@@ -353,6 +353,26 @@
 					"seat": "pij-usual-seahorse",
 					"to": "2026-11-07T07:29:14.945Z",
 					"why": "ledger PR #150 (F61-F79)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T07:31:24.990Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "144",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "fresh reviewer after the 07 Nov reboot (#144 delta, #150 ledger)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T07:31:24.990Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "150",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "fresh reviewer after the 07 Nov reboot (#144 delta, #150 ledger)"
 				}
 			]
 		}
