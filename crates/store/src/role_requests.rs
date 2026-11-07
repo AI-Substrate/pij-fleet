@@ -176,10 +176,26 @@ impl SqliteOrchestration {
     /// # Errors
     /// `E-RS-ROLE-REQUEST-EXISTS` when a request with this id is recorded.
     pub async fn record_role_request(&self, request: &RoleRequest) -> Result<()> {
+        self.record_role_request_keeping(request, ()).await
+    }
+
+    /// [`Self::record_role_request`], with `keep` moved into the write task and
+    /// dropped only when the transaction has ended. A caller's admission guard
+    /// passed here outlives a cancelled waiter for as long as the insert can
+    /// still land (review of #135, F001).
+    ///
+    /// # Errors
+    /// As [`Self::record_role_request`].
+    pub async fn record_role_request_keeping<K: Send + 'static>(
+        &self,
+        request: &RoleRequest,
+        keep: K,
+    ) -> Result<()> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
         let request = request.clone();
         owned_write(async move {
+            let _keep = keep;
             let mut tx = begin_write(&pool).await?;
             let inserted = sqlx::query(&format!(
                 "INSERT INTO role_requests ({COLUMNS}) \
@@ -286,19 +302,43 @@ impl SqliteOrchestration {
         .collect()
     }
 
+    /// Every request for `role` in `project` a holder has claimed but not yet
+    /// settled (`delivering`), oldest first. One that fails goes back on the
+    /// queue, as does one a stopped daemon left, so retiring the role waits
+    /// for these (review of #135, F001). One read on the partial
+    /// `role_requests_delivering` index, normally empty.
+    pub async fn delivering_for_role(&self, project: &str, role: &str) -> Result<Vec<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_delivering \
+             WHERE state = 'delivering' AND project = ?1 AND role = ?2 ORDER BY created_at, id"
+        ))
+        .bind(project)
+        .bind(role)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .iter()
+        .map(role_request)
+        .collect()
+    }
+
     /// Withdraw every request still queued for `role` in `project` (plan
     /// 206, `retire --drop-queued`): each row is deleted and one
     /// [`WITHDRAWN_EVENT`] naming its requester, `by` and `why` is appended,
     /// in one write transaction. Only `queued` rows are touched, so a request
-    /// a drain has already claimed is never withdrawn. Returns the withdrawn
-    /// requests and their events, for the caller to publish.
-    pub async fn withdraw_queued_role_requests(
+    /// a drain has already claimed is never withdrawn. `keep` (the caller's
+    /// admission guard) is held by the write task until the transaction ends.
+    /// Returns the withdrawn requests and their events, for the caller to
+    /// publish.
+    pub async fn withdraw_queued_role_requests<K: Send + 'static>(
         &self,
         project: &str,
         role: &str,
         by: &str,
         why: &str,
         at: u64,
+        keep: K,
     ) -> Result<(Vec<Event>, Vec<RoleRequest>)> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
@@ -309,6 +349,7 @@ impl SqliteOrchestration {
             why.to_string(),
         );
         owned_write(async move {
+            let _keep = keep;
             let mut tx = begin_write(&pool).await?;
             let rows = sqlx::query(&format!(
                 "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_queued \

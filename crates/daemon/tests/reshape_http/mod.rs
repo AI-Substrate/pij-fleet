@@ -1106,3 +1106,475 @@ async fn printed_repair_commands_keep_the_project_and_instance() {
     assert_ne!(head(&b), b_before, "B changed");
     assert_eq!(head(&a), a_head, "A untouched throughout");
 }
+
+/// A role with many holders, added to the project at `repo`.
+async fn many_holders(addr: SocketAddr, repo: &Repo, id: &str) {
+    let added = directory(
+        addr,
+        repo,
+        &[
+            "add",
+            id,
+            "--title",
+            id,
+            "--kind",
+            "general",
+            "--lifecycle",
+            "long-lived",
+            "--holders",
+            "many",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "start",
+        ],
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{id}: {added}");
+}
+
+/// A request for `role` in `fleet`, as the store would hold it.
+fn request(id: &str, role: &str, state: pij_store::RequestState) -> pij_store::RoleRequest {
+    pij_store::RoleRequest {
+        id: id.into(),
+        project: "fleet".into(),
+        role: role.into(),
+        instance: String::new(),
+        requester: SEAT.into(),
+        body: "please".into(),
+        in_reply_to: None,
+        fyi: false,
+        reply: pij_store::ReplyMode::Wake,
+        limit_ms: None,
+        holder: (state == pij_store::RequestState::Delivering).then(|| "pij-holder".into()),
+        state,
+        created_at: 1,
+        delivered_at: None,
+        checkin_at: None,
+        escalated_at: None,
+        answered_at: None,
+    }
+}
+
+/// POSIX shell words of `line`, as `sh` would split them, without running
+/// anything: unquoted, single-quoted and backslash-escaped text only. `None`
+/// when an expansion or operator character is left unquoted, so the line
+/// would do more than pass words.
+fn shell_words(line: &str) -> Option<Vec<String>> {
+    let (mut words, mut word, mut started) = (Vec::new(), String::new(), false);
+    let mut chars = line.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            ' ' | '\t' => {
+                if started {
+                    words.push(std::mem::take(&mut word));
+                    started = false;
+                }
+            }
+            '\'' => {
+                started = true;
+                loop {
+                    match chars.next()? {
+                        '\'' => break,
+                        quoted => word.push(quoted),
+                    }
+                }
+            }
+            '\\' => {
+                started = true;
+                word.push(chars.next()?);
+            }
+            '$' | '`' | '(' | ')' | ';' | '&' | '|' | '<' | '>' | '"' | '*' | '?' => {
+                // `<text>` and `<seat>` placeholders are the only angle
+                // brackets a printed command carries.
+                if ch == '<' {
+                    let rest: String = chars.clone().take_while(|c| *c != '>').collect();
+                    if rest.chars().all(|c| c.is_ascii_lowercase()) && !rest.is_empty() {
+                        word.push('<');
+                        word.push_str(&rest);
+                        word.push('>');
+                        for _ in 0..=rest.len() {
+                            chars.next();
+                        }
+                        started = true;
+                        continue;
+                    }
+                }
+                return None;
+            }
+            other => {
+                started = true;
+                word.push(other);
+            }
+        }
+    }
+    if started {
+        words.push(word);
+    }
+    Some(words)
+}
+
+/// Security review of #135, S001: a holding instance is data, so the release a
+/// held-role refusal prints quotes it as one shell word. Nothing printed is
+/// run; the line is split as `sh` would split it.
+#[tokio::test]
+async fn printed_commands_quote_a_hostile_holding_instance() {
+    let repo = repo("pij-directory-reshape-quote");
+    let rig = draining_rig().await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    many_holders(addr, &repo, "qa").await;
+    let hostile = "x$(id)";
+    let file = repo.root.join("holders.txt");
+    std::fs::write(&file, format!("qa/{hostile} pij-holder\n")).unwrap();
+    let assigned = directory(
+        addr,
+        &repo,
+        &[
+            "assign",
+            "--batch",
+            file.to_str().unwrap(),
+            "--why",
+            "import",
+        ],
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    let held = directory(addr, &repo, &["retire", "qa", "--why", "w"]).await;
+    assert_eq!(refusal_code(&held), "E-RS-DIRECTORY-ROLE-HELD", "{held}");
+    let [release] = commands(&held).try_into().expect("one printed release");
+    assert_eq!(
+        shell_words(&release).expect("no unquoted expansion"),
+        [
+            "directory",
+            "release",
+            &format!("qa/{hostile}"),
+            "pij-holder",
+            "--why",
+            "<text>",
+            "--project",
+            "fleet",
+        ],
+        "{release}"
+    );
+}
+
+/// Review of #135, F001 (queue re-entry): a drain holds the role's gate from
+/// its claim until the request is settled, and a retire or merge refuses while
+/// any request for the role is still being delivered, since a failed delivery,
+/// or a daemon that stopped first, puts it back on the queue. Each such
+/// request then shows up queued, never behind a retired role.
+#[tokio::test]
+async fn retirement_waits_for_requests_in_delivery() {
+    let repo = repo("pij-directory-reshape-inflight");
+    let rig = draining_rig().await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    for id in ["qa", "ops", "dev"] {
+        many_holders(addr, &repo, id).await;
+    }
+
+    // A drain cannot claim while the gate is held, so no retire can slip
+    // between a claim and its settling.
+    let queued = send_to(addr, &repo.main, "role:dev", "req-drain", json!({})).await;
+    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
+    let gate = rig.services.directory.admission("fleet", "dev").await;
+    let assigned = directory(addr, &repo, &["assign", "dev", "pij-holder", "--why", "w"]).await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let state = |id: &'static str| {
+        let store = rig.store.clone();
+        async move { store.role_request(id).await.unwrap().map(|r| r.state) }
+    };
+    assert_eq!(
+        state("req-drain").await,
+        Some(pij_store::RequestState::Queued),
+        "the drain waits on the gate before it claims"
+    );
+    drop(gate);
+    for _ in 0..100 {
+        if state("req-drain").await == Some(pij_store::RequestState::Delivered) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        state("req-drain").await,
+        Some(pij_store::RequestState::Delivered)
+    );
+
+    // Claimed, its holding ended: both verbs refuse and write nothing.
+    let before = head(&repo);
+    for (role, id) in [("qa", "req-fail"), ("ops", "req-boot")] {
+        rig.store
+            .record_role_request(&request(id, role, pij_store::RequestState::Delivering))
+            .await
+            .unwrap();
+        for drop_queued in [false, true] {
+            let mut argv = vec!["retire", role, "--why", "w"];
+            if drop_queued {
+                argv.push("--drop-queued");
+            }
+            let refused = directory(addr, &repo, &argv).await;
+            assert_eq!(
+                refusal_code(&refused),
+                "E-RS-DIRECTORY-ROLE-QUEUED",
+                "{refused}"
+            );
+            assert!(
+                refused
+                    .to_string()
+                    .contains(&format!("{id} from {SEAT} to pij-holder")),
+                "{refused}"
+            );
+        }
+        let merged = directory(addr, &repo, &["merge", role, "--into", "dev", "--why", "w"]).await;
+        assert_eq!(
+            refusal_code(&merged),
+            "E-RS-DIRECTORY-ROLE-QUEUED",
+            "{merged}"
+        );
+    }
+    assert_eq!(head(&repo), before, "nothing written");
+
+    // The delivery fails: the request goes back on the queue, where the
+    // queued refusal and --drop-queued take over.
+    assert!(
+        rig.store
+            .release_role_request_claim("req-fail", "pij-holder")
+            .await
+            .unwrap()
+    );
+    // The daemon stopped first: boot recovery re-queues it.
+    rig.store.recover_delivering_role_requests(2).await.unwrap();
+    for (role, id) in [("qa", "req-fail"), ("ops", "req-boot")] {
+        assert_eq!(state(id).await, Some(pij_store::RequestState::Queued));
+        let refused = directory(addr, &repo, &["retire", role, "--why", "w"]).await;
+        assert_eq!(
+            refusal_code(&refused),
+            "E-RS-DIRECTORY-ROLE-QUEUED",
+            "{refused}"
+        );
+        assert!(
+            refused.to_string().contains("queued for a holder"),
+            "{refused}"
+        );
+        let dropped = directory(
+            addr,
+            &repo,
+            &["retire", role, "--why", "w", "--drop-queued"],
+        )
+        .await;
+        assert_eq!(dropped["ok"], true, "{dropped}");
+        assert_eq!(dropped["data"]["withdrawn"][0]["id"], id, "{dropped}");
+        assert!(
+            rig.store
+                .queued_for_role("fleet", role)
+                .await
+                .unwrap()
+                .is_empty()
+                && rig
+                    .store
+                    .delivering_for_role("fleet", role)
+                    .await
+                    .unwrap()
+                    .is_empty(),
+            "nothing left behind retired {role}"
+        );
+    }
+}
+
+/// Holds the writer inside its ddocs validation of `role`'s document, once
+/// armed, until the test lets it go: a retirement paused after its waiter
+/// handed the commit to the blocking pool.
+struct PausingDdocs {
+    armed: std::sync::atomic::AtomicBool,
+    entered: tokio::sync::mpsc::UnboundedSender<()>,
+    go: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+}
+
+impl pij_daemon::community::ddocs::Validator for PausingDdocs {
+    fn validate(&self, _worktree: &Path, document: &Path) -> Result<(), Refusal> {
+        if document.ends_with("roles/qa/role.dd.json")
+            && self.armed.swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            let _ = self.entered.send(());
+            let _ = self.go.lock().unwrap().recv();
+        }
+        Ok(())
+    }
+
+    fn build(&self, _: &Path, document: &Path) -> Result<(), Refusal> {
+        std::fs::write(rendered(document), "rendered\n").unwrap();
+        Ok(())
+    }
+}
+
+/// Review of #135, F001 (cancelled waiters): the gate goes with the work that
+/// can still land, not the caller awaiting it. A send cancelled while its
+/// insert waits on the store keeps the gate until the insert lands, so the
+/// retire after it sees the request; a retirement cancelled while its commit
+/// waits in the writer keeps it until the commit lands, so the send after it
+/// sees the retired role.
+#[tokio::test]
+async fn the_gate_outlives_a_cancelled_waiter() {
+    let repo = repo("pij-directory-reshape-cancel");
+    let (entered, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (go, go_rx) = std::sync::mpsc::channel();
+    let ddocs = Arc::new(PausingDdocs {
+        armed: std::sync::atomic::AtomicBool::new(false),
+        entered,
+        go: std::sync::Mutex::new(go_rx),
+    });
+    let writer = CommunityWriter::new(
+        Arc::clone(&ddocs) as Arc<dyn pij_daemon::community::ddocs::Validator>,
+        vec![],
+        &LOCK_RETRY,
+    );
+    let rig = rig_inner(None, writer, Catalog::shipped()).await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    for id in ["qa", "ops"] {
+        many_holders(addr, &repo, id).await;
+    }
+
+    // The send: its insert waits behind another writer's transaction.
+    use sqlx::Connection;
+    let mut blocker = sqlx::SqliteConnection::connect_with(
+        &sqlx::sqlite::SqliteConnectOptions::new().filename(rig._fresh.path()),
+    )
+    .await
+    .unwrap();
+    sqlx::query("BEGIN IMMEDIATE")
+        .execute(&mut blocker)
+        .await
+        .unwrap();
+    let services = rig.services.clone();
+    let main = repo.main.clone();
+    let send = tokio::spawn(async move {
+        let address = pij_daemon::delivery::role_send::RoleAddress::parse("role:ops")
+            .unwrap()
+            .unwrap();
+        pij_daemon::delivery::role_send::route(
+            &services,
+            pij_daemon::delivery::role_send::RoleSend {
+                from: SeatId::from(SEAT),
+                address,
+                project: "fleet".into(),
+                repo: main,
+                body: "please".into(),
+                msg_id: "req-cancelled".into(),
+                in_reply_to: None,
+                fyi: false,
+                options: pij_daemon::delivery::role_send::RoleOptions::default(),
+            },
+            1,
+        )
+        .await
+        .map(|_| ())
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    send.abort();
+    assert!(send.await.unwrap_err().is_cancelled());
+    let main = repo.main.clone();
+    let retire = tokio::spawn(async move {
+        call(
+            addr,
+            "/v1/directory",
+            &["directory", "retire", "ops", "--why", "w"],
+            &main,
+        )
+        .await
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    sqlx::query("ROLLBACK").execute(&mut blocker).await.unwrap();
+    let retired = retire.await.unwrap();
+    assert!(
+        rig.store
+            .role_request("req-cancelled")
+            .await
+            .unwrap()
+            .is_some(),
+        "the cancelled send's insert landed after its waiter was gone"
+    );
+    assert_eq!(
+        refusal_code(&retired),
+        "E-RS-DIRECTORY-ROLE-QUEUED",
+        "the retire saw it: {retired}"
+    );
+    assert_ne!(
+        section(&committed(&repo, "ops"), "meta")["state"],
+        "retired"
+    );
+
+    // The retirement: cancelled while its commit waits in the writer.
+    ddocs.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    let directory_service = rig.services.directory.clone();
+    let main = repo.main.clone();
+    let retire = tokio::spawn(async move {
+        directory_service
+            .retire(
+                "fleet",
+                main,
+                "qa",
+                &SeatId::from(SEAT),
+                pij_daemon::community::directory::Retirement {
+                    why: "w",
+                    drop_queued: false,
+                },
+            )
+            .await
+            .map(|_| ())
+    });
+    entered_rx.recv().await.expect("the writer reached qa");
+    retire.abort();
+    assert!(retire.await.unwrap_err().is_cancelled());
+    let main = repo.main.clone();
+    let sent =
+        tokio::spawn(async move { send_to(addr, &main, "role:qa", "req-after", json!({})).await });
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(
+        !sent.is_finished(),
+        "the send waits for the retirement it raced"
+    );
+    go.send(()).unwrap();
+    let sent = sent.await.unwrap();
+    assert_eq!(refusal_code(&sent), "E-RS-DIRECTORY-RETIRED", "{sent}");
+    assert_eq!(section(&committed(&repo, "qa"), "meta")["state"], "retired");
+    assert!(rig.store.role_request("req-after").await.unwrap().is_none());
+}
+
+/// Plan 202 meets plan 206: an edit and a retirement rewrite `ROUTES.md` in
+/// their own commit, and a retired role routes nothing.
+#[tokio::test]
+async fn edit_and_retire_keep_the_routing_table_current() {
+    let repo = repo("pij-directory-reshape-routes");
+    let rig = draining_rig().await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    many_holders(addr, &repo, "qa").await;
+    let routes = || {
+        git(
+            &repo.gov,
+            &["show", "HEAD:.harness/government/community/ROUTES.md"],
+        )
+    };
+    assert!(routes().contains("role:qa"), "{}", routes());
+
+    let edited = directory(
+        addr,
+        &repo,
+        &["edit", "qa", "--scope-path", "src/qa/**", "--why", "w"],
+    )
+    .await;
+    assert_eq!(edited["ok"], true, "{edited}");
+    assert_eq!(edited["data"]["routes"]["regenerated"], true, "{edited}");
+    assert!(routes().contains("src/qa/**"), "{}", routes());
+
+    let retired = directory(addr, &repo, &["retire", "qa", "--why", "w"]).await;
+    assert_eq!(retired["ok"], true, "{retired}");
+    assert_eq!(retired["data"]["routes"]["regenerated"], true, "{retired}");
+    assert!(!routes().contains("role:qa"), "{}", routes());
+}

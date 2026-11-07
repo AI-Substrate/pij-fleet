@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use pij_core::directory::shell_word;
 use pij_core::model::{SeatDescriptor, SeatId};
 use pij_core::ports::TmuxPort;
 use pij_store::{Assignment, SqliteOrchestration};
@@ -142,6 +143,9 @@ pub struct Reshaped {
     /// The requests still to withdraw, oldest first; empty without
     /// `--drop-queued`.
     pub queued: Vec<pij_store::RoleRequest>,
+    /// What the commit did to the routing table (plan 202): a retired role
+    /// routes nothing. Empty when nothing was written.
+    pub routes: Regenerated,
     /// The command that finishes the withdrawal if it fails.
     finish: String,
     gate: tokio::sync::OwnedMutexGuard<()>,
@@ -365,7 +369,9 @@ impl DirectoryService {
             );
         };
         let record = format!(
-            "Record the version it came from: pij directory edit {id} --set template_version=<n> --why <text> --project {project}"
+            "Record the version it came from: pij directory edit {} --set template_version=<n> --why <text> --project {}",
+            shell_word(id),
+            shell_word(project)
         );
         let version = match meta["template_version"].as_str().map(str::trim) {
             Some(version) if !version.is_empty() => version,
@@ -709,17 +715,34 @@ impl DirectoryService {
         let paths = RolePaths::new(id)?;
         let gate = self.admission(project, id).await;
         let finish = format!(
-            "pij directory {} --why <text> --drop-queued --project {project}",
-            match into {
-                Some(into) => format!("merge {id} --into {into}"),
-                None => format!("retire {id}"),
-            }
+            "pij directory {} --why <text> --drop-queued --project {}",
+            reshape_verb(id, into),
+            shell_word(project)
         );
+        let store_refusal =
+            |error: pij_core::error::PijError| Refusal::new("E-RS-STORE", error.to_string());
+        // A claimed request goes back on the queue if its delivery fails or the
+        // daemon stops first, so the role cannot retire under it. A brake, not
+        // a policy: it only ever refuses a retirement, never causes one.
+        let delivering = self
+            .store
+            .delivering_for_role(project, id)
+            .await
+            .map_err(store_refusal)?;
+        if !delivering.is_empty() {
+            return Err(delivering_refusal(
+                project,
+                id,
+                into,
+                &delivering,
+                system_ms(),
+            ));
+        }
         let queued = self
             .store
             .queued_for_role(project, id)
             .await
-            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+            .map_err(store_refusal)?;
         let standing = self.standing(&repo, id)?;
         if standing.retired() {
             // An earlier --drop-queued committed the retirement but did not
@@ -730,6 +753,7 @@ impl DirectoryService {
                 return Ok(Reshaped {
                     written: None,
                     queued,
+                    routes: Regenerated::default(),
                     finish,
                     gate,
                 });
@@ -747,8 +771,8 @@ impl DirectoryService {
             actor.to_string(),
             why.to_string(),
         );
-        let (written, built) = self
-            .commit(repo, message, move |root, built| {
+        let (written, built, gate) = self
+            .commit_keeping(repo, message, gate, move |root, built| {
                 let date = super::holders::today();
                 let current = read_role(root, &id)?;
                 refuse_retired(&id, &role::standing(&current))?;
@@ -760,7 +784,11 @@ impl DirectoryService {
                         format!(
                             "role {id:?} is still held by {}; release it first",
                             held.iter()
-                                .map(|row| format!("{} ({})", row.seat, holding(&id, &row.instance)))
+                                .map(|row| format!(
+                                    "{} ({})",
+                                    row.seat,
+                                    holding(&id, &row.instance)
+                                ))
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         ),
@@ -769,9 +797,10 @@ impl DirectoryService {
                         "Release each holding first:{}",
                         held.iter()
                             .map(|row| format!(
-                                "\n  pij directory release {} {} --why <text> --project {project_id}",
-                                holding(&id, &row.instance),
-                                row.seat
+                                "\n  pij directory release {} {} --why <text> --project {}",
+                                shell_word(&holding(&id, &row.instance)),
+                                shell_word(&row.seat),
+                                shell_word(&project_id)
                             ))
                             .collect::<String>()
                     )));
@@ -805,6 +834,9 @@ impl DirectoryService {
                         existing: Existing::Replace,
                     });
                 }
+                let regenerated = routes::regenerate(&root.worktree, &files);
+                files.extend(regenerated.file.clone());
+                built.routes = Some(regenerated);
                 files.extend(flush_files(
                     root,
                     &project_id,
@@ -819,6 +851,7 @@ impl DirectoryService {
         Ok(Reshaped {
             written: Some(written),
             queued: if how.drop_queued { queued } else { Vec::new() },
+            routes: built.routes.unwrap_or_default(),
             finish,
             gate,
         })
@@ -827,7 +860,8 @@ impl DirectoryService {
     /// Withdraw the requests a `--drop-queued` retire or merge left queued
     /// (plan 206): delete their rows and append one `role.request.withdrawn`
     /// event each, in one store transaction, still under the role's gate,
-    /// which is released when this returns. Call it after telling each
+    /// which the write task holds until that transaction ends, even if this
+    /// call is cancelled first. Call it after telling each
     /// requester, so a failure here leaves the requests queued behind a retired
     /// role and the same command finishes the job (review of #135, F002).
     ///
@@ -847,6 +881,7 @@ impl DirectoryService {
             queued,
             finish,
             gate,
+            ..
         } = reshaped;
         if queued.is_empty() {
             return Ok(Vec::new());
@@ -863,7 +898,7 @@ impl DirectoryService {
             .event_bus
             .publish_committed_batch(async move {
                 store
-                    .withdraw_queued_role_requests(&project_id, &role_id, &by, &reason, at)
+                    .withdraw_queued_role_requests(&project_id, &role_id, &by, &reason, at, gate)
                     .await
             })
             .await
@@ -880,7 +915,6 @@ impl DirectoryService {
                 )
                 .with_next(format!("Run the same command again to finish: {finish}"))
             })?;
-        drop(gate);
         Ok(withdrawn)
     }
 
@@ -899,7 +933,7 @@ impl DirectoryService {
         change: RoleEdit,
         actor: &SeatId,
         why: &str,
-    ) -> Result<Written, Refusal> {
+    ) -> Result<(Written, Regenerated), Refusal> {
         let paths = RolePaths::new(id)?;
         let pending = self.pending(project).await?;
         let message = format!(
@@ -944,6 +978,9 @@ impl DirectoryService {
                     document: true,
                     existing: Existing::Replace,
                 }];
+                let regenerated = routes::regenerate(&root.worktree, &files);
+                files.extend(regenerated.file.clone());
+                built.routes = Some(regenerated);
                 files.extend(flush_files(
                     root,
                     &project_id,
@@ -955,7 +992,7 @@ impl DirectoryService {
             })
             .await?;
         self.flushed(&built.landed, &written).await?;
-        Ok(written)
+        Ok((written, built.routes.unwrap_or_default()))
     }
 
     /// Any other directory write (`directory add`, `directory routes --write`):
@@ -1553,11 +1590,30 @@ impl DirectoryService {
         + Send
         + 'static,
     ) -> Result<(Written, Built), Refusal> {
+        self.commit_keeping(repo, message, (), build)
+            .await
+            .map(|(written, built, ())| (written, built))
+    }
+
+    /// [`Self::commit`], with `keep` moved into the blocking job and handed
+    /// back when the commit lands. A caller cancelled while the job waits for
+    /// the writer leaves `keep` with the job, which can still commit, so an
+    /// admission guard is held for as long as its write can land (review of
+    /// #135, F001); a refused write drops it inside the job.
+    async fn commit_keeping<K: Send + 'static>(
+        &self,
+        repo: PathBuf,
+        message: String,
+        keep: K,
+        build: impl FnOnce(&GovernanceRoot, &mut Built) -> Result<Vec<NewFile>, Refusal>
+        + Send
+        + 'static,
+    ) -> Result<(Written, Built, K), Refusal> {
         let writer = Arc::clone(&self.writer);
         tokio::task::spawn_blocking(move || {
             let mut built = Built::default();
             let written = writer.write_with(&repo, |root| build(root, &mut built), &message)?;
-            Ok((written, built))
+            Ok((written, built, keep))
         })
         .await
         .map_err(|error| Refusal::new(E_GOV_GIT, format!("the writer stopped: {error}")))?
@@ -1649,14 +1705,15 @@ fn queued_refusal(
         .collect();
     targets.sort();
     targets.dedup();
-    let verb = match into {
-        Some(into) => format!("merge {id} --into {into}"),
-        None => format!("retire {id}"),
-    };
+    let verb = reshape_verb(id, into);
+    let project = shell_word(project);
     let assigns: String = targets
         .iter()
         .map(|target| {
-            format!("\n  pij directory assign {target} <seat> --why <text> --project {project}")
+            format!(
+                "\n  pij directory assign {} <seat> --why <text> --project {project}",
+                shell_word(target)
+            )
         })
         .collect();
     Refusal::new(
@@ -1671,6 +1728,51 @@ fn queued_refusal(
         "Assign a holder to take them, release it, then {verb} again:{assigns}\n\
          Or withdraw them, telling each requester once:\n  pij directory {verb} --why <text> --drop-queued --project {project}"
     ))
+}
+
+/// The refusal of a retire or merge while requests for `id` are mid-delivery
+/// (review of #135, F001): each is listed, and the same command is the next
+/// step once they settle. `--drop-queued` cannot withdraw them.
+fn delivering_refusal(
+    project: &str,
+    id: &str,
+    into: Option<&str>,
+    delivering: &[pij_store::RoleRequest],
+    now_ms: u64,
+) -> Refusal {
+    let listed: Vec<String> = delivering
+        .iter()
+        .map(|request| {
+            format!(
+                "{} from {} to {} ({} old)",
+                request.id,
+                request.requester,
+                request.holder.as_deref().unwrap_or("?"),
+                pij_core::cold_wake::human_duration(now_ms.saturating_sub(request.created_at))
+            )
+        })
+        .collect();
+    Refusal::new(
+        E_ROLE_QUEUED,
+        format!(
+            "role {id:?} has {} request(s) being delivered: {}; a failed delivery puts one back on the queue, so nothing was written",
+            delivering.len(),
+            listed.join(", ")
+        ),
+    )
+    .with_next(format!(
+        "Once they are delivered or back on the queue, run it again:\n  pij directory {} --why <text> --project {}",
+        reshape_verb(id, into),
+        shell_word(project)
+    ))
+}
+
+/// `retire <id>` or `merge <id> --into <into>`, each name a shell word.
+fn reshape_verb(id: &str, into: Option<&str>) -> String {
+    match into {
+        Some(into) => format!("merge {} --into {}", shell_word(id), shell_word(into)),
+        None => format!("retire {}", shell_word(id)),
+    }
 }
 
 /// Refuse a write to a retired role, naming where a merged one went.

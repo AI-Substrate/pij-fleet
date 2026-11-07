@@ -154,6 +154,11 @@ pub enum Routed {
         /// Already recorded: a send interrupted after its claim resumes to
         /// the holder it claimed, never a new one.
         recorded: bool,
+        /// The role's admission gate, for a claim not yet recorded: hand it
+        /// to the recording write, so a retire cannot slip between this
+        /// route's standing read and the `delivering` row it then refuses on
+        /// (review of #135, F001). `None` for a recorded claim.
+        gate: Option<tokio::sync::OwnedMutexGuard<()>>,
     },
     /// A retry of a request already queued or delivered: nothing is sent
     /// again, and the stored request is the answer.
@@ -265,14 +270,15 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
     };
     match live.as_slice() {
         [] => {
-            if let Err(error) = store.record_role_request(&request).await {
+            // The gate goes with the write: a cancelled send still holds it
+            // until its insert has landed or failed (review of #135, F001).
+            if let Err(error) = store.record_role_request_keeping(&request, gate).await {
                 // An identical send recorded it first: answer from that one.
                 if let Ok(Some(existing)) = store.role_request(&request.id).await {
                     return replay(&send, existing);
                 }
                 return Err(Refusal::new("E-RS-STORE", error.to_string()));
             }
-            drop(gate);
             let woke = wake(services, &store, &request, &assignments, now_ms).await;
             let receipt = Receipt {
                 msg_id: request.id.clone(),
@@ -306,6 +312,7 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
                 body: framed_body(&request),
                 request,
                 recorded: false,
+                gate: Some(gate),
             })
         }
         several => Err(Refusal::new(
@@ -361,6 +368,7 @@ fn replay(send: &RoleSend, existing: RoleRequest) -> Result<Routed, Refusal> {
             body: framed_body(&existing),
             request: existing,
             recorded: true,
+            gate: None,
         }),
         _ => Ok(Routed::Replay { request: existing }),
     }
@@ -765,6 +773,11 @@ pub async fn drain(
     };
     let mut outcomes = Vec::new();
     for mut request in queued {
+        // From the claim until it is settled, delivered or back on the queue,
+        // the role's gate is held: a retire or merge waits for it, and its
+        // queued-request read and withdrawal never race a claim (review of
+        // #135, F001).
+        let _gate = services.directory.admission(project, role).await;
         match store.claim_role_request(&request.id, seat.as_str()).await {
             Ok(true) => {}
             Ok(false) => continue,

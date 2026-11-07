@@ -938,18 +938,20 @@ async fn edit(
         }
     };
     let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
-    let written = state
+    let (written, regenerated) = state
         .services
         .directory
         .edit(&project, repo, id, change, actor, &why)
         .await?;
     record_pointers(state, &project, &written).await?;
+    let routes = routes_receipt(state, &project, &written, &regenerated).await;
     Ok(json!({
         "project": project,
         "id": id,
         "path": paths.document.display().to_string(),
         "commit": written.commit,
         "paths": written.paths,
+        "routes": routes,
     }))
 }
 
@@ -987,12 +989,13 @@ async fn reshape(
         }
         None => directory.retire(&project, repo, id, actor, how).await?,
     };
-    let (commit, paths) = match &reshaped.written {
+    let (commit, paths, routes) = match &reshaped.written {
         Some(written) => {
             record_pointers(state, &project, written).await?;
-            (json!(written.commit), json!(written.paths))
+            let routes = routes_receipt(state, &project, written, &reshaped.routes).await;
+            (json!(written.commit), json!(written.paths), routes)
         }
-        None => (Value::Null, json!([])),
+        None => (Value::Null, json!([]), Value::Null),
     };
     // Tell first, then withdraw: an FYI is held once per msg id, so a
     // withdrawal that fails after this is finished by the same command
@@ -1020,6 +1023,7 @@ async fn reshape(
         "paths": paths,
         "resumed": resumed,
         "withdrawn": told,
+        "routes": routes,
     }))
 }
 

@@ -1119,8 +1119,9 @@ writer commit as any add. No loop or timer.
 committed role under its lock, applies the change (a repeated flag replaces the
 whole list, as for `add --from`), keeps the changelog (a `--file` document's
 own changelog is replaced by the committed one), adds one row with `--why`, and
-commits it like an add (validate, build, commit, pointer). `data` is `{project,
-id, path, commit, paths}`.
+commits it like an add (validate, build, commit, pointer), with `ROUTES.md`
+regenerated in the same commit when the role's scope changed (plan 202).
+`data` is `{project, id, path, commit, paths, routes}`, `routes` as for `add`.
 
 | Refusal | When |
 |---|---|
@@ -1138,8 +1139,9 @@ outputs and holders lineage stay where they are and stay readable. The view
 gives each role `state` (`active` or `retired`), `merged_into` (or null) and
 `merged_from` (the roles merged into it, derived from their `merged_into`), and
 the human view prints `retired, merged into <to>` and `merged from <from>`. A
-retired role no longer clears a core-role prompt (C22). `data` is `{project, id,
-state, merged_into, commit, paths}`. Only retire and merge change a role's
+retired role no longer clears a core-role prompt (C22) and routes nothing: the
+same commit rewrites `ROUTES.md` without its rows (plan 202). `data` is
+`{project, id, state, merged_into, commit, paths, routes}`. Only retire and merge change a role's
 standing: `edit` refuses a retired role and refuses a change to `state` or
 `merged_into` (a `--file` that leaves them out keeps them). ddocs cannot tie
 `merged_into` to `state: retired` or check that it names a role, so the writer
@@ -1150,9 +1152,18 @@ refuses either on every write (`E-RS-ARG`, `E-RS-DIRECTORY-ROLE-MISSING`), and
 Requests queued for the role (no live holder took them) are never stranded
 silently. A send to a role and a retire or merge of it share one admission
 gate per (project, role): the send holds it from reading the role's standing
-until its request is recorded, and the reshape holds it from reading the queue
-through its commit and withdrawal, so no request is admitted between the check
-and the retirement. Without `--drop-queued`, retire and merge refuse and list
+until its request is recorded (queued, or `delivering` to the one live
+holder), a drain holds it from claiming a queued request until that request is
+delivered or back on the queue, and the reshape holds it from reading the
+queue through its commit and withdrawal, so no request is admitted between the
+check and the retirement. The gate goes with the work that can still land, not
+with the caller awaiting it: a send cancelled while its insert waits on the
+store, or a retire cancelled while its commit waits on the writer, keeps the
+gate until that write has landed or failed. A retire or merge also refuses
+while any request for the role is `delivering` (claimed, not yet settled),
+since a failed delivery, or a daemon that stops first and re-queues it at
+boot, would put it back on the queue behind a retired role. This check only
+ever refuses a retirement: it is a brake, not a policy. Without `--drop-queued`, retire and merge refuse and list
 the queued requests. With `--drop-queued` the role is retired, each requester
 is told once by an FYI held for its next real turn (msg id `<request
 id>.withdrawn`, so a repeat is ignored) that names the role, who retired it and
@@ -1172,7 +1183,9 @@ withdraws them. With nothing queued, a retired role refuses as before.
 Every command a refusal prints names the project it was asked about
 (`--project <slug>`) and the exact holding or queued instance
 (`<role>/<instance>`), so following it from another checkout changes the right
-project: the held refusal prints one release per holding, the queued refusal
+project. Each role, holding, seat and project in it is one shell word, quoted
+when it carries anything but `[A-Za-z0-9_-./:@%+=,]`, since a holding instance
+can arrive as data (`assign --batch`) and must never become shell syntax: the held refusal prints one release per holding, the queued refusal
 one assign per queued instance and the `--drop-queued` form, and F19's
 template-diff refusal its edit. Merge does not move queued requests to `<to>`:
 a queued request drains only on an assign, so a moved request would wait even
@@ -1182,16 +1195,19 @@ them.
 | Refusal | When |
 |---|---|
 | `E-RS-DIRECTORY-ROLE-HELD` | a seat still holds the role; the next step names the release |
-| `E-RS-DIRECTORY-ROLE-QUEUED` | requests sent to the role wait queued for a holder ([Send to a role](#send-to-a-role-plan-199)) and `--drop-queued` was not given. Each is listed as `<id> from <requester> for <role>[/<instance>] (<age> old)`; the next step prints an assign per queued instance (which drains them; release it and retry after) and the same verb with `--drop-queued` |
+| `E-RS-DIRECTORY-ROLE-QUEUED` | requests sent to the role wait queued for a holder ([Send to a role](#send-to-a-role-plan-199)) and `--drop-queued` was not given. Each is listed as `<id> from <requester> for <role>[/<instance>] (<age> old)`; the next step prints an assign per queued instance (which drains them; release it and retry after) and the same verb with `--drop-queued`. Also while a request for the role is being delivered, listed as `<id> from <requester> to <holder> (<age> old)`; the next step is the same verb once it settles (`--drop-queued` cannot withdraw a claimed request) |
 | `E-RS-DIRECTORY-RETIRED` | the role is already retired, or is the merge target; assign and edit of a retired role refuse too, naming the merge target when there is one |
 | `E-RS-DIRECTORY-ROLE-MISSING` | either role has no `role.dd.json` |
 | `E-RS-ARG` | no `--why`, `merge` without `--into`, a role merged into itself, `--into` on any verb but merge, or extra flags |
 
 Cost: one writer commit per edit, retire or merge, the same as an add, plus
-one read on the `role_requests_queued` index for retire and merge, and with
-`--drop-queued` one store transaction and one FYI per withdrawn request. The send path reads the role document
-it already reads. No loop
-or timer.
+one read on the `role_requests_queued` index and one on the (normally empty)
+`role_requests_delivering` index for retire and merge, and with
+`--drop-queued` one store transaction and one FYI per withdrawn request. The
+send path reads the role document it already reads. The gate is an in-process
+lock: no launch, loop or timer. A drain holds it per request while that
+request is delivered, so a send to the same role waits for at most one
+delivery.
 
 ### Role outputs (plan 200)
 
@@ -1248,7 +1264,8 @@ ddocs 2) and one delivery to the one seat told. No timer or poll.
 
 ### Routing table (plan 202)
 
-pij builds the routing table, "send it, don't do it", from every role's scope:
+pij builds the routing table, "send it, don't do it", from every active role's
+scope (a retired or merged role routes nothing, plan 206):
 one row per `scope.paths` entry and one per `scope.rules` entry, each sent to
 `role:<id>`, ordered by role id, paths first. It lives in
 `community/ROUTES.md`, which carries no holder names, so a change of holder never
@@ -1257,7 +1274,8 @@ components agree up to where either ends or turns into a glob) give the warning
 `W-ROUTES-OVERLAP: <path> (role:<a>) overlaps <path> (role:<b>)`, listed under
 `## Overlaps` in the file.
 
-Every role write through the writer (`directory add` today) rewrites
+Every role write through the writer (`directory add`, `edit`, `retire` and
+`merge`) rewrites
 `ROUTES.md` in the same commit when its bytes change, so a regeneration is never
 a commit of its own. The first one replaces a hand-written `ROUTES.md`; the old
 text stays in the branch history. `data.routes` on the add carries `path`,

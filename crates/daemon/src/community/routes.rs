@@ -102,10 +102,14 @@ pub struct Regenerated {
     pub table: Table,
 }
 
-/// Build the table from `(id, role document)` pairs.
+/// Build the table from `(id, role document)` pairs, active roles only.
 pub fn build(roles: &[(String, Value)]) -> Table {
     let mut routes: Vec<Route> = Vec::new();
-    for (id, document) in roles {
+    // A retired or merged role routes nothing: a send to it refuses (plan 206).
+    for (id, document) in roles
+        .iter()
+        .filter(|(_, document)| !super::role::standing(document).retired())
+    {
         let scope = section(document, "scope");
         for (kind, key) in [(Kind::Path, "paths"), (Kind::Rule, "rules")] {
             let entries = scope
