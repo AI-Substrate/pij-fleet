@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "When changing tap adoption rollback or investigating legacy launch storms",
+				"tags": [
+					"tmux",
+					"ownership",
+					"launches"
+				],
+				"title": "F112: preserve tap ownership before optimizing retries"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F112 came from a failed orphan-pipe adoption clearing a pre-existing matching @pij-tap-sink marker while the pipe survived. A stale legacy sink then triggered whole-machine ps on every600ms observer retry; log dedup did not dedup work. Rollback must preserve prior matching ownership evidence and undo only the new attempt. Unknown foreign pipes remain refused: never fix the storm by blindly detaching them. The repair removed the census and added bounded refusal backoff. A flat counter after manual marker repair is not loaded-code proof; keep PID/incarnation provenance and validate the retired site independently. Current reading/queue pointers are already in memory20dd3ed and handoverd027d36; do not duplicate them here."
+		}
+	]
+}
