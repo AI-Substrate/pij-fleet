@@ -5275,14 +5275,35 @@ async fn a_role_addressed_reply_answers_and_a_forged_sender_never_does() {
     rig.server.abort();
 }
 
-/// What `seat` has queued from `from`: (sender, msg id).
+/// Every live delivery job for `seat` from `from`, oldest first: (sender,
+/// msg id). Read from the queue table, not `peek_inbox`, which shows only the
+/// head job.
 async fn queued_from(rig: &Rig, seat: &str, from: &str) -> Vec<(String, String)> {
-    rig.delivery
-        .peek_inbox(&SeatId::from(seat))
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
         .await
-        .unwrap()
+        .unwrap();
+    let payloads: Vec<(String,)> = sqlx::query_as(
+        "SELECT payload FROM jobs WHERE kind = ?1 AND state IN ('pending', 'running') ORDER BY id",
+    )
+    .bind(format!("delivery:{seat}"))
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    payloads
         .into_iter()
-        .map(|claim| (claim.message.from.to_string(), claim.message.msg_id))
+        .map(|(payload,)| {
+            let payload: Value = serde_json::from_str(&payload).unwrap();
+            let message = if payload["message"].is_object() {
+                &payload["message"]
+            } else {
+                &payload
+            };
+            (
+                message["from"].as_str().unwrap_or_default().to_string(),
+                message["msg_id"].as_str().unwrap_or_default().to_string(),
+            )
+        })
         .filter(|(sender, _)| sender == from)
         .collect()
 }
@@ -5552,6 +5573,51 @@ async fn a_client_replaying_a_paneless_pull_holders_metadata_cannot_reply_as_it(
     assert_eq!(plain["ok"], true, "{plain}");
     assert_eq!(queued_from(&rig, "pij-second", "pij-pull").await.len(), 1);
     assert_eq!(unanswered().await, None);
+    rig.server.abort();
+}
+
+/// DOCUMENTING regression, not a guarantee (security review of #152, round 6;
+/// ruling C32 (2) as clarified). A different client holding the daemon key
+/// supplies a live seat's roster pane on a correlated reply and is resolved
+/// by that pane, so the reply is delivered as the victim. Pane binding is
+/// registration strength; proving the caller runs in that pane is PRD 003
+/// req-10's. The same send-as is reachable today through any uncorrelated
+/// send with a `from`. When plan 221 phase 2 gates send-as, these assertions
+/// flip to refusals.
+#[tokio::test]
+async fn a_client_replaying_a_live_seats_pane_still_replies_as_it_until_req_10() {
+    let (rig, repo, _) = limit_rig("pij-reply-pane-replay", true).await;
+    // %51 is pij-holder's registered pane; this caller is not pij-holder.
+    let replayed = json!({"TMUX_PANE": "%51", "cwd": repo.main});
+    let native = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-second",
+        "pane-replay-native",
+        json!({"from": "pij-holder", "caller": replayed, "in_reply_to": "req-limit"}),
+    )
+    .await;
+    assert_eq!(native["ok"], true, "{native}");
+    let shim = shim_send(
+        &rig,
+        &[
+            "send",
+            "pij-second",
+            "replayed",
+            "--in-reply-to",
+            "req-limit",
+        ],
+        replayed,
+    )
+    .await;
+    assert_eq!(shim["ok"], true, "{shim}");
+    let delivered = queued_from(&rig, "pij-second", "pij-holder").await;
+    assert_eq!(
+        delivered.len(),
+        2,
+        "both delivered as the victim: {delivered:?}"
+    );
+    assert!(delivered.iter().all(|(from, _)| from == "pij-holder"));
     rig.server.abort();
 }
 
