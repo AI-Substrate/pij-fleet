@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "0c01b1b8cfac84d9e83704bb955e9180365a9a4e",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/152#issuecomment-6709365561",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:152",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C32(1): context-free holder claim is still delivered as that holder; reject correlated message delivery or separate a no-delivery state assertion."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: BLOCK\n\nPR: #152\nHead: 0c01b1b8cfac84d9e83704bb955e9180365a9a4e\nScope: only 5aee7a1..0c01b1b, including relevant main-merge preservation. Graded against clarified C32.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/daemon/src/http/mod.rs | 2083-2087, 1975-1989 | Unbound holder assertion becomes another seat's message author | 9/10 |\n\nS152-001 remains OPEN under C32(1). The accepted context-free exception is not limited to a request-state assertion: caller A supplies no identity context, names stored holder B as from, correlates to B's delivered request, and sends an arbitrary message to C. The handler preserves B as author and submits the supplied recipient/body to delivery.\n\nstore.mjs:866-869,1922-1929 renders the sender into \"[pij from B]\" and injects the body without unbound attribution. FYIs also preserve B through http/mod.rs:2226-2234, delivery/mod.rs:756-762 and core/fyi.rs:174-190. B neither sent nor authorized the message.\n\nC32 explicitly excludes sending as another seat. The Known limit describes clock suppression, not this visible message-author impersonation. Raw-from messaging predates round2; this is the remaining correlated-reply boundary, not a duplicated149 finding or a demand for stronger cryptographic origin.\n\nRequired repair: reject context-free correlated message delivery, or separate the permitted holder-state assertion into a no-delivery operation. Do not reuse an unbound claim as Msg.from. Update the exact Known limit afterward.\n\nClosed repairs:\n- C32(2) refusal downgrade is CLOSED: identity refusals propagate before routing; native sender mismatches reject before enqueue. Shim derives sender and propagates refusal.\n- F006/C32(3) is CLOSED in source: role_requests.rs:736-772 writes the first stamp and audit in one owned transaction. Append failure rolls back both; replay duplicates neither. Owned publication removes the prior cancellation split.\n- Accepted-answer markers replace HTTP-status inference; refused role receipts stay unmarked. Stored delivered state/holder controls answer authority. Audit payload is body-free.\n\nSource tests cover refused native/shim replies, contradictory/matching identities and atomic append failure/retry/shared-field idempotence. They do not establish neutral sender or no delivery for the context-free path.\n\nEvidence: exact-head CI42387589437 and latest Delivers42387613058 independently verified SUCCESS; PR reports CLEAN.\nhttps://github.com/AI-Substrate/pij-fleet/actions/runs/42387589437\n\nNo local builds/tests, canary reruns, spoofing requests, credential reads or product edits. Prior fixture-model proof limits remain.\n"
+		}
+	]
+}
