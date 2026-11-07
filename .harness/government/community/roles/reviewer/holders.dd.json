@@ -448,6 +448,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-double-bobcat",
 					"why": "first verdict on #152 (plan 214, C31)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T11:57:28.025Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "149",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "#149 round 642e64b"
 				}
 			]
 		}
