@@ -58,6 +58,15 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-bumpy-herring",
 					"why": "fresh security seat after the 07 Nov reboot"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T12:22:56.484Z",
+					"harness": "copilot",
+					"harness_session": "6130e575-5ad1-4cf8-aad9-c4d34e5357c4",
+					"machine": "ops.osk.lan",
+					"seat": "pij-annual-squirrel",
+					"why": "second security seat while herring's queue drains (prime 22:22)"
 				}
 			]
 		}
