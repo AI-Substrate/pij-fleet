@@ -299,7 +299,10 @@
 					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
 					"instance_key": "210",
 					"machine": "ops.osk.lan",
+					"release_why": "plan 210 shipped (#161 merged 2cc2ac3b)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-following-marsupial",
+					"to": "2026-11-07T18:46:11.142Z",
 					"why": "plan 210 phase 2 (rename, code paths, coverage sensor)"
 				},
 				{
