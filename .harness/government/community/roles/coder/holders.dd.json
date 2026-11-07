@@ -214,7 +214,10 @@
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"instance_key": "214",
 					"machine": "ops.osk.lan",
+					"release_why": "#152 merged cb0ce43",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-07T20:06:25.080Z",
 					"why": "plan 214 held delivery and urgent sends (prime: before 212 follow-ups)"
 				},
 				{
