@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "697b6aa0d3eec8fbe9de3926148d6f04b837e15f",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/149#issuecomment-6708992714",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:149",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C32(3) audit compliance remains unmet at this historical SHA: request state commits before audit_close, and audit failure is logged rather than atomic."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: BLOCK, reconsidered under C32\n\nPR: #149\nHead: 697b6aa0d3eec8fbe9de3926148d6f04b837e15f\nBasis: C32 at governance commit62d84336, not a stronger caller-origin requirement.\nThis is the explicitly requested historical-head reconsideration. Live e0004f8 is not assessed here.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | - | crates/store/src/role_requests.rs; crates/daemon/src/http/requests.rs | 932-965; 129-145, 275-276, 358-359 | C32(3) compliance blocker: request-state mutation commits before mandatory audit | Source-confirmed |\n\nThe asserted-owner allowance itself is accepted under C32. S003 is not blocked here merely because local machine-key holders can assert identity.\n\nCondition (2) is met for the specified ID/pane restrictions: contradictory pane/asserted IDs refuse; asserted-only callers get only stored requester/holder authority, never PA/prime. Separate stronger native-origin coverage is not claimed.\n\nCondition (3) is NOT met at697b6aa. The role-request state transaction commits before the handler separately calls audit_close. Audit errors are logged, not rolled back into the state transaction; no matching SQL trigger or transactional request.closed append exists. Cancellation-safe persistence of the request change does not protect the later audit admission. Successful one-event cases do not prove atomicity, failure or cancellation behavior.\n\nThe remaining block is audit durability/C32 compliance, not a new caller-strength authentication exploit. Commit the durable audit with the mutation, retaining exactly-once replay semantics, and add failure/cancellation coverage. A later head's changes cannot prove this snapshot.\n\nS004's specific self-role authorization path and S005's state-command formatting remain source-closed. The hostile-holder regression gap at this historical SHA remains qualified; the later e0004f8 delta is separate.\n\nF103 is a separate untrusted-authority-source note, not an automatic149 blocker: current designation was removed from request authorization.\n\nNo local builds/tests, role assertions, runtime probes, credential reads or code changes. Original exact-head CI succeeded; this is not a verdict on the current branch.\n"
+		}
+	]
+}
