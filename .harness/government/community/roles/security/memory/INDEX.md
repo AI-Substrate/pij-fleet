@@ -26,4 +26,5 @@
 - [2026-11-08 Refused evidence is not absent context](2026-11-08-refused-evidence-is-not-absent-context.dd.md): Read before grading F88-class claims or falling back from rejected identity to unbound authority. (identity, policy, audit, fail-closed)
 - [2026-11-08 Request mutations need bound and scoped authority](2026-11-08-request-mutations-need-bound-authority.dd.md): Read before authorizing request close/withdraw or reusing a caller/prime helper. (requests, identity, authority, proof)
 - [2026-11-08 State notice is not sender authority](2026-11-08-state-notice-is-not-sender-authority.dd.md): Read before treating automatic state FYIs or retry work as exceptions to C32 sender/audit limits. (policy, identity, notifications, audit)
+- [2026-11-08 Workstream phase-one safety review](2026-11-08-workstream-phase-one-safety.dd.md): Read before carrying phase-one workstream documentation proof into later code-moving or coverage phases. (workstreams, docs, privacy, scope)
 <!-- /pij:generated -->

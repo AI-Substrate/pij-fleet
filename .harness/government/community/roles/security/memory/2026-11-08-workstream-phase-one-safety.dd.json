@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Read before carrying phase-one workstream documentation proof into later code-moving or coverage phases.",
+				"tags": [
+					"workstreams",
+					"docs",
+					"privacy",
+					"scope"
+				],
+				"title": "Workstream phase-one safety review"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#159 e402ddef80ea44dd2e2fa08c58eec157cdfe7eff phase1 security PASS: no reportable privacy/secrets/machine-path or template/skill safety weakening found. Scope is schemas, fixtures and docs, not moved code. Umbrella completeness sensor, pm v4 path update and later req26 links remain deferred; do not present them as proven by this pass. Schema/fixture validity, shipped template pins and rendering are correctness-owned. Exact-head CI green; no local tests or ddocs rendering. Verdict: security/outputs/2026-11/08-verdict-pr-159-e402dde.dd.json.\n"
+		}
+	]
+}
