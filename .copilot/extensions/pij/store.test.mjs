@@ -1558,6 +1558,49 @@ test("activity: session.idle settles a working seat to idle", async (t) => {
 	assert.deepEqual(states(), ["working", "idle"]);
 });
 
+// Plan 217 AC6: the size the daemon cannot read from events.jsonl.
+test("activity: the latest session.usage_info size rides the next post; an older daemon's refusal drops it", async (t) => {
+	let refuseContext = false;
+	const bodies = [];
+	const { f } = await activityBridge(t, (body) => {
+		bodies.push(body);
+		return refuseContext && "context_tokens" in body
+			? Object.assign(new Error("Pij HTTP 422"), { status: 422 })
+			: { changed: true };
+	});
+	const usage = (id, currentTokens, extra = {}) =>
+		f.event({
+			type: "session.usage_info",
+			id,
+			ephemeral: true,
+			...extra,
+			data: { currentTokens, tokenLimit: 952000, messagesLength: 40 },
+		});
+	const sent = () =>
+		bodies.map((body) => [body.state, body.context_tokens, body.context_window_tokens]);
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	await flush();
+	usage("u-sub", 9, { agentId: "sub-agent-9" });
+	usage("u-1", 640000);
+	f.event({ type: "assistant.turn_end", id: "turn-1-end", data: {} });
+	await flush();
+	assert.deepEqual(sent(), [
+		["working", undefined, undefined],
+		["idle", 640000, 952000],
+	]);
+	refuseContext = true;
+	f.event({ type: "assistant.turn_start", id: "turn-2", data: {} });
+	await flush();
+	f.event({ type: "assistant.turn_end", id: "turn-2-end", data: {} });
+	await flush();
+	assert.deepEqual(sent().slice(2), [
+		["working", 640000, 952000],
+		["working", undefined, undefined],
+		["idle", undefined, undefined],
+	]);
+	assert.equal(f.reports.filter(({ kind }) => kind === "activity-unpublished").length, 0);
+});
+
 test("activity: working and idle still publish while receiving is held", async (t) => {
 	const { f, states } = await activityBridge(t);
 	f.bridge.holdReceiving(new NativeError("integrity hold under test"));
