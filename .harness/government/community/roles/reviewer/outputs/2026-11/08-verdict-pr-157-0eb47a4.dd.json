@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b678-1f65-7292-99d4-13b95753eada",
+				"date": "2026-11-08",
+				"head": "0eb47a422d07903c065edf72b59d4876d2d256d4",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/157#issuecomment-6708665552",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:157",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #157 correctness review\n\n## A. Verdict\n\n**BLOCK** at `0eb47a422d07903c065edf72b59d4876d2d256d4`.\n\nThree admission/proof defects remain: **F001** unstarted checks can be hidden by an old pass; **F002** missing-parser fallback does not require a Delivers check; **F003** attached worktrees are reported/reused as detached.\n\n## B. Scope and proof\n\nFull plan-220 review against main `cee0113`: script, fake-runner tests, recipe and adopted instructions. Clean detached checkout; GitHub and `git ls-remote` agree on this head and main, PR CLEAN.\n\nCI run `42382327504` succeeded at this full head. Both Node jobs executed all 18 pr-freeze tests; each reports 2,222 Vitest cases passed and six skipped. No local TS tests, dependency installs, script execution, fetch or worktree mutation were run. Read-only git/gh inspection checked the real migration listing and check payload shape.\n\n## C. F001, P2: an unstarted newer check can disappear\n\n`harness/scripts/pr-freeze.ts:128-137` chooses newest using `startedAt ?? createdAt ?? completedAt ?? \"\"`, lexically. A same-name queued check without usable timing, or with an empty/zero startedAt, loses to an older completed pass. An empty/zero startedAt also prevents falling through to a later createdAt.\n\nFor the same workflow/name, supply an old SUCCESS with a normal startedAt and a newer QUEUED check with missing/empty startedAt and no useful fallback: latestChecks keeps the old pass and the aggregate declares checks passed. The input type explicitly permits missing fields. Unknown chronology cannot prove the running check was superseded.\n\nGitHub's CheckRun schema confirms startedAt and completedAt are nullable DateTime fields; it has no createdAt field. This is a supported unstarted-check boundary, not an assertion that the current completed checks lack their timestamps.\n\nThe current queued test instead manufactures a later normal startedAt using pass(), so it cannot catch this case. Order unstarted/re-run checks using reliable run identity/creation evidence, or fail closed when supersession cannot be established. Add absent/empty/sentinel start controls and actual re-run/workflow-shape cases; preserve the successful superseded-failure control.\n\n## D. F002, P2: “CI stands in” without a CI Delivers check\n\n`delivers` unconditionally returns `ok: true` when no binary is found (`pr-freeze.ts:305-313`). It receives no rollup and never establishes that CI's latest `delivers` check exists and passed. Unrelated green Rust checks therefore permit FINAL even for a missing or prose Delivers line.\n\nThe existing fallback test demonstrates the gap: good() supplies only rust-test/rust-lint, then the parser-absent prose case expects no failures. No Delivers proof exists in that world.\n\nRequire the actual latest passing Delivers check for the fallback, otherwise return NOT FINAL with the parser/build-or-check next step. Add absent, queued and failing Delivers fallback controls plus a genuine passing fallback. Do not introduce another parser.\n\n## E. F003, P2: attached worktree reuse violates the declared isolation\n\n`reviewWorktree` checks only HEAD and the name suffix (`pr-freeze.ts:167-172`); it does not check the porcelain `detached` line. An attached branch checkout named review-7-<head7> at the head is consequently reported as “detached at ...”, and createWorktree returns it without making a detached checkout.\n\nThat branch can move under the reviewer when its owner next commits or switches it, the failure this tool is meant to prevent. Require detached and no branch record when identifying reusable review worktrees. Add an attached-head/name-match negative control and retain the detached reuse case; never detach or move someone else's active checkout automatically.\n\n## F. Rules checked\n\n| Rule | Observed evidence |\n|---|---|\n| Head/base/merge/ready | Fake controls isolate mismatch, absent remote, non-main, DIRTY/BEHIND and draft; real subject agrees |\n| Latest checks | Superseded fail and timed running/queued cases pass; workflowName namespaces checks; unknown timing remains F001 |\n| Migrations | Real git ls-tree invocation lists main's flat migrations through 0036; fake cases cover lower/equal and mismatched schema numbers |\n| Delivers | Built-parser path uses the existing binary on stdin; absent-parser fallback remains F002 |\n| Worktree | Safe generated path and explicit detached create; exact-head stale mismatch/refusal controls pass; attached reuse remains F003 |\n| Tool failures/usage | must propagates nonzero tool results to main's exit 2; usage validation source-read, not a local CLI run |\n\nThe script's latest selector correctly groups current gh payloads by workflow/name when workflowName exists; the real returned records do carry that field. No claim of a missing workflow field is made.\n\n## G. Integration and cost\n\nThe justfile already sets positional-arguments, so the quoted \"$@\" recipe forwards arguments as intended. AGENTS and the pair REVIEW/APPROVE/packet steps require FINAL; those instructions should not rely on this predicate until repaired.\n\nOne hand-run invocation has bounded gh/git reads and one explicit-SHA fetch into FETCH_HEAD, with no push/merge or destination refspec. Worktree creation is opt-in. Security owns shell/path/ref safety; performance owns call counts. The claimed oldest-selection mutation is author evidence, not a reviewer mutation run.\n\nThe successful self-FINAL and 18 healthy/fake controls do not close the three counterexamples. Plan remains draft/unchecked; no migration, daemon change or Delivers addresses are claimed.\n\n## H. Handover\n\nFix F001-F003 with focused negative controls, then freeze one repair with CI for a delta recheck. Keep the existing supersession, migration and detached-create/reuse positives. No product changes were made by this reviewer. Missing freeze-proof controls are captured as harness observation DL-005.\n"
+		}
+	]
+}
