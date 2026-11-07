@@ -70,4 +70,5 @@
 - [2026-11-06 Queue reentry and gate ownership at cancellation](2026-11-06-queue-reentry-and-gate-ownership-at-cancellation.dd.md): Before reviewing retirement gates, failed-drain recovery or an async mutex around independently owned writes. (review, lifecycle, recovery, cancellation)
 - [2026-11-06 Reviewer LOG single append needs no window](2026-11-06-reviewer-log-single-append-needs-no-window.dd.md): Before writing a reviewer verdict LOG line or requesting ledger serialization. (review, ledger, coordination)
 - [2026-11-06 Role lifecycle boundaries and scoped actions](2026-11-06-role-lifecycle-boundaries-and-scoped-actions.dd.md): Before reviewing role retirement, queued-admission recovery, or generated directory repair commands. (review, lifecycle, recovery, project-scope)
+- [2026-11-08 2026-11-08 compaction handover: 112, 152 and 164 deployment addendum](2026-11-08-2026-11-08-compaction-handover-112-152.dd.md): After compaction: publish reviewed 112, review 152 round 6; 164 needs carry-over repair; 163 reassigned.
 <!-- /pij:generated -->
