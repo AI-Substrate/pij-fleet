@@ -597,6 +597,16 @@
 					"seat": "pij-double-bobcat",
 					"to": "2026-11-07T18:46:10.788Z",
 					"why": "plan 210 closing states PR #161"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T18:54:33.917Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "163",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "plan 221 capability-bootstrap workshop (AC3)"
 				}
 			]
 		}
