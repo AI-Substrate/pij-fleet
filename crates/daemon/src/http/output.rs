@@ -254,8 +254,18 @@ async fn write(
                 ),
             )
             .with_next(format!(
-                "Get assigned (pij directory assign {} <seat> --why <text> --project {}), or drop --answers to publish the output without answering",
-                request.role, request.project
+                "Get assigned ({}), or drop --answers to publish the output without answering",
+                crate::community::picture::command(&[
+                    "pij",
+                    "directory",
+                    "assign",
+                    &request.role,
+                    "<seat>",
+                    "--why",
+                    "<text>",
+                    "--project",
+                    &request.project,
+                ])
             )));
         }
         fields.requester = Some(request.requester.clone());

@@ -2628,6 +2628,30 @@ async fn a_role_send_reaches_its_one_holder_and_records_the_request() {
     rig.server.abort();
 }
 
+/// `line` split into words by `/bin/sh` (through `printf`) in an empty
+/// directory, asserting nothing in it ran: the #135 S001 round trip.
+fn sh_words(line: &str) -> Vec<String> {
+    let dir = fresh_dir("pij-printed-command-sh");
+    let shell = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(format!("printf '%s\\037' {line}"))
+        .current_dir(&dir)
+        .output()
+        .expect("run /bin/sh");
+    assert!(shell.status.success(), "{shell:?}");
+    assert_eq!(
+        std::fs::read_dir(&dir).unwrap().count(),
+        0,
+        "nothing in the printed command ran: {line}"
+    );
+    String::from_utf8(shell.stdout)
+        .unwrap()
+        .split('\x1f')
+        .filter(|word| !word.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 /// #149 S002: a holding's instance is stored text, so the several-holders
 /// refusal's printed send quotes it as one shell word. `/bin/sh` splits the
 /// printed line (placeholder filled) through `printf` in an empty directory:
@@ -2663,25 +2687,7 @@ async fn a_hostile_instance_is_one_quoted_word_in_the_printed_command() {
         .as_str()
         .unwrap_or_default()
         .replace("<text>", "hi");
-    let dir = fresh_dir("pij-role-send-hostile-sh");
-    let shell = Command::new("/bin/sh")
-        .arg("-c")
-        .arg(format!("printf '%s\\037' {line}"))
-        .current_dir(&dir)
-        .output()
-        .expect("run /bin/sh");
-    assert!(shell.status.success(), "{shell:?}");
-    assert_eq!(
-        std::fs::read_dir(&dir).unwrap().count(),
-        0,
-        "nothing in the printed command ran: {line}"
-    );
-    let words: Vec<String> = String::from_utf8(shell.stdout)
-        .unwrap()
-        .split('\x1f')
-        .filter(|word| !word.is_empty())
-        .map(str::to_string)
-        .collect();
+    let words = sh_words(&line);
     assert!(
         hostile.iter().any(|instance| words
             == [
@@ -4085,6 +4091,11 @@ const LIMIT_MS: u64 = 10 * 60_000;
 /// `pij-holder`, and request `req-limit` to it with a 10m limit. Returns the
 /// request's delivery time.
 async fn limit_rig(name: &str, pa: bool) -> (Rig, Repo, u64) {
+    limit_rig_as(name, pa, "pm-001").await
+}
+
+/// [`limit_rig`], with `pij-holder` assigned `target` (`pm-001[/<instance>]`).
+async fn limit_rig_as(name: &str, pa: bool, target: &str) -> (Rig, Repo, u64) {
     let repo = repo(name);
     let rig = rig(Arc::new(NoHook)).await;
     with_roles(rig.addr, &repo).await;
@@ -4120,7 +4131,7 @@ async fn limit_rig(name: &str, pa: bool) -> (Rig, Repo, u64) {
     steps.push(vec![
         "directory",
         "assign",
-        "pm-001",
+        target,
         "pij-holder",
         "--why",
         "lead",
@@ -4239,6 +4250,41 @@ async fn closing_a_delivered_request_stops_its_limit_and_quiet_tells_nobody() {
         "{early}"
     );
     rig.server.abort();
+}
+
+/// #149 F85: a request routed to a holding takes the holding's instance, which
+/// is stored text. The time limit's notice prints a release for it, and that
+/// line splits under `/bin/sh` into exact words and runs nothing.
+#[tokio::test]
+async fn the_time_limit_release_quotes_a_hostile_stored_instance() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let hostile = "1$(id>dollar)`id>tick`;id>semi";
+    let target = format!("pm-001/{hostile}");
+    let (rig, _repo, delivered) = limit_rig_as("pij-limit-hostile", true, &target).await;
+    time_limits(&rig.services, delivered + LIMIT_MS).await;
+    time_limits(&rig.services, delivered + 2 * LIMIT_MS).await;
+    let notices = inbox_bodies(&rig, "pij-second").await;
+    let notice = notices.first().expect("the PA was told");
+    let release = notice
+        .split_once("another holder (")
+        .and_then(|(_, rest)| rest.lines().next()?.strip_suffix(")."))
+        .unwrap_or_else(|| panic!("the notice ends with a release: {notices:?}"))
+        .replace("<why>", "w");
+    assert_eq!(
+        sh_words(&release),
+        [
+            "pij",
+            "directory",
+            "release",
+            &target,
+            "pij-holder",
+            "--why",
+            "w",
+            "--project",
+            "fleet",
+        ],
+        "{notice}"
+    );
 }
 
 /// Each action's request, kind, recipient and whether delivery admitted it.
