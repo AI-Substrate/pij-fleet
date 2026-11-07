@@ -573,6 +573,7 @@ async fn native_known_historical_session_resumes_instead_of_holding_live_bootstr
     let store = FreshStore::new();
     let services = native_host_services(&store, &saved.folder, &["%151-known"]).await;
     let registry = services.registry.clone();
+    let reports = Arc::clone(&services.reported_context);
     registry.put(saved.clone()).await.unwrap();
     registry.put(bootstrap.clone()).await.unwrap();
     let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
@@ -589,6 +590,12 @@ async fn native_known_historical_session_resumes_instead_of_holding_live_bootstr
     .await;
     assert_eq!(resumed["data"]["id"], saved.id.as_str());
     assert_eq!(resumed["data"]["binding"], "rebound");
+    // Plan 217 (review S153-001): the report grant is for this incarnation.
+    let grant = resumed["data"]["context_token"]
+        .as_str()
+        .expect("a native registration answers its report grant");
+    assert!(reports.authorized(&saved.id, Some(new_process), grant));
+    assert!(!reports.authorized(&saved.id, saved.proc, grant));
     let current = registry.get(&saved.id).await.unwrap().unwrap();
     assert_eq!(current.harness_session, saved.harness_session);
     assert_eq!(current.proc, Some(new_process));
@@ -4133,5 +4140,351 @@ async fn native_typing_http_unavailable_observation_preserves_reported_status_an
             && !call.starts_with("commit")
             && !call.starts_with("send_keys")));
         server.abort();
+    }
+}
+
+/// A native Copilot seat on a live host, served over HTTP, whose transcript
+/// knows no context size (as Copilot's never does), so reports show.
+struct GrantRig {
+    victim: SeatDescriptor,
+    host: HostFixture,
+    store: FreshStore,
+    spine: Arc<dyn pij_core::ports::Spine>,
+    registry: Arc<dyn pij_core::ports::Registry>,
+    reports: Arc<crate::reported_context::ReportedContext>,
+    addr: std::net::SocketAddr,
+    server: tokio::task::JoinHandle<()>,
+    client: reqwest::Client,
+}
+
+impl GrantRig {
+    async fn new() -> Self {
+        let host = HostFixture::spawn();
+        let (mut victim, _) = contract_identity();
+        victim.id = "pij-victim".into();
+        victim.proc = Some(host.identity().await);
+        victim.pane = Some("%151-victim".into());
+        let store = FreshStore::new();
+        let mut services = native_host_services(&store, &victim.folder, &["%151-victim"]).await;
+        let reports = Arc::clone(&services.reported_context);
+        services.session_status = Arc::new(crate::reported_context::WithReportedContext::new(
+            Arc::new(pij_testkit::fakes::FakeSessionStatus::new().with_reply(
+                victim.harness_session.as_deref().unwrap(),
+                pij_core::session_status::SessionStatusReply::Status(
+                    pij_core::session_status::SeatStatus::unknown(),
+                ),
+            )),
+            Arc::clone(&reports),
+        ));
+        let (spine, registry) = (services.spine.clone(), services.registry.clone());
+        registry.put(victim.clone()).await.unwrap();
+        let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+        Self {
+            victim,
+            host,
+            store,
+            spine,
+            registry,
+            reports,
+            addr,
+            server,
+            client: reqwest::Client::new(),
+        }
+    }
+
+    async fn register(&self, seat: &SeatDescriptor) -> Value {
+        native_http_response(
+            self.client
+                .post(format!("http://{}/v1/register", self.addr))
+                .json(&native_registration(seat)),
+            reqwest::StatusCode::OK,
+        )
+        .await
+    }
+
+    async fn report(&self, state: &str, tokens: u64, grant: &str) -> Value {
+        native_http_response(
+            self.client
+                .post(format!("http://{}/v1/activity", self.addr))
+                .json(&json!({
+                    "seat": self.victim.id,
+                    "native_session": self.victim.harness_session,
+                    "state": state,
+                    "context_tokens": tokens,
+                    "context_token": grant,
+                })),
+            reqwest::StatusCode::OK,
+        )
+        .await
+    }
+
+    async fn card(&self) -> Value {
+        native_http_response(
+            self.client
+                .post(format!("http://{}/v1/state", self.addr))
+                .json(&json!({"id": self.victim.id})),
+            reqwest::StatusCode::OK,
+        )
+        .await
+    }
+
+    async fn reissues(&self) -> Vec<pij_core::model::Event> {
+        self.spine
+            .tail(None, pij_core::model::Seq(0))
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.kind == super::GRANT_REISSUED_KIND)
+            .collect()
+    }
+}
+
+fn grant_of(response: &Value) -> Option<String> {
+    response["data"]["context_token"]
+        .as_str()
+        .map(str::to_string)
+}
+
+/// Plan 217, review S153-001, KNOWN LIMIT (F88, PRD 003): registration does
+/// not prove the caller is the seat's host, so a second caller presenting a
+/// live seat's roster identifiers re-registers and is handed its standing
+/// context grant, and with it can report that seat's size. This test pins the
+/// limit and its mitigation: the reissue is audited exactly once, with the
+/// caller's evidence and never the token; a first registration audits
+/// nothing; and the forged size is what everyone then sees.
+#[tokio::test]
+async fn reissued_grant_is_audited_known_limit_f88() {
+    let rig = GrantRig::new().await;
+    let own = grant_of(&rig.register(&rig.victim).await).unwrap();
+    assert!(
+        rig.reissues().await.is_empty(),
+        "a first registration audits nothing"
+    );
+
+    // Another caller with the victim's roster identifiers.
+    let stolen = grant_of(&rig.register(&rig.victim).await).unwrap();
+    assert_eq!(stolen, own, "the known limit: the same grant");
+    let audited = rig.reissues().await;
+    assert_eq!(audited.len(), 1, "{audited:?}");
+    assert_eq!(audited[0].seat.as_ref(), Some(&rig.victim.id));
+    assert!(!audited[0].payload.contains(&own), "never the token");
+    let evidence: Value = serde_json::from_str(&audited[0].payload).unwrap();
+    assert_eq!(evidence["pane"], "%151-victim");
+    assert_eq!(evidence["pid"], rig.victim.proc.unwrap().pid);
+    assert!(
+        evidence["origin"]
+            .as_str()
+            .is_some_and(|origin| origin.starts_with("127.0.0.1:"))
+    );
+
+    // At registration's strength the stolen grant reports a size, and the
+    // forged size is the one every reader sees.
+    assert_eq!(rig.report("idle", 650_000, &stolen).await["ok"], true);
+    assert_eq!(rig.card().await["data"]["contextUsed"], 650_000);
+    rig.server.abort();
+}
+
+/// Review F003 / P153-F002: the reissue audit is mandatory. When its append
+/// fails, the registration stands but the standing grant is withheld, so no
+/// grant leaves without its event; once the spine accepts it again, the
+/// grant is returned with exactly one event.
+#[tokio::test]
+async fn a_reissue_whose_audit_fails_withholds_the_grant() {
+    let rig = GrantRig::new().await;
+    let own = grant_of(&rig.register(&rig.victim).await).unwrap();
+    let pool = pij_store::open(&rig.store.path()).await.unwrap();
+    sqlx::query(
+        "CREATE TRIGGER refuse_grant_audit BEFORE INSERT ON spine_events \
+         WHEN NEW.kind = 'context.grant.reissued' \
+         BEGIN SELECT RAISE(ABORT, 'injected audit failure'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let refused = rig.register(&rig.victim).await;
+    assert_eq!(refused["data"]["id"], rig.victim.id.as_str(), "registered");
+    assert_eq!(grant_of(&refused), None, "no grant without its audit");
+    assert!(rig.reissues().await.is_empty());
+
+    sqlx::query("DROP TRIGGER refuse_grant_audit")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(grant_of(&rig.register(&rig.victim).await), Some(own));
+    assert_eq!(rig.reissues().await.len(), 1);
+    rig.server.abort();
+}
+
+/// Review S153-002: a report checked against an incarnation that a
+/// registration then replaces (same seat and session, rotated grant) must
+/// change nothing when it resumes, after the replacement has published its
+/// own state and size. Positive control: with no rotation in between, the
+/// same checked report applies.
+#[tokio::test]
+async fn a_report_from_a_replaced_incarnation_changes_nothing() {
+    use pij_core::model::SystemState;
+    let mut rig = GrantRig::new().await;
+    let old_proc = rig.victim.proc;
+    let old_grant = grant_of(&rig.register(&rig.victim).await).unwrap();
+    let stale_report = |tokens| crate::reported_context::ContextReport {
+        session: rig.victim.harness_session.clone(),
+        tokens,
+        window: None,
+    };
+
+    // Positive control: checked, then applied with nothing in between.
+    assert!(rig.reports.authorized(&rig.victim.id, old_proc, &old_grant));
+    let applied = rig
+        .reports
+        .apply(
+            rig.registry.as_ref(),
+            &rig.victim.id,
+            old_proc,
+            &old_grant,
+            SystemState::Working,
+            stale_report(100_000),
+        )
+        .await
+        .unwrap();
+    assert!(applied.is_some());
+    assert_eq!(rig.card().await["data"]["contextUsed"], 100_000);
+
+    // The old request passes its check, then pauses here.
+    assert!(rig.reports.authorized(&rig.victim.id, old_proc, &old_grant));
+    // The process is replaced: same seat, same session, a new grant.
+    rig.host.kill_and_reap(old_proc.unwrap()).await;
+    let replacement_host = HostFixture::spawn();
+    let mut replacement = rig.victim.clone();
+    replacement.proc = Some(replacement_host.identity().await);
+    let rebound = rig.register(&replacement).await;
+    assert_eq!(rebound["data"]["binding"], "rebound");
+    let new_grant = grant_of(&rebound).unwrap();
+    assert_ne!(new_grant, old_grant);
+    // The replacement publishes its own state and size.
+    assert_eq!(rig.report("idle", 650_000, &new_grant).await["ok"], true);
+    let generation = rig.reports.generation(&rig.victim.id);
+
+    // The old request resumes.
+    let stale = rig
+        .reports
+        .apply(
+            rig.registry.as_ref(),
+            &rig.victim.id,
+            old_proc,
+            &old_grant,
+            SystemState::Working,
+            stale_report(1_000),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        stale, None,
+        "a replaced incarnation's report applies nothing"
+    );
+    let card = rig.card().await;
+    assert_eq!(card["data"]["state"], "idle");
+    assert_eq!(card["data"]["contextUsed"], 650_000);
+    assert_eq!(rig.reports.generation(&rig.victim.id), generation);
+    rig.server.abort();
+}
+
+/// Review F004: a registration's exclusion covers its registry write for the
+/// write's whole owned lifetime. The replacement's put is admitted but held
+/// before commit (another connection holds SQLite's write lock); the
+/// registration waiter is then cancelled, and a report already checked
+/// against the old incarnation runs. It must wait for the write and then
+/// change nothing. The same schedule without the cancel is the control.
+#[tokio::test]
+async fn a_cancelled_registration_keeps_reports_out_until_its_write_commits() {
+    use pij_core::model::SystemState;
+    for cancel in [true, false] {
+        let mut rig = GrantRig::new().await;
+        let old_proc = rig.victim.proc;
+        let old_grant = grant_of(&rig.register(&rig.victim).await).unwrap();
+        assert!(rig.reports.authorized(&rig.victim.id, old_proc, &old_grant));
+        let generation = rig.reports.generation(&rig.victim.id);
+        rig.host.kill_and_reap(old_proc.unwrap()).await;
+        let replacement_host = HostFixture::spawn();
+        let mut replacement = rig.victim.clone();
+        replacement.proc = Some(replacement_host.identity().await);
+
+        let pool = pij_store::open(&rig.store.path()).await.unwrap();
+        let mut blocker = pool.acquire().await.unwrap();
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut *blocker)
+            .await
+            .unwrap();
+        // The registration's owned work, as the handler composes it.
+        let waiter = tokio::spawn({
+            let (reports, registry, replacement) = (
+                Arc::clone(&rig.reports),
+                Arc::clone(&rig.registry),
+                replacement.clone(),
+            );
+            async move {
+                let work = {
+                    let reports = Arc::clone(&reports);
+                    async move {
+                        registry
+                            .put_reporting_keeping_parent(replacement.clone())
+                            .await
+                            .unwrap();
+                        reports.grant(&replacement.id, replacement.proc).unwrap()
+                    }
+                };
+                reports.exclusively(work).await.unwrap()
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        if cancel {
+            waiter.abort();
+        }
+        let old = tokio::spawn({
+            let (reports, registry, id, session) = (
+                Arc::clone(&rig.reports),
+                Arc::clone(&rig.registry),
+                rig.victim.id.clone(),
+                rig.victim.harness_session.clone(),
+            );
+            async move {
+                reports
+                    .apply(
+                        registry.as_ref(),
+                        &id,
+                        old_proc,
+                        &old_grant,
+                        SystemState::Working,
+                        crate::reported_context::ContextReport {
+                            session,
+                            tokens: 1_000,
+                            window: None,
+                        },
+                    )
+                    .await
+                    .unwrap()
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(
+            !old.is_finished(),
+            "cancel={cancel}: the report waits for the write"
+        );
+        sqlx::query("ROLLBACK")
+            .execute(&mut *blocker)
+            .await
+            .unwrap();
+        assert_eq!(old.await.unwrap(), None, "cancel={cancel}");
+        if !cancel {
+            waiter.await.unwrap();
+        }
+        let row = rig.registry.get(&rig.victim.id).await.unwrap().unwrap();
+        assert_eq!(
+            row.proc, replacement.proc,
+            "cancel={cancel}: the write committed"
+        );
+        assert_eq!(row.state, SystemState::Idle, "cancel={cancel}");
+        assert_eq!(rig.reports.generation(&rig.victim.id), generation);
+        assert_eq!(rig.card().await["data"]["contextUsed"], Value::Null);
+        rig.server.abort();
     }
 }

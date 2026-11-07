@@ -29,6 +29,11 @@ the handover files you check, you are read-only.
   for Claude seats only), the idle nudge and the prime-active wake pause. Instead you get one
   `usage limit lifted` wake per reset time, naming the stopped seats. Decide which to restart and send each
   its resume. Once the reset is past, a seat you leave stopped no longer pauses anything.
+- If you take **no turn for 30 minutes while the fleet is working**, you get one
+  `[pij watchdog] <pa-id>: your fleet is working but you have taken no turn for 30m …` wake with the same
+  digest. Run the round and end your turn. If you take no turn in the next 10 minutes, the prime is told
+  you are unresponsive, so never leave a question dialog or an unsent prompt in your own composer. The
+  prime also gets an FYI for every fleet seat over 600k; it expects you to be compacting those.
 - Exactly when each wake fires, and why: [`docs/how/pa-watchdog.md`](../../../../docs/how/pa-watchdog.md).
 - **Set no timers of your own**: no `sleep` / background re-arm, `/loop`, cron, scheduled wakeups,
   `Monitor` loops or `pij inbox --wait`. An idle fleet is nudged once, so you need no "stop when quiet" rule.

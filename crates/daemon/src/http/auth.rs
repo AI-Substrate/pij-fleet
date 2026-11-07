@@ -71,7 +71,7 @@ impl std::error::Error for AuthRingError {}
 /// Length is not a secret here (it is fixed by how keys are minted) but the
 /// CONTENT is, so the loop always runs over the longer of the two and folds every
 /// byte into one accumulator rather than returning at the first difference.
-fn constant_time_eq(left: &str, right: &str) -> bool {
+pub(crate) fn constant_time_eq(left: &str, right: &str) -> bool {
     let (left, right) = (left.as_bytes(), right.as_bytes());
     let mut difference = (left.len() ^ right.len()) as u8;
     let width = left.len().max(right.len());
