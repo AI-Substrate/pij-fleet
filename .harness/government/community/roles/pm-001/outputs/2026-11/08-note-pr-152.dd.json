@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"kind": "note",
+				"role": "pm-001",
+				"subject": "pr:152",
+				"writer": "pij-steady-otter",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "C31 live wedge canary after deploy (plan 214 ac-0004, rerun on a REAL model), pm-001, 2026-11-08.\nDeploy: #152 merged cb0ce43; daemon pid 62830, store user_version 43. Canary seat pij-wandering-jackal: Copilot CLI, claude-haiku-5.5 low (footer verified), extension build cb0ce436 (the merged code), steer default on (pij steer status: default on, off []).\nPart 1, steering on: a pij message started one turn at 06:07:03 (ten separate `sleep 15` tool calls). Five normal sends, CANARY 1 to 5, were sent mid-turn at 06:07:33, :45, :57, 06:08:09 and :22. jobs (delivery:pij-wandering-jackal) 16569-16573: each claimed and acked within 1 s of enqueue, all inside the running turn. The model noted \"CANARY 5 ... Sleep 5 of 10 is running\", finished all ten sleeps, replied \"DONE, saw CANARY 1, 2, 3, 4, 5\", and the seat registered idle (06:10:13). No wedge.\nPart 2, steering off (pij steer off at 06:10:2x; steer.changed; the subject was told by held FYI): a pij message started a second turn at 06:10:30 (four sleeps). CANARY 6 was sent mid-turn at 06:10:51 (job 16578): claimed and acked at 06:11:45, as the turn ended (seat.activity 06:11:43 to :45). The model confirmed \"Canary 6 arrived after the second DONE2 reply\". The old post-ack barrier holds with the switch off.\nCleanup: steer set back on, the seat closed, its pane %58 killed, the process gone.\nResult: PASS. Steering is safe to roll to the other Copilot seats, one at a time, the PA last; rollback is `pij steer off <seat>`.\n"
+		}
+	]
+}
