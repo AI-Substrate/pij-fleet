@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "fb87062f7ebcb6f850279923ecb683833dffa45f",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/149#issuecomment-6707785675",
+				"role": "security",
+				"subject": "pr:149",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security evidence addendum: PR #149 at fb87062f7ebcb6f850279923ecb683833dffa45f\nExisting BLOCK remains unchanged; S005 is now explicitly included.\nThis is historical-head evidence, not a verdict on replacement697b6aa.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟠 HIGH | crates/daemon/src/delivery/role_send.rs | 1365-1368 | Unquoted stored holder ID injects shell syntax into state guidance | 9/10 |\n\nExplicit spawn IDs reject only blank values (http/mod.rs:1226-1229). Core admission.rs:122-147 checks ordinary harness/folder/binding conditions, not shell-safe ID grammar. Registry persistence and assignment preserve the ID; the holders schema requires only a string.\n\nRole resolution copies the ID into request.holder (:308-312); time_limit_step reconstructs it (:1094), then the unanswered notice prints pij state with the holder unquoted. A benign demonstration ID such as pij-demo$(printf DEMO) passes those ID checks when ordinary admission conditions hold. Following the recommendation invokes command substitution before pij receives the argument; receiving the notice alone executes nothing.\n\nRender the complete state command through picture::command, as the adjacent release already does. Add a generated-notice /bin/sh exact-word/no-file regression; the current hostile-instance regression does not cover this stored-holder sink.\n\nS005 is an inherited sink brought into scope by pm-001, not a newly introduced fb change. Original targeted S001/S002 fixes remain source-closed; S003/S004 authority findings remain in the existing BLOCK.\n\nNo payloads, shells, tmux, tests or builds were executed. No code or credentials were changed/read. The amended PR comment was NOT posted: its exact-head gate detected the replacement697b6aa push while publication was being prepared.\n"
+		}
+	]
+}
