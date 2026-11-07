@@ -312,7 +312,10 @@
 					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
 					"instance_key": "219",
 					"machine": "ops.osk.lan",
+					"release_why": "#164 merged 530ac84b (F108)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-back-tapir",
+					"to": "2026-11-07T19:44:00.249Z",
 					"why": "F108: detector missed a live F47 case (plan 219 follow-up)"
 				},
 				{
