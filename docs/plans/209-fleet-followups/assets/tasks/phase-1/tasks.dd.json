@@ -124,7 +124,8 @@
           "success": "Cost receipts per bp-0007; difficulties.md records F26, F27, F28 resolved; ddocs-check passes; PR body has a Delivers line.",
           "notes": "",
           "satisfies": [
-            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+            "../../../plan.dd.json#acceptance_criteria/ac-0007",
+            "../../../plan.dd.json#acceptance_criteria/ac-0008"
           ],
           "done": "tasks.dd.json#done_when/tk-0009"
         },
