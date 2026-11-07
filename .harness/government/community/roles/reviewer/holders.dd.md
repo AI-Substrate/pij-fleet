@@ -47,3 +47,4 @@
 | — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 150 | 2026-11-06T13:58:03.168Z | 2026-11-07T07:29:14.945Z | pij-steady-otter | pij-steady-otter | ledger PR #150 (F61-F79) | seat died in the 07 Nov reboot; prime: fresh holders |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 144 | 2026-11-07T07:31:24.990Z | — | pij-steady-otter | — | fresh reviewer after the 07 Nov reboot (#144 delta, #150 ledger) | — |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 150 | 2026-11-07T07:31:24.990Z | — | pij-steady-otter | — | fresh reviewer after the 07 Nov reboot (#144 delta, #150 ledger) | — |
+| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 148 | 2026-11-07T07:37:26.611Z | — | pij-steady-otter | — | first verdict on #148 (plan 211) | — |
