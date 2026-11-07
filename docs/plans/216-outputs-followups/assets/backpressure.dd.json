@@ -84,6 +84,26 @@
           "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
           "state": "unchecked",
           "probe": "docs/project/"
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC8",
+          "phase": "ph-00d8",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Daemon test: a delivered, limited request closed with --quiet gets no check-in and no FYI; without --quiet the requester gets one FYI; a non-allowed seat is refused before any write; a queued request is refused (use withdraw).",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0009",
+          "criterion": "AC9",
+          "phase": "ph-00d8",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Test: a hostile role or project value in the stored request comes back as one quoted word through a /bin/sh round-trip of the printed next step.",
+          "state": "unchecked",
+          "probe": "crates/"
         }
       ]
     },

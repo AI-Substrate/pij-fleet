@@ -6,11 +6,11 @@
     {
       "name": "meta",
       "value": {
-        "title": "Outputs follow-ups (F75-F79)",
+        "title": "Outputs and answers follow-ups (F75-F79, F83, F85)",
         "slug": "outputs-followups",
         "ordinal": 216,
         "complexity": "CS-1",
-        "summary": "Make pij outputs find a verdict by its short head, print a human line on write, warn on off-list kinds and undefined subjects, and say where the index starts.",
+        "summary": "Make pij outputs find a verdict by its short head, print a human line on write, warn on off-list kinds and undefined subjects, and say where the index starts. Also: close a delivered request quietly (F83), and quote stored values in output.rs's printed next steps (F85).",
         "status": "draft",
         "mode": "Full",
         "created": "2026-11-04",
@@ -78,6 +78,18 @@
           "claim": "Docs and states. docs/how/pij-rs-api.md: head prefixes, the success line, the output_kinds warning, subject forms and where the index starts. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "F83 (crane's fleet, via the prime, 07 Nov): `pij requests close <id> [--why <text>] [--quiet]` closes a DELIVERED role request that was answered or abandoned (withdraw only takes queued ones). Allowed for the request's requester, its holder, a PA of the project, or the prime, checked from the stored row before any write. It stops the s12 limit clock, moves the row to closed_role_requests in one transaction (as withdraw does), notifies nobody with --quiet, and otherwise tells the requester once by FYI. (The other half of F83, a holder's --in-reply-to reply marking the request answered, is F68 in plan 214.)",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+        },
+        {
+          "id": "ac-0009",
+          "claim": "F85 (wildcat, 07 Nov): no printed next step carries an unquoted stored value. crates/daemon/src/http/output.rs (E-RS-OUTPUT-NOT-HOLDER's next, about lines 257-258) interpolates request.role and request.project raw; put each complete word through pij_core::directory::shell_word (or picture::command), and sweep http/output.rs for any other printed command built from stored values.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0009"
         }
       ]
     },
