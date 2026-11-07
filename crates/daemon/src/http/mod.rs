@@ -4,7 +4,7 @@
 //! the completed router, so adding an endpoint cannot accidentally bypass it.
 
 pub mod anomalies;
-mod auth;
+pub(crate) mod auth;
 pub(crate) mod background;
 mod claims;
 mod client;
@@ -941,6 +941,11 @@ struct RegistrationResponse {
     /// hold". Absent stays absent, and the extension's own fallback applies.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     typing_grace_ms: Option<u64>,
+    /// The per-incarnation grant a native extension presents with its context
+    /// reports on `/v1/activity` (plan 217, review S153-001). Only in this
+    /// response; never in a roster or on the spine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    context_token: Option<String>,
 }
 
 /// Composition: the service returns `(descriptor, report)` from its committed
@@ -1025,6 +1030,7 @@ async fn register(
             }
         }
     }
+    let native = request.native_extension_delivery;
     let registered = state
         .registration
         .register_via(
@@ -1055,6 +1061,18 @@ async fn register(
             // field. 135 added binding/proc_source here and 136 added
             // typing_grace_ms in `wire`; two structs serializing the same
             // response is how two answers to one question start drifting.
+            // A failed grant leaves the seat without size reports, never
+            // unregistered.
+            let context_token = native
+                .then(|| {
+                    state
+                        .services
+                        .reported_context
+                        .grant(&descriptor.id, descriptor.proc)
+                        .map_err(|error| eprintln!("pij register: {error}"))
+                        .ok()
+                })
+                .flatten();
             let mut answer = Envelope::ok(
                 "pij register",
                 RegistrationResponse {
@@ -1062,6 +1080,7 @@ async fn register(
                     binding: Some(binding),
                     proc_source,
                     typing_grace_ms: Some(state.typing_grace_ms),
+                    context_token,
                 },
             );
             answer.meta = meta;

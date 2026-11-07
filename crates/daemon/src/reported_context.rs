@@ -10,13 +10,26 @@
 //! A fact the transcript knows always wins. In memory only: after a daemon
 //! restart a seat's size is unknown until its next turn boundary. No launch,
 //! no poll: the report rides a request the seat already makes.
+//!
+//! **Only the seat itself may report** (review S153-001). A size moves the
+//! cold-wake guard and the prime's large-seat FYI, and the pane and session a
+//! report names are in every roster, so they prove nothing. Registration
+//! issues a random per-incarnation grant ([`ReportedContext::grant`]),
+//! returned only in that registration's own response; a report must present
+//! it ([`ReportedContext::authorized`]). A new process incarnation gets a new
+//! grant and the old one stops working.
+//!
+//! **Generations** (review F002). Every activity post bumps the seat's
+//! generation ([`ReportedContext::touch`]), so the PA watchdog re-reads an idle
+//! seat's size only when something happened since it last read it, including
+//! a whole turn that fell between two rounds.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use pij_core::error::Result;
-use pij_core::model::SeatId;
+use pij_core::error::{PijError, Result};
+use pij_core::model::{ProcIdentity, SeatId};
 use pij_core::ports::SessionStatusPort;
 use pij_core::session_status::{Fact, SessionStatusReply, SessionTarget};
 
@@ -28,16 +41,76 @@ struct Report {
     window: Option<u64>,
 }
 
-/// The latest context size each seat reported.
+/// One seat's report grant: the token and the incarnation it was issued to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Grant {
+    token: String,
+    proc: Option<ProcIdentity>,
+}
+
+#[derive(Debug, Default)]
+struct State {
+    reports: HashMap<SeatId, Report>,
+    grants: HashMap<SeatId, Grant>,
+    generations: HashMap<SeatId, u64>,
+}
+
+/// The latest context size each seat reported, who may report it, and how
+/// often each seat's activity changed.
 #[derive(Debug, Default)]
 pub struct ReportedContext {
-    reports: Mutex<HashMap<SeatId, Report>>,
+    state: Mutex<State>,
 }
 
 impl ReportedContext {
-    /// Record `seat`'s latest size, for the session it reported from.
+    fn lock(&self) -> std::sync::MutexGuard<'_, State> {
+        self.state.lock().expect("reported context state")
+    }
+
+    /// The report grant for `seat`'s incarnation `proc`: the standing one when
+    /// the incarnation is unchanged (a heartbeat re-registration), else a new
+    /// random token that replaces it.
+    ///
+    /// # Errors
+    /// The system random source failed.
+    pub fn grant(&self, seat: &SeatId, proc: Option<ProcIdentity>) -> Result<String> {
+        let mut state = self.lock();
+        if let Some(grant) = state.grants.get(seat).filter(|grant| grant.proc == proc) {
+            return Ok(grant.token.clone());
+        }
+        let mut secret = [0_u8; 32];
+        getrandom::fill(&mut secret).map_err(|error| PijError::Adapter {
+            adapter: "daemon/reported-context".into(),
+            message: format!("report grant: {error}"),
+        })?;
+        let token = secret
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        state.grants.insert(
+            seat.clone(),
+            Grant {
+                token: token.clone(),
+                proc,
+            },
+        );
+        Ok(token)
+    }
+
+    /// Does `presented` match `seat`'s grant for its current incarnation
+    /// `proc`? No grant, another incarnation's grant, or a different token is
+    /// `false`.
+    pub fn authorized(&self, seat: &SeatId, proc: Option<ProcIdentity>, presented: &str) -> bool {
+        self.lock().grants.get(seat).is_some_and(|grant| {
+            grant.proc == proc && crate::http::auth::constant_time_eq(&grant.token, presented)
+        })
+    }
+
+    /// Record `seat`'s latest size, for the session it reported from. The
+    /// caller has checked [`Self::authorized`].
     pub fn record(&self, seat: &SeatId, session: Option<String>, tokens: u64, window: Option<u64>) {
-        self.reports.lock().expect("reported context map").insert(
+        let mut state = self.lock();
+        state.reports.insert(
             seat.clone(),
             Report {
                 session,
@@ -45,12 +118,23 @@ impl ReportedContext {
                 window,
             },
         );
+        *state.generations.entry(seat.clone()).or_default() += 1;
+    }
+
+    /// Note an activity post from `seat`: its size may have changed.
+    pub fn touch(&self, seat: &SeatId) {
+        *self.lock().generations.entry(seat.clone()).or_default() += 1;
+    }
+
+    /// How many times `seat`'s activity or size has changed since the daemon
+    /// started.
+    pub fn generation(&self, seat: &SeatId) -> u64 {
+        self.lock().generations.get(seat).copied().unwrap_or(0)
     }
 
     fn get(&self, seat: &SeatId, session: &str) -> Option<Report> {
-        self.reports
-            .lock()
-            .expect("reported context map")
+        self.lock()
+            .reports
             .get(seat)
             .filter(|report| report.session.as_deref().is_none_or(|own| own == session))
             .cloned()
@@ -149,5 +233,40 @@ mod tests {
             Fact::Unknown,
             "another session's report never applies"
         );
+    }
+
+    /// Review S153-001: a grant is per incarnation; only its own token passes.
+    #[test]
+    fn a_grant_is_per_incarnation_and_only_its_token_passes() {
+        let reports = ReportedContext::default();
+        let seat: SeatId = "pij-c".into();
+        let first = Some(ProcIdentity {
+            pid: 10,
+            proc_start: 1,
+        });
+        let token = reports.grant(&seat, first).unwrap();
+        assert_eq!(
+            reports.grant(&seat, first).unwrap(),
+            token,
+            "a heartbeat keeps it"
+        );
+        assert!(reports.authorized(&seat, first, &token));
+        assert!(!reports.authorized(&seat, first, "forged"));
+        assert!(!reports.authorized(&"pij-other".into(), first, &token));
+        let next = Some(ProcIdentity {
+            pid: 11,
+            proc_start: 2,
+        });
+        assert!(
+            !reports.authorized(&seat, next, &token),
+            "the seat was relaunched"
+        );
+        let renewed = reports.grant(&seat, next).unwrap();
+        assert_ne!(renewed, token);
+        assert!(
+            !reports.authorized(&seat, first, &token),
+            "the old grant is gone"
+        );
+        assert!(reports.authorized(&seat, next, &renewed));
     }
 }

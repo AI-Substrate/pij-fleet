@@ -573,6 +573,7 @@ async fn native_known_historical_session_resumes_instead_of_holding_live_bootstr
     let store = FreshStore::new();
     let services = native_host_services(&store, &saved.folder, &["%151-known"]).await;
     let registry = services.registry.clone();
+    let reports = Arc::clone(&services.reported_context);
     registry.put(saved.clone()).await.unwrap();
     registry.put(bootstrap.clone()).await.unwrap();
     let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
@@ -589,6 +590,12 @@ async fn native_known_historical_session_resumes_instead_of_holding_live_bootstr
     .await;
     assert_eq!(resumed["data"]["id"], saved.id.as_str());
     assert_eq!(resumed["data"]["binding"], "rebound");
+    // Plan 217 (review S153-001): the report grant is for this incarnation.
+    let grant = resumed["data"]["context_token"]
+        .as_str()
+        .expect("a native registration answers its report grant");
+    assert!(reports.authorized(&saved.id, Some(new_process), grant));
+    assert!(!reports.authorized(&saved.id, saved.proc, grant));
     let current = registry.get(&saved.id).await.unwrap().unwrap();
     assert_eq!(current.harness_session, saved.harness_session);
     assert_eq!(current.proc, Some(new_process));

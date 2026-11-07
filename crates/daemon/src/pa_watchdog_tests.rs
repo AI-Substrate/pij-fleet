@@ -2274,7 +2274,10 @@ const MINUTE: u64 = 60_000;
 
 /// Session sizes a test can change between rounds.
 #[derive(Default)]
-struct Sizes(std::sync::Mutex<std::collections::HashMap<String, u64>>);
+struct Sizes(
+    std::sync::Mutex<std::collections::HashMap<String, u64>>,
+    std::sync::Mutex<Vec<String>>,
+);
 
 impl Sizes {
     fn set(&self, seat: &str, tokens: u64) {
@@ -2282,6 +2285,17 @@ impl Sizes {
             .lock()
             .unwrap()
             .insert(format!("session-{seat}"), tokens);
+    }
+
+    /// How many times `seat`'s session was read, then forget them.
+    fn reads(&self, seat: &str) -> usize {
+        let mut reads = self.1.lock().unwrap();
+        let count = reads
+            .iter()
+            .filter(|session| **session == format!("session-{seat}"))
+            .count();
+        reads.clear();
+        count
     }
 }
 
@@ -2291,6 +2305,7 @@ impl pij_core::ports::SessionStatusPort for Sizes {
         &self,
         target: &pij_core::session_status::SessionTarget,
     ) -> pij_core::error::Result<SessionStatusReply> {
+        self.1.lock().unwrap().push(target.session.clone());
         Ok(match self.0.lock().unwrap().get(&target.session) {
             Some(tokens) => sized(*tokens, 0),
             None => SessionStatusReply::Status(SeatStatus::unknown()),
@@ -2678,4 +2693,102 @@ async fn large_seats_reach_the_prime_as_one_fyi_per_crossing() {
         )]
     );
     assert_eq!(fyis(&services).await, 2);
+}
+
+/// Review F001: after the dormant wake, the scope's brakes still hold when the
+/// unresponsive alert falls due: a fleet that shrank below two workers, or
+/// stopped on a usage limit, never wakes the prime. The wake's cap stands.
+#[tokio::test]
+async fn the_unresponsive_alert_obeys_the_scope_brakes_after_the_wake() {
+    for brake in ["worker-closed", "usage-limit"] {
+        let repos = Repos::new();
+        let (mut services, _store) = services().await;
+        let limits = Arc::new(FakeLimits::default());
+        services.usage_limits = limits.clone();
+        let [_, _, idle] = active_fleet(&services, &repos).await;
+        let pa = seat("pij-pa", &repos.path("main"), Some("pij-prime"));
+        make_pa(&services, &pa).await;
+        let start = now_ms();
+        let at = |minutes: u64| start + minutes * MINUTE;
+        let watchdog = PaWatchdog::default();
+        let mut sent = Vec::new();
+        for minute in 0..=50 {
+            if minute == 32 {
+                match brake {
+                    "worker-closed" => {
+                        services
+                            .registry
+                            .tombstone(&idle.id, "owner-close")
+                            .await
+                            .unwrap();
+                    }
+                    _ => limits.stop("pij-busy", "five_hour", at(240) / 1_000),
+                }
+            }
+            let outcomes = watchdog
+                .round(&services, INTERVAL, at(minute))
+                .await
+                .unwrap();
+            sent.extend(presence(&outcomes).into_iter().map(|row| (minute, row.0)));
+        }
+        assert_eq!(sent, vec![(30, "pa-dormant".to_string())], "{brake}");
+        assert!(drain(&services, "pij-prime").await.is_empty(), "{brake}");
+        assert_eq!(
+            claims(&services).await,
+            ["pa-dormant:pij-pa"],
+            "{brake}: the wake's cap stands"
+        );
+    }
+}
+
+/// Review F002: the size cache follows the seat. An idle seat with no size
+/// that later reports one, and an idle seat whose whole turn fell between two
+/// rounds, are re-read; an unchanged idle seat is not.
+#[tokio::test]
+async fn an_idle_seats_size_is_reread_when_its_activity_changes() {
+    let repos = Repos::new();
+    let (mut services, _store) = services().await;
+    let sizes = Arc::new(Sizes::default());
+    services.session_status = Arc::new(crate::reported_context::WithReportedContext::new(
+        sizes.clone(),
+        Arc::clone(&services.reported_context),
+    ));
+    let _fleet = active_fleet(&services, &repos).await;
+    let quiet = seat("pij-quiet", &repos.path("main"), Some("pij-prime"));
+    services.registry.put(quiet.clone()).await.unwrap();
+    sizes.set("pij-idle", 500_000);
+    let reports = Arc::clone(&services.reported_context);
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+    let round = |minute: u64| watchdog.round(&services, INTERVAL, start + minute * MINUTE);
+    let large = |outcomes: Vec<RoundOutcome>| -> Vec<String> {
+        presence(&outcomes)
+            .into_iter()
+            .flat_map(|(_, _, subjects)| subjects)
+            .collect()
+    };
+
+    assert!(large(round(0).await.unwrap()).is_empty());
+    sizes.reads("pij-idle");
+    assert!(large(round(1).await.unwrap()).is_empty());
+    assert_eq!(
+        sizes.reads("pij-idle"),
+        0,
+        "an unchanged idle seat is not re-read"
+    );
+
+    // An unknown idle seat reports its size (a Copilot turn boundary).
+    reports.record(&quiet.id, quiet.harness_session.clone(), 650_000, None);
+    assert_eq!(large(round(2).await.unwrap()), ["pij-quiet"]);
+
+    // A whole turn between two rounds: never seen working, but it posted.
+    sizes.set("pij-idle", 640_000);
+    reports.touch(&"pij-idle".into());
+    assert_eq!(large(round(3).await.unwrap()), ["pij-idle"]);
+
+    // It compacts the same way: the claim re-arms.
+    sizes.set("pij-idle", 100_000);
+    reports.touch(&"pij-idle".into());
+    assert!(large(round(4).await.unwrap()).is_empty());
+    assert_eq!(claims(&services).await, ["large-seat:pij-quiet"]);
 }

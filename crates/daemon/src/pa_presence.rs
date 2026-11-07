@@ -31,13 +31,15 @@
 //! **Cost.** No launch, timer or poll of its own. Per round: one claims read;
 //! per live PA in an active scope (or with a standing dormant claim), one
 //! indexed `LIMIT 1` read of its latest `seat.activity`; per fleet seat that
-//! is working, was working last round, or has no size yet, one session-status
-//! read through the watchdog's bounded reader (in-process; one outstanding
-//! read per seat). Repository keys come from the round's existing cache.
+//! is working, was working last round, has no completed read, or has posted
+//! activity or a size since its last read (an in-memory generation, bumped by
+//! `/v1/activity`), one session-status read through the watchdog's bounded
+//! reader (in-process; one outstanding read per seat). An unchanged idle seat
+//! is never re-read. Repository keys come from the round's existing cache.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use pij_core::model::{SeatDescriptor, SeatId, SystemState};
+use pij_core::model::{ProcIdentity, SeatDescriptor, SeatId, SystemState};
 use pij_core::session_status::SessionStatusBlock;
 use pij_core::usage_limit::limit_current;
 use pij_core::watchdog::{
@@ -65,12 +67,38 @@ pub(super) struct Trackers {
     pa_watched: HashMap<SeatId, u64>,
     /// Per PA: the last round that saw it working.
     pa_working: HashMap<SeatId, u64>,
-    /// Per fleet seat: its last read context size and model.
-    sizes: HashMap<SeatId, (Option<u64>, Option<String>)>,
+    /// Per fleet seat: its last completed size read.
+    sizes: HashMap<SeatId, CachedSize>,
     /// Seats seen working last round: one more read catches their final size.
     was_working: HashSet<SeatId>,
     /// The last audited verdict per check and subject: audits are on change.
     audited: HashMap<(PresenceKind, String), PresenceVerdict>,
+}
+
+/// One seat's last completed size read, and what it was read against.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CachedSize {
+    /// The size, `None` when the read completed but knows no size.
+    tokens: Option<u64>,
+    model: Option<String>,
+    /// [`crate::reported_context::ReportedContext::generation`] before the read.
+    generation: u64,
+    /// The incarnation it was read for.
+    proc: Option<ProcIdentity>,
+    session: Option<String>,
+    /// The read failed or timed out: `tokens` is the last good one, if any,
+    /// and the next round reads again.
+    stale: bool,
+}
+
+impl CachedSize {
+    /// Does this entry still describe `seat` at `generation`?
+    fn fresh(&self, seat: &SeatDescriptor, generation: u64) -> bool {
+        !self.stale
+            && self.generation == generation
+            && self.proc == seat.proc
+            && self.session == seat.harness_session
+    }
 }
 
 /// One scope for the presence checks.
@@ -706,7 +734,7 @@ impl PaWatchdog {
                 .map(|seat| {
                     (
                         &seat.id,
-                        sizes.get(&seat.id).and_then(|(tokens, _)| *tokens),
+                        sizes.get(&seat.id).and_then(|cached| cached.tokens),
                     )
                 })
                 .collect();
@@ -732,7 +760,10 @@ impl PaWatchdog {
                     continue;
                 }
                 let descriptor = fleet.iter().find(|row| row.id == seat);
-                let (tokens, model) = sizes.get(&seat).cloned().unwrap_or_default();
+                let (tokens, model) = sizes
+                    .get(&seat)
+                    .map(|cached| (cached.tokens, cached.model.clone()))
+                    .unwrap_or_default();
                 large.push(LargeSeat {
                     tokens: tokens.unwrap_or(LARGE_SEAT_TOKENS),
                     role: descriptor.and_then(|row| row.role.clone()),
@@ -787,46 +818,60 @@ impl PaWatchdog {
     }
 
     /// Re-read the size of each fleet seat that is working, was working last
-    /// round, or has none yet. An idle seat's context does not grow, so its
-    /// last read stands.
+    /// round, has no completed read, or has had an activity post or a size
+    /// report since its last read (review F002: a whole turn can fall between
+    /// two rounds), or was relaunched. An unchanged idle seat's context does
+    /// not grow, so its last read stands and no transcript is re-read.
     async fn refresh_sizes(&self, services: &Services, fleet: &[SeatDescriptor], now_ms: u64) {
-        let due: Vec<SeatDescriptor> = {
+        let reports = &services.reported_context;
+        let due: Vec<(SeatDescriptor, u64)> = {
             let trackers = self.presence.lock().await;
             fleet
                 .iter()
-                .filter(|seat| {
+                .map(|seat| (seat, reports.generation(&seat.id)))
+                .filter(|(seat, generation)| {
                     seat.state == SystemState::Working
                         || trackers.was_working.contains(&seat.id)
-                        || !trackers.sizes.contains_key(&seat.id)
+                        || !trackers
+                            .sizes
+                            .get(&seat.id)
+                            .is_some_and(|cached| cached.fresh(seat, *generation))
                 })
-                .cloned()
+                .map(|(seat, generation)| (seat.clone(), generation))
                 .collect()
         };
-        let blocks = self.read_blocks(services, &due, now_ms).await;
+        let seats: Vec<SeatDescriptor> = due.iter().map(|(seat, _)| seat.clone()).collect();
+        let blocks = self.read_blocks(services, &seats, now_ms).await;
         let mut trackers = self.presence.lock().await;
-        for (seat, block) in due.iter().zip(blocks) {
-            match block {
-                SessionStatusBlock::Known { status, .. } => {
-                    trackers.sizes.insert(
-                        seat.id.clone(),
-                        (
-                            status.context_used_tokens.value().copied(),
-                            status.model.value().cloned(),
-                        ),
-                    );
-                }
-                // A failed or slow read keeps the last size; anything else is
-                // a seat with no readable size.
+        for ((seat, generation), block) in due.into_iter().zip(blocks) {
+            let read = |tokens: Option<u64>, model: Option<String>, stale: bool| CachedSize {
+                tokens,
+                model,
+                generation,
+                proc: seat.proc,
+                session: seat.harness_session.clone(),
+                stale,
+            };
+            let entry = match block {
+                SessionStatusBlock::Known { status, .. } => read(
+                    status.context_used_tokens.value().copied(),
+                    status.model.value().cloned(),
+                    false,
+                ),
+                // A failed or slow read keeps the last size and is retried.
                 SessionStatusBlock::Failed { .. } => {
-                    trackers
-                        .sizes
-                        .entry(seat.id.clone())
-                        .or_insert((None, None));
+                    let last = trackers.sizes.get(&seat.id).cloned();
+                    read(
+                        last.as_ref().and_then(|last| last.tokens),
+                        last.and_then(|last| last.model),
+                        true,
+                    )
                 }
-                _ => {
-                    trackers.sizes.insert(seat.id.clone(), (None, None));
-                }
-            }
+                // Unbound, unsupported or no transcript: a completed read
+                // that knows no size, until the seat's activity changes.
+                _ => read(None, None, false),
+            };
+            trackers.sizes.insert(seat.id.clone(), entry);
         }
         let ids: HashSet<&SeatId> = fleet.iter().map(|seat| &seat.id).collect();
         trackers.sizes.retain(|seat, _| ids.contains(seat));

@@ -8239,26 +8239,45 @@ async fn a_size_posted_at_a_turn_boundary_reaches_the_state_card() {
         )),
         Arc::clone(&services.reported_context),
     ));
+    let victim = cold_seat(pij_core::model::SystemState::Idle);
+    let grant = services
+        .reported_context
+        .grant(&victim.id, victim.proc)
+        .expect("grant");
     let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
     let card = || post_json(addr, "/v1/state", serde_json::json!({"id": "pij-cold"}));
     assert_eq!(
         card().await.1["data"]["contextUsed"],
         serde_json::Value::Null
     );
-    let (status, reply) = post_json(
-        addr,
-        "/v1/activity",
-        serde_json::json!({
+    let report = |tokens: u64, token: Option<String>| {
+        let mut body = serde_json::json!({
             "seat": "pij-cold",
             "native_session": COLD_SESSION,
-            "state": "idle",
-            "context_tokens": 640_000,
+            "state": "working",
+            "context_tokens": tokens,
             "context_window_tokens": 952_000,
-        }),
-    )
-    .await;
+        });
+        if let Some(token) = token {
+            body["context_token"] = token.into();
+        }
+        post_json(addr, "/v1/activity", body)
+    };
+    for forged in [None, Some("0".repeat(64))] {
+        let (status, reply) = report(0, forged).await;
+        assert_eq!(status, 400, "{reply}");
+        let card = card().await.1;
+        assert_eq!(card["data"]["contextUsed"], serde_json::Value::Null);
+        assert_eq!(
+            card["data"]["state"], "idle",
+            "a refused report changes no activity"
+        );
+    }
+    let (status, reply) = report(640_000, Some(grant)).await;
     assert_eq!(status, 200, "{reply}");
-    assert_eq!(card().await.1["data"]["contextUsed"], 640_000);
+    let card = card().await.1;
+    assert_eq!(card["data"]["contextUsed"], 640_000);
+    assert_eq!(card["data"]["state"], "working");
     server.abort();
 }
 

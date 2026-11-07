@@ -690,8 +690,10 @@ pub struct PaVerdicts {
 /// restart is in the claims or on the spine.
 ///
 /// A PA observed working is never dormant. A turn after the dormant wake
-/// re-arms both. The unresponsive alert needs a prime; with none it is
-/// [`PresenceVerdict::Braked`] and fires when one appears.
+/// re-arms both, whatever the scope's state. The unresponsive alert needs a
+/// prime, an active scope and the minimum workers at the time it is due;
+/// without them it is [`PresenceVerdict::Braked`], keeps the dormant cap, and
+/// fires if they return before the PA takes a turn.
 pub fn pa_verdicts(seen: PaObservation) -> PaVerdicts {
     let quiet = PaVerdicts {
         dormant: PresenceVerdict::Quiet,
@@ -708,14 +710,19 @@ pub fn pa_verdicts(seen: PaObservation) -> PaVerdicts {
                 },
             };
         }
+        // The scope's brakes hold now, not only when the wake went: a fleet
+        // that stopped (usage limit, idle) or shrank below the minimum since
+        // never wakes the prime. The dormant cap stands either way.
+        let braked =
+            !seen.prime || seen.activity != Activity::Active || seen.workers < PRESENCE_MIN_WORKERS;
         let unresponsive = if seen.unresponsive_claimed {
             PresenceVerdict::Capped
         } else if seen.now_ms.saturating_sub(woken_at) < PA_UNRESPONSIVE_AFTER_MS {
             PresenceVerdict::Waiting
-        } else if seen.prime {
-            PresenceVerdict::Send
-        } else {
+        } else if braked {
             PresenceVerdict::Braked
+        } else {
+            PresenceVerdict::Send
         };
         return PaVerdicts {
             dormant: PresenceVerdict::Capped,
@@ -772,11 +779,15 @@ pub fn pa_missing_body(
          nobody is watching seat sizes, stalls or queued requests.",
         crate::cold_wake::human_duration(active_ms)
     );
-    let spawn = format!("pij-rs spawn --harness omp --role pa --cwd {folder}");
+    let spawn = format!(
+        "pij-rs spawn --harness omp --role pa --cwd {}",
+        crate::directory::shell_word(folder)
+    );
     match last_pa {
         Some(pa) => format!(
-            "{lead} The last PA was {pa}. Revive it: `pij-rs revive {pa}` (add `--fresh` for a \
-             blank conversation), or start a new one: `{spawn}`."
+            "{lead} The last PA was {pa}. Revive it: `pij-rs revive {}` (add `--fresh` for a \
+             blank conversation), or start a new one: `{spawn}`.",
+            crate::directory::shell_word(pa.as_str())
         ),
         None => format!("{lead} Start one: `{spawn}`."),
     }
@@ -803,9 +814,10 @@ pub fn pa_unresponsive_body(
         "[pij watchdog] {prime}: your PA {pa} has taken no turn for {}, and has not answered \
          the dormant wake sent {} ago ({wake_receipt}). It may be wedged, waiting on a \
          question, or holding a message in its composer. Check its pane; revive it \
-         (`pij-rs revive {pa}`); or replace it.",
+         (`pij-rs revive {}`); or replace it.",
         crate::cold_wake::human_duration(quiet_ms),
         crate::cold_wake::human_duration(woken_ago_ms),
+        crate::directory::shell_word(pa.as_str()),
     )
 }
 
@@ -1055,6 +1067,33 @@ mod tests {
             ..woken(40 * MIN)
         };
         assert_eq!(pa_verdicts(no_prime).unresponsive, PresenceVerdict::Braked);
+        // Review F001: the scope's brakes at the time the alert is due.
+        for braked in [
+            PaObservation {
+                workers: 1,
+                ..woken(40 * MIN)
+            },
+            PaObservation {
+                activity: Activity::Inactive,
+                ..woken(40 * MIN)
+            },
+        ] {
+            assert_eq!(
+                pa_verdicts(braked),
+                PaVerdicts {
+                    dormant: PresenceVerdict::Capped,
+                    unresponsive: PresenceVerdict::Braked
+                },
+                "{braked:?}"
+            );
+        }
+        // A turn still re-arms while the scope is inactive.
+        let inactive_turn = PaObservation {
+            activity: Activity::Inactive,
+            last_turn_ms: Some(41 * MIN),
+            ..woken(42 * MIN)
+        };
+        assert_eq!(pa_verdicts(inactive_turn).dormant, PresenceVerdict::Armed);
         let told = PaObservation {
             unresponsive_claimed: true,
             ..woken(50 * MIN)

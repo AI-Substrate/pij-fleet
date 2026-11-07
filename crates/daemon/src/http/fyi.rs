@@ -205,6 +205,10 @@ pub(crate) struct ActivityRequest {
     /// The model's context window, when the runtime knows it.
     #[serde(default)]
     context_window_tokens: Option<u64>,
+    /// The seat's report grant from its own registration (review S153-001):
+    /// required with `context_tokens`.
+    #[serde(default)]
+    context_token: Option<String>,
 }
 
 /// The seat's mechanical state after the publication.
@@ -245,12 +249,25 @@ pub(crate) async fn activity(
         Ok(seat) => seat,
         Err(response) => return *response,
     };
-    if let Some(tokens) = request.context_tokens {
-        state.services.reported_context.record(
+    // The pane and session above are in every roster, so they prove nothing
+    // about who is asking. A size moves the cold-wake guard and the prime's
+    // large-seat FYI: only the seat's own registration grant may report one,
+    // and a refused report changes nothing, its activity included.
+    let reports = &state.services.reported_context;
+    if request.context_tokens.is_some()
+        && !reports.authorized(
             &seat.id,
-            session.or_else(|| seat.harness_session.clone()),
-            tokens,
-            request.context_window_tokens,
+            seat.proc,
+            request.context_token.as_deref().unwrap_or_default(),
+        )
+    {
+        return refused(
+            ACTIVITY,
+            format!(
+                "a context report for {} needs its own registration's grant \
+                 (`context_token`); nothing was changed",
+                seat.id
+            ),
         );
     }
     // A targeted state write, never a put of the row read above: a tombstone,
@@ -264,6 +281,16 @@ pub(crate) async fn activity(
         Ok(seq) => seq.is_some(),
         Err(error) => return internal(ACTIVITY, error),
     };
+    match request.context_tokens {
+        Some(tokens) => reports.record(
+            &seat.id,
+            session.or_else(|| seat.harness_session.clone()),
+            tokens,
+            request.context_window_tokens,
+        ),
+        // The seat may have worked since the watchdog last read its size.
+        None => reports.touch(&seat.id),
+    }
     envelope(
         StatusCode::OK,
         &Envelope::ok(
