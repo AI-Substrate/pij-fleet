@@ -159,7 +159,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-13",
 						"../prds/001-pij-community.dd.json#requirements/req-14"
 					],
-					"state": "in-progress"
+					"state": "shipped"
 				},
 				{
 					"id": "c-claims",
@@ -198,7 +198,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-15",
 						"../prds/001-pij-community.dd.json#requirements/req-23"
 					],
-					"state": "in-progress"
+					"state": "shipped"
 				}
 			]
 		},
@@ -342,6 +342,11 @@
 					"date": "2026-11-06",
 					"by": "pij-exuberant-wildcat",
 					"change": "c-verbs realises req-28: plan 206 adds pij directory retire and merge (roadmap s15)."
+				},
+				{
+					"date": "2026-11-07",
+					"by": "pij-following-marsupial",
+					"change": "Plan 204: c-skill and c-templates shipped (the community route, and the optional role templates beside the core ones)."
 				}
 			]
 		}

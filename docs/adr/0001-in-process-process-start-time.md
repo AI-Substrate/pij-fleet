@@ -168,4 +168,7 @@ In-process conversion depends on libc:
   and the fallback means a broken release costs launches, not wrong answers.
 - The other `ps` launch sites (`ps.registration-native-process`,
   `ps.uds-peer-start`, `ps.tmux-harness-process-tree`) are out of scope and left
-  for a follow-up.
+  for a follow-up. Plan 218 retired `ps.uds-peer-start`: the Claude socket
+  transport reads its peer's start through this reader
+  (`pij_harnesses::proc::observed_start`, one kernel read packed in local time
+  and in UTC).

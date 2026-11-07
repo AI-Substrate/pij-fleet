@@ -1,8 +1,9 @@
 # The PA watchdog
 
-The PA watchdog loop (`crates/daemon/src/pa_watchdog.rs`) runs every 60 s (`TICK`). Its fleet wakes go to **PAs only**, meaning seats whose asserted role is `pa`. A PA hears from it in the three cases below and no others. Two other paths in the same loop can reach other seats:
+The PA watchdog loop (`crates/daemon/src/pa_watchdog.rs`) runs every 60 s (`TICK`). Its fleet wakes go to **PAs only**, meaning seats whose asserted role is `pa`. A PA hears from it in the four cases below and no others. Other paths in the same loop can reach other seats:
 
 - the limit-reset wake goes to the scope's prime when the scope has no PA;
+- the prime is woken when its active fleet has no PA, or when its PA does not answer a dormant wake, and gets an FYI when a fleet seat goes over 600k tokens ([below](#presence-and-large-seats-plan-217));
 - an opted-in seat, worker or prime included, gets its own stall nudge ([below](#opt-in-watchdog-not-a-pa)).
 
 No path wakes a worker because its fleet went idle.
@@ -12,6 +13,7 @@ No path wakes a worker because its fleet went idle.
 | **Idle nudge** (plan 172) | the fleet's workers go from someone working to no one working | `pij-bg` | `pa-watchdog: fleet idle` |
 | **Prime-active wake** (plan 173) | after that, the prime starts again on its own | `pij-bg` | `prime-active` |
 | **Limit-reset wake** (plan 172 R3) | a usage limit that stopped the fleet resets | `pij-bg` | `limit-reset` |
+| **Dormant wake** (plan 217) | the PA has taken no turn for 30 min while its fleet is active | `pij-bg` | `pa-watchdog: dormant while fleet active` |
 
 There is no fixed cadence. Every 60 s (`TICK`) a round reads the registry and roles, then decides each PA's case from what changed since the last round. The exact wire contract (payload fields, store tables) is in [pij-rs-api.md § PA watchdog](pij-rs-api.md#pa-watchdog). How a PA acts on a wake is in its brief, [`skills/pij/references/prime/pa.md`](../../skills/pij/references/prime/pa.md).
 
@@ -70,6 +72,20 @@ A fleet that went idle on a usage limit gets no edge nudge, because nothing can 
 - **Target:** the lowest-id PA in scope. With no PA, the prime: the current designation if live in scope, else the lowest-id `prime`-role seat. This is the one fleet wake that can reach a prime.
 - **Time is epoch only.** `resetsAt` is stored and compared as UTC epoch seconds. The wake shows the reset in the daemon's local zone, rendered at that instant, so a reset across a daylight-saving change shows the zone in force then (e.g. `03:00 AEDT`). Timezones never move the schedule.
 
+## Presence and large seats (plan 217)
+
+The idle nudge says nothing while workers are busy, and it is driven per PA, so a fleet whose PA is missing, or alive but asleep, heard nothing at all (6 Nov 2026: a PA took no turn for seven busy hours while its prime and 14 workers ran at 400k to 800k tokens). Four checks now ride the same 60 s round, per **scope**: a prime and the live seats in its repository, plus each PA's scope as above. A PA counts for the scope its parent's folder names; a directory `pa` holder is a `pa`-role seat, so it counts too. The thresholds are constants beside the trackers in `pij_core::watchdog` (Jordan, 2026-11-07).
+
+- **Active.** A scope is active while its prime or one of its workers was observed `working` within the last 20 minutes (`FLEET_ACTIVE_WINDOW_MS`). Unknown states are never evidence, and a scope stopped on a usage limit is not active. A scope with fewer than two live workers (`PRESENCE_MIN_WORKERS`) never raises the PA alerts below.
+- **PA missing → the prime.** An active scope with no live PA for 20 minutes (`PA_MISSING_AFTER_MS`) wakes its prime once: `[pij watchdog] <prime>: your fleet has been working for 20m with no live PA …`, naming the last PA with `pij-rs revive <pa>` (`--fresh` for a blank conversation), or `pij-rs spawn --harness omp --role pa --cwd <prime's folder>` when there was none. **What to do:** revive or spawn a PA, or decide the fleet goes without one. It re-arms when a live PA is seen in the scope, or after the scope has been seen inactive for a whole window.
+- **PA dormant → the PA.** A live PA that has taken no turn for 30 minutes (`PA_DORMANT_AFTER_MS`) while its scope is active is woken once, with the fleet digest: `[pij watchdog] <pa>: your fleet is working but you have taken no turn for 30m …`. Its last turn is its latest `seat.activity` (turn start or end), or the last round that saw it `working`, whichever is later; with neither, the clock starts when this daemon first saw it. A PA observed `working` is never dormant. **What to do (PA):** run the round as for an idle nudge, then end the turn. It re-arms when the PA takes a turn.
+- **PA unresponsive → the prime.** No PA turn 10 minutes after that wake (`PA_UNRESPONSIVE_AFTER_MS`) wakes the prime once: which PA, how long it has been silent, the dormant wake's message id and delivery receipt, and the choices. **What to do:** check its pane (a question dialog, a message parked in its composer, a wedge), revive it, or replace it. It re-arms with the dormant wake, when the PA takes a turn. With no prime in scope it is `braked` and fires when one appears.
+- **Large seat → an FYI for the prime.** A seat in the prime's fleet (the live seats in its repository, its PA included, and live seats whose parent chain reaches one of them) whose context is over 600,000 tokens (`LARGE_SEAT_TOKENS`) is named to the prime in a **held FYI, never a wake**: it rides in on the prime's next turn. One line per seat: size, role, model, and the scope's PA. Crossings in one round share one FYI. It re-arms when the seat is seen at or under the line (compacted, or revived fresh). A seat with no known size never counts. **What to do:** usually nothing; it tells you what your PA should already be handling. With no PA, compact the seat or ask it for a handover.
+
+**Once per stretch, across restarts.** Each message is claimed in `presence_claims` (migration 0039) before it is sent, keyed by check and subject (the scope, the PA, or the seat). A claim is released only on positive evidence (a live PA, a PA turn, a scope watched inactive for a whole window, a seat under the line) or when its PA or seat is no longer live. A restarted daemon starts its in-memory trackers afresh, which can only delay a message; the stored claim stops a repeat. A refused or failed delivery releases the claim, so the next round retries. A daemon that stops between the claim and the send loses that one message rather than repeating it.
+
+**Copilot sizes.** Copilot writes its session size only in the ephemeral `session.usage_info` event, which never reaches `events.jsonl`, so the transcript reader reports Copilot's `contextUsedTokens` as unknown. The Copilot extension keeps the latest `currentTokens` and `tokenLimit` and sends them as `context_tokens` and `context_window_tokens` on the `/v1/activity` post it already makes at each turn boundary. Only the seat itself may report: the report must carry the grant its own registration returned (`context_token`, random, one per process incarnation, never in a roster), so a seat that knows another's pane and session cannot forge its size (review S153-001). Known limit (F88, PRD 003): registration does not prove the caller is the seat's host, so a local caller can re-register with a live seat's roster identifiers and be handed its standing grant. Every such reissue writes one `context.grant.reissued` event with the caller's claimed identifiers and connection origin, never the token; if the event cannot be written, the grant is withheld. Genuine re-registrations write it too: it is an audit trail, not a theft detector. The daemon fills an unknown fact from that report (basis `native`), for the same session only; a size the transcript knows always wins. `pij list`, the digest, the large-seat FYI and the cold-wake guard all see it. The report is held in memory, so after a daemon restart a Copilot seat's size is unknown until its next turn boundary.
+
 ## Cold wakes
 
 Every PA wake goes through the ordinary delivery path, so the composer and human-typing gates still apply. None is held for a cold or long PA, because waking it is the point. Before sending, the round asks the send guard for its own verdict (`http::cold_wake::verdict`). When the PA is cold, the round appends `send.cold-wake-forced` with that wake's reason, exactly like a forced `pij send`. The receipt's label (`clear`, `busy`, `forced`, `unknown: …`) is recorded as `cold_check`.
@@ -84,10 +100,16 @@ Every PA wake goes through the ordinary delivery path, so the composer and human
 | `send.cold-wake-forced` | any wake of a cold PA | `reason`, `context_tokens`, `idle_ms`, `estimate_usd` |
 | `watchdog.limit-scheduled` | first sight of a `(scope, resetsAt)` | `due_at_ms`, `stopped` |
 | `watchdog.limit-wake` | the reset wake | `target`, `target_source`, `late`, `delivery` |
+| `watchdog.round` `{outcome: "pa-missing"}` | each change of the missing-PA verdict | `verdict` (`waiting`, `sent`, `capped`, `armed`, `braked`), `scope`, `prime`, `workers`, `missing_ms`; on `sent` also `last_pa`, `delivery`, `cold_check` |
+| `watchdog.round` `{outcome: "pa-dormant"}` | each change of a PA's dormant verdict | `verdict`, `scope`, `pa`, `quiet_ms`, `reason`; on `sent` also `seats`, `delivery`, `cold_check` |
+| `watchdog.round` `{outcome: "pa-unresponsive"}` | each change of a PA's unresponsive verdict | `verdict`, `scope`, `pa`, `prime`, `quiet_ms`; on `sent` also `wake` (the dormant wake's `msg_id`, `delivery`, `cold_check`), `delivery`, `cold_check` |
+| `watchdog.round` `{outcome: "large-seat"}` | a seat crossing (`sent`) or re-arming (`armed`) | `prime`, `scope`; on `sent` also `tokens`, `msg_id`, `delivery` |
 
 ## Cost per round
 
 Between events, a round reads no spine history: one registry list, one role join, and a size and mtime check per Claude transcript. The fleet digest (session reads with a 3 s wait, plus stale-card reads) is built only for a nudge or a prime-active `sent`. The brake's spine read happens only on a would-be wake.
+
+The presence checks add no launch, timer or poll. Per round: the current prime designation and one `presence_claims` read; per live PA in an active scope (or holding a dormant claim), one indexed `LIMIT 1` read of its latest `seat.activity`; and per fleet seat that is working, was working last round, has no completed read, or has posted to `/v1/activity` (a turn boundary or a size) since its last read, one session-status read through the same bounded reader. An idle seat with no activity since its last read is not re-read; a failed read is retried next round. Repository keys come from the round's folder cache; a folder git cannot place is now remembered for 10 minutes (`UNPLACED_TTL`) instead of asked again every round. Audits are written only when a verdict changes.
 
 ## Opt-in watchdog (not a PA)
 

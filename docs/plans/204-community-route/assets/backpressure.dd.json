@@ -1,0 +1,119 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 204 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-00cc",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: skill tests pass; the route is linked from the skill's router; a length budget is stated and met.",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-00cc",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: each validates 0/0; the public-safety scan finds 0; embedded per s03's mechanism.",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "templates_http (CI)"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-00cc",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: canary transcript summary in assets/evidence/; the scratch directory validates.",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/canary.md"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-00cc",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: --show prints the exact embedded body; an unknown name or version refuses and lists what exists.",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "templates_http (CI)"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5: cost",
+          "phase": "ph-00cc",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
+          "state": "checked",
+          "probe": "pij-rs --json ping",
+          "note": "Docs and embedded templates only: no launch, loop or timer.",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6: docs and states",
+          "phase": "ph-00cc",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/project/"
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC7: C28 in the route",
+          "phase": "ph-00cc",
+          "mode": "BUILD",
+          "tier": "human-judgement",
+          "proof": "BUILD: the route names each C28 point (signals for and against, role is not a seat, boundary reviews, named signal, templates as examples); pij-skill-check's 100-line budget for the route holds; lungfish's docs-system verdict on the wording.",
+          "state": "unchecked",
+          "probe": "skills/pij/references/routes/community.md"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}

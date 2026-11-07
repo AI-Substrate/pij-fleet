@@ -284,7 +284,10 @@ async fn emitted_spawn_argv_is_the_stamp_that_opens_the_real_transport() {
     let socket = std::env::temp_dir().join(format!("pij-uds-agree-{}.sock", std::process::id()));
     let listener = UnixListener::bind(&socket).expect("bind socket witness");
     let utc_start = write_uds_record(&dir, &socket);
-    let transport = UdsTransport::from_sessions_dir(dir.clone());
+    let transport = UdsTransport::from_sessions_dir(
+        dir.clone(),
+        std::sync::Arc::new(pij_harnesses::proc::observed_start),
+    );
     let mut seat = SeatDescriptor::new("pij-claude-seat", Harness::Claude, "/abs/tree");
     seat.proc = Some(ProcIdentity {
         pid: std::process::id(),

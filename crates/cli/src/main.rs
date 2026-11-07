@@ -1830,6 +1830,10 @@ async fn run(cli: Cli) -> ExitCode {
                     println!("{}", render_templates(&data["templates"]));
                     ExitCode::SUCCESS
                 }
+                Some(data) if data["template"].get("body").is_some_and(Value::is_string) => {
+                    println!("{}", render_template_show(&data["template"]));
+                    ExitCode::SUCCESS
+                }
                 Some(data) if data.get("diff").is_some_and(Value::is_string) => {
                     println!("{}", render_template_diff(data));
                     ExitCode::SUCCESS
@@ -3195,6 +3199,19 @@ fn render_templates(templates: &Value) -> String {
         );
     }
     out
+}
+
+/// `pij directory templates --show <name>[@vN]` for a human: where it lives,
+/// then the exact body.
+fn render_template_show(template: &Value) -> String {
+    format!(
+        "{} v{} (latest v{}): {}\n{}",
+        template["name"].as_str().unwrap_or("-"),
+        template["version"],
+        template["latest"],
+        template["path"].as_str().unwrap_or("-"),
+        template["body"].as_str().unwrap_or_default().trim_end()
+    )
 }
 
 /// `pij directory template-diff <id>` for a human.
