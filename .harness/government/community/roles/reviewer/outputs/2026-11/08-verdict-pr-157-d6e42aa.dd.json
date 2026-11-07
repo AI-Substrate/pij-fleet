@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b710-6989-7f43-af79-1a7f90481d06",
+				"date": "2026-11-08",
+				"head": "d6e42aa2f53643e0b360cbca50bc5f9ae8a51253",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/157#issuecomment-6710778430",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:157",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #157 round 2 correctness review\n\n## A) Verdict\n\n**PASS-WITH-NOTES** at `d6e42aa2f53643e0b360cbca50bc5f9ae8a51253`.\n\n**F002 and F004 closed.** Earlier F001/F003 closures stand. No further blocking correctness counterexample found in the documented CLI/predicate scope.\n\n## B) Scope and proof\n\nReviewed only `eb37f6a4aa586205da2711b0fc297c0efdf4759b..d6e42aa2f53643e0b360cbca50bc5f9ae8a51253`: 8239db70's guards and the already-reviewed main import.\n\nClean pinned checkout; GitHub and ls-remote agree, CLEAN, latest Delivers SUCCESS. CI `42396081957`, attempt 1, matches this head. Both Node jobs ran all 24 pr-freeze tests; each reports 2,228 passed and six skipped overall. Typecheck/lint succeeded.\n\nNo local tests/builds, script execution, fetch/worktree mutation or fault trigger. Guard mutations are author-reported, not reviewer runs.\n\n## C) F002 closed: exact successful parser-check evidence\n\nlatestChecks retains the selected run's own conclusion. The parser-absent fallback requires a present delivers result with conclusion exactly SUCCESS; ambiguous ordering has no selected conclusion and cannot satisfy it. The overall checks condition separately rejects running/failing/unordered results.\n\nThe new SKIPPED and NEUTRAL controls use malformed bodies and no parser: each fails only delivers, prints the non-SUCCESS conclusion and names the parser/check next step. A genuine SUCCESS is the positive. Earlier absent/failing/queued controls remain.\n\nGeneric merge-acceptable SKIPPED/NEUTRAL handling for other checks is intentionally unchanged, as directed; it no longer substitutes for Delivers parser execution.\n\n## D) F004 closed: lookup failure is not an import\n\nentry has explicit run/import/error outcomes. For a named script, real-path comparison establishes run or import; fileURL/realpath failure creates error. guard prints that diagnostic and exits 2 instead of silently falling through.\n\nThe injected realpath error control checks both diagnostic and exit 2 and verifies main is not run. Separate controls verify a proven import does nothing and a run returns main's result. The real symlink CLI control still prints usage and exits 2. No named script path represents REPL/-e import mode, not a verdict run.\n\n## E) Positive readiness and retained guards\n\nisDraft must now be exactly false. Missing/undefined/null or another value is not ready; the absent-draft control fails that condition with \"draft state not reported\".\n\nHead agreement, main base, CLEAN, nonempty latest checks, added-migration numbering/schema checks and parser failure remain explicit conditions. Earlier job-id/unordered-check and exact-head/detached/clean worktree guards are preserved. Worktree availability remains informational to PR finality; an unusable --worktree request is refused, not repaired in place.\n\n## F) Notes and limits\n\nThis is a read-only snapshot check, not a branch/body lock or proof that nobody can push after its reads. Keep the existing freeze discipline and rerun when the subject changes.\n\nThe fallback trusts the observed CI check; it is explicitly not a local parse. Security's provenance/path/output assessment and performance's invocation-cost verdict remain independently owned. No daemon/scheduling change or new recurring work was introduced by this delta.\n\n## G) Handover\n\nNo correctness repair requested for this delta. Preserve strict Delivers SUCCESS, visible entrypoint errors and positive draft evidence with their negatives/positives in CI. No product code was changed by this reviewer.\n"
+		}
+	]
+}
