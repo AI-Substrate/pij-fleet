@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "b673b71012a862e1638c467bb520e816f587e4fe",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/156#issuecomment-6710638725",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:156",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `b673b71012a862e1638c467bb520e816f587e4fe`.\n\nNo reportable security vulnerability found in the `011eb97..b673b71` receipt/retry repair and relevant merge resolutions. Earlier fixed-label, framing and canary limitations stand.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 0 | None | N/A | N/A | No reportable vulnerability | N/A |\n\nTell acceptance uses structured outcomes, not rendered prefixes (`crates/daemon/src/modal_stall.rs:287`). Delivered, including replay, Queued and Held mark acceptance; Refused/errors remain bounded retry failures. Held retains human approval, not authority to approve or execute.\n\nSuccessful receipt rendering uses constant outcome words (`crates/daemon/src/pa_watchdog.rs:375`). Genuine errors may remain in audit/log strings, but do not become notification bodies or row labels. The new error paths receive store/receipt errors, not captured-screen bytes. Fixed marker labels remain the sole production label source; no new raw-text fallback was found.\n\nAttempt admission precedes delivery (`crates/daemon/src/modal_stall.rs:241`). Failed counter persistence or a different stretch sends nothing. Storage records recipient IDs/counts with bound SQL, not receipt diagnostics or capture text (`crates/store/src/stalls.rs:99`). Cancellation after admission may consume an attempt without sending; it cannot bypass admission.\n\nNo new clearing-key path; notifications retain `command: None`. Migration 42 and the decoder use `attempts` consistently. This is not live-schema migration proof.\n\nThe native-incarnation refusal/recovery test checks parent-only retry with the same message ID and no repeated PA notification. The counter-abort test checks no sends for `MAX_TELL_TRIES + 2` rounds and delivery after dropping the trigger. Both were source-reviewed.\n\n**Proof:** exact-head CI [42395277193](https://github.com/AI-Substrate/pij-fleet/actions/runs/42395277193), attempt 1, passed all four jobs. JUnit lists 2,143 passing cases, including both new regressions and the retained privacy canary. No repair-owned C19/C21 disclosure found. Source/CI review only: no local builds/tests, probes, credential reads or product edits. Full correctness/cost assessments remain separately owned.\n"
+		}
+	]
+}
