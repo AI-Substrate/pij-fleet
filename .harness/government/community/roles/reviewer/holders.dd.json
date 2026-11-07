@@ -474,6 +474,16 @@
 					"seat": "pij-double-bobcat",
 					"to": "2026-11-07T13:01:22.423Z",
 					"why": "#154 plan 211 states"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T13:06:27.712Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "136",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "#136 final 560e260"
 				}
 			]
 		}

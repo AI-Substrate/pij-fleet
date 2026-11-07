@@ -55,3 +55,4 @@
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 152 | 2026-11-07T11:36:50.769Z | — | pij-steady-otter | — | first verdict on #152 (plan 214, C31) | — |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 149 | 2026-11-07T11:57:28.025Z | — | pij-steady-otter | — | #149 round 642e64b | — |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 154 | 2026-11-07T12:25:23.189Z | 2026-11-07T13:01:22.423Z | pij-steady-otter | pij-steady-otter | #154 plan 211 states | #154 merged cee0113 |
+| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 136 | 2026-11-07T13:06:27.712Z | — | pij-steady-otter | — | #136 final 560e260 | — |
