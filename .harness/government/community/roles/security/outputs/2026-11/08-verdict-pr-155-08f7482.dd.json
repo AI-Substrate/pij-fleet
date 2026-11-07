@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "08f74822302742c63614f87479f1158918718161",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/155#issuecomment-6708471816",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:155",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Named process/start is not connected-socket peer authentication; inherited socket-path trust and check-to-connect race remain.",
+				"macOS reader is source-only here; cache cardinality is bounded but retained bytes are not separately capped."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS WITH NOTES\n\nPR: #155\nHead: 08f74822302742c63614f87479f1158918718161\nScope: all20 PR-owned file deltas against merged main cee011387937c7881318c98d86014526d94f2ca7.\n\nNo high-confidence new security vulnerability found.\n\nVerified boundaries:\n- Daemon composition injects the trusted pij_harnesses::proc::observed_start reader (daemon/lib.rs:429-434). macOS checks returned PID; Linux reads process-specific /proc and checks Tgid. Local/UTC strings derive from one start snapshot and its contemporaneous offset. Failed reads/conversions return None, with no ps fallback (harnesses/proc.rs:162-184,233-271).\n- Exact-PID discovery compares record PID, observed local start and recorded UTC start. Key selection requires matching start/PID domain and exactly one token (transport/uds.rs:177-192,417-451).\n- Endpoint key is (seat.id, msg_id, seat.proc, seat.pane). It does not include sender/body/project, but caches only the endpoint: deliver repeats harness/command/acceptance gates and builds the current message payload, rather than inheriting another actor's authorization.\n- Entries are consumed under the mutex before awaits, then a fresh UTC start comparison is made. Eligibility is5s and cardinality64; expiry cleanup is lazy and retained bytes have no separate cap (uds.rs:101-117,197-242,320-378).\n- Existing daemon bearer/peer-route restrictions, registration host/session checks and role/project routing are unchanged; no new privileged launch or authority grant.\n\nMaterial inherited limits:\n- Named PID/start observation is NOT authentication of the connected socket's OS peer. No connected-peer PID credential check or socket-path ownership/symlink validation exists here. Session-record paths are followed and token/message data transmitted after connection (uds.rs:299-310,656-683). These safeguards were also absent on main; no PR-owned attacker-input path establishing a new exploit was found.\n- The fresh start read precedes reply-socket binding/frame construction/async connect, so it does not eliminate check-to-connect or socket replacement races. Existing pane fallback can select another uniquely matching live process after exact-PID failure. Start identity retains whole-second precision.\n- Source tests have positive discovery/delivery and negative stale-start/dead-peer/different-message controls. The cached witness checks message ID, not exact body or OS-peer identity. macOS production reader remains source-only under Linux CI here; reported scoped macOS clippy was not rerun.\n\nEvidence: exact-head CI42376556663 and latest Delivers42376884590 independently verified SUCCESS; GitHub reports CLEAN.\nhttps://github.com/AI-Substrate/pij-fleet/actions/runs/42376556663\n\nNo local builds/tests, socket probes/connections, credential-file reads, code changes or live after-deployment measurement.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | PR-owned delta | - | No high-confidence new vulnerability | - |\n"
+		}
+	]
+}
