@@ -12,19 +12,24 @@
 //   - the base is main;
 //   - mergeStateStatus is CLEAN;
 //   - every check's LATEST run, by name, passed (a superseded failure doesn't
-//     block; an in-progress or queued run does);
+//     block; an in-progress or queued run does). Runs are ordered by their
+//     GitHub Actions job id (detailsUrl); same-name runs that can't be ordered
+//     that way are never called final;
 //   - the PR is ready, not draft;
 //   - every migration the PR adds is numbered above main's highest, and the
 //     head's SCHEMA_VERSION is its highest migration (the merge-order rule);
 //   - the body's Delivers: line parses with CI's parser (pij-delivers-check),
-//     when that binary is built; without it, CI's `delivers` check stands in.
-// It also reports whether a review worktree sits at exactly that head; with
-// --worktree it creates one (detached, at the ls-remote head) when the two
-// heads agree. Exit 2: bad usage or a tool failure.
+//     when that binary is built; without it, CI's `delivers` check must be
+//     present with its latest run passed.
+// It also reports whether a review worktree sits at exactly that head,
+// detached and clean; with --worktree it creates one (detached, at the
+// ls-remote head) when the two heads agree, and refuses a path that is taken
+// by anything else. Exit 2: bad usage or a tool failure. It always prints.
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** One finished command. */
 export interface Ran {
@@ -73,9 +78,10 @@ interface Rollup {
 	readonly status?: string;
 	readonly conclusion?: string;
 	readonly state?: string;
-	readonly startedAt?: string;
-	readonly completedAt?: string;
-	readonly createdAt?: string;
+	readonly startedAt?: string | null;
+	readonly completedAt?: string | null;
+	readonly detailsUrl?: string | null;
+	readonly targetUrl?: string | null;
 }
 
 export interface PrView {
@@ -124,16 +130,48 @@ export function parseLsRemote(stdout: string): Map<string, string> {
 	return refs;
 }
 
-/** Each check's latest run, by name. */
-export function latestChecks(rollup: readonly Rollup[]): Map<string, Rollup> {
-	const when = (check: Rollup): string =>
-		check.startedAt ?? check.createdAt ?? check.completedAt ?? "";
-	const latest = new Map<string, Rollup>();
+/** A check's state: `unordered` means same-name runs that can't be ordered. */
+export type CheckState = "pass" | "running" | "fail" | "unordered";
+
+/** The GitHub Actions job id in a run's URL: ids only grow, so a re-run's is larger. */
+export function jobId(check: Rollup): number | undefined {
+	const url = check.detailsUrl ?? check.targetUrl ?? "";
+	const match = /\/actions\/runs\/\d+\/job\/(\d+)/.exec(url);
+	return match?.[1] ? Number(match[1]) : undefined;
+}
+
+/** One check name's runs, decided: the latest run's state, or `unordered`. */
+export interface LatestCheck {
+	readonly state: CheckState;
+	readonly runs: number;
+}
+
+/** Each check's latest run, by name. Runs are ordered by job id only (never
+ *  by timestamps, which GitHub leaves null on queued runs); when a name has
+ *  several runs and any lacks a job id, supersession can't be established, so
+ *  the check is `running` if any of its runs isn't finished, else `unordered`. */
+export function latestChecks(rollup: readonly Rollup[]): Map<string, LatestCheck> {
+	const groups = new Map<string, Rollup[]>();
 	for (const check of rollup) {
 		const name = check.name ?? check.context ?? "?";
 		const key = check.workflowName ? `${check.workflowName} / ${name}` : name;
-		const seen = latest.get(key);
-		if (!seen || when(check) >= when(seen)) latest.set(key, check);
+		groups.set(key, [...(groups.get(key) ?? []), check]);
+	}
+	const latest = new Map<string, LatestCheck>();
+	for (const [key, runs] of groups) {
+		const ids = runs.map(jobId);
+		let state: CheckState;
+		if (runs.length === 1) {
+			state = checkState(runs[0] as Rollup);
+		} else if (ids.every((id) => id !== undefined)) {
+			const newest = runs.reduce((best, run, index) =>
+				(ids[index] ?? 0) > (jobId(best) ?? 0) ? run : best,
+			);
+			state = checkState(newest);
+		} else {
+			state = runs.some((run) => checkState(run) === "running") ? "running" : "unordered";
+		}
+		latest.set(key, { state, runs: runs.length });
 	}
 	return latest;
 }
@@ -163,14 +201,59 @@ export function schemaVersion(source: string): number | undefined {
 	return match?.[1] ? Number(match[1]) : undefined;
 }
 
-/** The review worktree for this head: detached, at the head, named `-<pr>-<head7>`. */
-export function reviewWorktree(porcelain: string, pr: number, head: string): string | undefined {
-	for (const block of porcelain.split("\n\n")) {
-		const path = /^worktree (.+)$/m.exec(block)?.[1];
-		const at = /^HEAD ([0-9a-f]+)$/m.exec(block)?.[1];
-		if (path && at === head && basename(path).endsWith(`-${pr}-${short(head)}`)) return path;
+interface WorktreeEntry {
+	readonly path: string;
+	readonly head?: string;
+	readonly detached: boolean;
+}
+
+function worktrees(porcelain: string): WorktreeEntry[] {
+	return porcelain
+		.split("\n\n")
+		.map((block) => ({
+			path: /^worktree (.+)$/m.exec(block)?.[1] ?? "",
+			head: /^HEAD ([0-9a-f]+)$/m.exec(block)?.[1],
+			detached: /^detached$/m.test(block),
+		}))
+		.filter((entry) => entry.path !== "");
+}
+
+/** What `git worktree list` says about this PR's review worktree path(s). */
+export interface ReviewWorktree {
+	/** A worktree detached at exactly the head, named `-<pr>-<head7>`, and clean. */
+	readonly usable?: string;
+	/** Paths with that name that are NOT usable, and why. */
+	readonly unusable: readonly string[];
+}
+
+/** The review worktree for this head: detached at exactly the head, named
+ *  `-<pr>-<head7>`, with nothing modified or untracked. Anything else under
+ *  that name is reported as unusable, never reused. */
+export function reviewWorktree(
+	porcelain: string,
+	pr: number,
+	head: string,
+	run: Runner,
+): ReviewWorktree {
+	const unusable: string[] = [];
+	for (const entry of worktrees(porcelain)) {
+		if (!basename(entry.path).endsWith(`-${pr}-${short(head)}`)) continue;
+		if (!entry.detached) {
+			unusable.push(`${entry.path} is on a branch, not detached`);
+		} else if (entry.head !== head) {
+			unusable.push(`${entry.path} is at ${short(entry.head)}, not ${short(head)}`);
+		} else {
+			const status = run("git", ["-C", entry.path, "status", "--porcelain"]);
+			if (status.code !== 0) {
+				unusable.push(`${entry.path} can't be read (git status failed)`);
+			} else if (status.stdout.trim() !== "") {
+				unusable.push(`${entry.path} has local changes`);
+			} else {
+				return { usable: entry.path, unusable };
+			}
+		}
 	}
-	return undefined;
+	return { unusable };
 }
 
 /** Every condition for `pr`, from git and gh. Throws on a tool failure. */
@@ -207,22 +290,26 @@ export function check(pr: number, run: Runner, env: Environment): Report {
 		detail: merge === "CLEAN" ? "CLEAN" : `${merge}: ${MERGE_STATES[merge] ?? "not CLEAN"}`,
 	});
 
-	const checks = [...latestChecks(view.statusCheckRollup ?? []).entries()];
-	const failing = checks.filter(([, run]) => checkState(run) === "fail").map(([name]) => name);
-	const running = checks.filter(([, run]) => checkState(run) === "running").map(([name]) => name);
+	const latest = latestChecks(view.statusCheckRollup ?? []);
+	const checks = [...latest.entries()];
+	const named = (state: CheckState) =>
+		checks.filter(([, check]) => check.state === state).map(([name]) => name);
+	const [failing, running, unordered] = [named("fail"), named("running"), named("unordered")];
 	conditions.push({
 		name: "checks",
-		ok: checks.length > 0 && failing.length === 0 && running.length === 0,
+		ok: checks.length > 0 && checks.every(([, check]) => check.state === "pass"),
 		detail:
 			checks.length === 0
 				? "no checks ran on this head"
-				: checks.map(([name, run]) => `${name} ${checkState(run)}`).join(", "),
+				: checks.map(([name, check]) => `${name} ${check.state}`).join(", "),
 		next:
 			checks.length === 0
 				? "Next: CI hasn't started (or the PR is DIRTY); push or wait, then rerun"
 				: failing.length > 0
 					? `Next: fix ${failing.join(", ")} and push`
-					: `Next: wait for ${running.join(", ")}, then rerun`,
+					: running.length > 0
+						? `Next: wait for ${running.join(", ")}, then rerun`
+						: `Next: ${unordered.join(", ")} ran more than once and the runs can't be ordered; re-run it in CI, then rerun`,
 	});
 	conditions.push({
 		name: "draft",
@@ -242,15 +329,18 @@ export function check(pr: number, run: Runner, env: Environment): Report {
 			next: "Next: check the PR exists and origin is the PR's repository",
 		});
 	}
-	conditions.push(delivers(run, view.body ?? "", env));
+	conditions.push(delivers(run, view.body ?? "", env, latest));
 
 	if (served) {
 		const porcelain = must(run, "git", ["worktree", "list", "--porcelain"]);
-		const path = reviewWorktree(porcelain, pr, served);
+		const found = reviewWorktree(porcelain, pr, served, run);
+		for (const why of found.unusable) notes.push(`worktree  not usable: ${why}`);
 		notes.push(
-			path
-				? `worktree  ${path} (detached at ${short(served)})`
-				: `worktree  none at -${pr}-${short(served)}. Create one: just pr-freeze ${pr} --worktree`,
+			found.usable
+				? `worktree  ${found.usable} (detached at ${short(served)}, clean)`
+				: found.unusable.length > 0
+					? `worktree  none usable at -${pr}-${short(served)}. Remove or rename the one above, then: just pr-freeze ${pr} --worktree`
+					: `worktree  none at -${pr}-${short(served)}. Create one: just pr-freeze ${pr} --worktree`,
 		);
 	}
 	return {
@@ -301,14 +391,26 @@ function migrations(run: Runner, mainSha: string, head: string): Condition {
 	};
 }
 
-/** The body's Delivers: line, through the parser CI runs. */
-function delivers(run: Runner, body: string, env: Environment): Condition {
+/** The body's Delivers: line, through the parser CI runs; without the
+ *  binary, only a present and passed CI `delivers` check stands in. */
+function delivers(
+	run: Runner,
+	body: string,
+	env: Environment,
+	checks: Map<string, LatestCheck>,
+): Condition {
 	if (!env.deliversCheck) {
+		const ci = [...checks.entries()].filter(
+			([name]) => name === "delivers" || name.endsWith(" / delivers"),
+		);
+		const passed = ci.length > 0 && ci.every(([, check]) => check.state === "pass");
 		return {
 			name: "delivers",
-			ok: true,
-			detail:
-				"not parsed here (no pij-delivers-check; build it with just shared-build -- build -p pij-testkit --bin pij-delivers-check); CI's delivers check stands in",
+			ok: passed,
+			detail: passed
+				? "not parsed here (no pij-delivers-check); CI's delivers check passed on this head"
+				: `not parsed here (no pij-delivers-check), and CI's delivers check ${ci.length === 0 ? "is absent" : `is ${ci.map(([, check]) => check.state).join(", ")}`}`,
+			next: "Next: build the parser (just shared-build -- build -p pij-testkit --bin pij-delivers-check) or wait for CI's delivers check, then rerun",
 		};
 	}
 	const result = run(env.deliversCheck, [], body);
@@ -329,9 +431,15 @@ export function createWorktree(report: Report, run: Runner, env: Environment): s
 		);
 	}
 	const porcelain = must(run, "git", ["worktree", "list", "--porcelain"]);
-	const existing = reviewWorktree(porcelain, report.pr, report.head);
-	if (existing) return existing;
+	const found = reviewWorktree(porcelain, report.pr, report.head, run);
+	if (found.usable) return found.usable;
 	const path = join(dirname(env.root), `review-${report.pr}-${short(report.head)}`);
+	const taken = worktrees(porcelain).some((entry) => entry.path === path) || existsSync(path);
+	if (taken || found.unusable.length > 0) {
+		throw new Error(
+			`refusing --worktree: ${[...found.unusable, ...(taken ? [`${path} already exists`] : [])].join("; ")}. Remove it (git worktree remove <path>), then rerun`,
+		);
+	}
 	must(run, "git", ["worktree", "add", "--detach", path, report.head]);
 	return path;
 }
@@ -407,7 +515,18 @@ function main(argv: readonly string[]): number {
 	}
 }
 
+/** Is this module the script being run? Compared by real path, so a run
+ *  through a symlink (macOS /tmp is one) still runs, and never passes silently. */
+export function isMain(moduleUrl: string, argv1: string | undefined): boolean {
+	if (!argv1) return false;
+	try {
+		return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(argv1);
+	} catch {
+		return false;
+	}
+}
+
 // Run as CLI only (not when imported by tests).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url, process.argv[1])) {
 	process.exit(main(process.argv.slice(2)));
 }

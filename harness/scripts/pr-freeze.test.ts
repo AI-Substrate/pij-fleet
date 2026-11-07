@@ -1,14 +1,23 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
 	check,
 	checkState,
 	createWorktree,
+	isMain,
 	latestChecks,
 	migrationNumbers,
 	type Ran,
 	type Runner,
 	render,
 } from "./pr-freeze.js";
+
+const SCRIPT = resolve(import.meta.dirname, "pr-freeze.ts");
+const TSX = resolve(import.meta.dirname, "..", "..", "node_modules", ".bin", "tsx");
 
 const PR = 7;
 const HEAD = "a7a0f4a470532ae54d0103528b2bf338abff3bfe";
@@ -30,15 +39,18 @@ interface World {
 	mainSchema: number;
 	headSchema: number;
 	worktrees: string;
+	dirty: string[];
 }
 
-const pass = (name: string, startedAt = "2026-11-07T14:00:00Z") => ({
+/** A finished, passed Actions check whose job id is `job` (ids only grow). */
+const pass = (name: string, job = 100, workflowName = "ci") => ({
 	__typename: "CheckRun",
 	name,
-	workflowName: "ci",
+	workflowName,
 	status: "COMPLETED",
 	conclusion: "SUCCESS",
-	startedAt,
+	startedAt: "2026-11-07T14:00:00Z",
+	detailsUrl: `https://github.com/o/r/actions/runs/7/job/${job}`,
 });
 
 function good(): World {
@@ -55,6 +67,7 @@ function good(): World {
 		mainSchema: 36,
 		headSchema: 36,
 		worktrees: `worktree ${ROOT}\nHEAD ${MAIN}\nbranch refs/heads/main\n`,
+		dirty: [],
 	};
 }
 
@@ -70,6 +83,9 @@ function fake(world: World): { run: Runner; calls: string[] } {
 			return /^Delivers: (none|docs\/\S+)\s*$/m.test(input ?? "")
 				? ok("Delivers: none\n")
 				: { code: 1, stdout: "", stderr: "pij-delivers-check: no parseable Delivers: line\n" };
+		}
+		if (args[0] === "-C") {
+			return ok(world.dirty.includes(args[1] ?? "") ? " M src/lib.rs\n" : "");
 		}
 		const [verb, ...rest] = args;
 		if (program === "gh") {
@@ -154,31 +170,66 @@ describe("pr-freeze (plan 220, F92)", () => {
 		expect(text).toMatch(new RegExp(`- ${name}: .*Next: `));
 	});
 
-	it("lets a newer pass supersede an older failure, by check name", () => {
+	it("lets a newer pass supersede an older failure, by job id", () => {
 		const world = good();
 		world.rollup = [
-			{ ...pass("rust-test", "2026-11-07T13:00:00Z"), conclusion: "FAILURE" },
-			pass("rust-test", "2026-11-07T14:00:00Z"),
+			{ ...pass("rust-test", 100), conclusion: "FAILURE" },
+			pass("rust-test", 101),
 			pass("rust-lint"),
 		];
 		expect(failing(world)).toEqual([]);
 	});
 
-	it("treats a newer in-progress or queued run as not final, even over an older pass", () => {
-		for (const status of ["IN_PROGRESS", "QUEUED"]) {
-			const world = good();
-			world.rollup = [
-				pass("rust-test", "2026-11-07T13:00:00Z"),
-				{ ...pass("rust-test", "2026-11-07T14:00:00Z"), status, conclusion: null },
-			];
-			expect(failing(world)).toEqual(["checks"]);
-			const text = render(check(PR, fake(world).run, { root: ROOT, deliversCheck: PARSER }));
-			expect(text).toContain("Next: wait for ci / rust-test");
+	it("treats a newer in-progress or queued run as not final, whatever its timestamps say", () => {
+		// GitHub leaves startedAt null on a queued run; absent, empty and zero
+		// sentinels must not lose to an older pass.
+		for (const startedAt of [undefined, null, "", "0001-01-01T00:00:00Z"]) {
+			for (const status of ["IN_PROGRESS", "QUEUED"]) {
+				const world = good();
+				world.rollup = [
+					pass("rust-test", 100),
+					{ ...pass("rust-test", 101), status, conclusion: null, startedAt },
+				];
+				expect(failing(world)).toEqual(["checks"]);
+				const text = render(check(PR, fake(world).run, { root: ROOT, deliversCheck: PARSER }));
+				expect(text).toContain("Next: wait for ci / rust-test");
+			}
 		}
 		expect(checkState({ __typename: "StatusContext", context: "x", state: "PENDING" })).toBe(
 			"running",
 		);
-		expect(latestChecks([pass("a"), pass("a")]).size).toBe(1);
+	});
+
+	it("orders a real re-run (attempt 2) by job id, and keeps two workflows' same-named checks apart", () => {
+		const rerun = good();
+		// Attempt 1 failed, attempt 2 (same run, a newer job) passed; newest listed first.
+		rerun.rollup = [
+			pass("rust-test", 205),
+			{ ...pass("rust-test", 200), conclusion: "FAILURE" },
+			pass("rust-lint"),
+		];
+		expect(failing(rerun)).toEqual([]);
+		const two = good();
+		two.rollup = [pass("lint", 100, "ci"), { ...pass("lint", 300, "docs"), conclusion: "FAILURE" }];
+		expect(failing(two)).toEqual(["checks"]);
+		expect([...latestChecks(two.rollup).keys()]).toEqual(["ci / lint", "docs / lint"]);
+	});
+
+	it("fails closed when same-named runs can't be ordered", () => {
+		const noId = { ...pass("rust-test"), detailsUrl: null };
+		const unordered = good();
+		unordered.rollup = [noId, { ...noId, conclusion: "FAILURE" }];
+		expect(failing(unordered)).toEqual(["checks"]);
+		expect(render(check(PR, fake(unordered).run, { root: ROOT, deliversCheck: PARSER }))).toContain(
+			"can't be ordered",
+		);
+		const pending = good();
+		pending.rollup = [noId, { ...noId, status: "QUEUED", conclusion: null }];
+		expect(latestChecks(pending.rollup).get("ci / rust-test")?.state).toBe("running");
+		// One run with no id is still that run.
+		const single = good();
+		single.rollup = [noId];
+		expect(failing(single)).toEqual([]);
 	});
 
 	it("numbers migrations above main's highest, with SCHEMA_VERSION at the top one", () => {
@@ -205,33 +256,56 @@ describe("pr-freeze (plan 220, F92)", () => {
 		).toEqual([11]);
 	});
 
-	it("defers to CI's delivers check only when the parser isn't built", () => {
+	it("without the parser, needs CI's delivers check present and passed", () => {
 		const prose = good();
 		prose.body = "Delivers: the s05 send path, roughly\n";
 		expect(failing(prose, PARSER)).toEqual(["delivers"]);
-		expect(failing(prose, null)).toEqual([]);
-		const text = render(check(PR, fake(prose).run, { root: ROOT }));
-		expect(text).toContain("CI's delivers check stands in");
-	});
-
-	it("reports a review worktree only at exactly this head, named -<pr>-<head7>", () => {
-		const world = good();
-		const at = `/work/review-${PR}-${HEAD.slice(0, 7)}`;
-		world.worktrees += `\nworktree ${at}\nHEAD ${HEAD}\ndetached\n`;
-		const report = check(PR, fake(world).run, { root: ROOT });
-		expect(report.notes.join("\n")).toContain(`worktree  ${at}`);
-		const stale = good();
-		stale.worktrees += `\nworktree ${at}\nHEAD ${OTHER}\ndetached\n`;
-		expect(check(PR, fake(stale).run, { root: ROOT }).notes.join("\n")).toContain(
-			`Create one: just pr-freeze ${PR} --worktree`,
+		// No parser and no delivers check: not final.
+		expect(failing(prose, null)).toEqual(["delivers"]);
+		expect(render(check(PR, fake(prose).run, { root: ROOT }))).toContain(
+			"CI's delivers check is absent",
+		);
+		// No parser, and the delivers check failed or is still running: not final.
+		prose.rollup = [
+			...good().rollup,
+			{ ...pass("delivers", 100, "delivers"), conclusion: "FAILURE" },
+		];
+		expect(failing(prose, null)).toEqual(["checks", "delivers"]);
+		prose.rollup = [
+			...good().rollup,
+			{ ...pass("delivers", 100, "delivers"), status: "QUEUED", conclusion: null },
+		];
+		expect(failing(prose, null)).toEqual(["checks", "delivers"]);
+		// No parser, and the delivers check passed: it stands in.
+		const passed = good();
+		passed.rollup = [...good().rollup, pass("delivers", 100, "delivers")];
+		expect(failing(passed, null)).toEqual([]);
+		expect(render(check(PR, fake(passed).run, { root: ROOT }))).toContain(
+			"CI's delivers check passed",
 		);
 	});
 
-	it("--worktree creates it detached at the ls-remote head, reuses one, and refuses on a head mismatch", () => {
+	it("reports a review worktree only when detached at exactly this head, and clean", () => {
+		const at = `/work/review-${PR}-${HEAD.slice(0, 7)}`;
+		const notes = (world: World) => check(PR, fake(world).run, { root: ROOT }).notes.join("\n");
+		const clean = good();
+		clean.worktrees += `\nworktree ${at}\nHEAD ${HEAD}\ndetached\n`;
+		expect(notes(clean)).toContain(`worktree  ${at} (detached at ${HEAD.slice(0, 7)}, clean)`);
+		const stale = good();
+		stale.worktrees += `\nworktree ${at}\nHEAD ${OTHER}\ndetached\n`;
+		expect(notes(stale)).toContain(`not usable: ${at} is at ${OTHER.slice(0, 7)}`);
+		const branch = good();
+		branch.worktrees += `\nworktree ${at}\nHEAD ${HEAD}\nbranch refs/heads/review\n`;
+		expect(notes(branch)).toContain(`not usable: ${at} is on a branch, not detached`);
+		const dirty = { ...clean, dirty: [at] };
+		expect(notes(dirty)).toContain(`not usable: ${at} has local changes`);
+		expect(notes(good())).toContain(`Create one: just pr-freeze ${PR} --worktree`);
+	});
+
+	it("--worktree creates one at the ls-remote head, reuses only a clean detached one, refuses otherwise", () => {
+		const path = `/work/review-${PR}-${HEAD.slice(0, 7)}`;
 		const { run, calls } = fake(good());
-		const report = check(PR, run, { root: ROOT });
-		const path = createWorktree(report, run, { root: ROOT });
-		expect(path).toBe(`/work/review-${PR}-${HEAD.slice(0, 7)}`);
+		expect(createWorktree(check(PR, run, { root: ROOT }), run, { root: ROOT })).toBe(path);
 		expect(calls).toContain(`git worktree add --detach ${path} ${HEAD}`);
 
 		const existing = good();
@@ -242,12 +316,45 @@ describe("pr-freeze (plan 220, F92)", () => {
 		);
 		expect(reuse.calls.some((call) => call.startsWith("git worktree add"))).toBe(false);
 
-		const moved = good();
-		moved.ghHead = OTHER;
-		const mismatch = fake(moved);
-		expect(() =>
-			createWorktree(check(PR, mismatch.run, { root: ROOT }), mismatch.run, { root: ROOT }),
-		).toThrow(/refusing --worktree/);
-		expect(mismatch.calls.some((call) => call.startsWith("git worktree add"))).toBe(false);
+		const spoils: ((world: World) => void)[] = [
+			(w) => {
+				w.worktrees += `\nworktree ${path}\nHEAD ${HEAD}\nbranch refs/heads/review\n`;
+			},
+			(w) => {
+				w.worktrees += `\nworktree ${path}\nHEAD ${HEAD}\ndetached\n`;
+				w.dirty = [path];
+			},
+			(w) => {
+				w.worktrees += `\nworktree ${path}\nHEAD ${OTHER}\ndetached\n`;
+			},
+			(w) => {
+				w.ghHead = OTHER;
+			},
+		];
+		for (const spoil of spoils) {
+			const world = good();
+			spoil(world);
+			const attempt = fake(world);
+			expect(() =>
+				createWorktree(check(PR, attempt.run, { root: ROOT }), attempt.run, { root: ROOT }),
+			).toThrow(/refusing --worktree/);
+			expect(attempt.calls.some((call) => call.startsWith("git worktree add"))).toBe(false);
+		}
+	});
+
+	it("runs, prints and exits by its result when invoked through a symlink", () => {
+		const dir = mkdtempSync(join(tmpdir(), "pr-freeze-"));
+		try {
+			const link = join(dir, "pr-freeze.ts");
+			symlinkSync(SCRIPT, link);
+			expect(isMain(pathToFileURL(SCRIPT).href, link)).toBe(true);
+			expect(isMain(pathToFileURL(SCRIPT).href, join(dir, "other.ts"))).toBe(false);
+			expect(isMain(pathToFileURL(SCRIPT).href, undefined)).toBe(false);
+			const result = spawnSync(TSX, [link], { encoding: "utf8" });
+			expect(result.status).toBe(2);
+			expect(result.stderr).toContain("usage: just pr-freeze <pr number>");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
