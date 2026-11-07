@@ -1833,7 +1833,16 @@ async fn send(
         return response;
     }
     if request.message.fyi {
-        return hold_fyi(&state, request).await;
+        let local = request.message.from_machine.is_none();
+        let (from, in_reply_to) = (
+            request.message.from.clone(),
+            request.message.in_reply_to.clone(),
+        );
+        let response = hold_fyi(&state, request).await;
+        if local && response.status().is_success() {
+            answered_by(&state, &from, in_reply_to.as_deref()).await;
+        }
+        return response;
     }
     if let Some(command) = request.command {
         if request.message.to.machine.is_some() {
@@ -1887,6 +1896,7 @@ async fn send(
         Ok(label) => label,
         Err(response) => return *response,
     };
+    let (reply_from, reply_to) = (request.from.clone(), request.in_reply_to.clone());
     let msg = Msg {
         from: request.from,
         // Stamped above from the authenticated peer key, or absent locally.
@@ -1905,10 +1915,24 @@ async fn send(
     match accepted {
         Ok(mut receipt) => {
             receipt.cold_check = cold_check;
+            if !forwarded && !matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
+                answered_by(&state, &reply_from, reply_to.as_deref()).await;
+            }
             envelope(StatusCode::OK, &Envelope::ok("pij send", receipt))
         }
 
         Err(error) => send_failure("pij send", error),
+    }
+}
+
+/// A reply from a role request's holder answers it (plan 214, F68).
+pub(crate) async fn answered_by(state: &AppState, from: &SeatId, in_reply_to: Option<&str>) {
+    if in_reply_to.is_none() {
+        return;
+    }
+    if let Ok(now_ms) = system_time_ms() {
+        crate::delivery::role_send::answer_by_reply(&state.services, from, in_reply_to, now_ms)
+            .await;
     }
 }
 

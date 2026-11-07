@@ -159,6 +159,21 @@ const ADMITTED_SQL: &str = "SELECT \
        OR EXISTS (SELECT 1 FROM fyis \
          WHERE fyis.origin = '' AND fyis.id = ?2 AND fyis.recipient = ?1)";
 
+/// When local message `?2` reached recipient `?1`'s session, in ms (plan 214,
+/// F73): its delivery ledger row; else its acknowledged delivery job (the
+/// ledger keeps only each recipient's latest rows; `outcome IS NULL` is a
+/// real `ack_delivery`, not a refusal acked done); else its FYI, once
+/// delivered. NULL while it is still held. Each probe is an indexed SEARCH.
+const REACHED_SQL: &str = "SELECT COALESCE( \
+       (SELECT ledger.delivered_at * 1000 FROM delivered_messages AS ledger \
+         WHERE ledger.recipient = ?1 AND ledger.sender_machine = '' AND ledger.msg_id = ?2), \
+       (SELECT max(jobs.acked_at) * 1000 FROM jobs \
+         WHERE jobs.kind = 'delivery:' || ?1 AND jobs.dedupe_origin = '' AND jobs.dedupe_key = ?2 \
+         AND jobs.state = 'done' AND jobs.outcome IS NULL), \
+       (SELECT fyis.settled_at_ms FROM fyis \
+         WHERE fyis.origin = '' AND fyis.id = ?2 AND fyis.recipient = ?1 \
+         AND fyis.state = 'delivered'))";
+
 const COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to, fyi, reply, \
      limit_ms, state, holder, created_at, delivered_at, checkin_at, escalated_at, answered_at";
 
@@ -402,6 +417,19 @@ impl SqliteOrchestration {
             Ok(changed)
         })
         .await
+    }
+
+    /// When local message `msg_id` reached `recipient`'s session, in ms, or
+    /// `None` while it is still held (plan 214, F73): see [`REACHED_SQL`].
+    pub async fn message_reached_at(&self, recipient: &str, msg_id: &str) -> Result<Option<u64>> {
+        require_current_schema(&self.pool).await?;
+        let at: Option<i64> = sqlx::query_scalar(REACHED_SQL)
+            .bind(recipient)
+            .bind(msg_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        at.map(|at| sql_u64(at, "reached_at")).transpose()
     }
 
     /// Did delivery already take local message `msg_id` for `recipient`? The
@@ -745,10 +773,17 @@ mod tests {
     #[tokio::test]
     async fn limit_admission_probes_are_indexed_searches() {
         let pool = crate::open("").await.expect("memory");
-        let plan: Vec<String> = sqlx::query(&format!("EXPLAIN QUERY PLAN {}", super::ADMITTED_SQL))
+        // Plan 214: the arrival probe (F73) reads the same three indexes.
+        for sql in [super::ADMITTED_SQL, super::REACHED_SQL] {
+            limit_probe_is_indexed(&pool, sql).await;
+        }
+    }
+
+    async fn limit_probe_is_indexed(pool: &crate::StorePool, sql: &str) {
+        let plan: Vec<String> = sqlx::query(&format!("EXPLAIN QUERY PLAN {sql}"))
             .bind("pij-pa")
             .bind("role-limit-notice-r")
-            .fetch_all(&pool)
+            .fetch_all(pool)
             .await
             .expect("plan")
             .iter()

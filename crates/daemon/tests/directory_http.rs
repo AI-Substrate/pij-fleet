@@ -3515,9 +3515,49 @@ async fn a_claim_left_by_a_stopped_daemon_drains_once_after_restart() {
 const LIMIT_MS: u64 = 10 * 60_000;
 
 /// The s12 rig: a `pa` role (held by `pij-second` when `pa`), `pm-001` held by
-/// `pij-holder`, and request `req-limit` to it with a 10m limit. Returns the
-/// request's delivery time.
+/// `pij-holder`, and request `req-limit` to it with a 10m limit, which has
+/// reached the holder's session. Returns when it arrived: the limit clock's
+/// start (plan 214, F73).
 async fn limit_rig(name: &str, pa: bool) -> (Rig, Repo, u64) {
+    let (rig, repo, delivered) = limit_rig_held(name, pa).await;
+    let arrived = arrive(&rig, "pij-holder", "req-limit").await.max(delivered);
+    (rig, repo, arrived)
+}
+
+/// The holder's session reads its inbox up to and including `msg_id`, as its
+/// extension would; returns when `msg_id` reached it (ms).
+async fn arrive(rig: &Rig, seat: &str, msg_id: &str) -> u64 {
+    let seat_id = SeatId::from(seat);
+    if let Some(at) = rig.store.message_reached_at(seat, msg_id).await.unwrap() {
+        return at;
+    }
+    for _ in 0..20 {
+        let claims = rig.delivery.claim_inbox(&seat_id, false).await.unwrap();
+        let Some(claim) = claims.first() else { break };
+        rig.delivery
+            .acknowledge_inbox(
+                &seat_id,
+                claim.job_id,
+                &pij_daemon::delivery::NativeInboxIdentity::default(),
+                None,
+            )
+            .await
+            .unwrap();
+        if claim.message.msg_id == msg_id {
+            return rig
+                .store
+                .message_reached_at(seat, msg_id)
+                .await
+                .unwrap()
+                .expect("reached");
+        }
+    }
+    panic!("{msg_id} never reached {seat}");
+}
+
+/// [`limit_rig`] with the request still held in delivery. Returns its
+/// delivery (admission) time.
+async fn limit_rig_held(name: &str, pa: bool) -> (Rig, Repo, u64) {
     let repo = repo(name);
     let rig = rig(Arc::new(NoHook)).await;
     with_roles(rig.addr, &repo).await;
@@ -3931,4 +3971,87 @@ async fn an_admitted_notice_is_not_sent_again_to_a_rotated_pa() {
 #[tokio::test]
 async fn a_pinned_notice_never_admitted_goes_to_the_current_pa() {
     a_rotated_pa_after_a_pinned_notice("pij-limit-rotated-unsent", false).await;
+}
+
+/// Plan 214, F73: the limit clock starts when the request reaches the holder's
+/// session. While delivery still holds it behind a busy turn there is no
+/// check-in, however late; once it arrives the clock runs from then, and the
+/// check-in says how long delivery held it.
+#[tokio::test]
+async fn a_limit_counts_from_arrival_and_the_check_in_names_the_held_time() {
+    use pij_daemon::delivery::role_send::{time_limit_step, time_limits};
+    let (rig, _repo, delivered) = limit_rig_held("pij-limit-held", true).await;
+    for at in [delivered + LIMIT_MS, delivered + 6 * LIMIT_MS] {
+        assert_eq!(
+            limit_acts(time_limits(&rig.services, at).await),
+            [],
+            "still held: no check-in"
+        );
+    }
+    let arrived = arrive(&rig, "pij-holder", "req-limit").await.max(delivered);
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, arrived + LIMIT_MS - 1).await),
+        [],
+        "the clock runs from arrival"
+    );
+    // The round's read, as if delivery had held it for 20 minutes.
+    let mut read = rig
+        .store
+        .role_request("req-limit")
+        .await
+        .unwrap()
+        .expect("row");
+    read.delivered_at = Some(arrived - 2 * LIMIT_MS);
+    let action = time_limit_step(&rig.services, &read, arrived + LIMIT_MS)
+        .await
+        .expect("checked in");
+    assert_eq!((action.kind, action.admitted), ("check-in", true));
+    let bodies = inbox_bodies(&rig, "pij-holder").await;
+    assert!(
+        bodies
+            .iter()
+            .any(|body| body.contains("It waited 20m in delivery before it reached you")),
+        "{bodies:?}"
+    );
+}
+
+/// Plan 214, F68: a reply with --in-reply-to from the request's holder answers
+/// it, so no check-in follows; the same reply from another seat does not.
+#[tokio::test]
+async fn a_reply_from_the_holder_answers_the_request_and_stops_its_clock() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let (rig, repo, arrived) = limit_rig("pij-limit-reply", true).await;
+    let third = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-holder",
+        "reply-third",
+        json!({"in_reply_to": "req-limit"}),
+    )
+    .await;
+    assert_eq!(third["ok"], true, "{third}");
+    let row = |id: &'static str| {
+        let store = rig.store.clone();
+        async move { store.role_request(id).await.unwrap().expect("row") }
+    };
+    assert_eq!(row("req-limit").await.answered_at, None, "not the holder");
+    let reply = send_to(
+        rig.addr,
+        &repo.main,
+        SEAT,
+        "reply-holder",
+        json!({
+            "from": "pij-holder",
+            "caller": {"TMUX_PANE": "%51", "cwd": repo.main},
+            "in_reply_to": "req-limit",
+        }),
+    )
+    .await;
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert!(row("req-limit").await.answered_at.is_some(), "{reply}");
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, arrived + 5 * LIMIT_MS).await),
+        [],
+        "an answered request is never checked in"
+    );
 }
