@@ -469,7 +469,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "154",
 					"machine": "ops.osk.lan",
+					"release_why": "#154 merged cee0113",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-07T13:01:22.423Z",
 					"why": "#154 plan 211 states"
 				}
 			]
