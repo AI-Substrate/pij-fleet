@@ -1,0 +1,60 @@
+# Plan 210, phase 2: evidence
+
+Coder: pij-following-marsupial (coder/210). Branched from main at 59120b3, after phase 1 (#159) merged.
+
+## AC2: the rename
+
+- `git mv docs/project/roadmaps docs/project/workstreams`, and the skill's worked example from `examples/roadmaps/` to `examples/workstreams/`. Both switch to `pij/workstream` in the same commit (a567520), because ddocs E406 refuses a `pij/workstream` link into a `pij/roadmap` doc. Each gets a changelog row and a "Workstream NNN" title.
+- Live references follow: the PR template, the `docs/project` README, the skill README, `workstream.md` and the community route. The plan 204 canary rig copies `examples/workstreams` now.
+- **Readers needed no change:** each already takes `workstreams` first and falls back to `roadmaps` (from #131 and #141):
+  - the directory view's needs fold (`picture.rs`, `step_docs_read_workstreams_first_and_fall_back_to_roadmaps`);
+  - claims' `workstream` kind and its `roadmap` alias (`claims.rs`);
+  - `pij delivered`'s address resolution (`http/claims.rs`).
+  Their `roadmaps` tests stay as alias coverage.
+- **Left alone:** history in `docs/plans/` and `docs/retros/`, and the daemon's role fixtures (snapshots of the hand-written roles).
+
+## AC6: the coverage sensor
+
+- `harness/scripts/coverage-check.ts`, run by `just coverage-check`, a `coverage` stage in `.harness/extensions/checks/` and a step in `just self-check`. It fails, naming the row, when:
+  - a PRD requirement is delivered by no workstream step (unless `dropped`);
+  - a blueprint component is built by no step (unless `dropped`);
+  - an umbrella step is `complete` while a `part_of` child is neither complete nor abandoned, across files (phase-1 tk-0005; ddocs can't express it);
+  - a `part_of` names no step.
+- **Known gaps:** listed in `harness/scripts/coverage-exemptions.json`, each with an owner: PRD 001 req-26 and PRD 002 req-01 to req-14, all for docs-system's AC4 follow-up. An exemption for a row now covered, or naming no row, fails, so the list only shrinks.
+- **On this repo:** 0 findings with 15 exemptions. With none, it names exactly those 15, matching an independent python survey of the same docs.
+- **Tests:** `harness/scripts/coverage-check.test.ts` covers link resolution, delivered, built and dropped rows, the umbrella across files, a missing parent, stale and unknown exemptions, and this repo. CI ran all 5 on Node 22 and 24 (run 42393139897). A local tsx probe of the same cases passed.
+- **Cost:** reads three folders of JSON once per run. No loop, poll, launch or daemon change.
+
+## AC7: governance re-point
+
+[`ac7-repoint.sh`](ac7-repoint.sh) runs one `pij directory edit <role> --why 'C29 rename (plan 210)' --file <doc>` per live role whose document cites `docs/project/roadmaps/`. Only that path changes, and `edit --file` keeps each changelog and adds one row. The dry run on the governance branch head:
+
+```
+would edit coder: 1 line(s)
+would edit delivery: 1 line(s)
+would edit docs-system: 1 line(s)
+would edit pa: 1 line(s)
+would edit performance: 1 line(s)
+would edit pm-001: 2 line(s)
+would edit reviewer: 1 line(s)
+would edit security: 1 line(s)
+```
+
+It runs at the merge, so the role prompts and the folder flip together. The writer's commits are listed in the PR once run.
+
+## Other items from phase 1's notes
+
+- s16 is added (complete), delivering req-30 and req-31, which are now shipped. req-24's `delivered_by` is `#141, #159` and req-27's is `#136, #159`.
+- pm template v4 has only the path change. v1 to v3 stay pinned; the pins now cover 29 versions.
+- Four phase-1 task receipts now resolve from their folder (`../../evidence/`).
+- F104 (CI's ddocs check has no validator) is out of this PR. ddocs isn't on npm, so failing closed needs a CI install decision; I raised it with pm-001.
+
+## Gates
+
+- Local, macOS, niced on the fleet-194 target:
+  - `clippy -p pij-daemon --all-targets -D warnings`: clean.
+  - `pij-daemon --lib community::`: 93 passed.
+  - `--test claims_http`: 8 passed. `--test directory_http`: 62 passed.
+  - `pij-cli --test skill_verb_coverage`: 6 passed.
+  - `ddocs-check`, `local-path-check`, `pij-skill-check`, `coverage-check` and repo-wide biome: pass.
+- CI on b8823f3: all 5 checks green.
