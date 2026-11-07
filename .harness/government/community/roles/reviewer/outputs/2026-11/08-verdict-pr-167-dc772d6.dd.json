@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b7f2-630f-7de2-92eb-12a202ef4e05",
+				"date": "2026-11-08",
+				"head": "dc772d6810945eaabbfa77c9438dd24954cd691c",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/167#issuecomment-6713453452",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:167",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #167 correctness verdict\n\n**BLOCK** at `dc772d6810945eaabbfa77c9438dd24954cd691c`.\n\nThe normal lifecycle, persisted once-only mark and requested idle/queue controls are implemented, but two failure/ownership paths can lose the promised wake. This is source review plus exact-head CI; no local product tests, mutations or probes.\n\n## F001, P2: holdings lookup failure becomes permanent “holds nothing”\n\n`compaction_wake::step` calls the newly shared `holdings_of` (`daemon/src/compaction_wake.rs:150-156`). That helper converts an open_assignments error to an empty vector with unwrap_or_default (`http/memory_turn.rs:368-377`).\n\nIf that lookup fails and the separate claims lookup successfully returns empty, the round chooses HoldsNothing and durably settles the row. A seat that really holds a role is no longer pending and will not be reconsidered after the store recovers.\n\nThe old memory-turn helper deliberately allows its action to proceed when holdings cannot be read. Reusing that fail-open result for an irreversible wake-cancellation decision changes the consequence. The adjacent claims lookup correctly logs and waits on error; role lookup needs the same distinction.\n\nUse a fallible holdings read for this caller, log/defer on failure and preserve the old memory-turn policy separately. Add a focused failure/recovery case: a role-only holder must remain pending when that query fails, then wake once when it recovers.\n\n## F002, P2: tracking is outside the accepted control's owner\n\n`admit_control` awaits `delivery.accept_control`, then records the pending compaction (`http/mod.rs:2542-2549`). Delivery admission itself runs in a spawned JoinSet task and returns through a oneshot (`delivery/mod.rs:963-981`); cancelling its waiter does not cancel that committed admission.\n\nDrop/abort the waiting send_control/admit_control future while the owned admission is in flight: the compact can still be admitted/delivered, but no caller continuation remains to record its pending row. The watchdog only reads compaction_wakes, so it cannot recover that compact or send its resume. The direct send route awaits this helper without transferring that whole continuation to the delivery owner.\n\nThere is also a normal error variant at the same seam: compaction_wake::record logs a store write failure and returns unit (`compaction_wake.rs:268-277`), after which admit_control returns its accepted receipt without a pending row or recovery path.\n\nMove accepted-control tracking into a cancellation-surviving lifecycle/commit or provide deterministic recovery of an admitted compact whose tracking failed. Do not acknowledge the tracking guarantee with no durable fact. Add a waiter-cancellation case and tracking-write failure/recovery case, preserving existing control replay deduplication.\n\n## What is correct at this head\n\n- Direct/native/shim controls converge at send_control/admit_control; the held memory-turn compact eventually uses admit_control too. The HTTP tests prove held controls are recorded only when actually admitted.\n- Rows are keyed by seat and msg_id. INSERT OR IGNORE makes replay a no-op; a genuinely new message supersedes older pending rows transactionally.\n- started_since checks sequence, excludes seat.activity idle, and includes working/report/message.pushed events. The delivery producer emits message.pushed before its outcome, so a compact's own push is before the selected delivery fence.\n- The five-minute settle starts from the delivered event, not initial admission. Undelivered, gone, resumed and holds-nothing outcomes are explicit.\n- Queue::peek covers all live pending/running delivery/control jobs, including deferred or leased rows; it is not a claimable-only peek.\n- settle_compaction conditionally updates only the matching pending row, and Wake refuses to send if that mark fails or another round settled it. This correctly implements P9's mark-before-send/restart-at-most-once behavior.\n- The new work rides the existing PA round; no new loop or launch. Migration 0044 and SCHEMA_VERSION 44 agree.\n\n## Test evidence and limits\n\nExact-head CI **42416354906** passed: **2176 JUnit cases, zero failures/errors**. All five new daemon compact-wake tests executed, including queue wait/drain, idle-versus-working/report/push cancellation, new-compact rearming, supersession, undelivered expiry and restart after a successful wake. The direct/self/held memory-turn HTTP controls also executed.\n\nThe author reports that removing the idle exclusion and queue guard fails their respective tests. I did not rerun those mutations locally; the test expectations are explicit and align with the guard branches. These controls do not cover F001/F002.\n\n## Notes\n\n- P9 intentionally claims the one wake attempt before delivery. A failed/refused send is not retried by this implementation; settled=woken therefore does not prove successful delivery. Keep that distinction explicit in parent wording/operational evidence rather than adding an unapproved retry policy.\n- Settled rows remain stored; only the partial pending index becomes empty. “Rows exist only until settled” in the PR's cost prose should mean pending rows, not physical deletion.\n\nThe reviewed checkout is clean, detached and matches the frozen remote head. Security/cost and deployment evidence remain independently owned. No product/canonical plan state was edited.\n"
+		}
+	]
+}
