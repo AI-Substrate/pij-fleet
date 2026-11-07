@@ -1,6 +1,16 @@
 # Stream brief — s<ORD>-<SLUG>
 **From**: <o-prime id> · **Date**: <ISO> · **Lifecycle**: provisional/adopted
 
+**START NOW** on receipt: ack, run the orient stack, and continue through the journey in the same turn.
+Never end a turn with this assignment open unless you have parked it with
+`pij report state question|waiting|blocked|hold`; an idle seat with an open assignment is a stall.
+Your stall watchdog starts at 2 min; after your first `report.now`, relax it:
+`pij watchdog on <your id> --every 20m`.
+
+**Human gates**: <`standard` — preamble, post-validation and fleet confirmation are human stops |
+`standing autonomy: <ruling pointer>` — decide on your own recommendation, record each decision with its
+rationale, and continue; stop only when blocked on the human (password, interactive login, physical action)>
+
 ## Structure tree
 
 ```text
