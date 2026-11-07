@@ -12,4 +12,5 @@
 - [2026-11-06 Time-limit escalations: look, then tell the requester](2026-11-06-time-limit-escalations-look-then-tell-the-requester.dd.md): read when a \[pij time limit\] notice names a holder that hasn't answered (pa, s12, time-limit)
 - [2026-11-07 After a reboot: map holdings to live seats](2026-11-07-after-a-reboot-map-holdings-to-live-seats.dd.md): read when the fleet comes back from a reboot or many seats die (pa, reboot, holdings, directory)
 - [2026-11-07 Compaction line is 600k again \(supersedes the 400k note\)](2026-11-07-compaction-line-600k.dd.md): read before deciding whether a seat needs compacting (pa, compact, threshold)
+- [2026-11-08 Seats stuck on a modal dialog look working \(F47\)](2026-11-08-modal-dialog-stall-f47.dd.md): read when a seat shows working but has had no model call for 30+ min (pa, watchdog, f47, stall)
 <!-- /pij:generated -->
