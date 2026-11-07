@@ -19,6 +19,7 @@ use serde_json::Value;
 use super::holders::{self, seat_role_for};
 use super::layout::RolePaths;
 use super::root::GovernanceRoot;
+use super::routes::{self, Regenerated};
 use super::templates::{self, Catalog};
 use super::writer::{CommunityWriter, Existing, NewFile, Written};
 use super::{E_GOV_GIT, Refusal, role};
@@ -536,6 +537,55 @@ impl DirectoryService {
         Ok((written, entry))
     }
 
+    /// `pij output` (plan 200, AC1): one pij/output document in one commit,
+    /// its path chosen under the writer lock so two outputs at once never share
+    /// a file. Returns the commit and the document's path.
+    ///
+    /// # Errors
+    /// Any writer or [`super::output`] refusal; nothing is written.
+    pub async fn output_add(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        fields: super::output::OutputFields,
+        writer: &SeatId,
+        holds_role: bool,
+    ) -> Result<(Written, String), Refusal> {
+        let date = super::holders::today();
+        let pending = self.pending(project).await?;
+        let message = format!(
+            "community: {} {} on {}\n\nPij-Seat: {writer}\nPij-Project: {project}",
+            fields.role, fields.kind, fields.subject
+        );
+        let (project_id, by) = (project.to_string(), writer.to_string());
+        let chosen = Arc::new(std::sync::Mutex::new(String::new()));
+        let path_out = Arc::clone(&chosen);
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
+                let (mut files, path) =
+                    super::output::files(&root.worktree, &fields, &by, holds_role, &date)?;
+                *path_out
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                    path.display().to_string();
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &pending,
+                    &[],
+                    &mut built.landed,
+                )?);
+                Ok(files)
+            })
+            .await?;
+        self.flushed(&built.landed, &written).await?;
+        let path = chosen
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        Ok((written, path))
+    }
+
     /// `pij directory memory add` (plan 201, AC1): one note and the
     /// regenerated INDEX in one commit, built under the writer lock so two adds
     /// to one role each keep the other's INDEX line. Returns the note's path.
@@ -908,18 +958,21 @@ impl DirectoryService {
         Ok(written)
     }
 
-    /// Any other directory write (`directory add`): `files` plus the project's
-    /// pending close-ends, in one commit.
+    /// Any other directory write (`directory add`, `directory routes --write`):
+    /// `files` plus the project's pending close-ends, in one commit. When the
+    /// write changes the roles' scopes, or `ROUTES.md` is stale, the
+    /// regenerated `ROUTES.md` rides the same commit (plan 202).
     ///
     /// # Errors
-    /// Any writer refusal; nothing is written.
+    /// Any writer refusal, or [`super::E_NOTHING_TO_WRITE`] when there is
+    /// nothing at all to commit; nothing is written.
     pub async fn write(
         &self,
         project: &str,
         repo: PathBuf,
         files: Vec<NewFile>,
         message: String,
-    ) -> Result<Written, Refusal> {
+    ) -> Result<(Written, Regenerated), Refusal> {
         let pending = self.pending(project).await?;
         let (project_id, flush) = (project.to_string(), pending);
         let (written, built) = self
@@ -928,6 +981,9 @@ impl DirectoryService {
                     check_merge_target(root, file)?;
                 }
                 let mut files = files;
+                let regenerated = routes::regenerate(&root.worktree, &files);
+                files.extend(regenerated.file.clone());
+                built.routes = Some(regenerated);
                 files.extend(flush_files(
                     root,
                     &project_id,
@@ -935,11 +991,17 @@ impl DirectoryService {
                     &[],
                     &mut built.landed,
                 )?);
+                if files.is_empty() {
+                    return Err(Refusal::new(
+                        super::E_NOTHING_TO_WRITE,
+                        "nothing to write: ROUTES.md is current",
+                    ));
+                }
                 Ok(files)
             })
             .await?;
         self.flushed(&built.landed, &written).await?;
-        Ok(written)
+        Ok((written, built.routes.unwrap_or_default()))
     }
 
     /// Bind a live seat to an existing role: one holders commit, then the store
@@ -1731,6 +1793,7 @@ fn flush_files(
 struct Built {
     landed: Vec<Assignment>,
     row: Option<Assignment>,
+    routes: Option<Regenerated>,
     batch: Vec<(Assignment, Option<String>)>,
 }
 

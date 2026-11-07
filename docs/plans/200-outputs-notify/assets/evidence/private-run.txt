@@ -1,0 +1,76 @@
+private daemon pid=1061 port=7489 state=/tmp/pij-200-9jf9UT/state tmux=-L pij-200-1022
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-marten","harness":"omp","session
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-holder","harness":"omp","session
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-asker","harness":"omp","session"
+
+$ /tmp/pij-rs-200 project create fleet --repo /tmp/pij-200-9jf9UT/main --prime pij-scratch-marten
+pij project: ok — {"project":{"created_at":1793934543930,"created_by":"pij-scratch-marten","description":"fleet","plan_path":null,"prime_id":"pij-scratch-marten","repo":"/tmp/pij-200-9jf9UT/main","slug":"fleet"},"seq":10}
+exit=0
+
+$ /tmp/pij-rs-200 directory add reviewer --title reviewer --kind general --lifecycle long-lived --holders many --rule r --packet p --why setup
+pij directory: ok — {"commit":"73b78d3769ed8c15f8b94382061d97bac1025064","id":"reviewer","path":".harness/government/community/roles/reviewer/role.dd.json","paths":[".dd/schemas/pij/external/schema.json",".dd/schemas/pij/holders/schema.json",".dd/schemas/pij/memory/schema.json",".dd/schemas/pij/output/schema.json",".dd/schemas/pij/role/schema.json",".harness/government/community/roles/reviewer/memory/INDEX.md",".harness/government/community/roles/reviewer/outputs/.gitkeep",".harness/government/community/roles/reviewer/role.dd.json",".harness/government/community/roles/reviewer/role.dd.md"],"project":"fleet","roles":[{"id":"reviewer","path":".harness/government/community/roles/reviewer/role.dd.json"}],"worktree":"/private/tmp/pij-200-9jf9UT/gov"}
+exit=0
+
+$ /tmp/pij-rs-200 directory assign reviewer pij-scratch-holder --why reviews
+pij directory: ok — {"commit":"af0f270d8a6f3d76ae6888e3a73eb0f20f24e7e7","flushed":0,"path":".harness/government/community/roles/reviewer/holders.dd.json","project":"fleet","role":"reviewer","row":{"assigned_by":"pij-scratch-marten","from":"2026-11-06T03:09:04.245Z","harness":"omp","machine":"<host>","seat":"pij-scratch-holder","why":"reviews"},"seat":"pij-scratch-holder","seat_role":"worker","window":{"name":"fleet:reviewer","renamed":true}}
+exit=0
+reading rest-1: pid=1061 total=33 by_op={"ddocs.community": 4, "git.community": 14, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 1, "tmux.set-options tap owner": 3}
+reading rest-2: pid=1061 total=33 by_op={"ddocs.community": 4, "git.community": 14, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 1, "tmux.set-options tap owner": 3}
+
+$ the asker sends to role:reviewer (reply wake)
+request=01a1aed5-e13b-7373-9499-32c72efbf442
+reading after-role-send: pid=1061 total=33 by_op={"ddocs.community": 4, "git.community": 14, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 1, "tmux.set-options tap owner": 3}
+
+$ the holder answers with a verdict (--answers the request)
+ok=True notified={"mode": "wake", "outcome": {"next_retry_at": 0, "outcome": "queued", "reason": "extension-stream"}, "seat": "pij-scratch-asker"} path=.harness/government/community/roles/reviewer/outputs/2026-11/06-verdict-pr-200-0123456.dd.json
+reading after-answered-verdict: pid=1061 total=42 by_op={"ddocs.community": 6, "git.community": 21, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 1, "tmux.set-options tap owner": 3}
+
+$ an unrequested note (an FYI to the writer's parent)
+ok=True notified={"mode": "fyi", "outcome": {"outcome": "held", "reason": "fyi"}, "seat": "pij-scratch-marten"} path=.harness/government/community/roles/reviewer/outputs/2026-11/06-note-pr-200.dd.json
+reading after-unrequested-note: pid=1061 total=51 by_op={"ddocs.community": 8, "git.community": 28, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 1, "tmux.set-options tap owner": 3}
+
+$ two outputs at once
+ok=True notified={"mode": "fyi", "outcome": {"outcome": "held", "reason": "fyi"}, "seat": "pij-scratch-marten"} path=.harness/government/community/roles/reviewer/outputs/2026-11/06-note-pr-201-2.dd.json
+ok=True notified={"mode": "fyi", "outcome": {"outcome": "held", "reason": "fyi"}, "seat": "pij-scratch-marten"} path=.harness/government/community/roles/reviewer/outputs/2026-11/06-note-pr-201.dd.json
+reading after-two-at-once: pid=1061 total=69 by_op={"ddocs.community": 12, "git.community": 42, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 1, "tmux.set-options tap owner": 3}
+
+$ /tmp/pij-rs-200 outputs --subject pr:200 --head 0123456789abcdef0123456789abcdef01234567 --project fleet
+fleet: 1 output(s)
+  reviewer verdict on pr:200 at 0123456789abcdef0123456789abcdef01234567 (pass) by pij-scratch-holder: .harness/government/community/roles/reviewer/outputs/2026-11/06-verdict-pr-200-0123456.dd.json
+exit=0
+
+$ /tmp/pij-rs-200 outputs --role reviewer --project fleet
+fleet: 4 output(s)
+  reviewer note on pr:201 by pij-scratch-holder: .harness/government/community/roles/reviewer/outputs/2026-11/06-note-pr-201-2.dd.json
+  reviewer note on pr:201 by pij-scratch-holder: .harness/government/community/roles/reviewer/outputs/2026-11/06-note-pr-201.dd.json
+  reviewer note on pr:200 by pij-scratch-holder: .harness/government/community/roles/reviewer/outputs/2026-11/06-note-pr-200.dd.json
+  reviewer verdict on pr:200 at 0123456789abcdef0123456789abcdef01234567 (pass) by pij-scratch-holder: .harness/government/community/roles/reviewer/outputs/2026-11/06-verdict-pr-200-0123456.dd.json
+exit=0
+reading after-reads: pid=1061 total=69 by_op={"ddocs.community": 12, "git.community": 42, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 1, "tmux.set-options tap owner": 3}
+
+$ git -C gov log
+19a4e3f community: reviewer note on pr:201
+7dd061e community: reviewer note on pr:201
+67f5293 community: reviewer note on pr:200
+10a4b86 community: reviewer verdict on pr:200
+af0f270 community: assign reviewer to pij-scratch-holder
+73b78d3 community: add role reviewer
+
+$ files in each output commit
+19a4e3f community: reviewer note on pr:201
+
+.harness/government/community/roles/reviewer/outputs/2026-11/06-note-pr-201-2.dd.json
+.harness/government/community/roles/reviewer/outputs/2026-11/06-note-pr-201-2.dd.md
+7dd061e community: reviewer note on pr:201
+
+.harness/government/community/roles/reviewer/outputs/2026-11/06-note-pr-201.dd.json
+.harness/government/community/roles/reviewer/outputs/2026-11/06-note-pr-201.dd.md
+67f5293 community: reviewer note on pr:200
+
+.harness/government/community/roles/reviewer/outputs/2026-11/06-note-pr-200.dd.json
+.harness/government/community/roles/reviewer/outputs/2026-11/06-note-pr-200.dd.md
+10a4b86 community: reviewer verdict on pr:200
+
+.harness/government/community/roles/reviewer/outputs/2026-11/06-verdict-pr-200-0123456.dd.json
+.harness/government/community/roles/reviewer/outputs/2026-11/06-verdict-pr-200-0123456.dd.md
+~/pi-hacking/fleet-200-outputs-notify/docs/plans/200-outputs-notify/assets/evidence/private-run.sh: line 113:  1061 Terminated: 15          "$BIN" daemon --bind "127.0.0.1:$PORT" --state-dir "$PIJ_RS_STATE_DIR" >> "$S/daemon.log" 2>&1  (wd: /tmp)

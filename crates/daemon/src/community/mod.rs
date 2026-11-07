@@ -13,9 +13,11 @@ mod git;
 pub mod holders;
 pub mod layout;
 pub mod memory;
+pub mod output;
 pub mod pointer;
 pub mod role;
 pub mod root;
+pub mod routes;
 pub mod templates;
 pub mod writer;
 
@@ -77,6 +79,9 @@ pub const E_GOV_GIT: &str = "E-RS-GOV-GIT";
 pub const E_BRIEF_MISSING: &str = "E-RS-ROLE-BRIEF-MISSING";
 /// `directory add` named a role that already exists.
 pub const E_DIRECTORY_EXISTS: &str = "E-RS-DIRECTORY-EXISTS";
+/// A directory write found nothing to write (`directory routes --write` on a
+/// current `ROUTES.md`). Answered as success, never shown as a refusal.
+pub const E_NOTHING_TO_WRITE: &str = "E-RS-DIRECTORY-CURRENT";
 
 #[cfg(test)]
 pub(crate) mod test_repo;

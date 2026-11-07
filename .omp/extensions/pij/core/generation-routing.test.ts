@@ -267,7 +267,7 @@ describe("explicit generation forcing", () => {
 				"utf8",
 			),
 		);
-		const community = ["directory", "claim", "claims", "delivered"];
+		const community = ["directory", "claim", "claims", "delivered", "output", "outputs"];
 		const native = RS_ROUTE_TABLE.filter(
 			(row) => "nativeCommand" in row && community.includes(row.verb),
 		).map((row) => row.verb);
