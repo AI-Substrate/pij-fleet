@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "d8bf33717bff3805fa411d0113864810d99f895a",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/152#issuecomment-6711533284",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:152",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: BLOCK\n\nPR #152, exact head `d8bf33717bff3805fa411d0113864810d99f895a`.\n\nReviewed `efa0227..d8bf337` and the directly dependent caller, delivery and audit boundaries. The archived-request bypass is source-closed, and bare asserted identities now refuse. S152-001 remains open because the shim's new `VerifiedPull` exception accepts replayable victim metadata as sender authority.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/daemon/src/http/shim.rs | 1148-1187 | Victim descriptor metadata produces VerifiedPull, permitting correlated send-as through the shim (S152-001) | 9/10 |\n\n### S152-001: VerifiedPull observes the victim, not the caller\n\nA local client with daemon-key access can supply a live paneless pull seat B's registered session, PID and start metadata. `subject_verified` checks those fields against B's descriptor and checks B's process liveness; it does not establish that the requesting client is B's receiver or possesses its capability. The resulting `VerifiedPull` bypasses the asserted-only correlated-send refusal.\n\nSource trace, not an executed probe:\n\n- Machine bearer authentication is not seat authentication (`crates/daemon/src/http/mod.rs:754-770`).\n- Asserted `whoami` exposes the descriptor, including serialized session/process metadata (`crates/daemon/src/http/identity.rs:1078-1114`, `crates/core/src/model.rs:378-393`); no victim capability is needed to obtain that tuple.\n- `inbox_identity` accepts native session, PID and start from caller-controlled fields. Matching the descriptor and observing its live process creates `VerifiedPull`, without connection-owner or receiver-possession proof (`crates/daemon/src/http/shim.rs:1039-1063,1148-1187`; `crates/daemon/src/delivery/mod.rs:92-98`).\n- The new reply branch accepts that evidence before the asserted-ID refusal (`crates/daemon/src/http/mod.rs:2250-2262`). The shim derives `from` from it and retains that sender in normal or role delivery (`crates/daemon/src/http/shim.rs:707-724,800-824`); FYI storage also retains it (`crates/daemon/src/delivery/mod.rs:756-765`).\n\nPrerequisites are local daemon access, a live registered paneless pull victim, an active or archived request ID, and an accepting recipient. No victim re-registration, inbox claim or receiver capability is required. Ordinary cold-wake admission still applies to a normal send; an FYI needs no wake.\n\nThe metadata-based verification predates this delta. This delta carries it forward as trusted sender evidence and exempts it from the new refusal. The finding concerns that correlated-send exception, not a newly introduced general registration weakness.\n\n### C32 assessment\n\nAuthority: `.harness/government/community/RULINGS.md:36`, including clarified C32(3).\n\n- **C32(1), PRD 003 req-10: fails.** Arbitrary correlated content can still be sent as another seat. C32 explicitly excludes send-as from accepted work-signal residuals.\n- **C32(2), PRD 003 req-10: partial repair.** Bare assertions, contradicted panes, unresolved context and request-lookup errors refuse. Active and archived requests are gated before routing or holding. Matching victim metadata nevertheless obtains sender authority through `VerifiedPull`; its label is not proof of caller ownership.\n- **C32(3), PRD 003 req-10: answer-audit repair preserved.** The first answer stamp and audit remain one owned transaction; failed append prevents the stamp (`crates/store/src/role_requests.rs:792-824`). This cannot authenticate an earlier message delivery. No new per-action audit requirement for capability-authorized downstream actions is being imposed.\n- **C32(4), PRD 003 req-10: the Known limit is too narrow for the surviving path.** The PR names uncorrelated existence-only assertions and raw-from sends, but correlated metadata-replay send-as remains possible.\n\nDo not construct trusted sender evidence from replayable descriptor fields. Correlated paneless sends need independently established caller/receiver binding; otherwise refuse them. Retain the verified transport exception only when its verification actually proves the caller's authority. Add a negative test in which a different daemon client supplies the victim's matching metadata.\n\n### Closures and proof limits\n\nThe archived lookup repair fails closed on either lookup error. IDs absent from both tables remain uncorrelated, as documented. Normal/FYI and role routing run after this gate.\n\nThe OMP/Pi adapter keys and shared fixture align in source, and the caller-context attachment repairs the previously missing wire fields. This is TS wire-shape testing plus Rust fixture replay, not a live TS-to-daemon run (F106). The paneless positive test supplies matching descriptor metadata; it does not demonstrate client ownership.\n\nGitHub metadata and the independent remote pull ref agree on the reviewed SHA. GitHub initially reported CLEAN, but the final pre-publication read reported UNKNOWN with the same head; current integration readiness is therefore unconfirmed, not silently treated as CLEAN. CI run `42402097818` and latest successful Delivers run `42402122323` both identify the exact SHA and success. The earlier cancelled Delivers run is superseded. No local builds, tests, fault injection, credential reads, transport probes or payload execution were performed.\n"
+		}
+	]
+}
