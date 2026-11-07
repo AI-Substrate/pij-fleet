@@ -1,0 +1,153 @@
+{
+	"dd": {
+		"schema": "pij/workstream"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Workstream 002: pij base",
+				"status": "draft",
+				"updated": "2026-11-08",
+				"owner": "pm-001"
+			}
+		},
+		{
+			"name": "goal",
+			"value": "Build PRD 002's rows, in an order where message identity comes before the queue work that relies on it."
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s01",
+					"title": "Typecheck covers test files",
+					"state": "planned",
+					"delivers": ["../prds/002-pij-base.dd.json#requirements/req-08"],
+					"builds": ["../blueprints/002-pij-base.dd.json#components/c-typecheck-tests"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "A deliberately ill-typed test file makes `just typecheck` fail."
+				},
+				{
+					"id": "s02",
+					"title": "Known sender on every message",
+					"state": "planned",
+					"delivers": ["../prds/002-pij-base.dd.json#requirements/req-09"],
+					"builds": ["../blueprints/002-pij-base.dd.json#components/c-sender-identity"],
+					"needs": ["role:coder", "role:reviewer", "role:security", "role:delivery"],
+					"done_when": "A send whose sender is not a registered seat is refused or arrives marked unverified, and a reply to any delivered message reaches its sender.",
+					"note": "Read with the seat-permissions work (caller provenance) before planning; the two may share a fix."
+				},
+				{
+					"id": "s03",
+					"title": "Queue visibility: read-only view and sender notice",
+					"state": "planned",
+					"delivers": [
+						"../prds/002-pij-base.dd.json#requirements/req-11",
+						"../prds/002-pij-base.dd.json#requirements/req-12"
+					],
+					"builds": [
+						"../blueprints/002-pij-base.dd.json#components/c-queue-view",
+						"../blueprints/002-pij-base.dd.json#components/c-sender-notice"
+					],
+					"depends_on": ["#steps/s02"],
+					"needs": ["role:coder", "role:reviewer", "role:delivery", "role:performance"],
+					"done_when": "The view shows a waiting message with its reason and next try and leaves it deliverable; a sender whose message was queued gets exactly one notice when it is delivered and one when it is given up."
+				},
+				{
+					"id": "s04",
+					"title": "Spawn and revive: first task and preview",
+					"state": "planned",
+					"delivers": [
+						"../prds/002-pij-base.dd.json#requirements/req-02",
+						"../prds/002-pij-base.dd.json#requirements/req-03"
+					],
+					"builds": [
+						"../blueprints/002-pij-base.dd.json#components/c-revive-preview",
+						"../blueprints/002-pij-base.dd.json#components/c-spawn-first-task"
+					],
+					"needs": ["role:coder", "role:reviewer", "role:security"],
+					"done_when": "A revive preview prints the planned launch and changes nothing; a spawn given a task yields a seat whose first turn is that task, delivered exactly once."
+				},
+				{
+					"id": "s05",
+					"title": "Daemon affinity and discovery",
+					"state": "planned",
+					"delivers": [
+						"../prds/002-pij-base.dd.json#requirements/req-05",
+						"../prds/002-pij-base.dd.json#requirements/req-07"
+					],
+					"builds": [
+						"../blueprints/002-pij-base.dd.json#components/c-spawn-daemon-env",
+						"../blueprints/002-pij-base.dd.json#components/c-daemon-discovery"
+					],
+					"needs": ["role:coder", "role:reviewer", "role:security", "role:performance"],
+					"done_when": "A seat spawned by a private daemon replies to that daemon; with two daemons up, a lookup of a seat on the other one names that daemon, and one command lists both."
+				},
+				{
+					"id": "s06",
+					"title": "Work tree create and teardown",
+					"state": "planned",
+					"delivers": ["../prds/002-pij-base.dd.json#requirements/req-04"],
+					"builds": ["../blueprints/002-pij-base.dd.json#components/c-worktree-lifecycle"],
+					"needs": ["role:coder", "role:reviewer", "role:security"],
+					"done_when": "Create then remove leaves no tree, branch or build directory; removing a tree with uncommitted changes refuses and loses nothing."
+				},
+				{
+					"id": "s07",
+					"title": "Unported verbs ported or retired",
+					"state": "planned",
+					"delivers": ["../prds/002-pij-base.dd.json#requirements/req-06"],
+					"builds": ["../blueprints/002-pij-base.dd.json#components/c-unported-verbs"],
+					"needs": ["role:coder", "role:reviewer", "role:docs-system"],
+					"done_when": "`pij --help` lists no E-RS-UNPORTED verb, and reading a peer's transcript has its own verb name."
+				},
+				{
+					"id": "s08",
+					"title": "Wire version N-1 and the restart notice",
+					"state": "planned",
+					"delivers": ["../prds/002-pij-base.dd.json#requirements/req-10"],
+					"builds": ["../blueprints/002-pij-base.dd.json#components/c-wire-compat"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "A client built for version N reads a version N-1 envelope, and the restart and fleet notice go out together."
+				},
+				{
+					"id": "s09",
+					"title": "Live proofs: Claude socket receipts and pane delivery",
+					"state": "planned",
+					"delivers": [
+						"../prds/002-pij-base.dd.json#requirements/req-01",
+						"../prds/002-pij-base.dd.json#requirements/req-14"
+					],
+					"builds": [
+						"../blueprints/002-pij-base.dd.json#components/c-claude-socket-proof",
+						"../blueprints/002-pij-base.dd.json#components/c-pane-delivery-proof"
+					],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "A live Claude run ends in held and refused receipts as the operator holds or denies; for Codex, Copilot and Claude without its socket, a body over 4 KB lands once and whole in the receiver's own transcript.",
+					"note": "Evidence from real sessions, not CI (blueprint 002 d-2)."
+				},
+				{
+					"id": "s10",
+					"title": "Unproven seat admission",
+					"state": "planned",
+					"delivers": ["../prds/002-pij-base.dd.json#requirements/req-13"],
+					"builds": ["../blueprints/002-pij-base.dd.json#components/c-graded-admission"],
+					"needs": ["role:coder", "role:reviewer", "role:security"],
+					"done_when": "Registering without proof gives an unproven seat with no process binding and a printed next step, and proving it upgrades the same seat.",
+					"note": "could, planned (ruling C17): start only when someone needs it."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-08",
+					"by": "docs-system",
+					"change": "Created for plan 210 AC4: ten planned steps that deliver PRD 002's 14 rows and build blueprint 002's components. Owner pm-001 until the prime gives it a PM of its own."
+				}
+			]
+		}
+	]
+}

@@ -245,6 +245,15 @@
 					"done_when": "Roadmap 001 lives in docs/project/workstreams/ as pij/workstream, every reader follows the folder, and harness checks fails naming the row when a requirement is delivered by no step, a component is built by no step, or an umbrella step is complete before its children.",
 					"plan": "docs/plans/210-workstreams",
 					"needs": ["role:docs-system", "role:coder", "role:reviewer"]
+				},
+				{
+					"id": "s17",
+					"title": "Seat ids never name a role or project",
+					"state": "planned",
+					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-26"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "A spawn whose `--id` names a role in its project's directory or a project is refused by name; a spawn without `--id` still gets a `pij-<adjective>-<animal>` id.",
+					"note": "The open part of req-26 (ruling C13). Memorable ids and `<project>:<role>` windows shipped (s04, plan 195); an explicit `--id` is still accepted as given (crates/daemon/src/http/mod.rs:1426-1438)."
 				}
 			]
 		},
@@ -340,6 +349,11 @@
 					"date": "2026-11-08",
 					"by": "pij-following-marsupial",
 					"change": "Plan 210 phase 2: s16 added and complete (the move to workstreams, nesting and lanes, and the coverage sensor in harness checks)."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "docs-system",
+					"change": "Plan 210 AC4: s17 (planned) delivers req-26's open part, refusing an explicit seat id that names a role or project, so no PRD 001 row is left undelivered."
 				}
 			]
 		}

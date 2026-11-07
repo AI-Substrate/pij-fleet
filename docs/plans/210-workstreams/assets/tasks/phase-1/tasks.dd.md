@@ -40,6 +40,7 @@ _Empty._
 | tk-0003 | PRD 001 and blueprint 001 wording and rows | — | ph-00d2 | [x] checked | — | ../../evidence/phase-1.md#tk-0003-prd | [tk-0003](tasks.dd.md#done-when) | req-04, 18, 20, 21, 23, 24 and 27 say workstream; req-30 (nesting and lanes) and req-31 (coverage check) are added; c-doc-schemas names pij/workstream and realises req-30; each doc gets a changelog row. | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) |
 | tk-0004 | v3 of the six core templates | — | ph-00d2 | [x] checked | — | ../../evidence/phase-1.md#tk-0004-templates | [tk-0004](tasks.dd.md#done-when) | pm, coder, pa, prime, reviewer and security ship v3 with workstream wording; v1 and v2 bytes unchanged; SHIPPED and the sha256 pins carry v3; the templates README links v3. | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | Umbrella roll-up check (phase 2, coder) | — | ph-00d3 | [x] checked | — | ../../evidence/phase-2.md#ac6-the-coverage-sensor | [tk-0005](tasks.dd.md#done-when) | A check fails when an umbrella step is complete while a step that is part_of it is not. ddocs has no cross-row rule, so the phase 2 coverage sensor (req-31, AC6) holds it. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | [ac-0006](../../../plan.dd.md#acceptance-criteria) |
+| tk-0011 | AC4 remainder: coverage links for req-26 and PRD 002 | — | ph-00d2 | [x] checked | — | ../../evidence/ac4-coverage.md | [tk-0011](tasks.dd.md#done-when) | req-26 gains a delivering step (s17 in workstream 001); PRD 002's 14 rows get blueprint 002 and workstream 002; the 15 coverage exemptions and APPROVED_EXEMPTIONS are emptied, so coverage-check covers every row with no exemption. | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -74,6 +75,12 @@ _Empty._
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
 | dw-0002 | An umbrella step marked complete with an open child fails a check. ddocs has no cross-row rule, so this moves to the phase 2 coverage sensor (req-31, AC6). | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0011
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0011 | ddocs validate passes; coverage-check reports zero undelivered requirements and zero unbuilt components on main after #162, with no exemptions. | [x] checked | [bp-0004](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

@@ -11,7 +11,7 @@
         "ordinal": 210,
         "complexity": "CS-4",
         "summary": "Ruling C29: rename roadmaps forward to workstreams (folder, schema pij/workstream, skill, templates v2, PRD rows), add nesting (part_of), lanes and cross-file ordering, define 'a pij stream is one lane of a workstream', and make coverage a harness checks sensor.",
-        "status": "draft",
+        "status": "shipped",
         "mode": "Full",
         "created": "2026-11-04",
         "backpressure": "assets/backpressure.dd.json#rows"
@@ -60,8 +60,9 @@
         {
           "id": "ac-0004",
           "claim": "PRD and coverage fixes. PRD 001 amends req-04, 18, 20, 21, 23, 24 and 27 to workstream wording and adds rows for nesting and lanes and for coverage. req-26 and req-27 gain a delivering step; PRD 002's 14 rows get a blueprint and a workstream (or explicit links into existing ones), so nothing is orphaned.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "receipt": "assets/evidence/phase-1.md#tk-0003-prd (PRD wording and rows); assets/evidence/ac4-coverage.md (req-26 step, PRD 002 blueprint and workstream, exemptions removed)"
         },
         {
           "id": "ac-0005",
@@ -80,9 +81,9 @@
         {
           "id": "ac-0007",
           "claim": "Governance re-point (#135 merged: pij directory edit is live). The 8 live governance role prompts that cite the roadmap path are re-pointed with `pij directory edit` (docs-system runs it; the writer commits).",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0007",
-          "note": "runs at merge: ac7-repoint.sh runs right after this PR merges (dry run for the 8 roles in assets/evidence/phase-2.md); a states PR records the writer commits and checks AC7"
+          "receipt": "assets/evidence/phase-2.md#ac7-governance-re-point (8 path edits after #160 merged: governance a93a486 to 869ad9f; workstream wording: coder 5e3715f, pm-001 a127e0e)"
         },
         {
           "id": "ac-0008",
@@ -94,8 +95,9 @@
         {
           "id": "ac-0009",
           "claim": "Docs and states. In this PR: workstream 001 s16 goes to complete (plan cell docs/plans/210-workstreams); the amended and new PRD rows go to shipped where this PR delivers them. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0009"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0009",
+          "receipt": "assets/evidence/phase-2.md#verdicts-and-states (#160 merged at 09aa310: CI green at 4a0bc62, Delivers line, ddocs-check; verdicts bobcat 329c018, squirrel c1216cf, ocelot ecbbf94)"
         }
       ]
     },
@@ -105,16 +107,16 @@
         {
           "id": "ph-00d2",
           "title": "Phase 1: workstream docs (docs-system)",
-          "state": "unchecked",
+          "state": "checked",
           "brief": "AC1 schema (.dd/schemas/pij/workstream, alongside the roadmap one), AC3 skill workstream.md, AC4 PRD 001 amendments and new rows, AC5 templates v3, without moving any folder (nothing breaks). Holder: docs-system (pij-leading-guan). One PR.",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         },
         {
           "id": "ph-00d3",
           "title": "Phase 2: rename, code paths, coverage sensor (coder)",
-          "state": "unchecked",
+          "state": "checked",
           "brief": "After phase 1 merges: AC2 git mv roadmaps to workstreams with schema id pij/workstream, every code path that reads docs/project/roadmaps (directory needs fold from #141, delivered, claims, routes) updated in the same PR, AC6 coverage sensor in harness checks and just self-check, AC7 governance role prompts re-pointed with pij directory edit, AC8 cost, AC9 states. Holder: coder (pij-following-marsupial). One PR.",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "tasks": "assets/tasks/phase-2/tasks.dd.json#tasks"
         }
       ]
     },

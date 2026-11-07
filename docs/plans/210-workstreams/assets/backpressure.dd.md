@@ -22,13 +22,13 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | bp-0001 | AC1 | ph-00d2 | BUILD | computational | BUILD: fixtures for nesting across files, an umbrella marked complete with an open child (fails), lanes, and a cross-file depends_on; ddocs validate passes the good ones and fails the bad ones by name. | [x] checked | — | — | crates/ |
 | bp-0002 | AC2 | ph-00d2 | BUILD | computational | BUILD: ddocs validate and build on docs/project pass; `pij claim workstream` returns 002; grep finds no live 'docs/project/roadmaps' outside history and the alias. | [x] checked | — | — | crates/ |
-| bp-0003 | AC3 | ph-00d2 | BUILD | computational | BUILD: skill tests and pij-skill-check pass; the router links workstream.md; old roadmap.md links resolve (a one-line pointer) or are updated. | [ ] unchecked | — | — | crates/ |
-| bp-0004 | AC4 | ph-00d2 | BUILD | computational | BUILD: ddocs validate passes; the AC6 sensor reports zero undelivered rows and zero unbuilt components on the head. | [ ] unchecked | — | — | crates/ |
-| bp-0005 | AC5 | ph-00d2 | BUILD | computational | BUILD: template tests; v1 bytes unchanged (hash test); v2 validates. | [ ] unchecked | — | — | crates/ |
+| bp-0003 | AC3 | ph-00d2 | BUILD | computational | BUILD: skill tests and pij-skill-check pass; the router links workstream.md; old roadmap.md links resolve (a one-line pointer) or are updated. | [x] checked | — | — | crates/ |
+| bp-0004 | AC4 | ph-00d2 | BUILD | computational | BUILD: ddocs validate passes; the AC6 sensor reports zero undelivered rows and zero unbuilt components on the head. | [x] checked | — | — | crates/ |
+| bp-0005 | AC5 | ph-00d2 | BUILD | computational | BUILD: template tests; v1 bytes unchanged (hash test); v2 validates. | [x] checked | — | — | crates/ |
 | bp-0006 | AC6 | ph-00d2 | BUILD | computational | BUILD: the stage passes on the head; deleting a delivers link makes it fail naming the row. | [x] checked | — | — | crates/ |
-| bp-0007 | AC7 | ph-00d2 | BUILD | computational | EXISTS: each role.dd.json cites docs/project/workstreams; `pij directory view` shows no stale path. | [ ] unchecked | — | — | crates/ |
+| bp-0007 | AC7 | ph-00d2 | BUILD | computational | EXISTS: each role.dd.json cites docs/project/workstreams; `pij directory view` shows no stale path. | [x] checked | — | — | crates/ |
 | bp-0008 | AC8: cost | ph-00d2 | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [x] checked | Docs and a sensor that runs once per `harness checks`; no daemon change beyond what #131 already carries. No loop, poll, timer or launch site. | — | pij-rs --json ping |
-| bp-0009 | AC9: docs and states | ph-00d2 | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
+| bp-0009 | AC9: docs and states | ph-00d2 | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [x] checked | — | — | docs/project/ |
 
 <a id="sensors"></a>
 
