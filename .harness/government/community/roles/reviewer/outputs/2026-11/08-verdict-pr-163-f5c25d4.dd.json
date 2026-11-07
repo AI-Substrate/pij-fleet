@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b78c-ff7a-7f42-9766-8055f126dc0a",
+				"date": "2026-11-08",
+				"head": "f5c25d425edead58c176cacebd188ca3ac6fa1b8",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:163",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Exact-head CI run 42406082763, junit-linux: all 6 route_inventory_tests executed",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/42406082763"
+				},
+				{
+					"command": "Executable cache-suffix contract model with intact-tree positive control",
+					"exit_code": 0,
+					"log": "Full walk refuses after suffix reparenting while all specified cache-hit checks accept; design counterexample only"
+				},
+				{
+					"command": "Pinned axum 0.8.9 isolated GET/HEAD/PUT fixture, offline just shared-build",
+					"exit_code": 0,
+					"log": "GET 200 effects=1; HEAD 200 effects=2; PUT 405 effects=2"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #163 correctness verdict\n\n**BLOCK** at `f5c25d425edead58c176cacebd188ca3ac6fa1b8`. Whole PR: route-inventory sensor, integration, plan AC1-AC4 and revised workshop. No product code, canonical plan state or review-worktree HEAD was changed.\n\n## F001, P2: cached suffix ancestry can become stale while every hit check passes\n\n`docs/plans/221-seat-provenance/workshops/001-capability-bootstrap.md:111-127`\n\nThe new prefix check improves the previous reviewer F002, but it does not prove that the cached ancestor still belongs to its recorded harness boundary. The walk stops at its first cache hit (115), and the four hit rechecks (118-122) verify starts, incarnation state and session cardinality, not the cached suffix's current parent edges.\n\nCounterexample: live harness H owns one incarnation; its descendant chain is H -> intermediary M -> cached shell S -> fresh shim P. Cache S's pid/start -> H's pid/start. M dies and S is reparented outside H, while S and H retain their original pid/start values and H's incarnation remains current. P's fresh prefix still reaches S. Every specified hit recheck succeeds, but a full current walk from P reaches the system root, not H. None of the listed incarnation/session invalidation events occurs. Line 127's claim that a reparented process can no longer reach the cached ancestor is false when that ancestor itself was reparented.\n\nAn executable model of the stated contract passes the intact-tree positive control, then shows full-walk REFUSE versus specified-cache ACCEPT after changing only that suffix. This is a design counterexample, not a reproduced defect in a shipped capability implementation: phase 1 contains no such implementation.\n\n**Fix:** specify current evidence for the complete cached ancestor-to-boundary suffix and the nearest-boundary constraint, including intermediate-parent death/reparenting. The simplest safe contract is to walk all the way to the boundary on each tokenless request and cache only lookup metadata, not ancestry authorization. Keep the D=16 bound, fail-closed readers and zero-launch requirement, and update the cache-hit budget. A retained shortcut needs an explicit sound mechanism and a regression for this counterexample.\n\n## F002, P2: the inventory omits served HEAD pairs\n\n`crates/daemon/src/http/route_inventory_tests.rs:28-34,156-176`; `harness/scripts/route-inventory.json`\n\nThe probe checks only GET, POST, PUT, PATCH and DELETE. Axum 0.8.9, pinned by this PR, automatically routes HEAD through each GET handler unless HEAD is overridden. Production composition uses those GET routes (`crates/daemon/src/http/mod.rs:645-696`), including inbox claiming and background-owner reads.\n\nThe inventory has 12 GET pairs and no HEAD entries, so it covers 64 pairs while the router also serves 12 omitted HEAD pairs. Those include `HEAD /v1/inbox`, `HEAD /v1/bg` and `HEAD /v1/bg/{job}/tail`, not just health reads. The sensor stays green because it never probes them. An explicit HEAD-only method added later would also escape this probe.\n\nAn isolated fixture using the pinned axum version verified GET=200, HEAD=200 with the same handler effect executed, and PUT=405 without that effect. This is framework execution plus the production route composition, not a request to the live fleet.\n\n**Fix:** probe all supported standard HTTP methods, including HEAD, and classify every served pair. Add the current implicit HEAD entries with their corresponding authorities and test a served HEAD pair omitted from the inventory. Correct the inventory/evidence totals. If the intended artifact instead normalizes implicit HEAD to GET, explicitly change that contract and still detect/classify independently registered HEAD handlers; the current \"every served method/path pair\" claim is not true.\n\n## AC dispositions and prior-review closure\n\n| Criterion | Disposition |\n| --- | --- |\n| AC1 | Blocked by F002. The real-router probe is independent of the JSON, catches the five extra GET/POST methods, and has tests for missing, stale, repeated, malformed, invalid-classification and job-token mismatches. |\n| AC2 | Blocked by F001. Options, client/lifecycle coverage, issuer-first, nonce/incarnation transactions, connection-derived UCred, caller/target separation, operation-level gates, positive rollout execution and negative missing-capability evidence are present. |\n| AC3 | Phase 1 adds no daemon runtime loop, poll, timer, sweep or launch. The new sensor makes one JSON read and 59 x 5 bounded requests per explicit gate invocation, independent of live-seat count. Future authentication budgets are stated as unmeasured and require phase-2 proof. |\n| AC4 | API section, difficulty entry, follow-up waves and `Delivers: none` are present. AC2/AC4 and their dependent states honestly remain unchecked pending verdicts. |\n\nPrevious reviewer F001's false macOS-ps premise is corrected: the named parent/start readers are in-process, and unreadable evidence refuses instead of launching a fallback. Previous F002 is only partially closed, as F001 above explains. The other prior phase-2 conditions are explicitly addressed: secured issuance before counting/gating, ownership rather than public precedence, tokenless shared-host ambiguity refusal, context grant not yet a capability, and positive/negative rollout evidence. q-02 through q-04 remain prime-owned and undecided; the same-user private-state residual is described as a limit, not a detector.\n\n## N001: this head is no longer final against main\n\nIndependent `node harness/scripts/pr-freeze.ts 163` found ls-remote/gh head agreement, a clean detached worktree and successful latest exact-head CI checks, but reported **NOT FINAL: DIRTY** against main. The PM was informed. This verdict reviews only the requested exact SHA; reconciliation needs a fresh pinned review subject.\n\n## Validation and limits\n\n- Exact-head CI run `42406082763` succeeded. Its downloaded `junit-linux` artifact confirms all **six** tests present in `http::route_inventory_tests` executed and passed, including the real-router inventory test. The PR's prose says seven; this review relies on the executed source tests, not that count.\n- Canonical plan, backpressure and phase task documents each passed `ddocs validate` with zero errors/warnings. `harness plan validate --complete` reported zero errors, zero contradictions/orphans and nine expected open-state warnings; it is not whole-plan completion proof.\n- `git diff --check origin/main...HEAD` passed. The assigned product worktree stayed clean at the requested full SHA.\n- The cache-contract model and pinned-axum method fixture each had positive and negative controls. The fixture compiled offline through `just shared-build`, with an isolated target, CARGO_INCREMENTAL=0 and the prescribed nice/background-QoS build policy; execution was nice-only.\n- No local node_modules installation or symlink, live-daemon calls, credential-file reads, product mutations, merge or push. TS/lint/workspace-suite evidence is exact-head CI, not a local full `harness checks` run. Security and live performance verdicts remain their respective roles' work.\n"
+		}
+	]
+}
