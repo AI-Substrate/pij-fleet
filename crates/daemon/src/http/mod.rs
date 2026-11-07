@@ -222,7 +222,7 @@ enum Endpoint {
 }
 
 impl Endpoint {
-    const ALL: [Self; 59] = [
+    const ALL: [Self; 60] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -2182,17 +2182,18 @@ pub(crate) async fn note_turn_wait(state: &AppState, to: &SeatId, receipt: &mut 
 pub const REPLY_ANSWER_EVENT_KIND: &str = "request.answered_by_reply";
 
 /// How a reply's sender was established, for the audit: the route, and what
-/// bound the caller to a seat (`pane (derived)`, an asserted id, the shim's
-/// derived subject, or `none`) with the evidence it gave.
+/// bound the caller to a seat (`pane (derived)` or an asserted session id)
+/// with the evidence it gave. A reply is never unbound (C32 (1)).
 pub(crate) type ReplyEvidence = serde_json::Value;
 
-/// Check a reply's sender before anything is sent (S152-001, F88). Only a
-/// send whose `in_reply_to` names a role request is checked. When the caller's
-/// context resolves to a seat, that seat is the sender: a different `from`
-/// is refused `E-RS-REPLY-SENDER`, and context that cannot be resolved is
-/// refused as the identity ladder refuses it. Only a caller with no context
-/// at all is unbound: `from` stands, `answered_by` stamps only the stored
-/// holder, and the event records that nothing bound it.
+/// Check a reply's sender before anything is sent (S152-001, F88; ruling C32).
+/// Only a send whose `in_reply_to` names a role request is checked. When the
+/// caller's context resolves to a seat, that seat is the sender: a different
+/// `from` is refused `E-RS-REPLY-SENDER`, and context that cannot be resolved
+/// is refused as the identity ladder refuses it. A caller with no context at
+/// all is refused `E-RS-REPLY-IDENTITY`, normal or FYI: its `from` is only a
+/// claim, and delivering it would show the recipient a message from a seat
+/// that never sent it (C32 (1); security review of #152, S152-001).
 pub(crate) async fn reply_sender(
     state: &AppState,
     route: &'static str,
@@ -2205,12 +2206,22 @@ pub(crate) async fn reply_sender(
     };
     match state.services.governance.store().role_request(id).await {
         Ok(Some(_)) => {}
-        _ => return Ok(None),
+        Ok(None) => return Ok(None),
+        // Unknown whether it is a request, so unknown whether it must bind.
+        Err(error) => return Err(Box::new(internal("pij send", error))),
     }
     let pane = caller.and_then(|caller| caller.pane.clone());
     let session = caller.and_then(|caller| caller.session_id.clone());
     if pane.is_none() && session.is_none() {
-        return Ok(Some(serde_json::json!({"route": route, "bound": "none"})));
+        return Err(Box::new(refused(
+            "pij send",
+            format!(
+                "E-RS-REPLY-IDENTITY: this reply to request {id} carries no caller identity \
+                 context (no TMUX_PANE or PIJ_SESSION_ID), so pij cannot tell which seat sends \
+                 it, and it never delivers a reply as {from} on that seat's word; send it from \
+                 {from}'s own session"
+            ),
+        )));
     }
     match identity::resolve_seat(state, "pij send", session.clone(), pane.clone()).await {
         identity::Resolved::Seat(seat, by) if seat.id != *from => Err(Box::new(refused(
@@ -2232,8 +2243,7 @@ pub(crate) async fn reply_sender(
         }))),
         // Known evidence that does not resolve (a pane that contradicts the
         // asserted id, an unregistered pane, a failed read) is refused, never
-        // downgraded to an unbound reply: only a caller with no context at all
-        // is unbound (ruling C32 (2); security review of #152, S152-001).
+        // downgraded to an unbound reply (ruling C32 (2); S152-001).
         identity::Resolved::Refusal(response) => Err(Box::new(response)),
     }
 }

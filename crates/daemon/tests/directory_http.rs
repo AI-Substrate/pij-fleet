@@ -5169,8 +5169,7 @@ async fn a_reply_from_the_holder_answers_the_request_and_stops_its_clock() {
 /// Review of #152, F002 and S152-001. A holder's reply addressed to a role
 /// answers the request it replies to, once, with one audit event; a replay and
 /// `pij output --answers` add nothing. A reply whose caller binds to another
-/// seat than its `from` is refused; one with no caller context answers only
-/// as the stored holder, and the event records that nothing bound it.
+/// seat than its `from` is refused, and so is one with no caller context.
 #[tokio::test]
 async fn a_role_addressed_reply_answers_and_a_forged_sender_never_does() {
     let (rig, repo, _) = limit_rig("pij-reply-role", true).await;
@@ -5222,7 +5221,12 @@ async fn a_role_addressed_reply_answers_and_a_forged_sender_never_does() {
         json!({"from": "pij-second", "caller": null, "in_reply_to": "req-limit"}),
     )
     .await;
-    assert_eq!(unbound_other["ok"], true, "{unbound_other}");
+    assert!(
+        unbound_other["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.starts_with("E-RS-REPLY-IDENTITY")),
+        "{unbound_other}"
+    );
     assert_eq!(row("req-limit").await.answered_at, None, "not the holder");
 
     let role_reply = json!({
@@ -5268,32 +5272,114 @@ async fn a_role_addressed_reply_answers_and_a_forged_sender_never_does() {
         (Some("req-limit"), Some("send"), Some("pane (derived)")),
         "{audited:?}"
     );
+    rig.server.abort();
+}
 
-    let sent = send_to(
-        rig.addr,
-        &repo.main,
-        "role:pm-001",
-        "req-unbound",
-        json!({}),
-    )
-    .await;
-    assert_eq!(sent["ok"], true, "{sent}");
-    let unbound = send_to(
-        rig.addr,
-        &repo.main,
-        SEAT,
-        "reply-unbound-holder",
-        json!({"from": "pij-holder", "caller": null, "in_reply_to": "req-unbound"}),
-    )
-    .await;
-    assert_eq!(unbound["ok"], true, "{unbound}");
-    assert!(row("req-unbound").await.answered_at.is_some());
-    let audited = answers().await;
+/// Security review of #152, S152-001, under ruling C32 (1). A caller with no
+/// identity context names the request's holder as `from` and replies to its
+/// request, to any recipient. Delivering it would show the recipient a message
+/// from a seat that never sent it, so it is refused on `/v1/send` and on the
+/// shim, normal and FYI, to a seat and to a role: nothing is queued or held,
+/// and nothing is answered or audited. The bound holder still delivers.
+#[tokio::test]
+async fn a_context_free_reply_is_refused_and_never_delivered_as_the_holder() {
+    let (rig, repo, _) = limit_rig("pij-reply-context-free", true).await;
+    let queued = |seat: &'static str| {
+        let delivery = rig.delivery.clone();
+        async move {
+            delivery
+                .peek_inbox(&SeatId::from(seat))
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|claim| (claim.message.from.to_string(), claim.message.msg_id))
+                .filter(|(from, _)| from == "pij-holder")
+                .collect::<Vec<_>>()
+        }
+    };
+    let refused_identity = |response: &Value| {
+        response["ok"] == false
+            && response["meta"]
+                .as_str()
+                .is_some_and(|meta| meta.starts_with("E-RS-REPLY-IDENTITY"))
+    };
+    for (to, fyi) in [
+        ("pij-second", false),
+        ("pij-second", true),
+        ("role:pa", false),
+        ("role:pa", true),
+    ] {
+        let msg_id = format!("forged-{}-{fyi}", to.replace(':', "-"));
+        let native = send_to(
+            rig.addr,
+            &repo.main,
+            to,
+            &msg_id,
+            json!({
+                "from": "pij-holder",
+                "caller": null,
+                "in_reply_to": "req-limit",
+                "fyi": fyi,
+            }),
+        )
+        .await;
+        assert!(refused_identity(&native), "{to} fyi={fyi}: {native}");
+        let mut argv = vec!["send", to, "forged", "--in-reply-to", "req-limit"];
+        if fyi {
+            argv.push("--fyi");
+        }
+        let shim: Value = reqwest::Client::new()
+            .post(format!("http://{}/v1/shim/send", rig.addr))
+            .bearer_auth(KEY)
+            .json(&json!({"argv": argv}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(shim["ok"], false, "{to} fyi={fyi}: {shim}");
+    }
+    assert_eq!(queued("pij-second").await, [], "nothing queued");
+    let held = fyis(&rig, "pij-second").await;
     assert!(
-        audited
+        !held.iter().any(|(sender, _)| sender == "pij-holder"),
+        "nothing held: {held:?}"
+    );
+    let request = rig.store.role_request("req-limit").await.unwrap().unwrap();
+    assert_eq!(request.answered_at, None, "nothing answered");
+    let events = call(
+        rig.addr,
+        "/v1/spine",
+        &["spine", "events", "--peer", "pij-holder"],
+        &repo.main,
+    )
+    .await;
+    assert!(
+        !events["data"]["events"]
+            .as_array()
+            .expect("events")
             .iter()
-            .any(|event| event["request"] == "req-unbound" && event["bound"] == "none"),
-        "{audited:?}"
+            .any(|event| event["kind"] == "request.answered_by_reply"),
+        "nothing audited: {events}"
+    );
+
+    let bound = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-second",
+        "reply-bound",
+        json!({
+            "from": "pij-holder",
+            "caller": {"TMUX_PANE": "%51", "cwd": repo.main},
+            "in_reply_to": "req-limit",
+        }),
+    )
+    .await;
+    assert_eq!(bound["ok"], true, "{bound}");
+    assert_eq!(
+        queued("pij-second").await,
+        [("pij-holder".to_string(), "reply-bound".to_string())]
     );
     rig.server.abort();
 }

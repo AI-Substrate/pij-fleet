@@ -1462,8 +1462,11 @@ async fn run(cli: Cli) -> ExitCode {
                     }
                 }
             };
-            // A control keeps its own caller field; only a role message carries one here.
+            // A control keeps its own caller field; a role message and a reply
+            // carry one here, since the daemon binds a reply to its caller
+            // (ruling C32; review of #152, S152-001).
             let to_role = to.seat.as_str().starts_with("role:") && command.is_none();
+            let caller = message_caller(to_role, in_reply_to.is_some(), command.is_some());
             let request = SendRequest {
                 from: acting,
                 to,
@@ -1477,7 +1480,7 @@ async fn run(cli: Cli) -> ExitCode {
                 reply,
                 limit,
                 project,
-                caller: to_role.then(caller_context),
+                caller,
             };
             if to_role {
                 let mut response = client.send_role(&request).await;
@@ -2385,6 +2388,12 @@ fn shell_pwd() -> PathBuf {
         }
         _ => cwd,
     }
+}
+
+/// The caller evidence a non-control send carries: a role message's and a
+/// reply's. A control sends its own.
+fn message_caller(to_role: bool, reply: bool, control: bool) -> Option<CallerContext> {
+    (!control && (to_role || reply)).then(caller_context)
 }
 
 fn caller_context() -> CallerContext {
@@ -4677,6 +4686,22 @@ PEC notice";
             panic!("expected send");
         };
         assert_eq!(body_file.as_deref(), Some("-"));
+    }
+
+    /// Review of #152, S152-001: the daemon refuses a reply to a role request
+    /// that carries no caller context, so a seat's reply sends its own.
+    #[test]
+    fn a_reply_carries_its_caller_and_a_plain_seat_send_does_not() {
+        assert!(super::message_caller(false, true, false).is_some(), "reply");
+        assert!(super::message_caller(true, false, false).is_some(), "role");
+        assert!(
+            super::message_caller(false, false, false).is_none(),
+            "plain"
+        );
+        assert!(
+            super::message_caller(false, true, true).is_none(),
+            "control"
+        );
     }
 
     #[test]
