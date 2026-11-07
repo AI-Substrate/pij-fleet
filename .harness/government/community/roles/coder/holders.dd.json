@@ -263,6 +263,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-back-tapir",
 					"why": "plan 219 F47 modal-stall detector"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T14:30:09.341Z",
+					"harness": "copilot",
+					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
+					"instance_key": "220",
+					"machine": "ops.osk.lan",
+					"seat": "pij-back-tapir",
+					"why": "plan 220 PR freeze check (F92)"
 				}
 			]
 		}
