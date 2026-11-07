@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "fcfca246416d1afe02fae88cd72f866522d3d58b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/153#issuecomment-6708925859",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:153",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: block** at `fcfca246416d1afe02fae88cd72f866522d3d58b`.\n\nThis fresh assessment supersedes the security pass at the same head. F004 is a security-relevant old-incarnation authorization failure, not correctness-only bookkeeping or the accepted F88 identity residual. Clarified C32 and F003's grant-withholding closure remain unchanged.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/daemon/src/http/mod.rs | 1104-1119 | Cancellation drops registration exclusion while its owned replacement write continues, admitting stale-incarnation effects | 9/10 |\n\nNative registration's `reports.exclusive()` guard belongs to the request waiter. Its admitted mutation does not: EventBus transfers publication exclusion into a spawned task (`crates/daemon/src/events/mod.rs:137-143`), and the SQLite write is independently owned (`crates/store/src/registry.rs:350-383`; `crates/store/src/migrate.rs:43-55`).\n\nA feasible cancellation interleaving is:\n\n1. Replacement registration holds reports exclusion and publication admission while its put waits for SQLite's write lock.\n2. Cancellation drops the reports guard, but the admitted put/publication survives.\n3. An old report enters `apply`, reads the still-old row under WAL, passes old process/token validation and queues its activity publication behind replacement.\n4. Replacement commits the new process. The queued old activity write then updates the replacement by seat ID, without an expected-process predicate (`crates/store/src/registry.rs:485-487`).\n5. `apply` records old context and advances generation without revalidating after that awaited mutation (`crates/daemon/src/reported_context.rs:153-176`).\n\nCancellation occurs before the original registration reaches grant rotation. The replacement row nevertheless makes newly checked old-token reports unauthorized; this already-checked request crosses that incarnation boundary. Old activity/context can corrupt replacement signals, potentially bypassing the cold-wake brake or misrepresenting size. No grant theft or asserted victim identity is required.\n\nMake reports-exclusion ownership follow the cancellation-independent replacement operation through commit and grant rotation, not merely its caller. Add the missing cancellation regression: block an admitted replacement put, cancel its waiter, let an old report validate/queue, then release the write and assert replacement activity/context/generation receive no stale effects. The sequential rotation and registration-waiting tests do not cover this ownership mismatch.\n\n**Proof and scope:** current-head source trace, independently assessed from bobcat's F004 lead. No local reproduction, builds/tests, credential reads, live probes or code changes. Prior exact-head CI remains green, with 2,099 passing cases; it does not contain this cancellation regression. S153-002's non-cancelled size-report revalidation is repaired, but that repair does not survive this cancellation boundary. The accepted req-10 residual and C32 capability-exchange audit disposition are not reopened.\n"
+		}
+	]
+}
