@@ -49,6 +49,15 @@
 					"seat": "pij-thrifty-marten",
 					"to": "2026-11-06T09:13:26.189Z",
 					"why": "verdict on #147 (plan 213)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T07:31:57.870Z",
+					"harness": "copilot",
+					"harness_session": "9c0e641d-2dde-450e-9fc8-aa4cd3cbc1bb",
+					"machine": "ops.osk.lan",
+					"seat": "pij-thorough-ocelot",
+					"why": "fresh performance seat after the 07 Nov reboot"
 				}
 			]
 		}
