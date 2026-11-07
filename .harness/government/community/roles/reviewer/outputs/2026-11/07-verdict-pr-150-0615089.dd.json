@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b4f2-ba34-7a40-9eda-a04470147ddd",
+				"date": "2026-11-07",
+				"head": "06150897749bcb05d72d4319f59014e338beb245",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/150#issuecomment-6704064705",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:150",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #150 merge-resolution review\n\n## A. Verdict\n\n**pass** at `06150897749bcb05d72d4319f59014e338beb245`. No findings.\n\n## B. Scope\n\nOnly the ledger reconciliation from previously approved `6cc92eb8d1ae7e55bdba2d72087a2b8e566e5758` to this merge commit; its other parent is main `e6958e71a1b3ffe2b3dfa38d49ae16be04a1401c`. Imported product changes are outside this rereview.\n\n## C. Row preservation\n\nBoth old and new files contain exactly **77 wave-B rows**, with identical ID multisets and no duplicates, removals or additions. D-WB-46 through D-WB-49 match main's complete row text exactly, retaining F48-F51's resolved dispositions.\n\n## D. Resolution coverage\n\nThe three new closures match the implementation and CI evidence accepted in the #144 review:\n\n- **D-WB-61 / F63:** background-QoS compile step, nice-only test run; doc-only tests use one nice-only invocation. Severity stays medium.\n- **D-WB-63 / F65:** the Delivers CI gate rejects prose and accepts full DD addresses or `Delivers: none`. Severity stays medium.\n- **D-WB-65 / F67:** lineage batch records multiple holdings atomically in one writer commit. Severity stays low.\n\n## E. Evidence\n\n[CI run 42352145334](https://github.com/AI-Substrate/pij-fleet/actions/runs/42352145334) completed successfully at this full head, with all four jobs passed. [Delivers run 42352145326](https://github.com/AI-Substrate/pij-fleet/actions/runs/42352145326) also passed. PR state is CLEAN.\n\n## F. Cost and limits\n\nLedger-only reconciliation: no new loop, timer or launch. This verifies merge preservation and the three closure descriptions, not a new product or security review.\n\n## G. Commands\n\nGitHub merge-parent/diff metadata, old/new/main ledger retrieval, ID/row/severity inspection and exact-head CI metadata. No local builds or tests.\n\n## H. Handover\n\nThe prior ledger approval stands at this new head. No repair owed. Harness feedback is unchanged from the prior review: a lightweight ledger ID-sequence check could replace repeated manual reconciliation checks.\n"
+		}
+	]
+}
