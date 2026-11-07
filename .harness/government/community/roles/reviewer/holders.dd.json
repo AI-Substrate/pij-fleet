@@ -418,6 +418,16 @@
 					"seat": "pij-double-bobcat",
 					"to": "2026-11-07T08:49:45.623Z",
 					"why": "#141 F006 fix + main merges"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T10:50:48.374Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "135",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "#135 round af50381"
 				}
 			]
 		}
