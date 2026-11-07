@@ -8,6 +8,7 @@
 use pij_core::error::Result;
 use sqlx::Row;
 
+use crate::governance::invalid_record;
 use crate::migrate::{begin_write, owned_write, require_current_schema};
 use crate::orchestration::{SqliteOrchestration, adapter_error, sql_i64, sql_u64};
 
@@ -34,8 +35,11 @@ pub struct HeldDelivery {
     pub still_queued: bool,
 }
 
-/// Unflagged rows: holds that ended past the threshold, then deliveries still
-/// queued past it that no digest has shown. Both halves walk a partial index.
+/// One fleet's unflagged rows (`?4`, a JSON array of recipient seats): holds
+/// that ended past the threshold, then deliveries still queued past it that no
+/// digest has shown. Both halves are scoped to the fleet before the order and
+/// the limit, so another fleet's holds never take this one's page; each walks
+/// an index by recipient.
 const HELD_SQL: &str = "\
     SELECT jobs.id AS job_id, jobs.serial_key AS recipient, \
            json_extract(jobs.payload, '$.from') AS sender, jobs.dedupe_key AS msg_id, \
@@ -44,24 +48,36 @@ const HELD_SQL: &str = "\
       FROM held_deliveries INDEXED BY held_deliveries_unflagged \
       JOIN jobs ON jobs.id = held_deliveries.job_id \
      WHERE held_deliveries.flagged_at IS NULL \
+       AND held_deliveries.recipient IN (SELECT value FROM json_each(?4)) \
     UNION ALL \
     SELECT jobs.id, jobs.serial_key, json_extract(jobs.payload, '$.from'), jobs.dedupe_key, \
            (?1 - jobs.enqueued_at) * 1000, 1, jobs.enqueued_at \
-      FROM jobs INDEXED BY jobs_live_delivery \
-     WHERE jobs.state IN ('pending', 'running') AND jobs.kind LIKE 'delivery:%' \
+      FROM jobs INDEXED BY jobs_serial \
+     WHERE jobs.serial_key IN (SELECT value FROM json_each(?4)) \
+       AND jobs.state IN ('pending', 'running') AND jobs.kind LIKE 'delivery:%' \
        AND jobs.enqueued_at <= ?1 - ?2 \
        AND NOT EXISTS (SELECT 1 FROM held_deliveries WHERE held_deliveries.job_id = jobs.id) \
     ORDER BY since, job_id LIMIT ?3";
 
 impl SqliteOrchestration {
-    /// Deliveries held past [`HELD_FLAG_SECS`] that no digest has shown, at
-    /// `now_secs`, oldest first and at most [`HELD_FLAG_LIMIT`].
-    pub async fn unflagged_held_deliveries(&self, now_secs: u64) -> Result<Vec<HeldDelivery>> {
+    /// Deliveries to `recipients` held past [`HELD_FLAG_SECS`] that no digest
+    /// has shown, at `now_secs`, oldest first and at most [`HELD_FLAG_LIMIT`].
+    pub async fn unflagged_held_deliveries(
+        &self,
+        recipients: &[&str],
+        now_secs: u64,
+    ) -> Result<Vec<HeldDelivery>> {
+        if recipients.is_empty() {
+            return Ok(Vec::new());
+        }
         require_current_schema(&self.pool).await?;
+        let recipients = serde_json::to_string(recipients)
+            .map_err(|error| invalid_record(&error.to_string()))?;
         sqlx::query(HELD_SQL)
             .bind(sql_i64(now_secs, "now")?)
             .bind(HELD_FLAG_SECS)
             .bind(HELD_FLAG_LIMIT)
+            .bind(recipients)
             .fetch_all(&self.pool)
             .await
             .map_err(adapter_error)?
@@ -94,7 +110,8 @@ impl SqliteOrchestration {
             let mut tx = begin_write(&pool).await?;
             for id in ids {
                 sqlx::query(
-                    "INSERT INTO held_deliveries (job_id, flagged_at) VALUES (?1, ?2) \
+                    "INSERT INTO held_deliveries (job_id, recipient, flagged_at) \
+                     SELECT id, serial_key, ?2 FROM jobs WHERE id = ?1 \
                      ON CONFLICT (job_id) DO UPDATE SET flagged_at = excluded.flagged_at \
                      WHERE held_deliveries.flagged_at IS NULL",
                 )
@@ -115,8 +132,9 @@ impl SqliteOrchestration {
 mod tests {
     use sqlx::Row;
 
-    /// AC7: the digest's held read walks the two partial indexes and the jobs
-    /// primary key; it never scans job history.
+    /// AC7: the digest's held read walks its recipients' rows through
+    /// `held_deliveries_unflagged` and `jobs_serial` and the jobs primary key;
+    /// it never scans job history or another fleet's holds.
     #[tokio::test]
     async fn the_held_read_never_scans_job_history() {
         let pool = crate::open("").await.expect("memory");
@@ -124,6 +142,7 @@ mod tests {
             .bind(1_000_000_i64)
             .bind(super::HELD_FLAG_SECS)
             .bind(super::HELD_FLAG_LIMIT)
+            .bind(r#"["pij-a","pij-b"]"#)
             .fetch_all(&pool)
             .await
             .expect("plan")
@@ -131,7 +150,7 @@ mod tests {
             .map(|row| row.get::<String, _>("detail"))
             .collect();
         let text = plan.join("\n");
-        for index in ["held_deliveries_unflagged", "jobs_live_delivery"] {
+        for index in ["held_deliveries_unflagged", "jobs_serial"] {
             assert!(
                 plan.iter()
                     .any(|line| line.contains(&format!("INDEX {index}"))),
@@ -142,8 +161,8 @@ mod tests {
             !plan
                 .iter()
                 .any(|line| line.starts_with("SCAN jobs")
-                    && !line.contains("INDEX jobs_live_delivery")),
-            "a scan of jobs:\n{text}"
+                    || line.starts_with("SCAN held_deliveries")),
+            "a scan:\n{text}"
         );
     }
 }

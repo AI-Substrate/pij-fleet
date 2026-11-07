@@ -21,7 +21,7 @@ const COMMAND: &str = "pij steer";
 const USAGE: &str = "expected steer on [<seat>] | off [<seat>] | status [<seat>]";
 
 /// The audit event for a real change.
-pub const STEER_EVENT_KIND: &str = "steer.changed";
+pub const STEER_EVENT_KIND: &str = crate::delivery::STEERING_CHANGED_KIND;
 
 #[derive(Debug, PartialEq, Eq)]
 enum Action {
@@ -206,14 +206,17 @@ pub(crate) async fn steer(
                 from: actor.id.clone(),
                 to: target.id.clone(),
                 body: format!(
-                    "[pij steer] {} turned your mid-turn steering {}: normal sends to you {}. \
+                    "[pij steer] {} turned your mid-turn steering {}: {}. \
                      See it with `pij steer status {}`; change it with `pij steer on|off`.",
                     actor.id,
                     if steer { "on" } else { "off" },
                     if steer {
-                        "now land in a turn you are already in"
+                        "a normal send that arrives during a turn a pij message started now \
+                         goes into that turn"
                     } else {
-                        "now wait for your turn to end"
+                        "after a pij message starts a turn, the next one waits for that turn \
+                         to end, as before C31; a first message into a turn you started \
+                         yourself still goes in at once"
                     },
                     target.id
                 ),

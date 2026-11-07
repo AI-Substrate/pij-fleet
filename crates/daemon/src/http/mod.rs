@@ -1853,6 +1853,22 @@ async fn send(
             }
         }
     }
+    let reply = if request.message.from_machine.is_none() {
+        match reply_sender(
+            &state,
+            "send",
+            &request.message.from,
+            request.message.in_reply_to.as_deref(),
+            request.caller.as_ref(),
+        )
+        .await
+        {
+            Ok(evidence) => evidence,
+            Err(response) => return *response,
+        }
+    } else {
+        None
+    };
     // A send to `role:<id>` resolves through the directory first (plan 199).
     if let Some(response) = role_send::route(
         &state,
@@ -1878,17 +1894,26 @@ async fn send(
     )
     .await
     {
+        // A holder's reply addressed to a role answers too (review of #152, F002).
+        if response.status().is_success() {
+            answered_by(
+                &state,
+                &request.message.from,
+                request.message.in_reply_to.as_deref(),
+                reply,
+            )
+            .await;
+        }
         return response;
     }
     if request.message.fyi {
-        let local = request.message.from_machine.is_none();
         let (from, in_reply_to) = (
             request.message.from.clone(),
             request.message.in_reply_to.clone(),
         );
         let response = hold_fyi(&state, request).await;
-        if local && response.status().is_success() {
-            answered_by(&state, &from, in_reply_to.as_deref()).await;
+        if response.status().is_success() {
+            answered_by(&state, &from, in_reply_to.as_deref(), reply).await;
         }
         return response;
     }
@@ -1965,7 +1990,7 @@ async fn send(
         Ok(mut receipt) => {
             receipt.cold_check = cold_check;
             if !forwarded && !matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
-                answered_by(&state, &reply_from, reply_to.as_deref()).await;
+                answered_by(&state, &reply_from, reply_to.as_deref(), reply).await;
                 note_turn_wait(&state, &note_to, &mut receipt).await;
             }
             envelope(StatusCode::OK, &Envelope::ok("pij send", receipt))
@@ -2001,7 +2026,10 @@ pub(crate) async fn note_turn_wait(state: &AppState, to: &SeatId, receipt: &mut 
                 .mid_turn_steering(seat.id.as_str())
                 .await
             {
-                Ok(false) => "its mid-turn steering is off (`pij steer on` turns it back on)",
+                Ok(false) => {
+                    "its mid-turn steering is off (`pij steer on` turns it back on), so if a pij \
+                     message started this turn"
+                }
                 _ => return,
             }
         }
@@ -2021,14 +2049,103 @@ pub(crate) async fn note_turn_wait(state: &AppState, to: &SeatId, receipt: &mut 
     });
 }
 
-/// A reply from a role request's holder answers it (plan 214, F68).
-pub(crate) async fn answered_by(state: &AppState, from: &SeatId, in_reply_to: Option<&str>) {
-    if in_reply_to.is_none() {
+/// The audit event for a reply that answered a role request (S152-001).
+pub const REPLY_ANSWER_EVENT_KIND: &str = "request.answered_by_reply";
+
+/// How a reply's sender was established, for the audit: the route, and what
+/// bound the caller to a seat (`pane (derived)`, an asserted id, the shim's
+/// derived subject, or `none`) with the evidence it gave.
+pub(crate) type ReplyEvidence = serde_json::Value;
+
+/// Check a reply's sender before anything is sent (S152-001, F88). Only a
+/// send whose `in_reply_to` names a role request is checked. When the caller's
+/// context resolves to a seat, that seat is the sender: a different `from`
+/// is refused `E-RS-REPLY-SENDER`. When it does not resolve (a local caller
+/// with no context), `from` stands, `answered_by` stamps only the stored
+/// holder, and the event records that nothing bound it.
+pub(crate) async fn reply_sender(
+    state: &AppState,
+    route: &'static str,
+    from: &SeatId,
+    in_reply_to: Option<&str>,
+    caller: Option<&CallerContext>,
+) -> std::result::Result<Option<ReplyEvidence>, Box<Response>> {
+    let Some(id) = in_reply_to else {
+        return Ok(None);
+    };
+    match state.services.governance.store().role_request(id).await {
+        Ok(Some(_)) => {}
+        _ => return Ok(None),
+    }
+    let pane = caller.and_then(|caller| caller.pane.clone());
+    let session = caller.and_then(|caller| caller.session_id.clone());
+    if pane.is_none() && session.is_none() {
+        return Ok(Some(serde_json::json!({"route": route, "bound": "none"})));
+    }
+    match identity::resolve_seat(state, "pij send", session.clone(), pane.clone()).await {
+        identity::Resolved::Seat(seat, by) if seat.id != *from => Err(Box::new(refused(
+            "pij send",
+            format!(
+                "E-RS-REPLY-SENDER: this reply to request {id} says it is from {from}, but its caller \
+                 is {} (by {}); a reply answers a request only as the seat that sends it",
+                seat.id,
+                by.as_str()
+            ),
+        ))),
+        identity::Resolved::Seat(seat, by) => Ok(Some(serde_json::json!({
+            "route": route,
+            "bound": by.as_str(),
+            "pane": pane,
+            "session": session,
+            "pid": seat.proc.map(|proc| proc.pid),
+            "proc_start": seat.proc.map(|proc| proc.proc_start),
+        }))),
+        identity::Resolved::Refusal(_) => Ok(Some(serde_json::json!({
+            "route": route,
+            "bound": "none",
+            "pane": pane,
+            "session": session,
+        }))),
+    }
+}
+
+/// A reply from a role request's holder answers it (plan 214, F68): the
+/// stored holder only, once, with one audit event when it did (S152-001).
+pub(crate) async fn answered_by(
+    state: &AppState,
+    from: &SeatId,
+    in_reply_to: Option<&str>,
+    evidence: Option<ReplyEvidence>,
+) {
+    let (Some(id), Some(evidence)) = (in_reply_to, evidence) else {
+        return;
+    };
+    let Ok(now_ms) = system_time_ms() else {
+        return;
+    };
+    if !crate::delivery::role_send::answer_by_reply(&state.services, from, Some(id), now_ms).await {
         return;
     }
-    if let Ok(now_ms) = system_time_ms() {
-        crate::delivery::role_send::answer_by_reply(&state.services, from, in_reply_to, now_ms)
-            .await;
+    let mut payload = serde_json::json!({"request": id, "from": from});
+    if let (Some(payload), serde_json::Value::Object(evidence)) =
+        (payload.as_object_mut(), evidence)
+    {
+        payload.extend(evidence);
+    }
+    if let Err(cause) = state
+        .services
+        .event_bus
+        .publish(Event {
+            seq: None,
+            v: 1,
+            at: now_ms,
+            kind: REPLY_ANSWER_EVENT_KIND.into(),
+            seat: Some(from.clone()),
+            payload: payload.to_string(),
+        })
+        .await
+    {
+        eprintln!("pij-rs: audit of reply {id} from {from} failed: {cause}");
     }
 }
 
@@ -2330,7 +2447,7 @@ struct InboxQuery {
 
 /// The hold a receiver gets for a claim during a turn when its seat's
 /// mid-turn steering is off (plan 214, C31).
-pub const TURN_WAIT_HOLD: &str = "turn-wait: mid-turn steering is off for this seat (pij steer on)";
+pub use crate::delivery::TURN_WAIT_HOLD;
 
 /// Read one inbox message. The default path claims it for explicit client ack;
 /// `peek=true` is observation-only and never changes queue state.
@@ -2371,11 +2488,28 @@ async fn inbox(State(state): State<AppState>, Query(query): Query<InboxQuery>) -
         });
         return native_inbox_reply_steering(&state, &query.seat, page, Some(steer)).await;
     }
+    if !query.during_turn {
+        let result = state
+            .services
+            .delivery
+            .claim_native_inbox(&query.seat, query.wait, &identity)
+            .await;
+        return native_inbox_reply_steering(&state, &query.seat, result, Some(steer)).await;
+    }
+    // Re-read at the hand-off, so a claim that waits sees `off` set meanwhile.
+    let store = state.services.governance.store().clone();
+    let seat = query.seat.clone();
+    let steering = move || {
+        let (store, seat) = (store.clone(), seat.clone());
+        Box::pin(async move { store.mid_turn_steering(seat.as_str()).await })
+            as std::pin::Pin<Box<dyn std::future::Future<Output = Result<bool>> + Send>>
+    };
     let result = state
         .services
         .delivery
-        .claim_native_inbox(&query.seat, query.wait, &identity)
+        .claim_native_inbox_during_turn(&query.seat, query.wait, &identity, &steering)
         .await;
+    let steer = !matches!(&result, Ok(page) if page.held_reason.as_deref() == Some(TURN_WAIT_HOLD));
     native_inbox_reply_steering(&state, &query.seat, result, Some(steer)).await
 }
 

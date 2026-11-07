@@ -1604,7 +1604,7 @@ async fn record_delivered(
     // primary-key insert on the row just written; a message the digest
     // already showed while queued keeps its flag.
     sqlx::query(
-        "INSERT INTO held_deliveries (job_id) SELECT id FROM jobs \
+        "INSERT INTO held_deliveries (job_id, recipient) SELECT id, serial_key FROM jobs \
          WHERE id = ?1 AND acked_at - enqueued_at > ?2 \
      ON CONFLICT (job_id) DO NOTHING",
     )

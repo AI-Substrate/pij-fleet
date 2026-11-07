@@ -948,12 +948,17 @@ export class NativeCompletion {
 	}
 	observe(event, fresh = true, notify = true) {
 		if (this.terminal) return;
+		// A fresh root run end before this message was consumed lets the strict
+		// discard check ask whether the host dropped it. A root abort, error or
+		// fused completion can end a run with no turn_end or idle after it, and a
+		// steer accepted into that run is then cleared unconsumed (review of #152,
+		// F003): those ends count too. The check itself is unchanged.
 		if (
 			fresh &&
 			!this.consumption &&
 			!event.agentId &&
 			nonempty(event.id) &&
-			["assistant.turn_end", "session.idle"].includes(event.type)
+			DISCARD_BOUNDARIES.has(event.type)
 		) {
 			this.boundary = event.id;
 		}
@@ -1039,6 +1044,15 @@ export const RUN_TRIGGERS = new Set([
 	"session.fusion_completed",
 ]);
 
+/** Root run ends that let a not-yet-consumed message be checked for discard. */
+export const DISCARD_BOUNDARIES = new Set([
+	"assistant.turn_end",
+	"session.idle",
+	"abort",
+	"session.error",
+	"session.fusion_completed",
+]);
+
 /** Run state is asked at least this often after consumption, trigger or not. */
 export const RUN_STATE_REASK_MS = 30_000;
 
@@ -1077,6 +1091,8 @@ export class NativeBridge {
 		this.running = undefined;
 		this.unsubscribe = undefined;
 		this.completion = undefined;
+		// Plan 214 (P152-F002): the one watcher for the running pij-started turn.
+		this.turnWatch = undefined;
 		// Plan 214 (C31): the seat's mid-turn steering, as the daemon reported it
 		// with the last claim. Unknown is off: the post-ack barrier holds.
 		this.steerMidTurn = false;
@@ -1389,6 +1405,10 @@ export class NativeBridge {
 						}
 					: undefined;
 				completion?.observe(event);
+				// The turn's watcher hears its run's end live too, when a later
+				// steered message is the current completion (P152-F002).
+				const owner = this.turnWatch?.owner;
+				if (owner && owner !== completion) owner.observe(event);
 				if (metadata)
 					this.emit("native-event", {
 						type: event.type,
@@ -1439,7 +1459,7 @@ export class NativeBridge {
 						this.steerMidTurn && this.completion !== undefined && !this.completion.reported;
 					// The running turn is still reported when it ends, while the
 					// receiver waits in a claim.
-					const turnEnded = duringTurn ? this.settleInBackground(this.completion) : undefined;
+					const turnEnded = duringTurn ? this.watchTurn(this.completion) : undefined;
 					const { claims, hold, steer } = await this.client.claimInbox(
 						this.tuple(),
 						signal,
@@ -1545,19 +1565,51 @@ export class NativeBridge {
 	}
 	/**
 	 * Report `completion` when its turn ends, without blocking the receiver
-	 * (plan 214, C31). Once per completion; a failure surfaces to whoever
-	 * awaits the result, never as an unhandled rejection.
+	 * (plan 214, C31). One watcher per turn, however many messages are steered
+	 * into it (review of #152, P152-F002): the turn's first message owns the
+	 * watcher (one history cursor, one run-state question per trigger or re-ask),
+	 * and each later message joins it and is reported, with its own msg id, when
+	 * the owner's run ends. A run that has ended means nothing of it is still
+	 * processing or steering, so a message consumed in it has ended too. A
+	 * message never joins a watcher whose owner already saw its end: it starts
+	 * the next turn's. A failure surfaces to whoever awaits the result, never as
+	 * an unhandled rejection, and the next caller starts a fresh watcher.
 	 */
-	settleInBackground(completion) {
-		if (!completion.settling) {
-			const settling = this.waitForCompletion(completion);
-			completion.settling = settling;
-			// A failed wait is retried by the next caller, as the blocking wait is.
-			settling.catch(() => {
-				if (completion.settling === settling) completion.settling = undefined;
-			});
+	watchTurn(completion) {
+		if (completion.settling) return completion.settling;
+		const watch = this.turnWatch;
+		if (watch && !watch.owner.terminal && !watch.failed) {
+			watch.members.add(completion);
+			completion.settling = watch.settling;
+			return watch.settling;
 		}
-		return completion.settling;
+		const next = { owner: completion, members: new Set([completion]), failed: false };
+		next.settling = this.waitForCompletion(completion).then(() => {
+			for (const member of next.members)
+				if (member !== completion) this.reportShared(member, completion);
+		});
+		next.settling.catch(() => {
+			next.failed = true;
+			for (const member of next.members)
+				if (member.settling === next.settling) member.settling = undefined;
+			if (this.turnWatch === next) this.turnWatch = undefined;
+		});
+		this.turnWatch = next;
+		completion.settling = next.settling;
+		return next.settling;
+	}
+	/** A message steered into `owner`'s turn ended with it. */
+	reportShared(member, owner) {
+		if (member.reported) return;
+		member.terminal ??= owner.terminal;
+		member.reported = true;
+		this.emit("native-completed", {
+			msgId: member.msgId,
+			nativeMessageId: member.nativeId,
+			...owner.terminal,
+			turnOwnerMsgId: owner.msgId,
+			grade: "observed-native-terminal-not-model-success",
+		});
 	}
 	async waitForCompletion(completion = this.completion) {
 		if (completion.reported) return;

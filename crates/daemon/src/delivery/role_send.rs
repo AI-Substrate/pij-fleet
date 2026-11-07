@@ -902,9 +902,9 @@ pub async fn answer_by_reply(
     from: &SeatId,
     in_reply_to: Option<&str>,
     now_ms: u64,
-) {
+) -> bool {
     let Some(id) = in_reply_to else {
-        return;
+        return false;
     };
     let store = services.governance.store();
     match store.role_request(id).await {
@@ -912,12 +912,19 @@ pub async fn answer_by_reply(
             if request.state == RequestState::Delivered
                 && request.holder.as_deref() == Some(from.as_str()) =>
         {
-            if let Err(cause) = store.mark_role_request_answered(id, now_ms).await {
-                eprintln!("pij-rs: reply to request {id} not recorded as its answer: {cause}");
+            match store.mark_role_request_answered(id, now_ms).await {
+                Ok(stamped) => stamped,
+                Err(cause) => {
+                    eprintln!("pij-rs: reply to request {id} not recorded as its answer: {cause}");
+                    false
+                }
             }
         }
-        Ok(_) => {}
-        Err(cause) => eprintln!("pij-rs: reply to request {id}: {cause}"),
+        Ok(_) => false,
+        Err(cause) => {
+            eprintln!("pij-rs: reply to request {id}: {cause}");
+            false
+        }
     }
 }
 

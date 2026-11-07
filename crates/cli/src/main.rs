@@ -518,6 +518,7 @@ enum Command {
         args: Vec<String>,
     },
     /// Mid-turn steering for a seat: `steer on|off|status [<seat>]` (plan 214).
+    /// Off restores the post-ack barrier for a turn a pij message started.
     Steer {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,

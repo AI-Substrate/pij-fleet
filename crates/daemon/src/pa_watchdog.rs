@@ -1051,18 +1051,15 @@ const fn outcome_word(outcome: &DeliveryOutcome) -> &'static str {
 /// 214, AC2): one read of two partial indexes per digest, constant per digest,
 /// never per seat. A failed read leaves the list empty.
 async fn held_messages(services: &Services, rows: &[FleetRow], now_ms: u64) -> Vec<HeldMessage> {
+    let fleet: Vec<&str> = rows.iter().map(|row| row.seat.id.as_str()).collect();
     match services
         .governance
         .store()
-        .unflagged_held_deliveries(now_ms / 1_000)
+        .unflagged_held_deliveries(&fleet, now_ms / 1_000)
         .await
     {
         Ok(held) => held
             .into_iter()
-            .filter(|held| {
-                rows.iter()
-                    .any(|row| row.seat.id.as_str() == held.recipient)
-            })
             .map(|held| HeldMessage {
                 job_id: held.job_id,
                 recipient: SeatId::from(held.recipient.as_str()),

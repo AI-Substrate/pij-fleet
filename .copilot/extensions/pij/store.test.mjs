@@ -3055,6 +3055,118 @@ test("C31: a turn-wait hold keeps the barrier: the receiver waits for that turn,
 	await run;
 });
 
+/**
+ * Steer `count` more messages into the turn the fixture's first message
+ * starts: each later claim, made during that turn, returns the next one. Each
+ * send gets its own native id and is consumed at once unless `consume` says
+ * otherwise; acks echo their job id. Returns the run-state question counter.
+ */
+function steeredTurn(f, count, consume = () => true) {
+	const messages = Array.from({ length: count }, (_, index) => ({
+		...claim,
+		job_id: claim.job_id + index + 1,
+		message: { ...claim.message, msg_id: `steer-${index + 1}`, body: `steer ${index + 1}` },
+	}));
+	let next = 0;
+	const claims = steering(f, true, (_count, duringTurn) =>
+		duringTurn && next < messages.length ? { claims: [messages[next++]], hold: null } : undefined,
+	);
+	const request = f.client.request.bind(f.client);
+	f.client.request = async (path, body, signal) => {
+		if (path !== "/v1/inbox/ack") return request(path, body, signal);
+		f.trace.push("ack");
+		return body.job_id;
+	};
+	let sends = 0;
+	f.native.send = async (input) => {
+		f.trace.push("send");
+		assert.equal(input.mode, "immediate");
+		const nativeId = sends++ === 0 ? "native-message-137" : `native-steer-${sends}`;
+		if (consume(sends, nativeId))
+			f.history.push({
+				type: "user.message",
+				id: `user-${nativeId}-${sends}`,
+				data: { messageId: nativeId },
+			});
+		return nativeId;
+	};
+	const asks = { processing: 0, queue: 0 };
+	const { metadata, queue } = f.native.rpc;
+	f.native.rpc.metadata = {
+		isProcessing: async () => {
+			asks.processing++;
+			return metadata.isProcessing();
+		},
+	};
+	f.native.rpc.queue = {
+		pendingItems: async () => {
+			asks.queue++;
+			return queue.pendingItems();
+		},
+	};
+	return { claims, asks, messages };
+}
+
+test("C31: many messages steered into one running turn share one turn watcher and are each reported once", async (t) => {
+	const f = fixture({ delay: () => flush() });
+	t.after(() => f.bridge.stop());
+	const steers = 6;
+	const { asks } = steeredTurn(f, steers);
+	f.runState.processing = true;
+	const run = f.bridge.run();
+	for (let i = 0; i < 40; i++) await flush();
+	assert.equal(f.trace.filter((x) => x === "ack").length, steers + 1, "every message acked");
+	assert.equal(
+		f.reports.filter((e) => e.kind === "completion-wait").length,
+		1,
+		"one turn watcher, not one per steered message",
+	);
+	const asked = asks.processing;
+	for (let i = 0; i < 40; i++) await flush();
+	assert.equal(asks.processing, asked, "no run-state questions while the turn runs untriggered");
+	endOwnedTurn(f);
+	for (let i = 0; i < 20; i++) await flush();
+	const completed = f.reports.filter((e) => e.kind === "native-completed");
+	assert.deepEqual(
+		completed.map((e) => e.msgId).sort(),
+		[claim.message.msg_id, ...Array.from({ length: steers }, (_, i) => `steer-${i + 1}`)].sort(),
+		"each message reported once",
+	);
+	assert.ok(asks.processing - asked <= 2, `one question for the turn's end, not ${steers + 1}`);
+	f.bridge.stop();
+	await run;
+});
+
+test("C31: a steer cleared by a root abort before consumption is resent once, and receiving resumes", async (t) => {
+	const f = fixture({ delay: () => flush() });
+	t.after(() => f.bridge.stop());
+	// The steer (second send) is accepted but never consumed; its resend is.
+	const { claims, messages } = steeredTurn(f, 2, (send) => send !== 2);
+	f.runState.processing = true;
+	const run = f.bridge.run();
+	for (let i = 0; i < 20; i++) await flush();
+	assert.equal(f.trace.filter((x) => x === "send").length, 2, "the steer was accepted");
+	assert.equal(f.trace.filter((x) => x === "ack").length, 1, "only the first is acked so far");
+	f.runState.steeringMessages = ["[pij from pending steer"];
+	await flush();
+	// Copilot aborts the run: the steer is cleared from its queue, and the only
+	// end is the root abort (no turn_end, no idle).
+	f.runState.steeringMessages = [];
+	f.endRun({ type: "abort", id: "root-abort", data: { reason: "user_initiated" } });
+	for (let i = 0; i < 40; i++) await flush();
+	const sends = f.trace.filter((x) => x === "send").length;
+	assert.equal(sends, 4, "steer 1 resent exactly once, then steer 2 delivered");
+	assert.equal(
+		f.reports.filter((e) => e.kind === "native-requeued" && e.msgId === messages[0].message.msg_id)
+			.length,
+		1,
+	);
+	assert.equal(f.trace.filter((x) => x === "ack").length, 3, "no loss and no duplicate ack");
+	assert.ok(claims.length >= 3, "receiving resumed after the recovery");
+	f.bridge.stop();
+	await run;
+});
+
 for (const type of ["session.idle", "session.error"]) {
 	test(`native-event diagnostics report the completion's pre-state for a healthy ${type}`, async (t) => {
 		const f = fixture();

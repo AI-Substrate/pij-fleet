@@ -9,18 +9,17 @@
 -- A row is written by the ack that ends a hold longer than 15 minutes (the
 -- threshold is `HELD_FLAG_SECS` in the store), or by the digest that shows a
 -- message still queued past it. `flagged_at` is set when a digest shows it.
--- The digest reads only unflagged rows, through the partial index.
+-- A PA's digest reads only its own fleet's unflagged rows, by recipient,
+-- through the partial index, so another fleet's holds never fill its page;
+-- the still-queued half reads each recipient's live jobs through jobs_serial.
 CREATE TABLE held_deliveries (
     job_id     INTEGER PRIMARY KEY,
+    recipient  TEXT NOT NULL,
     flagged_at INTEGER
 ) STRICT;
 
 CREATE INDEX held_deliveries_unflagged
-    ON held_deliveries (job_id) WHERE flagged_at IS NULL;
-
--- Still-queued deliveries, oldest first, for the digest's live half.
-CREATE INDEX jobs_live_delivery
-    ON jobs (enqueued_at) WHERE state IN ('pending', 'running') AND kind LIKE 'delivery:%';
+    ON held_deliveries (recipient, job_id) WHERE flagged_at IS NULL;
 
 -- Mid-turn steering, per seat (C31). A native Copilot seat's extension keeps
 -- claiming while a turn it started is still running and steers each normal

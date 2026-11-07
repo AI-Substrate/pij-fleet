@@ -4178,6 +4178,138 @@ async fn a_reply_from_the_holder_answers_the_request_and_stops_its_clock() {
     );
 }
 
+/// Review of #152, F002 and S152-001. A holder's reply addressed to a role
+/// answers the request it replies to, once, with one audit event; a replay and
+/// `pij output --answers` add nothing. A reply whose caller binds to another
+/// seat than its `from` is refused; one with no caller context answers only
+/// as the stored holder, and the event records that nothing bound it.
+#[tokio::test]
+async fn a_role_addressed_reply_answers_and_a_forged_sender_never_does() {
+    let (rig, repo, _) = limit_rig("pij-reply-role", true).await;
+    let row = |id: &'static str| {
+        let store = rig.store.clone();
+        async move { store.role_request(id).await.unwrap().expect("row") }
+    };
+    let answers = || {
+        let (addr, cwd) = (rig.addr, repo.main.clone());
+        async move {
+            let events = call(
+                addr,
+                "/v1/spine",
+                &["spine", "events", "--peer", "pij-holder"],
+                &cwd,
+            )
+            .await;
+            events["data"]["events"]
+                .as_array()
+                .expect("events")
+                .iter()
+                .filter(|event| event["kind"] == "request.answered_by_reply")
+                .map(|event| {
+                    serde_json::from_str::<Value>(event["payload"].as_str().unwrap()).unwrap()
+                })
+                .collect::<Vec<_>>()
+        }
+    };
+
+    let forged = send_to(
+        rig.addr,
+        &repo.main,
+        SEAT,
+        "reply-forged",
+        json!({"from": "pij-holder", "in_reply_to": "req-limit"}),
+    )
+    .await;
+    assert!(
+        forged["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.starts_with("E-RS-REPLY-SENDER")),
+        "the caller is {SEAT}, not pij-holder: {forged}"
+    );
+    let unbound_other = send_to(
+        rig.addr,
+        &repo.main,
+        SEAT,
+        "reply-unbound-other",
+        json!({"from": "pij-second", "caller": null, "in_reply_to": "req-limit"}),
+    )
+    .await;
+    assert_eq!(unbound_other["ok"], true, "{unbound_other}");
+    assert_eq!(row("req-limit").await.answered_at, None, "not the holder");
+
+    let role_reply = json!({
+        "from": "pij-holder",
+        "caller": {"TMUX_PANE": "%51", "cwd": repo.main},
+        "in_reply_to": "req-limit",
+    });
+    let replied = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pa",
+        "reply-role",
+        role_reply.clone(),
+    )
+    .await;
+    assert_eq!(replied["ok"], true, "{replied}");
+    let answered = row("req-limit")
+        .await
+        .answered_at
+        .expect("answered by a role reply");
+    let replay = send_to(rig.addr, &repo.main, "role:pa", "reply-role", role_reply).await;
+    assert_eq!(replay["ok"], true, "{replay}");
+    assert_eq!(
+        row("req-limit").await.answered_at,
+        Some(answered),
+        "set once"
+    );
+    assert!(
+        !rig.store
+            .mark_role_request_answered("req-limit", answered + 1)
+            .await
+            .unwrap(),
+        "output --answers stamps the same field and finds it set"
+    );
+    let audited = answers().await;
+    assert_eq!(audited.len(), 1, "{audited:?}");
+    assert_eq!(
+        (
+            audited[0]["request"].as_str(),
+            audited[0]["route"].as_str(),
+            audited[0]["bound"].as_str()
+        ),
+        (Some("req-limit"), Some("send"), Some("pane (derived)")),
+        "{audited:?}"
+    );
+
+    let sent = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pm-001",
+        "req-unbound",
+        json!({}),
+    )
+    .await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    let unbound = send_to(
+        rig.addr,
+        &repo.main,
+        SEAT,
+        "reply-unbound-holder",
+        json!({"from": "pij-holder", "caller": null, "in_reply_to": "req-unbound"}),
+    )
+    .await;
+    assert_eq!(unbound["ok"], true, "{unbound}");
+    assert!(row("req-unbound").await.answered_at.is_some());
+    let audited = answers().await;
+    assert!(
+        audited
+            .iter()
+            .any(|event| event["request"] == "req-unbound" && event["bound"] == "none"),
+        "{audited:?}"
+    );
+    rig.server.abort();
+}
+
 fn role_of<'a>(view: &'a Value, id: &str) -> &'a Value {
     view["data"]["roles"]
         .as_array()

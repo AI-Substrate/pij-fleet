@@ -2551,6 +2551,7 @@ async fn forget_delivered_releases_a_claim_on_the_real_adapter() {
 #[tokio::test]
 async fn long_holds_are_listed_for_the_pa_once() {
     use pij_store::HELD_FLAG_SECS;
+    const FLEET: &[&str] = &["pij-a", "pij-b", "pij-c"];
     let fresh = FreshStore::new();
     let pool = pij_store::open(&fresh.path()).await.expect("open");
     let queue = SqliteQueue::new(
@@ -2600,7 +2601,10 @@ async fn long_holds_are_listed_for_the_pa_once() {
             .unwrap();
     }
 
-    let listed = store.unflagged_held_deliveries(now as u64).await.unwrap();
+    let listed = store
+        .unflagged_held_deliveries(FLEET, now as u64)
+        .await
+        .unwrap();
     let seen: Vec<(&str, &str, bool, Option<&str>)> = listed
         .iter()
         .map(|held| {
@@ -2628,7 +2632,7 @@ async fn long_holds_are_listed_for_the_pa_once() {
         .unwrap();
     assert!(
         store
-            .unflagged_held_deliveries(now as u64)
+            .unflagged_held_deliveries(FLEET, now as u64)
             .await
             .unwrap()
             .is_empty()
@@ -2644,10 +2648,114 @@ async fn long_holds_are_listed_for_the_pa_once() {
         .unwrap();
     assert!(
         store
-            .unflagged_held_deliveries(now as u64 + 60)
+            .unflagged_held_deliveries(FLEET, now as u64 + 60)
             .await
             .unwrap()
             .is_empty(),
         "shown while queued, so its ack does not list it again"
     );
+}
+
+/// Review of #152, F001: the held page is scoped to the PA's fleet before its
+/// limit. More than a page of older holds for another fleet never hides this
+/// fleet's one, and flagging it touches none of theirs.
+#[tokio::test]
+async fn another_fleets_older_holds_never_fill_this_fleets_page() {
+    use pij_store::{HELD_FLAG_LIMIT, HELD_FLAG_SECS};
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let queue = SqliteQueue::new(
+        pool.clone(),
+        Config::default().claim_lease_secs,
+        Config::default().delivered_id_capacity,
+    )
+    .expect("queue");
+    let store = pij_store::SqliteOrchestration::new(pool.clone());
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let held = |seat: String, msg: String, age: i64| {
+        let (queue, pool) = (&queue, &pool);
+        async move {
+            let id = queue
+                .enqueue(Job {
+                    kind: format!("delivery:{seat}"),
+                    serial_key: seat.clone(),
+                    payload: format!(r#"{{"from":"pij-sender","to":"{seat}","body":"b"}}"#),
+                    dedupe_key: msg,
+                    dedupe_origin: None,
+                    attempt: 0,
+                })
+                .await
+                .unwrap();
+            sqlx::query("UPDATE jobs SET enqueued_at = ?2 WHERE id = ?1")
+                .bind(id.0 as i64)
+                .bind(now - age)
+                .execute(pool)
+                .await
+                .unwrap();
+            let (claimed, _) = queue
+                .claim(&[format!("delivery:{seat}")], "reader")
+                .await
+                .unwrap()
+                .unwrap();
+            queue
+                .ack_delivery(claimed, DeliveryOrigin::ReaderRead)
+                .await
+                .unwrap();
+        }
+    };
+    let foreign = HELD_FLAG_LIMIT + 10;
+    for n in 0..foreign {
+        held(
+            format!("pij-foreign-{n}"),
+            format!("old-{n}"),
+            HELD_FLAG_SECS * 4 - n,
+        )
+        .await;
+        // A still-queued foreign hold too, older than the local one.
+        queue
+            .enqueue(Job {
+                kind: format!("delivery:pij-waiting-{n}"),
+                serial_key: format!("pij-waiting-{n}"),
+                payload: "{}".to_string(),
+                dedupe_key: format!("wait-{n}"),
+                dedupe_origin: None,
+                attempt: 0,
+            })
+            .await
+            .unwrap();
+    }
+    sqlx::query("UPDATE jobs SET enqueued_at = ?1 WHERE serial_key LIKE 'pij-waiting-%'")
+        .bind(now - HELD_FLAG_SECS * 3)
+        .execute(&pool)
+        .await
+        .unwrap();
+    held("pij-local".into(), "mine".into(), HELD_FLAG_SECS + 60).await;
+
+    let listed = store
+        .unflagged_held_deliveries(&["pij-local"], now as u64)
+        .await
+        .unwrap();
+    let msgs: Vec<&str> = listed.iter().map(|held| held.msg_id.as_str()).collect();
+    assert_eq!(msgs, ["mine"]);
+    store
+        .flag_held_deliveries(&[listed[0].job_id], now as u64)
+        .await
+        .unwrap();
+    assert!(
+        store
+            .unflagged_held_deliveries(&["pij-local"], now as u64)
+            .await
+            .unwrap()
+            .is_empty(),
+        "flagged once"
+    );
+    let unflagged: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM held_deliveries WHERE flagged_at IS NULL")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(unflagged, foreign, "no foreign hold was touched");
 }
