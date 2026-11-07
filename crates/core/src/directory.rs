@@ -65,6 +65,7 @@ Usage:
   pij directory assign <role>[/<instance>] <seat> --why <text>
   pij directory assign --batch <file> --why <text>      many holdings, one commit
   pij directory release <role>[/<instance>] <seat> --why <text>
+  pij directory release --batch <file> --why <text>     many holdings, one commit
   pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>
   pij directory lineage add --batch <file> --why <text>   many past holdings, one commit
   pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]
@@ -169,6 +170,7 @@ Usage:
   pij directory assign <role>[/<instance>] <seat> --why <text> [--project <slug>]
   pij directory assign --batch <file> --why <text> [--project <slug>]
   pij directory release <role>[/<instance>] <seat> --why <text> [--project <slug>]
+  pij directory release --batch <file> --why <text> [--project <slug>]
   pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>
   pij directory lineage add --batch <file> --why <text> [--project <slug>]
 
@@ -178,7 +180,9 @@ pm for pm-<n>, else worker; a prime keeps prime) and names its tmux window
 keeps the window's name). A second live holder of a one-holder role is allowed
 with a warning. --batch takes one `<role>[/<instance>] <seat>` per line (blank
 and # lines skipped) and writes them all in one commit, or none. release closes
-the row. `pij close <seat>` ends every holding.
+the row; release --batch takes the same lines and ends them all in one commit,
+or none. `pij delivered <pr>` ends the holdings a merged PR finished, and
+`pij close <seat>` ends every holding.
 
 lineage add (the prime only) records a closed seat's past holding: no live seat
 needed, no seat role set. Times are RFC 3339 with Z or an offset, or a date

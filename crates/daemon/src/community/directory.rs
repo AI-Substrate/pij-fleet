@@ -133,6 +133,48 @@ pub struct HoldingReceipt {
     pub drained: Vec<Value>,
 }
 
+/// One holding to end: `<role>[/<instance>] <seat>`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReleaseTarget {
+    /// The role id.
+    pub role: String,
+    /// The instance key, or empty.
+    pub instance: String,
+    /// The holding seat.
+    pub seat: String,
+}
+
+impl std::fmt::Display for ReleaseTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{} {}",
+            self.role,
+            instance_suffix(&self.instance),
+            self.seat
+        )
+    }
+}
+
+/// What [`DirectoryService::release_many`] does with a target that is not an
+/// open holding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unmatched {
+    /// Write nothing and name it (`release`, `release --batch`).
+    Refuse,
+    /// Leave it alone and name it (`pij delivered`).
+    Skip,
+}
+
+/// What a release batch ended.
+#[derive(Clone, Debug)]
+pub struct Released {
+    /// One receipt per ended holding, in target order.
+    pub receipts: Vec<HoldingReceipt>,
+    /// The targets left alone ([`Unmatched::Skip`]), each with why.
+    pub skipped: Vec<String>,
+}
+
 /// What a close did to the closed seat's holdings, per project.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct CloseEnds {
@@ -375,10 +417,26 @@ impl DirectoryService {
             let memory = super::memory::freshness(&root.worktree, id).unwrap_or(Value::Null);
             // A retired role routes, owns and needs nothing (plan 206).
             if !retired {
-                actions.extend(picture::actions(
+                let holders_mode = meta["holders"].as_str().unwrap_or("one");
+                let live_holders = mine
+                    .iter()
+                    .filter(|row| row.to.is_none() && live_seats.contains(&row.seat))
+                    .count();
+                // Read only when two-live-holders fires (plan 215, F90).
+                let open: HashMap<String, u64> = if holders_mode == "one" && live_holders > 1 {
+                    self.store
+                        .unanswered_by_holder(project, id)
+                        .await
+                        .map_err(store_error)?
+                        .into_iter()
+                        .collect()
+                } else {
+                    HashMap::new()
+                };
+                actions.extend(picture::actions_weighing(
                     project,
                     id,
-                    meta["holders"].as_str().unwrap_or("one"),
+                    holders_mode,
                     &mine,
                     live_seats,
                     &queued
@@ -387,6 +445,7 @@ impl DirectoryService {
                         .map(|request| request.instance.as_str())
                         .collect::<Vec<_>>(),
                     memory["latest"].as_str(),
+                    &open,
                 ));
             }
             let section = |name: &str| {
@@ -1763,64 +1822,179 @@ impl DirectoryService {
         actor: &SeatId,
         why: &str,
     ) -> Result<HoldingReceipt, Refusal> {
+        let target = ReleaseTarget {
+            role: role.to_string(),
+            instance: instance.to_string(),
+            seat: seat.to_string(),
+        };
+        let released = self
+            .release_many(project, repo, vec![target], actor, why, Unmatched::Refuse)
+            .await?;
+        Ok(released.receipts.into_iter().next().expect("one release"))
+    }
+
+    /// End several holdings in one holders commit (plan 215): `release
+    /// --batch` (F71) and the holdings `pij delivered` ends (F70). With
+    /// [`Unmatched::Refuse`] it is all or nothing, and a refusal names every
+    /// target that is not an open holding. With [`Unmatched::Skip`] those are
+    /// left alone and named in [`Released::skipped`]; when none matches,
+    /// nothing is written. Receipts come back in target order.
+    ///
+    /// # Errors
+    /// [`E_NOT_HELD`] (with `Refuse`, or with `Skip` when nothing matched),
+    /// [`E_ROLE_MISSING`], or any writer refusal; nothing is written.
+    pub async fn release_many(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        targets: Vec<ReleaseTarget>,
+        actor: &SeatId,
+        why: &str,
+        unmatched: Unmatched,
+    ) -> Result<Released, Refusal> {
+        if targets.is_empty() {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "a release batch needs at least one line",
+            ));
+        }
         let pending = self.pending(project).await?;
-        let message = format!(
-            "community: release {role}{} from {seat}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}",
-            instance_suffix(instance)
-        );
-        let (project_id, role_id, instance_key) =
-            (project.to_string(), role.to_string(), instance.to_string());
-        let (seat_id, actor_id, release_why) =
-            (seat.to_string(), actor.to_string(), why.to_string());
+        let subject = match targets.as_slice() {
+            [one] => format!(
+                "community: release {}{} from {}",
+                one.role,
+                instance_suffix(&one.instance),
+                one.seat
+            ),
+            many => format!(
+                "community: release {} holdings\n\n{}",
+                many.len(),
+                many.iter()
+                    .map(ReleaseTarget::to_string)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+        };
+        let message = format!("{subject}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}");
+        let (project_id, actor_id, release_why) =
+            (project.to_string(), actor.to_string(), why.to_string());
         let flush = pending;
+        let wanted = targets.clone();
         let (written, built) = self
             .commit(repo, message, move |root, built| {
-                let mut rows = read_holders(root, &project_id, &role_id)?;
-                built.landed = holders::apply_ends(&mut rows, &flush);
-                let row = rows
-                    .iter_mut()
-                    .rev()
-                    .find(|held| open_for(held, &seat_id, &instance_key))
-                    .ok_or_else(|| {
-                        Refusal::new(
+                let mut roles: Vec<String> = wanted.iter().map(|t| t.role.clone()).collect();
+                roles.sort();
+                roles.dedup();
+                let mut problems = Vec::new();
+                let mut by_role = BTreeMap::new();
+                for role in &roles {
+                    match read_holders(root, &project_id, role) {
+                        Ok(mut rows) => {
+                            built.landed.extend(holders::apply_ends(&mut rows, &flush));
+                            by_role.insert(role.clone(), rows);
+                        }
+                        Err(refusal) if refusal.code == E_ROLE_MISSING => {
+                            problems
+                                .push((E_ROLE_MISSING, format!("role {role:?} does not exist")));
+                        }
+                        Err(refusal) => return Err(refusal),
+                    }
+                }
+                let to = holders::now();
+                for (index, target) in wanted.iter().enumerate() {
+                    let Some(rows) = by_role.get_mut(&target.role) else {
+                        continue;
+                    };
+                    if wanted[..index].contains(target) {
+                        problems.push((E_NOT_HELD, format!("{target} is named twice")));
+                        continue;
+                    }
+                    let Some(row) = rows
+                        .iter_mut()
+                        .rev()
+                        .find(|held| open_for(held, &target.seat, &target.instance))
+                    else {
+                        problems.push((
                             E_NOT_HELD,
                             format!(
-                                "{seat_id} does not hold {role_id}{}",
-                                instance_suffix(&instance_key)
+                                "{} does not hold {}{}",
+                                target.seat,
+                                target.role,
+                                instance_suffix(&target.instance)
                             ),
-                        )
-                    })?;
-                row.to = Some(holders::now());
-                row.released_by = Some(actor_id.clone());
-                row.release_why = Some(release_why.clone());
-                built.row = Some(row.clone());
-                let mut files = vec![holders_file(&role_id, &rows)?];
+                        ));
+                        continue;
+                    };
+                    row.to = Some(to.clone());
+                    row.released_by = Some(actor_id.clone());
+                    row.release_why = Some(release_why.clone());
+                    built.batch.push((row.clone(), None));
+                }
+                match (unmatched, problems.as_slice()) {
+                    (_, []) => {}
+                    (Unmatched::Skip, skipped) if !built.batch.is_empty() => {
+                        built.skipped = skipped.iter().map(|(_, text)| text.clone()).collect();
+                    }
+                    (_, [(code, one)]) if wanted.len() == 1 => {
+                        return Err(Refusal::new(code, one.clone()));
+                    }
+                    (_, many) => {
+                        let code = if many.iter().all(|(code, _)| *code == E_NOT_HELD) {
+                            E_NOT_HELD
+                        } else {
+                            E_ROLE_MISSING
+                        };
+                        let named: Vec<&str> = many.iter().map(|(_, text)| text.as_str()).collect();
+                        return Err(Refusal::new(
+                            code,
+                            format!("the batch wrote nothing: {}", named.join("; ")),
+                        ));
+                    }
+                }
+                let mut files = Vec::new();
+                let mut written = Vec::new();
+                for (role, rows) in &by_role {
+                    if built.batch.iter().any(|(row, _)| &row.role == role) {
+                        files.push(holders_file(role, rows)?);
+                        written.push(role.as_str());
+                    }
+                }
                 files.extend(flush_files(
                     root,
                     &project_id,
                     &flush,
-                    &[role_id.as_str()],
+                    &written,
                     &mut built.landed,
                 )?);
                 Ok(files)
             })
             .await?;
-        let row = built.row.clone().expect("a landed release found its row");
+        let rows: Vec<Assignment> = built.batch.iter().map(|(row, _)| row.clone()).collect();
         self.store
-            .end_assignments(std::slice::from_ref(&row))
+            .end_assignments(&rows)
             .await
             .map_err(|error| store_refusal(&written, &error))?;
         self.flushed(&built.landed, &written).await?;
-        Ok(HoldingReceipt {
-            commit: written.commit.clone(),
-            path: holders_path(role)?,
-            row: holders::to_document(role, std::slice::from_ref(&row))["sections"][1]["value"][0]
-                .clone(),
-            warning: None,
-            seat_role: None,
-            flushed: built.landed.len(),
-            window: None,
-            drained: Vec::new(),
+        let mut receipts = Vec::with_capacity(rows.len());
+        for row in &rows {
+            receipts.push(
+                HoldingReceipt {
+                    commit: written.commit.clone(),
+                    path: holders_path(&row.role)?,
+                    row: holders::to_document(&row.role, std::slice::from_ref(row))["sections"][1]
+                        ["value"][0]
+                        .clone(),
+                    warning: None,
+                    seat_role: None,
+                    flushed: built.landed.len(),
+                    window: None,
+                    drained: Vec::new(),
+                },
+            );
+        }
+        Ok(Released {
+            receipts,
+            skipped: built.skipped,
         })
     }
 
@@ -1964,7 +2138,23 @@ impl DirectoryService {
         let writer = Arc::clone(&self.writer);
         tokio::task::spawn_blocking(move || {
             let mut built = Built::default();
-            let written = writer.write_with(&repo, |root| build(root, &mut built), &message)?;
+            let written = writer.write_with(
+                &repo,
+                |root| {
+                    let mut files = build(root, &mut built)?;
+                    // Every directory commit keeps ROUTES.md true (plan 215,
+                    // F72). A write that changes scopes regenerated it already;
+                    // any other (assign, release, lineage, close) carries it
+                    // only when it is stale, since holders are not in it.
+                    if built.routes.is_none() {
+                        let regenerated = routes::regenerate(&root.worktree, &files);
+                        files.extend(regenerated.file.clone());
+                        built.routes = Some(regenerated);
+                    }
+                    Ok(files)
+                },
+                &message,
+            )?;
             Ok((written, built, keep))
         })
         .await
@@ -2246,9 +2436,9 @@ fn flush_files(
 #[derive(Default)]
 struct Built {
     landed: Vec<Assignment>,
-    row: Option<Assignment>,
     routes: Option<Regenerated>,
     batch: Vec<(Assignment, Option<String>)>,
+    skipped: Vec<String>,
 }
 
 fn store_refusal(written: &Written, error: &pij_core::error::PijError) -> Refusal {

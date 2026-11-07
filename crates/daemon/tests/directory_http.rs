@@ -247,6 +247,7 @@ async fn rig_inner(
         },
     ));
     services.tmux = tmux.clone();
+    services.gh = Arc::new(MergedGh);
     services.liveness = Arc::new(FakeLiveness::new().with_proc(CALLER_PROC));
     let drain = hook.is_none().then(|| Arc::new(RoleQueueDrain::new()));
     let hook = hook.unwrap_or_else(|| {
@@ -6450,5 +6451,354 @@ async fn steering_is_switched_per_seat_read_with_the_claim_and_noted_on_receipts
     assert_eq!(on["data"]["steer"], true, "{on}");
     let status = steer(&["steer", "status", "pij-native"]).await;
     assert_eq!(status["data"]["steer"], true, "{status}");
+    rig.server.abort();
+}
+
+// Plan 215: holdings end with their work.
+
+/// Answers every PR as merged, touching plan 215's folder; `Delivers: none`.
+struct MergedGh;
+
+impl pij_daemon::community::gh::PullRequests for MergedGh {
+    fn view(
+        &self,
+        _: &Path,
+        number: u64,
+    ) -> Result<pij_daemon::community::gh::PullRequest, Refusal> {
+        Ok(pij_daemon::community::gh::PullRequest {
+            number,
+            state: "MERGED".into(),
+            merge_commit: Some(format!("{number:0>40}")),
+            body: "Delivers: none\n".into(),
+            files: vec![
+                "docs/plans/215-holdings-followups/plan.dd.json".into(),
+                "crates/daemon/src/lib.rs".into(),
+            ],
+            url: None,
+        })
+    }
+}
+
+async fn batch(rig: &Rig, repo: &Repo, leaf: &str, text: &str) -> Value {
+    let file = repo.root.join(format!("{leaf}.txt"));
+    std::fs::write(&file, text).unwrap();
+    call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            leaf,
+            "--batch",
+            file.to_str().unwrap(),
+            "--why",
+            "batch",
+        ],
+        &repo.main,
+    )
+    .await
+}
+
+/// `<role>[/<instance>] <seat>` for each receipt, sorted.
+fn released(holdings: &Value) -> Vec<String> {
+    let mut names: Vec<String> = holdings
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|holding| {
+            let role = Path::new(holding["path"].as_str().unwrap())
+                .parent()
+                .and_then(Path::file_name)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let row = &holding["row"];
+            assert!(row["to"].is_string(), "{holding}");
+            format!(
+                "{role}/{} {}",
+                row["instance_key"].as_str().unwrap_or_default(),
+                row["seat"].as_str().unwrap()
+            )
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// Plan 215 AC1 (F70): `pij delivered` ends the PR's reviewer, security and
+/// performance holdings and the coder holding of each plan its files deliver,
+/// in one commit; a holding it cannot match is left alone and named; another
+/// PR's holdings stay; a re-run writes nothing.
+#[tokio::test]
+async fn delivered_ends_the_holdings_its_pr_finished_in_one_commit_once() {
+    let repo = repo("pij-delivered-holdings");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    for id in ["coder", "security"] {
+        let added = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                "add",
+                id,
+                "--holders",
+                "many",
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+    let assigned = batch(
+        &rig,
+        &repo,
+        "assign",
+        "reviewer/215 pij-holder\ncoder/215 pij-holder\nsecurity/215 pij-second\n\
+         coder/216 pij-second\nreviewer/216 pij-second\n",
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    // In the store but not in the holders document: left alone and named.
+    rig.store
+        .record_assignment_committed(
+            &pij_store::Assignment {
+                project: "fleet".into(),
+                role: "security".into(),
+                instance: "215".into(),
+                seat: "pij-dormant".into(),
+                harness: None,
+                session: None,
+                machine: None,
+                from: "2026-11-06T00:00:00Z".into(),
+                to: None,
+                assigned_by: SEAT.into(),
+                released_by: None,
+                why: "store only".into(),
+                release_why: None,
+                end_pending: false,
+            },
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+    let start = head(&repo);
+
+    let first = call(rig.addr, "/v1/delivered", &["delivered", "215"], &repo.main).await;
+    assert_eq!(first["ok"], true, "{first}");
+    let data = &first["data"];
+    assert_eq!(
+        released(&data["holdings"]),
+        [
+            "coder/215 pij-holder",
+            "reviewer/215 pij-holder",
+            "security/215 pij-second"
+        ]
+    );
+    assert_eq!(
+        git(
+            &repo.gov,
+            &["rev-list", "--count", &format!("{start}..HEAD")]
+        )
+        .trim(),
+        "1",
+        "one commit for three holdings"
+    );
+    assert_eq!(data["holdings"][0]["commit"], head(&repo));
+    assert!(
+        data["line"]
+            .as_str()
+            .unwrap()
+            .contains("3 holding(s) released"),
+        "{data}"
+    );
+    assert!(
+        data["notes"]
+            .to_string()
+            .contains("holding left open: pij-dormant does not hold security/215"),
+        "{data}"
+    );
+    // pij-holder holds nothing else, so its window gets the seat's name back.
+    assert!(
+        data["holdings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|holding| holding["window"] == json!({"name": "pij-holder", "renamed": true})),
+        "{data}"
+    );
+    let mut open: Vec<String> = rig
+        .store
+        .assignments("fleet")
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|row| row.to.is_none())
+        .map(|row| format!("{}/{} {}", row.role, row.instance, row.seat))
+        .collect();
+    open.sort();
+    assert_eq!(
+        open,
+        [
+            "coder/216 pij-second",
+            "reviewer/216 pij-second",
+            "security/215 pij-dormant"
+        ]
+    );
+
+    let after = head(&repo);
+    let again = call(rig.addr, "/v1/delivered", &["delivered", "215"], &repo.main).await;
+    assert_eq!(again["ok"], true, "{again}");
+    assert_eq!(again["data"]["holdings"], json!([]), "{again}");
+    assert!(
+        again["data"]["notes"]
+            .to_string()
+            .contains("no holding released: pij-dormant does not hold security/215"),
+        "{again}"
+    );
+    assert_eq!(head(&repo), after, "a re-run writes nothing");
+    rig.server.abort();
+}
+
+/// Plan 215 AC2 (F71): `release --batch` ends many holdings in one commit,
+/// all or nothing, naming every holding that is not open; each live seat's
+/// window follows what it still holds, as for a single release.
+#[tokio::test]
+async fn a_batch_release_is_one_commit_all_or_nothing() {
+    let repo = repo("pij-directory-release-batch");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let assigned = batch(
+        &rig,
+        &repo,
+        "assign",
+        "pm-001 pij-holder\nreviewer/114 pij-holder\nreviewer/1 pij-second\nreviewer/2 pij-second\n",
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    let start = head(&repo);
+
+    let bad = batch(
+        &rig,
+        &repo,
+        "release",
+        "pm-001 pij-holder\nreviewer/9 pij-second\nreviewer/1 pij-holder\n",
+    )
+    .await;
+    assert_eq!(bad["details"]["code"], "E-RS-DIRECTORY-NOT-HELD", "{bad}");
+    for named in [
+        "pij-second does not hold reviewer/9",
+        "pij-holder does not hold reviewer/1",
+    ] {
+        assert!(bad.to_string().contains(named), "{named}: {bad}");
+    }
+    let unparsed = batch(&rig, &repo, "release", "pm-001\n").await;
+    assert_eq!(unparsed["details"]["code"], "E-RS-ARG", "{unparsed}");
+    assert!(unparsed.to_string().contains("line 1"), "{unparsed}");
+    assert_eq!(head(&repo), start, "nothing written");
+
+    let landed = batch(
+        &rig,
+        &repo,
+        "release",
+        "# done\npm-001 pij-holder\n\nreviewer/1 pij-second\nreviewer/2 pij-second\n",
+    )
+    .await;
+    assert_eq!(landed["ok"], true, "{landed}");
+    let holdings = &landed["data"]["holdings"];
+    assert_eq!(
+        released(holdings),
+        [
+            "pm-001/ pij-holder",
+            "reviewer/1 pij-second",
+            "reviewer/2 pij-second"
+        ]
+    );
+    assert_eq!(landed["data"]["commit"], head(&repo));
+    assert_eq!(
+        git(
+            &repo.gov,
+            &["rev-list", "--count", &format!("{start}..HEAD")]
+        )
+        .trim(),
+        "1"
+    );
+    // F57: pij-holder's window was named for pm-001 and moves to reviewer/114.
+    assert_eq!(
+        holdings[0]["window"],
+        json!({"name": "fleet:reviewer-114", "renamed": true}),
+        "{landed}"
+    );
+    assert_eq!(holdings[1]["window"]["reason"], "the seat has no pane");
+    assert!(holdings[2].get("window").is_none(), "one check per seat");
+    assert!(
+        rig.store
+            .open_assignments("pij-second")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        rig.store
+            .open_assignments("pij-holder")
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    rig.server.abort();
+}
+
+/// Plan 215 AC4 (F72): an assign or release carries a stale ROUTES.md,
+/// regenerated, in its own commit, and leaves a current one alone; a change
+/// of holder changes no route, so the prime hears nothing.
+#[tokio::test]
+async fn an_assign_repairs_a_stale_routes_table_in_its_commit() {
+    let repo = repo("pij-routes-stale-assign");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    let current = routes_md(&repo);
+    std::fs::write(
+        repo.gov.join(pij_daemon::community::layout::ROUTES),
+        "edited by hand\n",
+    )
+    .unwrap();
+    git(&repo.gov, &["commit", "-qam", "hand edit"]);
+    let told = fyis(&rig, "pij-second").await.len();
+
+    let hold = |leaf: &'static str| {
+        let (addr, main) = (rig.addr, repo.main.clone());
+        async move {
+            call(
+                addr,
+                "/v1/directory",
+                &["directory", leaf, "delivery", "pij-holder", "--why", "own"],
+                &main,
+            )
+            .await
+        }
+    };
+    let assigned = hold("assign").await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    let names = names_at_head(&repo);
+    assert!(
+        names.contains("community/ROUTES.md") && names.contains("roles/delivery/holders.dd.json"),
+        "{names}"
+    );
+    assert_eq!(routes_md(&repo), current, "regenerated from the roles");
+    let released = hold("release").await;
+    assert_eq!(released["ok"], true, "{released}");
+    assert!(
+        !names_at_head(&repo).contains("ROUTES.md"),
+        "current: no rewrite"
+    );
+    assert_eq!(fyis(&rig, "pij-second").await.len(), told);
     rig.server.abort();
 }
