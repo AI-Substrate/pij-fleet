@@ -342,6 +342,22 @@ fn memory_dir(paths: &RolePaths) -> PathBuf {
         .to_path_buf()
 }
 
+/// How fresh a role's memory is (plan 203): `{notes, latest}`, the number of
+/// notes and the newest dated note's `yyyy-mm-dd` (`null` when none is dated).
+/// One folder read in-process; launches nothing. `None` for a bad role id.
+pub fn freshness(worktree: &Path, role_id: &str) -> Option<Value> {
+    let paths = RolePaths::new(role_id).ok()?;
+    let names = note_names(&worktree.join(memory_dir(&paths)));
+    let latest = names
+        .iter()
+        .filter_map(|name| {
+            let stem = bare(name);
+            dated(stem).map(|_| stem[..10].to_string())
+        })
+        .max();
+    Some(json!({"notes": names.len(), "latest": latest}))
+}
+
 /// A role is there when its document is; reading also accepts a hand-made
 /// folder that has memory but no document yet.
 fn require_role(

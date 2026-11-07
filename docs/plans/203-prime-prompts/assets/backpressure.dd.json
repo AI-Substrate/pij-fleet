@@ -1,0 +1,124 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 203 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-00cb",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: a test project with each piece shows it in the view and in --json.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-00cb",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: each of the four conditions, set up in a test project, produces its prompt with a runnable command.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-00cb",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: a step needing a missing role shows a prompt; creating the role clears it; the PEC wording is present.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-00cb",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: the view shows the designated prime seat; with no prime role document, the prompt says the role document is missing, not the prime.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5",
+          "phase": "ph-00cb",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: a many-holder role renders one holder per line; times show local with zone.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6: cost",
+          "phase": "ph-00cb",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping",
+          "note": "The view launches nothing, per role or per seat; no timer or poll. Reads per call: store queries for the holdings, the project (its prime), the project's queued requests (filtered in SQL, without bodies) and each role's newest output (one window query), plus one registry list; in-process reads of each role's document and memory folder, the step documents (picture::read_step_docs: docs/project/workstreams, else docs/project/roadmaps, parsed once per call) and the blueprints their steps build, each once."
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC7: docs and states",
+          "phase": "ph-00cb",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/project/"
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC8",
+          "phase": "ph-00cb",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: in a test project, each C28 condition (a recurring path with no owner, an idle role, an overloaded role, a step need) yields a prompt that names its signal; a prompt with no signal is impossible (the type requires it); the wording carries 'a role is not a seat' and says templates are examples. Docs-system verdict on the wording.",
+          "state": "unchecked",
+          "probe": "crates/"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}

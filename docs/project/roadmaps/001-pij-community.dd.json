@@ -143,15 +143,17 @@
 				{
 					"id": "s09",
 					"title": "Prime prompts",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-12",
 						"../prds/001-pij-community.dd.json#requirements/req-14",
-						"../prds/001-pij-community.dd.json#requirements/req-24"
+						"../prds/001-pij-community.dd.json#requirements/req-24",
+						"../prds/001-pij-community.dd.json#requirements/req-29"
 					],
 					"builds": ["../blueprints/001-pij-community.dd.json#components/c-orient"],
 					"depends_on": ["#steps/s05", "#steps/s06", "#steps/s07"],
-					"done_when": "Each prompt condition shows with its runnable command."
+					"done_when": "Each prompt condition shows with its runnable command.",
+					"plan": "docs/plans/203-prime-prompts"
 				},
 				{
 					"id": "s11",
@@ -275,6 +277,11 @@
 					"date": "2026-11-06",
 					"by": "pij-local-warbler",
 					"change": "Plan 202: s08 complete (the routing table: ROUTES.md rewritten with every role write, overlap warnings, held FYIs on assign, compact and revive, changed rows to the prime, `pij directory routes`)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-back-tapir",
+					"change": "s09 complete (plan 203): pij directory is the prime's operating picture (holders with seat liveness, waiting requests, latest output, memory freshness, the designated prime), next actions with runnable commands, and prompts for roles a roadmap step needs."
 				}
 			]
 		}
