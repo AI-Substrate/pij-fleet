@@ -1,0 +1,104 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 219 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-00db",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Unit test: a working seat 19 min silent is not a candidate; 21 min silent is; an idle seat or a paneless seat never is; the threshold is a named constant.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-00db",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Fixture tests per harness: the real modal screens captured on 2026-11-06 (lynx) and 2026-11-07 (herring, pane %17) match; the same marker text inside a code block or chat transcript above the input box does not; a normal working screen does not. The read goes through the control client (a fake control client records one capture-pane and zero spawns).",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-00db",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Daemon test: a matched seat produces one message to its parent and one to its PA across three rounds; after a new event and a second stall, one more; a restart between rounds doesn't repeat (stored claim); the daemon sends no tmux send-keys.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-00db",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "CLI and state-card tests render the blocked badge and clear it after an event.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5: cost",
+          "phase": "ph-00db",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping",
+          "note": "No new timer, poll or launch. Candidates are found from state the daemon already holds; only a seat working and silent 20+ min gets one capture-pane per round through the existing persistent control client (no process). Steady state with no stalled seat: zero added reads. Per stalled seat: one control-client read per 60 s round until it clears. Measure before and after: ping spawns flat; control-client read count per round with one fixture-stalled seat."
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6: docs and states",
+          "phase": "ph-00db",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/project/"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}

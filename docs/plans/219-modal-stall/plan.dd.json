@@ -1,0 +1,174 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Detect a seat stalled on a modal dialog (F47)",
+        "slug": "modal-stall",
+        "ordinal": 219,
+        "complexity": "CS-2",
+        "summary": "The daemon notices a working seat that has been silent 20+ minutes, reads its pane through the existing control client, matches the harness's own modal-UI markers, and tells its parent and PA once, with the key that clears it.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Twice in two days a verdict seat sat for about two hours on a harness question dialog while pij reported it working, and every PR waiting on it stalled. This plan has the daemon detect that state cheaply and say so. One coder after plan 218."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "The daemon notices a working seat that has been silent 20+ minutes, reads its pane through the existing control client, matches the harness's own modal-UI markers, and tells its parent and PA once, with the key that clears it."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Pressing keys or choosing options for a seat.",
+        "Detecting stalls by reading the content of the seat's work.",
+        "Any new tmux process or timer."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Spot a stalled working seat. Inside an existing daemon round (the PA watchdog's 60 s round, or the session-status refresh it already does), a seat whose state is working, whose harness is Copilot, Claude, OMP or Pi with a pane, and which has had no event (no activity post, no model call, no delivery ack) for 20 minutes is a candidate. Only candidates are inspected; a healthy working seat costs nothing extra.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Read the pane without a launch, and match the harness's own modal markers. For a candidate, read the visible pane once through the daemon's persistent tmux control client (crates/tmux/src/control.rs, capture-pane is already an allowed read), never a new tmux process. Match only per-harness modal-UI markers kept in a table beside the harness adapters: for Copilot the selection footer (e.g. 'select · enter accept · ctrl+d decline · esc cancel') and 'Copilot needs information', for Claude its permission and question prompts, for OMP and Pi theirs. Markers must sit in the harness's chrome region (the last lines, after the input box), not in model output, so a seat whose work is ABOUT dialogs (quoting the marker in code or chat) does not trip it.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Tell, once per stretch. On a match the daemon sends one FYI-free normal message to the seat's parent and to the PA of its fleet (or the prime when there's no PA): seat, harness, how long it has been stalled, the dialog's first line, and the key that clears it (Copilot: ctrl+d declines, enter accepts the highlighted option; never choose an option for the seat). Once per stretch: the claim is stored before sending (as plan 217's presence claims are) and re-arms only after the seat records a new event. It never presses keys itself.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Visible in the view. pij list and the state card show 'blocked on a dialog' for a matched seat instead of 'working', with the clearing key, until it records an event.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No new timer, poll or launch. Candidates are found from state the daemon already holds; only a seat working and silent 20+ min gets one capture-pane per round through the existing persistent control client (no process). Steady state with no stalled seat: zero added reads. Per stalled seat: one control-client read per 60 s round until it clears. Measure before and after: ping spawns flat; control-client read count per round with one fixture-stalled seat.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Docs and states. docs/how/pij-rs-api.md (the blocked state, the stall message, the marker table and how to add a harness), the pij skill's PA section (what to do on a stall message: capture the pane, then ctrl+d or the right key; ask the seat in text afterwards), docs/difficulties.md marks F47 resolved. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00db",
+          "title": "Detect a seat stalled on a modal dialog (F47)",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-2.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "F47 (06 Nov, pm-001): a modal question in a pij seat stalls it silently while pij list shows working. pij-wary-lynx sat on one 13:30-15:16 on 06 Nov; pij-bumpy-herring sat on Copilot's 'Choose an optional follow-up' dialog (Fix highest severity issues / Fix all issues / Commit a summary of findings / Other; footer '↑/↓ select · enter accept · ctrl+d decline · esc cancel') from 21:01 to 22:55 on 07 Nov after publishing a verdict, while pij-rs state showed working with 'last call 1h53m ago'. Each cleared with ctrl+d. Both stalls delayed every PR waiting on that seat. The daemon already keeps a persistent tmux control client for reads (plan 180 cost rule; crates/tmux/src/control.rs allows capture-pane). Interim: the PA checks panes of seats silent over 30 min. Spec from the prime, 2026-11-07 22:56."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": [
+        {
+          "question": "Should the PA be allowed to clear a dialog for the seat with a verb (sending ctrl+d through the control client), or only be told? Proposed: told only in 219; a clear verb is a follow-up if the PA keeps doing it by hand.",
+          "state": "unchecked"
+        }
+      ]
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
