@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "697b6aa0d3eec8fbe9de3926148d6f04b837e15f",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/149#issuecomment-6708471850",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:149",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"S003 remains open: asserted owner/holder ID or matching supplied victim pane is not independently bound caller origin.",
+				"S005 source-closed, but generated state-command regression needs a hostile holder, not only a hostile instance."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: BLOCK\n\nPR: #149\nHead: 697b6aa0d3eec8fbe9de3926148d6f04b837e15f\nScope: only fb87062..697b6aa, including relevant main-merge preservation.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/daemon/src/http/requests.rs | 385-394 | Asserted holder identity still permits quiet foreign-request closure | 9/10 |\n\nS003 remains OPEN. may_close explicitly permits an existence-only asserted ID matching the stored requester or holder. A machine-authorized client can claim a live victim holder's ID, omit pane evidence and quietly close that delivered request. Withdrawal similarly accepts an asserted requester at :255-258.\n\nCaller::bound means ResolvedBy::Pane, but the pane is client-supplied: matching its registered owner/process does not prove which HTTP caller sent the request. Consistent victim pane/ID claims are not independent origin proof.\n\ndirectory_http.rs:4437-4477 explicitly expects asserted-holder quiet close to succeed and stop limits. Its contradictory-claim negative control does not cover a different caller supplying consistent victim identifiers.\n\nRequired repair: independently bind the actual caller before requester/holder/PA/prime authorization. Reject existence-only and uncorroborated victim-pane claims. Add correct-victim-identifier cross-caller controls with unchanged state/notification/limits and a legitimate self/holder positive.\n\nClosed findings:\n- S004's specific role-laundering path is CLOSED: requests.rs:488-516 removes the global designation/self-Prime-role fallbacks and uses the stored project's recorded prime plus scoped permissions. Self-labelled-stranger negatives and actual-prime positives are present. S003 remains independent.\n- S005 is CLOSED in source: role_send.rs:1484-1489 renders the complete holder state command with picture::command/shell_word. The new generated-notice test uses a hostile instance but an ordinary holder; its state assertion would also pass against the old unquoted holder. Hostile-holder regression coverage is still owed.\n- Original S001/S002 fixes survive the merge; prior tmux version/skip/positive-control qualifications remain.\n\nOwned drain/gate settlement, project routing and persistent notice retry/error surfacing are preserved in the reviewed delta. Listings/audits omit bodies. Main is schema36; this head is37. Changed unmerged0037 checksum requires separate handling for any privately installed prototype, not an authorization fallback.\n\nEvidence: exact-head CI42382562092 attempt2 SUCCESS; latest Delivers succeeded, and GitHub reports CLEAN. https://github.com/AI-Substrate/pij-fleet/actions/runs/42382562092\n\nNo local builds/tests, runtime spoofing, role assertions, shells/tmux, credential reads or product edits. This source review does not claim the surviving attack was executed.\n"
+		}
+	]
+}
