@@ -706,7 +706,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "169",
 					"machine": "ops.osk.lan",
+					"release_why": "#169 merged a2cc5e7",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-07T22:49:16.680Z",
 					"why": "F112 fix #169"
 				}
 			]

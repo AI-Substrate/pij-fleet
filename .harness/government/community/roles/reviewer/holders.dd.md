@@ -72,4 +72,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 166 | 2026-11-07T21:36:40.129Z | 2026-11-07T21:43:13.042Z | pij-steady-otter | pij-steady-otter | plan 221 states PR #166 (spoonbill reviewed #163) | #166 merged 8622292a |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 167 | 2026-11-07T21:37:57.674Z | — | pij-steady-otter | — | plan 222 compaction wake #167 | — |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 168 | 2026-11-07T21:44:44.601Z | — | pij-steady-otter | — | plan 215 #168 | — |
-| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 169 | 2026-11-07T22:38:12.253Z | — | pij-steady-otter | — | F112 fix #169 | — |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 169 | 2026-11-07T22:38:12.253Z | 2026-11-07T22:49:16.680Z | pij-steady-otter | pij-steady-otter | F112 fix #169 | #169 merged a2cc5e7 |
