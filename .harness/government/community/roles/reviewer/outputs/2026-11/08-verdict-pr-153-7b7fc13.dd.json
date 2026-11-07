@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b6af-cc85-76a0-97ce-15fe4e67da21",
+				"date": "2026-11-08",
+				"head": "7b7fc1388b4de424776a0ce2aa61ab5834e72770",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/153#issuecomment-6709418059",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:153",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #153 round-4 correctness review\n\n## A. Verdict\n\n**PASS-WITH-NOTES** at `7b7fc1388b4de424776a0ce2aa61ab5834e72770`.\n\n**F004 closed.** Earlier F001-F003 closures stand. No further correctness repair requested for the scoped cancellation schedule.\n\n## B. Scope\n\nOnly `fcfca246416d1afe02fae88cd72f866522d3d58b..7b7fc13`: owned registration/guard composition and its blocked-write regression. The accepted C32 identity residual and independent security/performance grades remain separately owned.\n\nClean pinned detached checkout; GitHub and ls-remote agree, PR CLEAN. CI run `42387081956`, attempt 2, succeeded at this full head. No local builds/tests, mutation runs, SQLite triggers or live probes were performed.\n\n## C. Guard lifetime\n\nReportedContext's mutex is now shared by Arc. Exclusively acquires an owned mutex guard and moves it into the spawned task with work; dropping the waiter cannot drop that guard or continuation after admission.\n\nThe production handler puts register_via and grant selection/rotation in that same owned work. Thus a pending registry commit cannot continue after releasing the context section, and reports cannot reread the old row during a detached replacement write. The short synchronous grant-map lock is not held over an await. No ordinary reverse lock order was introduced.\n\n## D. Distinguishing regression\n\n`a_cancelled_registration_keeps_reports_out_until_its_write_commits` executed and passed. With another connection holding BEGIN IMMEDIATE, it starts the owned replacement/rotation work, cancels its waiter, and starts an already-authorized old report. The old report remains waiting; after the write lock releases it returns None, while the row has the replacement process/idle state, context remains unknown and generation is unchanged.\n\nThe same test includes the non-cancelled schedule. This is a real-store ownership/commit boundary control, not just a synthetic mutex acquisition test. It uses the same owned composition primitive; it is not a reviewer-run HTTP cancellation experiment.\n\n## E. Retained safeguards\n\nThe mandatory audit withholding test, normal replaced-incarnation test, report-waits-for-registration case and F88 observable-size regression also executed. Reissue audit failure still withholds the token; first issuance remains separate. Moving grant rotation inside the owned work does not turn audit failure into a token return.\n\n## F. CI\n\nDownloaded JUnit contains 2,105 cases, zero failures/errors, including all five named controls. Latest Delivers succeeded, superseding an older cancelled run. The author-reported waiter-owned-guard mutation was not rerun here.\n\n## G. Notes\n\nThe regression drives the shared ownership primitive and real registry put, while the full register_via lock/rotation wiring was source-reviewed. Runtime shutdown can still terminate tasks; this closure concerns cancellation of the requesting waiter while the runtime/store continue.\n\nThe Known limit still names PRD 003 req-10. C32's existing identity acceptance is unchanged; no stronger authentication is claimed. The daemon-wide mutex/extra native-registration task remains a performance qualification, not a new timer/process launch. Deployment readings and migration-order notes stand.\n\n## H. Handover\n\nF004 correctness closure is ready at this head. Retain independent security/performance verdicts and prior deployment obligations before whole-plan completion. The reviewer made no product changes.\n"
+		}
+	]
+}
