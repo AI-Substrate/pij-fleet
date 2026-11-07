@@ -351,10 +351,9 @@ describe("coverage-check (plan 210, req-31)", () => {
 		});
 	});
 
-	it("this repo is covered, with only its owned exemptions", () => {
+	it("this repo is covered, with exactly the approved exemptions", () => {
 		const { findings, exempted } = repoFindings(resolve(import.meta.dirname, "../.."));
 		expect(findings).toEqual([]);
-		expect(exempted).toBeGreaterThan(0);
-		expect(exempted).toBeLessThanOrEqual(APPROVED_EXEMPTIONS.length);
+		expect(exempted).toBe(APPROVED_EXEMPTIONS.length);
 	});
 });

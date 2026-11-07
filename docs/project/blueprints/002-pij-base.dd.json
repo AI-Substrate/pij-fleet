@@ -1,0 +1,201 @@
+{
+	"dd": {
+		"schema": "pij/blueprint"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Blueprint 002: pij base",
+				"status": "draft",
+				"updated": "2026-11-08",
+				"owner": "pm-001",
+				"summary": "How PRD 002's rows get built: one component per open gap in the daemon, CLI and extensions outside the community work. Components name the code their PRD row's note points at."
+			}
+		},
+		{
+			"name": "overview",
+			"value": "PRD 002 holds what pij still needs outside the community directory (PRD 001): message identity and queue visibility, spawn and revive ergonomics, daemon affinity, work tree cleanup, verb coverage, wire compatibility, and two live proofs. Each component sits where its PRD row's note found the gap. Workstream 002 orders them."
+		},
+		{
+			"name": "components",
+			"value": [
+				{
+					"id": "c-claude-socket-proof",
+					"name": "Claude socket hold and deny, proven live",
+					"kind": "module",
+					"where": "crates/transport/src/uds.rs",
+					"responsibility": "Decode a real Claude session's hold and deny answers into held and refused receipts, with a live run as evidence.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-01"],
+					"state": "planned"
+				},
+				{
+					"id": "c-revive-preview",
+					"name": "Revive preview",
+					"kind": "verb",
+					"where": "crates/cli/src/main.rs (revive), crates/daemon/src/http/mod.rs",
+					"responsibility": "Print the launch `pij-rs revive` would make, changing no seat row and starting nothing.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-02"],
+					"state": "planned"
+				},
+				{
+					"id": "c-spawn-first-task",
+					"name": "Spawn with a first task",
+					"kind": "verb",
+					"where": "crates/cli/src/main.rs (spawn), crates/daemon/src/delivery/",
+					"responsibility": "Carry a task on spawn and deliver it once, after the seat binds.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-03"],
+					"state": "planned"
+				},
+				{
+					"id": "c-worktree-lifecycle",
+					"name": "Work tree create and teardown",
+					"kind": "verb",
+					"where": "crates/daemon/src/orchestration/",
+					"responsibility": "Scaffold the plan folder with a stream's work tree, and remove tree, branch and build output, refusing while work is uncommitted or unpushed.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-04"],
+					"state": "planned"
+				},
+				{
+					"id": "c-spawn-daemon-env",
+					"name": "Spawned seats keep their daemon",
+					"kind": "module",
+					"where": "crates/harnesses/src/spawn.rs",
+					"responsibility": "Pass the spawning daemon's address and state directory to the child so its replies go back there.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-05"],
+					"state": "planned"
+				},
+				{
+					"id": "c-unported-verbs",
+					"name": "Unported verbs ported or retired",
+					"kind": "verb",
+					"where": ".omp/extensions/pij/cli.ts, .omp/extensions/pij/core/generation-routing.ts, crates/cli/src/main.rs",
+					"responsibility": "Port or remove each E-RS-UNPORTED verb, and give a peer's transcript its own verb name.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-06"],
+					"state": "planned"
+				},
+				{
+					"id": "c-daemon-discovery",
+					"name": "Daemon listing and other-daemon hints",
+					"kind": "endpoint",
+					"where": "crates/daemon/src/http/mod.rs, crates/cli/src/main.rs",
+					"responsibility": "List the daemons that are up, and name the other daemon when a seat or message lives there.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-07"],
+					"state": "planned"
+				},
+				{
+					"id": "c-typecheck-tests",
+					"name": "Typecheck includes tests",
+					"kind": "file",
+					"where": "tsconfig.json, justfile (typecheck)",
+					"responsibility": "Make `just typecheck` cover test files.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-08"],
+					"state": "planned"
+				},
+				{
+					"id": "c-sender-identity",
+					"name": "Known sender on every message",
+					"kind": "endpoint",
+					"where": "crates/daemon/src/http/mod.rs (/v1/send), crates/daemon/src/delivery/mod.rs",
+					"responsibility": "Refuse or mark unverified a send whose sender is not a registered seat, and keep every delivered message replyable.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-09"],
+					"state": "planned"
+				},
+				{
+					"id": "c-wire-compat",
+					"name": "Wire version N-1 and restart notice",
+					"kind": "module",
+					"where": ".omp/extensions/pij/core/daemon-wire.ts, justfile (bounce-rs)",
+					"responsibility": "Accept the previous envelope version, and ship a wire change with a restart and a fleet notice together.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-10"],
+					"state": "planned"
+				},
+				{
+					"id": "c-queue-view",
+					"name": "Read-only queue view",
+					"kind": "endpoint",
+					"where": "crates/store/src/queue.rs, crates/daemon/src/http/mod.rs",
+					"responsibility": "Show a seat's waiting messages, why each waits and its next try, without claiming them.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-11"],
+					"state": "planned"
+				},
+				{
+					"id": "c-sender-notice",
+					"name": "Queued-send notice to the sender",
+					"kind": "module",
+					"where": "crates/daemon/src/delivery/mod.rs",
+					"responsibility": "Tell the sender once when its queued message is delivered or given up.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-12"],
+					"state": "planned"
+				},
+				{
+					"id": "c-graded-admission",
+					"name": "Unproven seat admission",
+					"kind": "module",
+					"where": "crates/daemon/src/registration.rs",
+					"responsibility": "Admit a seat that can't prove itself as unproven, with no process binding and a next step to prove itself.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-13"],
+					"state": "planned",
+					"note": "could, planned (ruling C17); revisit when someone needs it."
+				},
+				{
+					"id": "c-pane-delivery-proof",
+					"name": "Pane delivery proven live",
+					"kind": "module",
+					"where": "crates/tmux/src/lib.rs, crates/harnesses/",
+					"responsibility": "Show, per typed-input harness, that a body over 4 KB arrives once and whole as one turn.",
+					"realises": ["../prds/002-pij-base.dd.json#requirements/req-14"],
+					"state": "planned"
+				}
+			]
+		},
+		{
+			"name": "decisions",
+			"value": [
+				{
+					"id": "d-1",
+					"decision": "PRD 002 gets its own blueprint and workstream, not rows in 001's.",
+					"why": "PRD 002's non-goal n-1 excludes the community work; separate docs keep 001's coverage and PMs about the community."
+				},
+				{
+					"id": "d-2",
+					"decision": "The live proofs (req-01, req-14) are evidence from real sessions, not CI tests.",
+					"why": "CI has no Claude, Codex or Copilot session to receive a message; a stand-in socket or sender-side test is what the rows say is not enough.",
+					"realises": [
+						"../prds/002-pij-base.dd.json#requirements/req-01",
+						"../prds/002-pij-base.dd.json#requirements/req-14"
+					]
+				}
+			]
+		},
+		{
+			"name": "costs",
+			"value": [
+				{
+					"id": "k-1",
+					"what": "Daemon discovery when a seat or message is not found",
+					"rate": "One listing per lookup miss or per listing command; no background probe.",
+					"scaling": "Grows with the number of daemons on the machine, not with seats or time.",
+					"component": ["#components/c-daemon-discovery"]
+				},
+				{
+					"id": "k-2",
+					"what": "Queued-send notice",
+					"rate": "At most two notices per queued message (delivered or given up), event-driven from the existing delivery outcome; no poll.",
+					"scaling": "Grows with queued messages, not with seats or time.",
+					"component": ["#components/c-sender-notice"]
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-08",
+					"by": "docs-system",
+					"change": "Created for plan 210 AC4: a component for each of PRD 002's 14 rows, so each is realised and built by workstream 002."
+				}
+			]
+		}
+	]
+}
