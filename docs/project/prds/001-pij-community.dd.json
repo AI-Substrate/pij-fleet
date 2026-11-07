@@ -417,7 +417,8 @@
 					"state": "shipped",
 					"done_when": "`ddocs validate` passes on a workstream whose step is `part_of` a step in another workstream file and lists a lane with a stream id, and fails on a lane with no branch; the skill's workstream procedure teaches shaping, splitting, merging, nesting and lanes and defines workstream and pij stream so they never overlap; the coverage check (req-31) fails on a complete umbrella step with an unfinished child.",
 					"note": "Plan 210 phase 1 ships the `pij/workstream` schema and the skill; ddocs can't express the umbrella rule, so phase 2's coverage check holds it.",
-					"source": "ruling C29"
+					"source": "ruling C29",
+					"delivered_by": "#160"
 				},
 				{
 					"id": "req-31",
@@ -428,7 +429,8 @@
 					"state": "shipped",
 					"done_when": "`harness checks` passes on pij's project docs and fails naming the row on a fixture with a requirement no step delivers, a component no step builds, or a complete umbrella step with an unfinished child.",
 					"note": "Plan 210 phase 2 (the coverage sensor).",
-					"source": "ruling C29"
+					"source": "ruling C29",
+					"delivered_by": "#160"
 				}
 			]
 		},
@@ -599,6 +601,11 @@
 					"date": "2026-11-08",
 					"by": "pij-following-marsupial",
 					"change": "Plan 210 phase 2 round 1: req-18 says the workstreams have moved (no more until plan 210 wording)."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "pij-following-marsupial",
+					"change": "Plan 210 states: req-30 and req-31 delivered_by #160, from pij delivered 160."
 				}
 			]
 		}

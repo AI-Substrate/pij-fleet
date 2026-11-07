@@ -41,7 +41,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: skill tests and pij-skill-check pass; the router links workstream.md; old roadmap.md links resolve (a one-line pointer) or are updated.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {
@@ -61,7 +61,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: template tests; v1 bytes unchanged (hash test); v2 validates.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {
@@ -81,7 +81,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "EXISTS: each role.dd.json cites docs/project/workstreams; `pij directory view` shows no stale path.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {
@@ -102,7 +102,7 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "docs/project/"
         }
       ]
