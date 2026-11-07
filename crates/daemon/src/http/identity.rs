@@ -246,7 +246,7 @@ pub(crate) enum ResolvedBy {
 }
 
 impl ResolvedBy {
-    const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Pane => "pane (derived)",
             Self::AssertedId => "asserted seat id (existence checked only)",
