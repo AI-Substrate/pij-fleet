@@ -286,7 +286,10 @@
 					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
 					"instance_key": "220",
 					"machine": "ops.osk.lan",
+					"release_why": "#157 merged 0950c348",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-back-tapir",
+					"to": "2026-11-07T18:03:02.030Z",
 					"why": "plan 220 PR freeze check (F92)"
 				},
 				{
