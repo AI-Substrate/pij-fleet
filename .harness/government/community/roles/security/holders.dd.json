@@ -49,6 +49,15 @@
 					"seat": "pij-wary-lynx",
 					"to": "2026-11-06T09:13:22.941Z",
 					"why": "verdict on #147 (plan 213)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T07:31:41.422Z",
+					"harness": "copilot",
+					"harness_session": "94e4cef4-350b-4d67-b225-f117da43e070",
+					"machine": "ops.osk.lan",
+					"seat": "pij-bumpy-herring",
+					"why": "fresh security seat after the 07 Nov reboot"
 				}
 			]
 		}
