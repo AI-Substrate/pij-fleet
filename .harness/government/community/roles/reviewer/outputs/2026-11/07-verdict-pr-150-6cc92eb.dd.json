@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"head": "6cc92eb8d1ae7e55bdba2d72087a2b8e566e5758",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/150#issuecomment-6703979545",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:150",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #150 ledger review\n\n## A. Verdict\n\n**pass** at `6cc92eb8d1ae7e55bdba2d72087a2b8e566e5758`. No findings.\n\n## B. Scope\n\nOnly `docs/difficulties.md` changes. Checked the PR diff and the file fetched at the full head against pm-001's review packet.\n\n## C. ID and owner coverage\n\nThe 19 new rows continue directly after D-WB-58: **D-WB-59 through D-WB-77 map in order to F61 through F79**, without gaps or duplicate new IDs.\n\nF61/F62 name plan 212; F63/F65/F67 plan 209; F64/F74 are unowned; F66/F70/F71/F72 name plan 215; F68/F69/F73 plan 214; F75-F79 plan 216. The five pre-existing shim rows' owner-only moves to plan 213 match the PR's stated scope.\n\n## D. Severity coverage\n\nAll requested severities match: medium F62/F63/F65/F68/F70/F73; low F64/F66/F67/F71/F72; high F69. No behavioral change or resolution of the recorded difficulties is claimed.\n\n## E. Evidence\n\n[CI run 42229672205](https://github.com/AI-Substrate/pij-fleet/actions/runs/42229672205) names this full head; check (22), check (24), rust-lint and rust-test all passed. PR merge state is CLEAN.\n\n## F. Cost and proof limits\n\nDocs only: no loops, polls, timers, hooks or launches changed. CI's ddocs step explicitly reports UNAVAILABLE; this PR changes ordinary Markdown, not a DD source document. Review verifies ledger structure and the supplied attribution/severity requirements, not independent reproduction of F61-F79.\n\n## G. Commands\n\nGitHub PR metadata, diff, exact-head file and CI logs. No local builds/tests, worktree movement or product edits.\n\n## H. Handover and harness feedback\n\nCorrectness verdict is ready at this head. **magicWand:** a lightweight ledger ID-sequence check could replace repeated manual numbering checks. No blocker or additional difficulty encountered.\n"
+		}
+	]
+}
