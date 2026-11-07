@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b71d-7546-70b1-96ea-2c86b8c01fd4",
+				"date": "2026-11-08",
+				"head": "4a0bc62b932da3f2783dbb21b32f7bb0413b73e4",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/160#issuecomment-6710907293",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:160",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #160 round 2 correctness review\n\n## A) Verdict\n\n**PASS-WITH-NOTES** at `4a0bc62b932da3f2783dbb21b32f7bb0413b73e4`.\n\n**F001 closed.** Earlier F002/F003/N001 closures stand. The duplicate-section/row-id repair is also verified. No further blocking correctness finding in this delta.\n\n## B) Scope and proof\n\nReviewed only `50218822c86d7ccf5c1174d9170666a34d449fb5..4a0bc62b932da3f2783dbb21b32f7bb0413b73e4`: be0861c9's baseline invariant and 4a0bc62b's duplicate rejection.\n\nClean pinned checkout; GitHub and ls-remote agree, CLEAN, latest Delivers SUCCESS. Exact-head CI `42397453707`, attempt 1, passed. Both Node jobs ran all 18 coverage tests; each reports 2,222 passed/six skipped overall. Typecheck/lint succeeded.\n\nNo local product builds/tests, sensor execution, fixture mutation or live probe. Guard mutations are author-reported, not reviewer runs.\n\n## C) F001 closed: equality plus existing uncovered rows\n\nValid JSON rows can only belong to the approved set. Each applied exemption must still name an existing uncovered obligation. Every approved address absent from the valid JSON set now produces a finding: missing row, covered row, or missing JSON entry. Together these enforce pm-001's same-set/existing-uncovered invariant.\n\nThe previously missed deleted-row-plus-deleted-exemption case now fails even with the approval left in the constant. The mismatch case fails explicitly, and the clean triple-removal positive passes. Covered-baseline, new-real-row, same-count swap, duplicate exemption, invalid owner/why and stale/unknown controls remain.\n\nThe actual constant and JSON each contain 15 unique addresses, with identical sets and nonempty metadata. The production main calls repoFindings with its default approved constant; the test-only argument used for toy repositories is not a data-file or CLI override.\n\n## D) Duplicate rejection verified\n\nRepeated required sections produce a finding before row processing. Row IDs are checked with a per-document/section set; another occurrence is rejected rather than overwriting a step or masking an obligation.\n\nDirect-array controls verify a second requirements section, a duplicate requirement ID, and a duplicate step ID whose later complete copy previously hid an unfinished child. The last case reports both the duplicate and the umbrella's unfinished child. These assertions ran in CI.\n\n## E) Earlier proof retained\n\nRequired Reader failures/malformed inputs remain explicit findings; only legacy-folder ENOENT is excused. The live docs, project DD sources/faces and shipped template files/catalog are byte-unchanged from the previously reviewed head. The atomic rename, Reader-error controls, live-address fixes, 29 pins and provenance proof therefore stand.\n\nNo new recurring work or filesystem sweep was introduced. Equality and duplicate checks are in-memory work within the existing per-invocation sensor. Performance's full cost verdict and security's independent data-only/privacy verdict remain their owners' work.\n\n## F) Notes and remaining scope\n\nCoverage proves the present planning declarations and these structural/approval invariants, not historical intent or a full ddocs schema proof. The triple-removal test is not permission to delete/reuse product requirement IDs contrary to the existing procedure.\n\nF104's CI ddocs UNAVAILABLE limitation remains explicit. AC4's follow-up coverage work and AC7's merge-time governance edits/states receipts remain deferred; this is not whole-plan completion.\n\n## G) Handover\n\nNo further correctness repair requested for this delta. Preserve the missing-row/equality and raw duplicate controls. No product code or canonical progress was changed by this reviewer.\n"
+		}
+	]
+}
