@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "02f27aabf2a58f94d1383846fc1ad40b4d72ddf5",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/152#issuecomment-6712332565",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:152",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After merge/deploy: same-incarnation launch/CPU/RSS and legitimate reply/claim/SDK latency/rates; existing live-traffic limits remain."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `02f27aabf2a58f94d1383846fc1ad40b4d72ddf5`.\n\nVerified `65fc109..02f27aa` changes only `directory_http.rs` and the API doc. Production gates, runtime code, migration and OMP own-process cache are identical. The [65fc109 cost verdict](https://github.com/AI-Substrate/pij-fleet/pull/152#issuecomment-6711957477), including P152-F004 closure and deployment debt, carries forward: no new timer, poll, recurring work or launch site.\n\nThe strengthened fixture helper opens/closes a SQLite pool and reads/parses all pending/running delivery payloads for its target before sender filtering, rather than peeking only the head. Its connection/query and payload-byte costs scale with the test fixture's jobs per assertion, not live seats or daemon ticks. The new documenting regression adds one isolated rig/two sends; it changes no production behavior.\n\nExact-head [CI 42407240181](https://github.com/AI-Substrate/pij-fleet/actions/runs/42407240181) succeeds. JUnit confirms **all 82 directory HTTP cases passed**, including the documenting pane-replay positive that finds both queued messages through the strengthened helper; **2,162 executed Rust cases, zero failures/errors** overall. Latest Delivers **42407241684** succeeds at this SHA.\n\nNo local build, test, mutation, runtime probe or worktree edit. Herring/reviewer own the clarified C32 acceptance and Known-limit grade; this cost pass is not an F88 closure. Same-incarnation deployment/legitimate traffic proof remains owed.\n"
+		}
+	]
+}
