@@ -123,10 +123,14 @@ async fn send(state: &AppState, call: RoleSendCall<'_>, address: RoleAddress) ->
             body,
             mut request,
             recorded,
+            gate,
         }) => {
             // Persist before dispatch: the claim names the holder, so a retry
-            // after a rotation resumes to it instead of resolving another.
-            if !recorded && let Err(error) = store.record_role_request(&request).await {
+            // after a rotation resumes to it instead of resolving another. The
+            // role's gate goes with the write and is released once the
+            // `delivering` row is in, which a retire then waits on.
+            if !recorded && let Err(error) = store.record_role_request_keeping(&request, gate).await
+            {
                 return match store.role_request(&request.id).await {
                     Ok(Some(existing)) if existing.state != RequestState::Delivering => {
                         replay_response(command, &existing, now_ms)

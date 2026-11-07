@@ -6,10 +6,11 @@
 //! pending close-ends, so an end a refused close left behind reaches the branch
 //! with the next write.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use pij_core::directory::shell_word;
 use pij_core::model::{SeatDescriptor, SeatId};
 use pij_core::ports::TmuxPort;
 use pij_store::{Assignment, SqliteOrchestration};
@@ -32,6 +33,18 @@ pub const E_ROLE_MISSING: &str = "E-RS-DIRECTORY-ROLE-MISSING";
 pub const E_HELD: &str = "E-RS-DIRECTORY-HELD";
 /// The seat does not hold that role (and instance).
 pub const E_NOT_HELD: &str = "E-RS-DIRECTORY-NOT-HELD";
+/// The role is retired, or merged into another (plan 206, req-28).
+pub const E_RETIRED: &str = "E-RS-DIRECTORY-RETIRED";
+/// The role still has a live holder (plan 206: release before retiring).
+pub const E_ROLE_HELD: &str = "E-RS-DIRECTORY-ROLE-HELD";
+/// The role has requests queued for a holder (plan 206: retiring would strand
+/// them).
+pub const E_ROLE_QUEUED: &str = "E-RS-DIRECTORY-ROLE-QUEUED";
+/// A `--drop-queued` requester could not be told, so nothing was withdrawn
+/// (security review of #135, F002); the same command retries.
+pub const E_NOT_TOLD: &str = "E-RS-DIRECTORY-NOT-TOLD";
+/// A role made from a template records no template version (plan 206, F19).
+pub const E_NO_TEMPLATE_VERSION: &str = "E-RS-DIRECTORY-NO-TEMPLATE-VERSION";
 
 /// A past holding overlaps another holding of the same seat and instance.
 pub const E_OVERLAP: &str = "E-RS-DIRECTORY-OVERLAP";
@@ -71,6 +84,15 @@ pub struct AssignRequest {
     pub machine: String,
 }
 
+/// What `pij directory edit` changes (plan 206, F20).
+#[derive(Clone, Debug)]
+pub enum RoleEdit {
+    /// Fields laid over the committed document, as `add --from` does.
+    Fields(Box<role::RoleFields>),
+    /// A whole replacement document; the committed changelog is kept.
+    Document(Value),
+}
+
 /// What an assign or release changed.
 #[derive(Clone, Debug, Serialize)]
 pub struct HoldingReceipt {
@@ -104,6 +126,43 @@ pub struct CloseEnds {
     pub pending: Vec<Value>,
 }
 
+/// How a retire or merge goes (plan 206).
+#[derive(Clone, Copy, Debug)]
+pub struct Retirement<'a> {
+    /// The changelog row's reason.
+    pub why: &'a str,
+    /// Withdraw requests still queued for the role instead of refusing.
+    pub drop_queued: bool,
+}
+
+/// A landed retire or merge. With `--drop-queued` it still holds the role's
+/// admission gate and the requests to withdraw: the caller tells each
+/// requester, then calls [`DirectoryService::withdraw`], so no send is
+/// admitted until the withdrawal lands.
+#[derive(Debug)]
+pub struct Reshaped {
+    /// The writer commit, or `None` when this call only finished the
+    /// withdrawal an earlier retirement left undone (review of #135, F002).
+    pub written: Option<Written>,
+    /// The requests still to withdraw, oldest first; empty without
+    /// `--drop-queued`.
+    pub queued: Vec<pij_store::RoleRequest>,
+    /// What the commit did to the routing table (plan 202): a retired role
+    /// routes nothing. Empty when nothing was written.
+    pub routes: Regenerated,
+    /// The command that finishes the withdrawal if it fails.
+    finish: String,
+    gate: tokio::sync::OwnedMutexGuard<()>,
+}
+
+impl Reshaped {
+    /// The command that finishes the withdrawal: the same verb with
+    /// `--drop-queued`, its words quoted.
+    pub fn finish(&self) -> &str {
+        &self.finish
+    }
+}
+
 /// The daemon's role-holding service.
 pub struct DirectoryService {
     writer: Arc<CommunityWriter>,
@@ -112,7 +171,12 @@ pub struct DirectoryService {
     hook: Arc<dyn AfterAssign>,
     tmux: Arc<dyn TmuxPort>,
     templates: Catalog,
+    gates: Gates,
 }
+
+/// One async lock per (project, role): the admission boundary a send to the
+/// role and a retire or merge of it share (review of #135, F001).
+type Gates = Arc<std::sync::Mutex<HashMap<(String, String), Arc<tokio::sync::Mutex<()>>>>>;
 
 impl DirectoryService {
     /// Compose from the single writer, the spine-pool store, the bus, the
@@ -132,6 +196,7 @@ impl DirectoryService {
             hook,
             tmux,
             templates: Catalog::shipped(),
+            gates: Gates::default(),
         }
     }
 
@@ -156,7 +221,28 @@ impl DirectoryService {
             hook: Arc::new(NoHook),
             tmux: Arc::clone(&self.tmux),
             templates: self.templates.clone(),
+            gates: Arc::clone(&self.gates),
         }
+    }
+
+    /// The admission boundary for `role` in `project` (review of #135, F001):
+    /// a send to the role holds it from its standing read until its request
+    /// is recorded, and a retire or merge holds it from its queued-request
+    /// read through its commit and withdrawal. So no request is admitted
+    /// behind a retirement, and none lands between the check and the commit.
+    pub async fn admission(&self, project: &str, role: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        let gate = {
+            let mut gates = self
+                .gates
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            Arc::clone(
+                gates
+                    .entry((project.to_string(), role.to_string()))
+                    .or_default(),
+            )
+        };
+        gate.lock_owned().await
     }
 
     /// The role templates this service copies from and compares against.
@@ -231,6 +317,16 @@ impl DirectoryService {
             .filter_map(|entry| entry.file_name().into_string().ok())
             .collect();
         ids.sort();
+        let documents: Vec<Value> = ids
+            .iter()
+            .map(|id| {
+                std::fs::read(roles_dir.join(id).join("role.dd.json"))
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                    .unwrap_or(Value::Null)
+            })
+            .collect();
+        let standings: Vec<role::Standing> = documents.iter().map(role::standing).collect();
         let mut roles = Vec::new();
         let mut made_from = Vec::new();
         let mut scopes: Vec<(String, Vec<String>)> = Vec::new();
@@ -241,11 +337,8 @@ impl DirectoryService {
                 u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
             });
         let cutoff = picture::idle_cutoff(now_ms);
-        for id in &ids {
-            let document: Value = std::fs::read(roles_dir.join(id).join("role.dd.json"))
-                .ok()
-                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-                .unwrap_or(Value::Null);
+        for (index, (id, document)) in ids.iter().zip(&documents).enumerate() {
+            let retired = standings[index].retired();
             let meta = document["sections"]
                 .as_array()
                 .and_then(|sections| sections.iter().find(|section| section["name"] == "meta"))
@@ -264,34 +357,39 @@ impl DirectoryService {
                 .collect();
             let waiting = picture::waiting(id, &queued);
             let memory = super::memory::freshness(&root.worktree, id).unwrap_or(Value::Null);
-            actions.extend(picture::actions(
-                project,
-                id,
-                meta["holders"].as_str().unwrap_or("one"),
-                &mine,
-                live_seats,
-                &queued
-                    .iter()
-                    .filter(|request| request.role == *id)
-                    .map(|request| request.instance.as_str())
-                    .collect::<Vec<_>>(),
-                memory["latest"].as_str(),
-            ));
+            // A retired role routes, owns and needs nothing (plan 206).
+            if !retired {
+                actions.extend(picture::actions(
+                    project,
+                    id,
+                    meta["holders"].as_str().unwrap_or("one"),
+                    &mine,
+                    live_seats,
+                    &queued
+                        .iter()
+                        .filter(|request| request.role == *id)
+                        .map(|request| request.instance.as_str())
+                        .collect::<Vec<_>>(),
+                    memory["latest"].as_str(),
+                ));
+            }
             let section = |name: &str| {
                 document["sections"]
                     .as_array()
                     .and_then(|sections| sections.iter().find(|section| section["name"] == name))
                     .map_or(Value::Null, |section| section["value"].clone())
             };
-            scopes.push((
-                id.clone(),
-                section("scope")["paths"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|path| path.as_str().map(str::to_string))
-                    .collect(),
-            ));
+            if !retired {
+                scopes.push((
+                    id.clone(),
+                    section("scope")["paths"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|path| path.as_str().map(str::to_string))
+                        .collect(),
+                ));
+            }
             let changelog = section("changelog");
             let created = changelog
                 .as_array()
@@ -300,42 +398,62 @@ impl DirectoryService {
                 .filter_map(|row| row["date"].as_str())
                 .filter_map(|date| date.get(..10))
                 .min();
-            reviews.extend(picture::idle(
-                project,
-                &picture::RoleActivity {
-                    role: id,
-                    created,
-                    rows: &mine,
-                    live_holder: mine
-                        .iter()
+            if !retired {
+                reviews.extend(picture::idle(
+                    project,
+                    &picture::RoleActivity {
+                        role: id,
+                        created,
+                        rows: &mine,
+                        live_holder: mine
+                            .iter()
+                            .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
+                        waiting: waiting["count"]
+                            .as_u64()
+                            .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+                        has_output: outputs.iter().any(|output| &output.role == id),
+                        notes: memory["notes"]
+                            .as_u64()
+                            .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+                    },
+                    &cutoff,
+                ));
+            }
+            // A retired role refuses sends, so it has nothing to call on.
+            let call_on = if retired {
+                None
+            } else {
+                picture::call_on(
+                    project,
+                    id,
+                    mine.iter()
                         .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
-                    waiting: waiting["count"]
+                    memory["notes"]
                         .as_u64()
                         .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
-                    has_output: outputs.iter().any(|output| &output.role == id),
-                    notes: memory["notes"]
-                        .as_u64()
-                        .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
-                },
-                &cutoff,
-            ));
-            let call_on = picture::call_on(
-                project,
-                id,
-                mine.iter()
-                    .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
-                memory["notes"]
-                    .as_u64()
-                    .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
-            );
+                )
+            };
             let owned: Vec<Assignment> = mine.into_iter().cloned().collect();
-            made_from.push((id.clone(), meta["template"].as_str().map(str::to_string)));
+            // A retired role no longer covers a core role's prompt (C22).
+            if !retired {
+                made_from.push((id.clone(), meta["template"].as_str().map(str::to_string)));
+            }
             roles.push(serde_json::json!({
                 "id": id,
                 "title": meta["title"],
                 "kind": meta["kind"],
                 "holders": meta["holders"],
                 "template": self.templates.drift(&meta),
+                "state": standings[index].state,
+                "merged_into": standings[index].merged_into,
+                "merged_from": ids
+                    .iter()
+                    .zip(&standings)
+                    .filter(|(_, standing)| {
+                        standing.retired() && standing.merged_into.as_deref() == Some(id.as_str())
+                    })
+                    .map(|(from, _)| from.clone())
+                    .collect::<Vec<_>>(),
                 "live": live,
                 "requests": waiting,
                 "latest_output": picture::latest_output(id, &outputs),
@@ -346,13 +464,27 @@ impl DirectoryService {
         }
         let step_docs = picture::read_step_docs(repo);
         let mut prompts = templates::recommendations(project, &made_from);
-        picture::fold_needs(
-            project,
-            &mut prompts,
-            &picture::step_needs(&step_docs),
-            &made_from,
-            &self.templates,
-        );
+        // A retired role keeps its document, so a need naming it is
+        // retargeted, never answered with `add` (review of #135, F004).
+        let (needs, stale): (Vec<_>, Vec<_>) = picture::step_needs(&step_docs)
+            .into_iter()
+            .partition(|(need, _)| {
+                !ids.iter()
+                    .zip(&standings)
+                    .any(|(id, standing)| id == need && standing.retired())
+            });
+        picture::fold_needs(project, &mut prompts, &needs, &made_from, &self.templates);
+        let retired: Vec<(String, Option<String>)> = stale
+            .iter()
+            .filter_map(|(need, _)| {
+                ids.iter()
+                    .zip(&standings)
+                    .find(|(id, _)| *id == need)
+                    .map(|(id, standing)| (id.clone(), standing.merged_into.clone()))
+            })
+            .collect();
+        prompts.retain(|prompt| !retired.iter().any(|(id, _)| *id == prompt.role));
+        prompts.extend(picture::retarget(repo, &retired, &step_docs));
         // F21: a missing prime role document is not a missing prime.
         for prompt in prompts.iter_mut().filter(|prompt| prompt.role == "prime") {
             prompt.note = Some(match &prime {
@@ -417,7 +549,12 @@ impl DirectoryService {
     /// # Errors
     /// [`super::E_GOV_ABSENT`]; [`E_ROLE_MISSING`]; `E-RS-ARG` for a template
     /// or version this build does not ship.
-    pub fn template_diff(&self, repo: &std::path::Path, id: &str) -> Result<Value, Refusal> {
+    pub fn template_diff(
+        &self,
+        project: &str,
+        repo: &std::path::Path,
+        id: &str,
+    ) -> Result<Value, Refusal> {
         let paths = RolePaths::new(id)?;
         let root = super::root::find(repo)?;
         let document: Value = std::fs::read(root.worktree.join(&paths.document))
@@ -438,12 +575,29 @@ impl DirectoryService {
                 serde_json::json!({"id": id, "template": null, "behind": false, "diff": ""}),
             );
         };
-        let version = meta["template_version"].as_str().unwrap_or_default();
+        let record = format!(
+            "Record the version it came from: pij directory edit {} --set template_version=<n> --why <text> --project {}",
+            shell_word(id),
+            shell_word(project)
+        );
+        let version = match meta["template_version"].as_str().map(str::trim) {
+            Some(version) if !version.is_empty() => version,
+            _ => {
+                return Err(Refusal::new(
+                    E_NO_TEMPLATE_VERSION,
+                    format!(
+                        "role {id:?} records template {name:?} but no template_version, so there is nothing to diff from"
+                    ),
+                )
+                .with_next(record));
+            }
+        };
         let from = templates::parse_version(version).ok_or_else(|| {
             Refusal::new(
                 "E-RS-ARG",
                 format!("role {id:?} records template_version {version:?}, not a version number"),
             )
+            .with_next(record.clone())
         })?;
         let (latest, diff) = self.templates.diff_to_latest(name, from)?;
         Ok(serde_json::json!({
@@ -685,6 +839,370 @@ impl DirectoryService {
         Ok((written, note.display().to_string()))
     }
 
+    /// Where role `id` stands (plan 206): active, or retired and perhaps
+    /// merged into another. Read in-process from the governance worktree, no
+    /// launch: the read s05's send to a role refuses on.
+    ///
+    /// # Errors
+    /// [`super::E_GOV_ABSENT`]; [`E_ROLE_MISSING`].
+    pub fn standing(&self, repo: &std::path::Path, id: &str) -> Result<role::Standing, Refusal> {
+        let root = super::root::find(repo)?;
+        Ok(role::standing(&read_role(&root, id)?))
+    }
+
+    /// `pij directory retire <id>` (plan 206, req-28): mark the role retired
+    /// in one writer commit with a changelog row. Its memory, outputs and
+    /// lineage stay where they are.
+    ///
+    /// # Errors
+    /// [`E_ROLE_MISSING`]; [`E_RETIRED`] when it already is; [`E_ROLE_HELD`]
+    /// while a seat holds it; [`E_ROLE_QUEUED`] while requests wait queued
+    /// for it, unless `drop_queued`; any writer refusal. Nothing is written.
+    pub async fn retire(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        id: &str,
+        actor: &SeatId,
+        how: Retirement<'_>,
+    ) -> Result<Reshaped, Refusal> {
+        let why = how.why;
+        let message = format!(
+            "community: retire role {id}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}"
+        );
+        self.reshape(project, repo, message, id, None, actor, how)
+            .await
+    }
+
+    /// `pij directory merge <from> --into <to>` (plan 206, req-28): retire
+    /// `from` pointing at `to`, with a changelog row on both, in one writer
+    /// commit. Nothing is moved: `from`'s memory, outputs and lineage stay
+    /// where they are and the view lists `from` under `to`.
+    ///
+    /// # Errors
+    /// As [`Self::retire`] for `from`; `E-RS-ARG` when `to` is `from`;
+    /// [`E_ROLE_MISSING`] or [`E_RETIRED`] for `to`.
+    pub async fn merge(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        from: &str,
+        into: &str,
+        actor: &SeatId,
+        how: Retirement<'_>,
+    ) -> Result<Reshaped, Refusal> {
+        let why = how.why;
+        RolePaths::new(into)?;
+        if from == into {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("role {from:?} cannot be merged into itself"),
+            ));
+        }
+        let message = format!(
+            "community: merge role {from} into {into}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}"
+        );
+        self.reshape(project, repo, message, from, Some(into), actor, how)
+            .await
+    }
+
+    /// Retire `id`, merged into `into` when given, under the writer lock.
+    #[allow(clippy::too_many_arguments)]
+    async fn reshape(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        message: String,
+        id: &str,
+        into: Option<&str>,
+        actor: &SeatId,
+        how: Retirement<'_>,
+    ) -> Result<Reshaped, Refusal> {
+        let why = how.why;
+        let paths = RolePaths::new(id)?;
+        let gate = self.admission(project, id).await;
+        let finish = format!(
+            "pij directory {} --why <text> --drop-queued --project {}",
+            reshape_verb(id, into),
+            shell_word(project)
+        );
+        let store_refusal =
+            |error: pij_core::error::PijError| Refusal::new("E-RS-STORE", error.to_string());
+        // A claimed request goes back on the queue if its delivery fails or the
+        // daemon stops first, so the role cannot retire under it. A brake, not
+        // a policy: it only ever refuses a retirement, never causes one.
+        let delivering = self
+            .store
+            .delivering_for_role(project, id)
+            .await
+            .map_err(store_refusal)?;
+        if !delivering.is_empty() {
+            return Err(delivering_refusal(
+                project,
+                id,
+                into,
+                &delivering,
+                system_ms(),
+            ));
+        }
+        let queued = self
+            .store
+            .queued_for_role(project, id)
+            .await
+            .map_err(store_refusal)?;
+        let standing = self.standing(&repo, id)?;
+        if standing.retired() {
+            // An earlier --drop-queued committed the retirement but did not
+            // finish withdrawing: the same command finishes it, with no new
+            // commit or changelog row (review of #135, F002).
+            let same = into.is_none() || standing.merged_into.as_deref() == into;
+            if how.drop_queued && same && !queued.is_empty() {
+                return Ok(Reshaped {
+                    written: None,
+                    queued,
+                    routes: Regenerated::default(),
+                    finish,
+                    gate,
+                });
+            }
+            refuse_retired(id, &standing)?;
+        }
+        if !queued.is_empty() && !how.drop_queued {
+            return Err(queued_refusal(project, id, into, &queued, system_ms()));
+        }
+        let pending = self.pending(project).await?;
+        let (project_id, id, into, by, why) = (
+            project.to_string(),
+            id.to_string(),
+            into.map(str::to_owned),
+            actor.to_string(),
+            why.to_string(),
+        );
+        let (written, built, gate) = self
+            .commit_keeping(repo, message, gate, move |root, built| {
+                let date = super::holders::today();
+                let current = read_role(root, &id)?;
+                refuse_retired(&id, &role::standing(&current))?;
+                let rows = read_holders(root, &project_id, &id)?;
+                let held: Vec<_> = rows.iter().filter(|row| row.to.is_none()).collect();
+                if !held.is_empty() {
+                    return Err(Refusal::new(
+                        E_ROLE_HELD,
+                        format!(
+                            "role {id:?} is still held by {}; release it first",
+                            held.iter()
+                                .map(|row| format!(
+                                    "{} ({})",
+                                    row.seat,
+                                    holding(&id, &row.instance)
+                                ))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    )
+                    .with_next(format!(
+                        "Release each holding first:{}",
+                        held.iter()
+                            .map(|row| format!(
+                                "\n  pij directory release {} {} --why <text> --project {}",
+                                shell_word(&holding(&id, &row.instance)),
+                                shell_word(&row.seat),
+                                shell_word(&project_id)
+                            ))
+                            .collect::<String>()
+                    )));
+                }
+                let row_why = match &into {
+                    Some(into) => format!("merged into {into}: {why}"),
+                    None => why.clone(),
+                };
+                let retired = role::stamp(
+                    role::retire(current, into.as_deref())?,
+                    &id,
+                    &by,
+                    &row_why,
+                    &date,
+                )?;
+                let mut files = vec![NewFile {
+                    path: paths.document.clone(),
+                    bytes: role::to_bytes(&retired),
+                    document: true,
+                    existing: Existing::Replace,
+                }];
+                if let Some(into) = &into {
+                    let target = read_role(root, into)?;
+                    refuse_retired(into, &role::standing(&target))?;
+                    let stamped =
+                        role::stamp(target, into, &by, &format!("{id} merged in: {why}"), &date)?;
+                    files.push(NewFile {
+                        path: RolePaths::new(into)?.document,
+                        bytes: role::to_bytes(&stamped),
+                        document: true,
+                        existing: Existing::Replace,
+                    });
+                }
+                let regenerated = routes::regenerate(&root.worktree, &files);
+                files.extend(regenerated.file.clone());
+                built.routes = Some(regenerated);
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &pending,
+                    &[],
+                    &mut built.landed,
+                )?);
+                Ok(files)
+            })
+            .await?;
+        self.flushed(&built.landed, &written).await?;
+        Ok(Reshaped {
+            written: Some(written),
+            queued: if how.drop_queued { queued } else { Vec::new() },
+            routes: built.routes.unwrap_or_default(),
+            finish,
+            gate,
+        })
+    }
+
+    /// Withdraw the requests a `--drop-queued` retire or merge left queued
+    /// (plan 206): delete their rows and append one `role.request.withdrawn`
+    /// event each, in one store transaction, still under the role's gate,
+    /// which the write task holds until that transaction ends, even if this
+    /// call is cancelled first. Call it after telling each
+    /// requester, so a failure here leaves the requests queued behind a retired
+    /// role and the same command finishes the job (review of #135, F002).
+    ///
+    /// # Errors
+    /// `E-RS-STORE`, naming the retirement that landed and the command that
+    /// finishes the withdrawal.
+    pub async fn withdraw(
+        &self,
+        reshaped: Reshaped,
+        project: &str,
+        role: &str,
+        actor: &SeatId,
+        why: &str,
+        gone: Vec<String>,
+    ) -> Result<Vec<pij_store::RoleRequest>, Refusal> {
+        let Reshaped {
+            written,
+            queued,
+            finish,
+            gate,
+            ..
+        } = reshaped;
+        if queued.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (store, project_id, role_id) =
+            (self.store.clone(), project.to_string(), role.to_string());
+        let withdrawal = pij_store::Withdrawal {
+            by: actor.to_string(),
+            why: why.to_string(),
+            at: system_ms(),
+            gone,
+        };
+        let withdrawn = self
+            .event_bus
+            .publish_committed_batch(async move {
+                store
+                    .withdraw_queued_role_requests(&project_id, &role_id, &withdrawal, gate)
+                    .await
+            })
+            .await
+            .map_err(|error| {
+                Refusal::new(
+                    "E-RS-STORE",
+                    format!(
+                        "role {role:?} is retired{} but its queued requests were not withdrawn: {error}",
+                        written
+                            .as_ref()
+                            .map(|written| format!(" ({})", written.commit))
+                            .unwrap_or_default()
+                    ),
+                )
+                .with_next(format!("Run the same command again to finish: {finish}"))
+            })?;
+        Ok(withdrawn)
+    }
+
+    /// `pij directory edit <id>` (plan 206, F20): change an existing role in
+    /// one writer commit. The role is read under the writer lock, the change
+    /// applied, its changelog kept, and one row added.
+    ///
+    /// # Errors
+    /// [`E_ROLE_MISSING`]; `E-RS-ARG` for an edit that changes nothing or a
+    /// document for another id; any writer refusal. Nothing is written.
+    pub async fn edit(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        id: &str,
+        change: RoleEdit,
+        actor: &SeatId,
+        why: &str,
+    ) -> Result<(Written, Regenerated), Refusal> {
+        let paths = RolePaths::new(id)?;
+        let pending = self.pending(project).await?;
+        let message = format!(
+            "community: edit role {id}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}"
+        );
+        let (project_id, id, by, why) = (
+            project.to_string(),
+            id.to_string(),
+            actor.to_string(),
+            why.to_string(),
+        );
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
+                let current = read_role(root, &id)?;
+                let standing = role::standing(&current);
+                refuse_retired(&id, &standing)?;
+                let edited = match change {
+                    RoleEdit::Fields(fields) => role::apply_fields(current.clone(), &fields)?,
+                    RoleEdit::Document(document) => role::carry_standing(
+                        role::keep_changelog(document, &current),
+                        &current,
+                    ),
+                };
+                if role::standing(&edited) != standing {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        format!(
+                            "edit does not change role {id:?}'s state or merged_into; use pij directory retire or merge"
+                        ),
+                    ));
+                }
+                if edited == current {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        format!("the edit changes nothing in role {id:?}"),
+                    ));
+                }
+                let stamped = role::stamp(edited, &id, &by, &why, &super::holders::today())?;
+                let mut files = vec![NewFile {
+                    path: paths.document.clone(),
+                    bytes: role::to_bytes(&stamped),
+                    document: true,
+                    existing: Existing::Replace,
+                }];
+                let regenerated = routes::regenerate(&root.worktree, &files);
+                files.extend(regenerated.file.clone());
+                built.routes = Some(regenerated);
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &pending,
+                    &[],
+                    &mut built.landed,
+                )?);
+                Ok(files)
+            })
+            .await?;
+        self.flushed(&built.landed, &written).await?;
+        Ok((written, built.routes.unwrap_or_default()))
+    }
+
     /// Any other directory write (`directory add`, `directory routes --write`):
     /// `files` plus the project's pending close-ends, in one commit. When the
     /// write changes the roles' scopes, or `ROUTES.md` is stale, the
@@ -704,6 +1222,9 @@ impl DirectoryService {
         let (project_id, flush) = (project.to_string(), pending);
         let (written, built) = self
             .commit(repo, message, move |root, built| {
+                for file in files.iter().filter(|file| file.document) {
+                    check_merge_target(root, file)?;
+                }
                 let mut files = files;
                 let regenerated = routes::regenerate(&root.worktree, &files);
                 files.extend(regenerated.file.clone());
@@ -824,6 +1345,7 @@ impl DirectoryService {
                 for role in &roles {
                     match read_holders(root, &project, role) {
                         Ok(mut rows) => {
+                            refuse_retired(role, &super::role::standing(&read_role(root, role)?))?;
                             built.landed.extend(holders::apply_ends(&mut rows, &flush));
                             by_role.insert(role.clone(), rows);
                         }
@@ -1362,11 +1884,30 @@ impl DirectoryService {
         + Send
         + 'static,
     ) -> Result<(Written, Built), Refusal> {
+        self.commit_keeping(repo, message, (), build)
+            .await
+            .map(|(written, built, ())| (written, built))
+    }
+
+    /// [`Self::commit`], with `keep` moved into the blocking job and handed
+    /// back when the commit lands. A caller cancelled while the job waits for
+    /// the writer leaves `keep` with the job, which can still commit, so an
+    /// admission guard is held for as long as its write can land (review of
+    /// #135, F001); a refused write drops it inside the job.
+    async fn commit_keeping<K: Send + 'static>(
+        &self,
+        repo: PathBuf,
+        message: String,
+        keep: K,
+        build: impl FnOnce(&GovernanceRoot, &mut Built) -> Result<Vec<NewFile>, Refusal>
+        + Send
+        + 'static,
+    ) -> Result<(Written, Built, K), Refusal> {
         let writer = Arc::clone(&self.writer);
         tokio::task::spawn_blocking(move || {
             let mut built = Built::default();
             let written = writer.write_with(&repo, |root| build(root, &mut built), &message)?;
-            Ok((written, built))
+            Ok((written, built, keep))
         })
         .await
         .map_err(|error| Refusal::new(E_GOV_GIT, format!("the writer stopped: {error}")))?
@@ -1387,6 +1928,178 @@ fn open_for(row: &Assignment, seat: &str, instance: &str) -> bool {
 
 fn holders_path(role: &str) -> Result<String, Refusal> {
     Ok(RolePaths::new(role)?.holders.display().to_string())
+}
+
+/// A role document's `merged_into` must name another role in this directory
+/// (docs-system verdict on #135, note 2); ddocs cannot check it.
+fn check_merge_target(root: &GovernanceRoot, file: &NewFile) -> Result<(), Refusal> {
+    let Some(id) = file
+        .path
+        .parent()
+        .filter(|_| {
+            file.path
+                .file_name()
+                .is_some_and(|name| name == "role.dd.json")
+        })
+        .and_then(|dir| dir.file_name())
+        .and_then(|name| name.to_str())
+    else {
+        return Ok(());
+    };
+    let Ok(document) = serde_json::from_slice::<Value>(&file.bytes) else {
+        return Ok(());
+    };
+    let Some(into) = role::standing(&document).merged_into else {
+        return Ok(());
+    };
+    if into == id {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("role {id:?} cannot be merged into itself"),
+        ));
+    }
+    read_role(root, &into).map(|_| ())
+}
+
+/// `role` or `role/instance`, as the directory verbs take it.
+fn holding(role: &str, instance: &str) -> String {
+    if instance.is_empty() {
+        role.to_string()
+    } else {
+        format!("{role}/{instance}")
+    }
+}
+
+/// Refuse to retire `id` (merged into `into`, if given) in `project` while
+/// requests wait queued for it, listing each by id, requester, instance and
+/// age, with the exact commands that drain or withdraw them (review of #135,
+/// F003: the project and instance are kept).
+fn queued_refusal(
+    project: &str,
+    id: &str,
+    into: Option<&str>,
+    queued: &[pij_store::RoleRequest],
+    now_ms: u64,
+) -> Refusal {
+    let listed: Vec<String> = queued
+        .iter()
+        .map(|request| {
+            format!(
+                "{} from {} for {} ({} old)",
+                request.id,
+                request.requester,
+                holding(id, &request.instance),
+                pij_core::cold_wake::human_duration(now_ms.saturating_sub(request.created_at))
+            )
+        })
+        .collect();
+    let mut targets: Vec<String> = queued
+        .iter()
+        .map(|request| holding(id, &request.instance))
+        .collect();
+    targets.sort();
+    targets.dedup();
+    let verb = reshape_verb(id, into);
+    let project = shell_word(project);
+    let assigns: String = targets
+        .iter()
+        .map(|target| {
+            format!(
+                "\n  pij directory assign {} <seat> --why <text> --project {project}",
+                shell_word(target)
+            )
+        })
+        .collect();
+    Refusal::new(
+        E_ROLE_QUEUED,
+        format!(
+            "role {id:?} has {} request(s) queued for a holder: {}; nothing was written",
+            queued.len(),
+            listed.join(", ")
+        ),
+    )
+    .with_next(format!(
+        "Assign a holder to take them, release it, then {verb} again:{assigns}\n\
+         Or withdraw them, telling each requester once:\n  pij directory {verb} --why <text> --drop-queued --project {project}"
+    ))
+}
+
+/// The refusal of a retire or merge while requests for `id` are mid-delivery
+/// (review of #135, F001): each is listed, and the same command is the next
+/// step once they settle. `--drop-queued` cannot withdraw them.
+fn delivering_refusal(
+    project: &str,
+    id: &str,
+    into: Option<&str>,
+    delivering: &[pij_store::RoleRequest],
+    now_ms: u64,
+) -> Refusal {
+    let listed: Vec<String> = delivering
+        .iter()
+        .map(|request| {
+            format!(
+                "{} from {} to {} ({} old)",
+                request.id,
+                request.requester,
+                request.holder.as_deref().unwrap_or("?"),
+                pij_core::cold_wake::human_duration(now_ms.saturating_sub(request.created_at))
+            )
+        })
+        .collect();
+    Refusal::new(
+        E_ROLE_QUEUED,
+        format!(
+            "role {id:?} has {} request(s) being delivered: {}; a failed delivery puts one back on the queue, so nothing was written",
+            delivering.len(),
+            listed.join(", ")
+        ),
+    )
+    .with_next(format!(
+        "Once they are delivered or back on the queue, run it again:\n  pij directory {} --why <text> --project {}",
+        reshape_verb(id, into),
+        shell_word(project)
+    ))
+}
+
+/// `retire <id>` or `merge <id> --into <into>`, each name a shell word.
+fn reshape_verb(id: &str, into: Option<&str>) -> String {
+    match into {
+        Some(into) => format!("merge {} --into {}", shell_word(id), shell_word(into)),
+        None => format!("retire {}", shell_word(id)),
+    }
+}
+
+/// Refuse a write to a retired role, naming where a merged one went.
+fn refuse_retired(id: &str, standing: &role::Standing) -> Result<(), Refusal> {
+    if !standing.retired() {
+        return Ok(());
+    }
+    Err(match &standing.merged_into {
+        Some(into) => Refusal::new(E_RETIRED, format!("role {id:?} was merged into {into:?}"))
+            .with_next(format!("Use {into} instead.")),
+        None => Refusal::new(E_RETIRED, format!("role {id:?} is retired")),
+    })
+}
+
+/// The role's committed document.
+fn read_role(root: &GovernanceRoot, id: &str) -> Result<Value, Refusal> {
+    let paths = RolePaths::new(id)?;
+    let missing = || {
+        Refusal::new(
+            E_ROLE_MISSING,
+            format!("role {id:?} does not exist in this project's directory"),
+        )
+        .with_next(format!(
+            "Add it first: pij directory add {id} --why <text> ..."
+        ))
+    };
+    let bytes = std::fs::read(root.worktree.join(&paths.document)).map_err(|_| missing())?;
+    serde_json::from_slice(&bytes).map_err(|error| {
+        Refusal::new(
+            E_GOV_GIT,
+            format!("{} is not JSON: {error}", paths.document.display()),
+        )
+    })
 }
 
 /// The role's committed holders rows; none when it has no holders document.

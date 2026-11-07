@@ -7,6 +7,8 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
     match verb {
         None => Some(OVERVIEW),
         Some("add") => Some(ADD),
+        Some("edit") => Some(EDIT),
+        Some("retire" | "merge") => Some(RESHAPE),
         Some("assign" | "release" | "lineage") => Some(HOLD),
         Some("external") => Some(EXTERNAL),
         Some("rebuild") => Some(REBUILD),
@@ -55,6 +57,9 @@ Usage:
   pij directory add <id> --why <text> [role flags | --file <json>] [--project <slug>]
   pij directory add <id> --from template:<name>[@v<n>] --why <text> [role flags]
   pij directory add --batch <dir> --why <text> [--project <slug>]
+  pij directory edit <id> --why <text> (--set <field>=<value>... | role flags | --file <json>)
+  pij directory retire <role> --why <text>             a role no longer in use
+  pij directory merge <from> --into <to> --why <text>  fold one role into another
   pij directory templates                             the role templates and versions
   pij directory template-diff <id>                    what changed in its template since
   pij directory assign <role>[/<instance>] <seat> --why <text>
@@ -122,6 +127,39 @@ Flags:
   --packet <text> | --brief <repo-relative path>     the standing packet
   --file <json>             the whole document instead of flags
   --batch <dir>             every *.dd.json in <dir>, one commit, all or nothing";
+
+const EDIT: &str = "\
+pij directory edit: change a role that exists (plan 206).
+
+Usage:
+  pij directory edit <id> --why <text> --set <field>=<value> [--set ...] [role flags]
+  pij directory edit <id> --why <text> --file <role.dd.json>
+
+--set takes title, kind, lifecycle, holders, instance_key, default_limit,
+summary, template, template_version, harness, model, effort, packet or brief.
+The role flags `add` takes work too (a repeated flag such as --rule replaces
+the whole list). --file replaces the whole document but keeps its changelog.
+Every edit adds one changelog row (--why) and commits through the writer; an
+edit that changes nothing, or a role that does not exist, refuses.";
+
+const RESHAPE: &str = "\
+pij directory retire | merge: reshape the community as the work changes (plan 206).
+
+Usage:
+  pij directory retire <role> --why <text> [--drop-queued] [--project <slug>]
+  pij directory merge <from> --into <to> --why <text> [--drop-queued] [--project <slug>]
+
+retire marks the role retired (meta.state) with a changelog row. merge retires
+<from> with meta.merged_into <to> and adds a changelog row to both. Each is one
+commit. Nothing is moved or rewritten: a retired role's memory, outputs and
+lineage stay readable, and the view lists a merged role under its target. A role
+with a live holder refuses (release it first); a retired role cannot be assigned,
+edited, retired again or merged into, and sends to it are refused.
+
+A role with requests queued for a holder refuses, listing each request's id,
+requester and age: assign a holder to take them, or pass --drop-queued to
+withdraw them (each is recorded on the spine and its requester told once, as an
+FYI). merge does not move queued requests to <to>.";
 
 const HOLD: &str = "\
 pij directory assign|release|lineage: a seat takes or leaves a role, or the
@@ -236,6 +274,18 @@ mod tests {
                 .contains("--from template:<name>")
         );
         assert_eq!(help(Some("templates")), help(Some("template-diff")));
+        assert!(
+            help(Some("edit"))
+                .unwrap()
+                .contains("--set <field>=<value>")
+        );
+        assert!(help(None).unwrap().contains("pij directory edit <id>"));
+        assert_eq!(help(Some("retire")), help(Some("merge")));
+        assert!(
+            help(None)
+                .unwrap()
+                .contains("pij directory merge <from> --into <to>")
+        );
     }
 
     #[test]

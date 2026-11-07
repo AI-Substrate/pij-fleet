@@ -93,7 +93,8 @@
 						"../prds/001-pij-community.dd.json#requirements/req-05",
 						"../prds/001-pij-community.dd.json#requirements/req-06",
 						"../prds/001-pij-community.dd.json#requirements/req-10",
-						"../prds/001-pij-community.dd.json#requirements/req-16"
+						"../prds/001-pij-community.dd.json#requirements/req-16",
+						"../prds/001-pij-community.dd.json#requirements/req-28"
 					],
 					"state": "in-progress"
 				},
@@ -336,6 +337,11 @@
 					"date": "2026-11-06",
 					"by": "pij-back-tapir",
 					"change": "c-orient shipped (plan 203): the directory view and its prompts."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "c-verbs realises req-28: plan 206 adds pij directory retire and merge (roadmap s15)."
 				}
 			]
 		}
