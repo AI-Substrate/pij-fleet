@@ -18,6 +18,6 @@
 
 | id | seat | harness | harness_session | machine | instance_key | from | to | assigned_by | released_by | why | release_why |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| — | pij-wary-lynx | copilot | 3b066a36-c3a8-4830-9c90-ee18285c9a26 | ops.osk.lan | — | 2026-11-05T23:09:44.160Z | — | pij-steady-otter | — | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | — |
+| — | pij-wary-lynx | copilot | 3b066a36-c3a8-4830-9c90-ee18285c9a26 | ops.osk.lan | — | 2026-11-05T23:09:44.160Z | 2026-11-07T07:29:15.407Z | pij-steady-otter | pij-steady-otter | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | seat died in the 07 Nov reboot; prime: fresh holders |
 | — | pij-alert-ibex | copilot | f5ecc23f-34ac-4ecd-a42f-b129c66db7e7 | ops.osk.lan | — | 2026-11-06T03:22:08.439Z | — | pij-steady-otter | — | second security holder for parallel verdicts (prime 13:20) | — |
 | — | pij-wary-lynx | copilot | 3b066a36-c3a8-4830-9c90-ee18285c9a26 | ops.osk.lan | 147 | 2026-11-06T09:12:49.520Z | 2026-11-06T09:13:22.941Z | pij-steady-otter | pij-steady-otter | verdict on #147 (plan 213) | instance not supported on a one-holder role (F62); sent by seat |

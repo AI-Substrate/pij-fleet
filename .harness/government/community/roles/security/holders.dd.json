@@ -19,7 +19,10 @@
 					"harness": "copilot",
 					"harness_session": "3b066a36-c3a8-4830-9c90-ee18285c9a26",
 					"machine": "ops.osk.lan",
+					"release_why": "seat died in the 07 Nov reboot; prime: fresh holders",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-wary-lynx",
+					"to": "2026-11-07T07:29:15.407Z",
 					"why": "record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06)"
 				},
 				{
