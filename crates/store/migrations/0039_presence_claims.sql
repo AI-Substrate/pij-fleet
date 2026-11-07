@@ -14,4 +14,4 @@ CREATE TABLE presence_claims (
     PRIMARY KEY (kind, subject)
 ) STRICT;
 
-PRAGMA user_version = 38;
+PRAGMA user_version = 39;
