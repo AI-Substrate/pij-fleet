@@ -20,5 +20,6 @@
 - [2026-11-07 Reply sender is not answer authority](2026-11-07-reply-sender-is-not-answer-authority.dd.md): Read before changing correlated reply accounting, answered\_at, or using message.from for a durable role mutation. (reply, identity, authorization, regression)
 - [2026-11-07 Scoped digest reads fail closed](2026-11-07-scoped-digest-reads-fail-closed.dd.md): Read before changing digest scope resolution or reviewing queued role-request metadata exposure. (digest, scope, privacy, proof)
 - [2026-11-07 Correct victim identifiers are not caller proof](2026-11-07-victim-identifiers-are-not-caller-proof.dd.md): Read before authorizing seat activity/context reports or using telemetry to gate delivery. (identity, telemetry, authorization, regression)
+- [2026-11-08 Observation is not origin proof](2026-11-08-observation-is-not-origin-proof.dd.md): Read before using observed PID, pane or registry metadata to authorize a caller or socket peer. (identity, sockets, proof)
 - [2026-11-08 Request mutations need bound and scoped authority](2026-11-08-request-mutations-need-bound-authority.dd.md): Read before authorizing request close/withdraw or reusing a caller/prime helper. (requests, identity, authority, proof)
 <!-- /pij:generated -->
