@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "5b862a147c8dc02ab9d0a2aa0c96fe3abaced55e",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/161#issuecomment-6711416446",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:161",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass** at `5b862a147c8dc02ab9d0a2aa0c96fe3abaced55e`.\n\nPrivacy/security snapshot scan of all 11 changed documentation files, 492 additions/28 deletions, against base `e5e011e`. Imported-main changes were excluded.\n\nNo reportable vulnerability or apparent introduced private owner/name/content, prohibited machine path, credential or token disclosure found under C19/C21. Pij-owned governance layout and commit references are permitted.\n\nExact-head CI is green and the PR is CLEAN. This verdict covers publication hygiene only: actual governance edits, delivery-store values, receipt truth, current render/DD validation and the shipped claim remain reviewer-owned. No private-history/credential/store reads, local builds/tests, DD execution or live probes.\n"
+		}
+	]
+}
