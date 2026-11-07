@@ -119,6 +119,15 @@ Self or the target's **current recorded parent** may assert/unset its role; an u
 
 Sources: [`identity.rs`](../../crates/daemon/src/http/identity.rs), [`role.rs`](../../crates/daemon/src/http/role.rs), [`types.rs`](../../crates/daemon/src/http/types.rs), [`governance.rs`](../../crates/daemon/src/http/governance.rs).
 
+## Seat authority
+
+The daemon key proves machine access, not which seat is calling (F88, PRD 003 req-10). [`harness/scripts/route-inventory.json`](../../harness/scripts/route-inventory.json) classifies every (method, path) pair the daemon serves:
+- **machine-public**, with the reason, for any key holder;
+- **seat-authority**, which acts with a seat's authority. Each entry names its class (send-as, inbox-claim, role-and-holder, outputs, activity, registration, controls, adoption, attribution), the identities it grants authority by (seat, parent, prime, holder, owner, recipient), and today's guard. The guard codes are the inventory's own: R resolver, B hook binding, N native tuple, S shim caller, C control admission, P provenance exception, A asserted.
+- **job-token**, for the background emit hook.
+
+Today every seat-authority guard rests on identifiers a caller can present, so a local key holder can act as another seat; ruling C32 accepts that until req-10 lands. `just route-inventory-check` (a `harness checks` stage) probes the routes the router really serves and fails on a served pair missing from the inventory, a stale entry, or an entry without a valid classification, so a new route can't ship unclassified. How each seat incarnation will get a private capability, and the order phase 2 gates the classes in (send-as first), is decided in [plan 221's workshop](../plans/221-seat-provenance/workshops/001-capability-bootstrap.md).
+
 ## Spawn harness choice and retirement policy
 
 **OMP and Pi are distinct harnesses, with no shared default.** Native `pij-rs spawn --harness <h>`, HTTP `POST /v1/spawn` and in-process `pij_spawn({harness: …})` require an explicit selection from `omp`, `pi`, `claude`, `copilot` and `codex`; the parent runtime is not a default. `--bin` (HTTP `executable`, in-process `bin`) overrides only the executable path, never selects the harness. Bare selectors such as `--harness pi --bin omp` refuse with the fix `--harness omp`; a known different harness basename also refuses inside an absolute path. A matching absolute path, such as `--harness omp --bin /absolute/path/to/omp`, is accepted. OMP uses provider-qualified model ids such as `github-copilot/gpt-6-astra`; Pi uses its own installed catalog's exact id, such as `gpt-5.6-sol`, with provider qualification when needed. Model availability must be established in the selected runtime, not inferred from the other.
@@ -133,6 +142,8 @@ Sources: [`identity.rs`](../../crates/daemon/src/http/identity.rs), [`role.rs`](
 HydraFusion ids (`hydrafusion`, `hydrafusion-max`) are Copilot's per-turn model router. Copilot refuses every other context tier for them ("HydraFusion models do not support context tiers"), and omitting `--context` would inherit a persisted `long_context` config tier, so pij passes the explicit `default` tier. Copilot also refuses reasoning effort for them, so pij refuses `--effort` before launch rather than dropping it. The `--model auto --auto-tier hydrafusion` form is refused by Copilot 1.0.97 ("requires dynamic Auto tiers"); use the model id. The seat's recorded model stays the synthetic id; the per-turn routed model is not reported.
 
 These are argument-shape examples, not catalog or runtime receipts. `pij models` catalog enumeration remains unported (`E-RS-UNPORTED`): agents still cannot enumerate per-harness catalogs through pij, and no native catalog command is supplied. Consult the selected harness's installed catalog, then prove the choice with a canary and actual runtime evidence. Existing native launch flags are otherwise unchanged; native spawn still has no legacy layout/task/branch/plan-id flags.
+
+**No modal questions (F110).** Every Copilot launch carries `--no-ask-user`, and every Claude launch carries `--disallowedTools AskUserQuestion`. That covers spawn, and revive too, since it relaunches through the same argv builder with `--resume`. A seat asks in its text, never in a dialog its harness draws (pij skill invariants 9-10). Codex, OMP and Pi have no such tool flag. Pinned by `copilot_and_claude_launch_without_their_modal_question_tool` in `crates/harnesses/src/spawn.rs`.
 
 The daemon's `Config.retired_harnesses` reads comma-separated `PIJ_RETIRED_HARNESSES`. The generic default is empty: no harness is retired. This machine's `just bounce-rs` recipe explicitly sets `PIJ_RETIRED_HARNESSES=pi`; Pi is not hard-coded as globally retired. With that policy, native and in-process Pi spawn refuse with `harness pi is retired on this machine; use omp (or pass --allow-retired)`.
 

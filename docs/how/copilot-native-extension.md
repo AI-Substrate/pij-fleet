@@ -83,7 +83,7 @@ Copilot's per-turn model router. Spawn them by model id:
 pij-rs spawn --harness copilot --model hydrafusion-max --cwd "$PWD"
 ```
 
-Pij launches `copilot --yolo --model hydrafusion-max --context default`. Copilot
+Pij launches `copilot --yolo --no-ask-user --model hydrafusion-max --context default`. Copilot
 refuses every other context tier for these models ("HydraFusion models do not
 support context tiers"), and omitting `--context` would inherit a persisted
 `long_context` tier, so the explicit `default` tier is required. Copilot also

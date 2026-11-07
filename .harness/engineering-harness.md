@@ -34,6 +34,7 @@ exists) + minih retros (`docs/retros/*.md`).
 - `just lint` (biome, errors+warnings) — style/correctness.
 - `just lockfile-allowlist` — every package-lock.json source is an allowed host.
 - `just copilot-native-test` — native Copilot extension node:test contracts.
+- `just route-inventory-check` — every (method, path) pair the daemon serves is classified in `harness/scripts/route-inventory.json` (plan 221, F88).
 - `just rust-check` — Cargo.lock current, fmt, clippy (`-D warnings`), workspace tests.
 - `just smoke` — tmux-driven end-to-end driver SDK scenarios.
 - `just self-check` — the composite merge gate over all of the above.
@@ -41,7 +42,7 @@ exists) + minih retros (`docs/retros/*.md`).
 - **Runtime cost (not a gate):** `pij-rs --json ping | jq .data.spawns` (daemon launches per call site) and `just spawn-rate` (machine-wide launches/s). Required before/after receipts for any change to a loop, poll, hook or launch (AGENTS.md § Resource cost).
 - **`harness checks`** — the runnable signal inventory: runs every sensor above
   as individual stages with a per-sensor verdict (runs ALL, not first-fail;
-  `--quick` skips rust and smoke). The single "are we done?/ship" gate; add new sensors to
+  `--quick` skips route-inventory, rust and smoke). The single "are we done?/ship" gate; add new sensors to
   `.harness/extensions/checks/`.
 
 ## Evidence paths

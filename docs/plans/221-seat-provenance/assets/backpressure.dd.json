@@ -1,0 +1,86 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 221 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-00dd",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "A sensor (`just route-inventory-check`, wired into harness checks and self-check) enumerates the routes the daemon actually serves (from the router table or Endpoint::ALL, never from the JSON) and fails on any route missing from the inventory, any inventory entry with no such route, and any seat-authority route with no class. Tests: a route added without an inventory entry fails; a stale entry fails; an unclassified seat-authority route fails.",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md#ac1-route-inventory"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-00dd",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "The workshop has a security verdict (pass or pass-with-notes) from the security role and a reviewer verdict, both pinned to the workshop's commit, before phase 2 is planned. Its recommendation lists the route classes in the order phase 2 should gate them, with send-as first.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3: cost",
+          "phase": "ph-00dd",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
+          "state": "checked",
+          "probe": "pij-rs --json ping",
+          "note": "Phase 1 adds no daemon runtime cost: the inventory sensor runs per harness checks invocation (one route enumeration plus one JSON read), not per tick. The workshop must state the chosen design's per-request cost (for example one hash compare per seat-authority request) and any per-seat launch (none is acceptable per tick). Measured price of the sensor: cold, one niced background compile of pij-daemon's lib tests (about 3 minutes); warm, about 2 s end to end (0.14 s of tests, 413 local calls to an isolated router); once per full gate (rust-check skips the probe test); 5 s per call and 60 s overall timeouts.",
+          "receipt": "assets/evidence/phase-1.md#ac3-cost"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4: docs and states",
+          "phase": "ph-00dd",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/project/"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}

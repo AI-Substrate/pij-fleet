@@ -7,6 +7,13 @@ use pij_core::ports::LaunchCommand;
 const PIJ_SESSION_ID: &str = "PIJ_SESSION_ID";
 const PIJ_SPAWN_ID: &str = "PIJ_SPAWN_ID";
 const CLAUDE_ACCEPT_SETTINGS: &str = r#"{"crossSessionInbound":"accept"}"#;
+/// F110: a seat never opens its harness's modal question (pij SKILL.md
+/// invariants 9-10); it asks in its text. Copilot's built-in security-review
+/// subagent tells the parent to offer follow-ups with `ask_user`, and a
+/// verdict seat then sat on that dialog after every verdict. Every launch,
+/// including `--resume` (revive), takes these.
+const COPILOT_NO_ASK_USER: &str = "--no-ask-user";
+const CLAUDE_NO_ASK_USER: &str = "AskUserQuestion";
 
 /// Facts known by the launcher and the exact command it will execute.
 ///
@@ -170,6 +177,10 @@ pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
         }
         Harness::Claude => {
             args.push("--dangerously-skip-permissions".to_string());
+            args.extend([
+                "--disallowedTools".to_string(),
+                CLAUDE_NO_ASK_USER.to_string(),
+            ]);
             if input.accept_inbound {
                 args.extend(["--settings".to_string(), CLAUDE_ACCEPT_SETTINGS.to_string()]);
             }
@@ -187,7 +198,7 @@ pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
                     ),
                 });
             }
-            args.push("--yolo".to_string());
+            args.extend(["--yolo".to_string(), COPILOT_NO_ASK_USER.to_string()]);
             push_option(&mut args, "--model", input.model.as_deref());
             if input.model.is_some() {
                 // Omitting --context would inherit the persisted config tier,
@@ -394,6 +405,26 @@ mod tests {
         }
     }
 
+    /// F110: spawn and revive (`--resume`) both launch Copilot without
+    /// `ask_user` and Claude without `AskUserQuestion`.
+    #[test]
+    fn copilot_and_claude_launch_without_their_modal_question_tool() {
+        for resume in [None, Some("S-1".to_string())] {
+            let mut copilot = input(Harness::Copilot);
+            copilot.resume = resume.clone();
+            let args = build_spawn_plan(copilot).expect("copilot plan").args;
+            assert!(args.iter().any(|arg| arg == "--no-ask-user"), "{args:?}");
+            let mut claude = input(Harness::Claude);
+            claude.resume = resume;
+            let args = build_spawn_plan(claude).expect("claude plan").args;
+            assert!(
+                args.windows(2)
+                    .any(|pair| pair == ["--disallowedTools", "AskUserQuestion"]),
+                "{args:?}"
+            );
+        }
+    }
+
     #[test]
     fn every_harness_builds_discrete_ruled_argv() {
         let cases = [
@@ -414,6 +445,8 @@ mod tests {
                 "claude",
                 vec![
                     "--dangerously-skip-permissions",
+                    "--disallowedTools",
+                    "AskUserQuestion",
                     "--model",
                     "provider/model",
                     "--effort",
@@ -425,6 +458,7 @@ mod tests {
                 "copilot",
                 vec![
                     "--yolo",
+                    "--no-ask-user",
                     "--model",
                     "provider/model",
                     "--context",
@@ -608,7 +642,9 @@ mod tests {
                 "PIJ_SESSION_ID=pij-override",
                 "PIJ_SPAWN_ID=spawn-override",
                 "/opt/harnesses/claude",
-                "--dangerously-skip-permissions"
+                "--dangerously-skip-permissions",
+                "--disallowedTools",
+                "AskUserQuestion"
             ]
         );
         assert_eq!(plan.model, None);
@@ -629,6 +665,7 @@ mod tests {
                 [
                     "copilot",
                     "--yolo",
+                    "--no-ask-user",
                     "--model",
                     model,
                     "--context",

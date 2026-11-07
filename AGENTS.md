@@ -152,10 +152,10 @@ citation disputes, all of which resolved as neither party being wrong.)
 4. **Before declaring any task done — or before ship — run `harness checks`.**
    The engineering-harness gate: it runs the full deterministic **signal
    inventory** (local-path portability → project docs (ddocs) → workstream coverage → pij skill structure → typecheck → lockfile allowlist → lint →
-   test → Copilot native contracts → Rust gate → smoke → commit-trailer
+   test → Copilot native contracts → route inventory → Rust gate → smoke → commit-trailer
    attribution) as individual stages and reports a per-sensor verdict — and
    unlike `just self-check` it runs **all** sensors, so one invocation surfaces
-   every failure (`--quick` skips the heavy Rust and smoke stages). **New
+   every failure (`--quick` skips the heavy route-inventory, Rust and smoke stages). **New
    back-pressure sensors get added to `.harness/extensions/checks/` and to
    `just self-check` together.** If it exits non-zero, the task is not done.
    The `/pre-commit` skill (`skills/pre-commit/SKILL.md`) encodes the full
