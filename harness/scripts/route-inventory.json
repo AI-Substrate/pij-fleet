@@ -1,5 +1,5 @@
 {
-	"why": "Every daemon HTTP method and route pair, classified for seat identity provenance (plan 221 AC1, PRD 003 req-10, F88). Refreshed from the F88 note (63 pairs at a0ec952) to main, plus POST /v1/requests (#149), POST /v1/steer (#152) and the implicit HEAD pair axum serves for every GET route. `just route-inventory-check` probes the routes the daemon really serves (Endpoint::ALL through the router) and fails on a served pair missing here, an entry the daemon does not serve, a duplicate, or an entry without a valid classification.",
+	"why": "Every daemon HTTP method and route pair, classified for seat identity provenance (plan 221 AC1, PRD 003 req-10, F88). Refreshed from the F88 note (63 pairs at a0ec952) to main, plus POST /v1/requests (#149), POST /v1/steer (#152) and the implicit HEAD pair axum serves for every GET route. `just route-inventory-check` probes the routes the daemon really serves (Endpoint::ALL through the router) and fails on a served pair missing here, an entry the daemon does not serve, a duplicate, or an entry without a valid classification. Each seat-authority entry lists the operation classes it reaches (`operations`, its own class included), which is what plan 223 counts and gates; an implicit HEAD entry carries its GET's classification.",
 	"authorities": {
 		"machine-public": "Any holder of the daemon key, by explicit policy (the reason says why); no seat's authority is granted.",
 		"seat-authority": "The route acts with a seat's authority, resolved from caller claims; phase 2 gates these on the per-incarnation capability.",
@@ -45,8 +45,9 @@
 			"authority": "seat-authority",
 			"class": "registration",
 			"grants_by": ["seat"],
-			"guard": ["N"],
-			"note": "Repeat-registering a victim's incarnation changes permitted descriptor and role fields and returns its native context grant."
+			"guard": ["N", "R"],
+			"note": "Native branch: the native tuple (N) and the claimed host observed. Ordinary branch: the claimed pid, start and pane are observed on the host and resolved like R; neither proves the request came from that process. Repeat-registering a victim's incarnation changes permitted descriptor and role fields and returns its native context grant.",
+			"operations": ["registration"]
 		},
 		{
 			"method": "POST",
@@ -55,7 +56,8 @@
 			"class": "role-and-holder",
 			"grants_by": ["parent"],
 			"guard": ["R"],
-			"note": "With a role, the resolved caller becomes the child's parent and author; without one, spawning is machine-grade."
+			"note": "With a role, the resolved caller becomes the child's parent and author; without one, spawning is machine-grade.",
+			"operations": ["role-and-holder"]
 		},
 		{
 			"method": "POST",
@@ -64,7 +66,8 @@
 			"class": "controls",
 			"grants_by": ["parent", "prime"],
 			"guard": ["R"],
-			"note": "The assume-dead override for a recycled or unknown seat needs its parent, or the role prime if parentless; ordinary revival is machine-grade."
+			"note": "The assume-dead override for a recycled or unknown seat needs its parent, or the role prime if parentless; ordinary revival is machine-grade.",
+			"operations": ["controls"]
 		},
 		{
 			"method": "POST",
@@ -73,16 +76,18 @@
 			"class": "send-as",
 			"grants_by": ["seat", "parent"],
 			"guard": ["A", "C"],
-			"note": "Ordinary and FYI `from` is asserted, not resolved from the caller; new and reload controls add control admission and self or parent."
+			"note": "Ordinary and FYI `from` is asserted, not resolved from the caller; new and reload controls add control admission and self or parent.",
+			"operations": ["send-as", "controls"]
 		},
 		{
 			"method": "POST",
 			"path": "/v1/bg",
 			"authority": "seat-authority",
 			"class": "controls",
-			"grants_by": ["owner"],
+			"grants_by": ["owner", "parent"],
 			"guard": ["R"],
-			"note": "Create, list, tail and kill background jobs as their owner or direct parent."
+			"note": "Create, list, tail and kill background jobs as their owner; an existing job also as its direct parent.",
+			"operations": ["controls"]
 		},
 		{
 			"method": "GET",
@@ -91,7 +96,8 @@
 			"class": "controls",
 			"grants_by": ["owner", "parent"],
 			"guard": ["R"],
-			"note": "Lists an owner's jobs, or a parent's direct children's."
+			"note": "Lists an owner's jobs, or a parent's direct children's.",
+			"operations": ["controls"]
 		},
 		{
 			"method": "HEAD",
@@ -100,7 +106,8 @@
 			"class": "controls",
 			"grants_by": ["owner", "parent"],
 			"guard": ["R"],
-			"note": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Lists an owner's jobs, or a parent's direct children's."
+			"note": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Lists an owner's jobs, or a parent's direct children's.",
+			"operations": ["controls"]
 		},
 		{
 			"method": "GET",
@@ -109,7 +116,8 @@
 			"class": "controls",
 			"grants_by": ["owner", "parent"],
 			"guard": ["R"],
-			"note": "Reads a job's protected output as its owner or direct parent."
+			"note": "Reads a job's protected output as its owner or direct parent.",
+			"operations": ["controls"]
 		},
 		{
 			"method": "HEAD",
@@ -118,7 +126,8 @@
 			"class": "controls",
 			"grants_by": ["owner", "parent"],
 			"guard": ["R"],
-			"note": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Reads a job's protected output as its owner or direct parent."
+			"note": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Reads a job's protected output as its owner or direct parent.",
+			"operations": ["controls"]
 		},
 		{
 			"method": "POST",
@@ -127,7 +136,8 @@
 			"class": "controls",
 			"grants_by": ["owner", "parent"],
 			"guard": ["R"],
-			"note": "Signals a job as its owner or direct parent; runner pid, start and group are checked separately."
+			"note": "Signals a job as its owner or direct parent; runner pid, start and group are checked separately.",
+			"operations": ["controls"]
 		},
 		{
 			"method": "GET",
@@ -136,7 +146,8 @@
 			"class": "inbox-claim",
 			"grants_by": ["recipient"],
 			"guard": ["N"],
-			"note": "Claims a queued body and attests the native receiver from the seat's public tuple."
+			"note": "Claims a queued body and attests the native receiver from the seat's public tuple.",
+			"operations": ["inbox-claim"]
 		},
 		{
 			"method": "HEAD",
@@ -145,7 +156,8 @@
 			"class": "inbox-claim",
 			"grants_by": ["recipient"],
 			"guard": ["N"],
-			"note": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Claims a queued body and attests the native receiver from the seat's public tuple."
+			"note": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Claims a queued body and attests the native receiver from the seat's public tuple.",
+			"operations": ["inbox-claim"]
 		},
 		{
 			"method": "GET",
@@ -166,7 +178,8 @@
 			"class": "inbox-claim",
 			"grants_by": ["recipient"],
 			"guard": ["N"],
-			"note": "Commits the recipient's reader or control outcome; the job names the recipient."
+			"note": "Commits the recipient's reader or control outcome; the job names the recipient.",
+			"operations": ["inbox-claim"]
 		},
 		{
 			"method": "POST",
@@ -175,7 +188,8 @@
 			"class": "inbox-claim",
 			"grants_by": ["recipient"],
 			"guard": ["N"],
-			"note": "Renews the receiver lease and precedence, or an extension's running body claim."
+			"note": "Renews the receiver lease and precedence, or an extension's running body claim.",
+			"operations": ["inbox-claim"]
 		},
 		{
 			"method": "POST",
@@ -184,7 +198,8 @@
 			"class": "controls",
 			"grants_by": ["parent", "prime"],
 			"guard": ["R"],
-			"note": "Operator recovery of a running body by the target's parent or role prime."
+			"note": "Operator recovery of a running body by the target's parent or role prime.",
+			"operations": ["controls"]
 		},
 		{
 			"method": "POST",
@@ -241,7 +256,8 @@
 			"class": "activity",
 			"grants_by": ["seat", "owner", "parent"],
 			"guard": ["R"],
-			"note": "Status, done, question and clear as the subject; verify needs its current parent."
+			"note": "Status, done, question and clear as the subject; verify needs its current parent.",
+			"operations": ["activity"]
 		},
 		{
 			"method": "POST",
@@ -250,7 +266,8 @@
 			"class": "adoption",
 			"grants_by": ["seat", "parent", "prime"],
 			"guard": ["R", "P"],
-			"note": "Re-adopts a pane or reclaims a dead seat as its parent or prime; the provenance exception covers only paned non-Claude adopt with an explicit harness session."
+			"note": "Re-adopts a pane or reclaims a dead seat as its parent or prime; the provenance exception covers only paned non-Claude adopt with an explicit harness session.",
+			"operations": ["adoption"]
 		},
 		{
 			"method": "GET",
@@ -301,7 +318,8 @@
 			"class": "inbox-claim",
 			"grants_by": ["recipient"],
 			"guard": ["B"],
-			"note": "Consumes a seat's held FYIs and attributes delivery to its hook."
+			"note": "Consumes a seat's held FYIs and attributes delivery to its hook.",
+			"operations": ["inbox-claim"]
 		},
 		{
 			"method": "POST",
@@ -316,7 +334,8 @@
 			"class": "activity",
 			"grants_by": ["seat"],
 			"guard": ["B"],
-			"note": "Busy and idle as the seat; a context size also needs the incarnation's context grant."
+			"note": "Busy and idle as the seat; a context size also needs the incarnation's context grant.",
+			"operations": ["activity"]
 		},
 		{
 			"method": "POST",
@@ -325,16 +344,18 @@
 			"class": "send-as",
 			"grants_by": ["seat", "parent"],
 			"guard": ["S", "C"],
-			"note": "Send, FYI, role request and attachments as the derived caller; controls add control admission."
+			"note": "Send, FYI, role request and attachments as the derived caller; controls add control admission.",
+			"operations": ["send-as", "controls"]
 		},
 		{
 			"method": "POST",
 			"path": "/v1/shim/compact-self",
 			"authority": "seat-authority",
 			"class": "controls",
-			"grants_by": ["seat"],
+			"grants_by": ["seat", "parent"],
 			"guard": ["S", "C"],
-			"note": "Same handler as shim send; argv is not confined to compact-self by the URI."
+			"note": "Same handler as shim send; argv is not confined to compact-self by the URI, so its send aliases also reach the parent-authorized new and reload controls.",
+			"operations": ["controls", "send-as"]
 		},
 		{
 			"method": "POST",
@@ -343,7 +364,8 @@
 			"class": "inbox-claim",
 			"grants_by": ["recipient"],
 			"guard": ["S", "N"],
-			"note": "Claims as the seat, or recovers parked work after its live lease lapses."
+			"note": "Claims as the seat, or recovers parked work after its live lease lapses.",
+			"operations": ["inbox-claim"]
 		},
 		{
 			"method": "POST",
@@ -352,7 +374,8 @@
 			"class": "inbox-claim",
 			"grants_by": ["recipient"],
 			"guard": ["S", "N"],
-			"note": "Retires the seat's claim with matching caller evidence."
+			"note": "Retires the seat's claim with matching caller evidence.",
+			"operations": ["inbox-claim"]
 		},
 		{
 			"method": "GET",
@@ -373,7 +396,8 @@
 			"class": "role-and-holder",
 			"grants_by": ["seat", "parent"],
 			"guard": ["R"],
-			"note": "Asserts or unsets a role as the seat itself, or a child's as its parent."
+			"note": "Asserts or unsets a role as the seat itself, or a child's as its parent.",
+			"operations": ["role-and-holder"]
 		},
 		{
 			"method": "POST",
@@ -382,7 +406,8 @@
 			"class": "role-and-holder",
 			"grants_by": ["parent"],
 			"guard": ["R"],
-			"note": "Restamps children or takes eligible unparented or dead-parent seats under the actor."
+			"note": "Restamps children or takes eligible unparented or dead-parent seats under the actor.",
+			"operations": ["role-and-holder"]
 		},
 		{
 			"method": "POST",
@@ -391,7 +416,8 @@
 			"class": "attribution",
 			"grants_by": ["seat"],
 			"guard": ["R"],
-			"note": "Any seat may switch a non-PA seat's watchdog; impersonation forges set_by only."
+			"note": "Any seat may switch a non-PA seat's watchdog; impersonation forges set_by only.",
+			"operations": ["attribution"]
 		},
 		{
 			"method": "POST",
@@ -400,7 +426,8 @@
 			"class": "attribution",
 			"grants_by": ["seat"],
 			"guard": ["R"],
-			"note": "Any seat may switch any seat's steering, as with the watchdog (plan 214, C31); the change is audited and the target told, so impersonation forges the actor only."
+			"note": "Any seat may switch any seat's steering, as with the watchdog (plan 214, C31); the change is audited and the target told, so impersonation forges the actor only.",
+			"operations": ["attribution"]
 		},
 		{
 			"method": "POST",
@@ -409,7 +436,8 @@
 			"class": "controls",
 			"grants_by": ["seat", "parent"],
 			"guard": ["R"],
-			"note": "Closes a seat as itself or its parent and ends its holdings."
+			"note": "Closes a seat as itself or its parent and ends its holdings.",
+			"operations": ["controls"]
 		},
 		{
 			"method": "POST",
@@ -418,7 +446,8 @@
 			"class": "attribution",
 			"grants_by": ["seat"],
 			"guard": ["R"],
-			"note": "Stale seats are observed independently; impersonation forges the actor only."
+			"note": "Stale seats are observed independently; impersonation forges the actor only.",
+			"operations": ["attribution"]
 		},
 		{
 			"method": "GET",
@@ -463,7 +492,8 @@
 			"class": "role-and-holder",
 			"grants_by": ["seat", "parent"],
 			"guard": ["R"],
-			"note": "Answers or self-rules a decision as its asker, or supersedes as the current parent."
+			"note": "Answers or self-rules a decision as its asker, or supersedes as the current parent.",
+			"operations": ["role-and-holder"]
 		},
 		{
 			"method": "POST",
@@ -472,7 +502,8 @@
 			"class": "attribution",
 			"grants_by": ["seat"],
 			"guard": ["R"],
-			"note": "Any-seat project changes; impersonation forges creator or editor."
+			"note": "Any-seat project changes; impersonation forges creator or editor.",
+			"operations": ["attribution"]
 		},
 		{
 			"method": "POST",
@@ -481,7 +512,8 @@
 			"class": "attribution",
 			"grants_by": ["seat"],
 			"guard": ["R"],
-			"note": "Any-seat stream allocation and close; impersonation forges the author."
+			"note": "Any-seat stream allocation and close; impersonation forges the author.",
+			"operations": ["attribution"]
 		},
 		{
 			"method": "POST",
@@ -490,7 +522,8 @@
 			"class": "attribution",
 			"grants_by": ["seat"],
 			"guard": ["R"],
-			"note": "Any-seat fences; impersonation forges declared_by."
+			"note": "Any-seat fences; impersonation forges declared_by.",
+			"operations": ["attribution"]
 		},
 		{
 			"method": "POST",
@@ -499,7 +532,8 @@
 			"class": "attribution",
 			"grants_by": ["seat"],
 			"guard": ["R"],
-			"note": "Any-seat dispatch; impersonation forges the sender."
+			"note": "Any-seat dispatch; impersonation forges the sender.",
+			"operations": ["attribution"]
 		},
 		{
 			"method": "POST",
@@ -508,7 +542,8 @@
 			"class": "inbox-claim",
 			"grants_by": ["recipient"],
 			"guard": ["R"],
-			"note": "Acknowledges a dispatch as its recipient using visible digest facts."
+			"note": "Acknowledges a dispatch as its recipient using visible digest facts.",
+			"operations": ["inbox-claim"]
 		},
 		{
 			"method": "POST",
@@ -517,7 +552,8 @@
 			"class": "attribution",
 			"grants_by": ["seat"],
 			"guard": ["R"],
-			"note": "Forges the evaluator; process and model evidence are observed independently."
+			"note": "Forges the evaluator; process and model evidence are observed independently.",
+			"operations": ["attribution"]
 		},
 		{
 			"method": "POST",
@@ -526,7 +562,8 @@
 			"class": "attribution",
 			"grants_by": ["seat"],
 			"guard": ["R"],
-			"note": "Any-seat attestation; impersonation forges attested_by."
+			"note": "Any-seat attestation; impersonation forges attested_by.",
+			"operations": ["attribution"]
 		},
 		{
 			"method": "POST",
@@ -535,7 +572,8 @@
 			"class": "attribution",
 			"grants_by": ["seat"],
 			"guard": ["R"],
-			"note": "Any-seat task set and close; impersonation forges opener or closer."
+			"note": "Any-seat task set and close; impersonation forges opener or closer.",
+			"operations": ["attribution"]
 		},
 		{
 			"method": "POST",
@@ -550,7 +588,8 @@
 			"class": "role-and-holder",
 			"grants_by": ["seat", "parent", "holder"],
 			"guard": ["R"],
-			"note": "Role set as self or parent, and baton return by its current holder with the lease; other branches are any-seat."
+			"note": "Role set as self or parent, and baton return by its current holder with the lease; other branches are any-seat.",
+			"operations": ["role-and-holder", "attribution"]
 		},
 		{
 			"method": "POST",
@@ -559,7 +598,8 @@
 			"class": "attribution",
 			"grants_by": ["seat"],
 			"guard": ["R"],
-			"note": "Appends evidence attributed to the actor; reads are machine-wide."
+			"note": "Appends evidence attributed to the actor; reads are machine-wide.",
+			"operations": ["attribution"]
 		},
 		{
 			"method": "POST",
@@ -568,7 +608,8 @@
 			"class": "role-and-holder",
 			"grants_by": ["seat", "prime"],
 			"guard": ["R"],
-			"note": "Lineage add and batch need the project or role prime; other directory writes are any-seat and forge only authorship."
+			"note": "Lineage add and batch need the project or role prime; other directory writes are any-seat and forge only authorship.",
+			"operations": ["role-and-holder", "attribution"]
 		},
 		{
 			"method": "POST",
@@ -577,7 +618,8 @@
 			"class": "outputs",
 			"grants_by": ["seat", "holder", "prime"],
 			"guard": ["R"],
-			"note": "Publishes as the seat; --answers needs the request's holder, a live role holder or the project prime."
+			"note": "Publishes as the seat; --answers needs the request's holder, a live role holder or the project prime.",
+			"operations": ["outputs"]
 		},
 		{
 			"method": "POST",
@@ -586,7 +628,8 @@
 			"class": "outputs",
 			"grants_by": ["seat", "holder", "prime"],
 			"guard": ["R"],
-			"note": "Same handler as output: the canonical read is machine-wide, but output argv reaches the write path."
+			"note": "Same handler as output: the canonical read is machine-wide, but output argv reaches the write path.",
+			"operations": ["outputs"]
 		},
 		{
 			"method": "POST",
@@ -595,7 +638,8 @@
 			"class": "role-and-holder",
 			"grants_by": ["seat", "owner", "prime"],
 			"guard": ["R"],
-			"note": "Allocation stamps the actor; release needs the owner or a prime."
+			"note": "Allocation stamps the actor; release needs the owner or a prime.",
+			"operations": ["role-and-holder"]
 		},
 		{
 			"method": "POST",
@@ -604,7 +648,8 @@
 			"class": "role-and-holder",
 			"grants_by": ["seat", "owner", "prime"],
 			"guard": ["R"],
-			"note": "Same handler as claim: listing is machine-wide, but claim and release argv remain reachable."
+			"note": "Same handler as claim: listing is machine-wide, but claim and release argv remain reachable.",
+			"operations": ["role-and-holder"]
 		},
 		{
 			"method": "POST",
@@ -613,7 +658,8 @@
 			"class": "role-and-holder",
 			"grants_by": ["seat", "owner", "prime"],
 			"guard": ["R"],
-			"note": "Records a merged delivery as the actor; claim-release argv reaches owner or prime release."
+			"note": "Records a merged delivery as the actor; claim-release argv reaches owner or prime release.",
+			"operations": ["role-and-holder"]
 		},
 		{
 			"method": "POST",
@@ -622,7 +668,8 @@
 			"class": "role-and-holder",
 			"grants_by": ["seat", "holder", "prime"],
 			"guard": ["R"],
-			"note": "Withdraw and close need the requester, the project's PA or the prime (plan 212, #149); listing is project-scoped."
+			"note": "Withdraw and close need the requester, the project's PA or the prime (plan 212, #149); listing is project-scoped.",
+			"operations": ["role-and-holder"]
 		},
 		{
 			"method": "POST",

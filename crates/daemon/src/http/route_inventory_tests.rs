@@ -101,7 +101,15 @@ fn classification(entry: &Value, job_token: bool) -> Result<(), String> {
                 ));
             }
             members(entry, "grants_by", &GRANTS_BY)?;
-            members(entry, "guard", &GUARDS)
+            members(entry, "guard", &GUARDS)?;
+            // Plan 223: the classes counted and gated where this route reaches
+            // them, its own class among them (shared handlers reach more).
+            members(entry, "operations", &CLASSES)?;
+            let reaches = entry["operations"].as_array().into_iter().flatten();
+            if !reaches.filter_map(Value::as_str).any(|op| op == class) {
+                return Err(format!("operations must include its class `{class}`"));
+            }
+            Ok(())
         }
         other => Err(format!(
             "authority must be machine-public, seat-authority or job-token, not `{other}`"
@@ -139,6 +147,37 @@ fn inventory_findings(
         }
         if let Err(why) = classification(entry, job_token.contains(&pair)) {
             findings.push(format!("{method} {path}: {why}"));
+        }
+    }
+    // An implicit HEAD runs its GET handler, so it carries the GET's
+    // classification exactly (plan 223 AC1).
+    const CLASSIFICATION: [&str; 6] = [
+        "authority",
+        "class",
+        "grants_by",
+        "guard",
+        "operations",
+        "reason",
+    ];
+    for head in routes
+        .iter()
+        .filter(|entry| text(entry, "method") == "HEAD")
+    {
+        let path = text(head, "path");
+        let get = routes
+            .iter()
+            .find(|entry| text(entry, "method") == "GET" && text(entry, "path") == path);
+        if let Some(get) = get {
+            let differs: Vec<&str> = CLASSIFICATION
+                .into_iter()
+                .filter(|field| *field != "reason" && head[*field] != get[*field])
+                .collect();
+            if !differs.is_empty() {
+                findings.push(format!(
+                    "HEAD {path}: must carry its GET's classification; differs in {}",
+                    differs.join(", ")
+                ));
+            }
         }
     }
     for (method, path) in served.difference(&listed) {
@@ -222,7 +261,7 @@ fn pair(method: &str, path: &str) -> Pair {
 
 fn seat_route(method: &str, path: &str) -> Value {
     json!({"method": method, "path": path, "authority": "seat-authority",
-        "class": "send-as", "grants_by": ["seat"], "guard": ["R"]})
+        "class": "send-as", "grants_by": ["seat"], "guard": ["R"], "operations": ["send-as"]})
 }
 
 fn public_route(method: &str, path: &str) -> Value {
@@ -369,5 +408,35 @@ fn a_malformed_inventory_fails() {
     assert_eq!(
         check(&[], vec![json!({"path": "/v1/send"})]),
         ["routes[0]: needs a method and a path"]
+    );
+}
+
+#[test]
+fn operations_must_name_the_gated_classes_and_a_head_its_gets() {
+    let served = [pair("POST", "/v1/send")];
+    let with = |value: Value| {
+        let mut entry = seat_route("POST", "/v1/send");
+        entry["operations"] = value;
+        check(&served, vec![entry])
+    };
+    assert_eq!(
+        with(Value::Null),
+        ["POST /v1/send: operations must be a non-empty list"]
+    );
+    assert_eq!(
+        with(json!(["controls"])),
+        ["POST /v1/send: operations must include its class `send-as`"]
+    );
+    assert!(with(json!(["send-as", "controls"])).is_empty());
+
+    let served = [pair("GET", "/v1/inbox"), pair("HEAD", "/v1/inbox")];
+    let get = seat_route("GET", "/v1/inbox");
+    let mut head = seat_route("HEAD", "/v1/inbox");
+    assert!(check(&served, vec![get.clone(), head.clone()]).is_empty());
+    head["grants_by"] = json!(["seat", "parent"]);
+    head["operations"] = json!(["send-as", "controls"]);
+    assert_eq!(
+        check(&served, vec![get, head]),
+        ["HEAD /v1/inbox: must carry its GET's classification; differs in grants_by, operations"]
     );
 }
