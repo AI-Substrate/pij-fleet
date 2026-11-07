@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Read before adding a template version (SHIPPED, PINNED sha, templates_http) or a schema with links across doc types (E406).",
+				"tags": [
+					"docs-system",
+					"templates",
+					"ddocs",
+					"schema"
+				],
+				"title": "Ship a template version; ddocs cross-schema links"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Shipping a new template version (plan 210 added v3 of the six core templates):\n1. Copy `templates/roles/<name>/v<N>/role.dd.json` to `v<N+1>/`. Change only what the version is for, set `meta.template_version`, and append one changelog row that says exactly what changed (pm v3 changed a rule as well as the wording, so its row says so).\n2. `crates/daemon/src/community/templates.rs`: add `(\"<name>\", N+1)` to `SHIPPED` and a sha256 row to `PINNED` in `a_shipped_version_is_never_edited`, and bump both array lengths. Run `biome check` on the file before you hash it.\n3. `crates/daemon/tests/templates_http/mod.rs` asserts coder's version list; update it.\n4. Tests: `templates_http` is a module of the `directory_http` target, so run it with `cargo test -p pij-daemon --test directory_http templates`. Also run `--lib community::templates` and `-p pij-cli --test skill_verb_coverage`, through `just shared-build`.\n5. Check v2 against v3 with a field-by-field JSON diff, not a text diff.\n\nddocs facts from the pij/workstream schema:\n- A single link field works (`\"type\": \"link\"` without an array).\n- A link into a doc of another schema fails E406 (\"link targets pij/roadmap/section/steps, expected pij/workstream/...\").\n- There is still no cross-row rule, so \"umbrella complete only when children are\" needs a sensor.\n- Schema fixtures under `.dd/schemas/pij/*/fixtures` are checked by hand only; no test runs them.\n- `cargo fmt -p <crate> --check`, not bare rustfmt: the workspace edition orders imports differently.\n"
+		}
+	]
+}
