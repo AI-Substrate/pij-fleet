@@ -103,9 +103,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Test: a hostile role or project value in the stored request comes back as one quoted word through a /bin/sh round-trip of the printed next step.",
-          "state": "na",
+          "state": "unchecked",
           "probe": "crates/",
-          "note": "F85 goes in #149."
+          "note": "Ready on kestrel/216-requests-close-f83 (ef079fa, on fb87062); rebase onto main after #149 merges and keep only the F85 commit."
         }
       ]
     },
