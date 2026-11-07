@@ -46,4 +46,24 @@ The canary's own notes are in [canary-notes.md](canary-notes.md), with scratch p
 
 - **One stray call reached the machine daemon.** The canary called the `pij` wrapper once from its tool kernel, which had no `PIJ_*` env: `pij directory templates --show pm`. That one read-only call went to the machine daemon (an older build) and was refused (`E-RS-ARG directory add: unsupported --show`). It then used bash for every call. The machine daemon has no `digest` project and no canary seat (checked after). The rig's wrapper now pins the private daemon itself.
 - **The operator's reply was queued with "no harness session bound".** Its final `pij_send` to the operator showed this. The operator is a registered pane with no harness behind it; the canary's notes file was the report.
-- **Not repeated after the fixes.** A second fresh seat run would confirm them; the route is 89/100 lines.
+
+## Second run: Copilot, after the route fixes (2026-11-07)
+
+pm-001 asked for one rerun on the second harness to confirm the fixes. The rig and brief were the same as the first run.
+
+- **Seat:** a fresh Copilot CLI session on `claude-opus-5.5`, `pij-informal-scallop`, started in the project folder in the private tmux server. It registered itself with the private daemon (Copilot's native extension reads `PIJ_RS_ADDR` and `PIJ_RS_STATE_DIR`) and was designated prime.
+- **Result:** clean. It stood up the same seven roles (prime, pm-001 with `--instance-key 001`, pa, coder, reviewer, security, performance) from the route alone, each naming its signal. Every round-one fix held:
+  - no `<project>`, `<government-root>` or `<roadmap number>` was left in any role;
+  - pm-001 carries its instance key;
+  - the community README was written;
+  - the scopes are real paths.
+  - I checked independently: `ddocs validate` is ok on all seven, and the governance worktree is clean.
+- **Its notes:** [canary-2-notes.md](canary-2-notes.md), with scratch paths shown as `<scratch>`.
+- **Teardown:** I closed the seat (`pij close`), killed its pane and checked its process was gone. I then stopped the tmux server and the daemon and removed the scratch dir. The machine daemon lists none of the canary's seats.
+
+**Rig fix found on the way:** the first Copilot launch inherited the driving seat's `PIJ_SPAWN_ID` and `COPILOT_LOADER_PID`/`COPILOT_CLI*` variables through the tmux server's environment. Copilot's native registration then refused ("Spawn correlation does not match observed process identity"). OMP ignored them in the first run. [`canary-rig.sh`](canary-rig.sh) now clears them in the tmux server and in `env.sh`.
+
+**Small items, recorded for the community follow-up plan (F100 to F102), not changed here:**
+- The route doesn't say to commit the hand-written community README, nor to fill placeholders with branch-relative paths rather than machine paths (F100).
+- Every `add` sends the prime an FYI (F101).
+- The writer silently uses git's auto-detected identity (user@hostname) when the daemon's HOME has no git config (F102). This rig gives the daemon an empty HOME, so it showed here.

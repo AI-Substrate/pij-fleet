@@ -57,21 +57,27 @@ macro_rules! shipped {
 
 /// Every shipped `templates/roles/<name>/v<n>/role.dd.json`. A version is
 /// never edited after it ships; a new one is a new row here.
-const SHIPPED: [(&str, u32, &[u8]); 16] = shipped![
+const SHIPPED: [(&str, u32, &[u8]); 22] = shipped![
     ("coder", 1),
+    ("coder", 2),
     ("designer", 1),
     ("devcontainer", 1),
     ("docs-keeper", 1),
     ("infra", 1),
     ("note-taker", 1),
     ("pa", 1),
+    ("pa", 2),
     ("pm", 1),
+    ("pm", 2),
     ("prime", 1),
+    ("prime", 2),
     ("qa", 1),
     ("release", 1),
     ("researcher", 1),
     ("reviewer", 1),
+    ("reviewer", 2),
     ("security", 1),
+    ("security", 2),
     ("topic-expert", 1),
     ("transcriber", 1),
 ];
@@ -660,5 +666,142 @@ mod tests {
         assert_eq!(names, ["prime", "pa", "coder", "reviewer"]);
         let from_template = prompts("fleet", &[("appsec".into(), Some("security".into()))]);
         assert!(from_template.iter().all(|p| p["role"] != "security"));
+    }
+
+    /// A version is never edited after it ships (review of #136, S136001
+    /// added v2s rather than editing v1s): each shipped version's bytes are
+    /// pinned. A new version adds a row here; an edited one fails.
+    #[test]
+    fn a_shipped_version_is_never_edited() {
+        use sha2::{Digest, Sha256};
+        const PINNED: [(&str, u32, &str); 22] = [
+            (
+                "coder",
+                1,
+                "03a067e96b789574b8237315bfb3ca9cf31107cc4c08483c44fcadd08e915073",
+            ),
+            (
+                "coder",
+                2,
+                "9462fd31371f189597fbf41fc06baef239bfec61564dcf1eb683dc8f49f6d1d1",
+            ),
+            (
+                "designer",
+                1,
+                "dbbe15ff6d4c955654b29d56ba84b4f3d19eb1377c8a3792a5b30493914881bd",
+            ),
+            (
+                "devcontainer",
+                1,
+                "9327a7f0a9ef34bdd8bca7e38757c02a338e5ebcf869c10a357788f45e184664",
+            ),
+            (
+                "docs-keeper",
+                1,
+                "8c60821e6710d273f69f67e87ad980b9b9906facc1f5564dbd38081f41dcba52",
+            ),
+            (
+                "infra",
+                1,
+                "be21115ed2b5ca0c2b34514147e610259b92f775b859d5ecbb16506c8d797a52",
+            ),
+            (
+                "note-taker",
+                1,
+                "1ee2157ae53179dc381cab2376469f9bfebc3d6c80880d3c3bc091f55469d908",
+            ),
+            (
+                "pa",
+                1,
+                "6da2384b210340d288b1469e0ff6c936df5b1f84e99472919345e122c4ecccd8",
+            ),
+            (
+                "pa",
+                2,
+                "e3209c7abd4d6de318313e17118f1699e827a9a36e7ee2c146ba40a580fbbe49",
+            ),
+            (
+                "pm",
+                1,
+                "ee809ccec2e700374a36e611abf111c3e26ab9ec0b6c4327156005ed80b14577",
+            ),
+            (
+                "pm",
+                2,
+                "7c7acaa3ace20b02559696b75a76b6c0cff1ee693a44d9c3dfb41d8e8673551a",
+            ),
+            (
+                "prime",
+                1,
+                "95f695f0ff4ea6d81ff3b1ec262dad76b2ac002c4d347db36b77bee455f918bb",
+            ),
+            (
+                "prime",
+                2,
+                "f54fce81be1e3a0280bd7a6b1cd3cc74bbdfa9f2c9d18a78a9428de5b98dbb56",
+            ),
+            (
+                "qa",
+                1,
+                "812f4f2e2be864211a521d660aa398af95e7af9ac2b2a8a45ee8b91e48872587",
+            ),
+            (
+                "release",
+                1,
+                "bd1a4a96d082e10dc63c1e4d86dc08af484643f1183b82a03029ff02f78bcd11",
+            ),
+            (
+                "researcher",
+                1,
+                "6a2721eefb2d2ccd7673e59b3e2758c099eca384371ef9c1fab190817a235f5a",
+            ),
+            (
+                "reviewer",
+                1,
+                "5f0681eb3acb6310e4ad9da63e59e51470bd348a662ef8546cd6f43d6270741e",
+            ),
+            (
+                "reviewer",
+                2,
+                "68d3ef499cc0c9a1e875b59407beaf3e5cd9eab2723564778d75d02185b4d56c",
+            ),
+            (
+                "security",
+                1,
+                "749c1b1a5cf649d21aa6812382ec9430f66a013e117454f1e8fe743c1b745536",
+            ),
+            (
+                "security",
+                2,
+                "a1e7ac96297e3e90c18378256e474dcb9dfc021f8da88c05e1446279fc730991",
+            ),
+            (
+                "topic-expert",
+                1,
+                "47ab35387785701aa0e14600ff76b259aeccdc2d766f6faaa2d43433be909dfa",
+            ),
+            (
+                "transcriber",
+                1,
+                "0a2797a4538a34d90a0fb7f38c39a3a0f808f03da6cc85c29fed48b0d48a86db",
+            ),
+        ];
+        let catalog = Catalog::shipped();
+        assert_eq!(
+            catalog.all().len(),
+            PINNED.len(),
+            "pin every new version here"
+        );
+        for (name, version, pinned) in PINNED {
+            let template = catalog
+                .get(name, Some(version))
+                .expect("a pinned version ships");
+            let digest = Sha256::digest(&template.bytes);
+            let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+            assert_eq!(
+                hex, pinned,
+                "{name}@v{version} was edited after it shipped; add a new version"
+            );
+        }
     }
 }

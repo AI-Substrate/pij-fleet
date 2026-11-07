@@ -6,12 +6,12 @@ A PEC exists to build lasting knowledge of its problem space (ruling C30). Speci
 
 | Template | Kind | Holders | What it's for |
 |---|---|---|---|
-| [prime](prime/v1/role.dd.json) | general | one | Leads the community: the directory, rulings, routing, merges. |
-| [pm](pm/v1/role.dd.json) | general | one per roadmap | Runs one roadmap: packets, assignments, numbers, true states. |
-| [pa](pa/v1/role.dd.json) | general | one | Keeps seats healthy: memory before compaction, no silent stalls. |
-| [coder](coder/v1/role.dd.json) | general, per task | many | Builds one step from its packet and opens a PR. |
-| [reviewer](reviewer/v1/role.dd.json) | general, per task | many | Reviews one PR for correctness at its exact head. |
-| [security](security/v1/role.dd.json) | specialist | one | A security verdict on every PR (recommended for every community). |
+| [prime](prime/v2/role.dd.json) | general | one | Leads the community: the directory, rulings, routing, merges. |
+| [pm](pm/v2/role.dd.json) | general | one per roadmap | Runs one roadmap: packets, assignments, numbers, true states. |
+| [pa](pa/v2/role.dd.json) | general | one | Keeps seats healthy: memory before compaction, no silent stalls. |
+| [coder](coder/v2/role.dd.json) | general, per task | many | Builds one step from its packet and opens a PR. |
+| [reviewer](reviewer/v2/role.dd.json) | general, per task | many | Reviews one PR for correctness at its exact head. |
+| [security](security/v2/role.dd.json) | specialist | one | A security verdict on every PR (recommended for every community). |
 
 ### Optional examples
 
@@ -36,11 +36,11 @@ prime, pm, pa, coder and reviewer are the core roles `pij directory` prompts for
 
 ## Placeholders
 
-Text in `<angle brackets>` is project-specific and must be replaced: `<project>`, `<roadmap number>`, `<the paths named in the step's packet>`. The `default_seat` names only a harness; pick the model and effort when you assign. The `default_limit` values are starting points for the time-limit check.
+Text in `<angle brackets>` is project-specific: replace the project's placeholders (`<project>`, `<government-root>`, `<roadmap number>`, `<the paths named in the step's packet>`, and a template's own, such as `<topic>`) when you add the role. The commands in each packet (`pij report now '<did>' '<next>'`, `pij send '<seat>' --body-file '<path>'`) keep theirs: the holder fills them at run time, inside the single quotes (a `'` in the value is written `'\''`), so the shell passes each as one literal word, and sends text with `--body-file`. The `default_seat` names only a harness; pick the model and effort when you assign. The `default_limit` values are starting points for the time-limit check.
 
 ## Versions
 
-Each version lives in its own folder (`<name>/v1/`, `<name>/v2/`, …) and is never edited after it ships, so a role made from `<name>@vN` can be compared with the latest version. A role records the template and version it came from in `meta.template` and `meta.template_version`. A new version is a new folder plus one row in `SHIPPED` in `crates/daemon/src/community/templates.rs`; a test fails until every file here is compiled in.
+Each version lives in its own folder (`<name>/v1/`, `<name>/v2/`, …) and is never edited after it ships, so a role made from `<name>@vN` can be compared with the latest version. A role records the template and version it came from in `meta.template` and `meta.template_version`. A new version is a new folder plus one row in `SHIPPED` in `crates/daemon/src/community/templates.rs`; a test fails until every file here is compiled in, and another pins each shipped version's bytes, so editing one fails. The six core templates are at v2, which only single-quotes the placeholders in their packet commands.
 
 ## Using one
 
