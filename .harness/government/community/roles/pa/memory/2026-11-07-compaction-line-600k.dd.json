@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"hook": "read before deciding whether a seat needs compacting",
+				"tags": [
+					"pa",
+					"compact",
+					"threshold"
+				],
+				"title": "Compaction line is 600k again (supersedes the 400k note)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Jordan's rule, relayed by the prime 2026-11-07 18:06: 600k is the context limit and coders may run up to it. Don't compact anyone under 600k. This withdraws the 06 Nov 400k line (note 'Compaction line is 400k in this community'). The PA brief's 600k default is the rule. Handshake unchanged: handover under roles/<role>/outputs/, 'handover ready', then pij send <seat> --command compact (held for the memory turn), one seat at a time. 07 Nov 20:07: tapir 643k compacted; kestrel 609k next."
+		}
+	]
+}
