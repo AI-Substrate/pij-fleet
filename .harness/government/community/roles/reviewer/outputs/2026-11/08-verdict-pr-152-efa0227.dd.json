@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b72e-c716-7753-b49a-4e3fb27c3075",
+				"date": "2026-11-08",
+				"head": "efa0227eba1fc368038b724e67a03f761b1a3745",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/152#issuecomment-6711182868",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:152",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #152 round 3 correctness review\n\n## A) Verdict\n\n**PASS-WITH-NOTES** at `efa0227eba1fc368038b724e67a03f761b1a3745` for the requested caller-forwarding, merge and renumber re-check. The [0c01b1b correctness closures](https://github.com/AI-Substrate/pij-fleet/pull/152#issuecomment-6709324752) stand.\n\nThis is not herring's four-condition C32 verdict. The archived-request qualification below was handed to herring.\n\n## B) Scope and proof\n\nReviewed the own repair efa0227e and the main merge eca8b8e6 from the prior reviewed head. Previously reviewed main imports are separate.\n\nClean pinned checkout; GitHub and ls-remote agree, CLEAN, latest Delivers SUCCESS. CI `42398945624`, attempt 1, matches the full head: 2,158 JUnit cases, zero failures/errors. Caller-forwarding, context-free refusal, bound-holder reply, refused/contradicted caller, atomic answer/audit, held-delivery and steering controls executed.\n\nNo local builds/tests, mutation, daemon/pane probe or fresh canary was run.\n\n## C) Caller forwarding preserves valid replies\n\nmessage_caller attaches the existing caller_context for every non-control message that targets a role or has in_reply_to. This applies equally to ordinary and FYI seat replies; it does not depend on fyi. Plain seat messages without correlation remain unchanged.\n\nBoth send and send_role serialize the same SendRequest to /v1/send, including Some(caller); there is no seat-only conversion stripping it. Controls still supply their own caller through send_control, not this field. Remote/forwarded routing retains its existing separate treatment.\n\nThe CLI control verifies reply/role presence and plain/control absence. The actual HTTP regression verifies native/shim, normal/FYI and seat/role context-free refusal without queue/hold/answer/audit effects, then demonstrates a pane-bound holder still delivers. Existing seat/role successful reply and repeat/accounting controls also ran. This is source composition plus CI evidence, not a reviewer end-to-end CLI reply run.\n\n## D) Retained accounting\n\nFor a matched open role request, failed lookup now refuses rather than downgrading unknown identity. Missing pane/session context refuses before role/FYI/seat dispatch. Resolved caller/from mismatch and unresolvable supplied evidence still refuse.\n\nAccepted-role accounting still uses the internal semantic acceptance mark; native seat Refused receipts do not answer. The answer and request.answered_by_reply audit remain one owned transaction; the retained failed-append/retry/idempotence control executed.\n\n## E) Merge and renumber\n\nEndpoint::ALL is 60 and retains both Requests and Steer. Migration 0038 becomes 0043; its SQL differs only in user_version. SCHEMA_VERSION is 43, above merged main's 42, with 0041 deliberately unused as directed. No lower-gap backfill is claimed; private applied prototypes do not gain an automatic checksum upgrade.\n\nNo new timer, polling loop or launch site comes from caller attachment.\n\n## F) Security qualification\n\nreply_sender currently recognizes role_request(id), the open table, and returns None on no row. Main #149 moves closed requests into closed_role_requests. A context-free native API send correlated to an archived role-request ID therefore appears to retain the legacy raw-from path, although the Known limit names uncorrelated raw-from sends.\n\nThis source boundary was sent to herring for S152-001/C32 grading; it is not a local reproduction or a security acceptance. Asserted-only session identity likewise remains explicitly req-10's unresolved provenance, not something this caller-forwarding re-check attests.\n\n## G) Handover\n\nNo caller-forwarding/merge repair requested for this delta. Retain herring's independent security grade and the prior deployment/proof notes before merge. No product code was changed by this reviewer.\n"
+		}
+	]
+}
