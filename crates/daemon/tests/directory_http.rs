@@ -5455,45 +5455,103 @@ async fn the_omp_reply_shape_binds_by_pane_and_is_refused_without_caller() {
     rig.server.abort();
 }
 
-/// Review of #152, S152-001 (ruling of round 4): the one paneless sender a
-/// reply accepts is the shim's verified pull seat, whose registered native
-/// session and host tuple matched with the host live. That verification is
-/// carried to the reply gate, not re-resolved to an asserted id. The same
-/// caller on `/v1/send`, which makes no such check, is refused.
+/// Security review of #152, S152-001 (round 5). A paneless pull seat's
+/// native session, PID and start are roster metadata any local client can
+/// read. A DIFFERENT client supplies a live paneless pull holder's matching
+/// metadata and replies to its request as that seat: refused on the shim and
+/// on `/v1/send`, normal and FYI, to a seat and to a role, with nothing queued,
+/// held, answered or audited. The refusal says what to do instead, and the
+/// uncorrelated send it suggests is delivered and answers nothing.
 #[tokio::test]
-async fn a_verified_paneless_pull_reply_is_accepted_only_through_the_shim() {
-    let (rig, repo, _) = limit_rig("pij-reply-pull", true).await;
-    let mut pull = SeatDescriptor::new("pij-pull", Harness::Copilot, "/tmp");
+async fn a_client_replaying_a_paneless_pull_holders_metadata_cannot_reply_as_it() {
+    let (rig, repo, _) = limit_rig_held_by("pij-reply-pull", true, "pm-001", "pij-pull").await;
+    // The holder is a live Copilot seat outside tmux: a paneless pull seat.
+    let mut pull = rig
+        .services
+        .registry
+        .get(&SeatId::from("pij-pull"))
+        .await
+        .unwrap()
+        .unwrap();
+    pull.harness = Harness::Copilot;
+    pull.pane = None;
     pull.proc = Some(CALLER_PROC);
     pull.harness_session = Some("native-pull".into());
     rig.services.registry.put(pull).await.unwrap();
-    let caller = json!({
+    // Everything here is the victim's metadata, as `pij whoami pij-pull` shows it.
+    let replayed = json!({
         "PIJ_SESSION_ID": "pij-pull",
         "COPILOT_AGENT_SESSION_ID": "native-pull",
         "pid": CALLER_PROC.pid,
         "procStart": CALLER_PROC.proc_start,
         "cwd": repo.main,
     });
-    let shim = shim_send(
-        &rig,
-        &["send", SEAT, "pulled", "--in-reply-to", "req-limit"],
-        caller.clone(),
-    )
-    .await;
-    assert_eq!(shim["ok"], true, "{shim}");
-    let delivered = queued_from(&rig, SEAT, "pij-pull").await;
-    assert_eq!(delivered.len(), 1, "{delivered:?}");
+    for (to, fyi) in [
+        ("pij-second", false),
+        ("pij-second", true),
+        ("role:pa", false),
+        ("role:pa", true),
+    ] {
+        let mut argv = vec!["send", to, "forged", "--in-reply-to", "req-limit"];
+        if fyi {
+            argv.push("--fyi");
+        }
+        let shim = shim_send(&rig, &argv, replayed.clone()).await;
+        assert!(refused_identity(&shim), "{to} fyi={fyi}: {shim}");
+        assert!(
+            shim["meta"]
+                .as_str()
+                .is_some_and(|meta| meta.contains("without --in-reply-to")
+                    && meta.contains("--answers req-limit")),
+            "the refusal says what to do instead: {shim}"
+        );
+        let msg_id = format!("forged-pull-{}-{fyi}", to.replace(':', "-"));
+        let native = send_to(
+            rig.addr,
+            &repo.main,
+            to,
+            &msg_id,
+            json!({
+                "from": "pij-pull",
+                "caller": replayed,
+                "in_reply_to": "req-limit",
+                "fyi": fyi,
+            }),
+        )
+        .await;
+        assert!(refused_identity(&native), "{to} fyi={fyi}: {native}");
+    }
+    assert_eq!(
+        queued_from(&rig, "pij-second", "pij-pull").await,
+        [],
+        "nothing queued"
+    );
+    let held = fyis(&rig, "pij-second").await;
+    assert!(
+        !held.iter().any(|(sender, _)| sender == "pij-pull"),
+        "nothing held: {held:?}"
+    );
+    let unanswered = || async {
+        rig.store
+            .role_request("req-limit")
+            .await
+            .unwrap()
+            .unwrap()
+            .answered_at
+    };
+    assert_eq!(unanswered().await, None, "nothing answered");
+    assert_eq!(
+        reply_answers(&rig, &repo, "pij-pull").await,
+        0,
+        "nothing audited"
+    );
 
-    let native = send_to(
-        rig.addr,
-        &repo.main,
-        SEAT,
-        "pulled-native",
-        json!({"from": "pij-pull", "caller": caller, "in_reply_to": "req-limit"}),
-    )
-    .await;
-    assert!(refused_identity(&native), "{native}");
-    assert_eq!(queued_from(&rig, SEAT, "pij-pull").await, delivered);
+    // The refusal's advice: the same message without --in-reply-to is an
+    // uncorrelated send (PRD 003 req-10's), delivered and answering nothing.
+    let plain = shim_send(&rig, &["send", "pij-second", "plain"], replayed).await;
+    assert_eq!(plain["ok"], true, "{plain}");
+    assert_eq!(queued_from(&rig, "pij-second", "pij-pull").await.len(), 1);
+    assert_eq!(unanswered().await, None);
     rig.server.abort();
 }
 

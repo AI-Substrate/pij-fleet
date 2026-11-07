@@ -1988,7 +1988,6 @@ async fn send(
             &request.message.from,
             request.message.in_reply_to.as_deref(),
             request.caller.as_ref(),
-            None,
         )
         .await
         {
@@ -2183,37 +2182,27 @@ pub(crate) async fn note_turn_wait(state: &AppState, to: &SeatId, receipt: &mut 
 pub const REPLY_ANSWER_EVENT_KIND: &str = "request.answered_by_reply";
 
 /// How a reply's sender was established, for the audit: the route, and what
-/// bound the caller to a seat (`pane (derived)` or `paneless pull (verified)`)
+/// bound the caller to a seat (`pane (derived)`)
 /// with the evidence it gave. A reply is never unbound (C32 (1)).
 pub(crate) type ReplyEvidence = serde_json::Value;
-
-/// A shim caller already verified as a paneless pull seat (shim `subject`): a
-/// Claude, Copilot or Codex seat outside tmux whose registered native session
-/// and host tuple matched, with the host live at its recorded start. Carried
-/// forward to [`reply_sender`] rather than re-resolved, which would see only
-/// the asserted id.
-pub(crate) struct VerifiedPull {
-    pub seat: SeatId,
-    pub identity: crate::delivery::NativeInboxIdentity,
-}
 
 /// Check a reply's sender before anything is sent (S152-001, F88; ruling C32).
 /// Only a send whose `in_reply_to` names a role request, open or closed, is
 /// checked; any other id keeps today's uncorrelated behaviour. The sender must
-/// be bound: by the caller's pane, or as the shim's verified paneless pull
-/// seat. A `from` that differs from the bound seat is refused
-/// `E-RS-REPLY-SENDER`; context that cannot be resolved is refused as the
-/// identity ladder refuses it; and a caller with no context, or only an
-/// asserted session id (existence checked only), is refused
-/// `E-RS-REPLY-IDENTITY`, normal or FYI. A claimed `from` is never delivered
-/// as that seat (C32 (1); security review of #152, S152-001).
+/// be bound by the caller's pane: the one binding the daemon observes itself.
+/// A `from` that differs from the bound seat is refused `E-RS-REPLY-SENDER`;
+/// context that cannot be resolved is refused as the identity ladder refuses
+/// it; and a caller with no context, or only an asserted session id, is
+/// refused `E-RS-REPLY-IDENTITY`, normal or FYI. Roster metadata (a seat's
+/// native session, PID and start, also the native receiver lease's key) is
+/// readable by any client, so it never binds a reply (security review of #152,
+/// S152-001). Paneless seats lose correlated replies until PRD 003 req-10.
 pub(crate) async fn reply_sender(
     state: &AppState,
     route: &'static str,
     from: &SeatId,
     in_reply_to: Option<&str>,
     caller: Option<&CallerContext>,
-    verified: Option<&VerifiedPull>,
 ) -> std::result::Result<Option<ReplyEvidence>, Box<Response>> {
     let Some(id) = in_reply_to else {
         return Ok(None);
@@ -2243,23 +2232,14 @@ pub(crate) async fn reply_sender(
             "pij send",
             format!(
                 "E-RS-REPLY-IDENTITY: this reply to request {id} carries {what}, so pij cannot \
-                 tell which seat sends it, and it never delivers a reply as {from} on that seat's \
-                 word; send it from {from}'s own session, inside its tmux pane"
+                 tell which seat sends it, and it never delivers a reply as {from} on a claim. \
+                 Send it from {from}'s tmux pane. A seat outside tmux cannot send a reply to a \
+                 request until PRD 003 req-10: send the message without --in-reply-to (it is \
+                 delivered, but answers nothing), and if {from} holds the request, mark it \
+                 answered with pij output <kind> --role <role> --subject <address> --answers {id}"
             ),
         ))
     };
-    if let Some(pull) = verified {
-        if pull.seat != *from {
-            return Err(sender(&pull.seat, "verified paneless pull"));
-        }
-        return Ok(Some(serde_json::json!({
-            "route": route,
-            "bound": "paneless pull (verified)",
-            "session": pull.identity.native_session,
-            "pid": pull.identity.pid,
-            "proc_start": pull.identity.proc_start,
-        })));
-    }
     let pane = caller.and_then(|caller| caller.pane.clone());
     let session = caller.and_then(|caller| caller.session_id.clone());
     if pane.is_none() && session.is_none() {
