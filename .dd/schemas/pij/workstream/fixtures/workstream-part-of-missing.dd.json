@@ -1,0 +1,67 @@
+{
+	"dd": {
+		"schema": "pij/workstream"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Workstream 002: Digest delivery",
+				"status": "draft",
+				"updated": "2026-11-08",
+				"owner": "pm-001"
+			}
+		},
+		{
+			"name": "goal",
+			"value": "Deliver the digest by email and chat."
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s01",
+					"title": "Email delivery",
+					"state": "in-progress",
+					"part_of": "workstream-umbrella.dd.json#steps/s09",
+					"depends_on": [
+						"workstream-umbrella.dd.json#steps/s01"
+					],
+					"needs": [
+						"role:coder",
+						"role:reviewer"
+					],
+					"done_when": "A digest arrives by email.",
+					"lanes": [
+						{
+							"branch": "s003/email",
+							"worktree": "s003-email",
+							"stream": "digest:email"
+						}
+					]
+				},
+				{
+					"id": "s02",
+					"title": "Chat delivery",
+					"state": "planned",
+					"part_of": "workstream-umbrella.dd.json#steps/s02",
+					"depends_on": [
+						"#steps/s01"
+					],
+					"done_when": "A digest arrives in chat.",
+					"lanes": []
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-08",
+					"by": "pm-001",
+					"change": "Created, nested under workstream 001 s02."
+				}
+			]
+		}
+	]
+}

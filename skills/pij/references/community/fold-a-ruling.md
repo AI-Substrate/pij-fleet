@@ -1,6 +1,6 @@
 # Fold a ruling into the docs
 
-A ruling (from the operator, or the prime within the operator's rulings) changes what a PRD, blueprint or roadmap says. Fold it in on the branch of the plan it affects, or on its own small PR if it affects none. Read [README.md](README.md) first.
+A ruling (from the operator, or the prime within the operator's rulings) changes what a PRD, blueprint or workstream says. Fold it in on the branch of the plan it affects, or on its own small PR if it affects none. Read [README.md](README.md) first.
 
 ## Steps
 
