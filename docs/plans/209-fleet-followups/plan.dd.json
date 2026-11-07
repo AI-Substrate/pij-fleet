@@ -11,7 +11,7 @@
         "ordinal": 209,
         "complexity": "CS-3",
         "summary": "Follow-ups from the 06 Nov roadmap push: fix the CI flakes (F27), make real-child timing tests honest under background QoS (F28), put the skill check in the gate (F26), and land three non-blocking verdict notes from #129, #131 and #132.",
-        "status": "draft",
+        "status": "shipped",
         "mode": "Full",
         "created": "2026-11-04",
         "backpressure": "assets/backpressure.dd.json#rows"
@@ -89,7 +89,7 @@
         {
           "id": "ac-0008",
           "claim": "Docs and states. No roadmap state changes (follow-ups). docs/difficulties.md records F26, F27 and F28 as resolved. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0008"
         },
         {
@@ -156,7 +156,7 @@
         {
           "id": "ph-00d1",
           "title": "Fleet follow-ups: flakes, test timing and verdict notes",
-          "state": "unchecked",
+          "state": "checked",
           "brief": "All ACs. One coder. CS-3.",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
