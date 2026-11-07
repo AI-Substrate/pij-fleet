@@ -1,0 +1,144 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 223 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-00df",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "`just route-inventory-check` (and the route_inventory_tests) pass with the corrected entries; a test fails if a seat-authority entry has no operation class.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-00df",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Daemon tests: nonce registration issues a token once; a replayed or expired nonce is refused by name; two concurrent registrations with one nonce yield one token and one E-RS-SPAWN-NONCE-USED plus an anomaly; a public-facts registration gets neither token nor context grant (and the old reissue path is gone); rotation keeps the old token valid until the new one is presented; tombstone, supersede and observed-dead revoke; a bounce keeps a live seat's token valid; a fault injected mid-transaction leaves no consumed nonce and no digest.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-00df",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Daemon tests: a pid outside any seat tree is refused; a bash-tool-shaped child two hops below its harness passes as that seat; the walk stops at the nearest boundary and never validates through a shared tmux server or launchd; spoonbill's H to M to S to P chain (M dies, S is reparented) refuses P; a dead connector's inherited connection is refused on the next request; a uid mismatch and a missing pid refuse; the index cap refuses the 4,097th registration; an adopted seat over the socket gets a token. macOS clippy and tests run locally before push (CI is Linux only).",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-00df",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Daemon tests: two live sessions under one Copilot boundary make a shim-shaped tokenless request refused with the ruled text, while each host's token request passes; after one session's owner dies, tokenless authority returns; a public session id never moves ownership.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5",
+          "phase": "ph-00df",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Tests: a registration response is the only serialization carrying the token (assert over /health, roster, cards, spine events and the daemon log for a seeded token); a remote-listener request with a token is refused; the socket-failure path is counted as neither.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6",
+          "phase": "ph-00df",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Client tests (TS proof is CI on the exact head, C25): each long-lived client stores the token only in memory and presents it; the shim and pij-rs connect over the socket. A live canary on the deployed daemon (disposable seats, one per harness pij spawns: Copilot, OMP, Claude) shows each completing a send, an inbox claim and a report with the capability, recorded as receipts.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC7",
+          "phase": "ph-00df",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Daemon tests: a token send, a peer-credential send and an asserted-only send each increment the right counter; the same operation reached through an alias and through HEAD counts in its class; the counters are bounded (no growth with seats or requests).",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC8",
+          "phase": "ph-01df",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Daemon tests: an asserted-only send as another seat is refused E-RS-SEAT-CAPABILITY; the #152 pane-replay regression flips; a parent sending as itself to its child still works. Receipts: the /health send-as counter readings (two, a working day apart) showing zero 'neither' under traffic, and each client's proven send.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0009",
+          "criterion": "AC9: cost",
+          "phase": "ph-00df",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping",
+          "note": "Per the workshop's cost table. A long-lived token request adds one SHA-256 of 32 bytes, a constant-time compare and a lookup in a warm digest map. A tokenless request adds one peer-credential read per connection, a start re-read per request, and a walk of at most 16 hops (typically 1 to 3), each an in-process parent read, a start read and one hash lookup in the boundary index; no roster scan, no census. Nothing launches per request, so nothing per tick per seat. Bootstrap and rotation run once per incarnation (any C27 `ps` argv check stays here). Lifecycle: one store read of live digests after a bounce; nonces expire with the registration window, no sweep; the boundary index is capped at 4,096 and event-maintained. Measure before and after deploy: ping .data.spawns per call site and just spawn-rate, plus daemon CPU at rest with the fleet live, since every per-tick heartbeat, inbox and activity call now carries the check."
+        },
+        {
+          "id": "bp-0010",
+          "criterion": "AC10: docs and states",
+          "phase": "ph-00df",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/project/"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}
