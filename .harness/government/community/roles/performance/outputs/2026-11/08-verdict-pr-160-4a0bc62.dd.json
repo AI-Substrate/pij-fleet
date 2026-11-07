@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "4a0bc62b932da3f2783dbb21b32f7bb0413b73e4",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/160#issuecomment-6710995251",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:160",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `4a0bc62b932da3f2783dbb21b32f7bb0413b73e4`.\n\nFull phase-2 coverage-stage review, including strict reader/baseline repairs and `5021882..4a0bc62` equal-set/deleted-row/duplicate guards. **No new recurring daemon cost:** no timer, poll, hook, sweep or daemon executable site. Cost follows manual gate invocations, not seats per minute.\n\n**One sweep, not one filesystem read:** each standalone sensor run attempts four directory listings (PRDs, blueprints, workstreams, optional legacy roadmaps), reads/parses each matched `.dd.json` once, and reads/parses the exemptions file once. With D documents: **D+1 file reads/JSON parses**, plus directory filtering/sorting. Required-folder/document errors become findings; only legacy ENOENT is excused. There is no retry, recursive traversal or external parser/model call inside the sensor. Full documents and coverage indexes remain in memory; no input-byte/cardinality cap or sensor deadline.\n\n**Per gate:** `harness checks`, including `--quick`, adds one existing-runner `just coverage-check` stage using local `node_modules/.bin/tsx`. `self-check` calls that recipe once and does not call harness checks. The sensor launches nothing itself; the just/tsx command wrapper is not process-free. A full gate that reaches both coverage and Vitest performs **two document sweeps**: the standalone stage and one actual-repo unit case. If self-check stops at an earlier failure, later stages are not reached. No periodic/per-seat multiplier was introduced.\n\n**Repairs' CPU/memory:** required-section filtering and per-section row-ID Sets add command-local scans/metadata. Equal-set, existing-row and still-uncovered checks use Sets/Maps against the fixed 15 approved addresses; they add no file reread or subprocess. `validExemptions` runs twice in memory (coverage, then the returned count), not twice against the filesystem. The old exemption-by-gap array membership cost is gone.\n\nOne minor scalability qualification remains: sibling grouping spreads/copies the accumulated array on each child insertion, **O(sum(children-per-parent squared))** shallow copies. Other passes follow rows, links/string bytes and directory sorting. This and uncapped input/findings are finite invocation costs, not retained background growth.\n\nDocs/rename/template changes retain the earlier cost picture: one fixed pm-v4 embedded version (29 versions, 16 names); catalog/listing algorithms unchanged, hashes test-only. Existing product readers already handle both folder names. AC7's role-writer edits are merge-time work, not a runtime sweep, and were not executed here.\n\n**CI:** exact-head [42397453707](https://github.com/AI-Substrate/pij-fleet/actions/runs/42397453707) succeeds. Node 22 executes **all 18 coverage tests**, including equal-set/deleted-row negatives and clean-removal controls, repeated section/requirement/step-ID guards, umbrella control, fail-closed Reader cases, and the actual-repo scan. Vitest **2,222 passed / six skipped**; Node 24 and Rust checks also pass. These are correctness executions, not a timed assembled gate or latency bound. Latest Delivers succeeds; the older cancelled run is superseded.\n\nNo local gate, sensor, build, test, mutation, probe or worktree edit. F104's missing-ddocs CI validation limit remains; this cost verdict does not replace reviewer/security coverage or privacy proof. No migration or daemon after-deploy reading is needed for this command-only stage.\n"
+		}
+	]
+}
