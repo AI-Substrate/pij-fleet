@@ -103,9 +103,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Test: a hostile role or project value in the stored request comes back as one quoted word through a /bin/sh round-trip of the printed next step.",
-          "state": "unchecked",
+          "state": "na",
           "probe": "crates/",
-          "note": "Kestrel has this ready on kestrel/216-requests-close-f83 (ef079fa: output.rs quoted, with a /bin/sh round-trip test)."
+          "note": "F85 goes in #149."
         }
       ]
     },
