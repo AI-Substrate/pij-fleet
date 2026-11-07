@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "a7a0f4a470532ae54d0103528b2bf338abff3bfe",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/156#issuecomment-6708381133",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:156",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: block** at `a7a0f4a470532ae54d0103528b2bf338abff3bfe`.\n\nS156001: the exported \"dialog first line\" can be arbitrary captured work content rather than trusted dialog chrome.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/harnesses/src/modal.rs | 126-128, 147-151, 169-170 | Cropped dialog matching exports arbitrary model/work text into persisted stalls, messages and roster projections | 10/10 |\n\nCopilot's anchored footer does not validate the exported title. `region_top` uses the row after the nearest opening rule, or row zero if that rule is no longer visible. `first_line` only trims and truncates that arbitrary row to 160 characters. The footer branch runs before the title branch.\n\nA cropped dialog can therefore retain its recognized footer while starting with confidential model/work text. The committed lynx fixture begins with work-content table text and is accepted; the untitled test explicitly accepts a replacement non-title line (`crates/harnesses/src/modal.rs:253`).\n\nProduction copies this value into the stall record (`crates/daemon/src/modal_stall.rs:105`), persists it in `modal_stalls`, and places it in parent and PA/prime notifications, their `message.pushed` events, and `watchdog.modal-stall`. Roster/state projections, including shared cards, expose it too. Rendered private content can thus reach other seats' model contexts and authenticated roster readers, including paired-machine clients. The 160-character cap is not a privacy boundary.\n\nReturn a fixed marker-derived label, or require a recognized title inside a verified dialog block. Never substitute row zero or arbitrary body text when the title boundary is missing. Add a synthetic canary-content regression that preserves detection while proving the canary appears in no persisted stall, event, notification or projection.\n\n**Other boundaries:** no whole-pane persistence, send or successful-capture logging found. Remaining capture text stays in memory. Quoted-above-composer fixtures are rejected; OMP/Pi are excluded before capture. Claims commit before telling, incoming deliveries do not count as own activity, and same-stretch claims suppress restart repeats. Those controls do not repair the exported-title boundary.\n\nNo automatic dialog-clearing key is sent to the stalled pane. Notification messages have `command: None`; clearing keys are descriptive. Existing guarded message delivery may type an ordinary notification into a recipient, so this is not a claim of \"no typing anywhere.\"\n\n**Public hygiene:** no separate C19/C21 disclosure finding in the 34 PR-owned changed files. Detected own-layout paths, loopback test URLs, product references and generic scratch fixtures are permitted. Confidential provenance was not independently certified.\n\n**Proof:** CI [42381309337](https://github.com/AI-Substrate/pij-fleet/actions/runs/42381309337) passed all four jobs; its tested synthetic merge has the frozen head's tree. JUnit lists 2,089 passing cases, including all 11 relevant modal tests. Existing tests prove detection/notification/restart paths but explicitly allow unsafe non-title selection. The ddocs step reports UNAVAILABLE, not document validation. Source and CI review only; no local builds/tests, exploit execution, credential reads, live-pane operations, deployment or product edits.\n"
+		}
+	]
+}
