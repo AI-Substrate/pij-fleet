@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b847-ccd7-71d2-a045-a5db08c14069",
+				"date": "2026-11-08",
+				"head": "9cdcf3d8fac96966067901d6b8966d1cf76b844b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/167#issuecomment-6714363369",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:167",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #167 round 3 correctness verdict\n\n**BLOCK** at `9cdcf3d8fac96966067901d6b8966d1cf76b844b`.\n\n**F001, F002 and F003 are closed.** Durable sequence ordering fixes the backward/equal-clock case, and the #169 auto-merges preserve the compaction-wake path. New **F004** concerns the in-flight supersession rule at the wake commit.\n\n## F003 closure and retained fixes\n\nMigration 0044 now assigns seq INTEGER PRIMARY KEY AUTOINCREMENT and retains UNIQUE(seat,msg_id). pending_compactions and its partial index order by seat/seq; admitted_at only supplies delivery-wait age. Replayed message IDs do not create a new pending row.\n\nThe new real-store test covers a later-recorded compact with a ten-minute-earlier timestamp and with an equal timestamp. The later compact is woken once and the earlier one superseded. The author reports failure with the old ORDER BY; no mutation was rerun locally.\n\nF001's fallible role read and F002's persist-before-admission/error propagation remain intact. The merge does not change those files. Existing rearm, replay, dropped-caller, read/write recovery, in-flight timeout and P9 mark-before-send behavior remain covered.\n\n## F004, P2: a newer in-flight row can appear before an older wake commit\n\nThe round fetches pending_compactions once (`daemon/src/compaction_wake.rs:65-70`), decides eligibility through asynchronous reads, then settles the old row as Woken (`:108-114`).\n\nRecording a newer compact deliberately leaves older pending rows untouched until the newer control is delivered (`store/src/compactions.rs:19-44`). But settle_compaction's update only checks the selected seat/msg_id and settled IS NULL (`:99-107`); it does not check whether a higher-seq pending compact now exists.\n\nA concrete interleaving:\n\n1. The round snapshots eligible older A, with no B yet, and finishes its idle/queue/holdings checks.\n2. Another request commits newer B's tracking row before admitting its control. B is now in flight; A remains pending.\n3. The round commits A as Woken and sends its resume. The store update succeeds even though B was committed first.\n\nThis violates the new rule that an older compaction waits while a newer one is in flight. It can issue the old resume while the newer compact is about to run. The existing sequential in-flight test inserts B before taking the round snapshot, so it does not exercise this boundary.\n\nMake the Woken transition atomically veto/defer when a higher-seq pending row of the same seat exists at commit. Leave A pending rather than superseding it merely because B was recorded: A must still be able to wake after B expires undelivered. Preserve the conditional once-only mark and do not add a post-send retry policy.\n\nAdd a focused snapshot/commit interleaving case, or an equivalent store-level transition test: read A, commit pending B, then attempt to mark A Woken; that attempt must not authorize a send. Retain the existing newer-delivered and newer-never-delivered cases.\n\nThis is source-derived; no production race, local test or probe was run.\n\n## #169 auto-merge\n\nCompared with current main a2cc5e70, lib.rs adds only the compaction_wake module. pa_watchdog.rs adds the outcome type, shared bg_msg visibility and exactly one compaction_wake::round call beside the existing modal-stall call. Main's tap-refusal observer wiring remains intact.\n\nThe compact admission, fallible holdings and store files are unchanged by the merge. No duplicated/missing wake invocation was found.\n\n## Exact-head proof and boundaries\n\nCI **42423682724** passed: **2182 JUnit cases, zero failures/errors**. All ten daemon compact-wake tests executed, including the new clock test and retained failure/recovery, queue/idle, rearm, restart and dropped-caller controls. Direct/self/held memory-turn HTTP tests also executed. F004 is not covered.\n\nThe checkout is clean/detached, matches the frozen remote head, and GitHub reports CLEAN/ready. No local product builds/tests, mutations, dependency changes or deployment probes.\n\nMigration 0044 is still unmerged; any private database that applied an earlier 0044 prototype must not be assumed checksum/schema-compatible with this edited migration. P9 remains one attempted wake, not a guaranteed delivered message. Security/performance acceptance remains independently owned.\n"
+		}
+	]
+}
