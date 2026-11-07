@@ -1,0 +1,57 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b7f8-9866-7c33-966e-5277bfa8a2ca",
+				"date": "2026-11-08",
+				"head": "bf1cbd82bdb94bb5699f08c0e94046dc8c13bff1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/168#issuecomment-6713514931",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:168",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Exact-head CI run 42416962069, junit-linux",
+					"exit_code": 0,
+					"log": "2177 Rust cases, zero failures/errors; focused release/replay/routes/advice/rendering/index tests passed; https://github.com/AI-Substrate/pij-fleet/actions/runs/42416962069"
+				},
+				{
+					"command": "Author-run mutation: allow Refuse mode to skip invalid batch targets",
+					"exit_code": 101,
+					"log": "Killed by a_batch_release_is_one_commit_all_or_nothing at directory_http.rs:6694; bad batch wrote instead of refusing; edits restored"
+				},
+				{
+					"command": "Author-run mutation: remove both closed-holding filters",
+					"exit_code": 101,
+					"log": "Killed by delivered_ends_the_holdings_its_pr_finished_in_one_commit_once at directory_http.rs:6658; replay re-ended old holdings; edits restored"
+				},
+				{
+					"command": "Author-run unmutated regression: delivered 215, reassign coder/215, delivered 215",
+					"exit_code": 0,
+					"log": "Confirmed defect: second delivery returned ok=true, released newly assigned coder/215 pij-second, and advanced governance HEAD; scratch regression restored"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #168 correctness verdict\n\n**BLOCK** at `bf1cbd82bdb94bb5699f08c0e94046dc8c13bff1`. The batch, route-table and human-output changes are supported by source and CI, but delivered's rerun is not a no-op after a new holding is assigned.\n\n## F001, P2: replaying an old delivery releases new work\n\n`crates/daemon/src/http/claims.rs:383-402,488-510`\n\nEvery invocation calls `end_holdings` before handling replay. That function selects currently open reviewer/security/performance holdings for the PR and coder holdings for every plan in its file list. It does not distinguish the assignment generation or time from the work that the merged PR finished.\n\nConsequently, after a successful `delivered 215`, assigning `coder/215` again for new work and replaying the old `delivered 215` ends the new assignment and writes another directory commit. This violates both AC1's rerun no-op and its requirement to end holdings whose work that PR finished.\n\n**Confirmed on unmutated code by the author at the pinned head:** first delivery ended `coder/215 pij-holder`; a new assignment gave `coder/215` to `pij-second`; the second delivery returned `ok=true`, released `coder/215 pij-second`, and advanced the governance HEAD. The temporary regression was run in the coder's worktree and restored; the PR branch and review worktree stayed unchanged.\n\nThe existing replay test only retries without assigning new work (`crates/daemon/tests/directory_http.rs:6653-6665`), so it passes while missing this case.\n\n**Fix:** constrain automatic releases to the holding generations/work actually finished by that PR, using a stable merge-time/work-scope boundary or recorded assignment identities, and retain that boundary on retries. Add the reassign-then-replay regression and require no new commit and the new holding still open. Preserve recovery after a refused initial writer commit. Merely returning early on `commit.recorded.is_empty()` is insufficient: retries must still finish original work, and a first `Delivers: none` call already has no recorded addresses.\n\n## Requested mutation checks\n\nThe author ran these temporary mutants at bf1cbd8, restoring the edits after each:\n\n1. **Batch atomicity mutant:** changed `(Unmatched::Skip, skipped) if !built.batch.is_empty()` to `(_, skipped) if ...`, allowing a bad explicit release batch to commit valid entries. **Killed** by `a_batch_release_is_one_commit_all_or_nothing` at `directory_http.rs:6694`: the expected NOT-HELD refusal was absent and the bad batch wrote.\n2. **Closed-holding rewrite mutant:** removed the open-row condition from `release_many` and the open-row filter from `end_holdings`. **Killed** by `delivered_ends_the_holdings_its_pr_finished_in_one_commit_once` at `directory_http.rs:6658`: the replay re-ended the old coder/reviewer/security rows in another commit instead of returning empty holdings.\n\nThese prove the existing guards are meaningful. The separate unmutated reassign regression above shows the guard still lacks the required work-generation boundary.\n\n## Other requested claims\n\n- **One directory commit:** matching holdings are gathered and passed once to `release_many`. Its Refuse mode accumulates semantic errors before producing any files; the writer builds under its lock and the store ends the rows transactionally (`community/directory.rs:1846-1994`; `store/community.rs:247-271`). The clean batch and initial delivered fixture each assert one commit. Unmatched store-only rows are named, and immediate replay without new work writes nothing.\n- **Windows:** batch release and delivered share `windows_after_release`, deduplicating seats and checking each against its earliest ended holding (`http/directory.rs:1629-1675`).\n- **ROUTES.md:** `commit_keeping` invokes regeneration only when the write has not already done so; `routes::regenerate` includes the file only when its bytes differ. Holder changes cannot change the holder-free canonical table (`community/directory.rs:2141-2157`; `community/routes.rs:312-341`). The CI test covers stale-table repair in the assign commit, then no rewrite on a current-table release.\n- **Lineage and retire/merge:** lineage has a distinct dispatch before the ordinary holding renderer and prints `recorded`, for single and batch receipts. Retire/merge use the new one-line renderer, with withdrawal counts, route changes and prime-notification outcomes; JSON remains raw (`cli/src/main.rs:1888-1907,3002-3091`). Their focused renderer tests passed.\n- **F90 advice:** unanswered delivered requests are counted per holder with an indexed project/role query, only when a one-holder role has multiple live holdings. Two busy seats produce no release commands; one busy seat is kept even if older; otherwise the newest is kept (`community/picture.rs:513-577`; `store/role_requests.rs:18-22,1126-1147`). The source test and EXPLAIN test passed.\n- **Cost:** no new timer, poll or launch site. Release uses one writer commit per batch; ROUTES rendering is in-process; window renames reuse the existing site, at most once per released live seat. F90 adds an indexed read only when its condition fires, not a per-tick loop. Live cost judgment remains the performance role's work.\n\n## Evidence and limits\n\nExact-head CI run `42416962069` succeeded. Its JUnit artifact records **2,177 Rust cases, zero failures/errors**, including the delivered, batch-release, stale-routes, F90 advice, lineage, retire/merge and indexed-count tests. The confirmed new-work replay regression is author-run evidence and is not part of that passing CI suite.\n\n`node harness/scripts/pr-freeze.ts 168` reported FINAL immediately before this verdict: matching heads, CLEAN, successful latest checks, ready, no new migration. `git diff --check origin/main...HEAD` passed.\n\n**No local reviewer builds or tests.** The reviewer source-checked the guards and tests, inspected exact-head CI, and requested the author-run mutation/regression proofs. No product edits, node_modules installation/symlink, live-daemon probes, credential reads, merge or push. The detached review worktree remains clean at the requested full SHA.\n"
+		}
+	]
+}
