@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b579-e630-73c2-95c9-e913213abbdc",
+				"date": "2026-11-07",
+				"head": "03ba18533d267b66d666bfedddb39771535e573d",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/148#issuecomment-6705453605",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:148",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #148 repair correctness review\n\n## A. Verdict\n\n**pass-with-notes** at `03ba18533d267b66d666bfedddb39771535e573d`.\n\n**F001 and F002 closed.** No correctness repair remains in this round. The original AC2/live-attribution and no-op/shim deferrals remain explicit.\n\n## B. Scope\n\nOnly `5de084c74c75ea63532bec6f4eb36a9f872092d7..03ba185`: repair `4789a79` and the Linux-only dead-code allowance in `03ba185`. The prior accepted native brake and terminal-retired shutdown stand. Detached checkout stayed clean and pinned; no local builds/tests, mutations, runtime probes or product edits.\n\n## C. F001: exactly-once accounting\n\nEach early return for invalid role, pane-observation failure, out-of-subtree process, vanished pane or identity-observation error now records its outcome before returning. Calls reaching `register_via` are not counted by the route; the service records the settled result once. The shared early tally adds no registry read.\n\nThe amended `first_light` regression sends a service refusal and an early invalid-role refusal, then reads ping: total 2, one `shim.paneless.refused`, one `explicit.paneless.refused`, and no made-up name retained. The existing service test retains new/unchanged/refused coverage. This closes the formerly invisible entry-boundary failures without double-counting the service path.\n\n## D. F002: producer labels\n\nFresh address allocation now defaults to `explicit`; the outer startup loop supplies `lease-retry` after holder standby. The receive loop checks `standingBy` before whether any registration has succeeded. Both producer cases are covered by captured request-body assertions in CI.\n\nHeartbeat selection is unchanged: ordinary lease re-attestation explicitly passes `heartbeat`, while a real holder standby passes `lease-retry`; successful re-attestation clears the standby flag. An already healthy lease does not register. `NativeBridge.register` overwrites the advisory label on the sent copy, so a startup label cannot persistently replace the heartbeat label. Existing lease recovery/stale-answer and terminal-retired cases still pass.\n\n## E. Other repair checks\n\nThe per-attempt `Reads` mutex serializes read reservation against closing the tally. A worker attempting its argv read after closure cannot reserve a read and does not call `read_argv_with_ps`; a read reserved before closure is included in the returned tally. The deterministic held-worker test checks an admitted read, closes at count 1, releases the worker and observes refusal with the count unchanged.\n\nCounts retain bounded enum keys and at most 64 short named keys plus overflow; over-64-byte names and unknown claims go to `(other)`, while typed retired/held errors use their recorded seat. Generic refusal counting uses only the existing tally's known-name information, not a new registry query. Overflow, unknown-name and byte-cap regressions pass.\n\nThe mutex-based wording is corrected. The final `cfg_attr` changes Linux lint allowance only, not read admission or behavior.\n\n## F. Exact-head evidence and limits\n\n[CI run 42362221981](https://github.com/AI-Substrate/pij-fleet/actions/runs/42362221981) names this full head; all four jobs passed. Downloaded JUnit has **2,062 executed cases, zero failures/errors**, including ping accounting, service accounting, late-read closure, name/byte bounds and the existing zero-observation retired-address brake. Five Rust cases were skipped separately.\n\nBoth Node versions report **2,204 Vitest cases passed, six skipped**, and **324 combined native-extension cases passed**, including fresh-allocation labels, initial holder standby labels, lease recovery and retired shutdown. [Delivers run 42362222056](https://github.com/AI-Substrate/pij-fleet/actions/runs/42362222056) passed at the same head; PR is CLEAN.\n\nThe late-read test closes the tally directly; it is not a real timeout/macOS process-launch replay. Source establishes the production observer's call to the guard. Linux CI does not compile that observer branch; the packet's clean macOS clippy is coder-supplied evidence, not a reviewer local run. CI also explicitly reports ddocs UNAVAILABLE.\n\n## G. Cost and commands\n\nNo new loop, timer, event write or launch. Counting adds bounded-map locking; each attempt's read admission/closure uses its own lock. Independent performance owns contention and cost assessment, and security owns the raw-name exposure assessment.\n\nRead-only git head/status/delta and source/test/docs reads; exact-head CI metadata/logs and downloaded JUnit inspection. No build or test was executed locally.\n\n## H. Handover and harness feedback\n\nCorrectness is ready at this head, subject to the separately owned verdicts and existing deploy-time attribution work. **magicWand:** the new outer-producer and early-refusal controls make the attribution instrument prove that it observes the paths it claims to measure.\n"
+		}
+	]
+}
