@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"head": "a0ec95212431b8c12bbd7c477547a5242c8f78c0",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/153#issuecomment-6706743545",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:153",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Matched live deployment launch/CPU/RSS and scope/seat/due-read counts; warm-up and negative-cache TTL limits still apply.",
+				"P153-N001: presented-token length and shared report/grant/generation mutex contention are unmeasured; consider fixed-length rejection before the lock."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `a0ec95212431b8c12bbd7c477547a5242c8f78c0`.\n\nReviewed only `37056e3..a0ec952`: extension `424a2c4` and daemon `a0ec952`. **P153-F001 is closed.** The prior per-round scaling, cached-repository/negative-TTL, zero-launch-fixture and deployment qualifications stand. No new executable launch, timer, polling task or store query/write is introduced by the generation/grant bookkeeping.\n\n| Repair | Cost and limits |\n|---|---|\n| Generation-aware size cache | `pa_presence.rs:822-856` samples one in-memory generation per fleet seat and combines it with process/session identity and a stale flag. The sampled generation is kept across the async read, so a concurrent later activity invalidates it on the next round rather than being silently certified as already read. Unknown completed reads remain cached until activity/incarnation changes; failed reads are marked stale and retry. Unchanged idle seats still avoid transcript reads. |\n| Read budget | Per existing 60-second round, N fleet seats now take N generation lookups; only working/previously working, changed, stale or uncached seats enter the existing bounded status reader. Changes coalesce into a due read at a round boundary, not one read per post. The existing one-outstanding-read guard remains; failure retries do not launch overlapping reads. Due descriptors are copied into a separate vector and cache entries additionally retain generation, process, session and stale state. Digest/refresh duplicate completed reads remain as previously qualified. |\n| Activity generation | A successful `/v1/activity` post increments once: size reports update report and generation under one lock; state-only posts call `touch`. This happens after the existing state update. Even an accepted unchanged-state post advances generation, conservatively causing a later size refresh. No new activity timer, event or database statement from the counter itself. |\n| Grant issuance | Native registration reuses its existing response and adds a shared-map lookup. Same seat/process incarnation returns the cached grant; first/new process identity reads 32 random bytes and formats a 64-byte hex token. Random-source access and formatting occur under the shared state mutex, but use no child process or separate job. No additional registry/liveness observation is added for issuance. |\n| Token check / contention | Size-bearing activity posts additionally lock the shared reports/grants/generations map and compare the grant/process; valid posts later lock it again to update report/generation. State-only posts add the generation lock. Status overlay reads share this mutex, and generation selection occurs while holding the existing presence mutex. Normal operations are short map/scalar work; no new asynchronous lock cycle was found. |\n| **P153-N001: input-length qualification** | Grants are 64 hex bytes, but `authorized` holds the state mutex while `constant_time_eq` walks `max(expected_len, presented_len)` (`reported_context.rs:99-102`, `http/auth.rs:74-83`). There is no token-specific length guard here. Normal-token comparison is small; an overlong supplied token extends the shared critical section in proportion to input bytes. A fixed-length rejection before locking would make this cost intrinsically bounded. Herring has this pointer; this is not a security-authority verdict. |\n| Extension report/fallback | The grant rides the existing registration; the next existing activity post carries it with size. No separate request to obtain a grant or collect usage. An absent grant sends state only. A rejected size report may add one state-only fallback and clears that cached grant; a later ordinary re-registration restores it. No new re-registration or retry timer is added. |\n| Unresponsive brake / payload | Active scope, minimum workers and prime are checked from already-read facts when due; the dormant cap persists, and positive PA-turn evidence re-arms even while inactive. These are scalar comparisons that can prevent delivery work, not new reads. Quoted repair commands and keeping the digest only in the dormant PA wake are string/payload changes, not execution. |\n\nReports/grants/generations retain entries for encountered seat IDs; a new process replaces a grant for the same ID. There is no new hard cardinality cap or cleanup policy. The prior shared-round latency and map-retention limits therefore remain.\n\n**Proof:** GitHub is CLEAN at this exact head. [CI 42368571461](https://github.com/AI-Substrate/pij-fleet/actions/runs/42368571461) attempts **1 and 2** succeed. Latest JUnit records **2,079 executed cases, zero failures/errors**, including unknown-idle reporting, between-round crossing, compaction rearm and the unchanged-idle read-count assertion; unresponsive brakes after a wake; grant incarnation checks; the isolated launch test; and all six spawn guards. Five Rust tests were skipped separately. Node 22's native gate reports **326/326**, including grant-bearing usage-info posts. Delivers **42368573119** succeeded; the earlier superseded run was cancelled.\n\nNo local builds, tests, probes or review-tree changes. The existing zero-launch fixture does not become live transport/CPU proof because these regressions pass. Reviewer/security own full F001 and S153-001 authority/replay closure.\n\n**Migration policy:** this delta changes no migration. Under the prime's new merge-order rule, #152's 0038 followed by #153's 0039 is valid; if #153 merges first, #152 must be renumbered above 0039 before its merge. Merely keeping the compiled maximum at 39 satisfies the earlier technical ledger discussion, not the new numbering rule.\n\n**Still owed:** matched live deployment launch counters, machine rate, daemon/extension CPU/RSS and per-round scope/seat/due-read counts, with PID/build and actual elapsed time. Shared-mutex contention and presented-token-size effects remain unmeasured.\n"
+		}
+	]
+}
