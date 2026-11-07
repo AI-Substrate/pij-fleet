@@ -409,9 +409,21 @@ function verifyRegisteredSeat(seat, registration) {
 }
 
 /** Resolve a new address before creating its durable journal namespace. */
-export async function resolveRegistration(client, registration, signal, precedence) {
+/** `attempt` names why (plan 211): `explicit`, or `lease-retry` after a standby. */
+export async function resolveRegistration(
+	client,
+	registration,
+	signal,
+	precedence,
+	attempt = "explicit",
+) {
 	if (registration.id !== "") return registration;
-	const seat = await registerWithPrecedence(client, registration, signal, precedence);
+	const seat = await registerWithPrecedence(
+		client,
+		{ ...registration, attempt },
+		signal,
+		precedence,
+	);
 	throwIfStopped(signal);
 	verifyRegisteredSeat(seat, registration);
 	const bound = { ...registration, id: seat.id };
@@ -552,6 +564,14 @@ export class DaemonClient {
 				/^native Copilot registration refused: claimed pid is not an actual Copilot host executable; observed basename="[^"\\/\r\n]{1,255}", replaced=(?:true|false)$/.test(
 					envelope.meta,
 				);
+			// Plan 211 (AC4): this address is retired and this session may not take
+			// it; no retry can succeed, so the loops stop instead of re-registering.
+			const retired =
+				path === "/v1/register" &&
+				response.status === 400 &&
+				envelope?.v === 2 &&
+				envelope.ok === false &&
+				envelope.details?.code === "E-RS-SEAT-RETIRED";
 			const registrationRetry =
 				path === "/v1/register" &&
 				response.status === 409 &&
@@ -578,7 +598,11 @@ export class DaemonClient {
 					response.status === 401 ||
 					response.status === 429 ||
 					response.status >= 500,
-				hostRefusal || coldWake ? projected : `Pij HTTP ${response.status}`,
+				hostRefusal || coldWake
+					? projected
+					: retired
+						? "this seat address is retired (E-RS-SEAT-RETIRED); stopped re-registering"
+						: `Pij HTTP ${response.status}`,
 				registrationRetry && ["native-session", "native-holder"].includes(envelope.details.hold)
 					? envelope.details.hold
 					: undefined,
@@ -587,6 +611,7 @@ export class DaemonClient {
 			// The daemon withdrew this incarnation's registration; re-attest before an outage.
 			if (nativeUnavailable) error.revoked = true;
 			if (coldWake) error.coldWake = true;
+			if (retired) error.retired = true;
 			throw error;
 		}
 		return envelope;
@@ -1176,7 +1201,11 @@ export class NativeBridge {
 		this.receiverController.abort(error);
 		this.heartbeatController.abort();
 	}
-	async register() {
+	/**
+	 * `attempt` names why (plan 211): `explicit` (the first), `receive`,
+	 * `heartbeat` or `lease-retry` (after a standby). The daemon only counts it.
+	 */
+	async register(attempt = this.reconnectRegistration ? "receive" : "explicit") {
 		const signal = this.controller.signal;
 		const registration = this.registration;
 		// A boot-time history scan that failed retries here, bounded and stoppable;
@@ -1186,7 +1215,7 @@ export class NativeBridge {
 		});
 		const seat = await registerWithPrecedence(
 			this.client,
-			this.reconnectRegistration ?? registration,
+			{ ...(this.reconnectRegistration ?? registration), attempt },
 			signal,
 			this.precedence,
 		);
@@ -1210,6 +1239,7 @@ export class NativeBridge {
 		let retry = INITIAL_RETRY_MS;
 		let unavailable = false;
 		let reregister = false;
+		let stoodBy = false;
 		let observedAt = 0;
 		let observedSeq = 0;
 		while (!signal.aborted) {
@@ -1219,9 +1249,10 @@ export class NativeBridge {
 				// counters carry on and nothing is replayed as progress, so an older
 				// daemon's frozen-progress brake clears only on a genuinely live event.
 				if (reregister) {
-					await this.register();
+					await this.register(stoodBy ? "lease-retry" : "heartbeat");
 					throwIfStopped(signal);
 					reregister = false;
+					stoodBy = false;
 				}
 				if (this.observedSeq !== observedSeq) {
 					// One logical tick per changed report handles clock rollback;
@@ -1257,10 +1288,17 @@ export class NativeBridge {
 				await this.heartbeatDelay(lease.renew_after_ms, signal);
 			} catch (error) {
 				if (signal.aborted) return;
+				if (error instanceof NativeError && error.retired) {
+					// Plan 211 (AC4): a retired address never comes back to this session;
+					// stop both loops and say so once, instead of retrying every 5 s.
+					this.holdReceiving(error);
+					return;
+				}
 				if (error instanceof NativeError && error.holdKind === "native-holder") {
 					// A newer same-process session holds the seat (plan 168): stand by
 					// quietly, re-attesting on this session's own next prompt.
 					reregister = true;
+					stoodBy = true;
 					try {
 						await this.standby(signal, this.heartbeatDelay);
 					} catch {
@@ -1357,7 +1395,11 @@ export class NativeBridge {
 			while (!signal.aborted) {
 				try {
 					if (!this.registered) {
-						await this.register();
+						// A retry after a standby is a lease retry even before the first
+						// registration succeeded (review of #148, F002).
+						await this.register(
+							standingBy ? "lease-retry" : !this.reconnectRegistration ? "explicit" : "receive",
+						);
 						if (holdStarted !== undefined || standingBy) {
 							this.emit("connection-ready");
 							retry = INITIAL_RETRY_MS;

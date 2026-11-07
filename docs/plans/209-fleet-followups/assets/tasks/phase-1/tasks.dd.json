@@ -120,11 +120,12 @@
           "id": "tk-0009",
           "title": "Cost, docs and states",
           "phase": "ph-00d1",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Cost receipts per bp-0007; difficulties.md records F26, F27, F28 resolved; ddocs-check passes; PR body has a Delivers line.",
           "notes": "",
           "satisfies": [
-            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+            "../../../plan.dd.json#acceptance_criteria/ac-0007",
+            "../../../plan.dd.json#acceptance_criteria/ac-0008"
           ],
           "done": "tasks.dd.json#done_when/tk-0009"
         },
@@ -305,8 +306,9 @@
           {
             "id": "dw-0009",
             "assertion": "ddocs-check passes; CI green on the exact head; verdicts at that head.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0007"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0007",
+            "receipt": "../../evidence/phase-1.md; after-deploy cost in bp-0007's receipt; verdicts at 165c322 in bp-0008's receipt"
           }
         ],
         "tk-0010": [

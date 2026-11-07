@@ -344,6 +344,25 @@ impl SqliteOrchestration {
     }
 
     /// Delivered requests with a limit that are not yet escalated or answered,
+    /// `project`'s queued requests, oldest first, with empty bodies: the
+    /// directory view counts them and dates the oldest, and never reads a
+    /// body (plan 203).
+    pub async fn queued_role_request_heads(&self, project: &str) -> Result<Vec<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {} FROM role_requests INDEXED BY role_requests_queued \
+             WHERE project = ?1 AND state = 'queued' ORDER BY created_at, id",
+            COLUMNS.replacen(" body,", " '' AS body,", 1)
+        ))
+        .bind(project)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .iter()
+        .map(role_request)
+        .collect()
+    }
+
     /// oldest delivery first: the watchdog round's one read (s12).
     pub async fn open_limited_role_requests(&self) -> Result<Vec<RoleRequest>> {
         require_current_schema(&self.pool).await?;

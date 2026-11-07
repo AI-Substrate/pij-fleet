@@ -22,7 +22,9 @@ pij-unisphere = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-time = { workspace = true, features = ["parsing"] }
+# `local-offset` (libc localtime_r, ADR 0001) renders `pij directory` times in
+# local time with their zone (plan 203, F22).
+time = { workspace = true, features = ["parsing", "local-offset"] }
 tokio = { workspace = true }
 uuid = { workspace = true }
 

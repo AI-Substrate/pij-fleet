@@ -60,7 +60,24 @@ the processes this daemon has launched since it started, by `<program>.<site>`
 operation (`ps.proc-liveness`, `tmux.send-keys`, `git.orchestration-repo`, ...); the
 `by_op` values sum to `total` (plan 180). `data.pid` is the daemon's own process
 id (plan 190): the spawn counter resets on restart, so two readings compare only
-when their pids match. `data.ddocs` is the ddocs path the daemon resolved once at
+when their pids match. `data.registrations:{total,ps,by_key,by_seat}` counts registration
+attempts since start (plan 211, issue #145): `by_key` is per
+`<path>.<mode>.<outcome>` with `{count,ps}`, where `ps` is the ancestry `ps`
+reads those attempts paid. `path` is the client's advisory `attempt` on
+`/v1/register` (`explicit`, `receive`, `heartbeat`, `shim`, `lease-retry`;
+`unspecified` when absent, `other` when unknown) or the daemon caller (`adopt`,
+`claude-bind`, `codex-bind`); `mode` is `pane` or `paneless`; `outcome` is
+`new`, `rebound`, `unchanged`, `refused`, `retired`, `retryable`,
+`session-hold`, `holder-current` or `error`. Every parsed `/v1/register`
+counts once, including one the route refuses before registration (an invalid
+role, a pane it cannot observe). `by_seat` is per address: the resolved seat, or
+for a refusal the claimed id when it is a seat (`(unnamed)` when empty);
+addresses that are not seats, longer than 64 bytes, or beyond the first 64
+count under `(other)`. Each attempt's `ps` tally closes when the attempt is
+counted: an observer a timeout left running may not launch afterwards, so no
+read goes uncounted. The counters are in-process (one mutex-guarded pair of
+maps): no launch, event or store write per attempt, and nothing reads them to
+decide anything. `data.ddocs` is the ddocs path the daemon resolved once at
 start (`PIJ_DDOCS`, which must be absolute, else PATH), or `null` when it found
 none; `just doctor` prints it. A relative or empty PATH entry is taken relative
 to the daemon's directory at start, so the kept path is always absolute. `data.gh` is
@@ -146,6 +163,8 @@ with ordinary registration backoff; it is not a `native-session` Hold.
 Every successful `/v1/register` returns and stores a live descriptor (`tombstoned_at: None`). An existing retired address is resumed only with the **same harness AND** at least one continuity witness: the same nonempty harness session (`HARNESS_SESSION_ID`, `harness_session` or `harnessSession`), the same nonempty `spawn_id`, or the recorded process incarnation corroborated by the daemon. Missing values and a matching pane alone prove nothing. Without continuity it returns HTTP400, v2 `error:"refused"`, with `seat <id> is retired (<reason>, <at>); a different session may not take it`, without changing the row; a different harness adds `; harness mismatch: row <h1>, claim <h2>` and is never adopted by a lift. Paneless Claude/Codex/Copilot session selection includes retired addresses, preferring live rows, then greatest `proc_start`, then ascending id; historical duplicates are not host owners. Their existing live-owner, session and pull-shape restrictions remain stronger than the continuity ladder. A lift clears both tombstone fields, keeps the address, harness, parent, authoritative role and Telegram bindings, updates the claimed process/pane, and emits exactly one resume event with `prior_reason`, `old_proc`, `new_proc`, `old_pane` and `new_pane`: `seat.native-resumed` for native Copilot, `seat.resumed` otherwise. Native ownership/HOLD checks, the verified spawn-prebind exception and the `revive` verb are unchanged.
 
 That refusal carries the typed discriminator `details:{code:"E-RS-SEAT-RETIRED",seat:"<id>"}`, on `/v1/register` and `/v1/adopt` alike; match the code, never the prose (pij-fleet#44). `GET /v1/seats` omits retired rows, so an OMP or Pi extension choosing its own startup name can pick a retired seat's id. Only that self-chosen name advances to its next memorable candidate on this code, for at most 8 claims in total. An assigned identity never advances: `PIJ_SESSION_ID`, a reload's own id, a same-pane or same-process match, or a `/new`/`/fork` replacement keeps the refusal terminal. A boot that still fails notifies at error level, sets the footer to `boot failed` and, when `PIJ_ANNOUNCE_TO` or `PIJ_PARENT_ID` names a spawner, sends it one best-effort `pij boot failed (spawn <id>, pane <pane>): <reason>` message from the non-seat sender `pij-boot-failed-<pid>`.
+
+A native Copilot claim that names an address recorded for a different native session is refused before the daemon observes the host (plan 211, issue #145): `E-RS-SEAT-RETIRED` when that address is retired, else the different-session refusal. The same check decides again under the registration lock, so this early read is a brake: removing it refuses the same claims later, after the ancestry `ps`. The native Copilot extension treats `E-RS-SEAT-RETIRED` on `/v1/register` as final: its receive and heartbeat loops stop and report `receive-held` once, instead of re-registering on a 5 s backoff.
 
 ## Adopt continuity order (plan 156)
 
@@ -1106,14 +1125,121 @@ pa, coder, reviewer) or security is missing (ruling C22). A role counts for a
 template when its id or its `meta.template` is that name, so `pm-001` made from
 `pm` clears the pm prompt. Each prompt is `{role, kind, command}`, `kind` core or
 recommended, and `command` a runnable line such as `pij directory add pm --from
-template:pm --why "core role from the pm template" --project fleet`. Every
-printed command names the viewed project (shell-quoted when needed), so running
-it from another repo's directory still acts on the directory that printed it;
+template:pm --why 'core role from the pm template' --project fleet`. Every
+printed command names the viewed project, so running it from another repo's
+directory still acts on the directory that printed it. Each word of a printed
+command is shell-quoted where it needs it (`picture::command`), including text
+from step documents, blueprints and the store and placeholders such as
+`'<seat>'`, so the line runs as written: nothing in it is substituted or
+redirected (security S001 on #141). A test splits every printed command with
+`/bin/sh` and replays it through the parser its verb reaches;
 the human view's drift hint does the same. `guidance` states the PEC wording. The view creates nothing; adding a role clears its prompt.
 
 Cost: listing, diffing and the view read embedded bytes and the governance
 worktree in-process and launch nothing; an add from a template costs the same
 writer commit as any add. No loop or timer.
+
+### The prime's operating picture (plan 203)
+
+`pij directory` names the project's designated prime (`data.prime`, the seat
+the project records; `null` when none), and `data.prime_document` says whether
+the prime role's document exists, so a project without one reads as that
+document missing (the human view: `prime: <seat> (no prime role document
+yet)`), not as a missing prime. The prime's prompt carries `note`, naming the
+prime.
+
+Suggestions nothing points at (F39), the core and security roles from s03 with
+no workstream step needing them, are not listed one by one in a bare view: it
+carries `data.suggestions: {roles, command}` (the human view prints one line
+naming them) and `command` is `pij directory --suggest --project <slug>`, which
+lists each in full in `prompts`. A prompt that a need or another C28 signal
+points at (`needed_by`, a `needed` or `recurring` prompt) always shows.
+`--suggest` belongs to the view; on any other verb it refuses with `E-RS-ARG`. Each
+role also carries:
+
+- `live[].seat_live`: whether the holder's seat is registered and not tombstoned;
+- `requests`: `{count, oldest_at}` of its queued requests (s05), or `null`;
+- `latest_output`: its newest output (s06) `{kind, subject, head, result, writer, at, path}`, or `null`;
+- `memory`: `{notes, latest}`, the number of memory notes (s07) and the newest
+  dated note's `yyyy-mm-dd`;
+- `call_on`: for a cold role with memory (no live holder, at least one note),
+  the command that calls on it, `pij send role:<id> --body-file '<path to what
+  you need from it>' --project <slug>` (ruling C30: a cold specialist with rich memory is someone to call
+  on, not to retire); otherwise `null`.
+
+`data.actions` lists what needs the prime (req-12), each
+`{role, condition, says, commands}` with runnable commands that name the
+project:
+
+| condition | when | commands |
+|---|---|---|
+| `no-live-holder` | requests wait and no holder's seat is live: one action per `instance` of the waiting requests (`""` for any holder, which waits only while the role has no live holder at all) | `pij-rs revive <last holder of that instance>` (when there was one), `pij directory assign <role>[/<instance>] '<seat>' --why '<why>'`, so the assign drains those requests |
+| `two-live-holders` | a one-holder role has two or more live holders | `pij directory release <role>[/<instance>] <seat>` for each but the newest |
+| `memory-stale` | the role's last two closes (`picture::MEMORY_CLOSES`) both fall on a day after its newest memory note, or it has none | `pij directory memory add <role> --title … --hook … --body-file '<path to the note>'` |
+
+A missing core or security role stays in `prompts` (s03). A workstream step
+that is not complete and lists `needs: ["role:<id>"]` adds `needed_by`
+(`<workstream> <step>`) to that role's prompt, or, for a role that is neither there nor prompted, a prompt of
+kind `needed`: from its template when one ships, else as a new definition with
+`<title>`, `<what it always does>` and the standing packet (`--packet`, which
+`pij/role` requires) to fill in. Adding the role clears it.
+`data.notice` always asks the prime to notice a need no role covers, in the PEC
+wording.
+
+Step documents are found by one helper, `picture::step_docs` (ruling C29):
+the project repo's `docs/project/workstreams/*.dd.json`, or, while that folder
+holds none, the older `docs/project/roadmaps/*.dd.json`. `needs` names roles
+(req-24); `depends_on` is the ordering, which the view does not read. Each call
+reads and parses those documents once (`picture::read_step_docs`) for both the
+needs and the recurring paths.
+
+#### Growing the community (rulings C28, C30)
+
+Every recommendation to create, split, merge or retire a role is a
+`picture::Recommendation`, which cannot be built without the signal it rests on.
+Each one in `prompts` (create) and `reviews` (split, merge, retire) carries
+`act`, `signal: {code, says}`, `command` and `commands`, and may carry `detail`.
+`in_order: true` marks `commands` as steps (release, then assign) rather than
+alternatives. `later` holds lines for verbs that have not shipped (s15's
+`retire` and `merge`): shown with a `note`, never in `commands`, so `command`
+is `null` until they ship.
+
+| signal `code` | says | used by |
+|---|---|---|
+| `recurring` | the same system or paths keep coming up across tasks | a path built by at least three workstream steps (`RECURRING_STEPS`; each step's `builds` resolved to its blueprint component's `where`) that no role's `scope.paths` covers: create its owner |
+| `re-derived` | knowledge is re-derived (the same finding twice) | taught in the notice |
+| `independent-judgment` | a judgment must be independent of the author | the reviewer and security prompts |
+| `two-domains` | a seat is bloating because it carries two domains | a live seat holding two or more distinct roles (instances of one role are one domain): split each later role onto its own seat, releasing and reassigning each holding with its instance kept (`reviewer/115`) |
+| `one-owner` | a path or system needs one owner | taught in the notice |
+| `worth-remembering` | this would be worth remembering: knowledge that should outlive the seat (ruling C30) | taught in the notice |
+| `core` | a core role a PEC starts from (C22); its template is an example | the other core prompts |
+| `step-needs` | a workstream step names this role in its needs | the `needed` prompts |
+| `one-off`, `overlap`, `nothing-to-remember`, `mostly-idle` | the signals against | `mostly-idle`: a role with no memory notes, outputs, waiting requests or live holder and nothing started or ended for 30 days (`IDLE_DAYS`): retire it, or merge it into another (the s15 verbs, in `later`) |
+
+A cold role with memory is never put up for retirement: a role is not a seat.
+`data.reviews` is the boundary review the prime runs at a wave end, a compact
+or a PR merge. `data.notice` teaches all of it from the same signals. It opens
+with why a PEC exists (ruling C30): it builds lasting knowledge of its problem
+space, whatever the work (an engineering project, a design workshop, research,
+operations), held by specialist roles in memory and outputs that outlive any
+seat and are called on later, so a long-running specialist is a feature, not a
+cost. Then: recommend roles from need, weighing C28's two truths (small
+contexts are cheaper and sharper; an expert in its own seat beats a generalist
+carrying the topic), and keep the fleet small but expert; the signals for and
+against; that a role is not a seat (roles can be many and cold, live seats
+few); the boundary review, at which each holder also writes memory (C30); and
+that templates are examples. The human view
+prints each recommendation's signal under it.
+
+The human view prints times in local time with their zone
+(`2026-11-06 13:07 +10:00`), puts each holder of a role with more than one on
+its own line, then the next actions and the prompts.
+
+Cost: per call, one query each for the holdings, the project, the queued
+requests and each role's newest output (one window query), and one registry
+list; each role's document and memory folder, the repo's workstreams and the
+blueprints they point at are read in-process. It launches nothing, per role or
+per seat, and has no timer or poll.
 
 ### Role outputs (plan 200)
 

@@ -310,7 +310,12 @@ impl CodexBinder {
         };
         match self
             .registration
-            .register_with_harness_session(claim, Some(thread))
+            .register_via(
+                crate::registration::attempts::Path::CodexBind,
+                claim,
+                Some(thread),
+                None,
+            )
             .await
         {
             Ok(_) => Ok(true),

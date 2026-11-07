@@ -149,6 +149,27 @@ impl SqliteOrchestration {
         .map(output)
         .collect()
     }
+
+    /// `project`'s newest output for each role, in one read: the directory
+    /// view's latest-output column (plan 203).
+    ///
+    /// # Errors
+    /// Store failures.
+    pub async fn latest_outputs(&self, project: &str) -> Result<Vec<CommunityOutput>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {COLUMNS} FROM (SELECT *, ROW_NUMBER() OVER \
+             (PARTITION BY role ORDER BY created_at DESC, path DESC) AS newest \
+             FROM community_outputs WHERE project = ?1) WHERE newest = 1 ORDER BY role"
+        ))
+        .bind(project)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .iter()
+        .map(output)
+        .collect()
+    }
 }
 
 fn output(row: &sqlx::sqlite::SqliteRow) -> Result<CommunityOutput> {

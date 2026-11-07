@@ -1920,6 +1920,42 @@ test("foreign harness cannot nominate a native session or yield its occupied pan
 	);
 });
 
+test("plan 211: a fresh native address is allocated as explicit, or as a lease retry after a standby", async () => {
+	const bodies = [];
+	const client = {
+		request: async (_path, body) => {
+			bodies.push(body);
+			return {
+				...descriptor,
+				id: "pij-bright-otter",
+				session: body.harness_session,
+				proc: { pid: body.pid, proc_start: body.proc_start },
+				pane: body.pane,
+			};
+		},
+	};
+	const request = chooseRegistration({
+		sessionId: "native-A",
+		host: { ...descriptor.proc, pane: descriptor.pane },
+		folder: "/work",
+		env: {},
+		seats: [],
+	});
+	assert.equal(request.id, "");
+	await resolveRegistration(client, request, new AbortController().signal);
+	await resolveRegistration(
+		client,
+		request,
+		new AbortController().signal,
+		undefined,
+		"lease-retry",
+	);
+	assert.deepEqual(
+		bodies.map((body) => body.attempt),
+		["explicit", "lease-retry"],
+	);
+});
+
 test("same-process A to B to A restores the retired native address and accepted journal", async (t) => {
 	const home = await mkdtemp(join(tmpdir(), "pij-native-retired-"));
 	t.after(() => rm(home, { recursive: true, force: true }));
@@ -2331,7 +2367,7 @@ test("real chooseRegistration and filesystem preserve accepted-before-ack across
 	};
 	first.client.request = async (path, body, signal) => {
 		if (path === "/v1/register") {
-			assert.deepEqual(body, selected);
+			assert.deepEqual(body, { ...selected, attempt: "explicit" });
 			return registered;
 		}
 		if (path === "/v1/inbox/ack") {
@@ -2377,7 +2413,7 @@ test("real chooseRegistration and filesystem preserve accepted-before-ack across
 	const resumedRequest = second.client.request;
 	second.client.request = async (path, body, signal) => {
 		if (path === "/v1/register") {
-			assert.deepEqual(body, resumed);
+			assert.deepEqual(body, { ...resumed, attempt: "explicit" });
 			return { ...registered, proc: { pid: resumed.pid, proc_start: resumed.proc_start } };
 		}
 		if (path === "/v1/inbox/ack") {
@@ -2506,6 +2542,64 @@ test("only typed HTTP 409 registration refusals permit retry", async () => {
 			return true;
 		});
 	}
+});
+
+test("plan 211: only a typed E-RS-SEAT-RETIRED registration refusal marks the seat retired", async () => {
+	const retired = {
+		ok: false,
+		v: 2,
+		command: "pij register",
+		error: "refused",
+		details: { code: "E-RS-SEAT-RETIRED", seat: "pij-old" },
+		meta: "seat pij-old is retired (superseded, 1); a different session may not take it",
+	};
+	for (const [label, path, status, envelope, expected] of [
+		["typed retired refusal", "/v1/register", 400, retired, true],
+		["other code", "/v1/register", 400, { ...retired, details: { code: "E-RS-OTHER" } }, false],
+		["wrong status", "/v1/register", 409, retired, false],
+		["different endpoint", "/v1/send", 400, retired, false],
+	]) {
+		const client = new DaemonClient({
+			addr: "127.0.0.1:13700",
+			stateDir: "/isolated",
+			readKey: async () => "fixture-key",
+			fetch: async () => new Response(JSON.stringify(envelope), { status }),
+		});
+		await assert.rejects(client.request(path, registration), (error) => {
+			assert.equal(error.retired === true, expected, label);
+			assert.equal(error.retryable, false, label);
+			return true;
+		});
+	}
+});
+
+test("plan 211: a retired address stops the heartbeat instead of re-registering every few seconds", async (t) => {
+	let registers = 0;
+	const waits = [];
+	const f = fixture({
+		async heartbeatDelay(ms, signal) {
+			waits.push(ms);
+			await flush();
+			if (waits.length > 5) f.bridge.stop();
+			signal.throwIfAborted();
+		},
+	});
+	t.after(() => f.bridge.stop());
+	const request = f.client.request;
+	f.client.request = async (path, body, signal) => {
+		if (path === "/v1/inbox/heartbeat") return { state: "unavailable" };
+		if (path === "/v1/register") {
+			registers++;
+			const error = new NativeError("Pij HTTP 400", false, "seat retired");
+			error.retired = true;
+			throw error;
+		}
+		return request(path, body, signal);
+	};
+	await f.bridge.keepReceiverAlive();
+	assert.equal(registers, 1, "one re-registration, then it stops");
+	assert.deepEqual(waits, [250]);
+	assert.equal(f.reports.filter(({ kind }) => kind === "receive-held").length, 1, "said once");
 });
 
 async function deadlineHttpFixture(t, handler) {
@@ -5184,9 +5278,11 @@ test("standby: a newer same-process holder is a quiet wait that this session's o
 	});
 	const request = f.client.request.bind(f.client);
 	const registers = [];
+	const attempts = [];
 	f.client.request = async (path, body, signal) => {
 		if (path === "/v1/register") {
 			registers.push(body.native_precedence);
+			attempts.push(body.attempt);
 			if (held) throw new NativeError("held", true, "Pij HTTP 409", "native-holder");
 		}
 		return request(path, body, signal);
@@ -5207,6 +5303,9 @@ test("standby: a newer same-process holder is a quiet wait that this session's o
 	await acknowledged.promise;
 	f.bridge.stop();
 	assert.deepEqual(registers.at(-1), { last_user_message_at: 90_000, loaded_at: 1_000 });
+	// Plan 211 (review of #148, F002): the first registration is explicit and
+	// the one after the standby is a lease retry, though none succeeded before.
+	assert.deepEqual([attempts[0], attempts.at(-1)], ["explicit", "lease-retry"]);
 	assert.deepEqual(logs, []);
 	assert.ok(captured.some((event) => event.kind === "standby-ended"));
 });

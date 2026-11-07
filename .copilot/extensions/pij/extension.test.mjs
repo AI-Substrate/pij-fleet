@@ -1364,7 +1364,11 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		await f.waitFor("completion-wait");
 		const registrations = f.requests.filter((r) => r.path === "/v1/register");
 		assert.equal(registrations.length, 3);
-		assert.deepEqual(registrations[1].body, registrations[2].body);
+		// Plan 211: the re-attest names its path; the claim is otherwise the same.
+		const { attempt: _first, ...claimed } = registrations[1].body;
+		const { attempt: again, ...reclaimed } = registrations[2].body;
+		assert.deepEqual(claimed, reclaimed);
+		assert.equal(again, "receive");
 		assert.equal(f.requests.filter((r) => r.path.startsWith("/v1/inbox?")).length, 2);
 		assert.equal(f.requests.filter((r) => r.path === "/v1/inbox/ack").length, 1);
 		// Re-registration no longer polls typing readiness; the fresh claim still verifies incarnation.
