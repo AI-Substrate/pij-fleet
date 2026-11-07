@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b5cf-174d-7952-a2d5-877583ca01e3",
+				"date": "2026-11-07",
+				"head": "a0ec95212431b8c12bbd7c477547a5242c8f78c0",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/153#issuecomment-6706874154",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:153",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #153 round-1 correctness review\n\n## A. Verdict\n\n**pass-with-notes** at `a0ec95212431b8c12bbd7c477547a5242c8f78c0`.\n\n**Reviewer F001 and F002 closed.** No further repair is requested for these two scoped findings. Security's grant assessment and the deployment readings remain separately owned.\n\n## B. Scope\n\nOnly `37056e3e0776866578461068ad0d623d6749a6be..a0ec952`: extension `424a2c4` and daemon `a0ec952`. Prior review and exclusions stand. Detached checkout stayed clean and pinned. No local builds/tests, mutations, live probes or product edits.\n\n## C. F001: post-wake brakes\n\nThe due unresponsive alert now requires a prime, active scope and at least two workers. Being braked keeps the dormant cap instead of waking the PA again. Positive PA-turn evidence is handled first, so it still rearms the pair while inactive.\n\nThe pure case covers due inactive/small-scope suppression and inactive-turn rearm. The daemon regression wakes once, then closes a worker or applies a usage limit; only the original dormant message is sent, the prime receives no escalation and the dormant claim remains.\n\n## D. F002: cache refresh and bounded reads\n\n`CachedSize` records generation, process identity, session and failed-read staleness. Generation is sampled before `read_blocks` starts and that sampled value tags the result. A post arriving during or after the read therefore remains a different generation on the next round; an older result cannot be tagged as covering that later post.\n\nEvery successful activity/size post advances generation, even if the mechanical state was unchanged. Process/session changes also invalidate the entry. Completed unknown reads are distinct from failed reads: a later post refreshes the former; the latter remain stale and retryable.\n\nThere is no immediate retry-until-stable loop. One due entry per fleet seat feeds the existing bounded reader; its outstanding-read guard still prevents another physical read behind a slow one. An unchanged idle entry stays fresh.\n\nThe regression starts with a low known idle size and an unknown idle seat, asserts zero reads for the unchanged idle seat, records the unknown seat's later size, touches an idle crossing between rounds, then touches a compaction and verifies rearm. The pre-read generation stamp and incarnation equality are source-reviewed rather than fault-injected here.\n\n## E. Grant integration and qualification\n\nThe extension sends context only with a registration grant, preserves state-only publication when reports are refused and resumes reporting on a new registration. The HTTP regression shows missing/wrong grants leave both state and size unchanged, while the correct grant works. The unit grant case verifies reuse for an unchanged process and rejection/rotation for a changed one.\n\nSecurity was given a specific race to assess: `/v1/activity` authorizes against a cloned seat/proc, awaits `registry.set_activity`, then records without another grant check. A concurrent re-registration may rotate the grant in that interval; report storage retains session but not proc. This is not declared closed or substituted with the wrong-token regression. Herring owns the per-incarnation admission/replay conclusion.\n\nThe dormant digest remains on the PA wake; folder/seat command words are quoted. No new payload disclosure conclusion is made by this correctness review.\n\n## F. Exact-head CI\n\n[Run 42368571461](https://github.com/AI-Substrate/pij-fleet/actions/runs/42368571461), attempts **1 and 2**, names this full head and passes all four jobs. Downloaded JUnit has **2,079 executed cases, zero failures/errors**; five Rust cases were skipped separately.\n\nPost-wake brake, idle-size invalidation, grant and retained zero-launch controls executed. Both Node versions report **2,204 Vitest passed, six skipped**, and **326 native-extension passed**, including grant-bearing and grant-absent activity cases. [Delivers run 42368573119](https://github.com/AI-Substrate/pij-fleet/actions/runs/42368573119) passed; PR is CLEAN. DD validation remains explicitly UNAVAILABLE in CI.\n\n## G. Migration order and commands\n\nSQLx's gap support remains technically valid, but it does not satisfy the newly stated merge-order policy by itself. Current 0038/#152 then 0039/#153 is compliant. If #153 lands first, #152 must be renumbered above 0039 and carry the higher schema version before merge. This was explicitly relayed to pm-001; it is not a blocker on #153's current number.\n\nRead-only git/source/test/doc inspection and exact-head CI/JUnit were used. No new launch or timer was added by the cache repair; independent performance owns the generation/lock cost assessment.\n\n## H. Handover\n\nF001/F002 correctness closure is ready at this full head. Obtain the independent security/performance verdicts and retain deployment-time receipts before claiming whole-plan completion.\n"
+		}
+	]
+}
