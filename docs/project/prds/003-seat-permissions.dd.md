@@ -11,7 +11,7 @@
 | --- | --- |
 | title | PRD 003: seat messaging permissions |
 | status | draft |
-| updated | 2026-11-04 |
+| updated | 2026-11-08 |
 | owner | pij-far-jackal |
 | summary | Seats can message any seat by default, but a seat can be locked down to a small set, such as its parent and the prime. Parent and prime are always reachable. A sender is told when the recipient can't reply to it. |
 
@@ -91,3 +91,4 @@ A capability for keeping seats from influencing each other. Some seats should no
 | 2026-11-06 | pij-far-jackal with Jordan | q-01 answered: anyone may change a policy, parent and prime by default, anyone else with --force and a reason (req-08). |
 | 2026-11-07 | pij-steady-otter (pm-001) for pij-far-jackal | Added req-10, seat identity provenance (F88): security's endpoint inventory found registered identifiers standing in for caller proof; the prime ruled it is fixed once here, for every endpoint. |
 | 2026-11-08 | pij-steady-otter (pm-001) | Added req-11, who may designate the prime (F103): security classified it as an authorization-policy gap separate from req-10's caller identity. |
+| 2026-11-08 | pij-steady-otter (pm-001) for pij-far-jackal | Merged to main with q-02 to q-04 still open and every requirement planned (the prime's ruling: those questions decide permission policy, while req-10 decides whether the daemon can know who is calling at all, which every policy needs first). Plan 221 plans req-10 against this; a req-10 choice that depends on an open answer goes to the prime. |
