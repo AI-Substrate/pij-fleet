@@ -87,10 +87,10 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "pij-rs --json ping",
           "note": "AC1 to AC3 change tests and the gate only; no production launch. AC4 and AC5 are single indexed reads replacing existing ones. AC6 adds one awaited future per bound-ended turn; no timer, poll or launch.",
-          "receipt": "assets/evidence/phase-1.md: cost table; live before reading 0.70/s; the after-deploy reading is owed at merge"
+          "receipt": "assets/evidence/phase-1.md: cost table. Live after deploy (07 Nov, pij-thorough-ocelot, daemon pid 50992 built from e6958e7): +43 launches in 60.007 s = 0.717/s against 0.70/s before; machine-wide 146.8/s against 50.7/s is post-reboot load noise, not attributable; daemon CPU 16.7% over the interval, RSS 142.73 to 143.91 MiB. Governance roles/performance/outputs/2026-11/07-note-pr-144.dd.json."
         },
         {
           "id": "bp-0008",
@@ -99,8 +99,9 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
-          "state": "unchecked",
-          "probe": "docs/project/"
+          "state": "checked",
+          "probe": "docs/project/",
+          "receipt": "#144 merged at e6958e7 with CI green and verdicts at 165c322: reviewer pij-double-bobcat, security pij-bumpy-herring, performance pij-thorough-ocelot (all pass-with-notes; governance roles/<role>/outputs/2026-11/07-verdict-pr-144-165c322.dd.json). Delivers: none."
         },
         {
           "id": "bp-0009",
@@ -185,7 +186,7 @@
           "phase": "ph-00d1",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "BUILD: shared-build.test.ts: a --then batch with a test logs build and test --no-run under taskpolicy -b and test -- name with no taskpolicy, all at niceness 19; the --then batch test counts three cargo calls. Cost: a cargo test adds one cargo and one nice launch (its run step, which compiles nothing); nothing at rest or per poll.",
+          "proof": "BUILD: shared-build.test.ts: a --then batch with a test logs build and test --no-run under taskpolicy -b and test -- name with no taskpolicy, all at niceness 19; the --then batch test counts three cargo calls. Cost: a cargo test adds one cargo and one nice launch (its run step; ordinary tests are already compiled, while doctests still compile during the run, and a --doc test is run-only with no --no-run step); nothing at rest or per poll.",
           "state": "checked",
           "probe": "harness/scripts/shared-build.sh",
           "receipt": "assets/evidence/phase-1.md"
