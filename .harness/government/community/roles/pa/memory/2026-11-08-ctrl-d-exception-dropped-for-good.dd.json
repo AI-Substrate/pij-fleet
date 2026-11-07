@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "read when a modal-stall tell or a stuck Copilot dialog appears",
+				"tags": [
+					"pa",
+					"f47",
+					"f109",
+					"f110",
+					"dialog",
+					"exception"
+				],
+				"title": "ctrl+d dialog exception DROPPED for good (supersedes the F109 note)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Dropped 2026-11-08 07:30 by the prime's ruling, relayed by pm-001: both seats that hit Copilot's follow-up dialog (herring and squirrel, security, gpt-6.1-sol) now run copilot --resume ... --no-ask-user (the F110 flag, checked in their process argv). The notes 'Re-granted: PA may ctrl+d Copilot's follow-up dialog (until F109)' and the earlier F108 one no longer apply. Back to role.md: never type into a pane. If a modal-stall tell still arrives, capture the pane and report it in one line to the prime and pm-001: either a seat isn't on the flag, or the flag didn't hold."
+		}
+	]
+}
