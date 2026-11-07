@@ -40,7 +40,20 @@ would edit reviewer: 1 line(s)
 would edit security: 1 line(s)
 ```
 
-**Runs at merge:** it runs right after this PR merges, so a prompt never points at a folder main lacks. A small states PR then records the 8 writer commits and checks AC7.
+**Runs at merge:** it ran right after #160 merged (09aa310), so a prompt never pointed at a folder main lacked. The writer committed each edit on the governance branch, each with the `--why` and one changelog row:
+
+| role | governance commit |
+|---|---|
+| coder | a93a486 |
+| delivery | 8897e31 |
+| docs-system | 5695f97 |
+| pa | ebb9989 |
+| performance | df3e8b5 |
+| pm-001 | ec3dfc3 (also regenerated its ROUTES.md row) |
+| reviewer | e32c8ec |
+| security | 869ad9f |
+
+Afterwards no `role.dd.json` and no `ROUTES.md` row in the governance tree cites `docs/project/roadmaps/` (bp-0007).
 
 ## Other items from phase 1's notes
 
@@ -72,3 +85,12 @@ Squirrel and bobcat both blocked on the coverage sensor; bobcat added two doc fi
 - **N001.** req-18 and c-doc-schemas (with `ddocs set`, changelog rows, `ddocs build` and biome format), the community README and `templates/roles/README.md` now say the move is done.
 - **Mutation check** (temp copy, vitest stub, no node_modules in the worktree): turning off the baseline check, the covered-baseline, row-missing and same-set checks, the repeated-section and duplicate-id checks, the error-to-empty fallback, the section check and the duplicate check each fail the tests written for them.
 - Local: `coverage-check` (15 exempted), `ddocs-check`, `local-path-check`, `pij-skill-check` and repo-wide biome pass. vitest runs in CI (C25).
+
+## Verdicts and states
+
+- #160 merged at 09aa310. Final head 4a0bc62, CI green on all five checks, pr-freeze FINAL, one `Delivers:` line (s16, req-30, req-31).
+- Verdicts at 4a0bc62, all pass-with-notes: reviewer bobcat 329c018, security squirrel c1216cf, performance ocelot ecbbf94 (governance commits).
+- `pij delivered 160` printed `delivered_by #160` for req-30 and req-31, applied here. Its note asked to set s16's plan by hand because the PR touched plans 204 and 210; s16's plan already reads `docs/plans/210-workstreams`, so no change was needed.
+- No new verbs or refusals, so `docs/how/pij-rs-api.md` and the skill's verb tables needed nothing.
+- bp-0003 and bp-0005 are checked on phase 1's evidence (`pij-skill-check` green; `a_shipped_version_is_never_edited` and `every_template_file_is_embedded_byte_for_byte` passed), so they match AC3 and AC5.
+- **Still open:** AC4, bp-0004 and phase 1 (ph-00d2). AC4's remainder is docs-system's: req-26's delivering step and PRD 002's 14 rows, which are the 15 rows in `harness/scripts/coverage-exemptions.json`. So the plan isn't closed. `harness plan validate --complete` also warns that ACs 2, 4 and 6 to 9 have no task that `satisfies` them, because phase 2 had no task file.
