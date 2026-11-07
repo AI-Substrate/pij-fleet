@@ -314,6 +314,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-back-tapir",
 					"why": "F108: detector missed a live F47 case (plan 219 follow-up)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T18:47:59.569Z",
+					"harness": "copilot",
+					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
+					"instance_key": "221",
+					"machine": "ops.osk.lan",
+					"seat": "pij-following-marsupial",
+					"why": "plan 221 phase 1: route inventory sensor and capability bootstrap workshop (PRD 003 req-10, F88)"
 				}
 			]
 		}
