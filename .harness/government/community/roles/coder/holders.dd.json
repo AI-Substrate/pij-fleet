@@ -153,7 +153,10 @@
 					"harness_session": "92c00825-7025-4673-b7d6-8c3fb82fad45",
 					"instance_key": "209",
 					"machine": "ops.osk.lan",
+					"release_why": "seat died in the 07 Nov reboot; prime: fresh holders",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-local-warbler",
+					"to": "2026-11-07T07:29:17.176Z",
 					"why": "plan 209 fleet follow-ups"
 				},
 				{
