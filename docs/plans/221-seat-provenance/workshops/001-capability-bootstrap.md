@@ -9,7 +9,7 @@
 - **The issuer is secured first**, as phase 2's prerequisite.
 - **Then phase 2 gates the operations in this order:** send-as, inbox-claim, controls, role-and-holder, outputs, registration and adoption changes, activity, attribution.
 
-**Revision 1** answers ocelot (P163-F001, governance b78df40) and squirrel (governance f1d74f3) at bf89eed. It adds in-process ancestry with a strict no-launch refusal and a cache with an explicit lifetime, session ownership for shared Copilot hosts, issuer-first, nonce and incarnation transactions, secret and transport rules, operation-level gating, and PRD 003's open dependencies.
+**Revision 1** answers ocelot (P163-F001, governance b78df40), squirrel (governance f1d74f3) and bobcat (governance dc3b2aa) at bf89eed. It adds in-process ancestry with a strict no-launch refusal and a cache with an explicit lifetime, session ownership for shared Copilot hosts, issuer-first, nonce and incarnation transactions, secret and transport rules, operation-level gating, and PRD 003's open dependencies.
 
 ## What exists today
 
@@ -29,7 +29,7 @@ Facts at main `2cc2ac3`, with sources:
 
 ## Threat model and its honest limit
 
-The attacker in F88 is **a local caller holding the daemon key**: in practice another seat, or a script it runs, acting through pij's API as the same OS user. The control raises impersonation from "read the public roster" to "steal another process's private state": its memory, its environment (`ps -E` on macOS, `/proc/<pid>/environ` on Linux), its files, or running code inside its process tree (for example typing into its tmux pane). **A same-user attacker can do all of those**, and no design here stops it; that needs separate OS users per seat, which is out of scope. The capability makes impersonation a deliberate OS-level act, visible in its own right, rather than an API call that looks like normal use. Every option below is judged against that bar.
+The attacker in F88 is **a local caller holding the daemon key**: in practice another seat, or a script it runs, acting through pij's API as the same OS user. The control raises impersonation from "read the public roster" to "steal another process's private state": its memory, its environment (`ps -E` on macOS, `/proc/<pid>/environ` on Linux), its files, or running code inside its process tree (for example typing into its tmux pane). **A same-user attacker can do all of those**, and no design here stops it; that needs separate OS users per seat, which is out of scope. The capability makes impersonation a deliberate OS-level act rather than an API call that looks like normal use. **That is a stated limit, not a detector:** nothing here instruments memory or environment reads, so such an act is not guaranteed to be seen. Every option below is judged against that bar.
 
 ## The options
 
@@ -76,9 +76,10 @@ The parts below are contracts for phase 2: design, not code.
 
 #### The issuer first (contract a)
 
-- **Issuance, recovery, rebinding and supersession** of a capability, and of the context grant folded into it, are authorized only by bootstrap evidence or the current token. Legacy roster claims never authorize them, **not even in the count-only rollout phase**.
+- **Issuance, recovery, rebinding and supersession** of a capability, and of the context grant once it is folded into the capability, are authorized only by bootstrap evidence or the current token.
+- **Today's context grant is not the capability.** It is reissued from public facts (`crates/daemon/src/reported_context.rs:84-126`, F88 row 2). It becomes part of the capability only when that reissue path is closed by this secured issuer, and until then it is no evidence of anything. Legacy roster claims never authorize them, **not even in the count-only rollout phase**.
 - A TCP registration carrying only public facts still registers as today, so old clients keep working, but it gets no token and no context grant. That closes F88 row 2.
-- Securing the issuer is phase 2's **prerequisite**, shipped before any route class is counted or gated, not a late gate class.
+- Securing the issuer is phase 2's **prerequisite**, shipped before any route class is counted or gated, not a late gate class. Phase 2a's "nothing refused" means legacy requests stay compatible. It never means a privileged token is issued, reissued or rotated from public facts. Issuance, nonce consumption and incarnation binding, revocation, and this guard on every listener (Unix socket and TCP alike) all uphold option C before the first effect gate.
 
 #### Nonce and incarnation transactions (contract b)
 
@@ -90,7 +91,7 @@ The parts below are contracts for phase 2: design, not code.
   3. creates or binds the incarnation;
   4. stores the new token's digest.
 
-  A failure anywhere commits nothing. Two concurrent registrations serialize; the loser is refused `E-RS-SPAWN-NONCE-USED` and an anomaly is recorded, since a late real seat is the theft signal.
+  A failure anywhere commits nothing. Two concurrent registrations serialize; the loser is refused `E-RS-SPAWN-NONCE-USED` and an anomaly is recorded. A duplicate claim is worth a look, but it proves neither theft nor innocence.
 - **The nonce is also peer-checked.** A nonce registration must arrive over the Unix socket from a process whose nearest harness boundary is the spawned pane's process.
 - **Abandoned launches.** A nonce expires with its spawn's registration window. Expired rows are dropped when that spawn is next touched, or at daemon start. **No sweep.**
 - **Daemon restarts.** Nonce and token digests are persisted, so a seat registering after a bounce, or one already holding a token, carries on.
@@ -100,9 +101,12 @@ The parts below are contracts for phase 2: design, not code.
 
 #### Peer credentials and the ancestry cache (contract c, with ocelot's P163-F001)
 
-- **Credentials come from the accepted connection, never from headers or a claimed pid.** They are read once at accept: uid plus pid (Linux `SO_PEERCRED`; macOS `LOCAL_PEERPID` and `getpeereid`). The peer uid must equal the daemon's uid. Its start is read immediately in-process, and the pair is bound to the connection.
+- **Credentials come from the accepted connection, never from headers, the body or a claimed pid.** The API is pinned: `tokio::net::UnixStream::peer_cred()` on the accepted stream, giving `UCred` uid plus pid on Linux (`SO_PEERCRED`) and macOS (`LOCAL_PEERCRED` plus `LOCAL_PEERPID`). They are read once at accept. A missing pid, an error, or a uid other than the daemon's is a failure that refuses every seat-authority request on that connection. It never falls back to body identifiers. The peer's start is read in-process immediately, and the (pid, start) pair is bound to the connection.
 - **Every request re-reads the peer's start.** A connection inherited by a child, passed with `SCM_RIGHTS`, or pooled keeps the original connector's credentials. If that process has died, its start re-read fails and the request is refused. If it is alive and handed its connection on, it chose to delegate its own authority. Clients must not pool connections across sessions.
-- **Reads are in-process, never launched.** On macOS: `proc_pidinfo` short BSD info for the parent and BSD info for the start (`crates/harnesses/src/proc.rs:161-167, 347-355`, already used by registration). On Linux: `/proc/<pid>/stat`.
+- **Reads are in-process, never launched.** The readers are named:
+  - **Parent:** `pij_harnesses::proc::parent_and_name` on macOS (`proc_pidinfo` short BSD info, `crates/harnesses/src/proc.rs:347-355`). On Linux, phase 2 adds the same read from field 4 of `/proc/<pid>/stat`.
+  - **Start:** `pij_harnesses::proc::observed_start`, which reads the kernel start (`kernel_start`, macOS BSD info or Linux `/proc/<pid>/stat`, `proc.rs:161-177`). It launches nothing, and returns `None`, failing closed, when the kernel won't say (`proc.rs:258-271`). Plan 218's Claude socket peer check already uses it this way.
+  - Never the `ProcLiveness` wrapper, which can fall back to `ps`.
 - **Unreadable evidence is refused, never escalated.** A read that doesn't answer (the process is gone, or the kernel won't say) refuses the request by name (`E-RS-SEAT-PROVENANCE`). It never falls back to `ps` the way the `ProcLiveness` wrapper can, so the recurring path is strictly launch-free. C27's argv check, which does launch `ps`, stays in bootstrap: registration and adoption, once per incarnation.
 - **The walk.** It starts at the peer pid and follows parents for at most D = 16 hops. It stops at the **nearest** registered harness boundary, whose start must match, or at the first cached ancestor.
   - It never continues past a harness boundary, so a sibling or a shared tmux server, login shell or launchd above it never validates.
@@ -110,6 +114,7 @@ The parts below are contracts for phase 2: design, not code.
   - The work is O(D) kernel reads.
 - **How a fresh pid reaches the cache.** A new shim process names nothing, so the walk is what finds its ancestor: at each hop it looks up (pid, start) in the cache, and the first hit ends it. Its shell, or the harness, is usually one or two hops up.
 - **Entries.** An entry is keyed by (ancestor pid, ancestor start) and maps to the boundary (harness pid and start) and the one live incarnation it owns. It is inserted only for ancestors that a walk proved sit below that boundary.
+- **A hit proves only the current prefix.** A hit authorizes a peer only because that peer's own walk, read fresh on this request, reached the cached ancestor. The prefix from the peer up to the ancestor is current membership; the cache only saves the rest of the climb. A cached root never authorizes a sibling, or a process that has left its tree.
 - **Each hit is re-checked.** A surviving ancestor alone never validates:
   - the ancestor's current start must equal the key's (pid reuse);
   - the boundary must still be alive, with the same start;
@@ -117,7 +122,8 @@ The parts below are contracts for phase 2: design, not code.
   - the boundary must still own exactly one live session (ambiguity).
 - **Invalidation.**
   - Lazily, on a failed re-check: death, pid reuse, the incarnation ending, or ambiguity.
-  - On events: tombstone, supersede, re-registration with a new incarnation, a session change, or a second session registering under the boundary drops every entry indexed under that boundary or incarnation.
+  - On events: tombstone, supersede, re-registration with a new incarnation, token rotation, a session change, or a second session registering under the boundary drops every entry indexed under that boundary or incarnation.
+  - Changed ancestry, pid reuse and ancestor death fail the fresh prefix walk or the start re-check, and drop the entry.
   - Reparenting can't grant wrongly. A hit needs the peer's own walk to pass through the cached ancestor now, and a reparented process's walk no longer does.
 - **Storage.** At most 64 entries per incarnation (least recently used goes first) and a global cap. Retirement is lazy and event-driven. **No new poll or sweep.**
 
@@ -131,6 +137,7 @@ The parts below are contracts for phase 2: design, not code.
 #### Gate operations, not URI names (contract e)
 
 - **The unit of gating is the operation, not the route.** Shared handlers reach writes through other URIs: `/v1/outputs` with output argv, `/v1/claims` and `/v1/delivered` with claim or release argv, `/v1/shim/compact-self` with other send argv. Phase 2 gates each operation, wherever it is reached.
+- **The caller is not the target.** The caller's token, or its peer credentials, proves only who is calling. A parent, PA or prime acting on another seat passes the existing authorization checks as itself and never needs that target's token.
 - **Authorization checks stay.** The capability replaces only the input to the resolver: who is calling. The actor, parent, prime, holder, owner and recipient checks still apply, now to a proven caller.
 - **Included explicitly:**
   - background-owner reads (`GET /v1/bg`, tail);
@@ -162,8 +169,8 @@ Budgets for phase 2; no syscall count or latency is proven here.
 
 #### Residual for a daemon-key holder without the capability
 
-- **Still reachable:** machine-public routes (the roster, events, cards, reads), ordinary spawning without a role, sidecar, hold and release, and the job-token hook with its own token. **This is identity classification only.** Whether a sidecar or system message may reach whom, and who is exempt from limits, are PRD 003's open q-02 to q-04, not decided here.
-- **Needs an OS-level act:** impersonating a seat means reading the owner process's memory, winning the race for an unused spawn nonce (and being caught when the real seat registers), or running code under the victim's harness boundary (for example typing into its pane).
+- **Still reachable:** machine-public routes (the roster, events, cards, reads), ordinary spawning without a role, sidecar, hold and release, and the job-token hook with its own token. **This is authentication classification only** (machine-public, sidecar and system messages, the job-token hook). Whether a sidecar or system message may reach whom, and who is exempt from limits, are PRD 003's open q-02 to q-04, not decided here.
+- **Needs an OS-level act:** impersonating a seat means reading the owner process's memory, winning the race for an unused spawn nonce (the real seat's late registration is refused and recorded as an anomaly, which proves neither theft nor innocence), or running code under the victim's harness boundary (for example typing into its pane).
 - **Federation is unchanged:** a paired machine's key stays scoped to its three routes, with sends attributed to the machine alias.
 
 ## Why C
@@ -182,7 +189,11 @@ Budgets for phase 2; no syscall count or latency is proven here.
    - Add the nonce, the token and session ownership, with issuance secured from day one (contract a).
    - Clients send the token and switch to the socket.
    - The daemon counts each seat-authority operation as token, peer-credential or neither, per class. Bounded counters in `/health`, read as deltas under traffic. No route is refused yet, apart from issuance.
-2. **Phase 2b, enforce class by class**, in the order below. Each class flips from count to refuse only after its "neither" delta is zero across a working day of real traffic on the live fleet. Each refusal is named (`E-RS-SEAT-CAPABILITY`) and tells an old client what to update.
+2. **Phase 2b, enforce class by class**, in the order below. Each refusal is named (`E-RS-SEAT-CAPABILITY`) and tells an old client what to update. A class flips from count to refuse only on positive evidence:
+   - **Positive execution:** every representative client that uses the class (the Copilot native, OMP and Pi extensions, the shim, `pij-rs`, and the Claude, Codex and Copilot hooks) completes at least one capability-proven operation of that class on the live fleet.
+   - **Negative evidence:** a test shows the same operation without the capability is refused.
+   - **A zero "neither" delta** over a working day, counted only for a class that carried traffic. A class nobody exercised proves nothing.
+   - **Counted separately:** nonce-authenticated first registrations, so spawn bootstrap is visible apart from token and peer-credential traffic.
 3. **TCP** stays for machine-public routes and paired machines. Seat-authority operations over TCP must carry the token, on loopback only.
 
 ## Operation classes in the order phase 2 should gate them

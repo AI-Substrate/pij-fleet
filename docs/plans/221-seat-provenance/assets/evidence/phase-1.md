@@ -20,10 +20,15 @@
 
 ## AC2: the workshop
 
-[`workshops/001-capability-bootstrap.md`](../../workshops/001-capability-bootstrap.md), commit bf89eed.
-- It recommends option C: a single-use spawn nonce, or Unix-socket peer credentials, as bootstrap evidence; a hashed per-incarnation token as the per-request control; peer-credential ancestry for the shim and hooks.
-- Phase 2's order: send-as, inbox-claim, controls, role-and-holder, outputs, registration and adoption, activity, attribution.
-- Pending: security and reviewer verdicts at that commit.
+[`workshops/001-capability-bootstrap.md`](../../workshops/001-capability-bootstrap.md).
+- First draft at bf89eed. Revision 1 in this head answers the three blocking verdicts at bf89eed:
+  - performance, ocelot, P163-F001 (governance b78df40): in-process ancestry with a strict no-launch refusal, a bounded walk, a cache with an explicit lifetime, and the cost budget;
+  - security, squirrel (governance f1d74f3): session ownership for shared Copilot hosts, and contracts a to f;
+  - reviewer, bobcat (governance dc3b2aa): the pinned `UCred` API, named in-process readers, fresh-prefix cache hits, caller versus target, rollout evidence, the context grant's status, the residual worded as a limit.
+- It recommends option C with one owned session per incarnation. That rule is DECIDED by pm-001 (08 Nov), and the prime may override.
+- The issuer is secured first, then operations are gated in order: send-as, inbox-claim, controls, role-and-holder, outputs, registration and adoption changes, activity, attribution.
+- PRD 003's q-02 to q-04 are open, prime-owned dependencies; nothing in the design depends on their answers.
+- Pending: security and reviewer verdicts at this head.
 
 ## AC3: cost
 
