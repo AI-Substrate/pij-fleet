@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "eb37f6a4aa586205da2711b0fc297c0efdf4759b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/157#issuecomment-6709941699",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:157",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `eb37f6a4aa586205da2711b0fc297c0efdf4759b`.\n\nNo reportable security vulnerability found in the scoped `0eb47a4..eb37f6a` repair. Merge-only implementations were excluded.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 0 | None | N/A | N/A | No reportable vulnerability | N/A |\n\nDetails URLs are parsed into numeric job IDs for ordering, not fetched or passed to subprocesses (`harness/scripts/pr-freeze.ts:137-175`). PR/URL fields do not introduce shell, CLI-option or SSRF paths.\n\nWorktree reuse now checks detached state, full expected head and clean status (`pr-freeze.ts:232-258,427-443`). Local Git-produced paths remain single argv operands after `-C`; PR metadata cannot choose them. Unusable/taken destinations are refused without cleanup, reset or checkout.\n\nThe missing-parser fallback now requires a present, passing latest named delivers check (`pr-freeze.ts:395-414`). The CLI entry guard compares module/invocation realpaths without shell execution (`520-533`), including the symlinked-invocation test path.\n\n**Retained boundaries:** URL shape does not authenticate the check app or actual job identity; ordering still trusts GitHub rollup metadata. No demonstrated attacker-controlled exploitation path was found. Prior argv/no-shell and fetch notes stand: explicit SHA sources with `--no-tags`, no destination refspecs/refmap override; normal-config branch/tracking nonmutation, not zero filesystem writes or an unconditional all-ref guarantee. Full FINAL-guard correctness and invocation cost remain separately reviewed.\n\nNo scoped C19/C21 exposure found; parameterized temporary fixtures and own-layout references are permitted.\n\n**Proof:** exact-head CI [42391070697](https://github.com/AI-Substrate/pij-fleet/actions/runs/42391070697), attempt 1, passed all four jobs. Node 22 and Node 24 logs each record 21 pr-freeze tests passing. Test source was inspected, including the symlink child-process case; advertised local mutation checks were not independently rerun. No local builds/tests, shim/script execution, fetches, worktree mutations, credentials or live probes.\n"
+		}
+	]
+}
