@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b70a-f12c-7050-9075-bc78a63cb63f",
+				"date": "2026-11-08",
+				"head": "50218822c86d7ccf5c1174d9170666a34d449fb5",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/160#issuecomment-6710811627",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:160",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #160 round 1 correctness review\n\n## A) Verdict\n\n**BLOCK** at `50218822c86d7ccf5c1174d9170666a34d449fb5`.\n\n**F001 partially open:** missing approved rows leave reusable baseline approvals. **F002, F003 and N001 closed.**\n\npm-001 confirmed this remaining case is in scope: APPROVED_EXEMPTIONS and the JSON must be the same set, and every address must name an existing, uncovered row.\n\n## B) Scope and proof\n\nReviewed `f886b8f13f52a6fbc5a75bfb360ba8a97bc1a0d9..50218822c86d7ccf5c1174d9170666a34d449fb5`: subset/Reader repair, live-doc fixes, strict covered-baseline guard and the already-reviewed #149 main import.\n\nThe pinned checkout remains clean. At its review freeze GitHub and ls-remote agreed, CLEAN, latest Delivers SUCCESS. CI `42395785973`, attempt 1, matches this full head. Both Node jobs ran all 15 coverage tests; each reports 2,219 passed/six skipped overall, with typecheck/lint successful.\n\nPublication is authorized at this reviewed head while the coder repairs in parallel. The remote has since moved to `4a0bc62b932da3f2783dbb21b32f7bb0413b73e4`; this verdict does not grade that new head.\n\nNo local product builds/tests, sensor execution, fault trigger or mutation was run. Counterexamples are source-derived; guard mutations are author-reported.\n\n## C) F001, P2: an absent approved row is silently ignored\n\nThe strict baseline loop (`coverage-check.ts:223-227`) checks only addresses for which known.has(address) is true. If an approved row is gone, and its JSON exemption is gone too, neither that loop nor the valid-exemption unknown-row loop reports it.\n\nConcrete data-only path: remove PRD 002 req-01 and its JSON exemption, leaving APPROVED_EXEMPTIONS unchanged. The PRD folder/document/requirements array can remain nonempty and readable. The row is absent from obligations/gaps, there is no JSON entry to fail the unknown check, and the constant's missing address is skipped. Coverage passes. Reintroducing the row and exemption later reuses the lingering approval without a checker change.\n\nThis defeats the strict retirement rule even though the procedure forbids deleting/reusing rows. The missing approval must itself be a finding, not rely on an invalid data edit being noticed elsewhere.\n\nRequire every baseline address to exist and be uncovered, with explicit same-set validation against the JSON. Add a missing-approved-row-plus-removed-JSON control, while preserving the legitimate covered-row removal from both baseline and JSON. The current new-row/swap/metadata/covered-baseline tests do not cover this case.\n\n## D) F001 repairs that work\n\nThe 15 initial addresses are explicitly frozen. New real planned rows cannot gain exemptions through JSON; same-count swaps, duplicate addresses, empty owner/why and malformed exemption rows fail. Rejected entries are not applied, so their gaps also remain visible. Stale/unknown JSON exemptions fail, and a covered address retained in the constant fails. The paired covered-row/both-list-removal positive works.\n\nOnly the missing-baseline-address boundary remains; no broader rule against adding new ordinary requirements is requested.\n\n## E) F002 closed\n\nReader failures on required folders are findings, including EACCES, EIO and ENOENT. Empty required folders, unreadable/unparseable files and missing/non-array required sections are not treated as successful empty input. Only the legacy roadmaps folder may be absent on ENOENT.\n\nThe injected-reader negatives and healthy/absent-alias positives ran in CI. File/exemption parsing errors are surfaced by the source paths. This closes the original unreadable-blueprint false pass.\n\n## F) F003/N001 and retained proof\n\nThe live full-size/Delivers examples now point at workstreams. PRD req-18, blueprint c-doc-schemas and the community/templates READMEs describe the completed move. Remaining old-path hits in the inspected live-doc scope are historical changelogs/workshops.\n\nBoth corrected project DD documents validate with zero errors/warnings in an isolated archive, and their regenerated faces match exactly. The earlier atomic schema move and 29-template pin/history proof stand; this repair does not alter those shipped versions. Temporary validation files were cleaned.\n\n## G) Handover\n\nClose the missing-baseline-row/same-set case with focused CI evidence, then request a verdict at the new frozen head. AC4 and merge-time AC7 remain deferred as before. F104 remains the disclosed CI ddocs limitation, not a substitute for the baseline invariant.\n\nSquirrel received the source case for its independent data-only security grade. No product code or canonical progress was changed by this reviewer.\n"
+		}
+	]
+}
