@@ -6,7 +6,7 @@
     {
       "name": "meta",
       "value": {
-        "title": "Held delivery and urgent sends (F25, F73, F68)",
+        "title": "Held delivery: steer normal sends mid-turn (F25, C31, F73, F68)",
         "slug": "phase-1",
         "status": "draft",
         "summary": ""
