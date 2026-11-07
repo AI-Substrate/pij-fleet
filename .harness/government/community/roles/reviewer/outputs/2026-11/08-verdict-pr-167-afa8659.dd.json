@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b85f-a0d5-73d1-9735-ec419a075c57",
+				"date": "2026-11-08",
+				"head": "afa8659318d1663dd9af27e5f24be5d91ba65b00",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/167#issuecomment-6714587369",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:167",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #167 round 4 correctness verdict\n\n**PASS-WITH-NOTES** at `afa8659318d1663dd9af27e5f24be5d91ba65b00`.\n\n**F004 is closed. All four reviewer findings are now closed.** The new wake authorization checks the higher-sequence pending row atomically, preserving the older compaction's fallback rather than prematurely superseding it.\n\n## F004 closure\n\nmark_compaction_woken performs one owned UPDATE that requires the target row to be pending and rejects it when a higher-seq pending row of the **same seat** exists. Both outer references are explicitly qualified as compaction_wakes.seat/seq; the subquery does not compare the newer row to itself.\n\nThis check is inside the write transaction, not another pre-mark snapshot. A newer tracking row committed before the mark is therefore considered even if the watchdog's earlier pending list did not contain it.\n\nThe daemon uses this method only for Step::Wake. False or error skips wake entirely; a veto changes no row, so A remains pending. Other settlement paths retain their existing semantics.\n\nThe new real-store regression exercises the requested boundary: read A, commit B, reject A's mark and verify Some(None), add a higher-seq row of another seat, settle B undelivered, then permit A exactly once. This proves same-seat isolation, pending-state filtering, preserved fallback and duplicate-mark exclusion.\n\n## Retained behavior and proof\n\nThis is one commit after 9cdcf3d, no merge. The change does not alter F001's fallible holdings read, F002's persist-first admission/refusal policy, F003's durable sequence order, queue/idle exclusions or the previously checked #169 composition.\n\nExact-head CI **42425691985** passed: **2183 JUnit cases, zero failures/errors**. The new store-level veto regression and all ten daemon compaction-wake controls executed, including dropped-caller/write-failure/read-failure recovery, clock rollback/equality, in-flight fallback, queue/idle exclusion, rearm and restart.\n\nThe reviewed checkout is detached/clean and matches the remote full SHA; GitHub reports CLEAN/ready, with latest Delivers success. No local product tests/builds, mutation, dependency changes, interactive actions or live probes were performed.\n\n## Notes and proof ceiling\n\n- P9 remains one authorized wake attempt, not guaranteed delivery; failed/refused sends are not retried. Deployment/cost evidence remains independently owned.\n- Migration 0044 remains an unmerged addition. A private database with an earlier 0044 prototype must not be treated as automatically schema/checksum-compatible.\n\nNo new blocking correctness finding in this delta.\n"
+		}
+	]
+}
