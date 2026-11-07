@@ -37,3 +37,4 @@
 | — | pij-yielding-bison | copilot | 24bcbe7f-020f-4f4f-ac9d-48b0d12247ec | ops.osk.lan | 217 | 2026-11-07T07:41:54.014Z | — | pij-steady-otter | — | plan 217 PA presence (prime, Jordan's go) | — |
 | — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 204 | 2026-11-07T12:35:32.360Z | — | pij-steady-otter | — | revived for #136's final push (s10) | — |
 | — | pij-exuberant-wildcat | copilot | cc88fc7c-b066-44d1-a82d-fa6560786ddf | ops.osk.lan | 215 | 2026-11-07T13:01:51.665Z | — | pij-steady-otter | — | plan 215 holdings end with their work | — |
+| — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | 218 | 2026-11-07T13:01:51.991Z | — | pij-steady-otter | — | plan 218 Claude UDS delivery without ps (F82) | — |
