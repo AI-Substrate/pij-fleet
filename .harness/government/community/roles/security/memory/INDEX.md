@@ -17,6 +17,7 @@
 - [2026-11-07 Counter cardinality and byte bounds](2026-11-07-counter-cardinality-and-byte-bounds.dd.md): Read before adding client-labelled diagnostics, retaining seat identifiers, or claiming counters are bounded and private. (counters, privacy, availability, proof)
 - [2026-11-07 Grant issuance needs caller proof](2026-11-07-grant-issuance-needs-caller-proof.dd.md): Read before issuing incarnation capabilities from registration identifiers or accepting known seat provenance limits. (identity, registration, capability, proof)
 - [2026-11-07 Registration telemetry privacy closure](2026-11-07-registration-telemetry-privacy-closure.dd.md): Read before carrying the PR 148 raw-name or retained-byte notes into a later telemetry review. (counters, privacy, closure)
+- [2026-11-07 Reply sender is not answer authority](2026-11-07-reply-sender-is-not-answer-authority.dd.md): Read before changing correlated reply accounting, answered\_at, or using message.from for a durable role mutation. (reply, identity, authorization, regression)
 - [2026-11-07 Scoped digest reads fail closed](2026-11-07-scoped-digest-reads-fail-closed.dd.md): Read before changing digest scope resolution or reviewing queued role-request metadata exposure. (digest, scope, privacy, proof)
 - [2026-11-07 Correct victim identifiers are not caller proof](2026-11-07-victim-identifiers-are-not-caller-proof.dd.md): Read before authorizing seat activity/context reports or using telemetry to gate delivery. (identity, telemetry, authorization, regression)
 <!-- /pij:generated -->

@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"hook": "Read before changing correlated reply accounting, answered_at, or using message.from for a durable role mutation.",
+				"tags": [
+					"reply",
+					"identity",
+					"authorization",
+					"regression"
+				],
+				"title": "Reply sender is not answer authority"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #152 at 253374c27943f039df593a46919ff2ecb2fb1cb1 BLOCK S152-001 MEDIUM: local machine bearer admits caller-supplied from, then successful FYI/normal send passes it to answered_by. delivery/role_send.rs:850-858 compares that string to stored holder and role_requests.rs:579-600 stamps answered_at. A different caller claiming the correct holder can FYI itself and suppress the holder request clock without controlling the holder process. Independently bind actor before stamping; honest non-holder tests do not prove this. Test correct victim from, native/shim normal/FYI, inherited-parent claims and legitimate holder controls, keeping output-answer idempotence. Cross-seat steering management is intentionally broad, but does not grant foreign answer authority. No demonstrated cold/force bypass; normal guard runs before enqueue. Source-only, exact-head CI green. Verdict: security/outputs/2026-11/07-verdict-pr-152-253374c.dd.json."
+		}
+	]
+}
