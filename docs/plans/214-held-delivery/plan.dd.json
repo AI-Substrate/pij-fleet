@@ -50,21 +50,21 @@
           "claim": "PA flags long holds (C31 keeps it as the detector). The PA digest lists every message held more than 15 minutes behind a busy turn: recipient, sender, msg id, held minutes, and whether it is still queued. Each message is flagged once, not on every digest. The threshold is a named constant.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002",
-          "receipt": "crates/store/tests/queue.rs: long_holds_are_listed_for_the_pa_once; crates/core/tests/pa_digest.rs: the_digest_lists_messages_held_behind_a_busy_turn; crates/store/src/held.rs: HELD_FLAG_SECS, the_held_read_never_scans_job_history"
+          "receipt": "crates/store/tests/queue.rs: long_holds_are_listed_for_the_pa_once; crates/core/tests/pa_digest.rs: the_digest_lists_messages_held_behind_a_busy_turn; crates/store/src/held.rs: HELD_FLAG_SECS, the_held_read_never_scans_job_history; round 1 (F001): another_fleets_older_holds_never_fill_this_fleets_page"
         },
         {
           "id": "ac-0003",
           "claim": "C31: normal sends steer mid-turn on Copilot. The Copilot extension keeps claiming pij messages while a turn it started is still running, and steers each normal send into that turn (native.send immediate), as OMP and Pi already do. FYIs stay held until the turn ends, unchanged. A per-seat switch, default on, turns mid-turn steering off for one seat without a release (a daemon-side seat setting, changed by a verb and read by the extension without a restart); with it off, the seat behaves as today. A normal send to a busy seat whose harness can't steer gets a receipt note saying it waits for the turn to end, and why. No --urgent flag: with normal sends steering, it has nothing left to do (see research).",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003",
-          "receipt": "crates/daemon/tests/directory_http.rs: steering_is_switched_per_seat_read_with_the_claim_and_noted_on_receipts; crates/store/src/steering.rs: steering_is_on_until_set_off_and_reports_a_change_once; crates/daemon/src/http/steer.rs: grammar_accepts_on_off_status_with_an_optional_seat; .copilot/extensions/pij/store.test.mjs: the two C31 tests"
+          "receipt": "crates/daemon/tests/directory_http.rs: steering_is_switched_per_seat_read_with_the_claim_and_noted_on_receipts; crates/store/src/steering.rs: steering_is_on_until_set_off_and_reports_a_change_once; crates/daemon/src/http/steer.rs: grammar_accepts_on_off_status_with_an_optional_seat; .copilot/extensions/pij/store.test.mjs: the two C31 tests; round 1: a_during_turn_wait_wakes_on_events_and_rechecks_the_switch_at_hand_off (F005, P152-F003), and in store.test.mjs the shared turn watcher (P152-F002) and steered-abort recovery (F003) tests"
         },
         {
           "id": "ac-0004",
           "claim": "C31 wedge canary (live, required before ready). On a real Copilot seat running one long turn, send 5 normal messages during that turn: each is claimed and steered (claimed_at and acked_at inside the turn), the turn finishes normally, the seat registers idle afterwards, and nothing wedges (an older Copilot build wedged on mid-turn immediate injects: the bg-send wedge history). Then flip the seat's switch off, send once more, and show it waits for turn end. Receipts (msg ids, the store rows, the pane's turn end) go in the evidence.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004",
-          "receipt": "assets/evidence/steer-canary.md and steer-canary-receipt.json: a real Copilot CLI 1.0.108-1 seat, 5 sends steered inside one long turn, the turn ended and the seat went idle; after pij steer off, one send waited for turn end (local fixture model, no real inference)"
+          "receipt": "assets/evidence/steer-canary.md and steer-canary-receipt.json: a real Copilot CLI 1.0.108-1 seat, 5 sends steered inside one long turn, the turn ended and the seat went idle; after pij steer off, one send waited for turn end (local fixture model, no real inference); re-run after round 1 at d8634d6: pass (steer-canary-receipt-r1.json)"
         },
         {
           "id": "ac-0005",
@@ -78,7 +78,7 @@
           "claim": "F68: a reply answers. A send from the request's holder with `--in-reply-to <request id>` sets the request's answered_at and stops its check-in and escalation; a send without it, or from another seat, does not. `pij output --answers` (s06, live since #137) and this path set the same field, and neither double-counts.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0006",
-          "receipt": "crates/daemon/tests/directory_http.rs: a_reply_from_the_holder_answers_the_request_and_stops_its_clock"
+          "receipt": "crates/daemon/tests/directory_http.rs: a_reply_from_the_holder_answers_the_request_and_stops_its_clock; round 1: a_role_addressed_reply_answers_and_a_forged_sender_never_does (F002, S152-001)"
         },
         {
           "id": "ac-0007",

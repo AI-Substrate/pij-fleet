@@ -50,6 +50,22 @@ That is the bound the PA flag (AC2) still watches. Batching a claim page into on
 
 The first attempt used 6 rounds, and steer 5 landed in the request after the final reply. That is still the same Copilot turn, and the seat still went idle. The check now uses 8 rounds so that every steer lands before the final reply, which keeps the assertion strict.
 
+## Re-run after review round 1 (source `d8634d6`)
+
+Round 1 changed the receiver: steered messages now share one turn watcher, and a root abort counts as a discard boundary. The daemon side also changed: the switch is re-read at hand-off, and the during-turn wait is event-driven. Same driver; receipt: [`steer-canary-receipt-r1.json`](./steer-canary-receipt-r1.json). **Pass (exit 0)**; no foreign taps.
+
+| msg | queued | claimed | reached session |
+|---|---|---|---|
+| canary-start-1 | 970 | 970 | 971 |
+| canary-steer-1 | 977 | 977 | 981 |
+| canary-steer-2 | 983 | 983 | 991 |
+| canary-steer-3 | 989 | 991 | 1001 |
+| canary-steer-4 | 995 | 1001 | 1011 |
+| canary-steer-5 | 1001 | 1011 | 1021 |
+
+- The turn ended at 1031, with all five steered bodies seen by the model inside it. The seat then read `idle`.
+- Steering off: `canary-wait` was queued at 1048 and claimed and reached the session at 1131, when the turn ended. It was never seen inside the turn.
+
 ## Reproduce
 
 ```
