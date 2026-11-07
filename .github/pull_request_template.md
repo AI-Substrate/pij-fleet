@@ -1,4 +1,6 @@
-Delivers: <full ddocs addresses, e.g. docs/project/prds/001-pij-community.dd.json#requirements/req-20; or none>
+Delivers: <full ddocs addresses separated by commas, or none>
+<!-- CI checks this line (plan 209); pij delivered records it after the merge.
+     For example: docs/project/prds/001-pij-community.dd.json#requirements/req-07, docs/project/workstreams/001-pij-community.dd.json#steps/s05 -->
 
 ## What changed
 

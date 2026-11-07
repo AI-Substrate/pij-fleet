@@ -61,7 +61,7 @@ use pij_core::model::{
     DeliveryOutcome, Event, Harness, Msg, SeatDescriptor, SeatId, Seq, SystemState,
 };
 use pij_core::orchestration::PrimeState;
-use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView, QueuedRequest};
+use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView, HeldMessage, QueuedRequest};
 use pij_core::ports::SeatFilter;
 use pij_core::ports::SpineWindow;
 use pij_core::report::CardRecord;
@@ -91,6 +91,10 @@ const STATUS_WAIT: Duration = Duration::from_secs(3);
 
 /// How long `git rev-parse` may take to name a folder's repository.
 const GIT_WAIT: Duration = Duration::from_secs(2);
+
+/// How long a folder git could not place keys as itself before it is asked
+/// again.
+const UNPLACED_TTL: Duration = Duration::from_secs(600);
 
 /// How long one transcript's quota read may take before it counts as none.
 const LIMIT_READ_WAIT: Duration = Duration::from_secs(2);
@@ -161,6 +165,35 @@ pub enum RoundOutcome {
     /// An opted-in seat was due a nudge but is cold: the send guard would
     /// refuse it, so it was not sent (plan 178).
     OptInColdSkipped(SeatId),
+    /// A seat sat on its harness's own dialog; its parent and the PA in its
+    /// scope (else the prime) were told, once this stretch (plan 219).
+    ModalStall {
+        /// The stalled seat.
+        seat: SeatId,
+        /// Who was told this round, with delivery's receipt outcome or error.
+        told: Vec<(SeatId, String)>,
+    },
+    /// A modal-stall candidate was not read this round: its pane can't be read
+    /// without a launch (plan 219, P156-F001). Also a `watchdog.round` event.
+    ModalStallSkipped {
+        /// The candidate not read.
+        seat: SeatId,
+        /// Why.
+        reason: String,
+    },
+    /// A presence message (plan 217) was handed to delivery: the missing-PA
+    /// or unresponsive-PA alert to the prime, the dormant wake to the PA, or
+    /// the large-seat FYI to the prime.
+    Presence {
+        /// Which check.
+        kind: pij_core::watchdog::PresenceKind,
+        /// Who it went to.
+        to: SeatId,
+        /// The scope, the PA, or the large seats it is about.
+        subjects: Vec<String>,
+        /// Delivery's receipt outcome, or the error that stopped it.
+        delivery: String,
+    },
     /// The prime started working after the PA's fleet went idle (plan 173).
     PrimeActive {
         /// The PA.
@@ -206,6 +239,10 @@ pub struct PaWatchdog {
     /// When each `(scope, resetsAt)` was first seen, epoch ms.
     limits_seen: Mutex<HashMap<(String, u64), u64>>,
     repos: Mutex<HashMap<String, String>>,
+    /// Folders git could not place, and when: retried after [`UNPLACED_TTL`].
+    unplaced: Mutex<HashMap<String, std::time::Instant>>,
+    /// Plan 217's presence and large-seat trackers.
+    presence: Mutex<presence::Trackers>,
     /// When each opted-in seat was last nudged, in seconds.
     optin_nudged: Mutex<HashMap<SeatId, u64>>,
     /// Opted-in seats nudged (or skipped cold) since a round last saw them
@@ -240,7 +277,7 @@ pub(crate) fn start(
 }
 
 /// Publish one audit event; a failure is logged, never fatal to the round.
-async fn audit(
+pub(crate) async fn audit(
     services: &Services,
     kind: &str,
     seat: &SeatId,
@@ -329,12 +366,34 @@ pub(crate) async fn wake_pa(
     reason: &str,
     now_ms: u64,
 ) -> (String, String) {
+    let (outcome, cold_check) = wake_pa_receipt(services, pa, body, msg_id, reason, now_ms).await;
+    (outcome_text(&outcome), cold_check)
+}
+
+/// [`wake_pa`], keeping delivery's structured outcome (or the error's text)
+/// for a caller that must tell an accepted delivery from a refused one.
+pub(crate) async fn wake_pa_receipt(
+    services: &Services,
+    pa: &SeatDescriptor,
+    body: String,
+    msg_id: String,
+    reason: &str,
+    now_ms: u64,
+) -> (std::result::Result<DeliveryOutcome, String>, String) {
     match audit_cold_wake(services, pa, BG_ACTOR, &msg_id, reason, now_ms).await {
         Ok(cold_check) => match services.delivery.accept(bg_msg(&pa.id, body, msg_id)).await {
-            Ok(receipt) => (outcome_word(&receipt.outcome).to_string(), cold_check),
-            Err(cause) => (format!("error: {cause}"), cold_check),
+            Ok(receipt) => (Ok(receipt.outcome), cold_check),
+            Err(cause) => (Err(cause.to_string()), cold_check),
         },
-        Err(cause) => (format!("error: {cause}"), "unknown".to_string()),
+        Err(cause) => (Err(cause.to_string()), "unknown".to_string()),
+    }
+}
+
+/// The outcome word, or `error: <cause>`.
+pub(crate) fn outcome_text(outcome: &std::result::Result<DeliveryOutcome, String>) -> String {
+    match outcome {
+        Ok(outcome) => outcome_word(outcome).to_string(),
+        Err(cause) => format!("error: {cause}"),
     }
 }
 
@@ -403,20 +462,19 @@ impl PaWatchdog {
                 .into_iter()
                 .map(RoundOutcome::RequestLimit),
         );
+        // Seats stalled on a dialog ride it too (plan 219).
+        outcomes.extend(crate::modal_stall::round(self, services, &seats, now_ms).await);
 
         let pas: Vec<&SeatDescriptor> = seats.iter().filter(|seat| is_watched_pa(seat)).collect();
         // The designated prime is a supervisor whatever its role says: its
         // turns never open or re-arm an idle episode (#52 F1).
-        let designated = if pas.is_empty() {
-            None
-        } else {
-            services
-                .watchdogs()
-                .prime()
-                .await?
-                .filter(|designation| designation.state == PrimeState::Current)
-                .map(|designation| designation.seat)
-        };
+        // Read every round: the presence checks need it with no PA too.
+        let designated = services
+            .watchdogs()
+            .prime()
+            .await?
+            .filter(|designation| designation.state == PrimeState::Current)
+            .map(|designation| designation.seat);
         self.trackers
             .lock()
             .await
@@ -496,6 +554,7 @@ impl PaWatchdog {
                     now_ms,
                 )
                 .await;
+                flag_shown(services, &view, &delivery, now_ms).await;
                 audit(
                     services,
                     "watchdog.round",
@@ -535,6 +594,7 @@ impl PaWatchdog {
                 let body = prime_active_body(&prime.id, &view.digest());
                 let (sent, cold_check) =
                     wake_pa(services, pa, body, msg_id, PRIME_ACTIVE_REASON, now_ms).await;
+                flag_shown(services, &view, &sent, now_ms).await;
                 payload["seats"] = json!(view.rows.len());
                 payload["delivery"] = json!(sent);
                 payload["cold_check"] = json!(cold_check);
@@ -547,6 +607,18 @@ impl PaWatchdog {
                 delivery,
             });
         }
+        // Plan 217: presence and large seats ride the same round.
+        outcomes.extend(
+            self.presence_round(
+                services,
+                &seats,
+                designated.as_ref(),
+                &stops,
+                interval_secs,
+                now_ms,
+            )
+            .await,
+        );
         Ok(outcomes)
     }
 
@@ -738,7 +810,7 @@ impl PaWatchdog {
     /// Who a scope's limit-reset wake goes to: its PA; else the prime's
     /// current designation, when that seat is live in scope; else a live seat
     /// in scope holding the `prime` role. Ties go to the lowest seat id.
-    async fn wake_target(
+    pub(crate) async fn wake_target(
         &self,
         services: &Services,
         scope: &str,
@@ -904,16 +976,47 @@ impl PaWatchdog {
             members,
         } = scope;
 
+        let blocks = self.read_blocks(services, &members, now_ms).await;
+        let rows = members
+            .into_iter()
+            .zip(blocks)
+            .map(|(seat, block)| FleetRow {
+                size: seat_size(seat.state, &block, now_ms, seat.model.as_deref()),
+                seat,
+            })
+            .collect::<Vec<_>>();
+        let anomalies = stale_cards(services, &rows, now_ms).await;
+        let queued = queued_requests(services, pa, now_ms).await;
+        let held = held_messages(services, &rows, now_ms).await;
+        FleetView {
+            pa: pa.id.clone(),
+            prime: prime.map(|prime| prime.id.clone()),
+            scope,
+            rows,
+            anomalies,
+            queued,
+            held,
+            interval_ms: interval_secs * 1_000,
+        }
+    }
+
+    /// Each seat's session facts, read in bounded time.
+    async fn read_blocks(
+        &self,
+        services: &Services,
+        seats: &[SeatDescriptor],
+        now_ms: u64,
+    ) -> Vec<SessionStatusBlock> {
         // One outstanding read per seat, ever (review of #38). A cold read can
         // fold a whole transcript and outlive the wait; the next round must
         // not start another behind it, so a seat whose read is still running
         // shows `?` until that read lands.
         let deadline = tokio::time::Instant::now() + STATUS_WAIT;
-        let mut handles = Vec::with_capacity(members.len());
+        let mut handles = Vec::with_capacity(seats.len());
         {
             let mut pending = self.pending_reads.lock().await;
             pending.retain(|_, handle| !handle.is_finished());
-            for seat in &members {
+            for seat in seats {
                 if let Some(running) = pending.remove(&seat.id)
                     && !running.is_finished()
                 {
@@ -936,8 +1039,8 @@ impl PaWatchdog {
                 })));
             }
         }
-        let mut blocks = Vec::with_capacity(members.len());
-        for (seat, handle) in members.iter().zip(handles) {
+        let mut blocks = Vec::with_capacity(seats.len());
+        for (seat, handle) in seats.iter().zip(handles) {
             let Some(mut handle) = handle else {
                 blocks.push(SessionStatusBlock::Failed {
                     error: "previous read still running".into(),
@@ -960,44 +1063,44 @@ impl PaWatchdog {
                 }
             });
         }
-        let rows = members
-            .into_iter()
-            .zip(blocks)
-            .map(|(seat, block)| FleetRow {
-                size: seat_size(seat.state, &block, now_ms, seat.model.as_deref()),
-                seat,
-            })
-            .collect::<Vec<_>>();
-        let anomalies = stale_cards(services, &rows, now_ms).await;
-        let queued = queued_requests(services, now_ms).await;
-        FleetView {
-            pa: pa.id.clone(),
-            prime: prime.map(|prime| prime.id.clone()),
-            scope,
-            rows,
-            anomalies,
-            queued,
-            interval_ms: interval_secs * 1_000,
-        }
+        blocks
     }
 
     /// The repository a folder belongs to: its absolute git common dir, so
     /// every worktree of one repository shares a key. A folder git cannot
     /// place keys as itself, so it matches only seats in exactly that folder.
-    async fn repo(&self, folder: &str) -> String {
+    pub(crate) async fn repo(&self, folder: &str) -> String {
         if let Some(known) = self.repos.lock().await.get(folder) {
             return known.clone();
         }
+        if self
+            .unplaced
+            .lock()
+            .await
+            .get(folder)
+            .is_some_and(|at| at.elapsed() < UNPLACED_TTL)
+        {
+            return folder.to_string();
+        }
         match git_common_dir(folder).await {
             Some(dir) => {
+                self.unplaced.lock().await.remove(folder);
                 self.repos
                     .lock()
                     .await
                     .insert(folder.to_string(), dir.clone());
                 dir
             }
-            // Not cached: a folder that becomes a repository later is found.
-            None => folder.to_string(),
+            // Remembered for UNPLACED_TTL only: a folder that becomes a
+            // repository later is found, and a folder git cannot place costs
+            // one launch per lifetime, not one per round.
+            None => {
+                self.unplaced
+                    .lock()
+                    .await
+                    .insert(folder.to_string(), std::time::Instant::now());
+                folder.to_string()
+            }
         }
     }
 }
@@ -1043,11 +1146,140 @@ const fn outcome_word(outcome: &DeliveryOutcome) -> &'static str {
     }
 }
 
-/// Requests waiting on a role with no live holder (plan 199): one indexed
-/// read per digest, so the queue rides the round with no timer of its own.
-/// A failed read leaves the list empty rather than holding up the nudge.
-async fn queued_requests(services: &Services, now_ms: u64) -> Vec<QueuedRequest> {
-    match services.governance.store().unsettled_role_requests().await {
+/// Messages to this fleet held past the threshold and not yet shown (plan
+/// 214, AC2): one read of two partial indexes per digest, constant per digest,
+/// never per seat. A failed read leaves the list empty.
+async fn held_messages(services: &Services, rows: &[FleetRow], now_ms: u64) -> Vec<HeldMessage> {
+    let fleet: Vec<&str> = rows.iter().map(|row| row.seat.id.as_str()).collect();
+    match services
+        .governance
+        .store()
+        .unflagged_held_deliveries(&fleet, now_ms / 1_000)
+        .await
+    {
+        Ok(held) => held
+            .into_iter()
+            .map(|held| HeldMessage {
+                job_id: held.job_id,
+                recipient: SeatId::from(held.recipient.as_str()),
+                sender: held.sender.as_deref().map(SeatId::from),
+                msg_id: held.msg_id,
+                held_ms: held.held_ms,
+                still_queued: held.still_queued,
+            })
+            .collect(),
+        Err(cause) => {
+            eprintln!("pa watchdog: held deliveries unavailable: {cause}");
+            Vec::new()
+        }
+    }
+}
+
+/// The digest carrying `view` was admitted: its held messages are never shown
+/// again. One write, only when it listed any.
+async fn flag_shown(services: &Services, view: &FleetView, delivery: &str, now_ms: u64) {
+    if view.held.is_empty() || !matches!(delivery, "delivered" | "queued" | "held") {
+        return;
+    }
+    let ids: Vec<i64> = view.held.iter().map(|held| held.job_id).collect();
+    if let Err(cause) = services
+        .governance
+        .store()
+        .flag_held_deliveries(&ids, now_ms / 1_000)
+        .await
+    {
+        eprintln!("pa watchdog: held deliveries not marked shown: {cause}");
+    }
+}
+
+/// The projects whose queued requests a PA's digest shows (plan 209, #129's
+/// digest scope): the projects the PA holds a role in; else those its prime
+/// (its parent) holds a role in; else every project, but only when that
+/// parent is the designated prime; else none. `None` means every project.
+pub(crate) fn digest_scope(
+    own: Vec<String>,
+    parent: Vec<String>,
+    parent_is_designated_prime: bool,
+) -> Option<Vec<String>> {
+    if !own.is_empty() {
+        Some(own)
+    } else if !parent.is_empty() {
+        Some(parent)
+    } else if parent_is_designated_prime {
+        None
+    } else {
+        Some(Vec::new())
+    }
+}
+
+/// The projects `seat` holds an open role in, sorted and unique: one indexed
+/// read.
+async fn held_projects(services: &Services, seat: &SeatId) -> Result<Vec<String>, String> {
+    let mut projects: Vec<String> = services
+        .directory
+        .store()
+        .open_assignments(seat.as_str())
+        .await
+        .map_err(|cause| format!("{seat}'s holdings: {cause}"))?
+        .into_iter()
+        .map(|row| row.project)
+        .collect();
+    projects.sort();
+    projects.dedup();
+    Ok(projects)
+}
+
+/// The PA's digest scope ([`digest_scope`]): at most three indexed reads. A
+/// failed read is an error, never "holds nothing": the fallbacks would widen
+/// it, as far as every project under the designated prime (#144 F002).
+async fn queue_scope(
+    services: &Services,
+    pa: &SeatDescriptor,
+) -> Result<Option<Vec<String>>, String> {
+    let own = held_projects(services, &pa.id).await?;
+    let (parent, parent_is_prime) = match (own.is_empty(), pa.parent.as_ref()) {
+        (true, Some(parent)) => {
+            let held = held_projects(services, parent).await?;
+            let prime = held.is_empty()
+                && services
+                    .governance
+                    .store()
+                    .prime()
+                    .await
+                    .map_err(|cause| format!("the designated prime: {cause}"))?
+                    .is_some_and(|prime| {
+                        prime.state == PrimeState::Current && &prime.seat == parent
+                    });
+            (held, prime)
+        }
+        _ => (Vec::new(), false),
+    };
+    Ok(digest_scope(own, parent, parent_is_prime))
+}
+
+/// Requests waiting on a role with no live holder (plan 199), in the PA's
+/// projects ([`queue_scope`]): the scope's reads and one seek per project, per
+/// digest, so the queue rides the round with no timer of its own. A failed
+/// read, of the scope or the requests, reports the queue unavailable and
+/// leaves the list empty rather than holding up the nudge.
+async fn queued_requests(
+    services: &Services,
+    pa: &SeatDescriptor,
+    now_ms: u64,
+) -> Vec<QueuedRequest> {
+    let scope = match queue_scope(services, pa).await {
+        Ok(scope) => scope,
+        Err(cause) => {
+            eprintln!("pa watchdog: queued role requests unavailable: {cause}");
+            return Vec::new();
+        }
+    };
+    match services
+        .governance
+        .store()
+        .unsettled_role_requests_in(scope.as_deref())
+        .await
+    {
         Ok(requests) => requests
             .into_iter()
             .map(|request| QueuedRequest {
@@ -1189,6 +1421,9 @@ async fn disposed(
     }
     Ok(false)
 }
+
+#[path = "pa_presence.rs"]
+mod presence;
 
 #[cfg(test)]
 #[path = "pa_watchdog_tests.rs"]

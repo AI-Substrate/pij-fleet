@@ -138,6 +138,12 @@ Windows: o-prime `o-prime` · stream `s<ordinal>-<short-slug>` · fleet panes
 inside the stream's window. Names aid humans; identity remains the registry id
 and pane binding.
 
+A pij stream is one lane of a workstream (ruling C29): one recorded branch and
+worktree. The workstream doc orders the work and, in a PEC project, governs
+over prime-flow items; a stream orders nothing. Workstream step ids are `sNN`,
+stream branches `sNNN/<slug>`. See
+[the workstream procedure](../community/workstream.md#two-words-that-never-overlap).
+
 ## Human rulings and non-blocking questions
 
 Humans outrank every channel. Record their words immediately, preferably

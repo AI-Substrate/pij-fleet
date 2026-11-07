@@ -13,13 +13,14 @@ use std::path::{Path, PathBuf};
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use pij_core::model::{Envelope, ErrorKind, SeatId};
+use pij_core::model::{Envelope, ErrorKind, Msg, SeatId};
 use serde_json::{Value, json};
 
 use super::governance::GovernanceRequest;
 use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::routes::Trigger;
 use super::{AppState, envelope};
+use crate::community::directory::{Retirement, RoleEdit};
 use crate::community::layout::{RolePaths, exists};
 use crate::community::role::{self, RoleFields};
 use crate::community::routes::{self, Overlap, Regenerated};
@@ -28,9 +29,11 @@ use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
 use crate::community::{holders, memory};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 27] = [
+const SINGLE: [&str; 30] = [
     "why",
+    "into",
     "from",
+    "show",
     "to",
     "from-project",
     "role",
@@ -56,8 +59,10 @@ const SINGLE: [&str; 27] = [
     "body",
     "body-file",
     "note",
+    "slug",
 ];
-const REPEATED: [&str; 7] = [
+const REPEATED: [&str; 8] = [
+    "set",
     "scope-path",
     "rule",
     "out-of-scope",
@@ -67,7 +72,8 @@ const REPEATED: [&str; 7] = [
     "tags",
 ];
 /// Flags a `memory` call may carry (plan 201).
-const MEMORY: [&str; 8] = [
+const MEMORY: [&str; 9] = [
+    "slug",
     "title",
     "tags",
     "hook",
@@ -78,10 +84,12 @@ const MEMORY: [&str; 8] = [
     "actor",
 ];
 /// Flags that steer the write rather than describe a role.
-const CONTROL: [&str; 9] = [
+const CONTROL: [&str; 11] = [
     "write",
     "why",
+    "into",
     "from",
+    "show",
     "project",
     "file",
     "batch",
@@ -93,6 +101,11 @@ const CONTROL: [&str; 9] = [
 #[derive(Debug, Default)]
 struct Arguments {
     leaf: String,
+    /// `--drop-queued` (retire and merge only): a switch, no value.
+    drop_queued: bool,
+    /// `--suggest` on the view: every role suggestion, not only those a need
+    /// or signal points at (F39).
+    suggest: bool,
     positions: Vec<String>,
     single: BTreeMap<String, String>,
     repeated: BTreeMap<String, Vec<String>>,
@@ -109,6 +122,9 @@ impl Arguments {
                     && matches!(
                         leaf.as_str(),
                         "add"
+                            | "edit"
+                            | "retire"
+                            | "merge"
                             | "assign"
                             | "release"
                             | "rebuild"
@@ -147,6 +163,20 @@ impl Arguments {
                 continue;
             };
             if flag == "json" {
+                continue;
+            }
+            if flag == "drop-queued" {
+                call.drop_queued = true;
+                continue;
+            }
+            if flag == "suggest" {
+                if call.leaf != "view" {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        "--suggest belongs to the view: pij directory --suggest",
+                    ));
+                }
+                call.suggest = true;
                 continue;
             }
             if flag == "write" {
@@ -232,29 +262,91 @@ impl Arguments {
         }
         if matches!(call.leaf.as_str(), "templates" | "template-diff")
             && (call.positions.len() != usize::from(call.leaf == "template-diff")
-                || call
-                    .single
-                    .keys()
-                    .any(|flag| !matches!(flag.as_str(), "project" | "actor"))
-                || !call.repeated.is_empty())
-        {
-            return Err(Refusal::new(
-                "E-RS-ARG",
-                "usage: pij directory templates | pij directory template-diff <id> [--project <slug>]",
-            ));
-        }
-        if call.leaf == "lineage"
-            && (call.positions.len() != 3
-                || call.positions[0] != "add"
                 || call.single.keys().any(|flag| {
-                    !matches!(flag.as_str(), "why" | "project" | "actor" | "from" | "to")
+                    !(matches!(flag.as_str(), "project" | "actor")
+                        || (flag == "show" && call.leaf == "templates"))
                 })
                 || !call.repeated.is_empty())
         {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                "usage: pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text> [--project <slug>]",
+                "usage: pij directory templates [--show <name>[@vN]] | pij directory template-diff <id> [--project <slug>]",
             ));
+        }
+        if call.leaf != "templates" && call.single.contains_key("show") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {}: --show belongs to `templates`", call.leaf),
+            ));
+        }
+        if call.drop_queued && !matches!(call.leaf.as_str(), "retire" | "merge") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "directory {}: --drop-queued belongs to `retire` and `merge`",
+                    call.leaf
+                ),
+            ));
+        }
+        if call.leaf != "merge" && call.single.contains_key("into") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {}: --into belongs to `merge`", call.leaf),
+            ));
+        }
+        if matches!(call.leaf.as_str(), "retire" | "merge")
+            && (call.positions.len() != 1
+                || (call.leaf == "merge" && call.get("into").is_none())
+                || call
+                    .single
+                    .keys()
+                    .any(|flag| !matches!(flag.as_str(), "why" | "project" | "actor" | "into"))
+                || !call.repeated.is_empty())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                if call.leaf == "merge" {
+                    "usage: pij directory merge <from> --into <to> --why <text> [--drop-queued] [--project <slug>]"
+                } else {
+                    "usage: pij directory retire <role> --why <text> [--drop-queued] [--project <slug>]"
+                },
+            ));
+        }
+        if call.leaf != "edit" && call.repeated.contains_key("set") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {}: --set belongs to `edit`", call.leaf),
+            ));
+        }
+        if call.leaf == "edit"
+            && (call.positions.len() != 1
+                || call.get("batch").is_some()
+                || (call.get("file").is_some() && call.describes_a_role()))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory edit <id> --why <text> (--set <field>=<value>... and role flags | --file <json>)",
+            ));
+        }
+        if call.leaf == "lineage" {
+            // One holding by flags, or a file of them with --batch (F67).
+            let batch = call.get("batch").is_some();
+            let flags = call.single.keys().all(|flag| {
+                matches!(flag.as_str(), "why" | "project" | "actor")
+                    || (batch && flag == "batch")
+                    || (!batch && matches!(flag.as_str(), "from" | "to"))
+            });
+            if !flags
+                || call.positions.first().map(String::as_str) != Some("add")
+                || call.positions.len() != if batch { 1 } else { 3 }
+                || !call.repeated.is_empty()
+            {
+                return Err(Refusal::new(
+                    "E-RS-ARG",
+                    "usage: pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text> [--project <slug>], \
+                     or pij directory lineage add --batch <file> --why <text> [--project <slug>]",
+                ));
+            }
         }
         if call.leaf != "lineage" && call.single.contains_key("to") {
             return Err(Refusal::new(
@@ -322,7 +414,7 @@ impl Arguments {
                 format!("directory memory: unsupported --{flag}"),
             ));
         }
-        let writes = ["title", "tags", "hook", "body", "body-file"];
+        let writes = ["title", "tags", "hook", "body", "body-file", "slug"];
         match self.positions.as_slice() {
             [verb, _] if verb == "add" => {
                 if self.get("note").is_some() {
@@ -451,15 +543,20 @@ pub(crate) async fn handle(
     let result = match call.leaf.as_str() {
         "assign" | "release" => hold(&state, &actor.id, &request.caller, &call).await,
         "external" => external(&state, &actor.id, &request.caller, &call).await,
+        "edit" => edit(&state, &actor.id, &request.caller, &call).await,
+        "retire" | "merge" => reshape(&state, &actor.id, &request.caller, &call).await,
         "routes" => routes_leaf(&state, &actor.id, &request.caller, &call).await,
         "lineage" => lineage(&state, &actor.id, &request.caller, &call).await,
-        "templates" => Ok(json!({"templates": state.services.directory.templates().listing()})),
+        "templates" => match call.get("show") {
+            Some(spec) => state.services.directory.templates().show(&spec),
+            None => Ok(json!({"templates": state.services.directory.templates().listing()})),
+        },
         "template-diff" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) => state
                     .services
                     .directory
-                    .template_diff(&repo, &call.positions[0])
+                    .template_diff(&project, &repo, &call.positions[0])
                     .map(|mut data| {
                         data["project"] = json!(project);
                         data
@@ -470,9 +567,16 @@ pub(crate) async fn handle(
         "memory" => memory(&state, &actor.id, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
-                Ok((project, repo)) if call.leaf == "view" => {
-                    state.services.directory.view(&project, &repo).await
-                }
+                Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
+                    Ok(live) => {
+                        state
+                            .services
+                            .directory
+                            .view(&project, &repo, &live, call.suggest)
+                            .await
+                    }
+                    Err(refusal) => Err(refusal),
+                },
                 Ok((project, repo)) => state.services.directory.rebuild(&project, repo).await,
                 Err(refusal) => Err(refusal),
             }
@@ -483,6 +587,20 @@ pub(crate) async fn handle(
         Ok(data) => envelope(StatusCode::OK, &Envelope::ok(COMMAND, data)),
         Err(refusal) => refused(&refusal),
     }
+}
+
+/// The registered, untombstoned seats: one registry read per view.
+async fn live_seats(state: &AppState) -> Result<std::collections::HashSet<String>, Refusal> {
+    Ok(state
+        .services
+        .registry
+        .list(pij_core::ports::SeatFilter::default())
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .into_iter()
+        .filter(|seat| seat.tombstoned_at.is_none())
+        .map(|seat| seat.id.to_string())
+        .collect())
 }
 
 async fn add(
@@ -786,6 +904,273 @@ impl Source {
     }
 }
 
+/// The meta, default-seat and packet fields `--set <field>=<value>` may change.
+const SETTABLE: [&str; 14] = [
+    "title",
+    "kind",
+    "lifecycle",
+    "holders",
+    "instance_key",
+    "default_limit",
+    "summary",
+    "template",
+    "template_version",
+    "harness",
+    "model",
+    "effort",
+    "packet",
+    "brief",
+];
+
+/// The role flags with each `--set <field>=<value>` laid over them.
+fn edit_fields(call: &Arguments) -> Result<RoleFields, Refusal> {
+    let mut fields = call.fields();
+    for set in call.all("set") {
+        let (key, value) = set.split_once('=').ok_or_else(|| {
+            Refusal::new("E-RS-ARG", format!("--set {set:?}: write <field>=<value>"))
+        })?;
+        let key = key.trim().replace('-', "_");
+        let slot = match key.as_str() {
+            "title" => &mut fields.title,
+            "kind" => &mut fields.kind,
+            "lifecycle" => &mut fields.lifecycle,
+            "holders" => &mut fields.holders,
+            "instance_key" => &mut fields.instance_key,
+            "default_limit" => &mut fields.default_limit,
+            "summary" => &mut fields.summary,
+            "template" => &mut fields.template,
+            "template_version" => &mut fields.template_version,
+            "harness" => &mut fields.harness,
+            "model" => &mut fields.model,
+            "effort" => &mut fields.effort,
+            "packet" => &mut fields.packet,
+            "brief" => &mut fields.brief,
+            _ => {
+                return Err(Refusal::new(
+                    "E-RS-ARG",
+                    format!(
+                        "--set {key}: not a field edit can set; use one of {}, the list flags (--rule, --scope-path, ...) or --file",
+                        SETTABLE.join(", ")
+                    ),
+                ));
+            }
+        };
+        if slot.replace(value.to_string()).is_some() {
+            return Err(Refusal::new("E-RS-ARG", format!("{key} is given twice")));
+        }
+    }
+    Ok(fields)
+}
+
+/// `directory edit <id> --why <text>` (plan 206, F20): change a role that
+/// exists, through the writer, with one changelog row.
+async fn edit(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let id = &call.positions[0];
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| {
+            Refusal::new(
+                "E-RS-ARG",
+                "--why <text> is required: it becomes the changelog row",
+            )
+        })?;
+    let paths = RolePaths::new(id)?;
+    let change = match call.get("file") {
+        Some(file) => RoleEdit::Document(read_document(&caller_path(caller, &file)?)?),
+        None if call.describes_a_role() => RoleEdit::Fields(Box::new(edit_fields(call)?)),
+        None => {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "directory edit needs --set <field>=<value>, role flags or --file <json>",
+            ));
+        }
+    };
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let (written, regenerated) = state
+        .services
+        .directory
+        .edit(&project, repo, id, change, actor, &why)
+        .await?;
+    record_pointers(state, &project, &written).await?;
+    let routes = routes_receipt(state, &project, &written, &regenerated).await;
+    Ok(json!({
+        "project": project,
+        "id": id,
+        "path": paths.document.display().to_string(),
+        "commit": written.commit,
+        "paths": written.paths,
+        "routes": routes,
+    }))
+}
+
+/// `directory retire <role>` and `directory merge <from> --into <to>`
+/// (plan 206, req-28): one writer commit each.
+async fn reshape(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let id = &call.positions[0];
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| {
+            Refusal::new(
+                "E-RS-ARG",
+                "--why <text> is required: it becomes the changelog row",
+            )
+        })?;
+    RolePaths::new(id)?;
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let directory = &state.services.directory;
+    let into = call.get("into");
+    let how = Retirement {
+        why: &why,
+        drop_queued: call.drop_queued,
+    };
+    let reshaped = match &into {
+        Some(into) => {
+            directory
+                .merge(&project, repo, id, into, actor, how)
+                .await?
+        }
+        None => directory.retire(&project, repo, id, actor, how).await?,
+    };
+    let (commit, paths, routes) = match &reshaped.written {
+        Some(written) => {
+            record_pointers(state, &project, written).await?;
+            let routes = routes_receipt(state, &project, written, &reshaped.routes).await;
+            (json!(written.commit), json!(written.paths), routes)
+        }
+        None => (Value::Null, json!([]), Value::Null),
+    };
+    // Tell first, then withdraw: an FYI is held once per msg id, so a
+    // withdrawal that fails after this is finished by the same command
+    // without telling anyone twice (review of #135, F002).
+    let mut told = Vec::with_capacity(reshaped.queued.len());
+    for request in &reshaped.queued {
+        told.push(json!({
+            "id": request.id,
+            "requester": request.requester,
+            "instance": request.instance,
+            "created_at": request.created_at,
+            "told": tell_withdrawn(state, actor, request, id, into.as_deref(), &why).await,
+        }));
+    }
+    let resumed = reshaped.written.is_none();
+    // Withdraw only once every requester was told (security review of #135,
+    // F002): an FYI that could not be held leaves the requests queued behind
+    // the retired role, and the same command tells and withdraws them.
+    let untold: Vec<String> = told
+        .iter()
+        .filter(|row| {
+            row["told"]
+                .as_str()
+                .is_some_and(|told| told.starts_with("not told"))
+        })
+        .map(|row| {
+            format!(
+                "{} ({})",
+                row["requester"].as_str().unwrap_or("?"),
+                row["told"].as_str().unwrap_or("?")
+            )
+        })
+        .collect();
+    if !untold.is_empty() {
+        return Err(Refusal::new(
+            crate::community::directory::E_NOT_TOLD,
+            format!(
+                "role {id:?} is retired{} but {} requester(s) could not be told, so nothing was withdrawn: {}",
+                match &commit {
+                    Value::String(commit) => format!(" ({commit})"),
+                    _ => String::new(),
+                },
+                untold.len(),
+                untold.join(", ")
+            ),
+        )
+        .with_next(format!(
+            "Run the same command again to tell them and withdraw: {}",
+            reshaped.finish()
+        )));
+    }
+    // A requester that is no longer a seat has nobody to tell: its request is
+    // withdrawn, listed in `gone`, and its spine event says so.
+    let gone: Vec<String> = told
+        .iter()
+        .filter(|row| {
+            row["told"]
+                .as_str()
+                .is_some_and(|told| told.starts_with("gone"))
+        })
+        .filter_map(|row| row["id"].as_str().map(str::to_string))
+        .collect();
+    directory
+        .withdraw(reshaped, &project, id, actor, &why, gone.clone())
+        .await?;
+    Ok(json!({
+        "project": project,
+        "id": id,
+        "state": "retired",
+        "merged_into": into,
+        "commit": commit,
+        "paths": paths,
+        "resumed": resumed,
+        "withdrawn": told,
+        "gone": gone,
+        "routes": routes,
+    }))
+}
+
+/// Tell a withdrawn request's requester once, as an FYI held for its next
+/// real turn (plan 206). Returns the outcome: `held`; `self` when the
+/// requester is the seat that withdrew it; `gone: <why>` when the requester is
+/// no longer a seat (unknown or tombstoned), so there is nobody to tell; or
+/// `not told: <why>`, which holds the withdrawal back.
+async fn tell_withdrawn(
+    state: &AppState,
+    actor: &SeatId,
+    request: &pij_store::RoleRequest,
+    role: &str,
+    into: Option<&str>,
+    why: &str,
+) -> String {
+    if request.requester == actor.as_str() {
+        return "self".to_string();
+    }
+    let gone = match into {
+        Some(into) => format!("was merged into {into} (send to role:{into} if it still applies)"),
+        None => "was retired".to_string(),
+    };
+    let msg = Msg {
+        from: actor.clone(),
+        from_machine: None,
+        to: SeatId::from(request.requester.as_str()),
+        body: format!(
+            "[pij role:{role} request {} withdrawn] Role {role} {gone} by {actor}: {why}. Your request was never delivered. It said:\n{}",
+            request.id, request.body
+        ),
+        msg_id: format!("{}.withdrawn", request.id),
+        in_reply_to: None,
+        command: None,
+    };
+    match state.services.delivery.hold_fyi(msg).await {
+        Ok(_) => "held".to_string(),
+        Err(
+            error @ (pij_core::error::PijError::NoRegistryEntry { .. }
+            | pij_core::error::PijError::SeatIsGone { .. }),
+        ) => format!("gone: {error}"),
+        Err(error) => format!("not told: {error}"),
+    }
+}
+
 /// `directory assign|release <role>[/<instance>] <seat> --why <text>` (plan 195).
 async fn hold(
     state: &AppState,
@@ -833,9 +1218,20 @@ async fn hold(
             })
             .await?
     } else {
-        directory
+        let mut receipt = directory
             .release(&project, repo, role, instance, &seat_id, actor, &why)
-            .await?
+            .await?;
+        // F57: a live seat's window follows its remaining holdings.
+        if let Ok(Some(descriptor)) = state.services.registry.get(&seat_id).await
+            && descriptor.tombstoned_at.is_none()
+        {
+            receipt.window = Some(
+                directory
+                    .window_after_release(&descriptor, &receipt.row)
+                    .await,
+            );
+        }
+        receipt
     };
     let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
     if call.leaf == "assign" {
@@ -857,25 +1253,111 @@ async fn hold(
 
 /// `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time>
 /// --why <text>` (plan 208, F15): the prime records a closed seat's past
-/// holding. No live seat is needed.
+/// holding. No live seat is needed. With `--batch <file>` (plan 209, F67), one
+/// `<role>[/<instance>] <seat> <from> <to>` per line, blank and `#` lines
+/// skipped, all in one writer commit or none; every bad line is named.
 async fn lineage(
     state: &AppState,
     actor: &SeatId,
     caller: &CallerContext,
     call: &Arguments,
 ) -> Result<Value, Refusal> {
-    use crate::community::holders::{parse_time, stamp};
     let why = call
         .get("why")
         .filter(|why| !why.trim().is_empty())
         .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
-    let (role, instance) = role_and_instance(&call.positions[1])?;
-    let seat = call.positions[2].clone();
-    let when = |flag: &str| -> Result<time::OffsetDateTime, Refusal> {
-        let given = call
-            .get(flag)
+    let batch = call.get("batch");
+    let single = match &batch {
+        Some(_) => None,
+        None => Some(past_holding(
+            actor,
+            &why,
+            &call.positions[1],
+            &call.positions[2],
+            call.get("from").as_deref(),
+            call.get("to").as_deref(),
+        )?),
+    };
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    require_prime(state, actor, &project).await?;
+    let directory = &state.services.directory;
+    let Some(file) = batch else {
+        let mut row = single.expect("a single lineage add parsed its row");
+        row.project.clone_from(&project);
+        let (role, seat) = (row.role.clone(), row.seat.clone());
+        let receipt = directory.lineage_add(repo, row, actor).await?;
+        let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
+        data["project"] = json!(project);
+        data["role"] = json!(role);
+        data["seat"] = json!(seat);
+        return Ok(data);
+    };
+    let path = caller_path(caller, &file)?;
+    let text = std::fs::read_to_string(&path).map_err(|error| {
+        Refusal::new(
+            "E-RS-ARG",
+            format!("cannot read {}: {error}", path.display()),
+        )
+    })?;
+    let mut rows = Vec::new();
+    let mut problems = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let number = index + 1;
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let [target, seat, from, to] = fields.as_slice() else {
+            problems.push(format!(
+                "line {number}: want `<role>[/<instance>] <seat> <from> <to>`"
+            ));
+            continue;
+        };
+        match past_holding(actor, &why, target, seat, Some(from), Some(to)) {
+            Ok(mut row) => {
+                row.project.clone_from(&project);
+                rows.push(row);
+            }
+            Err(refusal) => problems.push(format!("line {number}: {}", refusal.message)),
+        }
+    }
+    if !problems.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("the batch wrote nothing: {}", problems.join("; ")),
+        ));
+    }
+    if rows.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("{} names no holdings", path.display()),
+        ));
+    }
+    let receipts = directory.lineage_many(repo, rows, actor).await?;
+    Ok(json!({
+        "project": project,
+        "commit": receipts[0].commit,
+        "holdings": receipts,
+    }))
+}
+
+/// One closed holding, checked: RFC 3339 times (or a date), `from` before
+/// `to`, `to` not in the future. `project` is left for the caller.
+fn past_holding(
+    actor: &SeatId,
+    why: &str,
+    target: &str,
+    seat: &str,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<pij_store::Assignment, Refusal> {
+    use crate::community::holders::{parse_time, stamp};
+    let (role, instance) = role_and_instance(target)?;
+    let when = |flag: &str, given: Option<&str>| -> Result<time::OffsetDateTime, Refusal> {
+        let given = given
             .ok_or_else(|| Refusal::new("E-RS-ARG", format!("--{flag} <time> is required")))?;
-        parse_time(&given).ok_or_else(|| {
+        parse_time(given).ok_or_else(|| {
             Refusal::new(
                 "E-RS-ARG",
                 format!(
@@ -884,7 +1366,7 @@ async fn lineage(
             )
         })
     };
-    let (from, to) = (when("from")?, when("to")?);
+    let (from, to) = (when("from", from)?, when("to", to)?);
     if from >= to {
         return Err(Refusal::new("E-RS-ARG", "--from must be before --to"));
     }
@@ -894,7 +1376,27 @@ async fn lineage(
             "--to is in the future; lineage add records holdings that have ended (use assign for a live seat)",
         ));
     }
-    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    Ok(pij_store::Assignment {
+        project: String::new(),
+        role: role.to_string(),
+        instance: instance.to_string(),
+        seat: seat.to_string(),
+        harness: None,
+        session: None,
+        machine: None,
+        from: stamp(from),
+        to: Some(stamp(to)),
+        assigned_by: actor.to_string(),
+        released_by: Some(actor.to_string()),
+        why: why.to_string(),
+        release_why: Some("lineage add".to_string()),
+        end_pending: false,
+    })
+}
+
+/// Only the project's prime records past holdings: its `prime_id`, or for a
+/// project that names none, a seat whose role is prime.
+async fn require_prime(state: &AppState, actor: &SeatId, project: &str) -> Result<(), Refusal> {
     let project_prime = state
         .services
         .governance
@@ -905,8 +1407,6 @@ async fn lineage(
         .into_iter()
         .find(|known| known.slug == project)
         .and_then(|known| known.prime_id);
-    // The project's own prime; a project that names none falls back to a
-    // seat whose role is prime.
     let is_prime = match &project_prime {
         Some(prime) => prime == actor,
         None => {
@@ -920,38 +1420,14 @@ async fn lineage(
                 == Some("prime")
         }
     };
-    if !is_prime {
-        return Err(Refusal::new(
+    if is_prime {
+        Ok(())
+    } else {
+        Err(Refusal::new(
             "E-RS-OWNERSHIP",
             format!("only the prime records past holdings; {actor} is not the prime of {project}"),
-        ));
+        ))
     }
-    let row = pij_store::Assignment {
-        project: project.clone(),
-        role: role.to_string(),
-        instance: instance.to_string(),
-        seat: seat.clone(),
-        harness: None,
-        session: None,
-        machine: None,
-        from: stamp(from),
-        to: Some(stamp(to)),
-        assigned_by: actor.to_string(),
-        released_by: Some(actor.to_string()),
-        why: why.clone(),
-        release_why: Some("lineage add".to_string()),
-        end_pending: false,
-    };
-    let receipt = state
-        .services
-        .directory
-        .lineage_add(repo, row, actor)
-        .await?;
-    let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
-    data["project"] = json!(project);
-    data["role"] = json!(role);
-    data["seat"] = json!(seat);
-    Ok(data)
 }
 
 /// `<role>[/<instance>]`, checked.
@@ -1141,7 +1617,7 @@ async fn memory(
         (None, Some(file)) if file == "-" => {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                "--body-file - reads stdin, which only the pij CLI can do; pass --body or a file path",
+                "--body-file - reads stdin, which the daemon cannot; `pij` and `pij-rs` send it as --body, or pass --body or a file path",
             ));
         }
         (None, Some(file)) => {
@@ -1167,6 +1643,7 @@ async fn memory(
             .collect(),
         hook: call.get("hook").unwrap_or_default(),
         body,
+        slug: call.get("slug"),
     };
     // Refuse a bad note before taking the writer lock.
     memory::note(&holders::today(), &fields)?;
@@ -1310,7 +1787,7 @@ fn canonical(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
-fn caller_path(caller: &CallerContext, path: &str) -> Result<PathBuf, Refusal> {
+pub(super) fn caller_path(caller: &CallerContext, path: &str) -> Result<PathBuf, Refusal> {
     let path = PathBuf::from(path);
     if path.is_absolute() {
         return Ok(path);
@@ -1371,10 +1848,10 @@ fn read_batch(dir: &Path) -> Result<Vec<(String, Value)>, Refusal> {
         .collect()
 }
 
-fn refused(refusal: &Refusal) -> Response {
+pub(super) fn refused(refusal: &Refusal) -> Response {
     let status = match refusal.code {
         "E-RS-ARG" | "E-RS-UNPORTED" => StatusCode::BAD_REQUEST,
-        "E-RS-OWNERSHIP" => StatusCode::FORBIDDEN,
+        "E-RS-OWNERSHIP" | "E-RS-OUTPUT-NOT-HOLDER" => StatusCode::FORBIDDEN,
         "E-RS-NOT-FOUND" | memory::E_NOTE_MISSING => StatusCode::NOT_FOUND,
         "E-RS-STORE" | crate::community::E_GOV_GIT => StatusCode::INTERNAL_SERVER_ERROR,
         _ => StatusCode::CONFLICT,
@@ -1398,6 +1875,210 @@ mod tests {
 
     fn argv(tokens: &[&str]) -> Vec<String> {
         tokens.iter().map(|token| (*token).to_string()).collect()
+    }
+
+    /// Every command the picture prints (plan 203), built from hostile repo
+    /// and store text, is split by a real `/bin/sh` and replayed through the
+    /// parser its verb reaches: nothing in it runs, the shell hands the verb
+    /// exactly the words the picture meant, and the verb accepts them. A role
+    /// it creates carries every section `pij/role` requires (#141 review and
+    /// security S001).
+    #[test]
+    fn every_printed_command_runs_as_written_through_the_real_parsers() {
+        use std::collections::HashSet;
+
+        use crate::community::picture::{self, RoleActivity};
+        use crate::community::templates::{self, Catalog};
+
+        let hostile = "s09$(touch dollar)`touch tick`;touch semi \"dq\" 'sq'\nnext";
+        let seat = "pij-a;touch seat";
+        let project = "fleet";
+        let holding = |role: &str, instance: &str, seat: &str, from: &str, to: Option<&str>| {
+            pij_store::Assignment {
+                project: project.into(),
+                role: role.into(),
+                instance: instance.into(),
+                seat: seat.into(),
+                harness: None,
+                session: None,
+                machine: None,
+                from: from.into(),
+                to: to.map(Into::into),
+                assigned_by: "prime".into(),
+                released_by: None,
+                why: "w".into(),
+                release_why: to.map(|_| "close".to_string()),
+                end_pending: false,
+            }
+        };
+        let closed = [
+            holding(
+                "reviewer",
+                "",
+                "pij-old",
+                "2026-11-01T00:00:00Z",
+                Some("2026-11-02T00:00:00Z"),
+            ),
+            holding(
+                "reviewer",
+                "",
+                "pij-old",
+                "2026-11-03T00:00:00Z",
+                Some("2026-11-04T00:00:00Z"),
+            ),
+        ];
+        let open = [
+            holding("reviewer", "115", seat, "2026-11-05T00:00:00Z", None),
+            holding("reviewer", "", "pij-b", "2026-11-06T00:00:00Z", None),
+        ];
+        let rows: Vec<&pij_store::Assignment> = closed.iter().chain(&open).collect();
+        let seats: HashSet<String> = [seat.to_string(), "pij-b".to_string()].into();
+        let mut printed: Vec<String> = Vec::new();
+        let mut take = |actions: Vec<Value>| {
+            for action in actions {
+                for command in action["commands"].as_array().unwrap() {
+                    printed.push(command.as_str().unwrap().to_string());
+                }
+            }
+        };
+        take(picture::actions(
+            project,
+            "reviewer",
+            "one",
+            &rows,
+            &HashSet::new(),
+            &["", "115"],
+            None,
+        ));
+        take(picture::actions(
+            project,
+            "reviewer",
+            "one",
+            &rows,
+            &seats,
+            &[],
+            Some("2026-11-05"),
+        ));
+        let mut prompts = templates::recommendations(project, &[]);
+        let needs = vec![
+            ("qa".to_string(), vec![format!("001 {hostile}")]),
+            (format!("docs{hostile}"), vec![format!("001 {hostile}")]),
+        ];
+        picture::fold_needs(project, &mut prompts, &needs, &[], &Catalog::shipped());
+        prompts.extend(picture::unowned(
+            project,
+            &[(
+                format!("crates/{hostile}"),
+                vec!["a".into(), "b".into(), "c".into()],
+            )],
+            &[],
+        ));
+        let mut two = open.to_vec();
+        two.push(holding("pm", "", seat, "2026-11-01T00:00:00Z", None));
+        prompts.extend(picture::two_domains(project, &two, &seats));
+        for prompt in &prompts {
+            printed.extend(prompt.commands.iter().cloned());
+        }
+        printed.extend(picture::call_on(project, hostile, false, 1));
+        let idle = picture::idle(
+            project,
+            &RoleActivity {
+                role: hostile,
+                created: Some("2026-01-01"),
+                rows: &[],
+                live_holder: false,
+                waiting: 0,
+                has_output: false,
+                notes: 0,
+            },
+            "2026-10-01",
+        )
+        .expect("idle");
+        assert!(idle.later.is_empty(), "retire and merge ship with s15");
+        let kinds: HashSet<&str> = prompts.iter().map(|prompt| prompt.kind).collect();
+        for kind in ["core", "needed", "recurring", "two-domains"] {
+            assert!(kinds.contains(kind), "the fixture prints a {kind} prompt");
+        }
+
+        let all: Vec<&String> = printed.iter().chain(&idle.commands).collect();
+        let dir = pij_testkit::fresh_dir("printed-commands");
+        let script: String = all
+            .iter()
+            .map(|command| format!("printf '%s\\037' {command}; printf '\\036'\n"))
+            .collect();
+        let shell = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(&script)
+            .current_dir(&dir)
+            .output()
+            .expect("run /bin/sh");
+        assert!(shell.status.success(), "{shell:?}");
+        assert_eq!(
+            std::fs::read_dir(&dir).unwrap().count(),
+            0,
+            "nothing in a printed command ran, and nothing was redirected"
+        );
+        let stdout = String::from_utf8(shell.stdout).unwrap();
+        let split: Vec<Vec<String>> = stdout
+            .split('\x1e')
+            .filter(|record| !record.is_empty())
+            .map(|record| {
+                record
+                    .split('\x1f')
+                    .filter(|word| !word.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .collect();
+        assert_eq!(split.len(), all.len());
+
+        let schema: Value = serde_json::from_slice(include_bytes!(
+            "../../../../.dd/schemas/pij/role/schema.json"
+        ))
+        .unwrap();
+        for (command, words) in all.iter().zip(&split) {
+            let words_ref: Vec<&str> = words.iter().map(String::as_str).collect();
+            assert_eq!(
+                picture::command(&words_ref),
+                **command,
+                "the shell split {command} into exactly its words"
+            );
+            match words_ref.as_slice() {
+                // Native clap; the CLI's own test replays this shape.
+                ["pij-rs", "revive", _] => {}
+                ["pij", "send", ..] => {
+                    crate::http::shim::parse_send(&words[1..], Some("text"))
+                        .unwrap_or_else(|error| panic!("{command}: {error}"));
+                }
+                ["pij", "directory", ..] => {
+                    let call = Arguments::parse(&words[1..])
+                        .unwrap_or_else(|refusal| panic!("{command}: {refusal:?}"));
+                    if call.leaf != "add" || call.get("from").is_some() {
+                        continue;
+                    }
+                    let document = role::from_fields(&call.positions[0], &call.fields())
+                        .unwrap_or_else(|refusal| panic!("{command}: {refusal:?}"));
+                    for (name, rule) in schema["sections"].as_object().unwrap() {
+                        if rule["required"] != true || name == "changelog" {
+                            continue;
+                        }
+                        let section = document["sections"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .find(|section| section["name"] == *name)
+                            .unwrap_or_else(|| panic!("{command}: pij/role requires {name}"));
+                        for field in rule["shape"]["required"].as_array().into_iter().flatten() {
+                            assert!(
+                                !section["value"][field.as_str().unwrap()].is_null(),
+                                "{command}: pij/role requires {name}.{field}"
+                            );
+                        }
+                    }
+                }
+                _ => panic!("{command}: a verb with no replay"),
+            }
+        }
     }
 
     #[test]
@@ -1513,5 +2194,23 @@ mod tests {
                 .leaf,
             "templates"
         );
+        assert_eq!(
+            Arguments::parse(&argv(&["directory", "templates", "--show", "pm@v1"]))
+                .unwrap()
+                .get("show")
+                .as_deref(),
+            Some("pm@v1")
+        );
+        for refused in [
+            &["directory", "template-diff", "pm", "--show", "pm"][..],
+            &["directory", "add", "pm", "--show", "pm", "--why", "w"][..],
+            &["directory", "--show", "pm"][..],
+        ] {
+            assert_eq!(
+                Arguments::parse(&argv(refused)).unwrap_err().code,
+                "E-RS-ARG",
+                "{refused:?}"
+            );
+        }
     }
 }

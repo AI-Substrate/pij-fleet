@@ -409,9 +409,21 @@ function verifyRegisteredSeat(seat, registration) {
 }
 
 /** Resolve a new address before creating its durable journal namespace. */
-export async function resolveRegistration(client, registration, signal, precedence) {
+/** `attempt` names why (plan 211): `explicit`, or `lease-retry` after a standby. */
+export async function resolveRegistration(
+	client,
+	registration,
+	signal,
+	precedence,
+	attempt = "explicit",
+) {
 	if (registration.id !== "") return registration;
-	const seat = await registerWithPrecedence(client, registration, signal, precedence);
+	const seat = await registerWithPrecedence(
+		client,
+		{ ...registration, attempt },
+		signal,
+		precedence,
+	);
 	throwIfStopped(signal);
 	verifyRegisteredSeat(seat, registration);
 	const bound = { ...registration, id: seat.id };
@@ -445,9 +457,19 @@ export class DaemonClient {
 		return (await this.#requestEnvelope(path, body, signal)).data;
 	}
 
-	/** @returns {Promise<{claims: unknown[], hold: {kind: "consent" | "native-target", reason: string} | null}>} */
-	async claimInbox(tuple, signal) {
-		const query = new URLSearchParams({ ...tuple, wait: "true" });
+	/**
+	 * `duringTurn`: this claim is made while a turn a pij message started is
+	 * still running (plan 214, C31); the daemon answers a `turn-wait` hold when
+	 * the seat's mid-turn steering is off.
+	 * `steer` is the seat's mid-turn steering as the daemon reports it (absent: off).
+	 * @returns {Promise<{claims: unknown[], steer: boolean, hold: {kind: "consent" | "native-target" | "turn-wait", reason: string} | null}>}
+	 */
+	async claimInbox(tuple, signal, duringTurn = false) {
+		const query = new URLSearchParams({
+			...tuple,
+			wait: "true",
+			...(duringTurn ? { during_turn: "true" } : {}),
+		});
 		const envelope = await this.#requestEnvelope(`/v1/inbox?${query}`, undefined, signal, true);
 		if (envelope.meta != null && typeof envelope.meta !== "string")
 			throw new NativeError(
@@ -457,11 +479,16 @@ export class DaemonClient {
 		const reason = envelope.meta?.startsWith(prefix) ? envelope.meta.slice(prefix.length) : null;
 		return {
 			claims: envelope.data,
+			steer: envelope.details?.mid_turn_steer === true,
 			hold:
 				reason === null
 					? null
 					: {
-							kind: reason.startsWith("native-target-session:") ? "native-target" : "consent",
+							kind: reason.startsWith("native-target-session:")
+								? "native-target"
+								: reason.startsWith("turn-wait")
+									? "turn-wait"
+									: "consent",
 							reason,
 						},
 		};
@@ -552,6 +579,14 @@ export class DaemonClient {
 				/^native Copilot registration refused: claimed pid is not an actual Copilot host executable; observed basename="[^"\\/\r\n]{1,255}", replaced=(?:true|false)$/.test(
 					envelope.meta,
 				);
+			// Plan 211 (AC4): this address is retired and this session may not take
+			// it; no retry can succeed, so the loops stop instead of re-registering.
+			const retired =
+				path === "/v1/register" &&
+				response.status === 400 &&
+				envelope?.v === 2 &&
+				envelope.ok === false &&
+				envelope.details?.code === "E-RS-SEAT-RETIRED";
 			const registrationRetry =
 				path === "/v1/register" &&
 				response.status === 409 &&
@@ -578,7 +613,11 @@ export class DaemonClient {
 					response.status === 401 ||
 					response.status === 429 ||
 					response.status >= 500,
-				hostRefusal || coldWake ? projected : `Pij HTTP ${response.status}`,
+				hostRefusal || coldWake
+					? projected
+					: retired
+						? "this seat address is retired (E-RS-SEAT-RETIRED); stopped re-registering"
+						: `Pij HTTP ${response.status}`,
 				registrationRetry && ["native-session", "native-holder"].includes(envelope.details.hold)
 					? envelope.details.hold
 					: undefined,
@@ -587,6 +626,7 @@ export class DaemonClient {
 			// The daemon withdrew this incarnation's registration; re-attest before an outage.
 			if (nativeUnavailable) error.revoked = true;
 			if (coldWake) error.coldWake = true;
+			if (retired) error.retired = true;
 			throw error;
 		}
 		return envelope;
@@ -908,12 +948,17 @@ export class NativeCompletion {
 	}
 	observe(event, fresh = true, notify = true) {
 		if (this.terminal) return;
+		// A fresh root run end before this message was consumed lets the strict
+		// discard check ask whether the host dropped it. A root abort, error or
+		// fused completion can end a run with no turn_end or idle after it, and a
+		// steer accepted into that run is then cleared unconsumed (review of #152,
+		// F003): those ends count too. The check itself is unchanged.
 		if (
 			fresh &&
 			!this.consumption &&
 			!event.agentId &&
 			nonempty(event.id) &&
-			["assistant.turn_end", "session.idle"].includes(event.type)
+			DISCARD_BOUNDARIES.has(event.type)
 		) {
 			this.boundary = event.id;
 		}
@@ -999,6 +1044,15 @@ export const RUN_TRIGGERS = new Set([
 	"session.fusion_completed",
 ]);
 
+/** Root run ends that let a not-yet-consumed message be checked for discard. */
+export const DISCARD_BOUNDARIES = new Set([
+	"assistant.turn_end",
+	"session.idle",
+	"abort",
+	"session.error",
+	"session.fusion_completed",
+]);
+
 /** Run state is asked at least this often after consumption, trigger or not. */
 export const RUN_STATE_REASK_MS = 30_000;
 
@@ -1037,6 +1091,11 @@ export class NativeBridge {
 		this.running = undefined;
 		this.unsubscribe = undefined;
 		this.completion = undefined;
+		// Plan 214 (P152-F002): the one watcher for the running pij-started turn.
+		this.turnWatch = undefined;
+		// Plan 214 (C31): the seat's mid-turn steering, as the daemon reported it
+		// with the last claim. Unknown is off: the post-ack barrier holds.
+		this.steerMidTurn = false;
 		// Plan 158 addendum 3: busy/idle publication, serialized so a late
 		// `working` can never land after `idle`.
 		this.activity = Promise.resolve();
@@ -1044,6 +1103,10 @@ export class NativeBridge {
 		this.activityUnsupported = false;
 		/** The last state the daemon accepted; stop settles a seat left `working`. */
 		this.activityPublished = undefined;
+		/** Plan 217: the latest `session.usage_info`, sent with each activity post. */
+		this.context = undefined;
+		/** This incarnation's report grant from its registration; none, no reports. */
+		this.contextToken = undefined;
 		this.stopped = undefined;
 	}
 	emit(kind, details = {}) {
@@ -1173,7 +1236,11 @@ export class NativeBridge {
 		this.receiverController.abort(error);
 		this.heartbeatController.abort();
 	}
-	async register() {
+	/**
+	 * `attempt` names why (plan 211): `explicit` (the first), `receive`,
+	 * `heartbeat` or `lease-retry` (after a standby). The daemon only counts it.
+	 */
+	async register(attempt = this.reconnectRegistration ? "receive" : "explicit") {
 		const signal = this.controller.signal;
 		const registration = this.registration;
 		// A boot-time history scan that failed retries here, bounded and stoppable;
@@ -1183,12 +1250,15 @@ export class NativeBridge {
 		});
 		const seat = await registerWithPrecedence(
 			this.client,
-			this.reconnectRegistration ?? registration,
+			{ ...(this.reconnectRegistration ?? registration), attempt },
 			signal,
 			this.precedence,
 		);
 		throwIfStopped(signal);
 		verifyRegisteredSeat(seat, registration);
+		// Plan 217 (review S153-001): only this registration's grant may report
+		// the seat's context size. An older daemon issues none.
+		this.contextToken = typeof seat?.context_token === "string" ? seat.context_token : undefined;
 		this.registered = true;
 		if (!this.reconnectRegistration) {
 			this.reconnectRegistration = { ...registration };
@@ -1207,6 +1277,7 @@ export class NativeBridge {
 		let retry = INITIAL_RETRY_MS;
 		let unavailable = false;
 		let reregister = false;
+		let stoodBy = false;
 		let observedAt = 0;
 		let observedSeq = 0;
 		while (!signal.aborted) {
@@ -1216,9 +1287,10 @@ export class NativeBridge {
 				// counters carry on and nothing is replayed as progress, so an older
 				// daemon's frozen-progress brake clears only on a genuinely live event.
 				if (reregister) {
-					await this.register();
+					await this.register(stoodBy ? "lease-retry" : "heartbeat");
 					throwIfStopped(signal);
 					reregister = false;
+					stoodBy = false;
 				}
 				if (this.observedSeq !== observedSeq) {
 					// One logical tick per changed report handles clock rollback;
@@ -1254,10 +1326,17 @@ export class NativeBridge {
 				await this.heartbeatDelay(lease.renew_after_ms, signal);
 			} catch (error) {
 				if (signal.aborted) return;
+				if (error instanceof NativeError && error.retired) {
+					// Plan 211 (AC4): a retired address never comes back to this session;
+					// stop both loops and say so once, instead of retrying every 5 s.
+					this.holdReceiving(error);
+					return;
+				}
 				if (error instanceof NativeError && error.holdKind === "native-holder") {
 					// A newer same-process session holds the seat (plan 168): stand by
 					// quietly, re-attesting on this session's own next prompt.
 					reregister = true;
+					stoodBy = true;
 					try {
 						await this.standby(signal, this.heartbeatDelay);
 					} catch {
@@ -1333,6 +1412,10 @@ export class NativeBridge {
 						}
 					: undefined;
 				completion?.observe(event);
+				// The turn's watcher hears its run's end live too, when a later
+				// steered message is the current completion (P152-F002).
+				const owner = this.turnWatch?.owner;
+				if (owner && owner !== completion) owner.observe(event);
 				if (metadata)
 					this.emit("native-event", {
 						type: event.type,
@@ -1354,7 +1437,11 @@ export class NativeBridge {
 			while (!signal.aborted) {
 				try {
 					if (!this.registered) {
-						await this.register();
+						// A retry after a standby is a lease retry even before the first
+						// registration succeeded (review of #148, F002).
+						await this.register(
+							standingBy ? "lease-retry" : !this.reconnectRegistration ? "explicit" : "receive",
+						);
 						if (holdStarted !== undefined || standingBy) {
 							this.emit("connection-ready");
 							retry = INITIAL_RETRY_MS;
@@ -1366,9 +1453,26 @@ export class NativeBridge {
 						await this.observeStartup();
 						this.heartbeat = this.keepReceiverAlive();
 					}
-					if (this.completion) await this.waitForCompletion();
+					// C31 (plan 214): a turn a pij message started no longer blocks the
+					// next claim. Only a turn already ended is settled first; one still
+					// running is claimed into, and the message steers in (send mode
+					// immediate), unless the daemon says this seat's steering is off.
+					// Steering off (or unknown: an older daemon says nothing) keeps the
+					// barrier: the next claim waits for that turn to end.
+					if (this.completion && (this.completion.terminal || !this.steerMidTurn))
+						await (this.completion.settling ?? this.waitForCompletion());
 					throwIfStopped(signal);
-					const { claims, hold } = await this.client.claimInbox(this.tuple(), signal);
+					const duringTurn =
+						this.steerMidTurn && this.completion !== undefined && !this.completion.reported;
+					// The running turn is still reported when it ends, while the
+					// receiver waits in a claim.
+					const turnEnded = duringTurn ? this.watchTurn(this.completion) : undefined;
+					const { claims, hold, steer } = await this.client.claimInbox(
+						this.tuple(),
+						signal,
+						duringTurn,
+					);
+					this.steerMidTurn = steer;
 					throwIfStopped(signal);
 					if (!Array.isArray(claims) || claims.length > 1)
 						throw new NativeError("Expected zero or one native claim; receiving held");
@@ -1384,6 +1488,17 @@ export class NativeBridge {
 								"Resume the targeted native session or use a new seat and intentionally reissue the message; no acknowledgement was sent.",
 						});
 						return;
+					}
+					if (hold?.kind === "turn-wait") {
+						this.emit("turn-wait", { reason: hold.reason });
+						await turnEnded;
+						continue;
+					}
+					if (turnEnded && !hold && claims.length === 0) {
+						// Nothing yet: claim again when the turn ends or the usual
+						// retry comes round, whichever is first.
+						await Promise.race([turnEnded, this.delay(retry, signal)]);
+						continue;
 					}
 					if (hold || claims.length === 0) {
 						if (hold) this.emit("consent-held", { reason: hold.reason, retryMs: retry });
@@ -1455,8 +1570,55 @@ export class NativeBridge {
 			this.receiverController.abort();
 		}
 	}
-	async waitForCompletion() {
-		const completion = this.completion;
+	/**
+	 * Report `completion` when its turn ends, without blocking the receiver
+	 * (plan 214, C31). One watcher per turn, however many messages are steered
+	 * into it (review of #152, P152-F002): the turn's first message owns the
+	 * watcher (one history cursor, one run-state question per trigger or re-ask),
+	 * and each later message joins it and is reported, with its own msg id, when
+	 * the owner's run ends. A run that has ended means nothing of it is still
+	 * processing or steering, so a message consumed in it has ended too. A
+	 * message never joins a watcher whose owner already saw its end: it starts
+	 * the next turn's. A failure surfaces to whoever awaits the result, never as
+	 * an unhandled rejection, and the next caller starts a fresh watcher.
+	 */
+	watchTurn(completion) {
+		if (completion.settling) return completion.settling;
+		const watch = this.turnWatch;
+		if (watch && !watch.owner.terminal && !watch.failed) {
+			watch.members.add(completion);
+			completion.settling = watch.settling;
+			return watch.settling;
+		}
+		const next = { owner: completion, members: new Set([completion]), failed: false };
+		next.settling = this.waitForCompletion(completion).then(() => {
+			for (const member of next.members)
+				if (member !== completion) this.reportShared(member, completion);
+		});
+		next.settling.catch(() => {
+			next.failed = true;
+			for (const member of next.members)
+				if (member.settling === next.settling) member.settling = undefined;
+			if (this.turnWatch === next) this.turnWatch = undefined;
+		});
+		this.turnWatch = next;
+		completion.settling = next.settling;
+		return next.settling;
+	}
+	/** A message steered into `owner`'s turn ended with it. */
+	reportShared(member, owner) {
+		if (member.reported) return;
+		member.terminal ??= owner.terminal;
+		member.reported = true;
+		this.emit("native-completed", {
+			msgId: member.msgId,
+			nativeMessageId: member.nativeId,
+			...owner.terminal,
+			turnOwnerMsgId: owner.msgId,
+			grade: "observed-native-terminal-not-model-success",
+		});
+	}
+	async waitForCompletion(completion = this.completion) {
 		if (completion.reported) return;
 		this.emit("completion-wait", {
 			msgId: completion.msgId,
@@ -1879,6 +2041,7 @@ export class NativeBridge {
 	 */
 	observeActivity(event) {
 		if (event?.agentId) return;
+		if (event?.type === "session.usage_info") this.observeContext(event.data);
 		// A fused turn that ends without a commit has no root turn_end, so its
 		// aggregate completion and abort end the work too. A failed route does not:
 		// its fallback model still runs the turn.
@@ -1894,18 +2057,45 @@ export class NativeBridge {
 		this.activityState = state;
 		this.activity = this.activity.then(() => this.publishActivity(state));
 	}
+	/**
+	 * Plan 217: Copilot's `session.usage_info` is ephemeral (never in
+	 * events.jsonl), so the daemon cannot read this session's size from its
+	 * transcript. Keep the latest; the next activity post carries it.
+	 */
+	observeContext(data) {
+		const tokens = data?.currentTokens;
+		if (!Number.isSafeInteger(tokens) || tokens < 0) return;
+		const window = data?.tokenLimit;
+		this.context = {
+			context_tokens: tokens,
+			...(Number.isSafeInteger(window) && window > 0 ? { context_window_tokens: window } : {}),
+		};
+	}
 	async publishActivity(state) {
 		if (this.activityUnsupported || !this.registered || this.controller.signal.aborted) {
 			// Not published: the next observed transition must try again.
 			if (this.activityState === state) this.activityState = undefined;
 			return;
 		}
+		const body = {
+			seat: this.registration.id,
+			native_session: this.registration.harness_session,
+			state,
+		};
+		const token = this.contextToken;
+		const context = token && this.context ? { ...this.context, context_token: token } : undefined;
 		try {
-			await this.client.request(
-				"/v1/activity",
-				{ seat: this.registration.id, native_session: this.registration.harness_session, state },
-				this.controller.signal,
-			);
+			try {
+				await this.client.request("/v1/activity", { ...body, ...context }, this.controller.signal);
+			} catch (error) {
+				// A refused report (a grant from before a daemon restart, or a
+				// daemon that knows no reports) still publishes the state; reports
+				// resume with the next registration's grant.
+				if (!context || ![400, 422].includes(error?.status) || this.controller.signal.aborted)
+					throw error;
+				if (this.contextToken === token) this.contextToken = undefined;
+				await this.client.request("/v1/activity", body, this.controller.signal);
+			}
 			this.activityPublished = state;
 		} catch (error) {
 			if (this.controller.signal.aborted) return;

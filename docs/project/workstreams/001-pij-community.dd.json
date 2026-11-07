@@ -1,0 +1,361 @@
+{
+	"dd": {
+		"schema": "pij/workstream"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Workstream 001: Pij Emergent Communities (PEC)",
+				"status": "draft",
+				"updated": "2026-11-08",
+				"owner": "pij-far-jackal"
+			}
+		},
+		{
+			"name": "goal",
+			"value": "Ship Pij Emergent Communities (PEC): a per-project directory of roles that outlive their seats, grown from what the work needs and reshaped as it changes, with memory, outputs, routing and prompts for the prime."
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s01",
+					"title": "Docs system and the community PRD",
+					"state": "complete",
+					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-18"],
+					"builds": ["../blueprints/001-pij-community.dd.json#components/c-doc-schemas"],
+					"depends_on": [],
+					"done_when": "Schemas resolve; this PRD, its blueprint and this roadmap validate clean; `ddocs graph` draws the joins."
+				},
+				{
+					"id": "s02",
+					"title": "Role schema, layout and the governance writer",
+					"state": "complete",
+					"delivers": [
+						"../prds/001-pij-community.dd.json#requirements/req-02",
+						"../prds/001-pij-community.dd.json#requirements/req-03",
+						"../prds/001-pij-community.dd.json#requirements/req-04",
+						"../prds/001-pij-community.dd.json#requirements/req-05",
+						"../prds/001-pij-community.dd.json#requirements/req-17",
+						"../prds/001-pij-community.dd.json#requirements/req-19"
+					],
+					"builds": [
+						"../blueprints/001-pij-community.dd.json#components/c-role-schema",
+						"../blueprints/001-pij-community.dd.json#components/c-layout",
+						"../blueprints/001-pij-community.dd.json#components/c-writer"
+					],
+					"depends_on": ["#steps/s01"],
+					"done_when": "`pij directory add` writes a validated role on the governance branch, refuses by name without governance or ddocs, and the cost row is measured.",
+					"needs": [
+						"role:docs-system",
+						"role:coder",
+						"role:reviewer",
+						"role:security",
+						"role:performance"
+					],
+					"plan": "docs/plans/190-community-writer"
+				},
+				{
+					"id": "s03",
+					"title": "Core and security templates",
+					"state": "complete",
+					"delivers": [
+						"../prds/001-pij-community.dd.json#requirements/req-13",
+						"../prds/001-pij-community.dd.json#requirements/req-14"
+					],
+					"builds": ["../blueprints/001-pij-community.dd.json#components/c-templates"],
+					"depends_on": ["#steps/s02"],
+					"done_when": "A new directory prompts for the five core roles and security and creates nothing (C22); a role made from a template records it; a template bump shows a diff.",
+					"plan": "docs/plans/194-role-templates"
+				},
+				{
+					"id": "s04",
+					"title": "Assign, release, lineage and the directory view",
+					"state": "complete",
+					"delivers": [
+						"../prds/001-pij-community.dd.json#requirements/req-01",
+						"../prds/001-pij-community.dd.json#requirements/req-06",
+						"../prds/001-pij-community.dd.json#requirements/req-16",
+						"../prds/001-pij-community.dd.json#requirements/req-17"
+					],
+					"builds": [
+						"../blueprints/001-pij-community.dd.json#components/c-store",
+						"../blueprints/001-pij-community.dd.json#components/c-verbs",
+						"../blueprints/001-pij-community.dd.json#components/c-orient"
+					],
+					"depends_on": ["#steps/s02"],
+					"done_when": "Lineage survives a store rebuild; the view lists roles and holders for this project only.",
+					"plan": "docs/plans/195-assign-lineage"
+				},
+				{
+					"id": "s05",
+					"title": "Send to a role, the role queue and reply modes",
+					"state": "complete",
+					"delivers": [
+						"../prds/001-pij-community.dd.json#requirements/req-07",
+						"../prds/001-pij-community.dd.json#requirements/req-08"
+					],
+					"builds": ["../blueprints/001-pij-community.dd.json#components/c-send-role"],
+					"depends_on": ["#steps/s04"],
+					"done_when": "The 0, 1 and 2 holder cases, instances, the PA wake and the three reply modes behave as the PRD says.",
+					"plan": "docs/plans/199-send-to-role"
+				},
+				{
+					"id": "s06",
+					"title": "Outputs and notification",
+					"state": "complete",
+					"delivers": [
+						"../prds/001-pij-community.dd.json#requirements/req-08",
+						"../prds/001-pij-community.dd.json#requirements/req-10"
+					],
+					"builds": [
+						"../blueprints/001-pij-community.dd.json#components/c-notify",
+						"../blueprints/001-pij-community.dd.json#components/c-verbs"
+					],
+					"depends_on": ["#steps/s04", "#steps/s05"],
+					"done_when": "Parallel outputs never conflict; the requester is notified in its chosen mode.",
+					"plan": "docs/plans/200-outputs-notify"
+				},
+				{
+					"id": "s07",
+					"title": "Role memory and its prompts",
+					"state": "complete",
+					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-09"],
+					"builds": [
+						"../blueprints/001-pij-community.dd.json#components/c-memory-hook",
+						"../blueprints/001-pij-community.dd.json#components/c-layout"
+					],
+					"depends_on": ["#steps/s04"],
+					"done_when": "Notes are one file each with a generated INDEX.md, and a role holder's compact and close are each preceded by the memory turn.",
+					"plan": "docs/plans/201-role-memory"
+				},
+				{
+					"id": "s08",
+					"title": "Routing table",
+					"state": "complete",
+					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-11"],
+					"builds": ["../blueprints/001-pij-community.dd.json#components/c-routes"],
+					"depends_on": ["#steps/s04"],
+					"done_when": "ROUTES.md regenerates on a scope change and reaches seats at the four triggers.",
+					"plan": "docs/plans/202-routing-table"
+				},
+				{
+					"id": "s09",
+					"title": "Prime prompts",
+					"state": "complete",
+					"delivers": [
+						"../prds/001-pij-community.dd.json#requirements/req-12",
+						"../prds/001-pij-community.dd.json#requirements/req-14",
+						"../prds/001-pij-community.dd.json#requirements/req-24",
+						"../prds/001-pij-community.dd.json#requirements/req-29"
+					],
+					"builds": ["../blueprints/001-pij-community.dd.json#components/c-orient"],
+					"depends_on": ["#steps/s05", "#steps/s06", "#steps/s07"],
+					"done_when": "Each prompt condition shows with its runnable command.",
+					"plan": "docs/plans/203-prime-prompts"
+				},
+				{
+					"id": "s11",
+					"title": "Number claims and delivery at merge",
+					"state": "complete",
+					"delivers": [
+						"../prds/001-pij-community.dd.json#requirements/req-20",
+						"../prds/001-pij-community.dd.json#requirements/req-21"
+					],
+					"builds": [
+						"../blueprints/001-pij-community.dd.json#components/c-claims",
+						"../blueprints/001-pij-community.dd.json#components/c-merge-delivery"
+					],
+					"depends_on": ["#steps/s02"],
+					"done_when": "Parallel claims never collide, and a merged PR's delivery shows on the requirement and the PM's card.",
+					"plan": "docs/plans/196-claims-delivery"
+				},
+				{
+					"id": "s12",
+					"title": "Time limits and check-ins",
+					"state": "complete",
+					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-22"],
+					"builds": ["../blueprints/001-pij-community.dd.json#components/c-limits"],
+					"depends_on": ["#steps/s05"],
+					"done_when": "The three req-22 cases behave as written, with no new timer or launch.",
+					"plan": "docs/plans/205-time-limits"
+				},
+				{
+					"id": "s13",
+					"title": "Doc procedures and examples in the skill",
+					"state": "complete",
+					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-23"],
+					"builds": ["../blueprints/001-pij-community.dd.json#components/c-skill"],
+					"depends_on": ["#steps/s01"],
+					"done_when": "A fresh PM writes a valid, linked PRD and roadmap from the procedure.",
+					"needs": ["role:docs-system", "role:reviewer", "role:security"],
+					"plan": "docs/plans/191-doc-procedures"
+				},
+				{
+					"id": "s14",
+					"title": "Triage pij's earlier register into PRD 002",
+					"state": "complete",
+					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-25"],
+					"builds": ["../blueprints/001-pij-community.dd.json#components/c-doc-schemas"],
+					"depends_on": ["#steps/s01"],
+					"done_when": "PRD 002 validates under docs/project/prds/ and every open row of the earlier register has a recorded verdict.",
+					"needs": ["role:docs-system", "role:reviewer", "role:security"],
+					"plan": "docs/plans/192-prd-register-move"
+				},
+				{
+					"id": "s10",
+					"title": "Community skill route and optional templates",
+					"state": "complete",
+					"delivers": [
+						"../prds/001-pij-community.dd.json#requirements/req-13",
+						"../prds/001-pij-community.dd.json#requirements/req-15",
+						"../prds/001-pij-community.dd.json#requirements/req-27",
+						"../prds/001-pij-community.dd.json#requirements/req-29"
+					],
+					"builds": [
+						"../blueprints/001-pij-community.dd.json#components/c-skill",
+						"../blueprints/001-pij-community.dd.json#components/c-templates"
+					],
+					"depends_on": ["#steps/s03", "#steps/s09"],
+					"done_when": "A fresh prime follows the route and stands up a working community.",
+					"plan": "docs/plans/204-community-route"
+				},
+				{
+					"id": "s15",
+					"title": "Reshape: retire and merge roles",
+					"state": "complete",
+					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-28"],
+					"builds": ["../blueprints/001-pij-community.dd.json#components/c-verbs"],
+					"depends_on": ["#steps/s04", "#steps/s05"],
+					"done_when": "A retired or merged role keeps its memory, outputs and lineage readable; a send to it refuses by name, naming the target after a merge.",
+					"plan": "docs/plans/206-directory-followups",
+					"needs": ["role:docs-system", "role:reviewer", "role:security"]
+				},
+				{
+					"id": "s16",
+					"title": "Workstreams: rename, nesting, lanes and coverage",
+					"state": "complete",
+					"delivers": [
+						"../prds/001-pij-community.dd.json#requirements/req-30",
+						"../prds/001-pij-community.dd.json#requirements/req-31"
+					],
+					"builds": ["../blueprints/001-pij-community.dd.json#components/c-doc-schemas"],
+					"depends_on": ["#steps/s13"],
+					"done_when": "Roadmap 001 lives in docs/project/workstreams/ as pij/workstream, every reader follows the folder, and harness checks fails naming the row when a requirement is delivered by no step, a component is built by no step, or an umbrella step is complete before its children.",
+					"plan": "docs/plans/210-workstreams",
+					"needs": ["role:docs-system", "role:coder", "role:reviewer"]
+				},
+				{
+					"id": "s17",
+					"title": "Seat ids never name a role or project",
+					"state": "planned",
+					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-26"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "A spawn whose `--id` names a role in its project's directory or a project is refused by name; a spawn without `--id` still gets a `pij-<adjective>-<animal>` id.",
+					"note": "The open part of req-26 (ruling C13). Memorable ids and `<project>:<role>` windows shipped (s04, plan 195); an explicit `--id` is still accepted as given (crates/daemon/src/http/mod.rs:1426-1438)."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-04",
+					"by": "pij-far-jackal with Jordan",
+					"change": "First draft from workshop 001."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-far-jackal with Jordan",
+					"change": "Added s11 (claims, delivery at merge); widened s05 and s07."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "Plan 191: s01 complete (done-when checked, docs/plans/191-doc-procedures/assets/evidence/s01-check.md); s13 complete; needs filled for s02, s13 and s14 (req-24)."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-steady-otter (pm-001), ruling C15",
+					"change": "s14 is a triage into a fresh PRD 002, not a move."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "Plan 192: s14 complete. The earlier register was triaged into PRD 002 (docs/project/prds/002-pij-base.dd.json); 16 of 40 open rows kept as 14."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-brisk-marten",
+					"change": "Plan 190: s02 complete (`pij directory add` and `--batch` on the governance writer; evidence in docs/plans/190-community-writer/assets/evidence/phase-2.md)."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-brisk-marten",
+					"change": "Plan 195: s04 complete (assign, release, close-ends, lineage, the view and rebuild; evidence in docs/plans/195-assign-lineage/assets/evidence/phase-2.md)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "docs-system",
+					"change": "Renamed forward per ruling C26: title and goal name Pij Emergent Communities (PEC). Slugs and step ids unchanged."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-following-marsupial",
+					"change": "s03 complete (plan 194); its done_when now says the core roles are prompted, not created (ruling C22)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "Plan 196: s11 complete (number claims and delivery at merge; evidence in docs/plans/196-claims-delivery/assets/evidence/)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-local-warbler",
+					"change": "Plan 202: s08 complete (the routing table: ROUTES.md rewritten with every role write, overlap warnings, held FYIs on assign, compact and revive, changed rows to the prime, `pij directory routes`)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-back-tapir",
+					"change": "s09 complete (plan 203): pij directory is the prime's operating picture (holders with seat liveness, waiting requests, latest output, memory freshness, the designated prime), next actions with runnable commands, and prompts for roles a roadmap step needs."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "s15 added (reshape: retire and merge roles, req-28, C26), plan 206, in progress."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "s15 depends on s05 (its send refusal needs role sends) and needs docs-system, reviewer and security (it changes the pij/role schema, C7)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "Plan 206: s15 complete (pij directory edit, retire and merge; retire waits for queued role requests; a retired or merged role refuses sends)."
+				},
+				{
+					"date": "2026-11-07",
+					"by": "pij-following-marsupial",
+					"change": "Plan 204: s10 complete (the /pij community route, ten optional templates, templates --show; a fresh-prime canary stood up a community from the route). s10 also delivers req-27 and req-29, the route half of C26 and C28."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "pij-following-marsupial",
+					"change": "Plan 210 phase 2 (ruling C29): moved from docs/project/roadmaps/ to docs/project/workstreams/ and switched to the pij/workstream schema in the same commit."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "pij-following-marsupial",
+					"change": "Plan 210 phase 2: s16 added and complete (the move to workstreams, nesting and lanes, and the coverage sensor in harness checks)."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "docs-system",
+					"change": "Plan 210 AC4: s17 (planned) delivers req-26's open part, refusing an explicit seat id that names a role or project, so no PRD 001 row is left undelivered."
+				}
+			]
+		}
+	]
+}

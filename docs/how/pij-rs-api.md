@@ -20,7 +20,9 @@ Native `pij-rs --json` also preserves the original response buffer after version
 
 `commit-trailers` is the deliberate CLI-only exception: `pij commit-trailers` forwards narrowly to `pij-rs commit-trailers`, preserving trailer-only stdout, native stderr (including the derivation-tier note), and exit status. There is no commit-trailers HTTP endpoint or JSON wrapper.
 
-`fleet-report` (plan 162) is the second native pass-through: `pij fleet-report <FOLDER>` forwards to `pij-rs fleet-report`, which folds the project's transcripts in-process through Unisphere, reads seats from the store **read-only** (never created, never migrated) and writes `index.html`, `report.json`, `report.js`, `manifest.json` and `tables/` to one folder. It never contacts the daemon. P1 refuses `--format parquet` (`E-RS-FLEET-FORMAT`) and `--prep-target` (`E-RS-FLEET-PREP-TARGET`) by name; the output folder carries names and paths unless `--anonymise`.
+`claim`, `claims`, `delivered` and `directory memory` (plan 209) also pass through: `pij` runs `pij-rs` for them, so the shim prints the native text (one line per claim, the delivered edits, the memory INDEX), the real `--help`, and reads `--body-file -` from stdin.
+
+`fleet-report` (plan 162) is another native pass-through: `pij fleet-report <FOLDER>` forwards to `pij-rs fleet-report`, which folds the project's transcripts in-process through Unisphere, reads seats from the store **read-only** (never created, never migrated) and writes `index.html`, `report.json`, `report.js`, `manifest.json` and `tables/` to one folder. It never contacts the daemon. P1 refuses `--format parquet` (`E-RS-FLEET-FORMAT`) and `--prep-target` (`E-RS-FLEET-PREP-TARGET`) by name; the output folder carries names and paths unless `--anonymise`.
 
 Known limit (plan 169): fleet-report prices every call at the default table; router sessions are not modelled per served model.
 
@@ -44,7 +46,7 @@ Sources: [`exit_code`](../../crates/cli/src/lib.rs), [shim refusal/output handli
 
 ### Shim forwarding (plan 213)
 
-The `pij` shim ([`pij-cli.cjs`](../../harness/scripts/pij-cli.cjs)) hands pij-rs's community verbs to `pij-rs` before its TypeScript router loads: argv and stdin unchanged, and pij-rs's own stdout, stderr, help and exit code. Nothing is re-rendered or wrapped, so `pij <verb>` and `pij-rs <verb>` print the same bytes. The verbs are listed once, in [`pij-native-verbs.json`](../../harness/scripts/pij-native-verbs.json): exactly the pij-rs subcommands that own their grammar and help (clap's help flag disabled), today `directory`, `claim`, `claims` and `delivered`. `send` goes too, from a tmux pane, when its recipient is a `role:` address or it uses `--to`, and from anywhere for `--help`; `pij-rs send` takes the shim's positional form (`send <recipient> [<text>]`) as well as `--to`/`--body`. The shim finds the verb past pij-rs's global options (`--json`, `--state-dir`, `--addr`) and reads each send flag with its value, from value-flag tables in the same file, so a value that looks like `role:…` is never taken for the recipient. Sends to a seat, every paneless send (the router registers the observed host first and never trusts an inherited `PIJ_SESSION_ID`), the shim-only `--file`/`--caption`, and any explicit `PIJ_DAEMON_GENERATION` other than `rs` keep the routed path. `pij-rs` is spawned by absolute path, from the first absolute PATH entry that holds it (a relative entry is skipped, as the ddocs resolver does); with none, the shim exits 127 and names it. Native `send`, `compact-self` and `inbox` resolve the acting seat with the full caller context, so the daemon applies the same harness-session checks as on the routed path.
+The `pij` shim ([`pij-cli.cjs`](../../harness/scripts/pij-cli.cjs)) hands pij-rs's community verbs to `pij-rs` before its TypeScript router loads: argv and stdin unchanged, and pij-rs's own stdout, stderr, help and exit code. Nothing is re-rendered or wrapped, so `pij <verb>` and `pij-rs <verb>` print the same bytes. The verbs are listed once, in [`pij-native-verbs.json`](../../harness/scripts/pij-native-verbs.json): exactly the pij-rs subcommands that own their grammar and help (clap's help flag disabled), today `directory`, `claim`, `claims`, `delivered`, `output`, `outputs` and `requests`. `send` goes too, from a tmux pane, when its recipient is a `role:` address or it uses `--to`, and from anywhere for `--help`; `pij-rs send` takes the shim's positional form (`send <recipient> [<text>]`) as well as `--to`/`--body`. The shim finds the verb past pij-rs's global options (`--json`, `--state-dir`, `--addr`) and reads each send flag with its value, from value-flag tables in the same file, so a value that looks like `role:…` is never taken for the recipient. Sends to a seat, every paneless send (the router registers the observed host first and never trusts an inherited `PIJ_SESSION_ID`), the shim-only `--file`/`--caption`, and any explicit `PIJ_DAEMON_GENERATION` other than `rs` keep the routed path. `pij-rs` is spawned by absolute path, from the first absolute PATH entry that holds it (a relative entry is skipped, as the ddocs resolver does); with none, the shim exits 127 and names it. Native `send`, `compact-self` and `inbox` resolve the acting seat with the full caller context, so the daemon applies the same harness-session checks as on the routed path.
 
 Tests: `shim_forward_tests` in [`crates/cli/src/main.rs`](../../crates/cli/src/main.rs) holds the verb list equal to clap's verbs that own their help and the value-flag tables equal to clap's options (with new and stale entries as negative controls), and [`crates/cli/tests/shim_forward.rs`](../../crates/cli/tests/shim_forward.rs) runs the real shim: help byte-equal to `pij-rs`, and every flag pij-rs's help names reaching a recording `pij-rs` with argv, stdin, output and exit code unchanged, with the kept-path calls as negative controls. Cost: one `node` start and one `pij-rs` exec per call, where the routed path started node twice (the second through tsx); measured medians at load 36 were 0.085 s against 0.546 s (`claim --help`) and 0.115 s against 0.639 s (`claims`). Nothing runs per tick, and the daemon launches nothing new.
 
@@ -56,9 +58,29 @@ has `ok:true`, `data.status:"healthy"` and
 `data.store:{status:"healthy",timeout_ms:2000}`. `data.spawns:{total,by_op}` counts
 the processes this daemon has launched since it started, by `<program>.<site>`
 operation (`ps.proc-liveness`, `tmux.send-keys`, `git.orchestration-repo`, ...); the
-`by_op` values sum to `total` (plan 180). `data.pid` is the daemon's own process
+`by_op` values sum to `total` (plan 180). Delivering to a Claude seat launches
+nothing: the socket transport reads the peer's start in-process, once per
+resolution, and `deliver` reuses the endpoint its own probe resolved after a fresh
+start re-read (plan 218, retiring `ps.uds-peer-start`). `data.pid` is the daemon's own process
 id (plan 190): the spawn counter resets on restart, so two readings compare only
-when their pids match. `data.ddocs` is the ddocs path the daemon resolved once at
+when their pids match. `data.registrations:{total,ps,by_key,by_seat}` counts registration
+attempts since start (plan 211, issue #145): `by_key` is per
+`<path>.<mode>.<outcome>` with `{count,ps}`, where `ps` is the ancestry `ps`
+reads those attempts paid. `path` is the client's advisory `attempt` on
+`/v1/register` (`explicit`, `receive`, `heartbeat`, `shim`, `lease-retry`;
+`unspecified` when absent, `other` when unknown) or the daemon caller (`adopt`,
+`claude-bind`, `codex-bind`); `mode` is `pane` or `paneless`; `outcome` is
+`new`, `rebound`, `unchanged`, `refused`, `retired`, `retryable`,
+`session-hold`, `holder-current` or `error`. Every parsed `/v1/register`
+counts once, including one the route refuses before registration (an invalid
+role, a pane it cannot observe). `by_seat` is per address: the resolved seat, or
+for a refusal the claimed id when it is a seat (`(unnamed)` when empty);
+addresses that are not seats, longer than 64 bytes, or beyond the first 64
+count under `(other)`. Each attempt's `ps` tally closes when the attempt is
+counted: an observer a timeout left running may not launch afterwards, so no
+read goes uncounted. The counters are in-process (one mutex-guarded pair of
+maps): no launch, event or store write per attempt, and nothing reads them to
+decide anything. `data.ddocs` is the ddocs path the daemon resolved once at
 start (`PIJ_DDOCS`, which must be absolute, else PATH), or `null` when it found
 none; `just doctor` prints it. A relative or empty PATH entry is taken relative
 to the daemon's directory at start, so the kept path is always absolute. `data.gh` is
@@ -144,6 +166,8 @@ with ordinary registration backoff; it is not a `native-session` Hold.
 Every successful `/v1/register` returns and stores a live descriptor (`tombstoned_at: None`). An existing retired address is resumed only with the **same harness AND** at least one continuity witness: the same nonempty harness session (`HARNESS_SESSION_ID`, `harness_session` or `harnessSession`), the same nonempty `spawn_id`, or the recorded process incarnation corroborated by the daemon. Missing values and a matching pane alone prove nothing. Without continuity it returns HTTP400, v2 `error:"refused"`, with `seat <id> is retired (<reason>, <at>); a different session may not take it`, without changing the row; a different harness adds `; harness mismatch: row <h1>, claim <h2>` and is never adopted by a lift. Paneless Claude/Codex/Copilot session selection includes retired addresses, preferring live rows, then greatest `proc_start`, then ascending id; historical duplicates are not host owners. Their existing live-owner, session and pull-shape restrictions remain stronger than the continuity ladder. A lift clears both tombstone fields, keeps the address, harness, parent, authoritative role and Telegram bindings, updates the claimed process/pane, and emits exactly one resume event with `prior_reason`, `old_proc`, `new_proc`, `old_pane` and `new_pane`: `seat.native-resumed` for native Copilot, `seat.resumed` otherwise. Native ownership/HOLD checks, the verified spawn-prebind exception and the `revive` verb are unchanged.
 
 That refusal carries the typed discriminator `details:{code:"E-RS-SEAT-RETIRED",seat:"<id>"}`, on `/v1/register` and `/v1/adopt` alike; match the code, never the prose (pij-fleet#44). `GET /v1/seats` omits retired rows, so an OMP or Pi extension choosing its own startup name can pick a retired seat's id. Only that self-chosen name advances to its next memorable candidate on this code, for at most 8 claims in total. An assigned identity never advances: `PIJ_SESSION_ID`, a reload's own id, a same-pane or same-process match, or a `/new`/`/fork` replacement keeps the refusal terminal. A boot that still fails notifies at error level, sets the footer to `boot failed` and, when `PIJ_ANNOUNCE_TO` or `PIJ_PARENT_ID` names a spawner, sends it one best-effort `pij boot failed (spawn <id>, pane <pane>): <reason>` message from the non-seat sender `pij-boot-failed-<pid>`.
+
+A native Copilot claim that names an address recorded for a different native session is refused before the daemon observes the host (plan 211, issue #145): `E-RS-SEAT-RETIRED` when that address is retired, else the different-session refusal. The same check decides again under the registration lock, so this early read is a brake: removing it refuses the same claims later, after the ancestry `ps`. The native Copilot extension treats `E-RS-SEAT-RETIRED` on `/v1/register` as final: its receive and heartbeat loops stop and report `receive-held` once, instead of re-registering on a 5 s backoff.
 
 ## Adopt continuity order (plan 156)
 
@@ -492,7 +516,9 @@ row/card evidence comes from plan 147's isolated capture, not a recapture of tho
 `last_event_at` as the roster for the same stored facts. These two names are
 literal, including the underscore in `last_event_at`; the existing card's other
 camelCase fields are unchanged. Freshness follows event **sequence**, not the
-greatest timestamp: a later committed event can have an earlier supplied clock.
+greatest timestamp: a later committed event can have an earlier supplied clock. A seat stalled on its harness's own dialog keeps `state` and `badge`; the roster
+and the card add a separate `dialog` object while the stall stands (plan 219,
+[Modal-dialog stalls](#modal-dialog-stalls-plan-219)).
 
 `stateNoteAt` (epoch ms) and `stateNoteSeq` (spine cursor) say when the
 `report.state` record carrying `stateNote` was written and where it sits, the
@@ -730,12 +756,12 @@ Source: [`fyi.rs`](../../crates/core/src/fyi.rs).
 
 ### Busy/idle publication: POST `/v1/activity`
 
-The request is `{seat, pane?, native_session?, state: "working"|"idle"}`. It takes the same binding evidence as `/v1/fyi/claim`, and a tombstoned seat is refused.
+The request is `{seat, pane?, native_session?, state: "working"|"idle", context_tokens?, context_window_tokens?, context_token?}`. It takes the same binding evidence as `/v1/fyi/claim`, and a tombstoned seat is refused. `context_tokens` (plan 217) is the session's current size when the runtime knows one the transcript does not: it must come with `context_token`, the grant the seat's own native registration returned (`/v1/register` answers it, random, one per process incarnation; never in a roster or on the spine). A report without it, or with another seat's or an earlier incarnation's, is refused and changes nothing, the activity included: the pane and session above are public, so they cannot authorize a size that moves the cold-wake guard (review S153-001). Known limit (F88, PRD 003): registration does not authenticate the calling process, so a local caller re-registering with a live seat's roster identifiers is handed its standing grant; each such reissue appends `context.grant.reissued` `{seat, claimed_id, harness, folder, pane, pid, proc_start, session, attempt, binding, proc_source, origin}`, never the token, and if that append fails the grant is withheld (the registration stands). A first grant for an incarnation writes nothing. Genuine re-registrations write the event too, so it is an audit trail, not a theft detector. A native registration and the applying of a size report run in one critical section, and a report is checked again inside it against the seat's current process and grant, so a report from a replaced incarnation changes nothing (review S153-002). The daemon keeps the latest in memory, per seat and session, and fills an unknown `contextUsedTokens` (and `contextWindowTokens`) from it with basis `native` ([PA watchdog § presence](#pa-watchdog)).
 It changes only the seat's mechanical `state` (a targeted write that never rewrites or revives the row), so `pij state` shows `working` during a turn and `idle` after it. Each change publishes a `seat.activity` event. `data` is `{seat, state, changed}`.
 - `working` never outlives its process: a tombstone resets it to `idle`, and so does a new incarnation registering the seat.
 
 - The OMP/Pi extension publishes `working` at `turn_start`, and `idle` at `turn_end`, at `agent_end` and on shutdown.
-- The Copilot native extension publishes on `assistant.turn_start`, and on `assistant.turn_end`, `session.idle` or shutdown.
+- The Copilot native extension publishes on `assistant.turn_start`, and on `assistant.turn_end`, `session.idle` or shutdown. Each post carries the latest `session.usage_info` (`currentTokens`, `tokenLimit`) as `context_tokens` and `context_window_tokens`: that event is ephemeral and never reaches `events.jsonl`. It sends them only with the grant its registration returned; a refused report (an older daemon, or a grant from before a daemon restart) makes it resend the state alone and wait for its next registration's grant.
 - Publications are serialized per session, and a failure never breaks a turn. A route-absent 404 from an older daemon stops publishing.
 - Claude seats publish through their managed hooks (plan 157): `UserPromptSubmit` sends `working`, and `Stop` and `StopFailure` send `idle`. `StopFailure` covers a turn that ends on an API error, which does not fire `Stop`. The seat is resolved by pane, via `pij-rs activity`, with the same 3 s bound and silent failure as the FYI claim. Only a prompt submitted to Claude fires `UserPromptSubmit`, so a turn opened another way stays `idle` until the next typed or pasted prompt.
 - The cases these hooks cannot see leave a Claude seat reading `working`:
@@ -743,9 +769,27 @@ It changes only the seat's mechanical `state` (a targeted write that never rewri
   - **A killed or exited process** fires nothing. The death sweep's tombstone, or a new incarnation registering the seat, resets it to `idle`.
   - While a seat reads `working`, the cold-wake guard treats it as busy and allows the send. That is the safe direction for a brake.
 
+### Mid-turn steering (plan 214, ruling C31)
+
+A normal send lands inside a turn the recipient is already in, wherever the harness can take it there: OMP and Pi steer every message into a running turn, Claude's socket transport delivers between tool calls, and the native Copilot extension steers too. Until C31 the Copilot extension claimed its next pij message only after the turn its previous pij message started had ended (the post-ack barrier), which held messages for hours behind long turns (F25). Now, while such a turn runs, it keeps claiming, and each claimed normal send goes in with `send` mode `immediate`, which steers it into the running turn. The turn is still observed and reported (`native-completed`) when it ends. FYIs are unchanged: held until the recipient's next real turn.
+
+**The switch.** `pij steer on|off|status [<seat>]` (`POST /v1/steer`, argv + `caller`) sets a seat's mid-turn steering; on by default, and the seat defaults to the caller. Any seat may switch any live seat, as with the watchdog. A real change appends a `steer.changed` event, and a seat changed by another is told in a held FYI. `status` lists `{default: "on", off: [{seat, set_by, set_at_ms}]}`, with `{seat, steer}` when a seat is named. The setting lives in `seat_steering` (migration 0043); no row means on.
+
+**What off means, exactly.** Off restores the old post-ack barrier and nothing more: after a pij message starts a turn, the extension claims the next one only when that turn has ended. A first pij message into a turn the seat started itself (a human's turn) still goes in at once, as it always did. Turning steering back on takes effect at the next turn boundary at the latest.
+
+**How the receiver reads it.** Every native claim (`GET /v1/inbox`) reports the seat's setting as `details.mid_turn_steer`; the extension keeps the last value and treats a missing one as off, so an older daemon keeps the barrier. During a turn its own message started, the extension claims only when the last value was on, and marks the claim `during_turn=true`. The daemon reads the setting again at the hand-off, after the job is claimed and before it is returned, so a claim that was already waiting when `off` was set never steers a message: the job is released and the answer is the hold `native-consumer-held:turn-wait: …`, and the extension waits for the turn to end before its next claim. A change therefore takes effect at the seat's next hand-off, with no restart and no poll.
+
+**Receipt note.** A normal send that is queued for a working seat that may not take it before its turn ends gets a receipt `warning`: `<seat> is mid-turn and <why>: this message may wait for that turn to end.` The reasons are steering off (worded as applying when a pij message started the turn), a Copilot seat with no native extension, a Claude seat with no inbound socket, and Codex. OMP, Pi, socket Claude and native Copilot with steering on get no note.
+
+A message still held long behind a busy turn shows up in the PA digest (`Messages held behind a busy turn`, below), which is how a wedge or a seat with steering off is noticed.
+
+Cost: no new launch. One primary-key read per native claim (the switch) and one more per during-turn hand-off, a registry read per queued send (the note), and one more claim per message during a turn instead of one after it. A during-turn claim's wait is event-driven, not the native 500 ms tick: it wakes on an enqueue to the seat or a `steer.changed` event for it, with a 15 s backstop (`DURING_TURN_BACKSTOP`) for work that becomes claimable on a timer, so a busy seat with an empty inbox costs at most one wake per 15 s. The extension observes a running turn with one shared watcher per turn, however many messages are steered into it.
+
 ### Cold-wake guard (plan 157 phase 2)
 
 Waking a seat whose prompt cache has expired re-writes its whole context at cache-write prices. The daemon therefore refuses a waking send to a **cold** recipient. The constants, the price table and the pure rule live in [`cold_wake.rs`](../../crates/core/src/cold_wake.rs): context over `COLD_CONTEXT_TOKENS`, last API call older than `COLD_IDLE_MS`, and the daemon does not see the seat working. The guard is a brake: it only ever refuses, and it never changes what is delivered.
+
+**Copilot seats** (plan 217). Copilot's transcript carries no context size, so until plan 217 the guard read Copilot seats as `unknown: context size unknown` and never refused them. Copilot seats now report their size at each turn boundary ([`/v1/activity`](#busyidle-publication-post-v1activity)), so once a Copilot seat has reported its size, a normal send to it while it is idle, cold and over the threshold is refused with `E-RS-COLD-WAKE`, as it already is for other harnesses: the sender resends with `--fyi`, or with `--force --reason '<why>'`. The threshold and idle time are unchanged. A Copilot seat whose size is not yet known (none reported since the daemon started) is still never refused. The price shown is the same Anthropic list-price estimate: it does not model Copilot billing, which charges AI credits per token type and writes a 5-minute cache, not a 1-hour one (a known gap, not a rule).
 
 ```bash
 pij send <seat> --force --reason '<why>' 'text'             # shim → /v1/shim/send argv verbatim
@@ -774,10 +818,16 @@ Sources: [`cold_wake.rs`](../../crates/core/src/cold_wake.rs) (rule), [`http/col
 | Live holders | What happens |
 |---|---|
 | one | An ordinary send (or `--fyi` hold) to that seat, through the cold-wake guard. The body gains one header line, `[pij role:<id>[/<instance>] request <id> from <seat> · reply <mode>[ · limit <d>]]`. The request is recorded `delivered` with its holder. |
-| none | The request is recorded `queued` (an `--fyi` send too, C2), and the project's `pa` holder, else the current prime designation, else a live `prime`-role seat, is woken once through the ordinary delivery path (a cold wake is audited, as the PA watchdog does). The wake names the request and two runnable steps: revive the last holder (with its context size) or `pij directory assign`. pij never starts a seat. Queued requests are listed in the PA watchdog digest until drained, and so is any request stuck `delivering` (claimed for a holder and never settled), with its holder and age. The digest reads both through partial indexes and never reads bodies. |
-| two or more | Refused `E-RS-ROLE-HOLDERS`, naming each seat and instance. |
+| none | The request is recorded `queued` (an `--fyi` send too, C2), and the project's `pa` holder, else the current prime designation, else a live `prime`-role seat, is woken once through the ordinary delivery path (a cold wake is audited, as the PA watchdog does). The wake names the request and two runnable steps: revive the last holder (with its context size) or `pij directory assign`. pij never starts a seat. Queued requests are listed in the PA watchdog digest until drained, and so is any request stuck `delivering` (claimed for a holder and never settled), with its holder and age. The digest reads both through partial indexes and never reads bodies, and only for the PA's projects (plan 209): those it holds a role in, else those its prime holds a role in, else every project when its parent is the designated prime, else none. |
+| two or more | Refused `E-RS-ROLE-HOLDERS`, naming each seat with its instance (or `no instance`). When a holder has an instance, `next` addresses it (`pij send role:<id>/<instance> "<text>"`); when none has, an instance cannot pick one, so `next` is the fix, `pij directory assign <id>/<instance> <seat> --why "<why>" --project <slug>`, and the message names a seat send (plan 212, F52). |
 
-The receipt is the ordinary send receipt plus `request: {id, project, role, instance, reply, limit_ms, state, holder}`. The request id is the send's `msg_id` (C3); a queued receipt has `outcome: queued` and a `woke: {seat, outcome, cold_check}` object. Assigning a holder (`pij directory assign`) delivers that role's queued requests to it in order, each from its requester, and marks them delivered (C6); a refused assign drains nothing. A request for any holder drains to a holder of any instance; one for an instance drains only to that instance. Each request is claimed before it is delivered, in one store statement that also requires the seat to be live and to hold the role at that moment, so two drains never deliver one request and a drain that runs after its holder was released delivers nothing (the request stays queued). A drained non-FYI request is admitted like an immediate send: when the holder is cold, a `send.cold-wake-forced` audit naming the requester and the reason `role queue: drained to the role's new holder on assign` is written before the wake, and a failed audit sends nothing. A drain never refuses a cold holder: the assign is the deliberate act, and a refusal would strand the request until the next assign. A daemon that stops between a claim and its outcome leaves the request `delivering`. The next boot settles every such row before it serves anything: one the delivery path already took for its holder (ledger, delivery job or held FYI under its msg_id) is marked delivered, and any other goes back to `queued` with no holder, so the next assign drains it once and the PA digest lists it. Waking the requester when the holder answers (C4) is s06's; s05 only stores the reply mode.
+An instance address resolves against the role's open holdings, so an instance a PM assigned on a one-holder role (`reviewer/<pr>`) is addressable. On a one-holder role whose holdings have no such instance it refuses `E-RS-ROLE-ADDRESS`, with `next` `pij send role:<id> "<text>"` when one seat holds it, or a seat send when several do, so the two refusals never point at each other.
+
+The receipt is the ordinary send receipt plus `request: {id, project, role, instance, reply, limit_ms, state, holder}`. The request id is the send's `msg_id` (C3); a queued receipt has `outcome: queued` and a `woke: {seat, outcome, cold_check}` object. Assigning a holder (`pij directory assign`) delivers that role's queued requests to it in order, each from its requester, and marks them delivered (C6); a refused assign drains nothing. The assign waits for its drain, and its receipt's `drained` lists each request it settled, `{request, from, reply, outcome}`, where `outcome` is `delivered`, `closed` (with `why`) or `queued` (with the `error` that left it there); `pij directory assign` prints one line per entry (plan 212, F56). A request the new holder sent itself is closed, not delivered (a seat cannot send to itself, and it knows what it asked): `why` is `the requester took the role` (F61). A request for any holder drains to a holder of any instance; one for an instance drains only to that instance. Each request is claimed before it is delivered, in one store statement that also requires the seat to be live and to hold the role at that moment, so two drains never deliver one request and a drain that runs after its holder was released delivers nothing (the request stays queued). A drained non-FYI request is admitted like an immediate send: when the holder is cold, a `send.cold-wake-forced` audit naming the requester and the reason `role queue: drained to the role's new holder on assign` is written before the wake, and a failed audit sends nothing. A drain never refuses a cold holder: the assign is the deliberate act, and a refusal would strand the request until the next assign. A daemon that stops between a claim and its outcome leaves the request `delivering`. The next boot settles every such row before it serves anything: one the delivery path already took for its holder (ledger, delivery job or held FYI under its msg_id) is marked delivered, and any other goes back to `queued` with no holder, so the next assign drains it once and the PA digest lists it. Waking the requester when the holder answers (C4) is s06's; s05 only stores the reply mode.
+
+`pij requests [--role <id>] [--state queued|delivering|delivered|closed] [--project <slug>]` lists the project's requests, newest first, at most 100 per state, with no bodies; with no `--state`, the open ones (queued and delivering). `pij requests withdraw <id> --why <text>` closes a queued request: in one transaction it moves to `closed_role_requests` (migration 0040) with who, when and why, so no assign delivers it and the PA digest drops it. The requester, a holder of the project's `pa` role or the project's recorded prime (`projects.prime_id`, as `pij output --answers` reads it; a `prime` seat role or designation a caller gives itself grants nothing) may withdraw; anyone else is refused `E-RS-OWNERSHIP`. A retried send of a closed request's msg_id replays it as `closed` and never queues it again (plan 212, F59).
+
+`pij requests close <id> [--why <text>] [--quiet]` closes a delivered request that was answered or abandoned (F83). It is the same one-transaction move, keeping its `holder` and `delivered_at`, and it stops the request's time limit: no further check-in or escalation. A request answered with a plain `--in-reply-to` send is the case this exists for. Withdraw's authority applies, plus the request's holder. `why` defaults to `answered or abandoned`. Unless the requester closed it or `--quiet` is given, the requester gets one FYI (msg id `request-closed-<id>`), reported as `told` in the receipt. The FYI is sent by the daemon (`pij-bg`), never as the closer (ruling C32 (1)), and its body names the closer, how that caller was bound (`bound by pane` or `asserted seat id`) and the reason. The close records what it owes (`notice`: `quiet`, `owed`, then `told`) in the same transaction; the FYI is sent by a task of its own, so a cancelled caller never abandons it, and a failure is in the printed line. Closing an already-closed request whose notice is still `owed` sends it then, replaying the close as it was recorded and audited (its closer, binding and reason; the retrying caller needs only the authority to trigger it, and its own `--why` is not used); a repeat after that is refused `E-RS-REQUEST-CLOSED`. How the caller was identified matters for `withdraw` and `close` (security review of #149, S003, F88): a caller bound by its pane (the daemon checks the pane, and an asserted id that disagrees with it is refused) has the full authority above, while a caller known only by an asserted session id acts only as the request's requester or holder, never as its PA or prime. Every withdraw and close writes one `request.closed_by_actor` spine event, appended in the close's own transaction: request, project, verb, the claimed actor, how it was bound, pane and session where given, and `quiet`; no body. Known limit (ruling C32): a local caller holding the daemon key can assert the requester's or holder's id and close or withdraw that request, which suppresses its clock; the close is audited, and the requester's notice names the closer as an asserted seat id. Nothing is ever sent as that seat. PRD 003 req-10 binds callers properly. A queued or delivering request is refused `E-RS-REQUEST-NOT-DELIVERED`; for a queued one, `next` is the withdraw.
 
 Flags, on a send to a role only: `--reply wake|fyi|none` (default `wake`; stored for s06 to notify with) and `--limit <duration>` (`90s`, `45m`, `1h30m`; default the role's `default_limit`, C5; stored for s12). `--project <slug>`. All three ride `POST /v1/send` as top-level `reply`, `limit` and `project` beside the message. The shim hands a role send to `pij-rs` unchanged ([shim forwarding](#shim-forwarding-plan-213)), so its receipt is pij-rs's: `from <seat>; request <id> <state> to <holder> (reply <mode>)`.
 
@@ -786,14 +836,19 @@ Flags, on a send to a role only: `--reply wake|fyi|none` (default `wake`; stored
 | `E-RS-ROLE-ONLY` | `--reply`, `--limit` or `--project` on a send to a seat |
 | `E-RS-ROLE-ADDRESS` | a malformed address, an instance on a one-holder role, `role:<id>@<machine>` or a forwarded role send (role addresses are local and never forwarded), or `--command` to a role |
 | `E-RS-DIRECTORY-ROLE-MISSING` | the project's directory has no such role (next: `pij directory view`) |
-| `E-RS-ROLE-HOLDERS` | two or more live holders |
+| `E-RS-DIRECTORY-RETIRED` | the role is retired (plan 206); nothing is sent or queued. A merged role names the role it went to, and the next step is `Send to role:<to> instead.` |
+| `E-RS-ROLE-HOLDERS` | two or more live holders (next: an instance address only one live holder has, with `--project`; a seat send when an instance is shared; or the assign that gives a holding one) |
+| `E-RS-REQUEST-NOT-QUEUED` | `requests withdraw` of a request a holder already has (delivering or delivered) |
+| `E-RS-REQUEST-CLOSED` | `requests withdraw` of a request already closed |
+| `E-RS-NOT-FOUND` | `requests withdraw` of an unknown id |
+| `E-RS-OWNERSHIP` | `requests withdraw` by a seat that is not the requester, the PA or the prime |
 | `E-RS-ROLE-MISMATCH` | the holder's `seat_roles` role disagrees with the directory (a `pm`, `pa` or `worker` role other than the one the directory implies; a prime is never re-roled). Next: `pij role <seat> <role>` |
 
-Cost: a role send costs what an ordinary send costs, plus in-process reads (no launch) and one store write; a queued request adds one wake delivery; a drain one delivery per request. No timer or poll: the digest reads the queue once per nudge.
+Cost: a role send costs what an ordinary send costs, plus in-process reads (no launch) and one store write; a queued request adds one wake delivery; a drain one delivery per request, or one store write for a request its new holder sent. `pij requests` is one indexed store read per state (`role_requests_by_project`, `closed_role_requests_by_project`); `withdraw` is one write transaction. Nothing is launched. No timer or poll: the digest reads the queue once per nudge.
 
 ### Time limits on role requests (plan 205)
 
-A role request with a limit (`--limit`, else the role's `default_limit`, C5; with neither, none) is checked inside the existing PA watchdog round, with no timer of its own. The clock starts at the later of the request's delivery and its holder's latest `report.now` card, so every card update restarts it; time spent queued for a holder does not count. Past the limit, the holder gets one check-in through the ordinary delivery path, with a cold wake audited as the watchdog does: write down what you have, update your card, and say why it needs longer. If a whole further limit passes after the check-in with no card update, the project's `pa` holder (else the prime) is told once. A holder that is no longer live cannot be checked in, so the PA is told as soon as the limit passes, with that reason. Nothing is ever stopped. Each step is first claimed (`limit_claim_at`, migration 0035) in one statement that also requires the request to be unanswered (`answered_at`, set by s06's outputs) and not yet told at that step, so an answer that lands mid-round wins and no two rounds send at once. The step's stamp (`checkin_at`, `escalated_at`) is written only once delivery admits the message (delivered, queued or held). When delivery refuses it, or there is nobody to tell, the claim is dropped and the next round tries again. Before sending, the attempt pins the seat it resolved (`limit_claim_target`). A claim left by a daemon that stopped mid-attempt expires after two minutes, and the retry first asks delivery whether the pinned seat already has the step's message (`role-limit-checkin-<id>` or `role-limit-notice-<id>`: a ledger row, delivery job or held FYI, as boot recovery reads). If it does, the retry only stamps; it never resolves a new recipient, so a PA that rotated meanwhile is not told twice. If it does not, the attempt never reached admission, and the retry resolves the recipient afresh.
+A role request with a limit (`--limit`, else the role's `default_limit`, C5; with neither, none) is checked inside the existing PA watchdog round, with no timer of its own. The clock starts when the request reaches the holder's session (plan 214, F73): its delivery ledger row, else its acknowledged delivery job, else its delivered FYI, one indexed read. While delivery still holds it behind a busy turn there is no check-in, however late; time spent queued for a holder, or held behind the holder's turn, does not count. After that the clock runs from the later of arrival and the holder's latest `report.now` card, so every card update restarts it. A check-in for a request delivery held a minute or more says how long (`It waited 20m in delivery before it reached you; the limit counts from then.`). A holder that is no longer live while its request is still held gets no check-in; the PA is told when the limit passes, as below. Past the limit, the holder gets one check-in through the ordinary delivery path, with a cold wake audited as the watchdog does: write down what you have, update your card, and say why it needs longer. If a whole further limit passes after the check-in with no card update, the project's `pa` holder (else the prime) is told once. A holder that is no longer live cannot be checked in, so the PA is told as soon as the limit passes, with that reason. Nothing is ever stopped. Each step is first claimed (`limit_claim_at`, migration 0035) in one statement that also requires the request to be unanswered (`answered_at`, set by s06's `pij output --answers` or by a reply: a local send from the request's holder with `--in-reply-to <request id>`, plan 214, F68, to the holder's requester or to a role, when that send is accepted; a reply from any other seat, or one its recipient refused, answers nothing, and the first answer's time is kept, so neither path counts twice. Under ruling C32 a reply's caller is bound where its context resolves (a `from` that differs is refused `E-RS-REPLY-SENDER`, and context that does not resolve is refused as the identity ladder refuses it); a reply to a role request, open or closed, must be bound by the caller's pane. A caller with no context, or with only an asserted session id (`PIJ_SESSION_ID` with no pane, which the ladder checks for existence only), is refused `E-RS-REPLY-IDENTITY`, normal or FYI, to a seat or a role, so a reply is never delivered as the seat it names (C32 (1)). A paneless seat's native session, PID and start are roster metadata any client can read, and the native receiver lease is keyed on the same tuple with no secret, so neither binds a reply. `pij-rs send` and the OMP/Pi `pij_send` tool attach the caller's context to every reply. The answer and its `request.answered_by_reply` audit event commit in one transaction, so there is no answer without its audit. Known limit: UNCORRELATED sends still accept an asserted session id (existence only) and a raw `from`, and paneless pull seats (Claude, Copilot or Codex outside tmux) cannot send correlated replies; they send without `--in-reply-to` and answer with `pij output --answers`. Pane binding is registration strength (C32 (2)): a client holding the daemon key can supply a live seat's pane on a correlated reply and send as that seat, and the same send-as is reachable today through any uncorrelated send with a `from`. All of these end with PRD 003 req-10 (plan 221 phase 2, which gates send-as first; C32 (4))) and not yet told at that step, so an answer that lands mid-round wins and no two rounds send at once. The step's stamp (`checkin_at`, `escalated_at`) is written only once delivery admits the message (delivered, queued or held). When delivery refuses it, or there is nobody to tell, the claim is dropped and the next round tries again. Before sending, the attempt pins the seat it resolved (`limit_claim_target`). A claim left by a daemon that stopped mid-attempt expires after two minutes, and the retry first asks delivery whether the pinned seat already has the step's message (`role-limit-checkin-<id>` or `role-limit-notice-<id>`: a ledger row, delivery job or held FYI, as boot recovery reads). If it does, the retry only stamps; it never resolves a new recipient, so a PA that rotated meanwhile is not told twice. If it does not, the attempt never reached admission, and the retry resolves the recipient afresh.
 
 Cost per round: one indexed read of the open limited requests (delivered, limited, not escalated, not answered), plus one `LIMIT 1` card read per open request; a check-in or notice is one claim, one pin, one delivery and one stamp; a retry of a stopped daemon's claim adds up to two indexed admission probes. A notice with nobody to tell is retried each round, at one claim, one assignments read and one release per such request. No launch site and no timer.
 
@@ -815,6 +870,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/orchestration` | `orchestration baton define/list/show/request/grant/return/reclaim`; `prime set/retire/unset <seat>`; `role set <seat> <role>` / `role unset <seat>` | `baton-define`, `baton-list`, `baton-show`, `baton-request`, `baton-grant`, `baton-return`, `baton-reclaim`, `prime-set`, `prime-retire`, `prime-unset`, `orchestration-role-set`, `role-unset` |
 | POST `/v1/role` | `role [<seat>] <role>` / `role [<seat>] --unset`; typed `{seat?, role, caller}` | `role-set` |
 | POST `/v1/link` | `link <seat> [--parent <you>] --role <pm/worker/pa>`; argv + `caller` only | — (`crates/cli/tests/seat_roles.rs`) |
+| POST `/v1/steer` | `steer on [<seat>]`; `off [<seat>]`; `status [<seat>]`; argv + `caller` only | — ([Mid-turn steering](#mid-turn-steering-plan-214-ruling-c31)) |
 | POST `/v1/watchdog` | `watchdog on [<seat>] [--every <duration>]`; `off [<seat>]`; `status [<seat>]`; argv + `caller` only | — ([Opt-in watchdog](#opt-in-watchdog)) |
 | POST `/v1/report` | `report now/state/question/blocked/clear/verify`; state metadata flags below | `report-question`, `report-verify` |
 | GET and POST `/v1/anomalies` | `anomalies [--here] [--project <slug>]`; GET `here=<absolute-path>&project=<slug>` | `anomalies-list`, `anomalies-argv` |
@@ -823,10 +879,13 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder's close answers `held` and lands after its [memory turn](#the-memory-turn) | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory routes [--write --why <text>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [Routing table](#routing-table-plan-202) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory edit <id> --why <text>` with `--set <field>=<value>`, role flags or `--file <json>`; `directory retire <role> --why <text> [--drop-queued]`; `directory merge <from> --into <to> --why <text> [--drop-queued]`; `directory templates [--show <name>[@vN]]`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory lineage add --batch <file> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory routes [--write --why <text>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [Routing table](#routing-table-plan-202) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/output` | `output verdict\|deliverable\|note\|handover --role <id> --subject <address> [--head <sha>] [--result <r>] [--note-owed <text>]… [--evidence <json>]… [--link <url>] [--answers <msg_id>] [--body <text>\|--body-file <path>] [--project <slug>]`; `output --help`. See [Role outputs](#role-outputs-plan-200) | — (`crates/daemon/tests/output_http.rs`) |
+| POST `/v1/outputs` | `outputs --subject <address> [--head <sha>]`; `outputs --role <id> [--limit <n>]`; `outputs --help` | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/claim` | `claim <kind> --for <subject> [--project <slug>]`; `claim release <kind> <number> [--why <text>] [--project <slug>]`; `--help`. See [Number claims and delivery at merge](#number-claims-and-delivery-at-merge-plan-196) | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/claims` | `claims [--project <slug>] [--open]` | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/delivered` | `delivered <pr> [--pm <seat>] [--project <slug>]` | — (`crates/daemon/tests/claims_http.rs`) |
+| POST `/v1/requests` | `requests [--role <id>] [--state queued\|delivering\|delivered\|closed] [--project <slug>]`; `requests withdraw <id> --why <text>`; `--help`. See [Send to a role](#send-to-a-role-plan-199) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/adopt` | Existing identity admission plus optional asserted role; omitted parent and role remain unsaid | `adopt-with-role` |
 | POST `/v1/register` | Existing verified registration plus optional asserted role; failed admission cannot commit a role | `register-with-role` |
 
@@ -982,6 +1041,12 @@ instance refuses `E-RS-DIRECTORY-OVERLAP`. The row goes into the holders
 document in time order, with `released_by` the prime and `release_why`
 `lineage add`, in one writer commit; the store indexes it without a live-seat
 check and sets no seat role. The view shows it in the lineage.
+`pij directory lineage add --batch <file> --why <text>` (plan 209, F67) reads
+one `<role>[/<instance>] <seat> <from> <to>` per line (blank and `#` lines
+skipped) and records them all in one writer commit (`community: lineage <n>
+holdings`), all or nothing: a bad time, a missing role, or an overlap with a
+committed holding or an earlier line refuses the whole batch, naming every
+bad line, and writes nothing. The envelope carries `commit` and `holdings`.
 
 `pij close <seat>` ends every open holding of the seat with `release_why`
 `close`, and never fails because of the directory. The ends are stored as
@@ -1038,8 +1103,11 @@ On assign the holder's tmux window is renamed `<project>:<role>`, or
 `<project>:<role>-<instance>` for a many-holder role (req-26, C16), when the new
 holding is the seat's first open one (the earliest `from`). A seat that takes a
 second role keeps its window's name (plan 208, F17): no launch, and
-`data.window` says `renamed: false` with the holding that names it. Release does
-not rename. A rename is one tmux
+`data.window` says `renamed: false` with the holding that names it. Releasing the
+holding a live seat's window is named for renames it for the seat's next first
+open holding, or back to the seat's own name (what spawn names a window) when it
+holds nothing else (plan 212, F57); releasing any other holding leaves the
+window alone, with no launch. A rename is one tmux
 launch (`tmux.rename-window`) that targets the holder's pane id, never through
 the control client, whose allow-list stays reads only. pij never targets a
 window by that name: tmux reads `-t a:b` as session `a`, window `b`, so a name
@@ -1048,7 +1116,8 @@ assigns; `data.window` says what happened.
 
 Cost: assign costs one writer commit plus the rename (about 10 launches: git 7,
 ddocs 2, tmux 1; 9 when the rename is skipped); release, lineage add and a close
-that ends holdings cost one writer commit (about 9). `assign --batch` of N
+that ends holdings cost one writer commit (about 9), and a release that renames
+the window one more tmux launch. `assign --batch` of N
 holdings is one writer commit (git 7, ddocs 2 per holders document touched)
 plus at most one rename per line. The view and help launch nothing. A rebuild
 costs three git launches plus one per holders document, on demand only.
@@ -1064,7 +1133,14 @@ as the work changes, and the templates are examples, not a checklist (C18).
 
 `pij directory templates` lists each template with its versions, the latest
 version's title, kind and summary, and whether it is a core role
-(`data.templates`).
+(`data.templates`). `pij directory templates --show <name>[@vN]` returns
+`data.template`: `{name, version, latest, path, body}`, where `body` is that
+version's exact embedded bytes (the latest by default) and `path` its place in
+pij's repo (`templates/roles/<name>/v<n>/role.dd.json`). An unknown name or
+version refuses with `E-RS-ARG`, listing what exists. Besides the core set and
+security, ten optional templates ship as examples (devcontainer, researcher,
+note-taker, topic-expert, docs-keeper, infra, release, qa, designer,
+transcriber; plan 204).
 
 `pij directory add <id> --from template:<name>[@v<n>] --why <text>` copies the
 named version (the latest by default) through the writer above. `meta.id`
@@ -1087,25 +1163,296 @@ returns `{id, template, version, latest, behind, diff}`: `diff` is a unified dif
 of the template between the role's version and the latest, computed in-process,
 and empty when the role is current or came from no template. Nothing is ever
 applied: the role file is untouched. A role without `role.dd.json` refuses with
-`E-RS-DIRECTORY-ROLE-MISSING`.
+`E-RS-DIRECTORY-ROLE-MISSING`. A role that records a template but no
+`template_version` refuses with `E-RS-DIRECTORY-NO-TEMPLATE-VERSION`, and a
+version that is not a number with `E-RS-ARG`; both name the next step, `pij
+directory edit <id> --set template_version=<n> --why <text>` (plan 206, F19).
 
 The view also carries `prompts` and `guidance` while any core role (prime, pm,
 pa, coder, reviewer) or security is missing (ruling C22). A role counts for a
 template when its id or its `meta.template` is that name, so `pm-001` made from
 `pm` clears the pm prompt. Each prompt is `{role, kind, command}`, `kind` core or
 recommended, and `command` a runnable line such as `pij directory add pm --from
-template:pm --why "core role from the pm template" --project fleet`. Every
-printed command names the viewed project (shell-quoted when needed), so running
-it from another repo's directory still acts on the directory that printed it;
+template:pm --why 'core role from the pm template' --project fleet`. Every
+printed command names the viewed project, so running it from another repo's
+directory still acts on the directory that printed it. Each word of a printed
+command is shell-quoted where it needs it (`picture::command`), including text
+from step documents, blueprints and the store and placeholders such as
+`'<seat>'`, so the line runs as written: nothing in it is substituted or
+redirected (security S001 on #141). A test splits every printed command with
+`/bin/sh` and replays it through the parser its verb reaches;
 the human view's drift hint does the same. `guidance` states the PEC wording. The view creates nothing; adding a role clears its prompt.
 
 Cost: listing, diffing and the view read embedded bytes and the governance
 worktree in-process and launch nothing; an add from a template costs the same
 writer commit as any add. No loop or timer.
 
+### Reshaping roles (plan 206)
+
+`pij directory edit <id> --why <text>` changes a role that exists (F20). Give
+`--set <field>=<value>` (repeatable; `title`, `kind`, `lifecycle`, `holders`,
+`instance_key`, `default_limit`, `summary`, `template`, `template_version`,
+`harness`, `model`, `effort`, `packet` or `brief`) and any of the role flags
+`add` takes, or `--file <json>` for the whole document. The writer reads the
+committed role under its lock, applies the change (a repeated flag replaces the
+whole list, as for `add --from`), keeps the changelog (a `--file` document's
+own changelog is replaced by the committed one), adds one row with `--why`, and
+commits it like an add (validate, build, commit, pointer), with `ROUTES.md`
+regenerated in the same commit when the role's scope changed (plan 202).
+`data` is `{project, id, path, commit, paths, routes}`, `routes` as for `add`.
+
+| Refusal | When |
+|---|---|
+| `E-RS-DIRECTORY-ROLE-MISSING` | the role has no `role.dd.json`; the next step is `pij directory add` |
+| `E-RS-ARG` | no id, no `--why`, nothing to change, an edit that changes nothing, `--set` without `=`, a field `--set` cannot set, a field given twice, `--file` with flags, a document naming another id, or `--set` on any verb but edit |
+| `E-RS-DDOCS-INVALID` | ddocs refuses the edited document; nothing is committed |
+
+`pij directory retire <role> --why <text>` and `pij directory merge <from>
+--into <to> --why <text>` reshape the community as the work changes (req-28,
+C26). Retire sets the role's `meta.state` to `retired` with a changelog row.
+Merge retires `<from>` with `meta.merged_into: <to>` and adds a changelog row to
+both roles (`merged into <to>: <why>` and `<from> merged in: <why>`), in one
+commit. Nothing is moved or rewritten: a retired role's `role.dd.json`, memory,
+outputs and holders lineage stay where they are and stay readable. The view
+gives each role `state` (`active` or `retired`), `merged_into` (or null) and
+`merged_from` (the roles merged into it, derived from their `merged_into`), and
+the human view prints `retired, merged into <to>` and `merged from <from>`. A
+retired role no longer clears a core-role prompt (C22) and routes nothing: the
+same commit rewrites `ROUTES.md` without its rows (plan 202). `data` is
+`{project, id, state, merged_into, commit, paths, routes}`. Only retire and merge change a role's
+standing: `edit` refuses a retired role and refuses a change to `state` or
+`merged_into` (a `--file` that leaves them out keeps them). ddocs cannot tie
+`merged_into` to `state: retired` or check that it names a role, so the writer
+refuses either on every write (`E-RS-ARG`, `E-RS-DIRECTORY-ROLE-MISSING`), and
+`merged_from` counts only retired roles. Once retired, a role takes no sends:
+`pij send role:<id>` refuses `E-RS-DIRECTORY-RETIRED`, naming the merge target.
+
+Requests queued for the role (no live holder took them) are never stranded
+silently. A send to a role and a retire or merge of it share one admission
+gate per (project, role): the send holds it from reading the role's standing
+until its request is recorded (queued, or `delivering` to the one live
+holder), a drain holds it from claiming a queued request until that request is
+delivered or back on the queue, and the reshape holds it from reading the
+queue through its commit and withdrawal, so no request is admitted between the
+check and the retirement. The gate goes with the work that can still land, not
+with the caller awaiting it: a send cancelled while its insert waits on the
+store, or a retire cancelled while its commit waits on the writer, keeps the
+gate until that write has landed or failed. A retire or merge also refuses
+while any request for the role is `delivering` (claimed, not yet settled),
+since a failed delivery, or a daemon that stops first and re-queues it at
+boot, would put it back on the queue behind a retired role. This check only
+ever refuses a retirement: it is a brake, not a policy. Without `--drop-queued`, retire and merge refuse and list
+the queued requests. With `--drop-queued` the role is retired, each requester
+is told once by an FYI held for its next real turn (msg id `<request
+id>.withdrawn`, so a repeat is ignored) that names the role, who retired it and
+why, and repeats the request's body, and then every request still queued for
+it (any instance) is withdrawn in one store transaction: its `role_requests`
+row is deleted and a `role.request.withdrawn` spine event, with the requester
+as its seat, records `{id, project, role, instance, requester, created_at,
+withdrawn_by, why, requester_gone}`. The retiring seat's own requests are not echoed back to
+it. `data.withdrawn` lists `{id, requester, instance, created_at, told}`, where
+`told` is `held`, `self`, or `gone: <why>` for a requester that is no longer a
+seat (unknown or tombstoned: nobody to tell). Those are still withdrawn, listed
+again in `data.gone` (request ids), and their events carry
+`requester_gone: true`. Nothing is withdrawn unless every other requester's FYI
+was held: one that could not be (`not told: <why>`) refuses
+`E-RS-DIRECTORY-NOT-TOLD` after the retirement landed, with the requests still
+queued, and the same command tells and withdraws them. If the withdrawal
+fails after the retirement committed (`E-RS-STORE`, naming the command), the
+same `retire` or `merge ... --drop-queued` finishes it: on an already retired
+role with requests still queued it makes no commit and adds no changelog row
+(`data.resumed: true`, `data.commit: null`), tells nobody twice, and
+withdraws them. With nothing queued, a retired role refuses as before.
+
+Every command a refusal prints names the project it was asked about
+(`--project <slug>`) and the exact holding or queued instance
+(`<role>/<instance>`), so following it from another checkout changes the right
+project. Each role, holding, seat and project in it is one shell word, quoted
+when it carries anything but `[A-Za-z0-9_-./:@%+=,]`, since a holding instance
+can arrive as data (`assign --batch`) and must never become shell syntax: the held refusal prints one release per holding, the queued refusal
+one assign per queued instance and the `--drop-queued` form, and F19's
+template-diff refusal its edit. Merge does not move queued requests to `<to>`:
+a queued request drains only on an assign, so a moved request would wait even
+when `<to>` has a live holder. Drain them with an assign first, or withdraw
+them.
+
+| Refusal | When |
+|---|---|
+| `E-RS-DIRECTORY-ROLE-HELD` | a seat still holds the role; the next step names the release |
+| `E-RS-DIRECTORY-ROLE-QUEUED` | requests sent to the role wait queued for a holder ([Send to a role](#send-to-a-role-plan-199)) and `--drop-queued` was not given. Each is listed as `<id> from <requester> for <role>[/<instance>] (<age> old)`; the next step prints an assign per queued instance (which drains them; release it and retry after) and the same verb with `--drop-queued`. Also while a request for the role is being delivered, listed as `<id> from <requester> to <holder> (<age> old)`; the next step is the same verb once it settles (`--drop-queued` cannot withdraw a claimed request) |
+| `E-RS-DIRECTORY-NOT-TOLD` | `--drop-queued`: a requester's FYI could not be held, so nothing was withdrawn; the retirement has landed and the next step is the same command |
+| `E-RS-DIRECTORY-RETIRED` | the role is already retired, or is the merge target; assign and edit of a retired role refuse too, naming the merge target when there is one |
+| `E-RS-DIRECTORY-ROLE-MISSING` | either role has no `role.dd.json` |
+| `E-RS-ARG` | no `--why`, `merge` without `--into`, a role merged into itself, `--into` on any verb but merge, or extra flags |
+
+Cost: one writer commit per edit, retire or merge, the same as an add, plus
+one read on the `role_requests_queued` index and one on the (normally empty)
+`role_requests_delivering` index for retire and merge, and with
+`--drop-queued` one store transaction and one FYI per withdrawn request. The
+send path reads the role document it already reads. The gate is an in-process
+lock: no launch, loop or timer. A drain holds it per request while that
+request is delivered, so a send to the same role waits for at most one
+delivery.
+
+### The prime's operating picture (plan 203)
+
+`pij directory` names the project's designated prime (`data.prime`, the seat
+the project records; `null` when none), and `data.prime_document` says whether
+the prime role's document exists, so a project without one reads as that
+document missing (the human view: `prime: <seat> (no prime role document
+yet)`), not as a missing prime. The prime's prompt carries `note`, naming the
+prime.
+
+Suggestions nothing points at (F39), the core and security roles from s03 with
+no workstream step needing them, are not listed one by one in a bare view: it
+carries `data.suggestions: {roles, command}` (the human view prints one line
+naming them) and `command` is `pij directory --suggest --project <slug>`, which
+lists each in full in `prompts`. A prompt that a need or another C28 signal
+points at (`needed_by`, a `needed` or `recurring` prompt) always shows.
+`--suggest` belongs to the view; on any other verb it refuses with `E-RS-ARG`. Each
+role also carries:
+
+- `live[].seat_live`: whether the holder's seat is registered and not tombstoned;
+- `requests`: `{count, oldest_at}` of its queued requests (s05), or `null`;
+- `latest_output`: its newest output (s06) `{kind, subject, head, result, writer, at, path}`, or `null`;
+- `memory`: `{notes, latest}`, the number of memory notes (s07) and the newest
+  dated note's `yyyy-mm-dd`;
+- `call_on`: for a cold role with memory (no live holder, at least one note),
+  the command that calls on it, `pij send role:<id> --body-file '<path to what
+  you need from it>' --project <slug>` (ruling C30: a cold specialist with rich memory is someone to call
+  on, not to retire); otherwise `null`.
+
+`data.actions` lists what needs the prime (req-12), each
+`{role, condition, says, commands}` with runnable commands that name the
+project:
+
+| condition | when | commands |
+|---|---|---|
+| `no-live-holder` | requests wait and no holder's seat is live: one action per `instance` of the waiting requests (`""` for any holder, which waits only while the role has no live holder at all) | `pij-rs revive <last holder of that instance>` (when there was one), `pij directory assign <role>[/<instance>] '<seat>' --why '<why>'`, so the assign drains those requests |
+| `two-live-holders` | a one-holder role has two or more live holders | `pij directory release <role>[/<instance>] <seat>` for each but the newest |
+| `memory-stale` | the role's last two closes (`picture::MEMORY_CLOSES`) both fall on a day after its newest memory note, or it has none | `pij directory memory add <role> --title … --hook … --body-file '<path to the note>'` |
+
+A missing core or security role stays in `prompts` (s03). A workstream step
+that is not complete and lists `needs: ["role:<id>"]` adds `needed_by`
+(`<workstream> <step>`) to that role's prompt, or, for a role that is neither there nor prompted, a prompt of
+kind `needed`: from its template when one ships, else as a new definition with
+`<title>`, `<what it always does>` and the standing packet (`--packet`, which
+`pij/role` requires) to fill in. Adding the role clears it.
+`data.notice` always asks the prime to notice a need no role covers, in the PEC
+wording.
+
+Step documents are found by one helper, `picture::step_docs` (ruling C29):
+the project repo's `docs/project/workstreams/*.dd.json`, or, while that folder
+holds none, the older `docs/project/roadmaps/*.dd.json`. `needs` names roles
+(req-24); `depends_on` is the ordering, which the view does not read. Each call
+reads and parses those documents once (`picture::read_step_docs`) for both the
+needs and the recurring paths.
+
+#### Growing the community (rulings C28, C30)
+
+Every recommendation to create, split, merge or retire a role is a
+`picture::Recommendation`, which cannot be built without the signal it rests on.
+Each one in `prompts` (create) and `reviews` (split, merge, retire) carries
+`act`, `signal: {code, says}`, `command` and `commands`, and may carry `detail`.
+`in_order: true` marks `commands` as steps (release, then assign) rather than
+alternatives. `later` holds lines for verbs that have not shipped: shown with a
+`note`, never in `commands`. None use it today: s15's `retire` and `merge`
+shipped in plan 206, so a `mostly-idle` review offers both as `commands`.
+
+| signal `code` | says | used by |
+|---|---|---|
+| `recurring` | the same system or paths keep coming up across tasks | a path built by at least three workstream steps (`RECURRING_STEPS`; each step's `builds` resolved to its blueprint component's `where`) that no role's `scope.paths` covers: create its owner |
+| `re-derived` | knowledge is re-derived (the same finding twice) | taught in the notice |
+| `independent-judgment` | a judgment must be independent of the author | the reviewer and security prompts |
+| `two-domains` | a seat is bloating because it carries two domains | a live seat holding two or more distinct roles (instances of one role are one domain): split each later role onto its own seat, releasing and reassigning each holding with its instance kept (`reviewer/115`) |
+| `one-owner` | a path or system needs one owner | taught in the notice |
+| `worth-remembering` | this would be worth remembering: knowledge that should outlive the seat (ruling C30) | taught in the notice |
+| `core` | a core role a PEC starts from (C22); its template is an example | the other core prompts |
+| `step-needs` | a workstream step names this role in its needs | the `needed` prompts: `add` for a role that does not exist; for a retired role named by an unfinished step (its document stays, so `add` would refuse) a `retarget` prompt instead, with one `ddocs set --value-json <workstream>#steps/<id>/needs <json>` per step that points the step at the merge target, or at `role:<replaces-<id>>` to fill in for a plain retirement (plan 206) |
+| `one-off`, `overlap`, `nothing-to-remember`, `mostly-idle` | the signals against | `mostly-idle`: a role with no memory notes, outputs, waiting requests or live holder and nothing started or ended for 30 days (`IDLE_DAYS`): retire it, or merge it into another (both in `commands`) |
+
+A cold role with memory is never put up for retirement: a role is not a seat.
+`data.reviews` is the boundary review the prime runs at a wave end, a compact
+or a PR merge. `data.notice` teaches all of it from the same signals. It opens
+with why a PEC exists (ruling C30): it builds lasting knowledge of its problem
+space, whatever the work (an engineering project, a design workshop, research,
+operations), held by specialist roles in memory and outputs that outlive any
+seat and are called on later, so a long-running specialist is a feature, not a
+cost. Then: recommend roles from need, weighing C28's two truths (small
+contexts are cheaper and sharper; an expert in its own seat beats a generalist
+carrying the topic), and keep the fleet small but expert; the signals for and
+against; that a role is not a seat (roles can be many and cold, live seats
+few); the boundary review, at which each holder also writes memory (C30); and
+that templates are examples. The human view
+prints each recommendation's signal under it.
+
+The human view prints times in local time with their zone
+(`2026-11-06 13:07 +10:00`), puts each holder of a role with more than one on
+its own line, then the next actions and the prompts.
+
+Cost: per call, one query each for the holdings, the project, the queued
+requests and each role's newest output (one window query), and one registry
+list; each role's document and memory folder, the repo's workstreams and the
+blueprints they point at are read in-process. It launches nothing, per role or
+per seat, and has no timer or poll.
+
+### Role outputs (plan 200)
+
+`pij output <kind> --role <id> --subject <address>` writes one `pij/output`
+document to
+`community/roles/<id>/outputs/<yyyy-mm>/<dd>-<kind>-<subject>[-<head7>].dd.json`
+through the single writer, in one commit, then indexes it in the store
+(migration 0036, keyed by project and path, since a path is relative to its
+project's governance worktree) and records its pointer. The kinds are `verdict`,
+`deliverable`, `note` and `handover`. A verdict needs `--head <sha>`, the exact
+head it is for, and `--result pass|pass-with-notes|block`; other kinds may give
+a result such as `failed`. `--note-owed` and `--evidence` repeat (evidence is
+JSON: `{"command":…,"exit_code":…,"log":…}`); `--link` names an external review;
+the body is `--body` or `--body-file` (pij-rs, which the shim forwards
+`output` to, reads the file, or stdin for `-`). A handover needs a body: what is in flight now, so a fresh holder can
+pick up. The path is chosen under the writer's lock, so two outputs at once
+land as two files (`-2`, `-3` …). The writer is recorded; one who does not hold
+the role is written with `writer_holds_role: false` and the answer carries a
+`warning`.
+
+`--answers <msg_id>` (ruling C3) names the role request it answers. Anyone may
+publish an output, but only the request's recorded holder, a live holder of the
+request's role, or the request project's prime may answer it; anyone else is
+refused with `E-RS-OUTPUT-NOT-HOLDER` before anything is written, stamped or
+sent (next: get assigned, or drop `--answers` to publish without answering).
+The request is marked answered (s12's `answered_at`, so its time-limit check-ins stop) and
+its requester is told in the reply mode it asked for: `wake` (the default; a
+cold requester is woken as an audited forced wake, ruling C4), `fyi` (held for
+its next turn) or `none`. A `block` verdict or a `failed` result always wakes.
+An output nobody asked for goes as an FYI to the seat above the writer (its
+recorded parent when live, else the current prime). One seat is told; the
+answer's `data.notified` says who, in which mode, the notice's `msg_id` and
+what happened. The `msg_id` is `output-<project>-<commit>`, from the output's
+own commit, so two outputs never share one and a replayed notice keeps its id.
+A failed lookup of the seat above or a refused forced-wake audit is reported
+in `outcome` with its cause (`not delivered: …`); nothing is sent after a
+refused audit.
+
+`pij outputs --subject pr:N --head <sha>` lists the outputs about that subject
+for exactly that head, so a verdict on an older head answers none once the head
+moves; without `--head` it lists every head. `pij outputs --role <id>` lists a
+role's outputs newest first (`--limit`, default 50). Reads use the store and
+launch nothing.
+
+| Refusal | When |
+|---|---|
+| `E-RS-ARG` | an unknown kind, a missing subject, a verdict without `--head` or a known `--result`, a handover without a body, bad `--evidence` JSON, `--body` with `--body-file` |
+| `E-RS-DIRECTORY-ROLE-MISSING` | the role has no `role.dd.json` |
+| `E-RS-NOT-FOUND` | `--answers` names no recorded request |
+| `E-RS-OUTPUT-NOT-HOLDER` (403) | `--answers` from a writer that is not the request's recorded holder, a live holder of its role or its project's prime |
+
+Plus every writer refusal above. Cost: one writer commit per output (git 7,
+ddocs 2) and one delivery to the one seat told. No timer or poll.
+
 ### Routing table (plan 202)
 
-pij builds the routing table, "send it, don't do it", from every role's scope:
+pij builds the routing table, "send it, don't do it", from every active role's
+scope (a retired or merged role routes nothing, plan 206):
 one row per `scope.paths` entry and one per `scope.rules` entry, each sent to
 `role:<id>`, ordered by role id, paths first. It lives in
 `community/ROUTES.md`, which carries no holder names, so a change of holder never
@@ -1114,7 +1461,8 @@ components agree up to where either ends or turns into a glob) give the warning
 `W-ROUTES-OVERLAP: <path> (role:<a>) overlaps <path> (role:<b>)`, listed under
 `## Overlaps` in the file.
 
-Every role write through the writer (`directory add` today) rewrites
+Every role write through the writer (`directory add`, `edit`, `retire` and
+`merge`) rewrites
 `ROUTES.md` in the same commit when its bytes change, so a regeneration is never
 a commit of its own. The first one replaces a hand-written `ROUTES.md`; the old
 text stays in the branch history. `data.routes` on the add carries `path`,
@@ -1162,7 +1510,8 @@ Source: [`community/routes.rs`](../../crates/daemon/src/community/routes.rs), [`
 local date, plan 209; `title`, `tags`,
 `hook`; `body`), to `community/roles/<role>/memory/<yyyy-mm-dd>-<slug>.dd.json`,
 the slug taken from the title (lowercase ASCII letters and digits, other runs
-as one hyphen, at most 60). `--tags` repeats or takes a comma list.
+as one hyphen, at most 40, cut back to a word boundary), or given with `--slug`
+(lowercase letters and digits joined by single hyphens, at most 40). `--tags` repeats or takes a comma list.
 `--body-file <path>` reads the body from a file; the CLI (`pij` hands `directory`
 to `pij-rs`, plan 213) reads the file, or stdin for `-`, and sends it as `--body`,
 while a raw HTTP caller's path is read by the daemon relative to `caller.cwd`. The same commit regenerates
@@ -1241,7 +1590,11 @@ Every turn records one `memory.turn` spine event on the seat: `action`,
 `holdings`, `prompt` (the prompt's msg_id), `ended` (`turn-end`, `bound`, or
 `undelivered` when the prompt was refused or could not be sent), `waited_ms`,
 `bound_ms`, a `note` whenever the action proceeded without the turn, and `then`
-(`closed`, `compact admitted`, `skipped: …` or `failed: …`). The wait is a live
+(`closed`, `compact admitted`, `skipped: …` or `failed: …`). When the bound
+passed while the prompt was still being admitted, the action runs at the bound
+and the turn keeps the admission: the event is recorded once it settles and
+adds `admission`, `delivered-late`, `queued`, `refused` or `failed: …` (plan
+209). Nothing is withdrawn. The wait is a live
 subscription to the seat's `delivery.outcome` and `seat.activity` events with one
 deadline: no poll, no timer, no launch. The turn starts at the prompt's own
 `delivery.outcome` in the event stream, never at the send's receipt, so an idle
@@ -1324,7 +1677,7 @@ what was skipped and why.
 | `E-RS-CLAIM-SCAN` | the project's checkout, or a folder of that kind's numbers, exists but cannot be read; nothing is claimed |
 | `E-RS-NOT-FOUND` | `--pm` names no live seat, or `--project` no project |
 | `E-RS-PR-NOT-MERGED` | gh says the PR is open or closed unmerged |
-| `E-RS-DELIVERS` | the body has no `Delivers:` line, or names something that is not a ddocs address |
+| `E-RS-DELIVERS` | the body has no `Delivers:` line, or names something that is not a ddocs address (the refusal quotes the whole line and shows the form to write) |
 | `E-RS-GH-MISSING` | gh is not installed or `PIJ_GH` is not an absolute executable; the next step installs it and restarts the daemon |
 | `E-RS-GH-AUTH` | gh is not signed in for the daemon's user; the next step is `gh auth login` |
 | `E-RS-GH` | gh refused (no such PR) or printed something unreadable |
@@ -1520,6 +1873,7 @@ The full behaviour, state diagram and known residual are in [pa-watchdog.md](pa-
   - seats `SeatDescriptor::nudgeable` that have been quiet for a whole interval;
   - seats that declared `waiting`, `hold`, `blocked` or `question`;
   - stale cards (`status-stale`). These come from the anomaly authority's own `StatusStaleDetector`, run over bounded reads. Each fleet seat gets one indexed `LIMIT 1` read for its latest card. Only for a card that is stale, the round then looks for its own clear or ack, matched by occurrence key, among the seat's `anomaly.clear` and `anomaly.ack` events since that card. That search uses a seat- and kind-indexed window of at most 4 pages of 256 rows. A clear for a different anomaly on the same seat never stands in for the card's own clear. Rows read per round follow the fleet and its stale cards, never the history. Other anomaly kinds stay with `pij anomalies`;
+- **Messages held behind a busy turn** (plan 214, AC2): every message to a seat in this fleet that waited more than 15 minutes (`HELD_FLAG_SECS` in `pij_store::held`) between being queued and reaching the session, with sender, recipient, msg id, held time and whether it is still queued. A delivery's held time is `jobs.acked_at - jobs.enqueued_at` on every rung (the ack is written after the body reaches the session: the Copilot extension's consume, an OMP/Pi steer, a PTY type, a socket ack), so no column was added. The ack that ends a long hold records it in `held_deliveries` (migration 0043); the digest also lists messages still queued past the threshold. Each is shown once: the digest marks what it listed once the PA's nudge is admitted. One read per digest, scoped to this fleet's recipients before its limit of 50 rows (so another fleet's holds never fill the page), through the unflagged partial index and `jobs_serial`; never per seat.
 - every seat, largest context first, with role, turn state, declared state, context, idle time, cache warmth and the cold-wake price of waking it.
 
 The digest reports facts. Policy, such as caps and exemptions, lives in the PA brief (`skills/pij/references/prime/pa.md`).
@@ -1537,7 +1891,21 @@ The digest reports facts. Policy, such as caps and exemptions, lives in the PA b
 
 **Bounded work per round.** Between edges a round reads no spine history. It does one registry list, one role join, and a size and mtime check of each Claude transcript; a transcript is re-read only when it changed. At an edge, transcript reads have a 3s wait, and at most one read per seat is ever outstanding. A read that outlives its wait is kept, that seat shows `?`, and no second read starts behind it until it lands. Spine reads are the per-seat card read and the per-stale-card disposition window described above, plus, only on a would-be prime-active wake, the prime's `delivery.outcome` window since arming (at most 4 pages of 256 rows).
 
+**Presence and large seats** (plan 217). The same round runs four checks per scope (a prime and the live seats in its repository, plus each PA's scope). A scope is active while its prime or a worker was observed `working` in the last 20 minutes, not on a usage limit; fewer than two workers never raise the PA alerts. An active scope with no live PA for 20 minutes wakes its prime once, with the last PA's `pij-rs revive` command or the spawn form. A live PA with no turn (`seat.activity`, or a round that saw it `working`) for 30 minutes while its scope is active is woken once with the digest (cold reason `pa-watchdog: dormant while fleet active`); with no PA turn 10 minutes later, the prime is woken once with that wake's receipt. A fleet seat over 600,000 tokens is named to the prime in a held FYI, never a wake, once per crossing (re-armed at or under the line); crossings in one round share it. Each message is claimed in `presence_claims` (migration 0039, keyed by check and subject) before it is sent and released only on positive evidence, so a restart never repeats one; a refused delivery releases it to retry. Each change of verdict appends `watchdog.round` `{outcome: "pa-missing" | "pa-dormant" | "pa-unresponsive" | "large-seat", verdict: "waiting" | "sent" | "capped" | "armed" | "braked", …}`. No launch, timer or poll of its own: per round one designation read and one claims read, one `LIMIT 1` `seat.activity` read per PA in an active scope, and a session-status read only for fleet seats that are or were just working, have no completed read, or have posted activity since their last read. Thresholds, payloads and what to do on each: [pa-watchdog.md § Presence and large seats](pa-watchdog.md#presence-and-large-seats-plan-217).
+
 Every edge appends a `watchdog.round` event. Its payload carries `outcome` (`nudged` or `idle-on-limit`), `prime`, `scope`, `seats`, `delivery` (the receipt outcome, or the error text), `cold_check` and `prime_active` (`watching`, or `no-prime` when the scope has no prime to watch). Every prime-active verdict other than waiting appends `watchdog.round` `{outcome: "prime-active", verdict: "sent" | "braked" | "capped" | "idle-on-limit", reason: "prime-active", prime, scope}`; a `sent` also carries `seats`, `delivery` and `cold_check`. `PIJ_RS_WATCHDOG_SECS` (default `watchdog_interval_secs`, 20 minutes) is the stall threshold: it decides when a ready seat is "quiet a whole interval" in the digest, and it is the default opt-in interval. It never schedules a PA nudge.
+
+## Modal-dialog stalls (plan 219)
+
+A harness's own question or permission dialog stops a seat's turn while pij still reads it `working` (F47: two verdict seats sat on Copilot's "Choose an optional follow-up" dialog for about two hours each). The PA watchdog's 60 s round finds them; there is no timer, poll or launch of its own.
+
+- **Candidates.** A live seat that is `working`, has a pane, runs a harness with known dialog markers (Copilot and Claude today), and has recorded **no own event for 20 minutes** (`pij_core::modal_stall::STALL_AFTER_MS`). Own events are `seat.activity`, `report.now` and `report.state`; deliveries and audits addressed to the seat don't count, so messages sent to a stalled seat don't hide it. Nor does `delivery.inbox-ack`: the Copilot native extension's reader acks on its own while the model sits on the dialog (F108). A seat with no own event at all is not a candidate. Each working seat with a pane on such a harness costs one `latest_matching` spine read per round: one read snapshot of three indexed per-kind SELECTs. Other seats cost nothing.
+- **Read, without a launch.** A candidate's visible pane is read once per round **only over the daemon's already-live tmux control client** (`TmuxPort::capture_without_launch`): it never starts a client and never forks `capture-pane`. With no live client the candidate is not read this round: the skip is recorded as a `watchdog.round` event on the seat, `{outcome: "modal-stall-skipped", reason: "no live tmux control client: not read this round, nothing launched", pane}`, and nobody is told. No key is ever sent.
+- **Match.** `pij_harnesses::modal::MODAL_MARKERS` names each harness's dialog chrome and where it must sit, anchored to the bottom of the screen where the composer would be. Copilot: the footer `↑/↓ select · enter accept · ctrl+d decline · esc cancel` directly above the bottom rule and status line, or the title `Copilot needs information` opening the region between the last two rules. Claude: `Esc to cancel` as the screen's last line, below the last rule. The same words quoted in the transcript sit above the composer and never match. A match is named by the marker's **fixed label** (`Copilot selection dialog (ctrl+d declines)`, `Copilot question dialog (ctrl+d declines)`, `Claude permission prompt (esc cancels)`), never by text read from the pane, so the seat's work never reaches a stored row, a message or a view. Fixtures: `crates/testkit/fixtures/harnesses/copilot-follow-up-dialog-{herring,lynx}.txt`, `claude-2.1.284-permission-dialog.txt`, and the no-match `copilot-working.txt`.
+- **Tell, once per stretch.** On a match the stall is claimed in the store's `modal_stalls` table (migration 0042) **before** anyone is told, keyed by the seat and the stretch's identity: the spine **sequence** of its last own event (its time is used only for duration, so an own event with an earlier clock still starts a new stretch). Then `pij-bg` sends one normal message to the seat's live parent and one to the PA in its scope (else the prime, chosen as for limit wakes), never the seat itself: seat, harness, how long it has been silent (its last own event, not proven dialog time), the dialog's label, and the key that clears it (Copilot: ctrl+d declines; Claude: esc cancels). Each recipient whose delivery is accepted (delivered, a replay included, durably queued, or held for a human's approval, which must not be re-sent) is recorded in the row's `told`, judged from the structured receipt; one whose tell was refused (a native receiver whose lease lapsed refuses, then recovers) or errored is tried again on later rounds with the same message id (`modal-stall:<seat>:<seq>:<recipient>`), up to `MAX_TELL_TRIES` (5) attempts per recipient per stretch, counted in the row's `attempts` BEFORE each send (when that save fails, nothing is sent, so the bound holds), and a recipient that appears later (a new PA) is told then. A restart or an overlapping round never tells a recorded recipient twice. A cold recipient is woken and audited with reason `pa-watchdog: modal dialog`. Each round that tells anyone appends `watchdog.modal-stall` on the seat with `harness`, `pane`, `quiet_seq`, `quiet_since`, `dialog`, `key` and `told` (each recipient tried and delivery's answer).
+- **View.** While a claimed stall stands (the last read still showed it, and the seat has recorded no own event with a later sequence), `/v1/seats` and `/v1/state` carry `dialog: {dialog, key, clears, since_ms}` for the seat. `pij list` shows `blocked on a dialog (<key>)` in its STATE column instead of `working`, and `pij state` adds `blocked on a dialog: silent for <duration>, with <label> on screen (clears with <clears>)`. `state` itself stays `working`, the daemon's observation. Remote seats carry none. Each `/v1/seats` request and each `/v1/state` adds one standing-stalls read.
+- **Cost.** No new timer, poll or launch. Per round: one spine read (three indexed SELECTs) per working seat with a pane on Copilot or Claude; for each candidate, one control-client capture (none without a live client) and, only when some seat is a candidate, one read of the `modal_stalls` rows; a write only to claim a stretch, record a recipient, or open or close a row.
+- **Adding a harness.** Capture its dialog and a normal working screen, commit both as fixtures with MANIFEST rows, add a `MODAL_MARKERS` row naming where the marker sits, its fixed `label`, its short `key` and the `clears` text, and add match and no-match tests in `crates/harnesses/src/modal.rs`. A harness with no row is never read; OMP and Pi have none yet.
 
 ## Opt-in watchdog
 

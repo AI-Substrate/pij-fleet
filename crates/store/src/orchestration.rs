@@ -9,7 +9,7 @@ use pij_core::orchestration::{
     VerifiedDescriptor, derive_parent, plan_descriptor_reconciliation,
 };
 use pij_core::usage_limit::LimitWake;
-use pij_core::watchdog::WatchdogOptIn;
+use pij_core::watchdog::{PresenceClaim, PresenceKind, WatchdogOptIn};
 
 use crate::migrate::{begin_write, owned_write, require_current_schema};
 
@@ -406,6 +406,79 @@ impl SqliteOrchestration {
         rows.into_iter().map(limit_wake).collect()
     }
 
+    /// Claim this stretch's presence message for `(kind, subject)` before it
+    /// is sent (plan 217). `false` means it is already claimed: do not send.
+    pub async fn claim_presence(
+        &self,
+        kind: PresenceKind,
+        subject: &str,
+        claimed_at_ms: u64,
+    ) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let done = sqlx::query(
+            "INSERT OR IGNORE INTO presence_claims (kind, subject, claimed_at) VALUES (?1, ?2, ?3)",
+        )
+        .bind(kind.as_str())
+        .bind(subject)
+        .bind(i64::try_from(claimed_at_ms).map_err(|_| store_range("claimed_at"))?)
+        .execute(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        Ok(done.rows_affected() > 0)
+    }
+
+    /// Record what delivery answered on the claim taken at `claimed_at_ms`.
+    /// A claim released and re-taken since is left alone.
+    pub async fn stamp_presence(
+        &self,
+        kind: PresenceKind,
+        subject: &str,
+        claimed_at_ms: u64,
+        detail: &str,
+    ) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let done = sqlx::query(
+            "UPDATE presence_claims SET detail = ?4 \
+             WHERE kind = ?1 AND subject = ?2 AND claimed_at = ?3",
+        )
+        .bind(kind.as_str())
+        .bind(subject)
+        .bind(i64::try_from(claimed_at_ms).map_err(|_| store_range("claimed_at"))?)
+        .bind(detail)
+        .execute(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        Ok(done.rows_affected() > 0)
+    }
+
+    /// Release `(kind, subject)`, re-arming its check. Returns whether a claim
+    /// was held.
+    pub async fn release_presence(&self, kind: PresenceKind, subject: &str) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let done = sqlx::query("DELETE FROM presence_claims WHERE kind = ?1 AND subject = ?2")
+            .bind(kind.as_str())
+            .bind(subject)
+            .execute(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        Ok(done.rows_affected() > 0)
+    }
+
+    /// Every standing presence claim: one read per round. The table holds at
+    /// most one row per check per scope, PA or seat.
+    pub async fn presence_claims(&self) -> Result<Vec<PresenceClaim>> {
+        require_current_schema(&self.pool).await?;
+        let rows = sqlx::query(
+            "SELECT kind, subject, claimed_at, detail FROM presence_claims ORDER BY kind, subject",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        rows.into_iter()
+            .filter_map(|row| presence_claim(row).transpose())
+            .collect()
+    }
+
     /// Reserve the complete stream recipe before Git mutates a worktree.
     pub async fn reserve_stream(
         &self,
@@ -647,6 +720,23 @@ fn watchdog_optin(row: sqlx::sqlite::SqliteRow) -> Result<WatchdogOptIn> {
             "watchdog set_at",
         )?,
     })
+}
+
+/// A row of a kind this build does not know is skipped, never an error.
+fn presence_claim(row: sqlx::sqlite::SqliteRow) -> Result<Option<PresenceClaim>> {
+    let kind: String = row.try_get("kind").map_err(adapter_error)?;
+    let Some(kind) = PresenceKind::parse(&kind) else {
+        return Ok(None);
+    };
+    Ok(Some(PresenceClaim {
+        kind,
+        subject: row.try_get("subject").map_err(adapter_error)?,
+        claimed_at_ms: sql_u64(
+            row.try_get("claimed_at").map_err(adapter_error)?,
+            "presence claimed_at",
+        )?,
+        detail: row.try_get("detail").map_err(adapter_error)?,
+    }))
 }
 
 fn limit_wake(row: sqlx::sqlite::SqliteRow) -> Result<LimitWake> {

@@ -1947,6 +1947,13 @@ async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
         ids(store.all_queued_role_requests().await.unwrap()),
         ["r-other-role", "r-other-instance", "r-late"]
     );
+    // Plan 203: the directory view's read is the project's queue, bodiless.
+    let mut elsewhere = request("r-elsewhere", "coder", "", 2);
+    elsewhere.project = "other".into();
+    store.record_role_request(&elsewhere).await.expect("record");
+    let heads = store.queued_role_request_heads("pij").await.unwrap();
+    assert!(heads.iter().all(|row| row.body.is_empty()), "no bodies");
+    assert_eq!(ids(heads), ["r-other-role", "r-other-instance", "r-late"]);
 }
 
 /// Plan 205 (migration 0035): the watchdog round reads only delivered,
@@ -2051,6 +2058,125 @@ async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
         ids(store.open_limited_role_requests().await.unwrap()),
         ["early", "late"],
         "a checked-in request stays open until escalated or answered"
+    );
+}
+
+/// Plan 200 (migration 0036): outputs are read back by exact head, so a moved
+/// head answers none, and by role, newest first; a path is indexed once.
+#[tokio::test]
+async fn outputs_answer_for_their_exact_head_and_list_by_role() {
+    use pij_store::CommunityOutput;
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool);
+    let output = |path: &str, kind: &str, head: Option<&str>, at: u64| CommunityOutput {
+        path: path.into(),
+        project: "pij".into(),
+        role: "reviewer".into(),
+        kind: kind.into(),
+        subject: "pr:132".into(),
+        head: head.map(Into::into),
+        result: head.map(|_| "pass".into()),
+        writer: "pij-reviewer".into(),
+        holds_role: true,
+        answers: Some("req-1".into()),
+        commit: "c0ffee".into(),
+        created_at: at,
+    };
+    let verdict = output(
+        "roles/reviewer/outputs/2026-11/a.dd.json",
+        "verdict",
+        Some("aaa"),
+        1,
+    );
+    store.record_output(&verdict).await.unwrap();
+    store
+        .record_output(&output(
+            "roles/reviewer/outputs/2026-11/h.dd.json",
+            "handover",
+            None,
+            2,
+        ))
+        .await
+        .unwrap();
+    store
+        .record_output(&verdict)
+        .await
+        .expect("a path is indexed once");
+
+    assert_eq!(
+        store
+            .outputs_for_subject("pij", "pr:132", Some("aaa"))
+            .await
+            .unwrap(),
+        vec![verdict.clone()]
+    );
+    assert!(
+        store
+            .outputs_for_subject("pij", "pr:132", Some("bbb"))
+            .await
+            .unwrap()
+            .is_empty(),
+        "a moved head answers none"
+    );
+    assert_eq!(
+        store
+            .outputs_for_subject("pij", "pr:132", None)
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+    let listed = store.outputs_for_role("pij", "reviewer", 10).await.unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|row| row.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["handover", "verdict"]
+    );
+    assert!(
+        store
+            .outputs_for_role("other", "reviewer", 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    // Plan 203: one read gives each role's newest output.
+    let mut pm = verdict.clone();
+    pm.path = "roles/pm/outputs/2026-11/n.dd.json".into();
+    pm.role = "pm".into();
+    pm.subject = "pr:203".into();
+    store.record_output(&pm).await.unwrap();
+    let latest = store.latest_outputs("pij").await.unwrap();
+    assert_eq!(
+        latest
+            .iter()
+            .map(|row| (row.role.as_str(), row.kind.as_str()))
+            .collect::<Vec<_>>(),
+        [("pm", "verdict"), ("reviewer", "handover")]
+    );
+    assert!(store.latest_outputs("other").await.unwrap().is_empty());
+    // Review of #137 (F001): a path is relative to its project's governance
+    // worktree, so another project's output at the same path is its own row.
+    let mut elsewhere = verdict.clone();
+    elsewhere.project = "other".into();
+    elsewhere.commit = "beef".into();
+    store.record_output(&elsewhere).await.unwrap();
+    assert_eq!(
+        store
+            .outputs_for_subject("other", "pr:132", Some("aaa"))
+            .await
+            .unwrap(),
+        vec![elsewhere]
+    );
+    assert_eq!(
+        store
+            .outputs_for_subject("pij", "pr:132", Some("aaa"))
+            .await
+            .unwrap(),
+        vec![verdict],
+        "the first project's row is untouched"
     );
 }
 
@@ -2284,6 +2410,39 @@ async fn role_requests_left_delivering_are_recovered_at_boot() {
         "the digest sees stuck claims as well as queued requests, without bodies"
     );
 
+    // Plan 209 (#129's digest scope): a project list reads only its rows;
+    // `waiting`'s project is pij, so another project sees nothing.
+    let mut other = request("elsewhere", RequestState::Queued);
+    other.project = "osk".into();
+    store.record_role_request(&other).await.expect("record");
+    let ids = |rows: Vec<RoleRequest>| rows.into_iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(
+        ids(store
+            .unsettled_role_requests_in(Some(&["osk".to_string()]))
+            .await
+            .unwrap()),
+        ["elsewhere"]
+    );
+    assert_eq!(
+        ids(store
+            .unsettled_role_requests_in(Some(&["pij".to_string()]))
+            .await
+            .unwrap()),
+        ["crashed", "held-fyi", "in-ledger", "waiting"]
+    );
+    assert!(
+        store
+            .unsettled_role_requests_in(Some(&[]))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(store.unsettled_role_requests().await.unwrap().len(), 5);
+    sqlx::query("DELETE FROM role_requests WHERE id = 'elsewhere'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
     assert_eq!(
         store.recover_delivering_role_requests(50).await.unwrap(),
         (2, 1)
@@ -2321,4 +2480,107 @@ async fn role_requests_left_delivering_are_recovered_at_boot() {
         (0, 0),
         "a second recovery finds nothing"
     );
+}
+
+/// Review of #152, F006 (ruling C32 (3)): a reply's answer stamp and its audit
+/// event commit together. An append that fails leaves the request unanswered
+/// and writes no event; the retry answers it once with one event; a repeat,
+/// or `pij output --answers` afterwards, changes nothing.
+#[tokio::test]
+async fn a_reply_answer_and_its_audit_commit_together_or_not_at_all() {
+    use pij_store::{ReplyMode, RequestState, RoleRequest};
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool.clone());
+    store
+        .record_role_request(&RoleRequest {
+            id: "req-audit".into(),
+            project: "pij".into(),
+            role: "coder".into(),
+            instance: String::new(),
+            requester: "pij-asker".into(),
+            body: "go".into(),
+            in_reply_to: None,
+            fyi: false,
+            reply: ReplyMode::Wake,
+            limit_ms: Some(60_000),
+            state: RequestState::Delivered,
+            holder: Some("pij-coder".into()),
+            created_at: 1,
+            delivered_at: Some(10),
+            checkin_at: None,
+            escalated_at: None,
+            answered_at: None,
+        })
+        .await
+        .expect("record");
+    let audit = || Event {
+        seq: None,
+        v: 1,
+        at: 20,
+        kind: "request.answered_by_reply".into(),
+        seat: Some(SeatId::from("pij-coder")),
+        payload: r#"{"request":"req-audit","from":"pij-coder"}"#.into(),
+    };
+    let audits = || {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM spine_events WHERE kind = 'request.answered_by_reply'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    let answered = || {
+        let store = store.clone();
+        async move {
+            store
+                .role_request("req-audit")
+                .await
+                .unwrap()
+                .and_then(|request| request.answered_at)
+        }
+    };
+    sqlx::query(
+        "CREATE TRIGGER fail_reply_audit BEFORE INSERT ON spine_events \
+         WHEN NEW.kind = 'request.answered_by_reply' \
+         BEGIN SELECT RAISE(ABORT, 'audit append failed'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(
+        store
+            .mark_role_request_answered_audited("req-audit", 20, audit())
+            .await
+            .is_err()
+    );
+    assert_eq!(answered().await, None, "no answer without its audit");
+    assert_eq!(audits().await, 0);
+    sqlx::query("DROP TRIGGER fail_reply_audit")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (events, stamped) = store
+        .mark_role_request_answered_audited("req-audit", 21, audit())
+        .await
+        .unwrap();
+    assert!(stamped && events.len() == 1 && events[0].seq.is_some());
+    assert_eq!(answered().await, Some(21));
+    assert_eq!(audits().await, 1);
+    let (events, stamped) = store
+        .mark_role_request_answered_audited("req-audit", 22, audit())
+        .await
+        .unwrap();
+    assert!(!stamped && events.is_empty(), "set once, audited once");
+    assert!(
+        !store
+            .mark_role_request_answered("req-audit", 23)
+            .await
+            .unwrap(),
+        "output --answers finds it set"
+    );
+    assert_eq!((answered().await, audits().await), (Some(21), 1));
 }

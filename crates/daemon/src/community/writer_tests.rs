@@ -189,6 +189,14 @@ fn a_path_carrying_a_foreign_edit_refuses_and_writes_nothing() {
     let refusal = writer.write(&scratch.main, files, "x").unwrap_err();
     assert_eq!(refusal.code, E_FOREIGN_EDIT);
     assert!(refusal.message.contains("INDEX.md (M)"), "{refusal}");
+    // Plan 209, F40: the next step says who commits the hand edit.
+    assert!(
+        refusal
+            .next
+            .as_deref()
+            .is_some_and(|next| next.starts_with("The prime commits or removes hand edits")),
+        "{refusal:?}"
+    );
     assert_eq!(
         std::fs::read_to_string(gov.join(&pm)).unwrap(),
         "hand edit\n"
@@ -627,6 +635,7 @@ fn memory_note(title: &str) -> crate::community::memory::NoteFields {
         tags: vec!["plan-201".to_string()],
         hook: format!("why {title}"),
         body: "what was learned\n".to_string(),
+        slug: None,
     }
 }
 

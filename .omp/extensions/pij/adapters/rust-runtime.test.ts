@@ -80,6 +80,7 @@ async function bootPushedEvent(
 	pi: FakePiRuntime,
 	claimResponse: unknown | Promise<unknown> = inboxClaimFixture(),
 	sendReceipt: Record<string, unknown> = { outcome: "accepted", at: 1 },
+	processStart: (pid: number) => number = () => 20260829103052,
 ) {
 	vi.stubEnv("PIJ_ANNOUNCE_TO", "");
 	vi.stubEnv("PIJ_SPAWN_ID", "");
@@ -140,7 +141,7 @@ async function bootPushedEvent(
 	const deps: DaemonHttpDeps = {
 		fetch: fetchMock as typeof fetch,
 		readFile: async () => "secret",
-		processStart: () => 20260829103052,
+		processStart,
 	};
 	const runtime = new RustRuntimeSession(
 		new PijDaemonClient({ addr: "127.0.0.1:7461", stateDir: "/tmp/state" }, "secret", deps),
@@ -464,6 +465,77 @@ describe("RustRuntimeSession", () => {
 				/body|message/i,
 			);
 			expect(sends).toHaveLength(1);
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
+	it("a reply carries caller context in the shape the daemon's reply gate binds", async () => {
+		// Review of #152, S152-001: the daemon refuses a reply to a role request
+		// with no caller context. The Rust half replays this fixture.
+		const contract = JSON.parse(
+			readFileSync(
+				new URL(
+					"../../../../crates/daemon/tests/fixtures/omp-correlated-send.wire.json",
+					import.meta.url,
+				),
+				"utf8",
+			),
+		) as Record<string, unknown>;
+		delete contract._comment;
+		const wanted = contract.caller as Record<string, unknown>;
+		for (const name of [
+			"PIJ_PARENT_ID",
+			"CLAUDE_CODE_SESSION_ID",
+			"COPILOT_AGENT_SESSION_ID",
+			"CODEX_THREAD_ID",
+		])
+			vi.stubEnv(name, undefined);
+		vi.stubEnv("TMUX_PANE", "%51");
+		const { acknowledgements, runtime, sends } = await bootPushedEvent(
+			PUSHED_EVENT_WIRE,
+			new FakePiRuntime(),
+		);
+		try {
+			await vi.waitFor(() => expect(acknowledgements).toHaveLength(1));
+			await runtime.send("pij-from", "reply");
+			const sent = sends.at(-1) ?? {};
+			expect(sent.in_reply_to).toBe("000000000000feed-0000000000000000");
+			expect(Object.keys(sent).sort()).toEqual(Object.keys(contract).sort());
+			const caller = sent.caller as Record<string, unknown>;
+			expect(Object.keys(caller).sort()).toEqual(Object.keys(wanted).sort());
+			for (const key of Object.keys(wanted)) expect(typeof caller[key]).toBe(typeof wanted[key]);
+			expect(caller.tmuxPane).toBe("%51");
+			// The reply consumed the correlation: the next send is uncorrelated and carries none.
+			await runtime.send("pij-from", "again");
+			expect(sends.at(-1)).not.toHaveProperty("in_reply_to");
+			expect(sends.at(-1)).not.toHaveProperty("caller");
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
+	it("observes its own process start once per runtime, not per send", async () => {
+		// Review of #152, P152-F004: the default reader launches `ps`. Boot, a
+		// correlated reply and a control each need the start; it is read once.
+		vi.stubEnv("TMUX_PANE", "%51");
+		const observed: number[] = [];
+		const { acknowledgements, runtime, sends } = await bootPushedEvent(
+			PUSHED_EVENT_WIRE,
+			new FakePiRuntime(),
+			inboxClaimFixture(),
+			{ outcome: "accepted", at: 1 },
+			(pid) => {
+				observed.push(pid);
+				return 20260829103052;
+			},
+		);
+		try {
+			await vi.waitFor(() => expect(acknowledgements).toHaveLength(1));
+			await runtime.send("pij-from", "reply");
+			await runtime.send("pij-target", frame("pij-from", ""), { command: "compact" });
+			expect(sends.map((sent) => (sent.caller as Record<string, unknown>).procStart)).toEqual([
+				20260829103052, 20260829103052,
+			]);
+			expect(observed).toEqual([process.pid]);
 		} finally {
 			runtime.shutdown("quit");
 		}

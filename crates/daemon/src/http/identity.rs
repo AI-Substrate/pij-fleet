@@ -246,7 +246,7 @@ pub(crate) enum ResolvedBy {
 }
 
 impl ResolvedBy {
-    const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Pane => "pane (derived)",
             Self::AssertedId => "asserted seat id (existence checked only)",
@@ -940,7 +940,12 @@ pub(crate) async fn adopt(
     let registered = match &reclaim {
         Some(_) => registration.reclaim(claim).await,
         None => registration
-            .register_with_harness_session(claim, harness_session)
+            .register_via(
+                crate::registration::attempts::Path::Adopt,
+                claim,
+                harness_session,
+                None,
+            )
             .await
             .map(|(descriptor, _)| descriptor),
     };
@@ -993,6 +998,8 @@ pub(crate) async fn adopt(
                     // one and must hear the same grace; answering 0 here would
                     // make adopt the one path that steps on a typing human.
                     typing_grace_ms: Some(super::resolve_typing_grace_ms()),
+                    // Adopt is not a native extension registration.
+                    context_token: None,
                 },
             );
             answer.meta = Some(format!(

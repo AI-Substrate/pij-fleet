@@ -38,7 +38,7 @@ fn section<'a>(document: &'a Value, name: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no {name} section in {document}"))["value"]
 }
 
-/// AC2, bp-0002: each of the six shipped templates becomes a role with its id
+/// AC2, bp-0002: each shipped template becomes a role with its id
 /// and where it came from; flags override; an unknown name or version refuses
 /// by name, listing what exists, and commits nothing.
 #[tokio::test]
@@ -57,9 +57,28 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
         .collect();
     assert_eq!(
         names,
-        ["coder", "pa", "pm", "prime", "reviewer", "security"]
+        [
+            "coder",
+            "designer",
+            "devcontainer",
+            "docs-keeper",
+            "infra",
+            "note-taker",
+            "pa",
+            "pm",
+            "prime",
+            "qa",
+            "release",
+            "researcher",
+            "reviewer",
+            "security",
+            "topic-expert",
+            "transcriber",
+        ]
     );
-    assert_eq!(listed["data"]["templates"][0]["versions"], json!([1]));
+    // coder shipped v1 in plan 194, v2 in plan 204 (security review of #136)
+    // and v3 in plan 210 (workstream wording, ruling C29).
+    assert_eq!(listed["data"]["templates"][0]["versions"], json!([1, 2, 3]));
 
     for name in names {
         let id = format!("{name}-x");
@@ -75,7 +94,8 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
         let meta = section(&document, "meta");
         assert_eq!(meta["id"], id.as_str());
         assert_eq!(meta["template"], name);
-        assert_eq!(meta["template_version"], "1");
+        let latest = Catalog::shipped().latest(name).expect("a shipped template");
+        assert_eq!(meta["template_version"], latest.to_string().as_str());
         let changelog = section(&document, "changelog").as_array().unwrap();
         assert_eq!(changelog.len(), 1, "only the add's row: {changelog:?}");
         assert_eq!(changelog[0]["why"], "from a template");
@@ -116,8 +136,8 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
     let before = head(&repo);
     for (argv, needle) in [
         (
-            &["add", "qa", "--from", "template:qa", "--why", "w"][..],
-            "\"qa\"",
+            &["add", "pilot", "--from", "template:astronaut", "--why", "w"][..],
+            "\"astronaut\"",
         ),
         (
             &["add", "pm-002", "--from", "template:pm@v9", "--why", "w"][..],
@@ -146,12 +166,12 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
     let unknown = directory(
         addr,
         &repo,
-        &["add", "qa", "--from", "template:qa", "--why", "w"],
+        &["add", "pilot", "--from", "template:astronaut", "--why", "w"],
     )
     .await;
     let message = unknown["meta"].as_str().unwrap_or_default();
     assert!(
-        message.contains("coder, pa, pm, prime, reviewer, security"),
+        message.contains("coder, designer, devcontainer, docs-keeper"),
         "lists what exists: {message}"
     );
     let version = directory(
@@ -165,6 +185,32 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
         "{version}"
     );
     assert_eq!(head(&repo), before, "a refusal commits nothing");
+    server.abort();
+}
+
+/// Plan 204 (F23, bp-0004): `templates --show` prints a shipped template's
+/// exact bytes and its path; an unknown name or version refuses by name.
+#[tokio::test]
+async fn templates_show_prints_the_exact_embedded_body() {
+    let repo = repo("pij-templates-show");
+    let (addr, server, _fresh) = daemon().await;
+    project(addr, &repo).await;
+    let shown = directory(addr, &repo, &["templates", "--show", "security@v1"]).await;
+    assert_eq!(shown["ok"], true, "{shown}");
+    let template = &shown["data"]["template"];
+    assert_eq!(template["path"], "templates/roles/security/v1/role.dd.json");
+    let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../templates/roles/security/v1/role.dd.json");
+    assert_eq!(
+        template["body"].as_str().unwrap(),
+        std::fs::read_to_string(file).unwrap()
+    );
+    for (spec, needle) in [("nope", "coder, designer"), ("pm@v9", "v1")] {
+        let refused = directory(addr, &repo, &["templates", "--show", spec]).await;
+        assert_eq!(refused["details"]["code"], "E-RS-ARG", "{refused}");
+        let message = refused["meta"].as_str().unwrap_or_default();
+        assert!(message.contains(needle), "{spec}: {message}");
+    }
     server.abort();
 }
 
@@ -320,7 +366,21 @@ async fn prompts_list_missing_core_roles_and_security_and_create_nothing() {
     let (addr, server, _fresh) = daemon().await;
     project(addr, &repo).await;
     let before = head(&repo);
-    let empty = view(addr, &repo).await;
+    // F39: a fresh project's bare view names the suggestions without listing
+    // five demands; `--suggest` shows each in full.
+    let bare = view(addr, &repo).await;
+    assert_eq!(bare["ok"], true, "{bare}");
+    assert!(bare["data"]["prompts"].is_null(), "{bare}");
+    assert_eq!(
+        bare["data"]["suggestions"]["roles"],
+        json!(["prime", "pm", "pa", "coder", "reviewer", "security"])
+    );
+    assert_eq!(
+        bare["data"]["suggestions"]["command"],
+        "pij directory --suggest --project fleet"
+    );
+    assert_eq!(bare["data"]["prime_document"], false);
+    let empty = directory(addr, &repo, &["--suggest"]).await;
     assert_eq!(empty["ok"], true, "{empty}");
     let prompted = |view: &Value| -> Vec<String> {
         view["data"]["prompts"]
@@ -353,7 +413,7 @@ async fn prompts_list_missing_core_roles_and_security_and_create_nothing() {
     let line = empty["data"]["prompts"][5]["command"].as_str().unwrap();
     assert_eq!(
         line,
-        "pij directory add security --from template:security --why \"recommended role from the security template\" --project fleet"
+        "pij directory add security --from template:security --why 'recommended role from the security template' --project fleet"
     );
     let added = directory(
         addr,
@@ -376,7 +436,7 @@ async fn prompts_list_missing_core_roles_and_security_and_create_nothing() {
     )
     .await;
     assert_eq!(pm["ok"], true, "{pm}");
-    let after = view(addr, &repo).await;
+    let after = directory(addr, &repo, &["--suggest"]).await;
     assert_eq!(prompted(&after), ["prime", "pa", "coder", "reviewer"]);
     server.abort();
 }
@@ -434,7 +494,7 @@ async fn a_prompt_replayed_from_another_repo_writes_to_the_viewed_project() {
     )
     .await;
     assert_eq!(created["ok"], true, "{created}");
-    let viewed = directory(rig.addr, &local, &["--project", "remote"]).await;
+    let viewed = directory(rig.addr, &local, &["--project", "remote", "--suggest"]).await;
     assert_eq!(viewed["data"]["project"], "remote", "{viewed}");
     let prompts = viewed["data"]["prompts"].as_array().unwrap();
     assert!(
@@ -456,7 +516,7 @@ async fn a_prompt_replayed_from_another_repo_writes_to_the_viewed_project() {
     let path = format!("{ROLES}/security/role.dd.json");
     assert!(remote.gov.join(&path).is_file(), "written to remote");
     assert!(!local.gov.join(&path).exists(), "nothing written locally");
-    let after = directory(rig.addr, &local, &["--project", "remote"]).await;
+    let after = directory(rig.addr, &local, &["--project", "remote", "--suggest"]).await;
     assert!(
         after["data"]["prompts"]
             .as_array()
@@ -465,7 +525,7 @@ async fn a_prompt_replayed_from_another_repo_writes_to_the_viewed_project() {
             .all(|p| p["role"] != "security"),
         "{after}"
     );
-    let unscoped = directory(rig.addr, &local, &[]).await;
+    let unscoped = directory(rig.addr, &local, &["--suggest"]).await;
     assert!(
         unscoped["data"]["prompts"]
             .as_array()

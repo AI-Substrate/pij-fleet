@@ -1483,9 +1483,19 @@ test("activity: foreground turns publish working then idle in order; failures ne
 	await run;
 });
 
-/** A running bridge whose /v1/activity requests are recorded; stopped after the test. */
-async function activityBridge(t, answer = () => ({ changed: true })) {
+/**
+ * A running bridge whose /v1/activity requests are recorded; stopped after the test.
+ * `grant` is the context-report grant its registration answers with (plan 217).
+ */
+async function activityBridge(t, answer = () => ({ changed: true }), { grant } = {}) {
 	const f = fixture();
+	if (grant !== undefined) {
+		const register = f.client.request;
+		f.client.request = async (path, body, signal) => {
+			const answered = await register.call(f.client, path, body, signal);
+			return path === "/v1/register" ? { ...answered, context_token: grant } : answered;
+		};
+	}
 	const run = f.bridge.run();
 	t.after(() => {
 		f.bridge.stop();
@@ -1556,6 +1566,78 @@ test("activity: session.idle settles a working seat to idle", async (t) => {
 	f.event({ type: "session.idle", id: "idle-1", data: {} });
 	await flush();
 	assert.deepEqual(states(), ["working", "idle"]);
+});
+
+// Plan 217 AC6: the size the daemon cannot read from events.jsonl, sent only
+// with this registration's grant (review S153-001).
+test("activity: the latest session.usage_info size rides the next post with the registration's grant", async (t) => {
+	let refuseContext = false;
+	const bodies = [];
+	const { f } = await activityBridge(
+		t,
+		(body) => {
+			bodies.push(body);
+			return refuseContext && "context_tokens" in body
+				? Object.assign(new Error("Pij HTTP 400"), { status: 400 })
+				: { changed: true };
+		},
+		{ grant: "grant-1" },
+	);
+	const usage = (id, currentTokens, extra = {}) =>
+		f.event({
+			type: "session.usage_info",
+			id,
+			ephemeral: true,
+			...extra,
+			data: { currentTokens, tokenLimit: 952000, messagesLength: 40 },
+		});
+	const sent = () =>
+		bodies.map((body) => [
+			body.state,
+			body.context_tokens,
+			body.context_window_tokens,
+			body.context_token,
+		]);
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	await flush();
+	usage("u-sub", 9, { agentId: "sub-agent-9" });
+	usage("u-1", 640000);
+	f.event({ type: "assistant.turn_end", id: "turn-1-end", data: {} });
+	await flush();
+	assert.deepEqual(sent(), [
+		["working", undefined, undefined, undefined],
+		["idle", 640000, 952000, "grant-1"],
+	]);
+	// A refused report (a stale grant) still publishes the state, then stops
+	// reporting until a registration answers with a new grant.
+	refuseContext = true;
+	f.event({ type: "assistant.turn_start", id: "turn-2", data: {} });
+	await flush();
+	f.event({ type: "assistant.turn_end", id: "turn-2-end", data: {} });
+	await flush();
+	assert.deepEqual(sent().slice(2), [
+		["working", 640000, 952000, "grant-1"],
+		["working", undefined, undefined, undefined],
+		["idle", undefined, undefined, undefined],
+	]);
+	assert.equal(f.reports.filter(({ kind }) => kind === "activity-unpublished").length, 0);
+});
+
+test("activity: a registration without a grant never reports a size", async (t) => {
+	const bodies = [];
+	const { f } = await activityBridge(t, (body) => {
+		bodies.push(body);
+		return { changed: true };
+	});
+	f.event({
+		type: "session.usage_info",
+		id: "u-1",
+		ephemeral: true,
+		data: { currentTokens: 640000, tokenLimit: 952000, messagesLength: 40 },
+	});
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	await flush();
+	assert.deepEqual(Object.keys(bodies[0]).sort(), ["native_session", "seat", "state"]);
 });
 
 test("activity: working and idle still publish while receiving is held", async (t) => {
@@ -1874,6 +1956,42 @@ test("foreign harness cannot nominate a native session or yield its occupied pan
 	assert.throws(
 		() => chooseRegistration({ ...input, host: { ...input.host, pane: descriptor.pane } }),
 		/Pane belongs/,
+	);
+});
+
+test("plan 211: a fresh native address is allocated as explicit, or as a lease retry after a standby", async () => {
+	const bodies = [];
+	const client = {
+		request: async (_path, body) => {
+			bodies.push(body);
+			return {
+				...descriptor,
+				id: "pij-bright-otter",
+				session: body.harness_session,
+				proc: { pid: body.pid, proc_start: body.proc_start },
+				pane: body.pane,
+			};
+		},
+	};
+	const request = chooseRegistration({
+		sessionId: "native-A",
+		host: { ...descriptor.proc, pane: descriptor.pane },
+		folder: "/work",
+		env: {},
+		seats: [],
+	});
+	assert.equal(request.id, "");
+	await resolveRegistration(client, request, new AbortController().signal);
+	await resolveRegistration(
+		client,
+		request,
+		new AbortController().signal,
+		undefined,
+		"lease-retry",
+	);
+	assert.deepEqual(
+		bodies.map((body) => body.attempt),
+		["explicit", "lease-retry"],
 	);
 });
 
@@ -2288,7 +2406,7 @@ test("real chooseRegistration and filesystem preserve accepted-before-ack across
 	};
 	first.client.request = async (path, body, signal) => {
 		if (path === "/v1/register") {
-			assert.deepEqual(body, selected);
+			assert.deepEqual(body, { ...selected, attempt: "explicit" });
 			return registered;
 		}
 		if (path === "/v1/inbox/ack") {
@@ -2334,7 +2452,7 @@ test("real chooseRegistration and filesystem preserve accepted-before-ack across
 	const resumedRequest = second.client.request;
 	second.client.request = async (path, body, signal) => {
 		if (path === "/v1/register") {
-			assert.deepEqual(body, resumed);
+			assert.deepEqual(body, { ...resumed, attempt: "explicit" });
 			return { ...registered, proc: { pid: resumed.pid, proc_start: resumed.proc_start } };
 		}
 		if (path === "/v1/inbox/ack") {
@@ -2463,6 +2581,64 @@ test("only typed HTTP 409 registration refusals permit retry", async () => {
 			return true;
 		});
 	}
+});
+
+test("plan 211: only a typed E-RS-SEAT-RETIRED registration refusal marks the seat retired", async () => {
+	const retired = {
+		ok: false,
+		v: 2,
+		command: "pij register",
+		error: "refused",
+		details: { code: "E-RS-SEAT-RETIRED", seat: "pij-old" },
+		meta: "seat pij-old is retired (superseded, 1); a different session may not take it",
+	};
+	for (const [label, path, status, envelope, expected] of [
+		["typed retired refusal", "/v1/register", 400, retired, true],
+		["other code", "/v1/register", 400, { ...retired, details: { code: "E-RS-OTHER" } }, false],
+		["wrong status", "/v1/register", 409, retired, false],
+		["different endpoint", "/v1/send", 400, retired, false],
+	]) {
+		const client = new DaemonClient({
+			addr: "127.0.0.1:13700",
+			stateDir: "/isolated",
+			readKey: async () => "fixture-key",
+			fetch: async () => new Response(JSON.stringify(envelope), { status }),
+		});
+		await assert.rejects(client.request(path, registration), (error) => {
+			assert.equal(error.retired === true, expected, label);
+			assert.equal(error.retryable, false, label);
+			return true;
+		});
+	}
+});
+
+test("plan 211: a retired address stops the heartbeat instead of re-registering every few seconds", async (t) => {
+	let registers = 0;
+	const waits = [];
+	const f = fixture({
+		async heartbeatDelay(ms, signal) {
+			waits.push(ms);
+			await flush();
+			if (waits.length > 5) f.bridge.stop();
+			signal.throwIfAborted();
+		},
+	});
+	t.after(() => f.bridge.stop());
+	const request = f.client.request;
+	f.client.request = async (path, body, signal) => {
+		if (path === "/v1/inbox/heartbeat") return { state: "unavailable" };
+		if (path === "/v1/register") {
+			registers++;
+			const error = new NativeError("Pij HTTP 400", false, "seat retired");
+			error.retired = true;
+			throw error;
+		}
+		return request(path, body, signal);
+	};
+	await f.bridge.keepReceiverAlive();
+	assert.equal(registers, 1, "one re-registration, then it stops");
+	assert.deepEqual(waits, [250]);
+	assert.equal(f.reports.filter(({ kind }) => kind === "receive-held").length, 1, "said once");
 });
 
 async function deadlineHttpFixture(t, handler) {
@@ -2892,6 +3068,186 @@ function nativeUser(f, nativeId, id = `user-${nativeId}`, interactionId) {
 function nativeTerminal(f, parentId, type = "session.idle", extra = {}) {
 	f.event({ type, id: `terminal-${parentId}`, parentId, data: {}, ...extra });
 }
+
+/** Make the fixture's daemon report `steer`, and record each claim's `duringTurn`. */
+function steering(f, steer, override) {
+	const claims = [];
+	const claimInbox = f.client.claimInbox.bind(f.client);
+	f.client.claimInbox = async (consumer, signal, duringTurn = false) => {
+		claims.push(duringTurn);
+		const page = override?.(claims.length, duringTurn) ?? (await claimInbox(consumer, signal));
+		return { steer, ...page };
+	};
+	return claims;
+}
+
+/** The running turn that the first delivery started ends. */
+function endOwnedTurn(f) {
+	const user = nativeUser(f, "native-message-137");
+	f.event({
+		type: "assistant.message",
+		id: "assistant-current",
+		parentId: user,
+		data: { content: "done" },
+	});
+	f.endRun();
+	nativeTerminal(f, "assistant-current");
+}
+
+test("C31: with steering on, the receiver claims into the turn its message started and still reports that turn once", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const claims = steering(f, true);
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.runState.processing = true;
+	await flush();
+	assert.deepEqual(claims, [false, true], "the second claim is made during the running turn");
+	assert.equal(f.reports.filter((e) => e.kind === "native-completed").length, 0);
+	endOwnedTurn(f);
+	for (let i = 0; i < 5; i++) await flush();
+	assert.equal(
+		f.reports.filter((e) => e.kind === "native-completed").length,
+		1,
+		"the turn is reported while the receiver waits in its claim",
+	);
+	f.bridge.stop();
+	await run;
+});
+
+test("C31: a turn-wait hold keeps the barrier: the receiver waits for that turn, then claims normally", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const reason = "turn-wait: mid-turn steering is off for this seat (pij steer on)";
+	const claims = steering(f, true, (count, duringTurn) =>
+		count === 2 && duringTurn ? { claims: [], hold: { kind: "turn-wait", reason } } : undefined,
+	);
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.runState.processing = true;
+	await flush();
+	assert.deepEqual(claims, [false, true]);
+	assert.ok(f.reports.some((e) => e.kind === "turn-wait" && e.reason === reason));
+	await flush();
+	assert.equal(claims.length, 2, "no claim while the turn runs");
+	endOwnedTurn(f);
+	for (let i = 0; i < 5; i++) await flush();
+	assert.deepEqual(claims, [false, true, false], "after the turn ends, an ordinary claim");
+	f.bridge.stop();
+	await run;
+});
+
+/**
+ * Steer `count` more messages into the turn the fixture's first message
+ * starts: each later claim, made during that turn, returns the next one. Each
+ * send gets its own native id and is consumed at once unless `consume` says
+ * otherwise; acks echo their job id. Returns the run-state question counter.
+ */
+function steeredTurn(f, count, consume = () => true) {
+	const messages = Array.from({ length: count }, (_, index) => ({
+		...claim,
+		job_id: claim.job_id + index + 1,
+		message: { ...claim.message, msg_id: `steer-${index + 1}`, body: `steer ${index + 1}` },
+	}));
+	let next = 0;
+	const claims = steering(f, true, (_count, duringTurn) =>
+		duringTurn && next < messages.length ? { claims: [messages[next++]], hold: null } : undefined,
+	);
+	const request = f.client.request.bind(f.client);
+	f.client.request = async (path, body, signal) => {
+		if (path !== "/v1/inbox/ack") return request(path, body, signal);
+		f.trace.push("ack");
+		return body.job_id;
+	};
+	let sends = 0;
+	f.native.send = async (input) => {
+		f.trace.push("send");
+		assert.equal(input.mode, "immediate");
+		const nativeId = sends++ === 0 ? "native-message-137" : `native-steer-${sends}`;
+		if (consume(sends, nativeId))
+			f.history.push({
+				type: "user.message",
+				id: `user-${nativeId}-${sends}`,
+				data: { messageId: nativeId },
+			});
+		return nativeId;
+	};
+	const asks = { processing: 0, queue: 0 };
+	const { metadata, queue } = f.native.rpc;
+	f.native.rpc.metadata = {
+		isProcessing: async () => {
+			asks.processing++;
+			return metadata.isProcessing();
+		},
+	};
+	f.native.rpc.queue = {
+		pendingItems: async () => {
+			asks.queue++;
+			return queue.pendingItems();
+		},
+	};
+	return { claims, asks, messages };
+}
+
+test("C31: many messages steered into one running turn share one turn watcher and are each reported once", async (t) => {
+	const f = fixture({ delay: () => flush() });
+	t.after(() => f.bridge.stop());
+	const steers = 6;
+	const { asks } = steeredTurn(f, steers);
+	f.runState.processing = true;
+	const run = f.bridge.run();
+	for (let i = 0; i < 40; i++) await flush();
+	assert.equal(f.trace.filter((x) => x === "ack").length, steers + 1, "every message acked");
+	assert.equal(
+		f.reports.filter((e) => e.kind === "completion-wait").length,
+		1,
+		"one turn watcher, not one per steered message",
+	);
+	const asked = asks.processing;
+	for (let i = 0; i < 40; i++) await flush();
+	assert.equal(asks.processing, asked, "no run-state questions while the turn runs untriggered");
+	endOwnedTurn(f);
+	for (let i = 0; i < 20; i++) await flush();
+	const completed = f.reports.filter((e) => e.kind === "native-completed");
+	assert.deepEqual(
+		completed.map((e) => e.msgId).sort(),
+		[claim.message.msg_id, ...Array.from({ length: steers }, (_, i) => `steer-${i + 1}`)].sort(),
+		"each message reported once",
+	);
+	assert.ok(asks.processing - asked <= 2, `one question for the turn's end, not ${steers + 1}`);
+	f.bridge.stop();
+	await run;
+});
+
+test("C31: a steer cleared by a root abort before consumption is resent once, and receiving resumes", async (t) => {
+	const f = fixture({ delay: () => flush() });
+	t.after(() => f.bridge.stop());
+	// The steer (second send) is accepted but never consumed; its resend is.
+	const { claims, messages } = steeredTurn(f, 2, (send) => send !== 2);
+	f.runState.processing = true;
+	const run = f.bridge.run();
+	for (let i = 0; i < 20; i++) await flush();
+	assert.equal(f.trace.filter((x) => x === "send").length, 2, "the steer was accepted");
+	assert.equal(f.trace.filter((x) => x === "ack").length, 1, "only the first is acked so far");
+	f.runState.steeringMessages = ["[pij from pending steer"];
+	await flush();
+	// Copilot aborts the run: the steer is cleared from its queue, and the only
+	// end is the root abort (no turn_end, no idle).
+	f.runState.steeringMessages = [];
+	f.endRun({ type: "abort", id: "root-abort", data: { reason: "user_initiated" } });
+	for (let i = 0; i < 40; i++) await flush();
+	const sends = f.trace.filter((x) => x === "send").length;
+	assert.equal(sends, 4, "steer 1 resent exactly once, then steer 2 delivered");
+	assert.equal(
+		f.reports.filter((e) => e.kind === "native-requeued" && e.msgId === messages[0].message.msg_id)
+			.length,
+		1,
+	);
+	assert.equal(f.trace.filter((x) => x === "ack").length, 3, "no loss and no duplicate ack");
+	assert.ok(claims.length >= 3, "receiving resumed after the recovery");
+	f.bridge.stop();
+	await run;
+});
 
 for (const type of ["session.idle", "session.error"]) {
 	test(`native-event diagnostics report the completion's pre-state for a healthy ${type}`, async (t) => {
@@ -4266,6 +4622,14 @@ test("claim page preserves typed target and transient hold metadata without chan
 			{ kind: "consent", reason },
 		]),
 		[`native-consumer-held:${target}`, { kind: "native-target", reason: target }],
+		// Plan 214 (C31): steering off answers a claim during a turn with turn-wait.
+		[
+			"native-consumer-held:turn-wait: mid-turn steering is off for this seat (pij steer on)",
+			{
+				kind: "turn-wait",
+				reason: "turn-wait: mid-turn steering is off for this seat (pij steer on)",
+			},
+		],
 	]) {
 		const client = new DaemonClient({
 			addr: "127.0.0.1:13700",
@@ -4274,9 +4638,30 @@ test("claim page preserves typed target and transient hold metadata without chan
 			fetch: async () =>
 				new Response(JSON.stringify({ ok: true, command: "pij inbox", v: 2, data: [], meta })),
 		});
-		assert.deepEqual(await client.claimInbox(tuple), { claims: [], hold });
+		assert.deepEqual(await client.claimInbox(tuple), { claims: [], steer: false, hold });
 		assert.deepEqual(await client.request("/v1/seats"), []);
 	}
+	// The seat's switch rides the claim's details; a claim during a turn says so.
+	const urls = [];
+	const steering = new DaemonClient({
+		addr: "127.0.0.1:13700",
+		stateDir: "/isolated",
+		readKey: async () => "key",
+		fetch: async (url) => {
+			urls.push(String(url));
+			return new Response(
+				JSON.stringify({ ok: true, v: 2, data: [], details: { mid_turn_steer: true } }),
+			);
+		},
+	});
+	assert.deepEqual(await steering.claimInbox(tuple, undefined, true), {
+		claims: [],
+		steer: true,
+		hold: null,
+	});
+	assert.match(urls[0], /[?&]during_turn=true(&|$)/);
+	await steering.claimInbox(tuple);
+	assert.doesNotMatch(urls[1], /during_turn/);
 });
 
 test("malformed claim hold metadata is not silently downgraded to an empty inbox", async () => {
@@ -5141,9 +5526,11 @@ test("standby: a newer same-process holder is a quiet wait that this session's o
 	});
 	const request = f.client.request.bind(f.client);
 	const registers = [];
+	const attempts = [];
 	f.client.request = async (path, body, signal) => {
 		if (path === "/v1/register") {
 			registers.push(body.native_precedence);
+			attempts.push(body.attempt);
 			if (held) throw new NativeError("held", true, "Pij HTTP 409", "native-holder");
 		}
 		return request(path, body, signal);
@@ -5164,6 +5551,9 @@ test("standby: a newer same-process holder is a quiet wait that this session's o
 	await acknowledged.promise;
 	f.bridge.stop();
 	assert.deepEqual(registers.at(-1), { last_user_message_at: 90_000, loaded_at: 1_000 });
+	// Plan 211 (review of #148, F002): the first registration is explicit and
+	// the one after the standby is a lease retry, though none succeeded before.
+	assert.deepEqual([attempts[0], attempts.at(-1)], ["explicit", "lease-retry"]);
 	assert.deepEqual(logs, []);
 	assert.ok(captured.some((event) => event.kind === "standby-ended"));
 });

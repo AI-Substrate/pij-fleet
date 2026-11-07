@@ -102,6 +102,7 @@ Any plan, PR or feature that adds or changes a **loop, poll, timer, hook, status
 2. **Measure it on the live fleet, before and after**, and keep the receipts: `pij-rs --json ping | jq .data.spawns` (two readings a known number of seconds apart; per call site) and `just spawn-rate --seconds 20` (whole machine). See [`docs/how/macos-defender.md`](docs/how/macos-defender.md) § Measure launches.
 3. **Launch nothing per tick per seat.** Prefer in-process work (read the file, call the syscall), the daemon's persistent tmux control client for tmux reads, or a cache with an explicit lifetime. Launch by **absolute path** (`/bin/ps`), never a bare name, in any repeated path.
 4. **Record every new daemon launch site** with the spawn counter; `crates/testkit/tests/spawn_sites.rs` fails if you don't.
+5. **Build niced; run tests nice-only; time real children honestly (F28, F63).** Compiling on the shared machine runs under `nice -n 19 taskpolicy -b` (macOS; `nice -n 19` elsewhere); running tests runs under `nice -n 19` alone, because background QoS slows a test's own child processes past its wall-clock budgets. `just shared-build` does both for you: a `cargo test` compiles with `--no-run` in background QoS, then runs the same command nice-only. The run step is not compile-free: cargo builds doctests as they run, so they compile nice-only, and `cargo test --doc` (which refuses `--no-run`) is one nice-only step. Write a budget on a real `ps`, tmux or spawn as `pij_testkit::time::scaled(...)` (TS: `scaled()` in `harness/driver/time-scale.ts`); `PIJ_TEST_TIME_SCALE` (default 1) stretches it on a loaded machine, and production constants never read it.
 
 Reviewers check cost explicitly, the same as correctness: name the loop, its rate, and its per-seat scaling, or say there is none.
 
@@ -150,7 +151,7 @@ citation disputes, all of which resolved as neither party being wrong.)
 3. Smoke: `just smoke` before merging.
 4. **Before declaring any task done — or before ship — run `harness checks`.**
    The engineering-harness gate: it runs the full deterministic **signal
-   inventory** (local-path portability → project docs (ddocs) → typecheck → lockfile allowlist → lint →
+   inventory** (local-path portability → project docs (ddocs) → workstream coverage → pij skill structure → typecheck → lockfile allowlist → lint →
    test → Copilot native contracts → Rust gate → smoke → commit-trailer
    attribution) as individual stages and reports a per-sensor verdict — and
    unlike `just self-check` it runs **all** sensors, so one invocation surfaces
@@ -185,6 +186,11 @@ citation disputes, all of which resolved as neither party being wrong.)
   cleared for you (plans 198, 208).
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
+- **`just pr-freeze <pr>`**: is a PR head final for verdicts? Run by hand before each verdict
+  request and before READY. FINAL (exit 0) only when `git ls-remote` and `gh` agree on the head,
+  the base is main, it is CLEAN, every check's latest run passed, it is not draft, its migrations
+  sit above main's highest, and its `Delivers:` line parses; otherwise each failing condition with
+  its next step. `--worktree` creates the detached review worktree at that head (plan 220, F92).
 - **`just doctor`** — read-only audit: CLI shim shape, `pij-rs` on PATH, skill
   link, OMP policy and daemon health. The first diagnostic when anything drifts.
 - **npm supply chain** — `.npmrc` enforces a seven-day `min-release-age`

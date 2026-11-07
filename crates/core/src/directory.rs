@@ -7,6 +7,8 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
     match verb {
         None => Some(OVERVIEW),
         Some("add") => Some(ADD),
+        Some("edit") => Some(EDIT),
+        Some("retire" | "merge") => Some(RESHAPE),
         Some("assign" | "release" | "lineage") => Some(HOLD),
         Some("external") => Some(EXTERNAL),
         Some("rebuild") => Some(REBUILD),
@@ -50,16 +52,21 @@ const OVERVIEW: &str = "\
 pij directory: the project's community directory, on the governance branch.
 
 Usage:
-  pij directory [--project <slug>] [--json]           this project's roles and holders
+  pij directory [--project <slug>] [--json]           this project's roles, holders and next actions
+  pij directory --suggest [--project <slug>]          also every role suggestion in full (core roles, security)
   pij directory add <id> --why <text> [role flags | --file <json>] [--project <slug>]
   pij directory add <id> --from template:<name>[@v<n>] --why <text> [role flags]
   pij directory add --batch <dir> --why <text> [--project <slug>]
-  pij directory templates                             the role templates and versions
+  pij directory edit <id> --why <text> (--set <field>=<value>... | role flags | --file <json>)
+  pij directory retire <role> --why <text>             a role no longer in use
+  pij directory merge <from> --into <to> --why <text>  fold one role into another
+  pij directory templates [--show <name>[@vN]]        the role templates, or one's body
   pij directory template-diff <id>                    what changed in its template since
   pij directory assign <role>[/<instance>] <seat> --why <text>
   pij directory assign --batch <file> --why <text>      many holdings, one commit
   pij directory release <role>[/<instance>] <seat> --why <text>
   pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>
+  pij directory lineage add --batch <file> --why <text>   many past holdings, one commit
   pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]
   pij directory rebuild                               the store from the branch head
   pij directory routes [--write --why <text>]         the routing table, with live holders
@@ -84,6 +91,16 @@ Usage:
   pij directory add <id> --why <text> --file <role.dd.json>
   pij directory add <id> --from template:<name>[@v<n>] --why <text> [flags]
   pij directory add --batch <dir> --why <text>
+
+Required, unless --file or --from template supplies them: --why, --title,
+--kind, --lifecycle, --holders, at least one --rule, and one of --packet or
+--brief. The shortest add:
+  pij directory add qa --why \"a QA role\" --title QA --kind specialist \\
+    --lifecycle long-lived --holders one --rule \"A verdict on every PR.\" \\
+    --packet \"Review each PR at its head.\"
+
+Each add is its own commit: a chain of adds that stops part-way leaves the
+earlier roles committed. --batch <dir> is all or nothing.
 
 Flags:
   --why <text>              required; becomes the changelog row
@@ -111,6 +128,39 @@ Flags:
   --file <json>             the whole document instead of flags
   --batch <dir>             every *.dd.json in <dir>, one commit, all or nothing";
 
+const EDIT: &str = "\
+pij directory edit: change a role that exists (plan 206).
+
+Usage:
+  pij directory edit <id> --why <text> --set <field>=<value> [--set ...] [role flags]
+  pij directory edit <id> --why <text> --file <role.dd.json>
+
+--set takes title, kind, lifecycle, holders, instance_key, default_limit,
+summary, template, template_version, harness, model, effort, packet or brief.
+The role flags `add` takes work too (a repeated flag such as --rule replaces
+the whole list). --file replaces the whole document but keeps its changelog.
+Every edit adds one changelog row (--why) and commits through the writer; an
+edit that changes nothing, or a role that does not exist, refuses.";
+
+const RESHAPE: &str = "\
+pij directory retire | merge: reshape the community as the work changes (plan 206).
+
+Usage:
+  pij directory retire <role> --why <text> [--drop-queued] [--project <slug>]
+  pij directory merge <from> --into <to> --why <text> [--drop-queued] [--project <slug>]
+
+retire marks the role retired (meta.state) with a changelog row. merge retires
+<from> with meta.merged_into <to> and adds a changelog row to both. Each is one
+commit. Nothing is moved or rewritten: a retired role's memory, outputs and
+lineage stay readable, and the view lists a merged role under its target. A role
+with a live holder refuses (release it first); a retired role cannot be assigned,
+edited, retired again or merged into, and sends to it are refused.
+
+A role with requests queued for a holder refuses, listing each request's id,
+requester and age: assign a holder to take them, or pass --drop-queued to
+withdraw them (each is recorded on the spine and its requester told once, as an
+FYI). merge does not move queued requests to <to>.";
+
 const HOLD: &str = "\
 pij directory assign|release|lineage: a seat takes or leaves a role, or the
 prime records a past holding.
@@ -120,6 +170,7 @@ Usage:
   pij directory assign --batch <file> --why <text> [--project <slug>]
   pij directory release <role>[/<instance>] <seat> --why <text> [--project <slug>]
   pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>
+  pij directory lineage add --batch <file> --why <text> [--project <slug>]
 
 assign appends a row to roles/<id>/holders.dd.json, sets the seat's role (pa,
 pm for pm-<n>, else worker; a prime keeps prime) and names its tmux window
@@ -131,7 +182,9 @@ the row. `pij close <seat>` ends every holding.
 
 lineage add (the prime only) records a closed seat's past holding: no live seat
 needed, no seat role set. Times are RFC 3339 with Z or an offset, or a date
-(UTC midnight); a holding that overlaps the seat's others is refused.";
+(UTC midnight); a holding that overlaps the seat's others is refused. --batch
+takes one `<role>[/<instance>] <seat> <from> <to>` per line and writes them all
+in one commit, or none.";
 
 const EXTERNAL: &str = "\
 pij directory external add: note a seat borrowed from another project.
@@ -147,9 +200,11 @@ pij directory templates | template-diff: the role templates pij ships.
 
 Usage:
   pij directory templates
+  pij directory templates --show <name>[@vN]
   pij directory template-diff <id> [--project <slug>]
 
-templates lists each template with its versions. Templates are examples to
+templates lists each template with its versions; --show prints one
+template's exact body (the latest version by default) and its path. Templates are examples to
 adapt, not a checklist. template-diff shows what changed between the template
 version role <id> came from and the latest one. Nothing is ever applied: the
 role keeps its own edits, and you copy any change you want by hand.";
@@ -179,13 +234,13 @@ const MEMORY: &str = "\
 pij directory memory: a role's memory, one note per file (pij/memory).
 
 Usage:
-  pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>
-  pij directory memory add <role> --title <t> --hook <h> --body-file <path|->
+  pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] [--slug <s>] --body <text>
+  pij directory memory add <role> --title <t> --hook <h> [--slug <s>] --body-file <path|->
   pij directory memory <role>                     print memory/INDEX.md
   pij directory memory <role> --note <slug>       print one note
 
 add writes roles/<role>/memory/<yyyy-mm-dd>-<slug>.dd.json, the slug taken
-from --title, and regenerates memory/INDEX.md with one line per note, keeping
+from --title (at most 40 characters, cut on a word) unless --slug gives it, and regenerates memory/INDEX.md with one line per note, keeping
 every line pij did not write. One commit per note. --tags repeats or takes a
 comma list. --body-file - reads stdin. Notes are never capped, pruned or
 deleted; there is no delete verb.
@@ -221,6 +276,18 @@ mod tests {
                 .contains("--from template:<name>")
         );
         assert_eq!(help(Some("templates")), help(Some("template-diff")));
+        assert!(
+            help(Some("edit"))
+                .unwrap()
+                .contains("--set <field>=<value>")
+        );
+        assert!(help(None).unwrap().contains("pij directory edit <id>"));
+        assert_eq!(help(Some("retire")), help(Some("merge")));
+        assert!(
+            help(None)
+                .unwrap()
+                .contains("pij directory merge <from> --into <to>")
+        );
     }
 
     #[test]
@@ -230,5 +297,24 @@ mod tests {
         assert_eq!(shell_word("it's"), "'it'\\''s'");
         assert_eq!(shell_word("$(x)"), "'$(x)'");
         assert_eq!(shell_word(""), "''");
+    }
+
+    /// Plan 209, F35: add --help names the required flags and the shortest add.
+    #[test]
+    fn add_help_names_the_required_flags() {
+        let add = help(Some("add")).unwrap();
+        assert!(
+            add.contains("at least one --rule, and one of --packet or\n--brief"),
+            "{add}"
+        );
+        assert!(add.contains("The shortest add:"), "{add}");
+    }
+
+    /// Plan 209, F38: add --help says each add commits on its own.
+    #[test]
+    fn add_help_says_each_add_is_its_own_commit() {
+        let add = help(Some("add")).unwrap();
+        assert!(add.contains("Each add is its own commit"), "{add}");
+        assert!(add.contains("--batch <dir> is all or nothing"), "{add}");
     }
 }

@@ -1242,6 +1242,24 @@ mod tests {
         assert!(fixture.queue.retried().is_empty());
     }
 
+    /// Plan 218 AC2: a socket drain probes once and delivers once, so the Claude
+    /// transport (whose `deliver` reuses its probe's endpoint) discovers once.
+    #[tokio::test]
+    async fn a_socket_drain_probes_once_then_delivers() {
+        let fixture = fixture(FakeTransport::reachable(), FakeTmux::new());
+        register(&fixture, seat("pij-socket-once", Some("%socket-once"))).await;
+        let msg = message("pij-socket-once", "one resolution", None);
+        enqueue(&fixture, &msg).await;
+        assert_eq!(fixture.worker.drain_once().await.unwrap(), 1);
+        assert_eq!(
+            fixture.transport.calls(),
+            [
+                "can_deliver:pij-socket-once:m-pij-socket-once",
+                "deliver:pij-socket-once:m-pij-socket-once",
+            ]
+        );
+    }
+
     #[tokio::test]
     async fn repeated_composer_deferrals_are_counted_without_flooding_the_spine() {
         let mut fixture = fixture_unarranged(

@@ -3,6 +3,8 @@
 pub mod role_send;
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -236,6 +238,22 @@ pub struct DeliveryService {
     recovery_authority_shared: bool,
     admissions: tokio::sync::Mutex<tokio::task::JoinSet<()>>,
 }
+
+/// The hold a claim made during a turn gets when the seat's mid-turn steering
+/// is off (plan 214, C31): the receiver keeps the old post-ack barrier.
+pub const TURN_WAIT_HOLD: &str = "turn-wait: mid-turn steering is off for this seat (pij steer on)";
+
+/// The event `pij steer` writes for a real change; it wakes a during-turn wait.
+pub const STEERING_CHANGED_KIND: &str = "steer.changed";
+
+/// A during-turn wait is event-driven (an enqueue or a switch change for the
+/// seat wakes it); this backstop only covers work that becomes claimable on a
+/// timer, such as a delayed retry. At most one wake per this per waiting seat.
+pub const DURING_TURN_BACKSTOP: Duration = Duration::from_secs(15);
+
+/// Reads the seat's mid-turn steering at a during-turn claim's hand-off.
+pub type SteeringGate =
+    dyn Fn() -> Pin<Box<dyn Future<Output = Result<bool>> + Send>> + Send + Sync;
 
 impl DeliveryService {
     /// Build a delivery service with an operating-system-random message-id prefix.
@@ -1402,7 +1420,14 @@ impl DeliveryService {
     /// Queue failures or a corrupt/misdirected delivery payload.
     pub async fn claim_inbox(&self, seat: &SeatId, wait: bool) -> Result<Vec<InboxClaim>> {
         Ok(self
-            .claim_inbox_inner(seat, wait, &NativeInboxIdentity::default(), None, false)
+            .claim_inbox_inner(
+                seat,
+                wait,
+                &NativeInboxIdentity::default(),
+                None,
+                false,
+                None,
+            )
             .await?
             .claims)
     }
@@ -1423,7 +1448,33 @@ impl DeliveryService {
         {
             self.attest_native_receiver(seat, identity).await?;
         }
-        self.claim_inbox_inner(seat, wait, identity, None, false)
+        self.claim_inbox_inner(seat, wait, identity, None, false, None)
+            .await
+    }
+
+    /// [`Self::claim_native_inbox`] for a receiver claiming during a turn its
+    /// own message started (plan 214, C31). The switch is read at the hand-off,
+    /// after the job is claimed: with steering off by then, the job is released
+    /// and the page holds [`TURN_WAIT_HOLD`], so a message enqueued after `off`
+    /// never steers, even into a claim that was already waiting. The wait has
+    /// no 500 ms tick: it wakes on the seat's enqueues and switch changes, with
+    /// [`DURING_TURN_BACKSTOP`].
+    pub async fn claim_native_inbox_during_turn(
+        &self,
+        seat: &SeatId,
+        wait: bool,
+        identity: &NativeInboxIdentity,
+        steering: &SteeringGate,
+    ) -> Result<NativeInboxPage> {
+        if self
+            .registry
+            .get(seat)
+            .await?
+            .is_some_and(|seat| seat.harness == Harness::Copilot && seat.native_extension_delivery)
+        {
+            self.attest_native_receiver(seat, identity).await?;
+        }
+        self.claim_inbox_inner(seat, wait, identity, None, false, Some(steering))
             .await
     }
 
@@ -1434,7 +1485,7 @@ impl DeliveryService {
         seat: &SeatId,
         identity: &NativeInboxIdentity,
     ) -> Result<NativeInboxPage> {
-        self.claim_inbox_inner(seat, false, identity, None, true)
+        self.claim_inbox_inner(seat, false, identity, None, true, None)
             .await
     }
 
@@ -1450,7 +1501,7 @@ impl DeliveryService {
     ) -> Result<NativeInboxPage> {
         if !wait {
             return self
-                .claim_inbox_inner(seat, false, identity, Some(liveness), false)
+                .claim_inbox_inner(seat, false, identity, Some(liveness), false, None)
                 .await;
         }
         let mut wake = self.event_bus.subscribe_live(
@@ -1473,7 +1524,7 @@ impl DeliveryService {
             .transpose()?;
         loop {
             let page = self
-                .claim_inbox_inner(seat, false, identity, Some(liveness), false)
+                .claim_inbox_inner(seat, false, identity, Some(liveness), false, None)
                 .await?;
             if !page.claims.is_empty() {
                 return Ok(page);
@@ -1633,11 +1684,16 @@ impl DeliveryService {
         identity: &NativeInboxIdentity,
         pull_liveness: Option<&dyn LivenessPort>,
         manual_native: bool,
+        during_turn: Option<&SteeringGate>,
     ) -> Result<NativeInboxPage> {
         let kinds = [delivery_kind(seat)];
         let mut wake = wait.then(|| {
-            self.event_bus
-                .subscribe_live(EventFilter::kinds([OUTCOME_EVENT_KIND]).for_seat(seat.clone()))
+            let filter = if during_turn.is_some() {
+                EventFilter::kinds([OUTCOME_EVENT_KIND, STEERING_CHANGED_KIND])
+            } else {
+                EventFilter::kinds([OUTCOME_EVENT_KIND])
+            };
+            self.event_bus.subscribe_live(filter.for_seat(seat.clone()))
         });
         loop {
             // Native claims are queue ownership, not permission to inject. The
@@ -1857,6 +1913,17 @@ impl DeliveryService {
                         held_reason: Some(reason),
                     });
                 }
+                // C31 hand-off: the switch as it stands now, not as it stood
+                // when the request (or its wait) began (review of #152, F005).
+                if let Some(steering) = during_turn
+                    && !steering().await?
+                {
+                    self.queue.retry(job_id, Duration::ZERO).await?;
+                    return Ok(NativeInboxPage {
+                        claims: Vec::new(),
+                        held_reason: Some(TURN_WAIT_HOLD.to_string()),
+                    });
+                }
                 let message = payload.message;
                 self.publish_pointer_unparked_if_parked(seat, 1).await?;
                 match self
@@ -1898,7 +1965,8 @@ impl DeliveryService {
             };
             tokio::select! {
                 event = subscription.next() => { if event.is_none() { return Ok(NativeInboxPage::default()); } }
-                _ = tokio::time::sleep(Duration::from_millis(500)), if native => {}
+                _ = tokio::time::sleep(Duration::from_millis(500)), if native && during_turn.is_none() => {}
+                _ = tokio::time::sleep(DURING_TURN_BACKSTOP), if during_turn.is_some() => {}
             }
         }
     }
@@ -2636,7 +2704,7 @@ mod tests {
 
     use super::{
         DeliveryService, DeliverySources, NativeInboxIdentity, OUTCOME_EVENT_KIND,
-        PUSHED_EVENT_KIND, delivery_job,
+        PUSHED_EVENT_KIND, TURN_WAIT_HOLD, delivery_job,
     };
     use crate::events::EventBus;
     use crate::pointer::{POINTER_PARKED_EVENT_KIND, POINTER_UNPARKED_EVENT_KIND};
@@ -4830,6 +4898,12 @@ mod tests {
             other => panic!("expected a queued carrier, got {other:?}"),
         }
         assert!(fixture.transport.delivered().is_empty(), "not sent direct");
+        // Plan 218 AC2: the admission probe is the carrier's only resolution
+        // before the drain worker's own (one probe, one delivery).
+        assert_eq!(
+            fixture.transport.calls(),
+            ["can_deliver:pij-fyi-paned:m-carrier"]
+        );
         let bodies = queued_bodies(&fixture, "pij-fyi-paned").await;
         assert_eq!(bodies.len(), 1);
         assert!(
@@ -4846,6 +4920,14 @@ mod tests {
             "{plain:?}"
         );
         assert_eq!(fixture.transport.delivered().len(), 1);
+        assert_eq!(
+            fixture.transport.calls()[1..],
+            [
+                "can_deliver:pij-fyi-paned:m-plain",
+                "deliver:pij-fyi-paned:m-plain"
+            ],
+            "a direct send probes once, then delivers"
+        );
     }
 
     /// Plan 158 review HIGH-2: a carrier whose delivery fails must not lose the
@@ -6086,5 +6168,108 @@ mod tests {
         assert_eq!(fixture.queue.live_len(), 1, "only the compact is queued");
         assert!(fixture.tmux.calls().is_empty(), "admission never types");
         assert!(fixture.transport.delivered().is_empty());
+    }
+
+    /// Review of #152 (P152-F003, F005). A during-turn wait on an empty inbox
+    /// is event-driven: ten idle seconds cost the native wait about twenty
+    /// claim passes (its 500 ms tick) and the during-turn wait one. A
+    /// message enqueued after `off`, while a during-turn claim already waits,
+    /// is released at the hand-off with the turn-wait hold, never steered.
+    #[tokio::test(start_paused = true)]
+    async fn a_during_turn_wait_wakes_on_events_and_rechecks_the_switch_at_hand_off() {
+        use std::future::Future;
+        use std::pin::Pin;
+        use std::sync::atomic::AtomicBool;
+        let fixture = fixture(FakeTransport::reachable());
+        let mut seat = SeatDescriptor::new("pij-native", Harness::Copilot, "/abs/tree");
+        seat.native_extension_delivery = true;
+        seat.proc = Some(ProcIdentity {
+            pid: 7,
+            proc_start: 70,
+        });
+        seat.harness_session = Some("native-7".into());
+        fixture.registry.put(seat.clone()).await.unwrap();
+        let identity = NativeInboxIdentity {
+            native_session: Some("native-7".into()),
+            pid: Some(7),
+            proc_start: Some(70),
+        };
+        let passes = || {
+            fixture
+                .registry
+                .calls()
+                .iter()
+                .filter(|call| call.as_str() == "get:pij-native")
+                .count()
+        };
+        let idle = Duration::from_secs(10);
+
+        let before = passes();
+        let waited = tokio::time::timeout(
+            idle,
+            fixture
+                .service
+                .claim_native_inbox(&seat.id, true, &identity),
+        )
+        .await;
+        assert!(waited.is_err(), "nothing to claim");
+        let native_passes = passes() - before;
+
+        let steer = Arc::new(AtomicBool::new(true));
+        let switch = Arc::clone(&steer);
+        let gate = move || {
+            let on = switch.load(Ordering::SeqCst);
+            Box::pin(async move { Ok(on) })
+                as Pin<Box<dyn Future<Output = pij_core::error::Result<bool>> + Send>>
+        };
+        let before = passes();
+        let waited = tokio::time::timeout(
+            idle,
+            fixture
+                .service
+                .claim_native_inbox_during_turn(&seat.id, true, &identity, &gate),
+        )
+        .await;
+        assert!(waited.is_err(), "nothing to claim");
+        let turn_passes = passes() - before;
+        // Each pass reads the recipient about twice (attest, then the loop).
+        // Measured: native 44 reads, during-turn 4.
+        assert!(
+            native_passes >= 30 && turn_passes <= 4,
+            "recipient reads in 10 idle seconds: native {native_passes}, during-turn {turn_passes}"
+        );
+
+        let waiting = {
+            let (service, seat, identity, gate) = (
+                Arc::clone(&fixture.service),
+                seat.id.clone(),
+                identity.clone(),
+                gate.clone(),
+            );
+            tokio::spawn(async move {
+                service
+                    .claim_native_inbox_during_turn(&seat, true, &identity, &gate)
+                    .await
+            })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        steer.store(false, Ordering::SeqCst);
+        fixture
+            .service
+            .send("pij-peer".into(), seat.id.clone(), "after off")
+            .await
+            .unwrap();
+        let page = waiting.await.unwrap().unwrap();
+        assert!(page.claims.is_empty(), "not steered after off");
+        assert_eq!(page.held_reason.as_deref(), Some(TURN_WAIT_HOLD));
+        assert!(
+            fixture
+                .queue
+                .peek(&[delivery_kind(&seat.id)])
+                .await
+                .unwrap()
+                .is_some(),
+            "released: still queued for the turn's end"
+        );
     }
 }

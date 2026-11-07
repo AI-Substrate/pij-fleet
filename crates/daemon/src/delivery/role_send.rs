@@ -23,14 +23,16 @@ use pij_core::orchestration::PrimeState;
 use pij_core::ports::Registry;
 use pij_core::session_status::SessionStatusBlock;
 use pij_store::{
-    Assignment, LimitStage, ReplyMode, RequestState, RoleRequest, SqliteOrchestration,
+    Assignment, CloseOutcome, LimitStage, ReplyMode, RequestState, RoleRequest, SqliteOrchestration,
 };
 use serde_json::{Value, json};
 
 use crate::Services;
-use crate::community::directory::{AfterAssign, E_ROLE_MISSING};
+use crate::community::directory::{AfterAssign, E_RETIRED, E_ROLE_MISSING};
 use crate::community::holders::seat_role_for;
 use crate::community::layout::RolePaths;
+use crate::community::picture::command;
+use crate::community::role;
 use crate::community::{Refusal, root};
 
 /// Every role address starts with this.
@@ -153,6 +155,11 @@ pub enum Routed {
         /// Already recorded: a send interrupted after its claim resumes to
         /// the holder it claimed, never a new one.
         recorded: bool,
+        /// The role's admission gate, for a claim not yet recorded: hand it
+        /// to the recording write, so a retire cannot slip between this
+        /// route's standing read and the `delivering` row it then refuses on
+        /// (review of #135, F001). `None` for a recorded claim.
+        gate: Option<tokio::sync::OwnedMutexGuard<()>>,
     },
     /// A retry of a request already queued or delivered: nothing is sent
     /// again, and the stored request is the answer.
@@ -188,18 +195,46 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
     {
         return replay(&send, existing);
     }
-    let document = role_document(&send.repo, &send.project, &send.address.role)?;
-    let meta = section(&document, "meta");
-    if !send.address.instance.is_empty()
-        && meta.and_then(|meta| meta["holders"].as_str()) == Some("one")
+    // A request closed before any holder took it (plan 212) is never queued
+    // again by a retry of its send.
+    if let Some(closed) = store
+        .closed_role_request(&send.msg_id)
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
     {
-        return Err(Refusal::new(
-            E_ROLE_ADDRESS,
-            format!(
-                "role {} has one holder and no instances; address it as {ROLE_PREFIX}{}",
-                send.address.role, send.address.role
-            ),
-        ));
+        return replay(&send, closed.request);
+    }
+    // Held from the standing read until a queued request is recorded, so a
+    // retire or merge never lands between them (review of #135, F001).
+    let gate = services
+        .directory
+        .admission(&send.project, &send.address.role)
+        .await;
+    let document = role_document(&send.repo, &send.project, &send.address.role)?;
+    refuse_retired(&send, &role::standing(&document))?;
+    let meta = section(&document, "meta");
+    let one_holder = meta.and_then(|meta| meta["holders"].as_str()) == Some("one");
+    let assignments = store
+        .assignments(&send.project)
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+    let open: Vec<&Assignment> = assignments
+        .iter()
+        .filter(|row| row.to.is_none() && row.role == send.address.role)
+        .collect();
+    // An instance on a one-holder role resolves only when a holding has it
+    // (plan 212, F52): the per-PR instances a PM assigns are addressable.
+    if !send.address.instance.is_empty()
+        && one_holder
+        && !open.iter().any(|row| row.instance == send.address.instance)
+    {
+        let mut role_live = Vec::new();
+        for row in &open {
+            if let Some(seat) = live_seat(services.registry.as_ref(), &row.seat).await? {
+                role_live.push(seat.id);
+            }
+        }
+        return Err(no_such_instance(&send, &role_live));
     }
     let reply = match send.options.reply.as_deref() {
         None => ReplyMode::Wake,
@@ -222,16 +257,12 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
                 crate::http::background::parse_duration_ms(text, "default_limit").ok()
             }),
     };
-    let assignments = store
-        .assignments(&send.project)
-        .await
-        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
     let mut live = Vec::new();
-    for row in assignments.iter().filter(|row| {
-        row.to.is_none()
-            && row.role == send.address.role
-            && (send.address.instance.is_empty() || row.instance == send.address.instance)
-    }) {
+    for row in open
+        .iter()
+        .copied()
+        .filter(|row| send.address.instance.is_empty() || row.instance == send.address.instance)
+    {
         if let Some(seat) = live_seat(services.registry.as_ref(), &row.seat).await? {
             live.push((row, seat));
         }
@@ -257,7 +288,9 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
     };
     match live.as_slice() {
         [] => {
-            if let Err(error) = store.record_role_request(&request).await {
+            // The gate goes with the write: a cancelled send still holds it
+            // until its insert has landed or failed (review of #135, F001).
+            if let Err(error) = store.record_role_request_keeping(&request, gate).await {
                 // An identical send recorded it first: answer from that one.
                 if let Ok(Some(existing)) = store.role_request(&request.id).await {
                     return replay(&send, existing);
@@ -297,27 +330,128 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
                 body: framed_body(&request),
                 request,
                 recorded: false,
+                gate: Some(gate),
             })
         }
-        several => Err(Refusal::new(
+        several => Err(several_holders(&send, several)),
+    }
+}
+
+/// Two or more live holders (plan 212, F52). Each is listed with its
+/// instance. When some have one, `next` addresses that instance; when none
+/// does, an instance cannot pick one, so `next` is the fix: give a holding an
+/// instance. Never advice that refuses again.
+fn several_holders(send: &RoleSend, several: &[(&Assignment, SeatDescriptor)]) -> Refusal {
+    let role = &send.address.role;
+    let listed = several
+        .iter()
+        .map(|(row, seat)| {
+            if row.instance.is_empty() {
+                format!("{} (no instance)", seat.id)
+            } else {
+                format!("{} ({ROLE_PREFIX}{role}/{})", seat.id, row.instance)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let head = format!(
+        "{} has {} live holders in project {}: {listed}",
+        send.address.display(),
+        several.len(),
+        send.project,
+    );
+    // Only an instance exactly one live holder has picks one seat; a shared
+    // one (two seats on `reviewer/149`) would refuse again (review of #149,
+    // F002), so then the advice is a seat.
+    let unique = several.iter().find(|(row, _)| {
+        !row.instance.is_empty()
+            && several
+                .iter()
+                .filter(|(other, _)| other.instance == row.instance)
+                .count()
+                == 1
+    });
+    let shared = several.iter().any(|(row, _)| !row.instance.is_empty());
+    match unique {
+        // The role address keeps its project, wherever the line is run
+        // (review of #149, F003).
+        Some((row, _)) => Refusal::new(
+            E_ROLE_HOLDERS,
+            format!("{head}; address one by its instance, or send to the seat"),
+        )
+        .with_next(command(&[
+            "pij",
+            "send",
+            &format!("{ROLE_PREFIX}{role}/{}", row.instance),
+            "<text>",
+            "--project",
+            &send.project,
+        ])),
+        None if shared => Refusal::new(
             E_ROLE_HOLDERS,
             format!(
-                "{} has {} live holders in project {}: {}; address one as {ROLE_PREFIX}{}/<instance>, or send to the seat",
-                send.address.display(),
-                several.len(),
-                send.project,
-                several
-                    .iter()
-                    .map(|(row, seat)| if row.instance.is_empty() {
-                        seat.id.to_string()
-                    } else {
-                        format!("{} ({})", seat.id, row.instance)
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                send.address.role
+                "{head}; no instance has a single holder, so no instance address picks one. \
+                 Send to a seat, or release one of the shared holdings"
             ),
-        )),
+        )
+        .with_next(command(&[
+            "pij",
+            "send",
+            several[0].1.id.as_str(),
+            "<text>",
+        ])),
+        None => Refusal::new(
+            E_ROLE_HOLDERS,
+            format!(
+                "{head}; none has an instance, so an instance cannot pick one. Send to a seat \
+                 ({}), or give each holding an instance, as per-PR verdict roles do",
+                command(&["pij", "send", several[0].1.id.as_str(), "<text>"])
+            ),
+        )
+        .with_next(command(&[
+            "pij",
+            "directory",
+            "assign",
+            &format!("{role}/<instance>"),
+            several[0].1.id.as_str(),
+            "--why",
+            "<why>",
+            "--project",
+            &send.project,
+        ])),
+    }
+}
+
+/// An instance on a one-holder role that no holding has (plan 212, F52). With
+/// one live holder, `next` is the role address; with several, that address
+/// would refuse too, so `next` sends to a seat.
+fn no_such_instance(send: &RoleSend, live: &[SeatId]) -> Refusal {
+    let role = &send.address.role;
+    let refusal = |message: String| Refusal::new(E_ROLE_ADDRESS, message);
+    match live {
+        [_] | [] => refusal(format!(
+            "role {role} has one holder and no holding has instance {}; address it as {ROLE_PREFIX}{role}",
+            send.address.instance
+        ))
+        .with_next(command(&[
+            "pij",
+            "send",
+            &format!("{ROLE_PREFIX}{role}"),
+            "<text>",
+            "--project",
+            &send.project,
+        ])),
+        several => refusal(format!(
+            "role {role} has one holder, but {} seats hold it ({}) and none has instance {}; send to a seat",
+            several.len(),
+            several
+                .iter()
+                .map(SeatId::as_str)
+                .collect::<Vec<_>>()
+                .join(", "),
+            send.address.instance
+        ))
+        .with_next(command(&["pij", "send", several[0].as_str(), "<text>"])),
     }
 }
 
@@ -352,6 +486,7 @@ fn replay(send: &RoleSend, existing: RoleRequest) -> Result<Routed, Refusal> {
             body: framed_body(&existing),
             request: existing,
             recorded: true,
+            gate: None,
         }),
         _ => Ok(Routed::Replay { request: existing }),
     }
@@ -364,12 +499,19 @@ pub fn replay_receipt(request: &RoleRequest, now_ms: u64) -> Receipt {
             "replay: request {} was already delivered to {holder}; not sent again",
             request.id
         ),
+        (RequestState::Closed, _) => format!(
+            "replay: request {} was closed before any holder took it (pij requests --state closed); not sent again",
+            request.id
+        ),
         _ => format!(
             "replay: request {} is still queued for a holder; not sent again",
             request.id
         ),
     };
-    let outcome = if request.state == RequestState::Delivered {
+    let outcome = if matches!(
+        request.state,
+        RequestState::Delivered | RequestState::Closed
+    ) {
         DeliveryOutcome::Held { reason }
     } else {
         DeliveryOutcome::Queued {
@@ -432,7 +574,7 @@ fn role_document(repo: &Path, project: &str, role: &str) -> Result<Value, Refusa
             E_ROLE_MISSING,
             format!("project {project} has no role {role} in its directory"),
         )
-        .with_next(format!("pij directory view --project {project}"))
+        .with_next(command(&["pij", "directory", "view", "--project", project]))
     };
     let text = std::fs::read_to_string(&path).map_err(|_| missing())?;
     serde_json::from_str(&text).map_err(|error| {
@@ -440,6 +582,39 @@ fn role_document(repo: &Path, project: &str, role: &str) -> Result<Value, Refusa
             "E-RS-ARG",
             format!("{} is not a role document: {error}", path.display()),
         )
+    })
+}
+
+/// A retired role takes no sends; a merged one names where its work went
+/// (plan 206, req-28). Nothing is queued for either.
+fn refuse_retired(send: &RoleSend, standing: &role::Standing) -> Result<(), Refusal> {
+    if !standing.retired() {
+        return Ok(());
+    }
+    let role = &send.address.role;
+    Err(match &standing.merged_into {
+        Some(into) => Refusal::new(
+            E_RETIRED,
+            format!(
+                "role {role} in project {} was merged into {into}; nothing was sent",
+                send.project
+            ),
+        )
+        .with_next(format!("Send to {ROLE_PREFIX}{into} instead.")),
+        None => Refusal::new(
+            E_RETIRED,
+            format!(
+                "role {role} in project {} is retired; nothing was sent",
+                send.project
+            ),
+        )
+        .with_next(command(&[
+            "pij",
+            "directory",
+            "view",
+            "--project",
+            &send.project,
+        ])),
     })
 }
 
@@ -483,7 +658,7 @@ async fn check_seat_role(
                 "{seat} holds {role} in the directory, which makes it a {expected}, but seat_roles records it as {actual}"
             ),
         )
-        .with_next(format!("pij role {seat} {expected}"))),
+        .with_next(command(&["pij", "role", seat.as_str(), expected]))),
         _ => Ok(()),
     }
 }
@@ -592,12 +767,23 @@ async fn wake_body(
             |tokens| format!("context {}", human_tokens(tokens)),
         );
         text.push_str(&format!(
-            "\n  revive the last holder {last} ({context}): pij-rs revive {last}"
+            "\n  revive the last holder {last} ({context}): {}",
+            command(&["pij-rs", "revive", last.as_str()])
         ));
     }
     text.push_str(&format!(
-        "\n  assign a fresh seat: pij directory assign {assign_target} <seat> --why \"<why>\" --project {}",
-        request.project
+        "\n  assign a fresh seat: {}",
+        command(&[
+            "pij",
+            "directory",
+            "assign",
+            &assign_target,
+            "<seat>",
+            "--why",
+            "<why>",
+            "--project",
+            &request.project,
+        ])
     ));
     text.push_str(
         "\nAssigning delivers the queue to the new holder. pij never starts a seat itself.",
@@ -678,34 +864,109 @@ impl RoleQueueDrain {
     }
 }
 
+#[async_trait::async_trait]
 impl AfterAssign for RoleQueueDrain {
-    fn assigned(&self, project: &str, role: &str, instance: &str, seat: &SeatId) {
-        let Some(services) = self.services.get().cloned() else {
+    async fn assigned(
+        &self,
+        project: &str,
+        role: &str,
+        instance: &str,
+        seat: &SeatId,
+    ) -> Vec<Value> {
+        let Some(services) = self.services.get() else {
             eprintln!("pij-rs: role queue for {role} not drained: services not bound");
-            return;
+            return Vec::new();
         };
-        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-            eprintln!("pij-rs: role queue for {role} not drained: no runtime");
-            return;
+        // The drain runs in its own task, so a cancelled assign waiter never
+        // drops a request between its claim and its settlement (review of
+        // #149, F004): the claim, the delivery and the settlement (or the
+        // release back to the queue) finish whatever happens to the waiter.
+        let owned = {
+            let (services, project, role, instance, seat) = (
+                services.clone(),
+                project.to_string(),
+                role.to_string(),
+                instance.to_string(),
+                seat.clone(),
+            );
+            tokio::spawn(async move { drain(&services, &project, &role, &instance, &seat).await })
         };
-        let (project, role, instance, seat) = (
-            project.to_string(),
-            role.to_string(),
-            instance.to_string(),
-            seat.clone(),
-        );
-        runtime.spawn(async move {
-            for (id, outcome) in drain(&services, &project, &role, &instance, &seat).await {
-                if let Err(cause) = outcome {
-                    eprintln!("pij-rs: role request {id} for {seat} not drained: {cause}");
-                }
+        let result = owned
+            .await
+            .unwrap_or_else(|cause| Err(format!("the drain task failed: {cause}")));
+        match result {
+            Ok(drained) => drained
+                .iter()
+                .inspect(|one| {
+                    if let Err(cause) = &one.outcome {
+                        eprintln!(
+                            "pij-rs: role request {} for {seat} not drained: {cause}",
+                            one.id
+                        );
+                    }
+                })
+                .map(Drained::receipt)
+                .collect(),
+            Err(cause) => {
+                eprintln!("pij-rs: role queue for {role} not drained: {cause}");
+                vec![json!({"error": format!("the queue could not be read: {cause}")})]
             }
+        }
+    }
+}
+
+/// Why the drain closes a request instead of delivering it (plan 212, F61).
+pub const REQUESTER_TOOK_ROLE: &str = "the requester took the role";
+
+/// How the drain settled one request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DrainedAs {
+    /// Delivered to the new holder.
+    Delivered,
+    /// Closed: the new holder sent it ([`REQUESTER_TOOK_ROLE`]).
+    Closed,
+}
+
+/// One request the drain settled, or failed to (then it stays queued).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Drained {
+    /// The request id.
+    pub id: String,
+    /// Who sent it.
+    pub from: String,
+    /// How the requester wants to hear back.
+    pub reply: ReplyMode,
+    /// What happened, or why it is still queued.
+    pub outcome: Result<DrainedAs, String>,
+}
+
+impl Drained {
+    /// The assign receipt's entry (F56).
+    pub fn receipt(&self) -> Value {
+        let mut entry = json!({
+            "request": self.id,
+            "from": self.from,
+            "reply": self.reply.as_str(),
         });
+        match &self.outcome {
+            Ok(DrainedAs::Delivered) => entry["outcome"] = json!("delivered"),
+            Ok(DrainedAs::Closed) => {
+                entry["outcome"] = json!("closed");
+                entry["why"] = json!(REQUESTER_TOOK_ROLE);
+            }
+            Err(cause) => {
+                entry["outcome"] = json!("queued");
+                entry["error"] = json!(cause);
+            }
+        }
+        entry
     }
 }
 
 /// Deliver `role`'s queued requests a holder of `instance` can take to `seat`,
-/// oldest first, each from its requester; mark each one delivered.
+/// oldest first, each from its requester; mark each one delivered. A request
+/// `seat` sent itself is closed instead ([`REQUESTER_TOOK_ROLE`], plan 212,
+/// F61): a seat cannot send to itself, and it already knows what it asked.
 ///
 /// Each is claimed before it is dispatched, and the claim holds only while
 /// `seat` is live and holds the role at that moment, so two drains never
@@ -721,19 +982,49 @@ pub async fn drain(
     role: &str,
     instance: &str,
     seat: &SeatId,
-) -> Vec<(String, Result<(), String>)> {
+) -> Result<Vec<Drained>, String> {
     let store = services.directory.store();
-    let queued = match store.queued_role_requests(project, role, instance).await {
-        Ok(queued) => queued,
-        Err(cause) => return vec![(format!("{project}/{role}"), Err(cause.to_string()))],
-    };
+    let queued = store
+        .queued_role_requests(project, role, instance)
+        .await
+        .map_err(|cause| cause.to_string())?;
     let mut outcomes = Vec::new();
     for mut request in queued {
+        // From the claim until it is settled, delivered or back on the queue,
+        // the role's gate is held: a retire or merge waits for it, and its
+        // queued-request read and withdrawal never race a claim (review of
+        // #135, F001).
+        let _gate = services.directory.admission(project, role).await;
+        let settled = |outcome: Result<DrainedAs, String>| Drained {
+            id: request.id.clone(),
+            from: request.requester.clone(),
+            reply: request.reply,
+            outcome,
+        };
+        if request.requester == seat.as_str() {
+            let at = crate::http::system_time_ms().map_err(|cause| cause.to_string())?;
+            match store
+                .close_role_request(
+                    &request.id,
+                    RequestState::Queued,
+                    seat.as_str(),
+                    REQUESTER_TOOK_ROLE,
+                    at,
+                    None,
+                )
+                .await
+            {
+                Ok(CloseOutcome::Closed(_)) => outcomes.push(settled(Ok(DrainedAs::Closed))),
+                Ok(_) => {}
+                Err(cause) => outcomes.push(settled(Err(cause.to_string()))),
+            }
+            continue;
+        }
         match store.claim_role_request(&request.id, seat.as_str()).await {
             Ok(true) => {}
             Ok(false) => continue,
             Err(cause) => {
-                outcomes.push((request.id, Err(cause.to_string())));
+                outcomes.push(settled(Err(cause.to_string())));
                 continue;
             }
         }
@@ -748,19 +1039,33 @@ pub async fn drain(
             Err(cause) => Err(cause),
         };
         if outcome.is_err() {
-            // Back on the queue for the next assign.
+            // Back on the queue for the next assign. This never lands behind a
+            // retired role (plan 206, review of #135): retire and merge refuse
+            // while any request for the role is delivering, and this drain has
+            // held the role's gate since its claim, so no retirement can land
+            // between the claim and this release.
             let _ = store
                 .release_role_request_claim(&request.id, seat.as_str())
                 .await;
         }
-        outcomes.push((request.id, outcome));
+        outcomes.push(Drained {
+            id: request.id,
+            from: request.requester,
+            reply: request.reply,
+            outcome: outcome.map(|()| DrainedAs::Delivered),
+        });
     }
-    outcomes
+    Ok(outcomes)
 }
 
 /// At boot, settle the requests a stopped daemon left `delivering` (review
 /// of #129): one delivery already took is marked delivered, any other is
 /// re-queued for the next assign. A failure is logged; boot carries on.
+///
+/// A re-queued request never lands behind a retired role (plan 206, review of
+/// #135): retire and merge refuse while any request for the role is
+/// delivering, so a role that was retired before the stop had none, and this
+/// runs before anything is served, so no retirement races it.
 pub async fn recover_requests(services: &Services) {
     let now_ms = match crate::http::system_time_ms() {
         Ok(now) => now,
@@ -829,6 +1134,62 @@ async fn deliver_drained(
         }
         Ok(receipt) => Ok(receipt.at),
         Err(cause) => Err(cause.to_string()),
+    }
+}
+
+/// A reply answers a role request (plan 214, F68): a local send from the
+/// request's holder whose `--in-reply-to` names a delivered request sets its
+/// `answered_at`, which stops its check-in and escalation. A send from any
+/// other seat (the requester, a third party) answers nothing. The stamp is
+/// set once, the same field s06's `pij output --answers` sets, so neither
+/// path counts twice. One primary-key read per reply; a failure is logged and
+/// never fails the send. With `audit`, the stamp and the event commit in one
+/// transaction, run as their own task and then published (ruling C32 (3);
+/// review of #152, F006): no answer without its audit, and a failed append
+/// answers nothing, so a later reply can. True when this reply answered it.
+pub async fn answer_by_reply(
+    services: &Services,
+    from: &SeatId,
+    in_reply_to: Option<&str>,
+    now_ms: u64,
+    audit: Option<pij_core::model::Event>,
+) -> bool {
+    let Some(id) = in_reply_to else {
+        return false;
+    };
+    let store = services.governance.store();
+    let request = match store.role_request(id).await {
+        Ok(Some(request)) => request,
+        Ok(None) => return false,
+        Err(cause) => {
+            eprintln!("pij-rs: reply to request {id}: {cause}");
+            return false;
+        }
+    };
+    if request.state != RequestState::Delivered || request.holder.as_deref() != Some(from.as_str())
+    {
+        return false;
+    }
+    let stamped = match audit {
+        Some(audit) => {
+            let (store, id) = (store.clone(), id.to_string());
+            services
+                .event_bus
+                .publish_committed_batch(async move {
+                    store
+                        .mark_role_request_answered_audited(&id, now_ms, audit)
+                        .await
+                })
+                .await
+        }
+        None => store.mark_role_request_answered(id, now_ms).await,
+    };
+    match stamped {
+        Ok(stamped) => stamped,
+        Err(cause) => {
+            eprintln!("pij-rs: reply to request {id} not recorded as its answer: {cause}");
+            false
+        }
     }
 }
 
@@ -920,9 +1281,13 @@ pub async fn time_limit_step(
             return None;
         }
     };
-    let (stage, since) = match request.checkin_at {
-        None => (LimitStage::CheckIn, delivered_at),
-        Some(checked_in) => (LimitStage::Notice, checked_in),
+    let (stage, since, held_ms) = match request.checkin_at {
+        None => match arrival(services, request, &holder, delivered_at).await? {
+            Arrival::Reached(at) => (LimitStage::CheckIn, at, at.saturating_sub(delivered_at)),
+            // A gone holder never receives it; the PA hears from the limit.
+            Arrival::HolderGone => (LimitStage::CheckIn, delivered_at, 0),
+        },
+        Some(checked_in) => (LimitStage::Notice, checked_in, 0),
     };
     if now_ms < since.max(card_at).saturating_add(limit) {
         return None;
@@ -969,7 +1334,7 @@ pub async fn time_limit_step(
         LimitStage::CheckIn => match live_seat(services.registry.as_ref(), holder.as_str()).await {
             Ok(Some(seat)) => Ok((
                 LimitStage::CheckIn,
-                check_in(services, request, &seat, limit, now_ms).await,
+                check_in(services, request, &seat, limit, held_ms, now_ms).await,
             )),
             Ok(None) => Ok((
                 LimitStage::Notice,
@@ -1105,11 +1470,50 @@ async fn send_limit(
     .0
 }
 
+/// Where a delivered request is on its way to the holder's session.
+enum Arrival {
+    /// It reached the session at this time (ms).
+    Reached(u64),
+    /// Still held, and the holder is no longer live.
+    HolderGone,
+}
+
+/// When the request reached its holder's session (plan 214, F73): the check-in
+/// clock starts there, not at admission, so time held behind a busy turn is
+/// never counted against the holder. `None` while it is still held for a live
+/// holder: no check-in yet. One indexed read, plus a registry read only while
+/// it is held.
+async fn arrival(
+    services: &Services,
+    request: &RoleRequest,
+    holder: &SeatId,
+    delivered_at: u64,
+) -> Option<Arrival> {
+    let store = services.governance.store();
+    match store.message_reached_at(holder.as_str(), &request.id).await {
+        Ok(Some(at)) => return Some(Arrival::Reached(at.max(delivered_at))),
+        Ok(None) => {}
+        Err(cause) => {
+            eprintln!("pij-rs: time limits: arrival of {}: {cause}", request.id);
+            return None;
+        }
+    }
+    match live_seat(services.registry.as_ref(), holder.as_str()).await {
+        Ok(None) => Some(Arrival::HolderGone),
+        Ok(Some(_)) => None,
+        Err(refusal) => {
+            eprintln!("pij-rs: time limits: holder {holder}: {}", refusal.message);
+            None
+        }
+    }
+}
+
 async fn check_in(
     services: &Services,
     request: &RoleRequest,
     seat: &SeatDescriptor,
     limit: u64,
+    held_ms: u64,
     now_ms: u64,
 ) -> LimitAction {
     let address = RoleAddress {
@@ -1117,8 +1521,17 @@ async fn check_in(
         instance: request.instance.clone(),
     }
     .display();
+    // F73: the clock ran from arrival; say how long delivery held it first.
+    let held = if held_ms >= 60_000 {
+        format!(
+            " It waited {} in delivery before it reached you; the limit counts from then.",
+            human_duration(held_ms)
+        )
+    } else {
+        String::new()
+    };
     let body = format!(
-        "[pij time limit] Request {} ({address} in {}, from {}) passed its limit of {} with no card update. \
+        "[pij time limit] Request {} ({address} in {}, from {}) passed its limit of {} with no card update.{held} \
          Write down what you have, update your card (pij report now \"<what you did>\" \"<what is next>\"), \
          and say why it needs longer. Nothing has been stopped.",
         request.id,
@@ -1163,16 +1576,25 @@ async fn notice(
         instance: request.instance.clone(),
     }
     .display();
-    let release = format!(
-        "pij directory release {} {holder} --why \"<why>\" --project {}",
+    let release = command(&[
+        "pij",
+        "directory",
+        "release",
         address.trim_start_matches(ROLE_PREFIX),
-        request.project,
-    );
+        holder.as_str(),
+        "--why",
+        "<why>",
+        "--project",
+        &request.project,
+    ]);
+    // Every printed command quotes its words: `holder` and the instance are
+    // stored text (#149, herring).
+    let look = command(&["pij", "state", holder.as_str()]);
     let body = match silence {
         Silence::Unanswered => format!(
             "[pij time limit] {holder} has not answered the check-in for request {} ({address} in {}, from {}): \
              no output and no card update for {} since. Nothing has been stopped. Next: look at it \
-             (pij state {holder}), or give the role another holder ({release}).",
+             ({look}), or give the role another holder ({release}).",
             request.id,
             request.project,
             request.requester,

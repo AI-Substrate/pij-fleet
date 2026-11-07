@@ -25,4 +25,4 @@ A PRD says what to build and why, as requirement rows that each have a state and
 
 ## Then
 
-A PRD on its own is not work. Write or update the blueprint ([blueprint.md](blueprint.md)) and the roadmap ([roadmap.md](roadmap.md)) so every requirement is realised by a component and delivered by a step.
+A PRD on its own is not work. Write or update the blueprint ([blueprint.md](blueprint.md)) and the workstream ([workstream.md](workstream.md)) so every requirement is realised by a component and delivered by a step.

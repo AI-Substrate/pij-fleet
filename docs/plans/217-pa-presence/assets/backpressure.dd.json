@@ -1,0 +1,134 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 217 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1: fleet active",
+          "phase": "ph-0217",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: pure tracker tests in crates/core: working within 20 min is active; unknown never is; a usage-limit stop is not; fewer than two workers never fires.",
+          "state": "unchecked",
+          "probe": "crates/core/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2: PA missing",
+          "phase": "ph-0217",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: private-daemon test over simulated rounds: one message at 20 min active with no live PA, naming the last PA and its revive command; none again until a PA is seen or the scope goes inactive; a negative control with a live PA sends nothing.",
+          "state": "unchecked",
+          "probe": "crates/daemon/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3: PA dormant",
+          "phase": "ph-0217",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: one wake at 30 min turn-less while active, with the digest and the new audit reason; a working PA is never woken; a PA turn re-arms.",
+          "state": "unchecked",
+          "probe": "crates/daemon/"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4: PA unresponsive",
+          "phase": "ph-0217",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: after a dormant wake with no PA turn for 10 min, one message to the prime with the wake's receipt; a PA turn inside 10 min sends nothing.",
+          "state": "unchecked",
+          "probe": "crates/daemon/"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5: large-seat FYI",
+          "phase": "ph-0217",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: a fleet seat crossing 600k queues one FYI for the prime and never wakes it (held count rises, no wake receipt); two crossings in one round are one FYI; under 600k re-arms; a seat outside the fleet never counts.",
+          "state": "unchecked",
+          "probe": "crates/daemon/"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6: Copilot context size",
+          "phase": "ph-0217",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: extension test that the status report carries contextUsedTokens with a known basis; LIVE: after deploy, `pij-rs --json list` shows a size for the live Copilot seats.",
+          "state": "unchecked",
+          "probe": ".copilot/extensions/pij"
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC7: restart safety",
+          "phase": "ph-0217",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: restart the private daemon between rounds inside a stretch; no message repeats.",
+          "state": "unchecked",
+          "probe": "crates/daemon/"
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC8: cost",
+          "phase": "ph-0217",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs unchanged (no new launch site); private-daemon spawn counters equal across rounds with the new checks on and off; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping",
+          "note": "Steady state: inside the existing 60 s round; per scope, a constant number of in-memory comparisons plus bounded store reads for the stored claims; zero launches per tick, per seat or per scope; no new timer."
+        },
+        {
+          "id": "bp-0009",
+          "criterion": "AC9: audit and docs",
+          "phase": "ph-0217",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`just ddocs-check`; skill tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/how/"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}

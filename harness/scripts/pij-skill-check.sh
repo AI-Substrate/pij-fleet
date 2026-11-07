@@ -44,7 +44,7 @@ done <<< "$registry_rows"
 for f in "$SKILL"/references/routes/*.md; do
   [ -e "$f" ] || continue
   self=$(basename "$f" .md)
-  for r in ready pair delegate agent skill peer ops prime watch node; do
+  for r in ready pair delegate agent skill peer ops prime watch node community; do
     [ "$r" = "$self" ] && continue
     hits=$(grep -En "routes/$r\.md|/pij $r\b" "$f" 2>/dev/null || true)
     if [ "$self" = prime ] && { [ "$r" = pair ] || [ "$r" = peer ]; }; then
@@ -67,6 +67,8 @@ budget "$SKILL/SKILL.md" 150
 budget "$SKILL/references/00-routing.md" 250
 budget "$SKILL/references/routes/pair.md" 350
 for m in ready peer agent skill ops delegate node; do budget "$SKILL/references/routes/$m.md" 150; done
+# Plan 204: the community route stays token-lean.
+budget "$SKILL/references/routes/community.md" 100
 
 soft_budget() {
   [ -f "$1" ] || return 0
@@ -208,22 +210,20 @@ reject_compact_progress_gate "$c3" \
 
 require_count "$pair_route" "## Completion interrupt — compact EARLY" 1 \
   "completion pair: exactly one compact-early block"
-require_order "$pair_route" "completion pair: coder compact precedes report handling" \
-  "**Coder completion**" "compact the coder FIRST" "handle the report"
-require_order "$pair_route" "completion pair: reviewer compact precedes verdict handling" \
-  "**Reviewer verdict**" "compact the reviewer FIRST" 'follow the `FIX` or `APPROVE` path'
-require_order "$pair_route" "completion pair: reload-first safety precedes compact" \
-  "**Buggy-extension safety**" "reload FIRST" "then compact"
+# Plan 175 folded the coder and reviewer steps into one sentence and dropped the
+# reload-first "Buggy-extension safety" step; plan 186 has a Copilot compact land
+# before the next packet, retiring "continue immediately" and "never wait for
+# compact receipts" (plan 209, F26).
+require_order "$pair_route" "completion pair: compact precedes report and verdict handling" \
+  "## Completion interrupt — compact EARLY" "compact that peer as the **first** tool" \
+  "then handle the report"
 pair_completion=$(section "$pair_route" '## Completion interrupt — compact EARLY')
-printf '%s\n' "$pair_completion" | grep -Fq 'without `--wait`' \
-  && ok "completion pair: compact dispatch forbids --wait" \
-  || err "completion pair: missing no-compact-wait marker"
-printf '%s\n' "$pair_completion" | grep -Fq "continue immediately" \
-  && ok "completion pair: report/review/fix work continues immediately" \
-  || err "completion pair: missing immediate-continuation marker"
-printf '%s\n' "$pair_completion" | grep -Fq "Never wait for compact receipts or completion" \
-  && ok "completion pair: compact receipt/completion cannot gate progress" \
-  || err "completion pair: missing no-receipt-gate marker"
+printf '%s\n' "$pair_completion" | grep -Fq 'fire-and-forget' \
+  && ok "completion pair: compact dispatch is fire-and-forget" \
+  || err "completion pair: missing fire-and-forget marker"
+printf '%s\n' "$pair_completion" | grep -Fq "let it land before the next packet" \
+  && ok "completion pair: a compact lands before the next packet (plan 186)" \
+  || err "completion pair: missing land-before-next-packet marker"
 printf '%s\n' "$pair_completion" \
   | grep -Eq '`pij send [^`]*(--command compact|"/compact")[^`]*--wait[^`]*`' \
   && err "completion pair: compact command must not include --wait" \
@@ -312,9 +312,10 @@ require_order "$kickoff" "rs kickoff: recorded parent verified before canary" \
   "**Verify placement.**" \
   '`pij node show <id> --json`' \
   "**Canary legs (a) and (b).**"
-require_order "$kickoff" "rs kickoff: canary identity before role before brief" \
-  "Complete canary leg (a) round-trip and leg (b) identity proof" \
-  '`pij role <id> pm --json` after verifying the recorded parent' \
+# Plan 175: one `pij canary` runs legs (a) and (b), and the role is stamped at spawn.
+require_order "$kickoff" "rs kickoff: canary legs before role before brief" \
+  "runs both (§ Canary)" \
+  'A spawned stream already carries `--role pm`' \
   "**Deliver the brief by pointer as canary leg (c).**"
 
 # Rs designation names the incoming seat; retirement history comes from spine, not oldPrime/tree; docs/how/pij-rs-api.md#unsupported-status.
@@ -428,7 +429,7 @@ real invocation|host skill mechanism
 preamble|human preamble
 planning|guided `/builder`
 validation|/validate-v2
-wait gate|WAITING_FOR_BUILD_CONFIG
+wait gate|Stop after validation
 construction|stream worktree, branch, approved base
 delegation|/pij pair
 landing|/builder 8 ship
@@ -436,10 +437,10 @@ EOF
 
   require_marker "$orchestrator" "A plausible thesis written from memory does not satisfy this step." \
     "orchestrator contract: thesis anti-fake wording"
-  require_marker "$orchestrator" "separate Copilot gpt-5.6-sol @ xhigh coder" \
+  require_marker "$orchestrator" 'a separate Copilot seat on `gpt-5.6-sol`, `--effort xhigh`' \
     "orchestrator contract: exact default coder profile"
-  require_marker "$orchestrator" "separate Copilot gpt-5.6-sol @ xhigh reviewer" \
-    "orchestrator contract: exact default reviewer profile"
+  require_marker "$orchestrator" "a different model family, discovered at spawn" \
+    "orchestrator contract: default reviewer is cross-family"
   require_marker "$orchestrator" "read it back verbatim" \
     "orchestrator contract: verbatim profile read-back"
   require_marker "$orchestrator" "never the o-prime's window" \
@@ -458,20 +459,14 @@ EOF
     "orchestrator contract: shared-tree is fallback"
   require_marker "$orchestrator" "outage-first" \
     "orchestrator recovery: silence is outage-first"
-  require_marker "$orchestrator" "15-minute cadence" \
-    "orchestrator recovery: bounded silence cadence"
-  require_marker "$orchestrator" '`COMPLETE`, `CONTINUING`, or `BLOCKED`' \
-    "orchestrator recovery: explicit status response"
-  require_marker "$orchestrator" "poke before redispatch" \
-    "orchestrator recovery: poke before redispatch"
-  require_marker "$orchestrator" "repeated short-interval polling" \
-    "orchestrator recovery: no polling regression"
-  require_marker "$orchestrator" "current provided-peer path" \
-    "orchestrator pair config: provided-peer path named"
+  # Plan 175 replaced the 15-minute poke cadence with observation (protocol
+  # rule 6) and dropped the flow-pair engine caveats (plan 209, F26).
+  require_marker "$orchestrator" "never message an idle seat to check on it" \
+    "orchestrator recovery: observe, never poke an idle seat"
+  require_marker "$orchestrator" "Redispatch only when observation shows" \
+    "orchestrator recovery: redispatch only on observed loss"
   require_marker "$orchestrator" "persist the plan roster" \
     "orchestrator pair config: plan roster persistence"
-  require_marker "$orchestrator" "current flow-pair engine does not persist" \
-    "orchestrator pair config: engine persistence ceiling"
 
   previous=0
   while IFS='|' read -r label marker; do
@@ -486,9 +481,8 @@ EOF
     fi
   done <<'EOF'
 human confirmation|After the human confirms the fleet
-coder override|--coder-model <confirmed>
-reviewer override|--reviewer-model <confirmed>
-phase delegation|Delegate each whole phase
+phase delegation|Run each whole phase through `/pij pair`
+confirmed models|with the confirmed models
 EOF
 
   direct_build=$(grep -Ein \

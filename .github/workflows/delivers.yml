@@ -1,0 +1,33 @@
+name: delivers
+
+# A PR body's `Delivers:` line, checked before the merge (plan 209, F65).
+# `pij delivered` reads it after the merge, and a line it can't parse records
+# nothing; this fails the PR while the line can still be fixed. It runs on
+# body edits too, which the main ci workflow does not.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: delivers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  delivers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+      # The body travels in an env var, never spliced into the script.
+      - name: the PR body's Delivers line parses
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n' "$PR_BODY" | cargo run --locked -q -p pij-testkit --bin pij-delivers-check

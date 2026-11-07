@@ -517,6 +517,12 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Mid-turn steering for a seat: `steer on|off|status [<seat>]` (plan 214).
+    /// Off restores the post-ack barrier for a turn a pij message started.
+    Steer {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Tombstone a seat owned by this caller without killing its process or pane.
     Close {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -603,6 +609,18 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Write a role's output and tell whoever asked (plan 200).
+    #[command(disable_help_flag = true)]
+    Output {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// A project's role outputs, by subject and exact head or by role (plan 200).
+    #[command(disable_help_flag = true)]
+    Outputs {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Take the next number for a kind, or release one (plan 196).
     #[command(disable_help_flag = true)]
     Claim {
@@ -618,6 +636,12 @@ enum Command {
     /// Record what a merged PR delivered; prints the ddocs edits (plan 196, C23).
     #[command(disable_help_flag = true)]
     Delivered {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// List role requests, or withdraw a queued one (plan 212, F59).
+    #[command(disable_help_flag = true)]
+    Requests {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -1224,12 +1248,29 @@ async fn run(cli: Cli) -> ExitCode {
     {
         return directory_help(args);
     }
+    if let Command::Output { args } | Command::Outputs { args } = &cli.command
+        && pij_core::directory::wants_help(args)
+    {
+        let family = if matches!(cli.command, Command::Outputs { .. }) {
+            "outputs"
+        } else {
+            "output"
+        };
+        println!("{}", pij_core::outputs::help(family));
+        return ExitCode::SUCCESS;
+    }
     // Claim help needs no daemon either (plan 196).
     if let Command::Claim { args } | Command::Claims { args } | Command::Delivered { args } =
         &cli.command
         && pij_core::directory::wants_help(args)
     {
         print!("{}", pij_core::claims::HELP);
+        return ExitCode::SUCCESS;
+    }
+    if let Command::Requests { args } = &cli.command
+        && pij_core::directory::wants_help(args)
+    {
+        print!("{}", pij_core::requests::HELP);
         return ExitCode::SUCCESS;
     }
     let client = match DaemonClient::new(&state_dir, &addr) {
@@ -1421,8 +1462,11 @@ async fn run(cli: Cli) -> ExitCode {
                     }
                 }
             };
-            // A control keeps its own caller field; only a role message carries one here.
+            // A control keeps its own caller field; a role message and a reply
+            // carry one here, since the daemon binds a reply to its caller
+            // (ruling C32; review of #152, S152-001).
             let to_role = to.seat.as_str().starts_with("role:") && command.is_none();
+            let caller = message_caller(to_role, in_reply_to.is_some(), command.is_some());
             let request = SendRequest {
                 from: acting,
                 to,
@@ -1436,7 +1480,7 @@ async fn run(cli: Cli) -> ExitCode {
                 reply,
                 limit,
                 project,
-                caller: to_role.then(caller_context),
+                caller,
             };
             if to_role {
                 let mut response = client.send_role(&request).await;
@@ -1735,6 +1779,10 @@ async fn run(cli: Cli) -> ExitCode {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
             emit(&client.watchdog(&args, &caller_context()).await, as_json)
         }
+        Command::Steer { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            emit(&client.steer(&args, &caller_context()).await, as_json)
+        }
         Command::Close { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
             emit(&client.close(&args, &caller_context()).await, as_json)
@@ -1807,6 +1855,10 @@ async fn run(cli: Cli) -> ExitCode {
                     println!("{}", render_templates(&data["templates"]));
                     ExitCode::SUCCESS
                 }
+                Some(data) if data["template"].get("body").is_some_and(Value::is_string) => {
+                    println!("{}", render_template_show(&data["template"]));
+                    ExitCode::SUCCESS
+                }
                 Some(data) if data.get("diff").is_some_and(Value::is_string) => {
                     println!("{}", render_template_diff(data));
                     ExitCode::SUCCESS
@@ -1820,12 +1872,74 @@ async fn run(cli: Cli) -> ExitCode {
                     println!("{}", render_memory_note(memory));
                     ExitCode::SUCCESS
                 }
+                // `directory memory add`: one line, the JSON is for --json (F31).
+                Some(added)
+                    if args.first().map(String::as_str) == Some("memory")
+                        && args.get(1).map(String::as_str) == Some("add")
+                        && added.get("commit").is_some_and(Value::is_string) =>
+                {
+                    println!(
+                        "{}",
+                        render_memory_added(args.get(2).map_or("-", String::as_str), added)
+                    );
+                    ExitCode::SUCCESS
+                }
+                // An assign or release, single or `--batch` (plan 212, F56, F57).
+                Some(data) if is_holding(data) || data["holdings"].is_array() => {
+                    println!("{}", render_holdings(data));
+                    ExitCode::SUCCESS
+                }
+                _ => emit(&response, as_json),
+            }
+        }
+        Command::Output { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let args = match pij_cli::governance::body_file_to_body(&args, |source| {
+                if source == "-" {
+                    std::io::read_to_string(std::io::stdin())
+                } else {
+                    std::fs::read_to_string(source)
+                }
+            }) {
+                Ok(args) => args,
+                Err(reason) => {
+                    eprintln!("pij output: {reason}");
+                    return ExitCode::from(2);
+                }
+            };
+            emit(
+                &pij_cli::governance::governance(&client, "output", &args, &caller_context()).await,
+                as_json,
+            )
+        }
+        Command::Outputs { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let response =
+                pij_cli::governance::governance(&client, "outputs", &args, &caller_context()).await;
+            match response.data.as_ref().filter(|_| response.ok && !as_json) {
+                Some(data) if data.get("outputs").is_some_and(Value::is_array) => {
+                    println!("{}", render_outputs(data));
+                    ExitCode::SUCCESS
+                }
                 _ => emit(&response, as_json),
             }
         }
         Command::Claim { args } => claims_verb(&client, "claim", &args, cli.json).await,
         Command::Claims { args } => claims_verb(&client, "claims", &args, cli.json).await,
         Command::Delivered { args } => claims_verb(&client, "delivered", &args, cli.json).await,
+        Command::Requests { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let response =
+                pij_cli::governance::governance(&client, "requests", &args, &caller_context())
+                    .await;
+            match response.data.as_ref().filter(|_| response.ok && !as_json) {
+                Some(data) => {
+                    println!("{}", render_requests(data));
+                    ExitCode::SUCCESS
+                }
+                None => emit(&response, as_json),
+            }
+        }
         Command::Project { args }
         | Command::Stream { args }
         | Command::Fence { args }
@@ -2276,6 +2390,12 @@ fn shell_pwd() -> PathBuf {
     }
 }
 
+/// The caller evidence a non-control send carries: a role message's and a
+/// reply's. A control sends its own.
+fn message_caller(to_role: bool, reply: bool, control: bool) -> Option<CallerContext> {
+    (!control && (to_role || reply)).then(caller_context)
+}
+
 fn caller_context() -> CallerContext {
     let read = |key: &str| std::env::var(key).ok().filter(|value| !value.is_empty());
     CallerContext {
@@ -2691,6 +2811,11 @@ async fn run_daemon(
             if let Err(error) = statusline_script {
                 eprintln!("pij-rs claude statusline: {error}");
             }
+            // Installed before the readiness line, not on the first poll of
+            // ctrl_c(): a SIGINT sent as soon as "listening on" appears must
+            // shut down cleanly rather than take the default action (F27).
+            let interrupt =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt());
             println!(
                 "pij-rs daemon: listening on {} · key {} (0600) · offline={} · paired with {}",
                 daemon.addr,
@@ -2728,7 +2853,12 @@ async fn run_daemon(
                     daemon.addr
                 ),
             }
-            let _ = tokio::signal::ctrl_c().await;
+            match interrupt {
+                Ok(mut interrupt) => {
+                    interrupt.recv().await;
+                }
+                Err(error) => eprintln!("pij-rs: could not install the interrupt handler: {error}"),
+            }
             println!("pij-rs daemon: shutting down");
             match daemon.shutdown().await {
                 Ok(()) => ExitCode::SUCCESS,
@@ -2811,35 +2941,223 @@ fn emit<T: serde::Serialize>(envelope: &Envelope<T>, json: bool) -> ExitCode {
     ExitCode::from(exit_code(envelope))
 }
 
-/// `pij directory` for a human: each role, its mode and its live holders.
-/// Times are shown in local time with their offset (F13); `--json` keeps UTC.
-fn render_directory(view: &Value) -> String {
-    let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
-    let offset = pij_harnesses::proc::local_utc_offset_minutes().ok();
-    let since = |value: &Value| match (value.as_str(), offset) {
-        (Some(stored), Some(minutes)) => pij_daemon::community::holders::local(stored, minutes),
-        _ => text(value),
+/// `pij requests` and `pij requests withdraw` for a human (plan 212, F59).
+fn render_requests(data: &Value) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or_default().to_string();
+    if let Some(line) = data["line"].as_str() {
+        return line.to_string();
+    }
+    let rows = data["requests"].as_array().cloned().unwrap_or_default();
+    let mut out = format!(
+        "{}: {} {} request{}",
+        text(&data["project"]),
+        rows.len(),
+        text(&data["state"]),
+        if rows.len() == 1 { "" } else { "s" }
+    );
+    for row in rows {
+        let address = match row["instance"].as_str() {
+            Some(instance) if !instance.is_empty() => {
+                format!("role:{}/{instance}", text(&row["role"]))
+            }
+            _ => format!("role:{}", text(&row["role"])),
+        };
+        let whom = match (row["holder"].as_str(), row["closed_by"].as_str()) {
+            (_, Some(by)) => format!("closed by {by}: {}", text(&row["why"])),
+            (Some(holder), None) => format!("holder {holder}"),
+            (None, None) => "no holder".to_string(),
+        };
+        let _ = write!(
+            out,
+            "\n  {}  {}  {}  from {}  reply {}  {}",
+            text(&row["id"]),
+            text(&row["state"]),
+            address,
+            text(&row["requester"]),
+            text(&row["reply"]),
+            whom
+        );
+    }
+    out
+}
+
+/// An assign or release receipt: it carries its holders row and commit.
+fn is_holding(data: &Value) -> bool {
+    data["row"].is_object() && data["commit"].is_string() && data["flushed"].is_number()
+}
+
+/// Assign and release receipts for a human: the holding, the window, and each
+/// queued request the assign settled (plan 212, F56).
+fn render_holdings(data: &Value) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or_default().to_string();
+    let holdings = match data["holdings"].as_array() {
+        Some(many) => many.clone(),
+        None => vec![data.clone()],
     };
-    let roles = view["roles"]
+    let mut out = Vec::new();
+    for holding in &holdings {
+        let row = &holding["row"];
+        let ended = row["to"].is_string();
+        // `.../roles/<role>/holders.dd.json`: a batch holding carries no `role`.
+        let path = text(&holding["path"]);
+        let from_path = std::path::Path::new(&path)
+            .parent()
+            .and_then(std::path::Path::file_name)
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let role = holding["role"].as_str().map_or(from_path, str::to_string);
+        let role = match row["instance_key"].as_str() {
+            Some(instance) if !instance.is_empty() => format!("{role}/{instance}"),
+            _ => role,
+        };
+        out.push(format!(
+            "{} {} {} {} (commit {})",
+            if ended { "released" } else { "assigned" },
+            role,
+            if ended { "from" } else { "to" },
+            text(&row["seat"]),
+            text(&holding["commit"]).chars().take(7).collect::<String>()
+        ));
+        if let Some(warning) = holding["warning"].as_str() {
+            out.push(format!("  {warning}"));
+        }
+        let window = &holding["window"];
+        if let Some(name) = window["name"].as_str() {
+            out.push(
+                match (window["renamed"].as_bool(), window["reason"].as_str()) {
+                    (Some(true), _) => format!("  window renamed {name}"),
+                    (_, Some(reason)) => format!("  window {name} unchanged: {reason}"),
+                    _ => format!("  window {name} unchanged"),
+                },
+            );
+        } else if let Some(reason) = window["reason"].as_str() {
+            // A failed holdings lookup names no window (review of #149, N001).
+            out.push(format!("  window unchanged: {reason}"));
+        }
+        for drained in holding["drained"].as_array().into_iter().flatten() {
+            let mut line = format!(
+                "  request {} from {} (reply {}): {}",
+                text(&drained["request"]),
+                text(&drained["from"]),
+                text(&drained["reply"]),
+                text(&drained["outcome"])
+            );
+            if let Some(why) = drained["why"].as_str().or(drained["error"].as_str()) {
+                line.push_str(&format!(" ({why})"));
+            }
+            out.push(line);
+        }
+    }
+    out.join("\n")
+}
+
+/// `pij outputs` for a human: one line per output, newest first.
+fn render_outputs(data: &Value) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
+    let rows = data["outputs"]
         .as_array()
         .map(Vec::as_slice)
         .unwrap_or_default();
+    let mut out = format!("{}: {} output(s)", text(&data["project"]), rows.len());
+    for row in rows {
+        let _ = write!(
+            out,
+            "\n  {} {} on {}{}{} by {}{}: {}",
+            text(&row["role"]),
+            text(&row["kind"]),
+            text(&row["subject"]),
+            row["head"]
+                .as_str()
+                .map_or_else(String::new, |head| format!(" at {head}")),
+            row["result"]
+                .as_str()
+                .map_or_else(String::new, |result| format!(" ({result})")),
+            text(&row["writer"]),
+            if row["writer_holds_role"] == false {
+                " (not a holder)"
+            } else {
+                ""
+            },
+            text(&row["path"]),
+        );
+    }
+    out
+}
+
+/// `pij directory` for a human: the prime, each role with its holders, waiting
+/// requests, latest output and memory, then the next actions and prompts.
+fn render_directory(view: &Value) -> String {
+    render_directory_at(view, |at| {
+        time::UtcOffset::local_offset_at(at).unwrap_or(time::UtcOffset::UTC)
+    })
+}
+
+/// `instant` (RFC 3339 text, or ms since the epoch) at the offset `zone`
+/// gives for it, as `yyyy-mm-dd hh:mm ±hh:mm`; the text as given when it
+/// does not parse.
+fn local_time(instant: &Value, zone: &impl Fn(time::OffsetDateTime) -> time::UtcOffset) -> String {
+    let at = match instant {
+        Value::String(text) => {
+            time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).ok()
+        }
+        Value::Number(ms) => ms
+            .as_u64()
+            .and_then(|ms| i128::from(ms).checked_mul(1_000_000))
+            .and_then(|ns| time::OffsetDateTime::from_unix_timestamp_nanos(ns).ok()),
+        _ => None,
+    };
+    let Some(at) = at else {
+        return instant.as_str().unwrap_or("-").to_string();
+    };
+    let local = at.to_offset(zone(at));
+    let (hours, minutes, _) = local.offset().as_hms();
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02} {}{:02}:{:02}",
+        local.year(),
+        u8::from(local.month()),
+        local.day(),
+        local.hour(),
+        local.minute(),
+        if hours < 0 || minutes < 0 { '-' } else { '+' },
+        hours.unsigned_abs(),
+        minutes.unsigned_abs()
+    )
+}
+
+fn render_directory_at(
+    view: &Value,
+    zone: impl Fn(time::OffsetDateTime) -> time::UtcOffset,
+) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
+    let list = |value: &Value| value.as_array().cloned().unwrap_or_default();
+    let roles = list(&view["roles"]);
     let mut out = format!("{}: {} role(s)", text(&view["project"]), roles.len());
-    for role in roles {
-        let live = role["live"]
-            .as_array()
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        let holders: Vec<String> = live
+    match view["prime"].as_str() {
+        Some(prime) => {
+            let _ = write!(out, "; prime: {prime}");
+        }
+        None => out.push_str("; no designated prime"),
+    }
+    // F21: a missing prime role document is not a missing prime.
+    if view["prime_document"] == false {
+        out.push_str(" (no prime role document yet)");
+    }
+    for role in &roles {
+        let holders: Vec<String> = list(&role["live"])
             .iter()
             .map(|holder| {
                 let instance = holder["instance"].as_str().filter(|key| !key.is_empty());
                 format!(
-                    "{}{} since {} on {}{}",
+                    "{}{} since {} on {}{}{}",
                     text(&holder["seat"]),
                     instance.map(|key| format!(" ({key})")).unwrap_or_default(),
-                    since(&holder["since"]),
+                    local_time(&holder["since"], &zone),
                     text(&holder["machine"]),
+                    if holder["seat_live"] == false {
+                        ", seat not live"
+                    } else {
+                        ""
+                    },
                     if holder["end_pending"] == true {
                         ", end pending"
                     } else {
@@ -2848,18 +3166,79 @@ fn render_directory(view: &Value) -> String {
                 )
             })
             .collect();
-        let _ = write!(
-            out,
-            "\n  {} ({}, {}): {}",
+        let head = format!(
+            "\n  {} ({}, {}): ",
             text(&role["id"]),
             text(&role["kind"]),
-            text(&role["holders"]),
-            if holders.is_empty() {
-                "no holder".to_string()
-            } else {
-                holders.join("; ")
-            }
+            text(&role["holders"])
         );
+        out.push_str(&head);
+        // F22: one line per holder unless there is exactly one.
+        match holders.as_slice() {
+            _ if role["state"] == "retired" => match role["merged_into"].as_str() {
+                Some(into) => {
+                    let _ = write!(out, "retired, merged into {into}");
+                }
+                None => out.push_str("retired"),
+            },
+            [] => out.push_str("no holder"),
+            [only] => out.push_str(only),
+            many => {
+                let _ = write!(out, "{} holders", many.len());
+                for holder in many {
+                    let _ = write!(out, "\n    {holder}");
+                }
+            }
+        }
+        let merged: Vec<&str> = role["merged_from"]
+            .as_array()
+            .map(|from| from.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        if !merged.is_empty() {
+            let _ = write!(out, "\n    merged from {}", merged.join(", "));
+        }
+        let requests = &role["requests"];
+        if let Some(count) = requests["count"].as_u64() {
+            let _ = write!(
+                out,
+                "\n    requests: {count} waiting, oldest {}",
+                local_time(&requests["oldest_at"], &zone)
+            );
+        }
+        let output = &role["latest_output"];
+        if output.is_object() {
+            let _ = write!(
+                out,
+                "\n    latest output: {} on {}{}{} by {}, {}",
+                text(&output["kind"]),
+                text(&output["subject"]),
+                output["head"]
+                    .as_str()
+                    .map(|head| format!(" at {}", head.chars().take(7).collect::<String>()))
+                    .unwrap_or_default(),
+                output["result"]
+                    .as_str()
+                    .map(|result| format!(" ({result})"))
+                    .unwrap_or_default(),
+                text(&output["writer"]),
+                local_time(&output["at"], &zone)
+            );
+        }
+        let memory = &role["memory"];
+        if let Some(notes) = memory["notes"].as_u64() {
+            match memory["latest"].as_str() {
+                Some(latest) => {
+                    let _ = write!(out, "\n    memory: {notes} note(s), newest {latest}");
+                }
+                None if notes == 0 => out.push_str("\n    memory: no notes"),
+                None => {
+                    let _ = write!(out, "\n    memory: {notes} note(s), none dated");
+                }
+            }
+        }
+        if let Some(call) = role["call_on"].as_str() {
+            let _ = write!(out, "\n    cold, with memory to call on: {call}");
+        }
         let template = &role["template"];
         if template["behind"] == true {
             let _ = write!(
@@ -2873,21 +3252,83 @@ fn render_directory(view: &Value) -> String {
             );
         }
     }
-    if let Some(prompts) = view["prompts"].as_array().filter(|p| !p.is_empty()) {
+    let actions = list(&view["actions"]);
+    if !actions.is_empty() {
+        out.push_str("\n\nNext actions:");
+        for action in &actions {
+            let _ = write!(out, "\n  {}", text(&action["says"]));
+            for command in list(&action["commands"]) {
+                let _ = write!(out, "\n    {}", text(&command));
+            }
+        }
+    }
+    // C28: every recommendation prints the signal it rests on.
+    let recommend = |out: &mut String, item: &Value| {
+        let commands = list(&item["commands"]);
+        let later = list(&item["later"]);
         let _ = write!(
             out,
-            "\n\n{}\nNot yet in this directory:",
+            "\n  {} ({}): {}",
+            text(&item["role"]),
+            text(&item["kind"]),
+            commands
+                .first()
+                .or(later.first())
+                .map_or_else(|| text(&item["command"]), text)
+        );
+        let joint = if item["in_order"] == true {
+            "then"
+        } else {
+            "or"
+        };
+        for command in commands.iter().skip(1) {
+            let _ = write!(out, "\n    {joint}: {}", text(command));
+        }
+        // Verbs not shipped yet: shown, never as runnable (plan 203).
+        for command in later.iter().skip(usize::from(commands.is_empty())) {
+            let _ = write!(out, "\n    or: {}", text(command));
+        }
+        if let Some(detail) = item["detail"].as_str() {
+            let _ = write!(out, "\n    {detail}");
+        }
+        let needed: Vec<String> = list(&item["needed_by"]).iter().map(text).collect();
+        if !needed.is_empty() {
+            let _ = write!(out, "\n    needed by {}", needed.join(", "));
+        }
+        if let Some(note) = item["note"].as_str() {
+            let _ = write!(out, "\n    {note}");
+        }
+        let _ = write!(out, "\n    signal: {}", text(&item["signal"]["says"]));
+    };
+    let prompts = list(&view["prompts"]);
+    if !prompts.is_empty() {
+        let _ = write!(
+            out,
+            "\n\n{}\nRoles to consider adding:",
             text(&view["guidance"])
         );
-        for prompt in prompts {
-            let _ = write!(
-                out,
-                "\n  {} ({}): {}",
-                text(&prompt["role"]),
-                text(&prompt["kind"]),
-                text(&prompt["command"])
-            );
+        for prompt in &prompts {
+            recommend(&mut out, prompt);
         }
+    }
+    let suggested = list(&view["suggestions"]["roles"]);
+    if !suggested.is_empty() {
+        let _ = write!(
+            out,
+            "\n\nSuggested roles not yet here: {}. See each with its command: {}",
+            suggested.iter().map(text).collect::<Vec<_>>().join(", "),
+            text(&view["suggestions"]["command"])
+        );
+    }
+    let reviews = list(&view["reviews"]);
+    if !reviews.is_empty() {
+        out.push_str("\n\nBoundary review (at a wave end, a compact or a PR merge):");
+        for review in &reviews {
+            recommend(&mut out, review);
+        }
+    }
+    if let Some(notice) = view["notice"].as_str() {
+        let _ = write!(out, "\n\n{notice}");
     }
     out
 }
@@ -2919,6 +3360,19 @@ fn render_templates(templates: &Value) -> String {
     out
 }
 
+/// `pij directory templates --show <name>[@vN]` for a human: where it lives,
+/// then the exact body.
+fn render_template_show(template: &Value) -> String {
+    format!(
+        "{} v{} (latest v{}): {}\n{}",
+        template["name"].as_str().unwrap_or("-"),
+        template["version"],
+        template["latest"],
+        template["path"].as_str().unwrap_or("-"),
+        template["body"].as_str().unwrap_or_default().trim_end()
+    )
+}
+
 /// `pij directory template-diff <id>` for a human.
 fn render_template_diff(data: &Value) -> String {
     let id = data["id"].as_str().unwrap_or("-");
@@ -2937,6 +3391,21 @@ fn render_template_diff(data: &Value) -> String {
 }
 
 /// One memory note for a human: its title line, then the body as written.
+/// `pij directory memory add` in human mode (plan 209, F31).
+fn render_memory_added(role: &str, added: &Value) -> String {
+    let path = added["path"].as_str().unwrap_or_default();
+    let note = path
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .trim_end_matches(".dd.json");
+    let commit = added["commit"].as_str().unwrap_or_default();
+    format!(
+        "pij directory memory: wrote {role} memory {note} (commit {})",
+        &commit[..commit.len().min(7)]
+    )
+}
+
 fn render_memory_note(note: &Value) -> String {
     if let Some(text) = note["text"].as_str() {
         return text.trim_end().to_string();
@@ -3108,6 +3577,18 @@ fn render_state(envelope: &Envelope<pij_daemon::http::StateCard>, json: bool) ->
         }
         if card.pending_fyis > 0 {
             let _ = write!(output, "\nFYIs held: {}", card.pending_fyis);
+        }
+        if let Some(dialog) = &card.dialog {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| {
+                    u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+                });
+            let _ = write!(
+                output,
+                "\n{}",
+                pij_core::modal_stall::blocked_line(dialog, now_ms)
+            );
         }
         for note in &card.deliveries {
             let _ = write!(
@@ -3538,6 +4019,7 @@ impl Command {
             Command::Role { .. } => "pij role",
             Command::Link { .. } => "pij link",
             Command::Watchdog { .. } => "pij watchdog",
+            Command::Steer { .. } => "pij steer",
             Command::Close { .. } => "pij close",
             Command::Reap { .. } => "pij reap",
             Command::Anomalies { .. } => "pij anomalies",
@@ -3555,9 +4037,12 @@ impl Command {
             Command::Orchestration { .. } => "pij orchestration",
             Command::Spine { .. } => "pij spine",
             Command::Directory { .. } => "pij directory",
+            Command::Output { .. } => "pij output",
+            Command::Outputs { .. } => "pij outputs",
             Command::Claim { .. } => "pij claim",
             Command::Claims { .. } => "pij claims",
             Command::Delivered { .. } => "pij delivered",
+            Command::Requests { .. } => "pij requests",
             Command::List { .. } => "pij list",
             Command::State { .. } => "pij state",
             Command::Tail { .. } => "pij tail",
@@ -3580,6 +4065,217 @@ mod tests {
         assert!(
             text.contains("pij directory template-diff qa --project 'my remote'"),
             "{text}"
+        );
+    }
+
+    /// Plan 206: a merged role reads as retired into its target, and the
+    /// target lists what was merged into it.
+    #[test]
+    fn the_view_names_retired_and_merged_roles() {
+        let view = serde_json::json!({
+            "project": "fleet",
+            "pending": [],
+            "roles": [
+                {"id": "qa", "kind": "general", "holders": "one", "live": [],
+                    "state": "retired", "merged_into": "review", "merged_from": []},
+                {"id": "review", "kind": "general", "holders": "many", "live": [],
+                    "state": "active", "merged_into": null, "merged_from": ["qa"]},
+                {"id": "old", "kind": "general", "holders": "one", "live": [],
+                    "state": "retired", "merged_into": null, "merged_from": []},
+            ],
+        });
+        let text = super::render_directory(&view);
+        assert!(
+            text.contains("qa (general, one): retired, merged into review"),
+            "{text}"
+        );
+        assert!(
+            text.contains("review (general, many): no holder\n    merged from qa"),
+            "{text}"
+        );
+        assert!(text.contains("old (general, one): retired"), "{text}");
+    }
+
+    /// Plan 203: the prime, holders one per line for a many-holder role, local
+    /// times with zone, requests, the latest output, memory, the next actions,
+    /// the needed and prime prompts, and the PEC notice.
+    #[test]
+    fn the_directory_view_renders_the_picture_in_local_time() {
+        let view = serde_json::json!({
+            "project": "fleet", "prime": "pij-prime", "prime_document": false, "pending": [],
+            "suggestions": {"roles": ["pm", "pa"], "command": "pij directory --suggest --project fleet"},
+            "roles": [
+                {"id": "reviewer", "kind": "general", "holders": "many",
+                 "live": [
+                    {"seat": "pij-a", "instance": "114", "since": "2026-11-06T03:07:00.000Z", "machine": "m", "seat_live": true},
+                    {"seat": "pij-b", "instance": "115", "since": "2026-11-06T04:00:00Z", "machine": "m", "seat_live": false}
+                 ],
+                 "requests": {"count": 2, "oldest_at": 1_793_934_000_000_u64},
+                 "latest_output": {"kind": "verdict", "subject": "pr:200", "head": "0123456789", "result": "pass", "writer": "pij-a", "at": 1_793_934_000_000_u64},
+                 "memory": {"notes": 3, "latest": "2026-11-05"}},
+                {"id": "pm", "kind": "specialist", "holders": "one",
+                 "live": [{"seat": "pij-c", "instance": "", "since": "2026-11-05T23:30:00Z", "machine": "m", "seat_live": true}],
+                 "requests": null, "latest_output": null, "memory": {"notes": 0, "latest": null}},
+                {"id": "historian", "kind": "specialist", "holders": "one", "live": [],
+                 "memory": {"notes": 12, "latest": "2026-10-01"}, "call_on": "pij send role:historian --body-file x"}
+            ],
+            "actions": [{"role": "pm", "condition": "memory-stale", "says": "pm's last 2 closes left no memory note", "commands": ["pij directory memory add pm --project fleet"]}],
+            "prompts": [
+                {"role": "prime", "kind": "core", "command": "pij directory add prime --from template:prime", "commands": ["pij directory add prime --from template:prime"], "note": "the project's prime is pij-prime; this adds the prime role's document", "signal": {"code": "core", "says": "a core role"}},
+                {"role": "docs-system", "kind": "needed", "needed_by": ["001 s09"], "command": "pij directory add docs-system", "signal": {"code": "step-needs", "says": "a step needs it"}}
+            ],
+            "reviews": [
+                {"role": "reviewer", "kind": "two-domains", "act": "split", "commands": ["pij directory release reviewer/115 pij-a", "pij directory assign reviewer/115 '<seat>'"], "in_order": true, "signal": {"code": "two-domains", "says": "two domains"}},
+                {"role": "dusty", "kind": "idle", "act": "retire", "command": null, "commands": [], "later": ["pij directory retire dusty", "pij directory merge dusty --into '<role>'"], "detail": "dusty is idle", "note": "retire and merge are s15's verbs", "signal": {"code": "mostly-idle", "says": "it would mostly sit idle"}}
+            ],
+            "guidance": "PEC guidance",
+            "notice": "PEC notice",
+        });
+        let ten = time::UtcOffset::from_hms(10, 0, 0).unwrap();
+        let text = super::render_directory_at(&view, |_| ten);
+        let expected = "\
+fleet: 3 role(s); prime: pij-prime (no prime role document yet)
+  reviewer (general, many): 2 holders
+    pij-a (114) since 2026-11-06 13:07 +10:00 on m
+    pij-b (115) since 2026-11-06 14:00 +10:00 on m, seat not live
+    requests: 2 waiting, oldest 2026-11-06 13:00 +10:00
+    latest output: verdict on pr:200 at 0123456 (pass) by pij-a, 2026-11-06 13:00 +10:00
+    memory: 3 note(s), newest 2026-11-05
+  pm (specialist, one): pij-c since 2026-11-06 09:30 +10:00 on m
+    memory: no notes
+  historian (specialist, one): no holder
+    memory: 12 note(s), newest 2026-10-01
+    cold, with memory to call on: pij send role:historian --body-file x
+
+Next actions:
+  pm's last 2 closes left no memory note
+    pij directory memory add pm --project fleet
+
+PEC guidance
+Roles to consider adding:
+  prime (core): pij directory add prime --from template:prime
+    the project's prime is pij-prime; this adds the prime role's document
+    signal: a core role
+  docs-system (needed): pij directory add docs-system
+    needed by 001 s09
+    signal: a step needs it
+
+Suggested roles not yet here: pm, pa. See each with its command: pij directory --suggest --project fleet
+
+Boundary review (at a wave end, a compact or a PR merge):
+  reviewer (two-domains): pij directory release reviewer/115 pij-a
+    then: pij directory assign reviewer/115 '<seat>'
+    signal: two domains
+  dusty (idle): pij directory retire dusty
+    or: pij directory merge dusty --into '<role>'
+    dusty is idle
+    retire and merge are s15's verbs
+    signal: it would mostly sit idle
+
+PEC notice";
+        assert_eq!(text, expected);
+        let behind = super::local_time(&serde_json::json!("2026-11-06T03:07:00Z"), &|_| {
+            time::UtcOffset::from_hms(-3, -30, 0).unwrap()
+        });
+        assert_eq!(behind, "2026-11-05 23:37 -03:30");
+    }
+
+    /// Plan 203: the picture's revive line parses as `pij-rs revive` (the
+    /// daemon's test replays its `pij directory` and `pij send` lines).
+    /// Review of #149, N001: a release whose holdings lookup failed names no
+    /// window, and its printed line still says why the window kept its name.
+    #[test]
+    fn a_failed_holdings_lookup_is_printed_in_the_release_line() {
+        let out = super::render_holdings(&serde_json::json!({
+            "role": "pm-001", "seat": "pij-a", "project": "fleet", "commit": "abc",
+            "row": {"from": "2026-11-01T00:00:00Z"},
+            "window": {"name": null, "renamed": false,
+                "reason": "the seat's open holdings could not be read (store down), so the window keeps its name"},
+        }));
+        assert!(
+            out.contains(
+                "window unchanged: the seat's open holdings could not be read (store down)"
+            ),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn the_pictures_revive_line_parses_as_native_revive() {
+        let gone = pij_store::Assignment {
+            project: "fleet".into(),
+            role: "qa".into(),
+            instance: String::new(),
+            seat: "pij-gone".into(),
+            harness: None,
+            session: None,
+            machine: None,
+            from: "2026-11-01T00:00:00Z".into(),
+            to: Some("2026-11-02T00:00:00Z".into()),
+            assigned_by: "prime".into(),
+            released_by: None,
+            why: "w".into(),
+            release_why: Some("release".into()),
+            end_pending: false,
+        };
+        let actions = pij_daemon::community::picture::actions(
+            "fleet",
+            "qa",
+            "one",
+            &[&gone],
+            &std::collections::HashSet::new(),
+            &[""],
+            None,
+        );
+        let revive = actions[0]["commands"][0].as_str().unwrap();
+        let words: Vec<&str> = revive.split(' ').collect();
+        assert_eq!(words, ["pij-rs", "revive", "pij-gone"]);
+        match super::Cli::try_parse_from(words)
+            .expect("pij-rs parses it")
+            .command
+        {
+            super::Command::Revive { id, .. } => assert_eq!(id, "pij-gone"),
+            _ => panic!("not revive"),
+        }
+    }
+
+    /// Plan 209, F41: `pij delivered` in human mode prints each edit's command.
+    #[test]
+    fn delivered_prints_the_edits_for_the_docs_pr() {
+        let data = serde_json::json!({
+            "line": "PR #131 delivered 2 addresses; told pij-steady-otter",
+            "edits": [
+                {"address": "a", "value": "#131", "command": "ddocs set 'docs/project/prds/001-pij-community.dd.json#requirements/req-20/delivered_by' '#131'"},
+                {"address": "b", "value": "#131", "command": "ddocs set 'docs/project/prds/001-pij-community.dd.json#requirements/req-21/delivered_by' '#131'"},
+            ],
+            "notes": [],
+        });
+        let text = super::render_claims("delivered", &data);
+        assert!(
+            text.contains("ddocs edits for the PM's next docs PR"),
+            "{text}"
+        );
+        assert!(
+            text.contains("requirements/req-20/delivered_by' '#131'"),
+            "{text}"
+        );
+        assert!(
+            text.contains("requirements/req-21/delivered_by' '#131'"),
+            "{text}"
+        );
+    }
+
+    /// Plan 209, F31: a memory add says what it wrote, not its envelope.
+    #[test]
+    fn a_memory_add_prints_one_line() {
+        let added = serde_json::json!({
+            "path": "community/roles/coder/memory/2026-11-06-shim-stdin.dd.json",
+            "commit": "0123456789abcdef",
+            "paths": [],
+        });
+        assert_eq!(
+            super::render_memory_added("coder", &added),
+            "pij directory memory: wrote coder memory 2026-11-06-shim-stdin (commit 0123456)"
         );
     }
 
@@ -3625,6 +4321,35 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_str(&super::render_state(&response, true)).expect("unadorned JSON");
         assert_eq!(json["data"]["held"].as_array().expect("holds").len(), 2);
+    }
+
+    /// Plan 219: a standing dialog stall is named on the human card, and a
+    /// card without one says nothing about dialogs.
+    #[test]
+    fn state_names_a_standing_dialog_stall() {
+        let card = |dialog: serde_json::Value| {
+            let card: pij_daemon::http::StateCard = serde_json::from_value(serde_json::json!({
+                "id": "pij-asking", "state": "working", "liveness": "active", "cwd": "/abs/tree",
+                "harness": "copilot", "unsupported": [], "dialog": dialog,
+            }))
+            .expect("typed daemon state");
+            super::render_state(&pij_core::model::Envelope::ok("pij state", card), false)
+        };
+        let human = card(serde_json::json!({
+            "dialog": "Copilot selection dialog (ctrl+d declines)", "key": "ctrl+d",
+            "clears": "ctrl+d declines", "since_ms": 0,
+        }));
+        assert!(
+            human.contains("\nblocked on a dialog: silent for "),
+            "{human}"
+        );
+        assert!(
+            human.ends_with(
+                ", with Copilot selection dialog (ctrl+d declines) on screen (clears with ctrl+d declines)"
+            ),
+            "{human}"
+        );
+        assert!(!card(serde_json::Value::Null).contains("blocked on a dialog"));
     }
 
     /// Plan 160: the daemon renders the size lines; `pij-rs state` prints them.
@@ -3825,6 +4550,7 @@ mod tests {
                 "role",
                 "link",
                 "watchdog",
+                "steer",
                 "close",
                 "reap",
                 "anomalies",
@@ -3842,9 +4568,12 @@ mod tests {
                 "orchestration",
                 "spine",
                 "directory",
+                "output",
+                "outputs",
                 "claim",
                 "claims",
                 "delivered",
+                "requests",
                 "list",
                 "state",
                 "tail"
@@ -3957,6 +4686,22 @@ mod tests {
             panic!("expected send");
         };
         assert_eq!(body_file.as_deref(), Some("-"));
+    }
+
+    /// Review of #152, S152-001: the daemon refuses a reply to a role request
+    /// that carries no caller context, so a seat's reply sends its own.
+    #[test]
+    fn a_reply_carries_its_caller_and_a_plain_seat_send_does_not() {
+        assert!(super::message_caller(false, true, false).is_some(), "reply");
+        assert!(super::message_caller(true, false, false).is_some(), "role");
+        assert!(
+            super::message_caller(false, false, false).is_none(),
+            "plain"
+        );
+        assert!(
+            super::message_caller(false, true, true).is_none(),
+            "control"
+        );
     }
 
     #[test]
@@ -4617,8 +5362,8 @@ mod shim_forward_tests {
         // Negative controls: a new verb that owns its help but is not listed,
         // and a listed verb clap no longer has, both fail.
         let grown =
-            Cli::command().subcommand(clap::Command::new("requests").disable_help_flag(true));
-        assert_eq!(gaps(&grown, &listed), ["requests"]);
+            Cli::command().subcommand(clap::Command::new("future-verb").disable_help_flag(true));
+        assert_eq!(gaps(&grown, &listed), ["future-verb"]);
         let mut stale = listed.clone();
         stale.push("retired-verb".to_string());
         assert_eq!(gaps(&Cli::command(), &stale), ["retired-verb"]);
