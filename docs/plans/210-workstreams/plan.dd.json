@@ -19,7 +19,7 @@
     },
     {
       "name": "summary",
-      "value": "Lands after the open batch (#129 to #137, plus #135's directory edit). Source: governance community/workstreams-audit-2026-11-06.md (Summary and Appendix E) and RULINGS.md C29. Rename forward as C26 did: history, plans 190 to 195, retros, migrations (0031/0032 comments are checksummed), outputs and memory are not rewritten. Step ids (steps, sNN) stay. No store or CLI rename for pij streams. Docs-system writes the schema, docs and skill wording; one coder does the sensor, the claims alias cleanup and any code that reads the folder."
+      "value": "Lands after the open batch (#129 to #137, plus #135's directory edit). Source: governance community/workstreams-audit-2026-11-06.md (Summary and Appendix E) and RULINGS.md C29. Rename forward as C26 did: history, plans 190 to 195, retros, migrations (0031/0032 comments are checksummed), outputs and memory are not rewritten. Step ids (steps, sNN) stay. No store or CLI rename for pij streams. Docs-system writes the schema, docs and skill wording; one coder does the sensor, the claims alias cleanup and any code that reads the folder. Amended 2026-11-08 (pm-001): two phases and two PRs (docs content by docs-system, then rename, code and sensor by a coder), because the rename must ship with the code that reads the folder; templates are v3 because #136 shipped v2 for quoting."
     },
     {
       "name": "goals",
@@ -62,7 +62,7 @@
         },
         {
           "id": "ac-0005",
-          "claim": "Templates v2. pm, coder, pa, prime, reviewer and security templates ship v2 with workstream wording (v1 unchanged, never edited). `pij directory templates --show <name>@v2` shows them; the 10 optional templates from #136 already use workstream.",
+          "claim": "Templates v3. pm, coder, pa, prime, reviewer and security templates ship v3 with workstream wording (v1 and v2 unchanged, never edited; #136 shipped v2 of these six for shell quoting, so the rename is v3). `pij directory templates --show <name>@v2` shows them; the 10 optional templates from #136 already use workstream.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },
@@ -74,7 +74,7 @@
         },
         {
           "id": "ac-0007",
-          "claim": "Governance re-point (after #135). The 8 live governance role prompts that cite the roadmap path are re-pointed with `pij directory edit` (docs-system runs it; the writer commits).",
+          "claim": "Governance re-point (#135 merged: pij directory edit is live). The 8 live governance role prompts that cite the roadmap path are re-pointed with `pij directory edit` (docs-system runs it; the writer commits).",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0007"
         },
@@ -97,9 +97,16 @@
       "value": [
         {
           "id": "ph-00d2",
-          "title": "Roadmaps become workstreams",
+          "title": "Phase 1: workstream docs (docs-system)",
           "state": "unchecked",
-          "brief": "All ACs. One coder. CS-4.",
+          "brief": "AC1 schema (.dd/schemas/pij/workstream, alongside the roadmap one), AC3 skill workstream.md, AC4 PRD 001 amendments and new rows, AC5 templates v3, without moving any folder (nothing breaks). Holder: docs-system (pij-leading-guan). One PR.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        },
+        {
+          "id": "ph-00d3",
+          "title": "Phase 2: rename, code paths, coverage sensor (coder)",
+          "state": "unchecked",
+          "brief": "After phase 1 merges: AC2 git mv roadmaps to workstreams with schema id pij/workstream, every code path that reads docs/project/roadmaps (directory needs fold from #141, delivered, claims, routes) updated in the same PR, AC6 coverage sensor in harness checks and just self-check, AC7 governance role prompts re-pointed with pij directory edit, AC8 cost, AC9 states. Holder: coder (pij-following-marsupial). One PR.",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]
