@@ -40,6 +40,10 @@ pub const MODAL_STALL_REASON: &str = "pa-watchdog: modal dialog";
 /// The audit event kind for a stall the round told someone about.
 pub const MODAL_STALL_KIND: &str = "watchdog.modal-stall";
 
+/// How many failed tells a recipient gets per stretch before the round stops
+/// trying it (one per 60 s round).
+pub const MAX_TELL_TRIES: u32 = 5;
+
 /// One stretch's stall, as stored before anyone is told.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModalStall {
@@ -64,6 +68,18 @@ pub struct ModalStall {
     /// Who accepted this stretch's message. Anyone else is told on a later
     /// round.
     pub told: Vec<SeatId>,
+    /// Failed tells per recipient this stretch; one at [`MAX_TELL_TRIES`] is
+    /// not tried again.
+    pub failed: std::collections::BTreeMap<SeatId, u32>,
+}
+
+impl ModalStall {
+    /// Is `target` still owed this stretch's message, and still worth a try?
+    #[must_use]
+    pub fn owes(&self, target: &SeatId) -> bool {
+        !self.told.contains(target)
+            && self.failed.get(target).copied().unwrap_or(0) < MAX_TELL_TRIES
+    }
 }
 
 impl ModalStall {
@@ -103,9 +119,9 @@ pub fn blocked_cell(view: &DialogView) -> String {
 #[must_use]
 pub fn blocked_line(view: &DialogView, now_ms: u64) -> String {
     format!(
-        "blocked on a dialog: {}, no own event for {} (clears with {})",
-        view.dialog,
+        "blocked on a dialog: silent for {}, with {} on screen (clears with {})",
         human_duration(now_ms.saturating_sub(view.since_ms)),
+        view.dialog,
         view.clears
     )
 }
@@ -127,11 +143,11 @@ pub fn is_candidate(seat: &SeatDescriptor, last_own_event_ms: Option<u64>, now_m
 #[must_use]
 pub fn stall_body(seat: &SeatId, harness: Harness, stall: &ModalStall, now_ms: u64) -> String {
     format!(
-        "pij: {seat} ({harness}) is showing {} and has had no event of its own for {}, while pij reads it working.\n\
+        "pij: {seat} ({harness}) has been silent for {}, with {} on screen, while pij reads it working.\n\
          It clears with: {}. Look at the pane first (tmux capture-pane -p -t <pane>), then clear it, and ask the seat in text what it wanted. Never choose an option for it.\n\
          pij will not tell you again until the seat records a new event.",
-        stall.dialog,
         human_duration(now_ms.saturating_sub(stall.quiet_since_ms)),
+        stall.dialog,
         stall.clears,
     )
 }

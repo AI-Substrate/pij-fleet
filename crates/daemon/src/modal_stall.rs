@@ -9,14 +9,16 @@
 //! read snapshot). A candidate's visible pane is read once per round ONLY over
 //! the daemon's already-live tmux control client
 //! ([`TmuxPort::capture_without_launch`]): never a client start, never a fork.
-//! With no live client the round skips the rest of its candidates and records
-//! the skip (pm-001's ruling on P156-F001).
+//! With no live client the candidate is skipped this round and the skip is
+//! recorded as a `watchdog.round` event with its reason (pm-001's ruling on
+//! P156-F001).
 //!
 //! On a match the stretch is claimed in the store FIRST, keyed by the sequence
 //! of the seat's last own event. Then the seat's parent and the PA in its scope
 //! (else the prime) are told, each recorded once it accepts; one that failed is
-//! retried on a later round with the same message id. pij never presses a key
-//! for the seat, and names the dialog only by the marker's fixed label.
+//! retried on later rounds with the same message id, up to
+//! `MAX_TELL_TRIES` failures. pij never presses a key for the seat, and names
+//! the dialog only by the marker's fixed label.
 //!
 //! [`TmuxPort::capture_without_launch`]: pij_core::ports::TmuxPort::capture_without_launch
 
@@ -30,9 +32,9 @@ use serde_json::json;
 use crate::Services;
 use crate::pa_watchdog::{PaWatchdog, RoundOutcome, audit, wake_pa};
 
-/// Why a round skipped its candidates.
+/// Why a round skipped a candidate.
 pub(crate) const NO_LIVE_CONTROL_CLIENT: &str =
-    "no live tmux control client: candidates skipped this round, nothing launched";
+    "no live tmux control client: not read this round, nothing launched";
 
 /// Find and report this round's stalled seats.
 pub(crate) async fn round(
@@ -76,11 +78,23 @@ pub(crate) async fn round(
         let screen = match services.tmux.capture_without_launch(pane).await {
             Ok(Some(screen)) => screen,
             Ok(None) => {
-                eprintln!("pa watchdog: modal stall: {NO_LIVE_CONTROL_CLIENT}");
+                audit(
+                    services,
+                    "watchdog.round",
+                    &seat.id,
+                    now_ms,
+                    json!({
+                        "outcome": "modal-stall-skipped",
+                        "reason": NO_LIVE_CONTROL_CLIENT,
+                        "pane": pane,
+                    }),
+                )
+                .await;
                 outcomes.push(RoundOutcome::ModalStallSkipped {
+                    seat: seat.id.clone(),
                     reason: NO_LIVE_CONTROL_CLIENT.to_string(),
                 });
-                break;
+                continue;
             }
             Err(cause) => {
                 eprintln!(
@@ -130,6 +144,7 @@ pub(crate) async fn round(
                     clears: found.clears.to_string(),
                     open: true,
                     told: Vec::new(),
+                    failed: std::collections::BTreeMap::new(),
                 };
                 match services.watchdogs().claim_modal_stall(&stall).await {
                     Ok(true) => stall,
@@ -183,10 +198,11 @@ async fn set_open(services: &Services, seat: &SeatId, quiet_seq: u64, open: bool
 }
 
 /// Tell the seat's live parent and the PA in its scope (else the prime) that
-/// haven't accepted this stretch's message yet, never the seat itself. A
-/// delivery answer (delivered, queued, held, refused) is acceptance and is
-/// recorded; an error is not, so that recipient is tried again next round.
-/// Returns who was tried this round and delivery's answer.
+/// are still owed this stretch's message, never the seat itself. A delivery
+/// answer (delivered, queued, held, refused) is acceptance and is recorded; an
+/// error is counted, and that recipient is tried again next round until it
+/// has failed `MAX_TELL_TRIES` times. Returns who was tried this round and
+/// delivery's answer.
 async fn tell(
     watchdog: &PaWatchdog,
     services: &Services,
@@ -211,7 +227,7 @@ async fn tell(
     let mut tried: Vec<(SeatId, String)> = Vec::new();
     for target in targets {
         if target.id == seat.id
-            || stall.told.contains(&target.id)
+            || !stall.owes(&target.id)
             || tried.iter().any(|(id, _)| id == &target.id)
         {
             continue;
@@ -225,14 +241,22 @@ async fn tell(
                 .await
                 .0
         };
-        if !delivery.starts_with("error")
-            && let Err(cause) = services
+        let recorded = if delivery.starts_with("error") {
+            services
+                .watchdogs()
+                .record_modal_stall_failure(&seat.id, stall.quiet_seq, &target.id)
+                .await
+                .map(drop)
+        } else {
+            services
                 .watchdogs()
                 .mark_modal_stall_told(&seat.id, stall.quiet_seq, &target.id)
                 .await
-        {
+                .map(drop)
+        };
+        if let Err(cause) = recorded {
             eprintln!(
-                "pa watchdog: modal stall: record {} told about {}: {cause}",
+                "pa watchdog: modal stall: record the tell to {} about {}: {cause}",
                 target.id, seat.id
             );
         }

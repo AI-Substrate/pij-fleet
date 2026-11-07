@@ -63,21 +63,21 @@ pub const MODAL_MARKERS: &[ModalMarker] = &[
     ModalMarker {
         harness: Harness::Copilot,
         chrome: Chrome::FooterAboveStatus("↑/↓ select · enter accept · ctrl+d decline"),
-        label: "Copilot's selection dialog",
+        label: "Copilot selection dialog (ctrl+d declines)",
         key: "ctrl+d",
         clears: COPILOT_CLEARS,
     },
     ModalMarker {
         harness: Harness::Copilot,
         chrome: Chrome::TitleAboveStatus("Copilot needs information"),
-        label: "Copilot's question dialog (Copilot needs information)",
+        label: "Copilot question dialog (ctrl+d declines)",
         key: "ctrl+d",
         clears: COPILOT_CLEARS,
     },
     ModalMarker {
         harness: Harness::Claude,
         chrome: Chrome::LastLine("Esc to cancel"),
-        label: "Claude's permission prompt",
+        label: "Claude permission prompt (esc cancels)",
         key: "esc",
         clears: "esc cancels the request (enter would approve the highlighted option)",
     },
@@ -185,7 +185,7 @@ mod tests {
             &fixture("copilot-follow-up-dialog-herring.txt"),
         )
         .expect("herring's screen is a dialog");
-        assert_eq!(herring.label, "Copilot's selection dialog");
+        assert_eq!(herring.label, "Copilot selection dialog (ctrl+d declines)");
         assert_eq!(herring.key, "ctrl+d");
         assert!(herring.clears.starts_with("ctrl+d declines"));
         let lynx = modal_dialog(
@@ -193,6 +193,7 @@ mod tests {
             &fixture("copilot-follow-up-dialog-lynx.txt"),
         )
         .expect("lynx's screen is a dialog");
+        assert_eq!(lynx.label, "Copilot selection dialog (ctrl+d declines)");
         assert_eq!(lynx.clears, herring.clears);
     }
 
@@ -204,10 +205,7 @@ mod tests {
             "enter submit · esc cancel",
         );
         let found = modal_dialog(Harness::Copilot, &screen).expect("titled dialog");
-        assert_eq!(
-            found.label,
-            "Copilot's question dialog (Copilot needs information)"
-        );
+        assert_eq!(found.label, "Copilot question dialog (ctrl+d declines)");
     }
 
     #[test]
@@ -217,7 +215,7 @@ mod tests {
             &fixture("claude-2.1.284-permission-dialog.txt"),
         )
         .expect("Claude's permission dialog");
-        assert_eq!(found.label, "Claude's permission prompt");
+        assert_eq!(found.label, "Claude permission prompt (esc cancels)");
         assert_eq!(found.key, "esc");
         assert!(found.clears.starts_with("esc cancels"));
     }

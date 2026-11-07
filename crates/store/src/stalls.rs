@@ -14,7 +14,8 @@ use sqlx::Row;
 use crate::migrate::{begin_write, owned_write, require_current_schema};
 use crate::orchestration::{SqliteOrchestration, adapter_error, sql_i64, sql_u64};
 
-const COLUMNS: &str = "seat, quiet_seq, quiet_since, claimed_at, dialog, key, clears, open, told";
+const COLUMNS: &str =
+    "seat, quiet_seq, quiet_since, claimed_at, dialog, key, clears, open, told, failed";
 
 impl SqliteOrchestration {
     /// Claim `stall`'s stretch before anyone is told. `true` means this call
@@ -31,11 +32,11 @@ impl SqliteOrchestration {
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
             let done = sqlx::query(&format!(
-                "INSERT INTO modal_stalls ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, '[]') \
+                "INSERT INTO modal_stalls ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, '[]', '{{}}') \
                  ON CONFLICT (seat) DO UPDATE SET quiet_seq = excluded.quiet_seq, \
                  quiet_since = excluded.quiet_since, claimed_at = excluded.claimed_at, \
                  dialog = excluded.dialog, key = excluded.key, clears = excluded.clears, \
-                 open = 1, told = '[]' \
+                 open = 1, told = '[]', failed = '{{}}' \
                  WHERE modal_stalls.quiet_seq < excluded.quiet_seq"
             ))
             .bind(stall.seat.as_str())
@@ -85,6 +86,41 @@ impl SqliteOrchestration {
             .map_err(adapter_error)?;
             tx.commit().await.map_err(adapter_error)?;
             Ok(done.rows_affected() > 0)
+        })
+        .await
+    }
+
+    /// Count one failed tell to `target` this stretch. Returns the count, or
+    /// `None` when the row is another stretch's.
+    ///
+    /// # Errors
+    /// Store failures, or an out-of-range sequence.
+    pub async fn record_modal_stall_failure(
+        &self,
+        seat: &SeatId,
+        quiet_seq: u64,
+        target: &SeatId,
+    ) -> Result<Option<u32>> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let (seat, target) = (seat.clone(), target.clone());
+        let quiet_seq = sql_i64(quiet_seq, "quiet_seq")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let count: Option<i64> = sqlx::query_scalar(
+                "UPDATE modal_stalls SET failed = json_set(failed, '$.' || json_quote(?3), \
+                 coalesce(json_extract(failed, '$.' || json_quote(?3)), 0) + 1) \
+                 WHERE seat = ?1 AND quiet_seq = ?2 \
+                 RETURNING json_extract(failed, '$.' || json_quote(?3))",
+            )
+            .bind(seat.as_str())
+            .bind(quiet_seq)
+            .bind(target.as_str())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(count.map(|count| u32::try_from(count).unwrap_or(u32::MAX)))
         })
         .await
     }
@@ -172,12 +208,15 @@ impl SqliteOrchestration {
 
 fn modal_stall(row: &sqlx::sqlite::SqliteRow) -> Result<ModalStall> {
     let seat: String = row.try_get("seat").map_err(adapter_error)?;
-    let told: String = row.try_get("told").map_err(adapter_error)?;
+    let json = |column: &str| -> Result<String> { row.try_get(column).map_err(adapter_error) };
+    let malformed = |column: &str, error: serde_json::Error| pij_core::error::PijError::Adapter {
+        adapter: "store/modal-stalls".into(),
+        message: format!("{column} for {seat} is malformed JSON: {error}"),
+    };
     let told: Vec<String> =
-        serde_json::from_str(&told).map_err(|error| pij_core::error::PijError::Adapter {
-            adapter: "store/modal-stalls".into(),
-            message: format!("told for {seat} is not a JSON list: {error}"),
-        })?;
+        serde_json::from_str(&json("told")?).map_err(|error| malformed("told", error))?;
+    let failed: std::collections::BTreeMap<String, u32> =
+        serde_json::from_str(&json("failed")?).map_err(|error| malformed("failed", error))?;
     Ok(ModalStall {
         quiet_seq: sql_u64(
             row.try_get("quiet_seq").map_err(adapter_error)?,
@@ -196,6 +235,10 @@ fn modal_stall(row: &sqlx::sqlite::SqliteRow) -> Result<ModalStall> {
         clears: row.try_get("clears").map_err(adapter_error)?,
         open: row.try_get::<i64, _>("open").map_err(adapter_error)? == 1,
         told: told.into_iter().map(SeatId::from).collect(),
+        failed: failed
+            .into_iter()
+            .map(|(target, count)| (SeatId::from(target), count))
+            .collect(),
         seat: SeatId::from(seat),
     })
 }

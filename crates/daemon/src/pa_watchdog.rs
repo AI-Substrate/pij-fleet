@@ -169,9 +169,11 @@ pub enum RoundOutcome {
         /// Who was told this round, with delivery's receipt outcome or error.
         told: Vec<(SeatId, String)>,
     },
-    /// The round's modal-stall candidates were skipped: no pane can be read
-    /// without a launch (plan 219, P156-F001).
+    /// A modal-stall candidate was not read this round: its pane can't be read
+    /// without a launch (plan 219, P156-F001). Also a `watchdog.round` event.
     ModalStallSkipped {
+        /// The candidate not read.
+        seat: SeatId,
         /// Why.
         reason: String,
     },
