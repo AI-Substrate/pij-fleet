@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "50218822c86d7ccf5c1174d9170666a34d449fb5",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/160#issuecomment-6710728776",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:160",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: block** at `50218822c86d7ccf5c1174d9170666a34d449fb5`.\n\nOriginal exemption-file broadening and filesystem-error fallbacks are repaired. Two remaining proposed-data-only guard bypasses prevent full S160001/S160002 closure.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | ⚪ LOW | harness/scripts/coverage-check.ts | 104-115, 174-177 | Duplicate sections or identities silently hide obligations or overwrite unfinished children | 10/10 |\n| 2 | ⚪ LOW | harness/scripts/coverage-check.ts | 214-226 | Missing baseline obligations leave approval available for later data-only reintroduction | 10/10 |\n\n## Duplicate coverage inputs\n\nAppending a second requirements section containing a new planned, undelivered requirement leaves the first healthy section intact. `sections.find(...)` reads only the first section and silently ignores the new obligation. The checker, approved baseline and exemption file need not change.\n\nRow IDs are not unique-checked either: a duplicate requirement with approved req-26 shares its exemption, while a duplicate complete child-step ID overwrites an unfinished child in `steps`, defeating the umbrella check.\n\nReject duplicate required sections and duplicate row addresses before coverage/exemption/umbrella processing. Add direct-array controls: the current record-based fixture helper cannot represent repeated section names. This is validation of coverage-consumed identities, not a demand to install the full DD validator.\n\n## Missing baseline obligations\n\nRemoving req-26 from its PRD and removing its JSON exemption, while retaining its checker-baseline entry, passes the baseline loop because `known.has(address)` is false. The other fourteen exemptions remain valid. The address is still approved and can later be restored with its exemption without changing checker code.\n\nRequire every retained approved identity to exist as exactly one obligation. Its disappearance must fail until the baseline entry is explicitly retired; otherwise the promised retirement/shrink boundary can be bypassed through proposed data.\n\n**Closures:** runtime subset, duplicate-exemption, nonempty owner/reason and exact-address checks prevent the original JSON addition/swap bypass. Covered-present baseline entries fail until removed, and removing a closed row from both places passes. Required-folder ENOENT/EACCES/EIO, empty required directories, parse/read failures and missing/non-array required sections now fail explicitly; only legacy alias ENOENT is allowed. Duplicate-section handling and missing-baseline validation remain gaps.\n\nWording repairs introduce no weakened safety rule or prohibited disclosure. Prior 29-version pins and shipped bytes remain unchanged; main #149 implementations were not re-reviewed.\n\n**Proof:** exact-head CI [42395785973](https://github.com/AI-Substrate/pij-fleet/actions/runs/42395785973), attempt 1, passed all four jobs. Node 22 and 24 each executed 15 coverage-check tests. Those controls do not cover the bypasses above. Mutation sensitivity is author-reported, not independently rerun. F104/C20 ddocs remains UNAVAILABLE. Source/CI only, with no local builds/tests, credentials, role edits, live probes or product changes.\n"
+		}
+	]
+}
