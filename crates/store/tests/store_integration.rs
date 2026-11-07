@@ -2146,6 +2146,7 @@ async fn outputs_answer_for_their_exact_head_and_list_by_role() {
     let mut pm = verdict.clone();
     pm.path = "roles/pm/outputs/2026-11/n.dd.json".into();
     pm.role = "pm".into();
+    pm.subject = "pr:203".into();
     store.record_output(&pm).await.unwrap();
     let latest = store.latest_outputs("pij").await.unwrap();
     assert_eq!(
