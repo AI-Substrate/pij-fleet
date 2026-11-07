@@ -23,7 +23,7 @@
 | bp-0001 | AC1 | ph-00d2 | BUILD | computational | BUILD: fixtures for nesting across files, an umbrella marked complete with an open child (fails), lanes, and a cross-file depends_on; ddocs validate passes the good ones and fails the bad ones by name. | [x] checked | — | — | crates/ |
 | bp-0002 | AC2 | ph-00d2 | BUILD | computational | BUILD: ddocs validate and build on docs/project pass; `pij claim workstream` returns 002; grep finds no live 'docs/project/roadmaps' outside history and the alias. | [x] checked | — | — | crates/ |
 | bp-0003 | AC3 | ph-00d2 | BUILD | computational | BUILD: skill tests and pij-skill-check pass; the router links workstream.md; old roadmap.md links resolve (a one-line pointer) or are updated. | [x] checked | — | — | crates/ |
-| bp-0004 | AC4 | ph-00d2 | BUILD | computational | BUILD: ddocs validate passes; the AC6 sensor reports zero undelivered rows and zero unbuilt components on the head. | [ ] unchecked | — | — | crates/ |
+| bp-0004 | AC4 | ph-00d2 | BUILD | computational | BUILD: ddocs validate passes; the AC6 sensor reports zero undelivered rows and zero unbuilt components on the head. | [x] checked | — | — | crates/ |
 | bp-0005 | AC5 | ph-00d2 | BUILD | computational | BUILD: template tests; v1 bytes unchanged (hash test); v2 validates. | [x] checked | — | — | crates/ |
 | bp-0006 | AC6 | ph-00d2 | BUILD | computational | BUILD: the stage passes on the head; deleting a delivers link makes it fail naming the row. | [x] checked | — | — | crates/ |
 | bp-0007 | AC7 | ph-00d2 | BUILD | computational | EXISTS: each role.dd.json cites docs/project/workstreams; `pij directory view` shows no stale path. | [x] checked | — | — | crates/ |

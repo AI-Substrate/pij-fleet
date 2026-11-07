@@ -81,6 +81,18 @@
 					],
 					"done": "tasks.dd.json#done_when/tk-0005",
 					"receipt": "../../evidence/phase-2.md#ac6-the-coverage-sensor"
+				},
+				{
+					"id": "tk-0011",
+					"title": "AC4 remainder: coverage links for req-26 and PRD 002",
+					"phase": "ph-00d2",
+					"state": "checked",
+					"success": "req-26 gains a delivering step (s17 in workstream 001); PRD 002's 14 rows get blueprint 002 and workstream 002; the 15 coverage exemptions and APPROVED_EXEMPTIONS are emptied, so coverage-check covers every row with no exemption.",
+					"satisfies": [
+						"../../../plan.dd.json#acceptance_criteria/ac-0004"
+					],
+					"done": "tasks.dd.json#done_when/tk-0011",
+					"receipt": "../../evidence/ac4-coverage.md"
 				}
 			]
 		},
@@ -125,6 +137,14 @@
 						"assertion": "An umbrella step marked complete with an open child fails a check. ddocs has no cross-row rule, so this moves to the phase 2 coverage sensor (req-31, AC6).",
 						"state": "checked",
 						"pressure": "../../backpressure.dd.json#rows/bp-0001"
+					}
+				],
+				"tk-0011": [
+					{
+						"id": "dw-0011",
+						"assertion": "ddocs validate passes; coverage-check reports zero undelivered requirements and zero unbuilt components on main after #162, with no exemptions.",
+						"state": "checked",
+						"pressure": "../../backpressure.dd.json#rows/bp-0004"
 					}
 				]
 			}

@@ -11,7 +11,7 @@
         "ordinal": 210,
         "complexity": "CS-4",
         "summary": "Ruling C29: rename roadmaps forward to workstreams (folder, schema pij/workstream, skill, templates v2, PRD rows), add nesting (part_of), lanes and cross-file ordering, define 'a pij stream is one lane of a workstream', and make coverage a harness checks sensor.",
-        "status": "draft",
+        "status": "shipped",
         "mode": "Full",
         "created": "2026-11-04",
         "backpressure": "assets/backpressure.dd.json#rows"
@@ -107,7 +107,7 @@
         {
           "id": "ph-00d2",
           "title": "Phase 1: workstream docs (docs-system)",
-          "state": "unchecked",
+          "state": "checked",
           "brief": "AC1 schema (.dd/schemas/pij/workstream, alongside the roadmap one), AC3 skill workstream.md, AC4 PRD 001 amendments and new rows, AC5 templates v3, without moving any folder (nothing breaks). Holder: docs-system (pij-leading-guan). One PR.",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         },

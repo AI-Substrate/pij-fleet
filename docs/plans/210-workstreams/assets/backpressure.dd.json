@@ -51,7 +51,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: ddocs validate passes; the AC6 sensor reports zero undelivered rows and zero unbuilt components on the head.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {

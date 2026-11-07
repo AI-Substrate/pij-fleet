@@ -12,7 +12,7 @@
 | title | Roadmaps become workstreams |
 | slug | workstreams |
 | ordinal | 210 |
-| status | draft |
+| status | shipped |
 | complexity | CS-4 |
 | summary | Ruling C29: rename roadmaps forward to workstreams (folder, schema pij/workstream, skill, templates v2, PRD rows), add nesting (part_of), lanes and cross-file ordering, define 'a pij stream is one lane of a workstream', and make coverage a harness checks sensor. |
 | backpressure | [rows](assets/backpressure.dd.md#rows) |
@@ -63,7 +63,7 @@ Lands after the open batch (#129 to #137, plus #135's directory edit). Source: g
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-00d2 | Phase 1: workstream docs (docs-system) | AC1 schema (.dd/schemas/pij/workstream, alongside the roadmap one), AC3 skill workstream.md, AC4 PRD 001 amendments and new rows, AC5 templates v3, without moving any folder (nothing breaks). Holder: docs-system (pij-leading-guan). One PR. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-00d2 | Phase 1: workstream docs (docs-system) | AC1 schema (.dd/schemas/pij/workstream, alongside the roadmap one), AC3 skill workstream.md, AC4 PRD 001 amendments and new rows, AC5 templates v3, without moving any folder (nothing breaks). Holder: docs-system (pij-leading-guan). One PR. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 | ph-00d3 | Phase 2: rename, code paths, coverage sensor (coder) | After phase 1 merges: AC2 git mv roadmaps to workstreams with schema id pij/workstream, every code path that reads docs/project/roadmaps (directory needs fold from #141, delivered, claims, routes) updated in the same PR, AC6 coverage sensor in harness checks and just self-check, AC7 governance role prompts re-pointed with pij directory edit, AC8 cost, AC9 states. Holder: coder (pij-following-marsupial). One PR. | [x] checked | — | — | — | [tasks](assets/tasks/phase-2/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
