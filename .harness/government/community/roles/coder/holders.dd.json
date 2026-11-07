@@ -133,7 +133,10 @@
 					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
 					"instance_key": "204",
 					"machine": "ops.osk.lan",
+					"release_why": "seat died in the 07 Nov reboot; prime: fresh holders",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-following-marsupial",
+					"to": "2026-11-07T07:29:17.610Z",
 					"why": "plan 204 s10 (route doc and templates first)"
 				},
 				{
