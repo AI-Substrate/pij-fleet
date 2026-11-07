@@ -65,12 +65,14 @@ function fixture(): Fixture {
 	executable(
 		join(bin, "cargo"),
 		[
+			// cargo 1.98 refuses `--doc` with `--no-run`: doctests build as they run.
+			'case " $* " in *" --doc "*) case " $* " in *" --no-run "*) echo "error: can\'t skip running doc tests with --no-run" >&2; exit 101;; esac;; esac',
 			'echo "start $1 target=$CARGO_TARGET_DIR incremental=$CARGO_INCREMENTAL" >> "$LOG"',
 			'cat "$CARGO_TARGET_DIR.lock/owner" >> "$LOG"',
 			'[ "$1" = drop ] && echo 1024 > "$FREE"',
 			// The scheduling cargo runs under: its niceness and the flag the
 			// fake taskpolicy passed down, if one wrapped it.
-			'[ -n "$NICENESS" ] && echo "niceness=$(ps -o nice= -p $$ | tr -d \' \') taskpolicy=$FAKE_TASKPOLICY" >> "$LOG"',
+			'[ -n "$NICENESS" ] && echo "niceness=$(ps -o nice= -p $$ | tr -d \' \') taskpolicy=$FAKE_TASKPOLICY args=$*" >> "$LOG"',
 			// A build child (rustc, a build script) that ticks into the log
 			// while alive; cargo waits for it, as cargo waits for rustc.
 			'[ -n "$WORKER" ] && ( i=0; while [ $i -lt 25 ]; do echo "tick $1" >> "$LOG"; sleep 0.2; i=$((i+1)); done ) </dev/null >/dev/null 2>&1 &',
@@ -183,13 +185,15 @@ describe("just shared-build", () => {
 		]);
 		expect(result.code).toBe(0);
 		const lines = log(f);
+		// A test compiles (--no-run), then runs: two cargo calls (F63).
 		expect(lines.filter((line) => line.startsWith("start"))).toEqual([
 			`start build target=${f.target} incremental=0`,
 			`start test target=${f.target} incremental=0`,
+			`start test target=${f.target} incremental=0`,
 		]);
 		const owners = lines.filter((line) => line.startsWith("seat="));
-		expect(owners).toHaveLength(2);
-		expect(owners[0]).toBe(owners[1]);
+		expect(owners).toHaveLength(3);
+		expect(new Set(owners).size).toBe(1);
 		expect(owners[0]).toMatch(
 			new RegExp(
 				`^seat=pij-test-seat pid=\\d+ worktree=${escapeRegExp(f.worktree)} started=\\d{4}-\\d\\d-\\d\\dT`,
@@ -227,25 +231,52 @@ describe("just shared-build", () => {
 		);
 	});
 
-	it("runs every cargo command under nice 19 and taskpolicy -b, and skips taskpolicy where it is absent", async () => {
+	it("compiles under nice 19 and taskpolicy -b, runs tests under nice 19 alone, and skips taskpolicy where it is absent", async () => {
 		const f = fixture();
 		const taskpolicy = join(f.root, "fake-taskpolicy");
 		executable(taskpolicy, 'FAKE_TASKPOLICY="$1"; export FAKE_TASKPOLICY; shift; exec "$@"');
 		const scheduling = async (env: NodeJS.ProcessEnv) => {
 			writeFileSync(f.log, "");
 			expect(
-				(await run(f, ["--", "build", "--then", "test"], { NICENESS: "1", ...env })).code,
+				(
+					await run(f, ["--", "build", "--then", "test", "-p", "x", "--", "name"], {
+						NICENESS: "1",
+						...env,
+					})
+				).code,
 			).toBe(0);
 			return log(f).filter((line) => line.startsWith("niceness="));
 		};
+		// F63: the test compiles in background QoS, and its binaries run
+		// without it; what follows `--` goes only to the run.
 		expect(await scheduling({ PIJ_SHARED_BUILD_TASKPOLICY: taskpolicy })).toEqual([
-			"niceness=19 taskpolicy=-b",
-			"niceness=19 taskpolicy=-b",
+			"niceness=19 taskpolicy=-b args=build",
+			"niceness=19 taskpolicy=-b args=test -p x --no-run",
+			"niceness=19 taskpolicy=none args=test -p x -- name",
 		]);
 		expect(await scheduling({})).toEqual([
-			"niceness=19 taskpolicy=none",
-			"niceness=19 taskpolicy=none",
+			"niceness=19 taskpolicy=none args=build",
+			"niceness=19 taskpolicy=none args=test -p x --no-run",
+			"niceness=19 taskpolicy=none args=test -p x -- name",
 		]);
+	});
+
+	it("runs a doc-only test in one step under nice 19 alone, never with --no-run", async () => {
+		const f = fixture();
+		const taskpolicy = join(f.root, "fake-taskpolicy");
+		executable(taskpolicy, 'FAKE_TASKPOLICY="$1"; export FAKE_TASKPOLICY; shift; exec "$@"');
+		const result = await run(f, ["--", "test", "-p", "x", "--doc", "--", "name"], {
+			NICENESS: "1",
+			PIJ_SHARED_BUILD_TASKPOLICY: taskpolicy,
+		});
+		expect(result.stderr).toBe("");
+		expect(result.code).toBe(0);
+		// #144 F001: cargo compiles doctests during the run, so there is no
+		// compile step to put in background QoS.
+		expect(log(f).filter((line) => line.startsWith("niceness="))).toEqual([
+			"niceness=19 taskpolicy=none args=test -p x --doc -- name",
+		]);
+		expect(existsSync(f.lock)).toBe(false);
 	});
 
 	it("releases the lock when cargo fails and runs nothing after the failure", async () => {
@@ -259,6 +290,9 @@ describe("just shared-build", () => {
 	for (const [signal, code] of [
 		["SIGTERM", 143],
 		["SIGINT", 130],
+		["SIGHUP", 129],
+		// Untrapped: bash dies of it, but runs its EXIT trap first (F48).
+		["SIGUSR1", null],
 	] as const) {
 		it(`on ${signal}, stops cargo's whole process tree before another batch can enter`, async () => {
 			const f = fixture();

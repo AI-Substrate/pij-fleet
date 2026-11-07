@@ -182,7 +182,7 @@ fn boot_once(root: &std::path::Path, home: &std::path::Path, state_dir: &std::pa
             }
         }
     });
-    let deadline = Instant::now() + Duration::from_secs(30);
+    let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(30));
     let mut startup = Vec::new();
     let ready = loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -211,6 +211,14 @@ fn boot_once(root: &std::path::Path, home: &std::path::Path, state_dir: &std::pa
         .status()
         .expect("signal isolated daemon");
     assert!(interrupted.success());
-    assert!(child.wait().expect("join isolated daemon").success());
+    let status = child.wait().expect("join isolated daemon");
+    let mut stderr = String::new();
+    if let Some(mut pipe) = child.stderr.take() {
+        let _ = std::io::Read::read_to_string(&mut pipe, &mut stderr);
+    }
+    assert!(
+        status.success(),
+        "isolated daemon exited {status} after SIGINT; stdout={startup:?}; stderr={stderr}"
+    );
     reader.join().expect("join stdout reader");
 }

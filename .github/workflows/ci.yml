@@ -53,6 +53,9 @@ jobs:
       # annotation on every run instead of passing silently. When ddocs is on
       # the runner (PIJ_DDOCS or PATH) it validates and fails on any finding.
       - run: just ddocs-check --unavailable=warn
+      # The /pij skill's structure (plan 209, F26): it failed 20 checks for
+      # weeks because nothing ran it.
+      - run: just pij-skill-check
       # Integration suites that drive a private Rust daemon (cli.inbox.integration,
       # the watchdog smoke) need the debug pij-rs binary; build it here and make
       # its presence REQUIRED so a missing binary fails loud instead of skipping.

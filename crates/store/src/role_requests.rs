@@ -400,21 +400,65 @@ impl SqliteOrchestration {
     /// first: the PA digest's list (review of #129, F003). Bodies are not
     /// read (blank here); the digest never shows them. Two partial-index reads.
     pub async fn unsettled_role_requests(&self) -> Result<Vec<RoleRequest>> {
+        self.unsettled_role_requests_in(None).await
+    }
+
+    /// [`Self::unsettled_role_requests`] for `projects` only (plan 209, #129's
+    /// digest scope); `None` reads every project. Queued rows are one seek of
+    /// `role_requests_queued` per project, never a scan of the others;
+    /// `delivering` rows (normally none) are read from their own index and
+    /// kept by project. An empty list reads nothing. Bodies are not read.
+    pub async fn unsettled_role_requests_in(
+        &self,
+        projects: Option<&[String]>,
+    ) -> Result<Vec<RoleRequest>> {
         require_current_schema(&self.pool).await?;
+        // No projects reads nothing, not the global delivering rows (#144).
+        if projects.is_some_and(<[String]>::is_empty) {
+            return Ok(Vec::new());
+        }
         let columns = COLUMNS.replace("body", "'' AS body");
         let mut rows = Vec::new();
-        for (index, state) in [
-            ("role_requests_queued", "queued"),
-            ("role_requests_delivering", "delivering"),
-        ] {
-            let read = sqlx::query(&format!(
-                "SELECT {columns} FROM role_requests INDEXED BY {index} WHERE state = '{state}'"
-            ))
-            .fetch_all(&self.pool)
-            .await
+        let queued = match projects {
+            None => vec![None],
+            Some(projects) => projects.iter().map(Some).collect(),
+        };
+        for project in queued {
+            let read = match project {
+                None => {
+                    sqlx::query(&format!(
+                        "SELECT {columns} FROM role_requests INDEXED BY role_requests_queued \
+                     WHERE state = 'queued'"
+                    ))
+                    .fetch_all(&self.pool)
+                    .await
+                }
+                Some(project) => {
+                    sqlx::query(&format!(
+                        "SELECT {columns} FROM role_requests INDEXED BY role_requests_queued \
+                     WHERE state = 'queued' AND project = ?1"
+                    ))
+                    .bind(project)
+                    .fetch_all(&self.pool)
+                    .await
+                }
+            }
             .map_err(adapter_error)?;
             for row in &read {
                 rows.push(role_request(row)?);
+            }
+        }
+        let delivering = sqlx::query(&format!(
+            "SELECT {columns} FROM role_requests INDEXED BY role_requests_delivering \
+             WHERE state = 'delivering'"
+        ))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        for row in &delivering {
+            let request = role_request(row)?;
+            if projects.is_none_or(|projects| projects.contains(&request.project)) {
+                rows.push(request);
             }
         }
         rows.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
