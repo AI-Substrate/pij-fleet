@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "7b7fc1388b4de424776a0ce2aa61ab5834e72770",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/153#issuecomment-6709304203",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:153",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `7b7fc1388b4de424776a0ce2aa61ab5834e72770`.\n\nF004 is closed in `fcfca24..7b7fc13`. No new reportable security finding in this repair. Clarified C32's accepted caller-provenance residual remains deferred to PRD 003 req-10.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 0 | None | N/A | N/A | No new reportable vulnerability | N/A |\n\n`ReportedContext::exclusively` moves an owned exclusion guard into the spawned task (`crates/daemon/src/reported_context.rs:141-149`). Registry completion and grant rotation stay inside that owned lifetime (`crates/daemon/src/http/mod.rs:1113-1132`). Cancelling the waiter cannot release exclusion while the admitted replacement write continues.\n\nOld reports subsequently re-read the replacement row and current process/grant inside the gate (`crates/daemon/src/reported_context.rs:171-178`) and refuse before activity/context/generation effects. Join failures become adapter/internal errors, not successful token responses. Reissued grants still require durable audit before handout (`crates/daemon/src/http/mod.rs:1161-1175`). No new recursive acquisition or lock-order inversion identified.\n\nThe cancellation regression (`crates/daemon/src/http/native_tests.rs:4398-4487`) exercises replacement with both cancelled and noncancelled waiters, requires the old report to wait and refuse, and preserves replacement process, idle state, context and generation. Context starts unknown in this test; the earlier sequential-rotation case supplies the known-size check, and the earlier no-rotation case supplies successful-report control.\n\n**Proof notes:** this test exercises helper-level handler composition rather than an HTTP disconnect. Admission is timing-based, cancelled-waiter termination is not joined, and replacement-grant validity is not explicitly asserted. Advertised mutation sensitivity was not independently rerun. These limits do not negate the source ownership closure.\n\n**CI:** exact-head [42387081956](https://github.com/AI-Substrate/pij-fleet/actions/runs/42387081956), attempt 2, passed all four jobs. JUnit lists 2,105 passing cases, including `a_cancelled_registration_keeps_reports_out_until_its_write_commits`. Known limit independently remains present with `PRD 003 req-10`; prior audit-withholding and noncancelled size-race closures stand.\n\nSource/CI review only: no local builds/tests, exploits, credential reads, live probes or product edits. This closes F004's registration-cancellation boundary, not every size-less activity lifecycle. The owned task's per-registration cost remains performance-owned.\n"
+		}
+	]
+}
