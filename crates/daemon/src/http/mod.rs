@@ -19,6 +19,7 @@ pub mod governance;
 mod identity;
 mod lifecycle;
 pub mod memory_turn;
+mod output;
 mod report;
 mod revive;
 pub mod role;
@@ -199,6 +200,10 @@ enum Endpoint {
     Spine,
     /// `pij directory add` (plan 190): the community directory's writer.
     Directory,
+    /// `pij output` (plan 200): a role's output, through the writer.
+    Output,
+    /// `pij outputs` (plan 200): a project's outputs by subject or role.
+    Outputs,
     /// `pij claim` and `pij claim release` (plan 196).
     Claim,
     /// `pij claims` (plan 196).
@@ -211,7 +216,7 @@ enum Endpoint {
 }
 
 impl Endpoint {
-    const ALL: [Self; 56] = [
+    const ALL: [Self; 58] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -264,6 +269,8 @@ impl Endpoint {
         Self::Orchestration,
         Self::Spine,
         Self::Directory,
+        Self::Output,
+        Self::Outputs,
         Self::Claim,
         Self::Claims,
         Self::Delivered,
@@ -319,6 +326,8 @@ impl Endpoint {
             Self::Orchestration => "/v1/orchestration",
             Self::Spine => "/v1/spine",
             Self::Directory => "/v1/directory",
+            Self::Output => "/v1/output",
+            Self::Outputs => "/v1/outputs",
             Self::Claim => "/v1/claim",
             Self::Claims => "/v1/claims",
             Self::Delivered => "/v1/delivered",
@@ -373,6 +382,8 @@ impl Endpoint {
             | Self::Orchestration
             | Self::Spine
             | Self::Directory
+            | Self::Output
+            | Self::Outputs
             | Self::Claim
             | Self::Claims
             | Self::Delivered
@@ -611,6 +622,8 @@ fn router_with_optional_federation(
                     | Endpoint::Orchestration
                     | Endpoint::Spine
                     | Endpoint::Directory
+                    | Endpoint::Output
+                    | Endpoint::Outputs
                     | Endpoint::Claim
                     | Endpoint::Claims
                     | Endpoint::Delivered
@@ -686,6 +699,9 @@ fn router_with_optional_federation(
             Endpoint::Orchestration => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Spine => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Directory => router.route(endpoint.path(), post(directory::handle)),
+            Endpoint::Output | Endpoint::Outputs => {
+                router.route(endpoint.path(), post(output::handle))
+            }
             Endpoint::Claim | Endpoint::Claims | Endpoint::Delivered => {
                 router.route(endpoint.path(), post(claims::handle))
             }
