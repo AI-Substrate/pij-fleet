@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b6b3-8a23-76f2-a026-91f730b83d4a",
+				"date": "2026-11-08",
+				"head": "721ec9965ec5f30f4dd525a5b6ad029efb4fcb35",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/158#issuecomment-6709474836",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:158",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #158 correctness review\n\n**PASS** at `721ec9965ec5f30f4dd525a5b6ad029efb4fcb35`.\n\nAll six delivered_by values match the approved live deliveries ledger, queried with SQLite mode=ro and only the target requirement metadata:\n\n| Requirement | PR | Recorded merge |\n|---|---|---|\n| req-12, req-24 | #141 | acf3646c035ac4816ff56cbf29ea58ff238c6d5b |\n| req-28 | #135 | bb753b8fa3786eb7ec4cc90603de095fa242bd5d |\n| req-15, req-27, req-29 | #136 | 8e19abcbc9f511792c5041522707f8d4fb21c8c8 |\n\nThe entire req-13 object is identical to the parent commit and still has no delivered_by, as instructed. The only other canonical change is the explanatory changelog row.\n\n`ddocs build` on an isolated archive of this pinned commit completed without warnings/findings; `cmp` confirms the generated PRD face is byte-identical to the committed face. The review checkout remained unmodified.\n\nGitHub and ls-remote agree on the head; mergeability settled to CLEAN and all five checks succeeded. Only the PRD JSON and its generated Markdown changed. No local product tests/builds, live mutations, credential reads or other stored work content were used.\n"
+		}
+	]
+}
