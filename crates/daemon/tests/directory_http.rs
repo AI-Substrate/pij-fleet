@@ -3014,6 +3014,8 @@ async fn a_limit_checks_in_once_then_tells_the_pa_once_and_a_card_update_spares_
         .unwrap()
         .and_then(|request| request.delivered_at)
         .expect("delivered");
+    // The clock starts when it reaches the holder's session (plan 214, F73).
+    let delivered = arrive(&rig, "pij-holder", "req-limit").await.max(delivered);
     let kinds = |actions: Vec<pij_daemon::delivery::role_send::LimitAction>| {
         actions
             .into_iter()
@@ -3694,6 +3696,7 @@ async fn an_answer_after_the_rounds_read_stops_the_check_in_and_the_notice() {
         .unwrap()
         .and_then(|request| request.delivered_at)
         .expect("delivered");
+    let late = arrive(&rig, "pij-holder", "req-late").await.max(late);
     let checked = late + LIMIT_MS;
     assert_eq!(
         limit_acts(time_limits(&rig.services, checked).await),
@@ -3994,15 +3997,22 @@ async fn a_limit_counts_from_arrival_and_the_check_in_names_the_held_time() {
         [],
         "the clock runs from arrival"
     );
-    // The round's read, as if delivery had held it for 20 minutes.
+    // The round's read, as if delivery had held it for 20 minutes before the
+    // arrival the store recorded (the ledger keeps seconds).
+    let reached = rig
+        .store
+        .message_reached_at("pij-holder", "req-limit")
+        .await
+        .unwrap()
+        .expect("reached");
     let mut read = rig
         .store
         .role_request("req-limit")
         .await
         .unwrap()
         .expect("row");
-    read.delivered_at = Some(arrived - 2 * LIMIT_MS);
-    let action = time_limit_step(&rig.services, &read, arrived + LIMIT_MS)
+    read.delivered_at = Some(reached - 2 * LIMIT_MS);
+    let action = time_limit_step(&rig.services, &read, reached + LIMIT_MS)
         .await
         .expect("checked in");
     assert_eq!((action.kind, action.admitted), ("check-in", true));
