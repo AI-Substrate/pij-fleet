@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"head": "08f74822302742c63614f87479f1158918718161",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/155#issuecomment-6707667533",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:155",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Matched-workload after-deploy site/daemon launch counters, machine launch rate, daemon CPU/RSS and observed delivery latency."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `08f74822302742c63614f87479f1158918718161`.\n\nFull PR-owned review against `cee011387937c7881318c98d86014526d94f2ca7`. **`ps.uds-peer-start` is removed from production**, not moved to a fallback: the daemon injects `pij_harnesses::proc::observed_start`, which calls the kernel reader directly and returns None on an unavailable answer. No new executable launch, poll, timer or transport-crate dependency.\n\n| Surface | Cost and limits |\n|---|---|\n| Start observation | `harnesses/proc.rs:265-272` reads one start instant and packs local/UTC from it, so discovery no longer makes separate subprocess observations. macOS performs one `proc_pidinfo` start read plus timezone refresh/conversion. Linux uses the existing `/proc` reader's status/stat/boot-time file reads; “one observation” is not one filesystem syscall there. No `ProcLiveness` ps fallback is called by this observer. |\n| **Direct delivery budget** | Normal cache-hit path: **one discovery + one fresh start recheck**, hence **two start observations**, not one total per delivery. On macOS that is two kernel start reads and **zero ps**, replacing the former four ps launches. Exact discovery reads the session record and token registry once; the endpoint is then moved into delivery. |\n| **FYI-carrier budget** | Admission discovers once; the worker probes/discovers once and its delivery freshly rechecks once: **two discoveries / three start observations / zero ps**, replacing the former six ps. The daemon and drain tests pin probe/delivery call shape. |\n| Endpoint handoff | The shared cache is a mutex-protected Vec, not an unbounded map. Entries match seat ID, message ID, registered process identity and pane; resolution removes the matching entry with `swap_remove`. Fresh process observation and rediscovery occur after releasing that mutex. Remembering scans/prunes up to 64 entries, allocates key strings and may shift entries on eviction. No kernel/file/socket wait is held under the cache lock. |\n| Bound and expiry | At most 64 retained entries, valid for five seconds, consumed on use. Expiry is checked on access/insert, not by a timer; other expired entries may remain allocated until later activity. Count is bounded, but key/socket/token string bytes have no new independent cap. Peak memory includes retained endpoint credentials/strings and concurrently constructed endpoints. Debug formatting intentionally omits cached credentials. |\n| Miss/failure path | Expiry, eviction, unmatched keys, spent entries or failed rechecks fall back to ordinary discovery. This can repeat file enumeration and observations; a normal one-discovery budget is not a universal bound on failed/concurrent paths. A None observation rejects reuse; existing pane-fallback and socket-auth policies still govern fresh discovery. Reviewer/security own the full identity/isolation conclusion. |\n| Remaining I/O | Session JSON and matching peer-key reads/parse remain. Matching-key lookup enumerates the session directory; pane fallback also enumerates records and observes matching pane candidates. Work still follows registry/key-file volume and payload bytes, not just the bounded cache. Socket connection, reply listener, ack/hold waits and framing are unchanged. |\n\n**CI proof:** this exact head is CLEAN. [CI 42376556663](https://github.com/AI-Substrate/pij-fleet/actions/runs/42376556663) has all four jobs successful; both visible delivers checks succeed, latest **42376884590**. JUnit records **2,083 executed cases, zero failures/errors**, including one-observation local/UTC discovery, reused/spent endpoint, dead-peer no-write, other-message separation, socket-drain call counts, live-process/timezone parity and all six spawn guards. Five Rust tests were skipped separately.\n\nThe retired-site guard now bans both the old counter label and `Command::new` in production UDS code, with a positive assertion that its scanner still sees discovery. The reuse test removes the record/key after probing, delivers through the retained endpoint, asserts two observations, then verifies a second use cannot reuse it. These are meaningful count/behavior controls, not constants-only checks.\n\nLinux CI does not compile the macOS kernel reader. The packet reports clean macOS clippy; this review performed no local build, test, mutation run, probe, Claude-key read or actual delivery.\n\n**After deployment:** take matched same-PID/build ping windows, machine launch rate and daemon CPU/RSS during known legitimate Claude traffic, and correlate direct versus carrier deliveries from independent outcome/store metadata. A quiet zero-message window alone does not verify F82's savings. At comparable traffic the old **4 x direct + 6 x carrier** ps budget should become **zero at the retired site**; other daemon launches must remain separately attributed. Preserve actual elapsed time, recipient/workload mix, cache misses and observed latency. Kernel/discovery counts are source/test budgets unless an existing live instrument measures them; do not invent live counts.\n\nThe historical +40/60.007 s (0.667/s) and earlier 0.900/s were active delivery windows, not controlled idle baselines. Live savings, cache-pressure/byte footprint and filesystem/CPU latency remain owed. No migration.\n"
+		}
+	]
+}
