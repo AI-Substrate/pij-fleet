@@ -647,7 +647,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "163",
 					"machine": "ops.osk.lan",
+					"release_why": "#163 merged ed9a3d7c",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-07T21:30:22.404Z",
 					"why": "second reviewer seat (scaling rule): #163 whole-PR verdict"
 				},
 				{
