@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Read before authorizing request close/withdraw or reusing a caller/prime helper.",
+				"tags": [
+					"requests",
+					"identity",
+					"authority",
+					"proof"
+				],
+				"title": "Request mutations need bound and scoped authority"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #149 finalfb87062f7ebcb6f850279923ecb683833dffa45f is securityBLOCK: S004HIGH9/10 self-assertedPrime metadata grants foreign-project authority after actual scoped checks fail; S003MEDIUM9/10 existence-only PIJ_SESSION_ID actor permits quiet foreign close. Bind real caller independently and use stored requester/holder plus explicitly scoped authoritative PA/prime/designation; self-role labels are not permissions. Correct victim identifiers and a correctly attributed self-labelled stranger are required negative controls, with actual-authorized positives. OriginalS001 tmux format escaping andS002 stored-instance quoting are source-closed, with real-tmux version/skip/positive-control and selected-only shell-test limits. F85legacyguidance separate; no universal renderer coverage claim. ExactCIgreen butmainDIRTY; newmergepinneeded. ls-remote won over stale force-push messages. Source-only, no localtests/probes/roleassertions. Verdict: security/outputs/2026-11/07-verdict-pr-149-fb87062.dd.json."
+		}
+	]
+}
