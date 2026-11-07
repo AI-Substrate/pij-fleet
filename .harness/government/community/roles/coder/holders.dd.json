@@ -301,6 +301,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-following-marsupial",
 					"why": "plan 210 phase 2 (rename, code paths, coverage sensor)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T18:33:52.002Z",
+					"harness": "copilot",
+					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
+					"instance_key": "219",
+					"machine": "ops.osk.lan",
+					"seat": "pij-back-tapir",
+					"why": "F108: detector missed a live F47 case (plan 219 follow-up)"
 				}
 			]
 		}
