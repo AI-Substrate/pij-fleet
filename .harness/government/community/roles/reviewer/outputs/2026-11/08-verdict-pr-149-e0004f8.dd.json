@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b690-9be4-7ba3-97ce-6e275392ee1a",
+				"date": "2026-11-08",
+				"head": "e0004f856f665cdeec03a62b0f48e769f342bea2",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/149#issuecomment-6709063624",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:149",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #149 repair correctness review\n\n## A. Verdict\n\n**BLOCK** at `e0004f856f665cdeec03a62b0f48e769f342bea2`.\n\n**F001-F004 closed. F005 partially open:** owed-notice recovery fails when the authorized retrying actor is the requester. **N001 partially open:** window preservation is fixed, but its lookup error is absent from human output.\n\n## B. Scope and CI\n\nOnly `fb87062f7ebcb6f850279923ecb683833dffa45f..e0004f8`: #135/#154 main import, correctness repairs, caller-binding/atomic-audit changes and hostile-holder test. No repeat full-plan review or claim that the superseded 697b6aa freeze was reviewed.\n\nClean pinned detached checkout; GitHub and ls-remote agree, PR CLEAN, all five checks successful. CI run `42384775056` matches this full head. JUnit contains 2,094 cases, zero failures/errors, including the repair/gate tests below. No local builds/tests, mutation runs, shell probes or product edits.\n\n## C. F001-F003 closed\n\n**F001:** elevated prime authority comes only from the stored request project's `projects.prime_id`. Generic role and global designation fallbacks are gone. Pane-derived callers retain scoped authority; an asserted-only caller is limited to the stored requester/holder. The executed self-labelled-prime case refuses withdraw/close/quiet close without moving the row, refuses asserted-only prime elevation, and has a real recorded-prime positive control.\n\n**F002:** only an instance with one live holder is advised. Shared instances advise a concrete seat, for both bare and explicit-instance addresses. The new shared-instance control and retained distinct-instance controls executed.\n\n**F003:** role-address repairs include the selected project. The regression shell-splits the printed line and invokes the real shim endpoint from a no-project cwd, reaching the correct holder. Direct-seat advice correctly needs no project.\n\n## D. F004 and #135 gate closed\n\nThe after-assign hook spawns an independently owned drain and awaits its receipt. The role admission guard is acquired inside that owned job, before each claim or self-request close, and remains through delivery settlement or requeue. A cancelled waiter cannot drop that guard/continuation.\n\n`a_cancelled_assign_waiter_never_strands_its_drain` executed: the hook waiter is polled once and dropped, and the queued request reaches delivered. `reshape::retirement_waits_for_requests_in_delivery` also executed: assign runs alongside the held gate, the request stays queued until release, then settles; delivering-row retirement/merge refusals remain.\n\nThe writer and assignment event commit return before the awaited hook. The merge did not hold those writer locks while the owned drain waits on #135's gate, so no new ordinary lock cycle was found.\n\n## E. F005, P2: requester retry cannot settle an owed notice\n\nThe main repair is sound: quiet/owed/told intent is stored with close, notice sending is owned, errors are printed, and stable origin/msg_id dedupes repeated FYIs. The executed close case seeds an owed row, retries as the holder, observes one notice and told, then refuses another close.\n\nHowever, `http/requests.rs` permits the requester to retry an owed row through may_close, then notify_owned/tell_requester uses the **retry actor** as Msg.from and the recorded requester as Msg.to. For a requester retry these are the same local seat. `DeliveryService::hold_fyi` applies the ordinary self-address refusal; `core/src/delivery.rs:383-384` returns SelfAddressed. The retry consequently prints NOT told and leaves notice owed.\n\nThis is a supported authorized caller, not a forged request: the first-close path already treats requester close as no notice owed, but the replay path omits that handling. Settle requester-owned retries without self-send, or use an appropriate fixed system notice sender while preserving the original close intent/provenance. Add the requester retry control alongside the holder retry. No local reproduction is claimed.\n\n## F. C32 and audit\n\nThe request's identity/project/holder are read before mutation. Bound actors are derived through the existing ladder; an id disagreeing with the pane refuses. Asserted-only requester/holder mutation remains a disclosed F88 residual, not elevated PA/prime authority.\n\n`close_role_request_audited`, invoked through publish_committed_batch, moves/deletes the request and appends request.closed_by_actor in the same owned transaction. Audit failure rolls back the close; replay emits no second close event. The payload names request/project/verb/actor/binding/pane/session/quiet, not the body. The known limit names PRD 003 req-10.\n\nSecurity was given a remaining C32 boundary to grade: nonquiet/retry notices use the asserted actor as their sender, and an owed-notice retry has no new close audit. Whether that structured state notice satisfies C32(1)/(3) is not silently declared accepted by this correctness verdict. Herring owns the complete security ruling.\n\n## G. N001 and proof qualifications\n\n**N001, P3:** first_open now returns an error receipt with name:null and renamed:false, so it cannot rename from a failed lookup. But render_holdings only emits the window line when name is a string (`cli/src/main.rs:3002-3009`); the error reason is hidden for a human. Print the reason even without a known name. JSON already carries it.\n\nThe current F005 regression seeds owed rather than fault-injecting notification/cancellation. Source ownership/persistence was inspected; do not describe it as a reviewer failure/cancellation run. The hostile-holder /bin/sh time-limit look/release test executed in CI, not locally.\n\nMigration 0037's nullable notice supports withdraw/drain rows and delivered-close intent; holder/delivered_at are retained. Number 37 is above current main's 36. Later-merging lower-number branches still follow merge-order renumbering; private applied prototypes of unmerged 0037 do not gain an automatic checksum upgrade.\n\n## H. Handover\n\nPreserve F001-F004/gate controls. Fix requester owed-notice retry and human error rendering, retain the holder/dedupe control, and obtain herring's complete C32 grade. Return one frozen repair delta with CI. The reviewer remained read-only.\n"
+		}
+	]
+}
