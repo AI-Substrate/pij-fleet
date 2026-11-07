@@ -675,6 +675,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "plan 221 states PR #166 (spoonbill reviewed #163)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T21:37:57.674Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "167",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "plan 222 compaction wake #167"
 				}
 			]
 		}
