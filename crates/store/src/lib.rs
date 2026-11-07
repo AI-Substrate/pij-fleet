@@ -21,6 +21,7 @@ pub mod registry;
 mod role_assertion;
 pub mod role_requests;
 pub mod spine;
+mod stalls;
 pub mod status;
 
 pub use claims::{Claim, ClaimKey, DeliveryCommit, DeliveryNote, DeliveryRecord, ReleaseOutcome};

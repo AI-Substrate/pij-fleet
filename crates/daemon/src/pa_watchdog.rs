@@ -165,6 +165,22 @@ pub enum RoundOutcome {
     /// An opted-in seat was due a nudge but is cold: the send guard would
     /// refuse it, so it was not sent (plan 178).
     OptInColdSkipped(SeatId),
+    /// A seat sat on its harness's own dialog; its parent and the PA in its
+    /// scope (else the prime) were told, once this stretch (plan 219).
+    ModalStall {
+        /// The stalled seat.
+        seat: SeatId,
+        /// Who was told this round, with delivery's receipt outcome or error.
+        told: Vec<(SeatId, String)>,
+    },
+    /// A modal-stall candidate was not read this round: its pane can't be read
+    /// without a launch (plan 219, P156-F001). Also a `watchdog.round` event.
+    ModalStallSkipped {
+        /// The candidate not read.
+        seat: SeatId,
+        /// Why.
+        reason: String,
+    },
     /// A presence message (plan 217) was handed to delivery: the missing-PA
     /// or unresponsive-PA alert to the prime, the dormant wake to the PA, or
     /// the large-seat FYI to the prime.
@@ -261,7 +277,7 @@ pub(crate) fn start(
 }
 
 /// Publish one audit event; a failure is logged, never fatal to the round.
-async fn audit(
+pub(crate) async fn audit(
     services: &Services,
     kind: &str,
     seat: &SeatId,
@@ -350,12 +366,34 @@ pub(crate) async fn wake_pa(
     reason: &str,
     now_ms: u64,
 ) -> (String, String) {
+    let (outcome, cold_check) = wake_pa_receipt(services, pa, body, msg_id, reason, now_ms).await;
+    (outcome_text(&outcome), cold_check)
+}
+
+/// [`wake_pa`], keeping delivery's structured outcome (or the error's text)
+/// for a caller that must tell an accepted delivery from a refused one.
+pub(crate) async fn wake_pa_receipt(
+    services: &Services,
+    pa: &SeatDescriptor,
+    body: String,
+    msg_id: String,
+    reason: &str,
+    now_ms: u64,
+) -> (std::result::Result<DeliveryOutcome, String>, String) {
     match audit_cold_wake(services, pa, BG_ACTOR, &msg_id, reason, now_ms).await {
         Ok(cold_check) => match services.delivery.accept(bg_msg(&pa.id, body, msg_id)).await {
-            Ok(receipt) => (outcome_word(&receipt.outcome).to_string(), cold_check),
-            Err(cause) => (format!("error: {cause}"), cold_check),
+            Ok(receipt) => (Ok(receipt.outcome), cold_check),
+            Err(cause) => (Err(cause.to_string()), cold_check),
         },
-        Err(cause) => (format!("error: {cause}"), "unknown".to_string()),
+        Err(cause) => (Err(cause.to_string()), "unknown".to_string()),
+    }
+}
+
+/// The outcome word, or `error: <cause>`.
+pub(crate) fn outcome_text(outcome: &std::result::Result<DeliveryOutcome, String>) -> String {
+    match outcome {
+        Ok(outcome) => outcome_word(outcome).to_string(),
+        Err(cause) => format!("error: {cause}"),
     }
 }
 
@@ -424,6 +462,8 @@ impl PaWatchdog {
                 .into_iter()
                 .map(RoundOutcome::RequestLimit),
         );
+        // Seats stalled on a dialog ride it too (plan 219).
+        outcomes.extend(crate::modal_stall::round(self, services, &seats, now_ms).await);
 
         let pas: Vec<&SeatDescriptor> = seats.iter().filter(|seat| is_watched_pa(seat)).collect();
         // The designated prime is a supervisor whatever its role says: its
@@ -768,7 +808,7 @@ impl PaWatchdog {
     /// Who a scope's limit-reset wake goes to: its PA; else the prime's
     /// current designation, when that seat is live in scope; else a live seat
     /// in scope holding the `prime` role. Ties go to the lowest seat id.
-    async fn wake_target(
+    pub(crate) async fn wake_target(
         &self,
         services: &Services,
         scope: &str,
@@ -1025,7 +1065,7 @@ impl PaWatchdog {
     /// The repository a folder belongs to: its absolute git common dir, so
     /// every worktree of one repository shares a key. A folder git cannot
     /// place keys as itself, so it matches only seats in exactly that folder.
-    async fn repo(&self, folder: &str) -> String {
+    pub(crate) async fn repo(&self, folder: &str) -> String {
         if let Some(known) = self.repos.lock().await.get(folder) {
             return known.clone();
         }

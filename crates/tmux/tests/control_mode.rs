@@ -382,6 +382,80 @@ fn a_lost_control_client_falls_back_then_reconnects() {
     });
 }
 
+/// Plan 219 (P156-F001): the modal-stall detector's read answers only over a
+/// control client that is already live. Cold, lost or disabled, it answers
+/// `None` and launches nothing: no client start, no forked capture.
+#[test]
+fn capture_without_launch_never_starts_a_client_or_forks() {
+    let server = Server::start();
+    let pane = server.panes[0].clone();
+    block_on(async {
+        let disabled = server.adapter(false);
+        let cold = server.adapter(true);
+        let before = server.launches().len();
+        assert_eq!(
+            disabled.capture_without_launch(&pane).await.expect("read"),
+            None
+        );
+        assert_eq!(
+            cold.capture_without_launch(&pane).await.expect("read"),
+            None
+        );
+        assert_eq!(
+            server.launches().len(),
+            before,
+            "cold or disabled: no launch"
+        );
+
+        cold.list_panes()
+            .await
+            .expect("warm: starts the control client");
+        let warm = server.launches().len();
+        let screen = cold
+            .capture_without_launch(&pane)
+            .await
+            .expect("read")
+            .expect("a live client answers");
+        assert!(screen.contains("%end 1 2 3"), "{screen:?}");
+        assert_eq!(server.launches().len(), warm, "a live client: no launch");
+
+        let clients = server.tmux(&[
+            "list-clients",
+            "-F",
+            "#{client_name} #{client_control_mode}",
+        ]);
+        let control = clients
+            .lines()
+            .find_map(|line| line.strip_suffix(" 1"))
+            .unwrap_or_else(|| panic!("no control client attached: {clients:?}"))
+            .to_string();
+        server.tmux(&["detach-client", "-t", &control]);
+        let lost = server.launches().len();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while cold
+            .capture_without_launch(&pane)
+            .await
+            .expect("read")
+            .is_some()
+        {
+            assert!(Instant::now() < deadline, "the lost client still answers");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        for _ in 0..3 {
+            assert_eq!(
+                cold.capture_without_launch(&pane).await.expect("read"),
+                None
+            );
+        }
+        assert_eq!(
+            server.launches().len(),
+            lost,
+            "a lost client is neither replaced nor forked around: {:#?}",
+            &server.launches()[lost..]
+        );
+    });
+}
+
 #[test]
 fn a_dead_server_is_a_plain_error_not_a_hang() {
     let server = Server::start();

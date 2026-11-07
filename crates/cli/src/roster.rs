@@ -1,6 +1,7 @@
 //! `pij list`'s human table (plan 160): who is on the roster, how big each
 //! seat's context is, how long since its last call, whether its cache is warm,
-//! and ❄ on a row the cold-wake guard would refuse right now.
+//! and ❄ on a row the cold-wake guard would refuse right now. A seat stalled on
+//! its harness's own dialog shows `blocked on a dialog (<key>)` (plan 219).
 //!
 //! The daemon derives and renders the size columns (`sizeColumns`), so this
 //! only lays them out. The TS shim renders the same table from the same JSON;
@@ -33,16 +34,14 @@ pub fn render_table(data: &Value) -> String {
                 .to_string()
         };
         let cold = seat["sizeColumns"][3].as_str() == Some("❄");
+        // Plan 219: a seat on its harness's own dialog reads working; say so.
+        let state = match seat["dialog"]["key"].as_str() {
+            Some(key) => format!("blocked on a dialog ({key})"),
+            None => text("state"),
+        };
         rows.push((
             cold,
-            [
-                id,
-                text("harness"),
-                text("state"),
-                column(0),
-                column(1),
-                column(2),
-            ],
+            [id, text("harness"), state, column(0), column(1), column(2)],
         ));
     }
     let mut widths = HEADERS.map(|header| header.chars().count());

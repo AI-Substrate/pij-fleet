@@ -646,3 +646,189 @@ async fn parallel_claimers_produce_exactly_one_holder() {
     assert_eq!(claimed, 1, "the baton has one holder, never one per caller");
     assert!(store.lease("git-index").await.expect("lease").is_some());
 }
+
+/// Plan 219 (F47): a stall is claimed once per stretch, keyed by the sequence
+/// of the seat's last own event. A later own event ends it even when its clock
+/// is earlier or equal (review F002); deliveries TO the seat don't. Each
+/// recipient that accepted is recorded once (review F001).
+#[tokio::test]
+async fn a_modal_stall_is_claimed_once_per_stretch_and_stands_until_an_own_event() {
+    use pij_core::modal_stall::ModalStall;
+    use pij_core::model::Event;
+    use pij_core::ports::Spine;
+
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = SqliteOrchestration::new(pool.clone());
+    let spine = pij_store::SqliteSpine::new(pool);
+    let seat = SeatId::from("pij-stalled");
+    let event = |kind: &str, at: u64| Event {
+        seq: None,
+        v: 1,
+        at,
+        kind: kind.to_string(),
+        seat: Some(seat.clone()),
+        payload: "{}".to_string(),
+    };
+    let first = spine
+        .append(event("seat.activity", 1_000))
+        .await
+        .expect("working")
+        .0;
+    let stall = ModalStall {
+        seat: seat.clone(),
+        quiet_seq: first,
+        quiet_since_ms: 1_000,
+        claimed_at_ms: 1_300_000,
+        dialog: "Copilot's selection dialog".to_string(),
+        key: "ctrl+d".to_string(),
+        clears: "ctrl+d declines".to_string(),
+        open: true,
+        told: Vec::new(),
+        attempts: std::collections::BTreeMap::new(),
+    };
+    assert!(store.claim_modal_stall(&stall).await.expect("claim"));
+    let later_round = ModalStall {
+        claimed_at_ms: 1_360_000,
+        ..stall.clone()
+    };
+    assert!(
+        !store.claim_modal_stall(&later_round).await.expect("again"),
+        "the same stretch is claimed once"
+    );
+    assert_eq!(
+        store
+            .standing_modal_stalls(Some(&seat))
+            .await
+            .expect("read"),
+        vec![stall.clone()]
+    );
+
+    // Each recipient that accepted is recorded once.
+    let pm = SeatId::from("pij-pm");
+    assert!(
+        store
+            .mark_modal_stall_told(&seat, first, &pm)
+            .await
+            .expect("told")
+    );
+    assert!(
+        !store
+            .mark_modal_stall_told(&seat, first, &pm)
+            .await
+            .expect("again")
+    );
+    assert!(
+        !store
+            .mark_modal_stall_told(&seat, first + 1, &pm)
+            .await
+            .expect("other stretch"),
+        "another stretch's row is left alone"
+    );
+    assert_eq!(
+        store.modal_stalls().await.expect("all")[0].told,
+        vec![pm.clone()]
+    );
+    // Tells are counted per recipient, for this stretch only.
+    let pa = SeatId::from("pij-pa");
+    for want in 1..=2 {
+        assert_eq!(
+            store
+                .record_modal_stall_attempt(&seat, first, &pa)
+                .await
+                .expect("fail"),
+            Some(want)
+        );
+    }
+    assert_eq!(
+        store
+            .record_modal_stall_attempt(&seat, first + 1, &pa)
+            .await
+            .expect("other"),
+        None
+    );
+    assert_eq!(
+        store.modal_stalls().await.expect("all")[0]
+            .attempts
+            .get(&pa),
+        Some(&2)
+    );
+
+    // A delivery to the seat is not its own event: the stall stands.
+    spine
+        .append(event("delivery.outcome", 1_400_000))
+        .await
+        .expect("delivery");
+    assert_eq!(
+        store.standing_modal_stalls(None).await.expect("read").len(),
+        1
+    );
+
+    // A read without the dialog closes it; a read with it reopens it.
+    assert!(
+        store
+            .set_modal_stall_open(&seat, first, false)
+            .await
+            .expect("close")
+    );
+    assert!(
+        store
+            .standing_modal_stalls(None)
+            .await
+            .expect("read")
+            .is_empty()
+    );
+    assert!(
+        store
+            .set_modal_stall_open(&seat, first, true)
+            .await
+            .expect("reopen")
+    );
+
+    // An own event with an EARLIER clock is still later by sequence: it ends
+    // the stretch, and the next stretch claims again with nobody told.
+    let earlier = spine
+        .append(event("seat.activity", 900))
+        .await
+        .expect("idle")
+        .0;
+    assert!(
+        store
+            .standing_modal_stalls(None)
+            .await
+            .expect("read")
+            .is_empty()
+    );
+    let next = ModalStall {
+        quiet_seq: earlier,
+        quiet_since_ms: 900,
+        claimed_at_ms: 2_800_000,
+        ..stall.clone()
+    };
+    assert!(store.claim_modal_stall(&next).await.expect("next stretch"));
+    assert!(
+        !store
+            .claim_modal_stall(&stall)
+            .await
+            .expect("older stretch"),
+        "an older stretch never replaces a newer one"
+    );
+    assert_eq!(store.modal_stalls().await.expect("all"), vec![next.clone()]);
+    assert_eq!(
+        store.standing_modal_stalls(None).await.expect("read").len(),
+        1
+    );
+
+    // And an EQUAL clock ends it too.
+    spine
+        .append(event("report.now", 900))
+        .await
+        .expect("report");
+    assert!(
+        store
+            .standing_modal_stalls(None)
+            .await
+            .expect("read")
+            .is_empty()
+    );
+}

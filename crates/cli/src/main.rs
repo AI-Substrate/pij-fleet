@@ -3559,6 +3559,18 @@ fn render_state(envelope: &Envelope<pij_daemon::http::StateCard>, json: bool) ->
         if card.pending_fyis > 0 {
             let _ = write!(output, "\nFYIs held: {}", card.pending_fyis);
         }
+        if let Some(dialog) = &card.dialog {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| {
+                    u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+                });
+            let _ = write!(
+                output,
+                "\n{}",
+                pij_core::modal_stall::blocked_line(dialog, now_ms)
+            );
+        }
         for note in &card.deliveries {
             let _ = write!(
                 output,
@@ -4289,6 +4301,35 @@ PEC notice";
         let json: serde_json::Value =
             serde_json::from_str(&super::render_state(&response, true)).expect("unadorned JSON");
         assert_eq!(json["data"]["held"].as_array().expect("holds").len(), 2);
+    }
+
+    /// Plan 219: a standing dialog stall is named on the human card, and a
+    /// card without one says nothing about dialogs.
+    #[test]
+    fn state_names_a_standing_dialog_stall() {
+        let card = |dialog: serde_json::Value| {
+            let card: pij_daemon::http::StateCard = serde_json::from_value(serde_json::json!({
+                "id": "pij-asking", "state": "working", "liveness": "active", "cwd": "/abs/tree",
+                "harness": "copilot", "unsupported": [], "dialog": dialog,
+            }))
+            .expect("typed daemon state");
+            super::render_state(&pij_core::model::Envelope::ok("pij state", card), false)
+        };
+        let human = card(serde_json::json!({
+            "dialog": "Copilot selection dialog (ctrl+d declines)", "key": "ctrl+d",
+            "clears": "ctrl+d declines", "since_ms": 0,
+        }));
+        assert!(
+            human.contains("\nblocked on a dialog: silent for "),
+            "{human}"
+        );
+        assert!(
+            human.ends_with(
+                ", with Copilot selection dialog (ctrl+d declines) on screen (clears with ctrl+d declines)"
+            ),
+            "{human}"
+        );
+        assert!(!card(serde_json::Value::Null).contains("blocked on a dialog"));
     }
 
     /// Plan 160: the daemon renders the size lines; `pij-rs state` prints them.

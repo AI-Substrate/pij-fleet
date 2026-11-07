@@ -3183,6 +3183,13 @@ async fn seat_card(
     projection.card.held = active_holds(state, &id).await?;
     projection.card.delivery_deferrals = state.services.queue.delivery_deferrals(&id).await?;
     projection.card.pending_fyis = state.services.delivery.pending_fyi_count(&id).await?;
+    projection.card.dialog = state
+        .services
+        .watchdogs()
+        .standing_modal_stalls(Some(&id))
+        .await?
+        .first()
+        .map(pij_core::modal_stall::ModalStall::view);
     projection.card.native_receiver_reason = state
         .services
         .delivery
@@ -3375,6 +3382,7 @@ fn state_card(
             held: Vec::new(),
             delivery_deferrals: Vec::new(),
             pending_fyis: 0,
+            dialog: None,
             deliveries: Vec::new(),
             session_status: None,
             size: pij_core::cold_wake::SeatSize::default(),
@@ -3446,6 +3454,10 @@ struct SeatProjection<'a> {
     /// prints the same columns.
     #[serde(rename = "sizeColumns", skip_serializing_if = "Option::is_none")]
     size_columns: Option<[String; 4]>,
+    /// A standing stall on the harness's own dialog (plan 219): `pij list`
+    /// shows `blocked on a dialog (<key>)` in place of `working`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dialog: Option<pij_core::modal_stall::DialogView>,
 }
 
 /// How long `pij list` waits for one seat's session facts (plan 160). The
@@ -3591,6 +3603,14 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
     } else {
         vec![None; roster.seats.len()]
     };
+    // One read for every local seat; a failed read shows none (plan 219).
+    let dialogs = match state.services.watchdogs().standing_modal_stalls(None).await {
+        Ok(stalls) => stalls,
+        Err(error) => {
+            eprintln!("pij seats: standing modal stalls: {error}");
+            Vec::new()
+        }
+    };
     let projection = FederatedRosterProjection {
         seats: roster
             .seats
@@ -3598,6 +3618,10 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
             .zip(sizes.iter_mut())
             .map(|(seat, sized)| {
                 let (session_status, size) = sized.take().unzip();
+                let dialog = (seat.machine.as_deref() == Some(state.machine_alias.as_str()))
+                    .then(|| dialogs.iter().find(|stall| stall.seat == seat.id))
+                    .flatten()
+                    .map(pij_core::modal_stall::ModalStall::view);
                 SeatProjection {
                     seat,
                     generation: "rs",
@@ -3606,6 +3630,7 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
                     size_columns: size.as_ref().map(pij_core::cold_wake::size_columns),
                     session_status,
                     size,
+                    dialog,
                 }
             })
             .collect(),
