@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"hook": "Read before changing digest scope resolution or reviewing queued role-request metadata exposure.",
+				"tags": [
+					"digest",
+					"scope",
+					"privacy",
+					"proof"
+				],
+				"title": "Scoped digest reads fail closed"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #144 at 165c32215126ed72e5eb8949431f090cde50d559 closes S001: preserve own, parent and prime lookup failures; omit queued-request metadata and log unavailability rather than widening scope. Empty scope must read nothing. Broken-table coverage fails own and parent reads together, not parent alone; the prime-lookup test is a guard rather than an old-code-failing regression. Review was source-only with exact-head green CI, no local tests. Verdict: security/outputs/2026-11/07-verdict-pr-144-165c322.dd.json. PR #150 at 6cc92eb8d1ae7e55bdba2d72087a2b8e566e5758 passes the introduced-content C19/C21 scan; private-content provenance was not independently verified. Verdict: security/outputs/2026-11/07-verdict-pr-150-6cc92eb.dd.json."
+		}
+	]
+}
