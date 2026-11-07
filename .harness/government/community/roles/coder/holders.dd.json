@@ -366,6 +366,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-following-marsupial",
 					"why": "plan 223 (req-10 phase 2) from marsupial's own workshop 001"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T21:52:50.049Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f112",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "F112: per-tick whole-machine ps census in the legacy tap-writer check (ocelot 4029f72)"
 				}
 			]
 		}
