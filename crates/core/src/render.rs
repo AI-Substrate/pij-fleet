@@ -163,6 +163,21 @@ pub fn machine(machine: &str) -> Cow<'_, str> {
     )
 }
 
+/// Text an error carries from elsewhere (a reason, a record, an adapter's
+/// words): as it is when it is one plain line with no forged frame, else
+/// fenced (F142, #193 round 3). An error's text reaches receipts and refusals
+/// through `to_string()`, so it is made safe where it is written.
+pub fn line(text: &str) -> Cow<'_, str> {
+    if text.chars().count() <= FENCE_MAX
+        && !text.chars().any(char::is_control)
+        && !text.contains("[pij from")
+    {
+        Cow::Borrowed(text)
+    } else {
+        Cow::Owned(fenced(text, FENCE_MAX))
+    }
+}
+
 /// How much of a fenced reason a generated notice shows.
 pub const FENCE_MAX: usize = 500;
 
