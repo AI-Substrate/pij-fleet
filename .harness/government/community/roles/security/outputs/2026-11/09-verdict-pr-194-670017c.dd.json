@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "670017c7fab4c0365307a2ff2abd9b38849f75ee",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/194#issuecomment-6728284865",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:194",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: BLOCK\n\nPR #194, exact head `670017c7fab4c0365307a2ff2abd9b38849f75ee`.\n\nReviewed `52cb364..670017c` and directly dependent scanner/notice merge boundaries. The original external-module truncation is repaired, but the new stripper can still discard production. **This is a source-proven security-proof blocker, not a demonstrated production exploit.**\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | notice_ids.rs | 49-56, 105-144 | Scanner may silently blank production; proof defect, not an exploit | 10/10 |\n\n### Remaining proof blocker\n\n`crates/daemon/tests/notice_ids.rs` discovers cfg-test markers through raw substring search (`:105-144`), without skipping comments or strings at that stage. A commented marker before a production function can therefore cause the function to be blanked.\n\nThe block-comment skipper stops at the first terminator rather than tracking Rust's nested comments (`:49-56`). If delimiter matching then fails, the stripping code falls back to EOF (`:128`), contrary to its documented stop-early/never-blank-production guarantee.\n\nA valid-Rust source illustration, not executed:\n\n```rust\n#[cfg(test)]\nmod tests { /* outer /* inner */ { */ }\nfn live() { let msg_id = format!(\"pa-missing:{}\", 1); }\n```\n\nThe inner comment terminator exposes a commented opening brace to the scanner; matching can fail and the EOF fallback removes the following live mint from inspection.\n\nDiscover markers outside opaque tokens, handle nested block comments, and fail explicitly or retain source when a closing delimiter cannot be proven. This does not require claiming exhaustive Rust/data-flow parsing.\n\n### Repairs and merge that pass\n\nExternal cfg-test declarations now end individually, preserving actual sidecar production and its reserved-ID guard (`crates/daemon/src/http/mod.rs:4584-4599,4641`). Synthetic and real-source regression assertions cover that concrete old truncation (`notice_ids.rs:507-544`), though the real oracle checks a byte window rather than the entire function.\n\nAll 30 prefixes and SidecarBg admission/deduplication controls remain. The merged idle nudge still sends only on Clear/Busy and mints both IDs through NoticeKind with independent random occurrence parts (`crates/daemon/src/idle_nudge.rs:331-393`). This is merge-retention evidence, not a new independent #195 review.\n\nF146/general next_message_id remains outside this PR and uncleared; old `.withdrawn` duplicate/compatibility notes stand. No new C19/C21 disclosure was identified.\n\n### Proof\n\nGitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42531048819` and Delivers run `42531048821` both identify this SHA and success. Green CI does not establish the claimed adversarial stripping property.\n\nNo local builds, tests, scanner/mutant execution, runtime sends, probes, credential reads or mutations were performed.\n"
+		}
+	]
+}
