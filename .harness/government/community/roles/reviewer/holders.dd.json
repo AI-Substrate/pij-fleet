@@ -955,6 +955,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-08T10:57:21.037Z",
 					"why": "F137 bind :0 #188"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T11:09:10.197Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "187",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F134/F133 #187"
 				}
 			]
 		}
