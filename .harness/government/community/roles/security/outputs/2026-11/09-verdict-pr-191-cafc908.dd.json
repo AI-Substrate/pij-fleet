@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "cafc9085aba3ef2c5ffddb6ce638471f467b33ba",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/191#issuecomment-6724166308",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:191",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS\n\nPR #191, exact head `cafc9085aba3ef2c5ffddb6ce638471f467b33ba`.\n\nThe complete diff and directly dependent recording, address, legacy rendering and tmux boundaries were source-reviewed. No new security vulnerability was identified.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerability identified | - |\n\n### Admission and addresses\n\nAssign and lineage-add, single and batch, reach the shared instance grammar checker; refusals display bounded, escaped keys (`crates/daemon/src/http/directory.rs:1199,1362,1505`; `crates/daemon/src/community/layout.rs:89`). An omitted/empty assignment instance remains the canonical empty key, not arbitrary text.\n\nRole-address parsing rejects explicit empty instances, extra slashes, Unicode, percent-encoded strings and non-lowercase values (`crates/daemon/src/delivery/role_send.rs:67-88`). Native and shim role sends reach the same parser (`crates/daemon/src/http/role_send.rs:57`); malformed role addresses do not fall through to ordinary delivery.\n\n### Legacy sink and execution boundaries\n\nWindow naming renders project, role and stored instance separately, including pre-grammar legacy rows (`crates/daemon/src/community/directory.rs:2623-2629`). Kept-window reasons no longer echo the name, and the restored seat-ID fallback is rendered (`:1634,1658,1662`). Plain receipt window rendering supplies the additional whole-window guard (`crates/cli/src/main.rs:3127`). Invalid data reveals only a character count.\n\nRelease-command arguments remain whole-word shell quoted (`community/directory.rs:1141-1143`; `crates/core/src/directory.rs:32`). Tmux uses fixed argv and hash doubling to prevent format/job expansion (`crates/tmux/src/lib.rs:1434,1484`).\n\nLoose release matches existing open holdings; rebuild reads governance records rather than creating a new caller-authority route (`community/directory.rs:1987,754`). Caller/project resolution is unchanged. No new authority widening was identified, and no blanket C32 exemption is used.\n\n### Proof\n\nNo new C19/C21 disclosure was identified. GitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42500185891` and Delivers run `42500186044` both identify this SHA and success.\n\nThe claimed V/X mutations were not independently repeated. No local builds, tests, tmux operations, release/rebuild operations, payload execution, credential reads or mutations were performed.\n"
+		}
+	]
+}
