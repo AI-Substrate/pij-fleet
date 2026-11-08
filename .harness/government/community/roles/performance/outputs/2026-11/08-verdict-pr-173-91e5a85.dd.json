@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "91e5a85d5e18455025157477705f4c678cb58ae5",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/173#issuecomment-6715853666",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:173",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `91e5a85d5e18455025157477705f4c678cb58ae5`.\n\n**No additional database read per send, and no additional write, claim or launch.** The queue/store implementation is unchanged. Its existing carrying transaction still checks delivery/queue dedup, transitions the FYIs, inserts the carrier, appends the `fyi.delivered` event and commits. The new count uses the event vector returned by that same call; it does not reread the spine, count pending FYIs again or inspect the queued body.\n\nThe production store returns zero or one claim event, whose payload already contains `ids` and `via`. The new daemon code parses that serialized payload into a temporary JSON Value and reads the array length. **This is extra CPU/allocation, not zero work:** O(serialized claim-payload bytes), including all claimed IDs, even when the displayed FYI block is a digest. It occurs on successful carrying enqueues, including the general queue branch that discards the count. No-carry/plain fallback returns zero without that parse; duplicate enqueues return no new claim event. The new receipt formats N only when the returned count is positive.\n\nOther queued-reason branches now create an owned String before the existing outcome copy, adding a small transient allocation per such receipt. Longer strings also increase serialized receipt/refusal bytes. F121 changes only refusal text; its validation condition and delivery decisions are unchanged.\n\n**No new standing loop, recurring timer, poll, retry or executable site.** Existing carrier routing, durable admission, claim/carrier atomicity, plain-send fallback and drain scheduling remain. The change scales with each relevant send and its claimed ID payload, not with all seats or idle ticks. Six existing spawn guards remain unchanged and pass.\n\n**P173-N001, wording/proof boundary:** `within seconds (wakes the seat)` adds no deadline, retry guarantee or model-completion evidence. The supplied historical 381 sends delivered by injection within five seconds is an observation, not a future worst-case bound. A queued receipt still proves admission, not completed injection or model work; this review did not independently reread that live census.\n\n**CI:** [42435509833](https://github.com/AI-Substrate/pij-fleet/actions/runs/42435509833) succeeds at this exact SHA. Downloaded JUnit confirms **2,195 executed cases, zero failures/errors/skips**, including the carrier wording unit test, failed-claim/plain-fallback case, new normal-role/seat carrier integration, F121 refusal case and all six spawn guards. There are **90 directory HTTP cases**. The integration checks ordinary queue rows, non-FYI role-request storage and settlement via each normal carrier's message ID, not a live wake-latency bound. Rust lint and Node 22/24 checks pass; Delivers `42435509698` succeeds.\n\nWorktree and GitHub heads agree; clean and CLEAN/MERGEABLE. No local build, test, mutation, live send, census or deployment probe. No performance blocker; extra payload parsing and the admission-versus-completion qualification are retained explicitly.\n"
+		}
+	]
+}
