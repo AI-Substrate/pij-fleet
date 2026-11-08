@@ -485,9 +485,12 @@ impl DirectoryService {
                     holders_mode,
                     &mine,
                     live_seats,
+                    // The prime role has no rows to read liveness from, so its
+                    // recovery action is gated on the designation itself: a
+                    // live designated prime needs none (review of #177, F002).
                     &queued
                         .iter()
-                        .filter(|request| request.role == *id)
+                        .filter(|request| request.role == *id && !(is_prime && live_holder))
                         .map(|request| request.instance.as_str())
                         .collect::<Vec<_>>(),
                     memory["latest"].as_str(),

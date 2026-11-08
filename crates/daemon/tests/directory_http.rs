@@ -7409,3 +7409,102 @@ async fn a_legacy_prime_assignment_never_stands_in_for_the_designation() {
     );
     rig.server.abort();
 }
+
+/// Review of #177 (bobcat F002): a request waiting for the prime gets the
+/// recovery action (`pij project set ... --prime`) only when the designated
+/// prime is not live; a live designation needs none.
+#[tokio::test]
+async fn the_prime_recovery_action_follows_the_designations_liveness() {
+    let repo = repo("pij-directory-prime-recovery");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles_and_prime(rig.addr, &repo, &["--prime", "pij-second"]).await;
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "prime",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    rig.store
+        .record_role_request(&pij_store::RoleRequest {
+            id: "prime-waits".into(),
+            project: "fleet".into(),
+            role: "prime".into(),
+            instance: String::new(),
+            requester: SEAT.into(),
+            body: "please".into(),
+            in_reply_to: None,
+            fyi: false,
+            reply: pij_store::ReplyMode::Wake,
+            limit_ms: None,
+            holder: None,
+            state: pij_store::RequestState::Queued,
+            created_at: 1,
+            delivered_at: None,
+            checkin_at: None,
+            escalated_at: None,
+            answered_at: None,
+        })
+        .await
+        .unwrap();
+    let prime_actions = |view: &Value| -> Vec<Value> {
+        view["data"]["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|action| action["role"] == "prime")
+            .cloned()
+            .collect()
+    };
+
+    let live = view(rig.addr, &repo).await;
+    let waiting = live["data"]["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|role| role["id"] == "prime")
+        .map(|role| role["requests"]["count"].clone());
+    assert_eq!(waiting, Some(json!(1)), "the request waits: {live}");
+    assert_eq!(
+        prime_actions(&live),
+        Vec::<Value>::new(),
+        "a live designation needs no recovery"
+    );
+
+    let mut gone = rig
+        .services
+        .registry
+        .get(&SeatId::from("pij-second"))
+        .await
+        .unwrap()
+        .unwrap();
+    gone.tombstoned_at = Some(1);
+    rig.services.registry.put(gone).await.unwrap();
+    let dead = view(rig.addr, &repo).await;
+    let actions = prime_actions(&dead);
+    assert_eq!(actions.len(), 1, "{actions:?}");
+    assert_eq!(actions[0]["condition"], "no-live-holder");
+    assert_eq!(
+        actions[0]["commands"],
+        json!(["pij project set fleet --prime '<seat>'"])
+    );
+    assert!(
+        actions[0]["says"]
+            .as_str()
+            .unwrap()
+            .starts_with("the project has no live designated prime and 1 request(s)"),
+        "{actions:?}"
+    );
+    rig.server.abort();
+}
