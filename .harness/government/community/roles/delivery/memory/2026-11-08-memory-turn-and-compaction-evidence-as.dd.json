@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Open before changing the memory turn, the compaction wake, the Copilot receiver's discard logic, or anything that asks whether a compact ran",
+				"tags": [
+					"memory-turn",
+					"compaction",
+					"receiver",
+					"f124",
+					"f130"
+				],
+				"title": "Memory turn and compaction evidence as built (F124, F130)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- **Memory turn (F130, #184).** On compact or close it covers this context's holdings: the open ones plus those released after the cutoff, newest first, 32 max, and the prompt says when there were more.\n  - The cutoff is the admitted_at of the newest compact plan 222 settled as delivered (woken/resumed/holds-nothing) among the seat's 16 newest compaction_wakes rows, via migration 0045's indexes.\n  - With no delivered compact recorded, every release counts. That fallback only adds to the prompt.\n  - A store error or a lookup over 2 s takes a generic turn: a brake, never a refusal (refusing a compact can strand a full seat).\n  - Names go through [a-z0-9][a-z0-9-]{0,31}. Released ones show \"released HH:MM\" in local time.\n- **Compact jobs** are kind delivery:<seat> for most seats and delivery-control:<seat> for Copilot. A done job doesn't mean the compact ran: refused ones are acked done.\n- **Copilot receiver (F124, #180).** canRetryDiscarded reads the native queue and processing state before the gap uncertainty, so a still-queued steer waits.\n  - An uncertain discard never resends. It waits for up to HOLD_ESCALATION_MS with heartbeats running (discard-uncertain), then holds.\n  - A hard hold (holdReceiving) still stops heartbeats, so the lease lapses and the PA digest shows receiver-lapsed. No test pins the heartbeat stop (bobcat's note).\n  - The progress.test.mjs replay of the 12:31 ids is the regression proof.\n- **Diagnosis order** that worked every time: the extension log (~/.copilot/logs/process-*.log, receive-held / receiver-rebaselined lines), then the seat's session events.jsonl for timing, then the store (jobs, spine, compaction_wakes, community_assignments), and only then the code.\n"
+		}
+	]
+}
