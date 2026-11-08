@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "060ef066847a0ef1882976a04291ab149681dce1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/170#issuecomment-6715329531",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:170",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `060ef066847a0ef1882976a04291ab149681dce1`. **P170-F001 closed.**\n\nDelta from `bfe2301bdbf6cc62d7f720270fabc11a8fcc17df`, previously blocked in [5a0ffbc](https://github.com/AI-Substrate/pij-fleet/pull/170#issuecomment-6715123283). Reviewed both repair commits, including the stricter input/cwd handling.\n\n**Absolute launches:** both production entry paths construct `resolvedRunner(resolveTools(...), spawnRunner)` once. Prune resolves git/gh/pij-rs; normal freeze resolves git/gh. The resolver walks absolute PATH entries in-process using executable access and regular-file checks, with no which/helper launch. Its Map lasts one script run. Repeated calls pass the stored absolute path; unresolved bare names return an explicit refusal without launching. Lsof and absolute parser paths pass through directly. Missing or later-disappearing tools do not introduce a retry/search loop.\n\nThe CI execution-seam case captures the values delivered to the injected base runner: repeated git/gh calls receive absolute paths with no additional resolution, relative PATH entries are never probed, and an unresolved bare name is not launched. Production wires that same wrapper to `spawnSync`. This closes the new repeated PATH-search problem while preserving the builtin-only/C25 runner.\n\n**Cost delta:** startup adds bounded-by-PATH filesystem work for two or three tool names, not child launches. After successful resolution, the earlier macOS direct-call model remains **3 + P + C + R**, for candidates C, distinct PRs P and actual removal attempts R; zero candidates still stop after one Git listing. Lsof remains one enumeration per nonempty run. No new recurring timer, poll or daemon mutation; the timeout is an on-demand per-child deadline mechanism.\n\nSeat and process spellings are canonicalized once during inventory capture, and candidate paths once per candidate. This removes the old repeated O(C*S) seat realpath work. Canonicalization is now O(S+M+C) calls, while in-memory cross-matching remains O(C*(S+M)). Linux adds one owner stat per enumerated PID and a cwd link read for this user's PIDs. Validation is linear in the already-read inputs. Read-before-remove adds a retained decision vector and a second finite pass, O(C) storage, not a second inventory/gh/status sweep.\n\n**P170-N001, timeout scope:** every real child receives `timeout: 60_000`; ETIMEDOUT is reported explicitly. Read-phase timeouts abort before any removal, and a removal timeout prevents later removals, without undoing earlier ones. This is neither an overall-run deadline nor an unconditional 60-second child wall-time cap: [Node 22's spawnSync contract](https://nodejs.org/docs/latest-v22.x/api/child_process.html#child_processspawnsynccommand-args-options) sends the default SIGTERM and still waits for complete child exit; a child that handles it without exiting can keep the caller waiting. The production timeout option is verified by source; CI refusal cases inject timed-out results, not a real 60-second termination benchmark.\n\nThe daemon boundary remains one seat-list read, with no daemon control/restart/write command. Partial cwd inventories now refuse, and Linux's stated other-user exclusion narrows the observable set; this cost pass does not decide the separate shared-host deletion-safety review.\n\n**CI:** [42431389764](https://github.com/AI-Substrate/pij-fleet/actions/runs/42431389764) succeeds at this exact SHA. Node **22 and 24 each execute all 32 pr-freeze tests**, including the resolver seam, stricter inventory fixtures and real strip-types entry invocation; typecheck/Biome and Rust checks succeed. Delivers `42431389913` succeeds; the cancelled duplicate is not proof.\n\nWorktree and GitHub heads agree; clean and CLEAN/MERGEABLE. No local build, test, live dry-run, cwd census or prune. The old 13-candidate/~10-second author observation is not relabeled as a measurement of this repaired head. Actual macOS component latency and timeout termination behavior remain unmeasured.\n"
+		}
+	]
+}
