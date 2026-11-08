@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bce9-55f9-7932-8e3e-1a7ac3b2275c",
+				"date": "2026-11-09",
+				"head": "5e485524f8a1e7264d4db316cdf59aaabb864143",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/193#issuecomment-6726975342",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:193",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #193 round 2 correctness review: BLOCK\n\nHead: `5e485524f8a1e7264d4db316cdf59aaabb864143`.\nRequest: `01a1bce9-55f9-7932-8e3e-1a7ac3b2275c`.\nRead-only delta from `8050ace4c0b83a73f64490094f4427d8c22b395a`. Detached worktree clean and pinned. No local builds, tests or live probes.\n\n**F001-F005 are closed.** Two remaining paths disprove the PR body's blanket claim that all other error-to-text sites contain only store/git/IO/parse errors without caller fields. PM explicitly required the delivery-error issue to be fixed in #193 round 3.\n\n## F006: Delivery errors still carry raw caller fields into plain answer/withdrawal failures\n\n`crates/daemon/src/http/decisions.rs:247-257` calls `delivery.accept` and copies `error.to_string()` into `DecisionError.message`. Its response puts that message in envelope `meta` (`:406-418`); native `pij answer` emits the envelope (`crates/cli/src/main.rs:1808-1813`), whose failure renderer prints meta verbatim (`crates/cli/src/lib.rs:53-58`).\n\nThis is not a store or JSON-parse error. The answer checks the asker live before preparing/admitting delivery (`decisions.rs:193-210`). Delivery independently reads its current registry row (`crates/daemon/src/delivery/mod.rs:1091-1123`) and returns `SeatIsGone` with the stored tombstone reason (`:1188-1193`). If the asker closes with a hostile reason between those stages, that reason reaches the answering parent's plain failure. `PijError::SeatIsGone`, `NoRegistryEntry` and `NotDeliverable` display their fields raw (`crates/core/src/error.rs`).\n\nThe withdrawal sweep also missed `http/directory.rs:1166-1167`, which formats `hold_fyi` errors as `gone: {error}` or `not told: {error}`. The gone outcome stays escaped data in a successful reshape receipt, but the not-told outcome is inserted into the returned `E_NOT_TOLD` failure at `:1071-1091`. A live legacy requester and a conflicting pre-held `<request-id>.withdrawn` FYI reach `NotDeliverable`, not the data-only gone branch.\n\nFix the shared delivery-error display boundary, as PM requested, rendering identity fields and fencing caller-chosen reasons/diagnostics in the variants that carry them. Preserve typed failure and retry semantics. Test a hostile tombstone reason on answer delivery and a hostile identity on withdrawal's FYI-conflict failure through their actual plain consumers. R1-R13 do not cover these paths.\n\n## F007: The withdrawal failure separately interpolates the raw requester\n\n`http/directory.rs:1071-1075` constructs each untold entry with:\n\n```rust\nformat!(\n    \"{} ({})\",\n    row[\"requester\"].as_str().unwrap_or(\"?\"),\n    row[\"told\"].as_str().unwrap_or(\"?\")\n)\n```\n\nRendering the shared error alone cannot close this independent identity occurrence. In the legacy live-requester/FYI-conflict case above, the requester is still printed raw in the outer list, even with a safe error display. The list becomes plain refusal meta at `:1080-1091`.\n\nRender the requester at this prose boundary. Cover a failed withdrawal notification with a hostile stored requester; assert both the error cause and outer identity are safe, while withdrawal remains pending and a successful retry retains its existing semantics.\n\n## Repair closures\n\n| Item | Source and proof |\n|---|---|\n| F001 | `notify_owned` and `tell_requester` return only static diagnostic strings; both first-close and owed-notice retry use that path. HTTP test covers absent hostile requester and hostile tombstone reason, including `told.outcome`; R1/R2 reported killed. |\n| F002 | Start/list/tail/kill share the title fence; paths are fenced. The tail handler passes `job.owner == caller.id` to `tail_line`, so a parent sees fenced child output and the owner retains raw output. Helper test has parent/owner controls; R3/R4 reported killed. Existing HTTP owner/parent permission tests also passed. |\n| F003 | ReleaseTarget, instance suffix, unmatched/pinned-release diagnostics and later-holding timestamps render through the new helpers. Matching still uses raw keys and timestamps, not rendered text. Helper test and R5-R7 cover seat/instance/time. |\n| F004 | Earlier release reason fenced; not-owner seat rendered. Re-release HTTP test and R8 cover the reason. Hostile not-owner identity remains source-only, as disclosed. |\n| F005 | Address parser rejects controls; plain state reparses each stored address and substitutes its length when invalid. Core and CLI tests include canonical positive and ESC/BEL/NUL negatives; R11/R12 reported killed. Delivered notes use newly parsed addresses. |\n| Plan folders | Single-folder guard suppresses unsafe plan edits; single/several-folder notes use the shared shown-folder helper. HTTP hostile-folder test and R9/R10 reported killed. Several-folder branch has no separate hostile execution receipt. |\n| Drained error | CLI fences `drained.error`; `drained.why` is the fixed `REQUESTER_TOOK_ROLE` vocabulary from `Drained::receipt`. CLI test and R13 reported killed. |\n\nThe inherited #192 idle-nudge default-off implementation and PA guidance equal main `9603be624cd5b0a1bf5ceefbd0505fadc084841f`; the main merge has no remerge conflict delta. This review does not regrade #192 or clear capability work.\n\n## Evidence and limits\n\nHead-bound CI run `42521354301`, attempt 1, succeeded. Matching JUnit artifact and nextest log contain **2288 passing tests**, no failures/errors, and **five separately reported skips**. All new repair tests named above passed. The later delivers run `42521355410` succeeded at the same head; an earlier duplicate delivers run was cancelled.\n\nThe author's round-2 index reports R1-R13 killed on `8050ace4 + round-2 working changes`, before the main merge. Mutation sites and killing assertions remain at the reviewed head. This is author-reported predecessor-tree evidence, not thirteen isolated final-head executions; its raw output points to session history, which was not read. Helper-only receipts are not claimed as hostile end-to-end parent/retry/replay execution.\n\nNo new periodic loop, poll, timer, hook, sweep, status refresh or process launch in the F142 changes. Added rendering work is per invocation; the idle-nudge switch is inherited unchanged from main.\n\nEvidence: `pr193-5e48552-delta.diff`, `pr193-5e48552-junit.xml`, `pr193-5e48552-ci.log`, and the author's round-2 receipt index.\n\n## Handback\n\nBLOCK at the exact head above. F001-F005 and the plan-folder/drained-error repairs hold; fix F006/F007 and correct the error-text inventory before the next frozen head.\n"
+		}
+	]
+}
