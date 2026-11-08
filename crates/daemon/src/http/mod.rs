@@ -2099,7 +2099,7 @@ pub(crate) fn spawn_evidence_paths(spawn_id: &str) -> (PathBuf, PathBuf) {
     )
 }
 
-async fn read_spawn_exit(path: &Path) -> Result<Option<i32>> {
+pub(crate) async fn read_spawn_exit(path: &Path) -> Result<Option<i32>> {
     let value = match tokio::fs::read_to_string(path).await {
         Ok(value) => value,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -2113,6 +2113,12 @@ async fn read_spawn_exit(path: &Path) -> Result<Option<i32>> {
             });
         }
     };
+    // A status file the wrapper (or anything) has created but not yet written
+    // is no exit yet: the next poll reads it whole. Reading it as a malformed
+    // status turned a child's exit into a 500 (CI, plan 223 round 2).
+    if value.trim().is_empty() {
+        return Ok(None);
+    }
     let value = value
         .trim()
         .strip_prefix("exit_code=")

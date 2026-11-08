@@ -3958,6 +3958,14 @@ fn spawn_child_command(command: &[OsString], nonce: Option<&str>) -> Option<Proc
     Some(child)
 }
 
+/// Write the child's exit status whole: a temp file renamed into place, so
+/// the daemon polling for it never reads a created-but-empty file.
+fn write_exit_status(status_file: &std::path::Path, code: i32) -> std::io::Result<()> {
+    let staged = status_file.with_extension("status.partial");
+    std::fs::write(&staged, format!("exit_code={code}\n"))?;
+    std::fs::rename(&staged, status_file)
+}
+
 fn run_spawn_child(
     status_file: &Path,
     log_file: &Path,
@@ -3983,7 +3991,7 @@ fn run_spawn_child(
             let message = format!("could not launch {executable:?}: {error}");
             eprintln!("pij-rs spawn child: {message}");
             let _ = std::fs::write(log_file, format!("{message}\n"));
-            let _ = std::fs::write(status_file, "exit_code=127\n");
+            let _ = write_exit_status(status_file, 127);
             std::thread::sleep(Duration::from_secs(2));
             return ExitCode::from(127);
         }
@@ -4030,7 +4038,7 @@ fn run_spawn_child(
         }
     };
     let _ = copier.join();
-    if let Err(error) = std::fs::write(status_file, format!("exit_code={code}\n")) {
+    if let Err(error) = write_exit_status(status_file, code) {
         eprintln!(
             "pij-rs spawn child: could not write status {}: {error}",
             status_file.display()

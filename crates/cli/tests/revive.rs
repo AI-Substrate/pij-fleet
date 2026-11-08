@@ -7,6 +7,16 @@ use pij_daemon::http::{HttpConfig, router_with_config};
 use pij_testkit::fakes::{FakeLiveness, FakeTmux};
 use pij_testkit::fresh_dir;
 
+/// The launches the fake tmux recorded, in order. Each launch also reads its
+/// pane's process (plan 223 review D5: recorded on the spawn's nonce), which
+/// is not a launch.
+fn launches(tmux: &FakeTmux) -> Vec<String> {
+    tmux.calls()
+        .into_iter()
+        .filter(|call| call.starts_with("new_window:"))
+        .collect()
+}
+
 fn run_cli(state_dir: &std::path::Path, addr: &str, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_pij-rs"))
         .args([
@@ -262,7 +272,7 @@ async fn shipped_revive_derives_identity_and_launches_one_prebind_incarnation() 
         .clone()
         .expect("revive must mint a fresh spawn id");
 
-    let calls = tmux.calls();
+    let calls = launches(&tmux);
     assert_eq!(calls.len(), 1, "one revive must launch exactly one pane");
     assert!(
         calls[0].starts_with("new_window:fleet:returned:"),

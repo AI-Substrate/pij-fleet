@@ -3405,6 +3405,25 @@ async fn executable_harness_mismatch_refuses_before_launch_or_override_event() {
     server.abort();
 }
 
+/// A status file created but not yet written (the window between a writer's
+/// create and its write) is no exit yet, never a malformed one: reading it
+/// as malformed turned a child's exit into a 500 (Linux CI, plan 223).
+#[tokio::test]
+async fn an_empty_spawn_status_is_not_yet_an_exit() {
+    let dir = pij_testkit::fresh_dir("pij-spawn-status");
+    let path = dir.join("s-empty.status");
+    std::fs::write(&path, "").expect("created, not yet written");
+    assert_eq!(super::read_spawn_exit(&path).await.expect("no error"), None);
+    std::fs::write(&path, "exit_code=1\n").expect("written");
+    assert_eq!(super::read_spawn_exit(&path).await.expect("read"), Some(1));
+    std::fs::write(&path, "garbage").expect("written");
+    assert!(
+        super::read_spawn_exit(&path).await.is_err(),
+        "still malformed"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[tokio::test]
 async fn spawn_wait_reports_child_exit_with_log_tail() {
     let registry = Arc::new(FakeRegistry::new());
@@ -3468,8 +3487,9 @@ async fn spawn_wait_reports_child_exit_with_log_tail() {
 
     let (response, (log_path, status_path)) = tokio::join!(response, report_exit);
     let response = response.expect("spawn response");
-    assert_eq!(response.status(), reqwest::StatusCode::BAD_GATEWAY);
+    let status = response.status();
     let body = response.text().await.expect("failure envelope");
+    assert_eq!(status, reqwest::StatusCode::BAD_GATEWAY, "{body}");
     assert!(body.contains("spawn.failed"), "{body}");
     assert!(body.contains("exit code 1"), "{body}");
     assert!(body.contains(log_path.to_string_lossy().as_ref()), "{body}");

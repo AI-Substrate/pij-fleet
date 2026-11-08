@@ -12,6 +12,16 @@ use pij_daemon::http::{HttpConfig, router_with_config};
 use pij_testkit::fakes::{FakeLiveness, FakeTmux, FakeTransport};
 use pij_testkit::fresh_dir;
 
+/// The launches the fake tmux recorded, in order. Each launch also reads its
+/// pane's process (plan 223 review D5: recorded on the spawn's nonce), which
+/// is not a launch.
+fn launches(tmux: &FakeTmux) -> Vec<String> {
+    tmux.calls()
+        .into_iter()
+        .filter(|call| call.starts_with("new_window:"))
+        .collect()
+}
+
 fn run_cli(state_dir: &std::path::Path, addr: &str, args: &[&str]) -> std::process::Output {
     run_cli_with_env(state_dir, addr, args, std::iter::empty::<(&str, &str)>())
 }
@@ -157,7 +167,7 @@ async fn shipped_cli_retired_policy_requires_explicit_override_and_records_event
         serde_json::from_slice(&accepted.stdout).expect("spawn envelope");
     let seat = accepted.data.expect("spawned descriptor");
     assert_eq!(seat.harness, Harness::Pi);
-    let calls = tmux.calls();
+    let calls = launches(&tmux);
     assert_eq!(calls.len(), 1);
     assert!(calls[0].contains("/opt/harnesses/pi"));
     let events: Vec<_> = spine
@@ -311,7 +321,7 @@ async fn shipped_spawn_revive_and_registration_do_not_attest_native_delivery() {
         !first.native_extension_delivery,
         "launch intent is not native registration"
     );
-    let calls = tmux.calls();
+    let calls = launches(&tmux);
     assert_eq!(calls.len(), 4);
     assert!(!calls[0].contains("--ui-server"));
     assert!(calls[1].contains(r#"{\"crossSessionInbound\":\"accept\"}"#));
@@ -351,7 +361,7 @@ async fn shipped_spawn_revive_and_registration_do_not_attest_native_delivery() {
         !live_collision.status.success(),
         "a live id must still refuse"
     );
-    assert_eq!(tmux.calls().len(), 4, "live collision launches nothing");
+    assert_eq!(launches(&tmux).len(), 4, "live collision launches nothing");
 
     registry
         .tombstone(&first.id, "test transition")
@@ -419,7 +429,7 @@ async fn shipped_spawn_revive_and_registration_do_not_attest_native_delivery() {
         run_cli(&dir, &addr, &args)
     };
 
-    let revive_launch = tmux.calls().last().cloned().expect("revive launch call");
+    let revive_launch = launches(&tmux).last().cloned().expect("revive launch call");
     let launched_spawn_id = launch_env(&revive_launch, "PIJ_SPAWN_ID");
     let first_bind = register_same(launched_spawn_id.as_deref());
     assert!(
