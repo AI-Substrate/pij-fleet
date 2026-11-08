@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bc03-0163-7a42-b2c5-ef0790507b5e",
+				"date": "2026-11-09",
+				"head": "ad96a4bbc8112a859c09472506c3ea3972169010",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/189#issuecomment-6724181129",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:189",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #189 merge-only delta: PASS-WITH-NOTES\n\nHead: `ad96a4bbc8112a859c09472506c3ea3972169010`\n\nMerge-only review against `a8a5758702ce7208172f8af6d635c458dc754b43` and reviewer output `7074afcab1e52e38db17b1b1db547bfb8518b7c4`. **The previous current-base/DIRTY limitation is closed. F001/F002 repairs remain intact.**\n\nThe first-parent history contains exactly the two requested merges, `3f1a81a8` and `ad96a4bb`, with no intervening implementation or rebase.\n\n## Merge checks\n\n- `crates/daemon/src/http/memory_turn.rs` is byte-identical to both main `3ad4132` and `a244cb4`. The conflicting local `shown` export is gone; idle-nudge no longer imports it and uses the shared renderers directly. The inherited memory window, cutoff, bounds, labels and timeout behavior are not rewritten by this merge.\n- The claim kind changes from the former name helper to `render::word`; valid claim kinds retain their spelling and hostile framing still fails closed. Claim projects use `render::name`, the same grammar as the previous helper.\n- The prime body's seat uses `render::seat`, preserving the existing canonical-seat predicate. The FYI-ID collision error now uses `render::msg_id` rather than escaped/truncated caller text. These affect display only, not FYI identity, deduplication or refusal.\n- Migration 0046, indexed own-event/owner-job queries and all idle-nudge tests are unchanged from the passed repair head. The atomic mark veto and independent per-prime RNG calls are retained.\n- Relative to main `a244cb4`, `docs/difficulties.md` adds only D-F136-1. Main's F133, F134 and F137 rows remain, so the append-only conflict did not discard either side.\n\n## Evidence and remaining notes\n\n[CI run 42500138815](https://github.com/AI-Substrate/pij-fleet/actions/runs/42500138815), associated with this exact head, attempt 1: **2272 Rust cases passed; five skipped**. JUnit artifact `13624749974`, timestamp `2026-11-08T16:31:44.090+00:00`, has no failures/errors.\n\nThe independent two-prime ID case, squat/refusal case, three-way mark veto, sequential/restart case, indexed-read cases, malformed/idle-tail case, hostile nudge label cases, refused-compact cutoff case and hostile memory prompt cases all executed. Both Node checks, Rust lint and Delivers passed. `git diff --check` passed; worktree and current PR are CLEAN. Same-head security and performance verdicts are pass-with-notes.\n\nThe previous sender-only FYI-conflict and duplicate insert-loser proof gaps remain source-inspected. Prime RNG failure is still an audited, non-retried missed attempt after the mark; no failure-injection proof is added here. Other predictable notification namespaces and the inherited F135/F142 plain-text residuals are not globally cleared.\n\n**Cost:** existing 60-second cadence and once-per-stretch fanout are unchanged. The merge adds bounded in-process rendering at existing call sites, no new loop, timer, poll, read or launch.\n\nNo local builds/tests, dependency installs, live probes, product edits or canonical plan-state edits were performed.\n"
+		}
+	]
+}
