@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"kind": "note",
+				"role": "reviewer",
+				"subject": "pr:175",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Review HOLD at c87c5e02df4a85dd97f3fbac20fc9f08e6f7da4c, per pm-001 on 08 Nov. Initial source inspection confirms the commit-only comparison can flag a reloaded extension after a docs-only or skills-only merge even when its code is unchanged. No verdict was written or published. PM reports a round-2 change to extension-directory git tree IDs; awaiting the new exact head and packet before reviewing further. The initial HOLD acknowledgment was undelivered because the parent's native receiver was unavailable. This request needs longer because it remains on an explicit PM HOLD, not because tests or builds are running. No local builds/tests or product edits were made. Current cargo load caps are acknowledged; no cargo is being run."
+		}
+	]
+}
