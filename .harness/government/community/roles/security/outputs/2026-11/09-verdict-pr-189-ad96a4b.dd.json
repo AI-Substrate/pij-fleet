@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "ad96a4bbc8112a859c09472506c3ea3972169010",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/189#issuecomment-6724148018",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:189",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes**, merge-only delta at `ad96a4bbc8112a859c09472506c3ea3972169010`, against `a8a5758702ce7208172f8af6d635c458dc754b43` (migration 0046).\n\nThe two merges preserve S189-001's independent-per-prime identity repair and transactional refusal/audit. The four rendering swaps remain closed. The memory-turn resolution is byte-identical to main. No new scoped security vulnerability was established.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new merge-only vulnerabilities found | - |\n\n## Delta and resolution\n\nThe first-parent range contains only `3f1a81a8` and `ad96a4bb`; no rebase or replacement of the previously reviewed occurrence repair.\n\nThe own rendering changes are:\n\n- Idle-nudge claim kind uses `render::word`; project uses `render::name` instead of the former memory-turn helper. These admit only closed ASCII tokens. Kind rendering is stricter for non-letter-leading legacy values, not new authority.\n- Prime-body seat uses `render::seat` instead of `SeatId::rendered`, preserving the canonical-seat/invalid-length boundary.\n- The `E-RS-FYI-ID-TAKEN` message renders its ID through bounded `render::msg_id` instead of debug-escaping a shortened prefix. Off-grammar IDs become fixed length labels; quotes, controls, whitespace and forged message framing cannot pass.\n\nThe random ID generation, per-prime fresh draw, stretch mark, sender/recipient collision check, refusal audit, store implementation, fake behavior and relevant regression tests are unchanged from `a8a5758`. Publishing a holder or earlier-prime ID therefore still reveals nothing that determines a later prime FYI's random component.\n\n`crates/daemon/src/http/memory_turn.rs` has blob `b7ffb3d8c107bf9a4471a02eab6230e15634fe2f` in the final head, main `3ad4132268d6a9e0a35a515af75307315bae4de2` and main `a244cb479eed70d4098e72d9d0b0a6f41d0ffda9`. The conflict selected main verbatim rather than combining incompatible helper implementations.\n\nThe second merge's combined difficulty-document diff retains the idle-holder row and both main F133/F134 rows. No executable conflict resolution was introduced there. The larger GitHub/code diff includes the already reviewed #185/#187 and main template content, not a new nudge implementation.\n\n## Retained scope\n\nS189-001 remains closed for the idle-holder nudge/prime FYIs. The other documented predictable daemon FYI and normal-message namespaces remain F141, not a global guarantee supplied by this merge.\n\nThe prior spent-mark/cancellation/RNG-failure and full-label cross-project fanout qualifications remain. Closed rendering is structural containment, not semantic prompt-injection prevention or permission to evaluate raw JSON data.\n\nThe imported #185 base still has deferred F135 window-receipt and F142 free-text/line qualifications. The #187 legacy winning-record/mixed-old-writer and cold-prefix producer limitations also remain. None is silently cleared by this merge-only verdict.\n\n## CI evidence\n\nLocal/remote/GitHub heads agree; shared worktree clean; PR CLEAN; all five current checks succeed.\n\nCI [42500138815](https://github.com/AI-Substrate/pij-fleet/actions/runs/42500138815) tested merge `fd74118018c8556785dc1c023d190bee9aef1ab5`, with this exact head and main `a244cb479eed70d4098e72d9d0b0a6f41d0ffda9` as parents; tree `c4f3e80ad4ee247298443d80edec21767b6625d9`.\n\nJUnit artifact [13624749974](https://github.com/AI-Substrate/pij-fleet/actions/runs/42500138815/artifacts/13624749974) confirms 2,272 passing cases, no failures; five separately skipped. Independent-per-prime IDs, old-ID collision refusal, hostile holding labels, three-way stretch veto and once-per-stretch tests all executed successfully on the merged composition.\n\nNo local builds/tests, mutations, hostile/live-system probes, credential reads, actual merges/checkouts or product edits. Prior author mutant receipts are not new independent execution.\n"
+		}
+	]
+}
