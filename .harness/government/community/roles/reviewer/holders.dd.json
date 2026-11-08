@@ -725,7 +725,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "170",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #170 merged (f8d2cabbcd42)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-08T01:21:36.075Z",
 					"why": "F107/F109 pr-freeze #170"
 				},
 				{
