@@ -735,7 +735,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "171",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #171 merged (f8cb6712bdb1)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T01:10:29.642Z",
 					"why": "PRD 003 answers docs #171"
 				}
 			]
