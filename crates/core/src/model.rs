@@ -13,11 +13,72 @@ use serde::{Deserialize, Serialize};
 #[serde(transparent)]
 pub struct SeatId(pub String);
 
+/// Longest seat id a new seat may take (F127). Generated names reach 33 bytes;
+/// the longest live id is 36.
+pub const SEAT_ID_MAX_BYTES: usize = 64;
+
 impl SeatId {
     /// Borrow the underlying id.
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Whether the id fits the closed seat-id grammar every new seat takes
+    /// (F127): `pij-`, then words of lowercase ASCII letters and digits joined
+    /// by single hyphens, at most [`SEAT_ID_MAX_BYTES`] bytes. Every generated
+    /// name fits it.
+    pub fn is_canonical(&self) -> bool {
+        let Some(words) = self.0.strip_prefix("pij-") else {
+            return false;
+        };
+        self.0.len() <= SEAT_ID_MAX_BYTES
+            && words.split('-').all(|word| {
+                !word.is_empty()
+                    && word
+                        .bytes()
+                        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+            })
+    }
+
+    /// The id as daemon-authored text shows it: itself when canonical, else
+    /// `invalid (N chars)`. A seat id is reported by a seat, and a stored row
+    /// may predate the grammar, so a prompt the daemon writes never carries one
+    /// raw (F127).
+    pub fn rendered(&self) -> std::borrow::Cow<'_, str> {
+        if self.is_canonical() {
+            std::borrow::Cow::Borrowed(&self.0)
+        } else {
+            std::borrow::Cow::Owned(invalid_text(&self.0))
+        }
+    }
+}
+
+/// Refuse a seat id outside the closed grammar ([`SeatId::is_canonical`]),
+/// with the stable code `E-RS-SEAT-ID`. The reason never echoes the id raw.
+///
+/// # Errors
+/// A refusal naming the grammar and the id's escaped form.
+pub fn check_seat_id(id: &SeatId) -> Result<(), String> {
+    if id.is_canonical() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{SEAT_ID_REFUSAL}: seat id {:?} is not `pij-` then lowercase letters and digits in words joined by single hyphens, at most {SEAT_ID_MAX_BYTES} bytes",
+            id.as_str()
+                .escape_debug()
+                .take(SEAT_ID_MAX_BYTES)
+                .collect::<String>()
+        ))
+    }
+}
+
+/// The stable code a seat-id refusal carries.
+pub const SEAT_ID_REFUSAL: &str = "E-RS-SEAT-ID";
+
+/// How daemon-authored text names a string that failed its grammar: its
+/// length, never its content.
+pub fn invalid_text(raw: &str) -> String {
+    format!("invalid ({} chars)", raw.chars().count())
 }
 
 impl fmt::Display for SeatId {
