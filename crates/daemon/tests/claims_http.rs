@@ -53,6 +53,7 @@ fn pr(number: u64, state: &str, body: &str, files: &[&str]) -> (u64, PullRequest
             number,
             state: state.into(),
             merge_commit: (state == "MERGED").then(|| format!("{number:0>40}")),
+            merged_at: (state == "MERGED").then(|| "2026-11-07T00:00:00Z".to_string()),
             body: body.into(),
             files: files.iter().map(|file| (*file).to_string()).collect(),
             url: Some(format!("https://example.invalid/pr/{number}")),

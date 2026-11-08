@@ -1,0 +1,173 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Holdings end with their work (F70, F71, F66, F72)",
+        "slug": "holdings-followups",
+        "ordinal": 215,
+        "complexity": "CS-2",
+        "summary": "Merge releases a PR's holdings, release takes --batch, lineage add prints a human line, and ROUTES.md stays true without a manual write.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "s08's routing table is only useful while it is true, and today holdings outlive their work: merged PRs keep their reviewer, security, performance and coder holdings until someone releases them one by one. This plan makes `pij delivered` release them, adds release --batch, gives lineage add a human summary, and has the writer keep ROUTES.md current. Starts after #149 (plan 212, release renderer and window rule) and #144 (plan 209, lineage --batch) merge. One coder."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Merge releases a PR's holdings, release takes --batch, lineage add prints a human line, and ROUTES.md stays true without a manual write."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Lineage add --batch (F67, plan 209).",
+        "Ageing holdings out by time: only merge ends them here."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "F70: merge ends the holdings. `pij delivered <pr>` releases every open holding whose work that PR finished: reviewer/<pr>, security/<pr> and performance/<pr>, and coder/<plan> for each plan number the PR's files deliver (the same docs/plans/<NNN>-* scan that releases claims). It prints one line per release (role, instance, seat) and does them in the writer commit it already makes, or one more, never one per holding. A holding it can't match is left alone and named. Re-running delivered is a no-op.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "F71: `pij directory release --batch <file> --why <text>` releases many holdings in one writer commit, all or nothing, like assign --batch: one `<role>[/<instance>] <seat>` per line, blank and # lines skipped. A line naming a holding that isn't open names every bad line and writes nothing. Window names follow #149's release rule per seat.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "F66: `pij directory lineage add` (single and --batch) prints a human summary through the shim, as assign and release do after #149: one line per recorded holding (role, instance, seat, from, to). --json keeps the raw receipt. Also (N001 from #144): docs/how/pij-rs-api.md's lineage --batch paragraph says its diagnostics are phase-local, not that it names every bad line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "F72: the routes table keeps itself. Every assign, release (single or batch), retire, merge and delivered release rewrites governance ROUTES.md from the same data `pij directory routes` prints, in the same writer commit. `routes --write` stays as a repair. No change means no rewrite.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No new timer, poll or launch. Delivered's release and the ROUTES.md rewrite ride the writer commits these verbs already make (at most one extra commit per verb call, never one per holding). The routes render is in-process. State the commits per verb before and after.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Docs and states. docs/how/pij-rs-api.md: delivered's release lines, release --batch, lineage add's human output, ROUTES.md written by the writer. The skill's verb rows carry release --batch. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00d7",
+          "title": "Holdings end with their work (F70, F71, F66, F72)",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-2.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "F70 (prime, 22:54 after #130 merged): the routes table listed coder holdings for merged plans (199, 201, 207, 208, 213) and 11 reviewer/<pr> holdings for merged PRs; pm-001 released 12 by hand. Merge is the natural end of those holdings, and s08's table is only useful while it is true. F71 (pm-001): releasing those 12 took 12 calls and 12 commits; assign has --batch (plan 208), release does not. F66 (pm-001, lineage dogfood): lineage add through the shim printed the raw JSON receipt. F72 (prime, 23:14): ROUTES.md needs `routes --write`, though the writer already commits on every assign and release. F67 (lineage add --batch) is in #144 (plan 209), not here. Seams: pij delivered (plan 196), the writer and assign --batch (plan 208), release's window rule (#149, plan 212), routes (plan 202, #130)."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": [
+        {
+          "question": "Should delivered also release holdings for a PR closed without merging? Proposed: no; only merge ends work, and the PA's digest can list holdings on closed PRs.",
+          "state": "unchecked"
+        }
+      ]
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}

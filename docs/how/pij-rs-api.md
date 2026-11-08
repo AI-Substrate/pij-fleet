@@ -890,7 +890,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder's close answers `held` and lands after its [memory turn](#the-memory-turn) | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory edit <id> --why <text>` with `--set <field>=<value>`, role flags or `--file <json>`; `directory retire <role> --why <text> [--drop-queued]`; `directory merge <from> --into <to> --why <text> [--drop-queued]`; `directory templates [--show <name>[@vN]]`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory lineage add --batch <file> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory routes [--write --why <text>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [Routing table](#routing-table-plan-202) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory edit <id> --why <text>` with `--set <field>=<value>`, role flags or `--file <json>`; `directory retire <role> --why <text> [--drop-queued]`; `directory merge <from> --into <to> --why <text> [--drop-queued]`; `directory templates [--show <name>[@vN]]`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory release --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory lineage add --batch <file> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory routes [--write --why <text>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [Routing table](#routing-table-plan-202) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/output` | `output verdict\|deliverable\|note\|handover --role <id> --subject <address> [--head <sha>] [--result <r>] [--note-owed <text>]… [--evidence <json>]… [--link <url>] [--answers <msg_id>] [--body <text>\|--body-file <path>] [--project <slug>]`; `output --help`. See [Role outputs](#role-outputs-plan-200) | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/outputs` | `outputs --subject <address> [--head <sha>]`; `outputs --role <id> [--limit <n>]`; `outputs --help` | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/claim` | `claim <kind> --for <subject> [--project <slug>]`; `claim release <kind> <number> [--why <text>] [--project <slug>]`; `--help`. See [Number claims and delivery at merge](#number-claims-and-delivery-at-merge-plan-196) | — (`crates/daemon/tests/claims_http.rs`) |
@@ -1038,6 +1038,23 @@ gives it (store row, seat role, hook, window rule). The envelope carries
 
 `pij directory release <role>[/<instance>] <seat> --why <text>` closes the row
 (`to`, `released_by`, `release_why`); seat roles are left as they are.
+`pij directory release --batch <file> --why <text>` (plan 215, F71) reads the
+same `<role>[/<instance>] <seat>` lines and ends every holding in one writer
+commit (`community: release <n> holdings`), all or nothing for the directory
+write: the holders documents either all change in that commit or none do. A git
+or store-index failure partway through is the writer's inherited split (the
+commit landed, the store did not index it; `pij directory rebuild` restores
+it), not a global recovery. Its diagnostics are
+phase-local: a malformed line refuses `E-RS-ARG` naming every malformed line;
+only a file that parses is checked against the holders documents, where a
+holding that is not open, a line repeated, or a missing role refuses
+`E-RS-DIRECTORY-NOT-HELD` (or `E-RS-DIRECTORY-ROLE-MISSING`) naming every one.
+Either way nothing is written. Each live seat's window then follows its
+remaining holdings as for a single release, checked once per seat against its
+earliest ended holding. The envelope carries `commit` and `holdings`, one
+receipt per line in file order. Through the shim, assign, release and both
+batches print one line per holding (`released <role>[/<instance>] from <seat>
+(commit <sha>)`, plus the window); `--json` keeps the receipt.
 
 `pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time>
 --why <text>` (plan 208, F15) lets the prime record a closed seat's past
@@ -1056,8 +1073,14 @@ check and sets no seat role. The view shows it in the lineage.
 one `<role>[/<instance>] <seat> <from> <to>` per line (blank and `#` lines
 skipped) and records them all in one writer commit (`community: lineage <n>
 holdings`), all or nothing: a bad time, a missing role, or an overlap with a
-committed holding or an earlier line refuses the whole batch, naming every
-bad line, and writes nothing. The envelope carries `commit` and `holdings`.
+committed holding or an earlier line refuses the whole batch and writes
+nothing. Its diagnostics are phase-local (review of #144, N001): a line that
+does not parse (a bad or reversed time) refuses `E-RS-ARG` naming every such
+line, and only a file that parses is checked for missing roles and overlaps,
+which are then named together. The envelope carries `commit` and `holdings`.
+Through the shim, `lineage add` (single or `--batch`) prints one line per
+recorded holding, `recorded <role>[/<instance>] held by <seat> from <from> to
+<to> (commit <sha>)` (plan 215, F66); `--json` keeps the receipt.
 
 `pij close <seat>` ends every open holding of the seat with `release_why`
 `close`, and never fails because of the directory. The ends are stored as
@@ -1130,7 +1153,9 @@ ddocs 2, tmux 1; 9 when the rename is skipped); release, lineage add and a close
 that ends holdings cost one writer commit (about 9), and a release that renames
 the window one more tmux launch. `assign --batch` of N
 holdings is one writer commit (git 7, ddocs 2 per holders document touched)
-plus at most one rename per line. The view and help launch nothing. A rebuild
+plus at most one rename per line; `release --batch` is one writer commit plus
+at most one rename per seat. Each writer commit also reads the role documents
+in-process to check `ROUTES.md` (no launch). The view and help launch nothing. A rebuild
 costs three git launches plus one per holders document, on demand only.
 
 ### Role templates (plan 194)
@@ -1230,7 +1255,12 @@ gives each role `state` (`active` or `retired`), `merged_into` (or null) and
 the human view prints `retired, merged into <to>` and `merged from <from>`. A
 retired role no longer clears a core-role prompt (C22) and routes nothing: the
 same commit rewrites `ROUTES.md` without its rows (plan 202). `data` is
-`{project, id, state, merged_into, commit, paths, routes}`. Only retire and merge change a role's
+`{project, id, state, merged_into, commit, paths, routes}`. Through the shim a
+successful retire or merge prints one line (plan 215, F89): `retired <role>
+(commit <sha>)` or `merged <from> into <to> (commit <sha>)`, then `; withdrew <n>
+queued request(s) (<m> gone)` when it withdrew any, and `; routes regenerated
+(+<added> -<removed>), told <prime>` when `ROUTES.md` changed; `--json` keeps
+the receipt. Only retire and merge change a role's
 standing: `edit` refuses a retired role and refuses a change to `state` or
 `merged_into` (a `--file` that leaves them out keeps them). ddocs cannot tie
 `merged_into` to `state: retired` or check that it names a role, so the writer
@@ -1340,7 +1370,7 @@ project:
 | condition | when | commands |
 |---|---|---|
 | `no-live-holder` | requests wait and no holder's seat is live: one action per `instance` of the waiting requests (`""` for any holder, which waits only while the role has no live holder at all) | `pij-rs revive <last holder of that instance>` (when there was one), `pij directory assign <role>[/<instance>] '<seat>' --why '<why>'`, so the assign drains those requests |
-| `two-live-holders` | a one-holder role has two or more live holders | `pij directory release <role>[/<instance>] <seat>` for each but the newest |
+| `two-live-holders` | a one-holder role has two or more live holders | names each holder with its unanswered delivered requests; while two or more have open work, nothing (a deliberate second holder, plan 215, F90); else `pij directory release <role>[/<instance>] <seat>` for each but the one with open work, or the newest |
 | `memory-stale` | the role's last two closes (`picture::MEMORY_CLOSES`) both fall on a day after its newest memory note, or it has none | `pij directory memory add <role> --title … --hook … --body-file '<path to the note>'` |
 
 A missing core or security role stays in `prompts` (s03). A workstream step
@@ -1404,7 +1434,9 @@ its own line, then the next actions and the prompts.
 Cost: per call, one query each for the holdings, the project, the queued
 requests and each role's newest output (one window query), and one registry
 list; each role's document and memory folder, the repo's workstreams and the
-blueprints they point at are read in-process. It launches nothing, per role or
+blueprints they point at are read in-process. A one-holder role with two or
+more live holders adds one indexed query for its holders' unanswered requests
+(plan 215, F90); no other role does. It launches nothing, per role or
 per seat, and has no timer or poll.
 
 ### Role outputs (plan 200)
@@ -1475,7 +1507,11 @@ components agree up to where either ends or turns into a glob) give the warning
 Every role write through the writer (`directory add`, `edit`, `retire` and
 `merge`) rewrites
 `ROUTES.md` in the same commit when its bytes change, so a regeneration is never
-a commit of its own. The first one replaces a hand-written `ROUTES.md`; the old
+a commit of its own. Every other directory commit (assign, release, either
+batch, lineage add, a close's ends and the holdings `pij delivered` ends) checks
+it too, in-process, and carries a stale `ROUTES.md` (one edited by hand, or
+written before a change it missed) regenerated in the same commit (plan 215,
+F72); a current one is left alone, and no holder change ever changes it. The first one replaces a hand-written `ROUTES.md`; the old
 text stays in the branch history. `data.routes` on the add carries `path`,
 `regenerated`, `added` and `removed` (rows as `{role, kind, what}`), `overlaps`
 and `prime`; overlap warnings are also in `data.warnings`.
@@ -1652,7 +1688,7 @@ or a designated prime. A released number is never handed out again.
 
 `pij delivered <pr>` is the verb the merger runs once after a merge (ruling C23;
 no webhook, hook or poll). It reads the PR with one gh launch
-(`gh pr view <pr> --json number,state,mergeCommit,body,files,url`, with `--repo`
+(`gh pr view <pr> --json number,state,mergeCommit,mergedAt,body,files,url`, with `--repo`
 taken from the checkout's `origin` when it is on github.com) and takes the
 delivered addresses from the body's `Delivers:` lines: full ddocs addresses
 separated by commas or spaces, or `none`. It records (project, PR, address,
@@ -1677,7 +1713,37 @@ values are read in-process from the checkout. A document that cannot be read
 or parsed, a row it does not have, or a cell that is not text gets no edit:
 pij never prints a replacement for a cell it cannot see. `data.notes[]` says
 what was skipped and why.
-`pij delivered` changes no file, commits nothing and pushes nothing.
+
+It then ends the holdings the PR finished (plan 215, F70): each open
+`reviewer/<pr>`, `security/<pr>` and `performance/<pr>`, and `coder/<plan>` for
+each plan number in the PR's `docs/plans/NNN-*` files (the scan that releases
+claims). The plan paths a PR touches select which coder holdings end; they are
+not proof the plan's work is complete. Only a holding whose `from` is before
+the PR's `mergedAt` ends: the merge time binds the release to the work the PR
+ended, so a key reassigned after the merge (new work under the same
+`coder/<plan>` or `reviewer/<pr>`) is left open and named in `data.notes[]`,
+and a retry after a refused first run still ends what predates the merge.
+`mergedAt` is GitHub's clock and `from` is the daemon's, so skew matters only
+for a holding assigned within seconds of the merge. With no merge time from gh
+nothing ends, and a note says to release by hand. The holdings are chosen from
+the store before the writer lock, so each is pinned to its exact holding (its
+`from`): under the lock it ends only if that holding is still the open one, and
+a release and post-merge reassignment of the same seat and key landing in
+between leave the new holding open, named in the notes. They end in one directory
+writer commit, `release_why` `PR #<n> merged (<sha>)`, never one commit per
+holding and none when nothing is open, so a re-run ends nothing more. `data.holdings[]` has one release receipt each (the
+shim prints `released <role>/<instance> from <seat> (commit <sha>)` per line),
+the line counts them, and each live seat's window follows what it still holds.
+A holding the store lists but the holders document does not is left alone and
+named in `data.notes[]`. If the writer refuses, the delivery stays recorded
+and the refusal says to run `pij delivered <pr>` again, which ends what is
+still open. Cost: one store read, at most one writer commit (git 7, ddocs 2 per
+holders document) and at most one tmux rename per released live seat.
+Known limit: `delivered` and `release --batch` end holdings under the caller's
+inherited any-seat release authority (as a single `release` does), so any
+registered seat can run them. That is F88's root, owned by PRD 003 req-10
+(plan 223) under ruling C32; this plan adds no authority check.
+`pij delivered` changes no project file and pushes nothing.
 
 | Refusal | When |
 |---|---|

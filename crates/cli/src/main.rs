@@ -1884,6 +1884,19 @@ async fn run(cli: Cli) -> ExitCode {
                     );
                     ExitCode::SUCCESS
                 }
+                // `directory lineage add`, single or `--batch` (plan 215, F66).
+                Some(data)
+                    if args.first().map(String::as_str) == Some("lineage")
+                        && (is_holding(data) || data["holdings"].is_array()) =>
+                {
+                    println!("{}", render_lineage(data));
+                    ExitCode::SUCCESS
+                }
+                // `directory retire` and `merge` (plan 215, F89).
+                Some(data) if data["state"] == "retired" && data.get("withdrawn").is_some() => {
+                    println!("{}", render_reshaped(data));
+                    ExitCode::SUCCESS
+                }
                 // An assign or release, single or `--batch` (plan 212, F56, F57).
                 Some(data) if is_holding(data) || data["holdings"].is_array() => {
                     println!("{}", render_holdings(data));
@@ -2986,6 +2999,97 @@ fn is_holding(data: &Value) -> bool {
     data["row"].is_object() && data["commit"].is_string() && data["flushed"].is_number()
 }
 
+/// `<role>[/<instance>]` of a holding receipt; a batch receipt carries no
+/// `role`, so it comes from `.../roles/<role>/holders.dd.json`.
+fn holding_name(holding: &Value) -> String {
+    let path = holding["path"].as_str().unwrap_or_default();
+    let from_path = std::path::Path::new(path)
+        .parent()
+        .and_then(std::path::Path::file_name)
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let role = holding["role"].as_str().map_or(from_path, str::to_string);
+    match holding["row"]["instance_key"].as_str() {
+        Some(instance) if !instance.is_empty() => format!("{role}/{instance}"),
+        _ => role,
+    }
+}
+
+/// `directory lineage add` for a human (plan 215, F66): one line per recorded
+/// past holding.
+fn render_lineage(data: &Value) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or_default().to_string();
+    let holdings = match data["holdings"].as_array() {
+        Some(many) => many.clone(),
+        None => vec![data.clone()],
+    };
+    holdings
+        .iter()
+        .map(|holding| {
+            let row = &holding["row"];
+            format!(
+                "recorded {} held by {} from {} to {} (commit {})",
+                holding_name(holding),
+                text(&row["seat"]),
+                text(&row["from"]),
+                text(&row["to"]),
+                text(&holding["commit"]).chars().take(7).collect::<String>()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `directory retire` and `merge` for a human (plan 215, F89): one line.
+fn render_reshaped(data: &Value) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or_default().to_string();
+    let id = text(&data["id"]);
+    let mut out = match data["merged_into"].as_str() {
+        Some(into) => format!("merged {id} into {into}"),
+        None => format!("retired {id}"),
+    };
+    match data["commit"].as_str() {
+        Some(commit) => {
+            let _ = write!(
+                out,
+                " (commit {})",
+                commit.chars().take(7).collect::<String>()
+            );
+        }
+        None => out.push_str(" (already retired; no new commit)"),
+    }
+    let withdrawn = data["withdrawn"].as_array().map_or(0, Vec::len);
+    if withdrawn > 0 {
+        let gone = data["gone"].as_array().map_or(0, Vec::len);
+        let _ = write!(
+            out,
+            "; withdrew {withdrawn} queued request(s) ({gone} gone)"
+        );
+    }
+    let routes = &data["routes"];
+    if routes["regenerated"] == true {
+        let (added, removed) = (
+            routes["added"].as_array().map_or(0, Vec::len),
+            routes["removed"].as_array().map_or(0, Vec::len),
+        );
+        let _ = write!(out, "; routes regenerated (+{added} -{removed})");
+        match (
+            routes["prime"]["sent"].as_str(),
+            routes["prime"]["prime"].as_str(),
+        ) {
+            (Some(_), Some(prime)) => {
+                let _ = write!(out, ", told {prime}");
+            }
+            _ => {
+                if let Some(reason) = routes["prime"]["reason"].as_str() {
+                    let _ = write!(out, ", prime not told: {reason}");
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Assign and release receipts for a human: the holding, the window, and each
 /// queued request the assign settled (plan 212, F56).
 fn render_holdings(data: &Value) -> String {
@@ -2998,18 +3102,7 @@ fn render_holdings(data: &Value) -> String {
     for holding in &holdings {
         let row = &holding["row"];
         let ended = row["to"].is_string();
-        // `.../roles/<role>/holders.dd.json`: a batch holding carries no `role`.
-        let path = text(&holding["path"]);
-        let from_path = std::path::Path::new(&path)
-            .parent()
-            .and_then(std::path::Path::file_name)
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let role = holding["role"].as_str().map_or(from_path, str::to_string);
-        let role = match row["instance_key"].as_str() {
-            Some(instance) if !instance.is_empty() => format!("{role}/{instance}"),
-            _ => role,
-        };
+        let role = holding_name(holding);
         out.push(format!(
             "{} {} {} {} (commit {})",
             if ended { "released" } else { "assigned" },
@@ -3494,6 +3587,16 @@ fn render_claims(family: &str, data: &Value) -> String {
         }
         "delivered" => {
             let mut out = text(&data["line"]);
+            if data["holdings"]
+                .as_array()
+                .is_some_and(|held| !held.is_empty())
+            {
+                let _ = write!(
+                    out,
+                    "\n{}",
+                    render_holdings(&serde_json::json!({"holdings": data["holdings"]}))
+                );
+            }
             let edits = data["edits"].as_array().cloned().unwrap_or_default();
             if !edits.is_empty() {
                 out.push_str("\nddocs edits for the PM's next docs PR (not applied):");
@@ -4200,6 +4303,60 @@ PEC notice";
         );
     }
 
+    /// Plan 215 (F66): `lineage add` prints one line per recorded holding,
+    /// never "released", single or `--batch`.
+    #[test]
+    fn lineage_add_prints_one_recorded_line_per_holding() {
+        let row = |instance: &str, seat: &str| {
+            serde_json::json!({
+                "commit": "abcdef123", "flushed": 0,
+                "path": ".harness/government/community/roles/reviewer/holders.dd.json",
+                "row": {"seat": seat, "instance_key": instance,
+                    "from": "2026-10-01T00:00:00Z", "to": "2026-10-03T00:00:00Z"},
+            })
+        };
+        let mut single = row("", "pij-wren");
+        single["role"] = serde_json::json!("reviewer");
+        assert_eq!(
+            super::render_lineage(&single),
+            "recorded reviewer held by pij-wren from 2026-10-01T00:00:00Z to 2026-10-03T00:00:00Z (commit abcdef1)"
+        );
+        let many = super::render_lineage(&serde_json::json!({
+            "project": "fleet", "commit": "abcdef123",
+            "holdings": [row("1", "pij-wren"), row("2", "pij-heron")],
+        }));
+        assert_eq!(many.lines().count(), 2, "{many}");
+        assert!(
+            many.starts_with("recorded reviewer/1 held by pij-wren")
+                && many.contains("\nrecorded reviewer/2 held by pij-heron"),
+            "{many}"
+        );
+    }
+
+    /// Plan 215 (F89): a retire or merge prints one human line.
+    #[test]
+    fn retire_and_merge_print_one_line() {
+        let retired = super::render_reshaped(&serde_json::json!({
+            "id": "s05-probe", "state": "retired", "merged_into": null,
+            "commit": "8c3cf13aa", "resumed": false,
+            "withdrawn": [{"id": "r1"}, {"id": "r2"}], "gone": ["r2"],
+            "routes": {"regenerated": true, "added": [], "removed": [{}],
+                "prime": {"sent": "fyi", "prime": "pij-far-jackal"}},
+        }));
+        assert_eq!(
+            retired,
+            "retired s05-probe (commit 8c3cf13); withdrew 2 queued request(s) (1 gone); routes regenerated (+0 -1), told pij-far-jackal"
+        );
+        let merged = super::render_reshaped(&serde_json::json!({
+            "id": "qa", "state": "retired", "merged_into": "test",
+            "commit": null, "resumed": true, "withdrawn": [], "gone": [], "routes": null,
+        }));
+        assert_eq!(
+            merged,
+            "merged qa into test (already retired; no new commit)"
+        );
+    }
+
     #[test]
     fn the_pictures_revive_line_parses_as_native_revive() {
         let gone = pij_store::Assignment {
@@ -4249,8 +4406,19 @@ PEC notice";
                 {"address": "b", "value": "#131", "command": "ddocs set 'docs/project/prds/001-pij-community.dd.json#requirements/req-21/delivered_by' '#131'"},
             ],
             "notes": [],
+            "holdings": [{
+                "commit": "abcdef123", "flushed": 0,
+                "path": ".harness/government/community/roles/reviewer/holders.dd.json",
+                "row": {"seat": "pij-bobcat", "instance_key": "131",
+                    "from": "2026-11-01T00:00:00Z", "to": "2026-11-02T00:00:00Z"},
+            }],
         });
         let text = super::render_claims("delivered", &data);
+        // Plan 215 (F70): one line per holding the merge ended.
+        assert!(
+            text.contains("\nreleased reviewer/131 from pij-bobcat (commit abcdef1)"),
+            "{text}"
+        );
         assert!(
             text.contains("ddocs edits for the PM's next docs PR"),
             "{text}"

@@ -15,6 +15,12 @@ use crate::migrate::{begin_write, owned_write, require_current_schema};
 use crate::orchestration::{SqliteOrchestration, adapter_error, sql_i64, sql_u64};
 use crate::spine::append_in_transaction;
 
+/// Each holder's unanswered delivered requests for one role (plan 215, F90).
+const UNANSWERED_SQL: &str = "SELECT holder, COUNT(*) AS open FROM role_requests \
+     INDEXED BY role_requests_by_project WHERE project = ?1 AND state = 'delivered' \
+     AND role = ?2 AND answered_at IS NULL AND holder IS NOT NULL \
+     GROUP BY holder ORDER BY holder";
+
 /// The spine event a withdrawn request leaves (plan 206): its row is gone, so
 /// this is the record of who asked, what role, who withdrew it and why.
 pub const WITHDRAWN_EVENT: &str = "role.request.withdrawn";
@@ -1113,6 +1119,33 @@ impl SqliteOrchestration {
         .transpose()
     }
 
+    /// How many of `role`'s delivered requests in `project` each holder has
+    /// not answered yet (plan 215, F90): the directory view's open-work count
+    /// for a one-holder role with two live holders. One seek of
+    /// `role_requests_by_project`; read only when that condition holds.
+    pub async fn unanswered_by_holder(
+        &self,
+        project: &str,
+        role: &str,
+    ) -> Result<Vec<(String, u64)>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(UNANSWERED_SQL)
+            .bind(project)
+            .bind(role)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?
+            .iter()
+            .map(|row| {
+                let open: i64 = row.try_get("open").map_err(adapter_error)?;
+                Ok((
+                    row.try_get("holder").map_err(adapter_error)?,
+                    u64::try_from(open).unwrap_or_default(),
+                ))
+            })
+            .collect()
+    }
+
     /// `project`'s requests in `state` (for `role` when given), newest first,
     /// at most [`REQUESTS_LIST_LIMIT`]; with no state, the open ones (queued
     /// and delivering). Each state is one indexed read.
@@ -1297,6 +1330,31 @@ mod tests {
         for sql in [super::ADMITTED_SQL, super::REACHED_SQL] {
             limit_probe_is_indexed(&pool, sql).await;
         }
+    }
+
+    /// Plan 215 (F90): the open-work count is one SEARCH of the project's
+    /// delivered rows, never a SCAN of the table.
+    #[tokio::test]
+    async fn unanswered_count_is_an_indexed_search() {
+        let pool = crate::open("").await.expect("memory");
+        let plan: Vec<String> =
+            sqlx::query(&format!("EXPLAIN QUERY PLAN {}", super::UNANSWERED_SQL))
+                .bind("fleet")
+                .bind("security")
+                .fetch_all(&pool)
+                .await
+                .expect("plan")
+                .iter()
+                .map(|row| row.get::<String, _>("detail"))
+                .collect();
+        let text = plan.join("\n");
+        assert!(
+            plan.iter()
+                .any(|line| line.starts_with("SEARCH role_requests ")
+                    && line.contains("INDEX role_requests_by_project")),
+            "{text}"
+        );
+        assert!(!plan.iter().any(|line| line.starts_with("SCAN")), "{text}");
     }
 
     async fn limit_probe_is_indexed(pool: &crate::StorePool, sql: &str) {

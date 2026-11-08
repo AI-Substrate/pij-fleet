@@ -4,7 +4,8 @@
 //! on record; the checkout floor is read in-process, so neither verb launches
 //! anything. `pij delivered` is the verb the merger runs once (ruling C23): one
 //! gh read, the delivery recorded with one event on the PM's card, and the
-//! ddocs edits printed for the PM's next docs PR. It writes no project file.
+//! ddocs edits printed for the PM's next docs PR. It writes no project file;
+//! the holdings the PR finished end in one governance writer commit (plan 215).
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -22,6 +23,7 @@ use super::governance::GovernanceRequest;
 use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::{AppState, envelope, system_time_ms};
 use crate::community::Refusal;
+use crate::community::directory::{E_NOT_HELD, HoldingReceipt, Unmatched};
 use crate::community::gh::{E_GH, E_GH_AUTH, E_GH_MISSING, PullRequest};
 
 /// The PR is not merged.
@@ -378,6 +380,22 @@ async fn delivered(
         .map_err(store_refusal)?;
     // Built after the record, so every PR recorded for a row is in its edit.
     let edits = edits(state, &project, &repo, &pull, &addresses, &mut notes).await?;
+    let plans: BTreeSet<u64> = claims::numbers_in_paths(pull.files.iter().map(String::as_str))
+        .into_iter()
+        .filter(|(kind, _)| kind == "plan")
+        .map(|(_, number)| number)
+        .collect();
+    let ended = end_holdings(
+        state,
+        actor,
+        &project,
+        &repo,
+        &pull,
+        &merge_commit,
+        &plans,
+        &mut notes,
+    )
+    .await?;
 
     // The card a replay names is the one the first record told (review of
     // #131, N001): a replay neither moves nor resends a delivery.
@@ -413,12 +431,13 @@ async fn delivered(
         ));
     }
     let line = format!(
-        "PR #{number} ({}) delivered {} address(es) in {project}: {} new, {} already recorded; {} claim(s) released; {told}",
+        "PR #{number} ({}) delivered {} address(es) in {project}: {} new, {} already recorded; {} claim(s) released; {} holding(s) released; {told}",
         merge_commit.get(..12).unwrap_or(&merge_commit),
         addresses.len(),
         commit.recorded.len(),
         commit.already.len(),
         commit.released.len(),
+        ended.len(),
     );
     Ok(json!({
         "project": project,
@@ -435,9 +454,109 @@ async fn delivered(
         "earlier_pm": commit.earlier_pm,
         "event_seq": commit.events.first().and_then(|event| event.seq).map(|seq| seq.0),
         "edits": edits,
+        "holdings": ended,
         "notes": notes,
         "line": line,
     }))
+}
+
+/// End the holdings PR `number` finished (plan 215, F70): `reviewer`,
+/// `security` and `performance` keyed by the PR, and `coder` keyed by each
+/// plan the PR's files deliver. The plan paths select which coder holdings
+/// end; they are not proof the plan's work is complete. One writer commit for
+/// all of them, never one per holding, and none when nothing is open, so a
+/// re-run is a no-op. A holding the store lists but the holders document does
+/// not is left alone and named in `notes`. Each live seat's window then
+/// follows what it still holds.
+///
+/// # Errors
+/// A writer refusal, naming the re-run that finishes it: the delivery is
+/// already recorded, and the holdings are read from the store each time.
+#[allow(clippy::too_many_arguments)]
+async fn end_holdings(
+    state: &AppState,
+    actor: &SeatId,
+    project: &str,
+    repo: &Path,
+    pull: &PullRequest,
+    merge_commit: &str,
+    plans: &BTreeSet<u64>,
+    notes: &mut Vec<String>,
+) -> Result<Vec<HoldingReceipt>, Refusal> {
+    let number = pull.number;
+    // Releases are bound to the work the PR ended: only a holding that began
+    // before the merge ends (review of #168). A holding assigned later is new
+    // work under the same key and stays, so a re-run never ends it, while a
+    // retry after a refused first run still ends what predates the merge.
+    // mergedAt is GitHub's clock and `from` is this machine's: skew only
+    // matters for a holding assigned within seconds of the merge, which is
+    // accepted.
+    // The store read here is outside the writer lock, so each target is
+    // pinned to its exact holding: a release and post-merge reassignment that
+    // land before the writer runs leave the new holding open, named.
+    let Some(merged) = pull
+        .merged_at
+        .as_deref()
+        .and_then(crate::community::holders::parse_time)
+    else {
+        notes.push(format!(
+            "no holding released: gh gave no merge time for PR #{number}, so pij cannot tell its work from later work; release by hand"
+        ));
+        return Ok(Vec::new());
+    };
+    let (targets, later) = state
+        .services
+        .directory
+        .finished_by(project, number, plans, merged)
+        .await?;
+    notes.extend(later);
+    if targets.is_empty() {
+        return Ok(Vec::new());
+    }
+    let why = format!(
+        "PR #{number} merged ({})",
+        merge_commit.get(..12).unwrap_or(merge_commit)
+    );
+    let released = match state
+        .services
+        .directory
+        .release_many(
+            project,
+            repo.to_path_buf(),
+            targets,
+            actor,
+            &why,
+            Unmatched::Skip,
+        )
+        .await
+    {
+        Ok(released) => released,
+        Err(refusal) if refusal.code == E_NOT_HELD => {
+            notes.push(format!("no holding released: {}", refusal.message));
+            return Ok(Vec::new());
+        }
+        Err(refusal) => {
+            return Err(Refusal::new(
+                refusal.code,
+                format!(
+                    "PR #{number}'s delivery is recorded, but its holdings were not released: {}",
+                    refusal.message
+                ),
+            )
+            .with_next(format!(
+                "Run `pij delivered {number}` again: it ends the holdings still open"
+            )));
+        }
+    };
+    notes.extend(
+        released
+            .skipped
+            .iter()
+            .map(|skipped| format!("holding left open: {skipped}")),
+    );
+    let mut receipts = released.receipts;
+    super::directory::windows_after_release(state, &mut receipts).await;
+    Ok(receipts)
 }
 
 /// The live holder of the project's `pm-<workstream>` role for the workstreams
