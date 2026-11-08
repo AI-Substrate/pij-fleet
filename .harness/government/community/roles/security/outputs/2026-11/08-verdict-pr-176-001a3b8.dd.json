@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "001a3b8406f694c2b77ff69dddda5ae47e69a480",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/176#issuecomment-6717005695",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:176",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes**, delta only, at `001a3b8406f694c2b77ff69dddda5ae47e69a480`.\n\nThe complete tracked `.cargo/config.toml` has exactly two active settings: `[build] jobs = 4` and `[env] RUST_TEST_THREADS = { value = \"4\", force = false }` (lines 12-18). No registry, source, rustflags, linker, tool, path or credential-helper configuration is present. No scoped injection or C19/C21 disclosure found.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new delta vulnerability | - |\n\nThe justfile exports and added echo lines are removed; justfile matches the PR base. Shared-build's executable mappings, lock and disk-floor handling remain unchanged. The previous direct-justfile-export note is retired.\n\nRetained prior qualifications: caller-supplied `RUST_TEST_THREADS` remains unvalidated environment data, not executed code; shared-build's decimal/positive-result check has no explicit overflow/range guard. The configuration provides defaults, not a non-overridable fleet maximum.\n\nLocal and remote heads agree; worktree clean; PR CLEAN and ready; all reported checks succeeded. Exact-head [CI 42444630104](https://github.com/AI-Substrate/pij-fleet/actions/runs/42444630104) and [Delivers 42444662796](https://github.com/AI-Substrate/pij-fleet/actions/runs/42444662796) are the execution evidence. The author's configuration-precedence/env-isolation probes were not independently rerun.\n\nNo local cargo/builds/tests/scripts, installs, global Cargo or credential reads, product edits or production/pane/process operations.\n"
+		}
+	]
+}
