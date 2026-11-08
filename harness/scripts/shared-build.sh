@@ -30,10 +30,12 @@
 # call, not this script's.
 #
 # Parallelism is capped (F126): load reached about 95 and starved every
-# project's gates, and `nice` does not shorten the run queue. CARGO_BUILD_JOBS
-# caps rustc jobs; RUST_TEST_THREADS (libtest's env form of --test-threads)
-# caps each test binary's threads. An explicit `-- --test-threads N` still
-# wins, as does a RUST_TEST_THREADS the caller set. The cap is printed first.
+# project's gates, and `nice` does not shorten the run queue. The repository's
+# `.cargo/config.toml` sets the default (4 jobs, 4 test threads) for every cargo
+# run; this maps PIJ_CARGO_JOBS onto both, as CARGO_BUILD_JOBS (which beats the
+# config) and RUST_TEST_THREADS (libtest's env form of --test-threads). An
+# explicit `-- --test-threads N` still wins, as does a RUST_TEST_THREADS the
+# caller set. The cap is printed first.
 #
 # Every cargo command runs under `nice -n 19` and, where it exists (macOS),
 # `taskpolicy -b` (background QoS: efficiency cores, throttled IO), so a build

@@ -1,0 +1,18 @@
+# Cargo's parallelism default for every cargo run in this repository (F126):
+# the justfile recipes, `just shared-build`, the governance fixture's offline
+# build, `pij daemon bounce`, `pij-gate` and CI. Cargo reads this file from
+# the directory it runs in (or any parent), whatever the environment, so a
+# curated env without HOME or CARGO_HOME still gets it. Load reached about 95
+# on the shared machine and starved other projects' gates; `nice` lowers
+# priority but does not shorten the run queue.
+#
+# Overrides: CARGO_BUILD_JOBS in the environment beats `jobs` (shared-build
+# sets it from PIJ_CARGO_JOBS), and `force = false` lets a RUST_TEST_THREADS
+# the caller set beat this one (as does an explicit `-- --test-threads N`).
+[build]
+jobs = 4
+
+[env]
+# Reaches every process cargo runs, test binaries included: libtest's env
+# form of `--test-threads`.
+RUST_TEST_THREADS = { value = "4", force = false }

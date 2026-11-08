@@ -113,8 +113,8 @@ function fixture(): Fixture {
 			// Unset unless a test supplies them: the caps default to 4.
 			PIJ_CARGO_JOBS: "",
 			RUST_TEST_THREADS: "",
-			// Absent, not empty, so only the script's own export can set it
-			// (`just` exports one too, and bash keeps an inherited one exported).
+			// Absent, not empty, so only the script's own export can set it (an
+			// ambient one would reach cargo, since bash keeps it exported).
 			CARGO_BUILD_JOBS: undefined,
 			PIJ_ID: "pij-test-seat",
 			LOG: log,
