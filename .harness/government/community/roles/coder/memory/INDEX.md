@@ -15,4 +15,5 @@
 - [2026-11-08 Fail-closed patterns reviewers keep finding \(watchdog tells, gates\)](2026-11-08-fail-closed-review-patterns.dd.md): Open before writing a retrying notifier, a once-per-X claim, a pane or screen reader, or a FINAL/PASS gate (review, fail-closed, retries, gates, watchdog)
 - [2026-11-08 plan 204 community route and canary rig](2026-11-08-plan-204-community-route-and-canary-rig.dd.md): read before editing the community route, templates, or running a fresh-seat canary (plan-204, canary, templates)
 - [2026-11-08 plan 210 phase 2: workstreams rename, coverage sensor, AC7 at merge](2026-11-08-plan-210-phase-2-workstreams-rename.dd.md): open before running plan 210's AC7 re-point after \#160 merges, editing coverage exemptions, or moving ddocs between folders (plan-210, workstreams, coverage, ac7)
+- [2026-11-08 PR hygiene traps: DIRTY means no CI, read biome output, shared-target binaries](2026-11-08-pr-hygiene-traps-dirty-means-no-ci-read.dd.md): Open before pushing a PR round, especially after main moved or during a load cap (ci, pr, build)
 <!-- /pij:generated -->
