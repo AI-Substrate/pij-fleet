@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "1d9a1f30fbee5b3bce5b09a8bb084947a9dba997",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/174#issuecomment-6716251233",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:174",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #174, exact head `1d9a1f30fbee5b3bce5b09a8bb084947a9dba997`.\n\nThe never-bound eligibility change, directly dependent registration/tombstone guards, pane observation and obituary/F115 paths were source-reviewed. No high-confidence newly exploitable vulnerability was identified.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new vulnerability identified | - |\n\n### Live-seat and pane boundaries\n\nNo reviewed caller path permits clearing a registered process to None. Registration requires bind evidence before assigning the descriptor process, and half-identities are rejected (`crates/daemon/src/registration.rs:702,946,1044`; `crates/core/src/admission.rs:158`). Store decoding requires both pid and start absent (`crates/store/src/registry.rs:138`).\n\nThe new predicate requires no process, a recorded pane, and a successful enumeration omitting that exact ID. No pane, unavailable control client, transport failure or parse failure retains the seat (`crates/daemon/src/reaper.rs:119`; `crates/tmux/src/lib.rs:1078`; `crates/tmux/src/control.rs:236`). The new tmux command does not interpolate the recorded pane; comparison uses string equality.\n\nExecution re-observes eligibility and compares the complete descriptor inside the tombstone transaction. Concurrent registration, pane reassignment or revive changes fail that comparison (`crates/daemon/src/reaper.rs:245`; `crates/store/src/registry.rs:61`). No additional outsider authority was established under current C32.\n\n### Obituary, jobs and disclosure\n\nObituaries use the committed child's recorded parent, suppress missing/dead recipients, and add no queued-message body, private path or credential (`crates/daemon/src/death_sweep.rs:69,108`). Identifier interpolation and registration-strength identity limits remain inherited, not newly cleared.\n\nQueued delivery jobs remain in the queue. Existing pending-FYI dropping and number-claim release are distinct inherited tombstone effects, not a claim that all seat state survives (`crates/store/src/registry.rs:76`).\n\nF115 flags only the scoped digest's listed job IDs after admission; it does not acknowledge or delete jobs (`crates/daemon/src/pa_watchdog.rs:1194`; `crates/store/src/held.rs:119`). No new C19/C21 disclosure was identified.\n\n### Proof qualifications\n\nPane absence means absence from the adapter's filtered server census. Its inherited control-pane filter recognizes start-command text rather than a uniquely attested pane (`crates/tmux/src/control.rs:47`); this review did not establish an unauthorized exploit through that assumption and does not certify it as stronger pane proof.\n\nGitHub metadata and the independent remote pull ref agree on the reviewed SHA. Integration status was UNKNOWN initially and CLEAN at the final pre-publication check. CI run `42438560763` and latest successful Delivers run `42438573592` both identify this exact SHA and success; the earlier cancelled Delivers run is superseded.\n\nNo local builds, tests, probes, tmux operations, death sweeps, credential reads or mutations were performed. Behavioral execution proof is exact-head CI, not a new live end-to-end observation.\n"
+		}
+	]
+}
