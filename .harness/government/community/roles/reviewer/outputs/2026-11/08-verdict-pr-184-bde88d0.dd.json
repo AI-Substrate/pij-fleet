@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ba3f-8ab4-7632-bfd4-a0287b4786e6",
+				"date": "2026-11-08",
+				"head": "bde88d0f60b0a02db5be3404320096e2875f8401",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/184#issuecomment-6719309070",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:184",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #184 round 2 whole-head correctness verdict\n\n**PASS-WITH-NOTES** at `bde88d0f60b0a02db5be3404320096e2875f8401`.\n\nThe refused-control/DONE cutoff trap is addressed, and the new bounds and grammar preserve the intended memory turn. No blocking code finding remains.\n\n## Boundary and lookup\n\nThe cutoff does not read queue state. It selects the newest sequence among the seat's 16 newest compaction_wakes rows whose settlement is woken, resumed or holds-nothing. Each of those paths follows a matching delivered outcome; pending, gone, superseded and undelivered rows do not qualify. A refused native control may still be ACKed queue Done for replay safety without advancing this boundary.\n\nThe new real-round regression seeds a refused delivery outcome, runs the watchdog to undelivered and confirms the earlier released role remains in the memory context. Its delivered counterpart settles holds-nothing and clears that role. This verifies the settlement consumer, not a claim that queue Done attests provider compaction.\n\nThe selected timestamp is admission time, as documented, not delivery/completion time. No qualifying row within the 16-row window falls back to all releases; these conservative choices can ask again for older knowledge rather than silently discarding it.\n\nMigration 0045 adds both seat-leading indexes. The cutoff limits inside its subquery; holdings use indexed open/released ranges, newest releases first, with at most 33 returned rows. The extra row detects overflow, then storage returns at most 32 plus more. The supplied query plans match the SQL/index structure and show no sort; they are author measurements, not locally rerun EXPLAINs.\n\n## Deduplication, safety and presentation\n\nDeduplication uses raw project/role/instance keys before rendering: an open holding wins over a released copy; otherwise the newest release wins. Memory commands remain one per project/role.\n\nOverflow is explicit in the prompt, initial receipt and final report through holdings_more. More counts selected holding rows; deduplication can make the final named list shorter.\n\nA lookup error or timeout takes Turn::Unread with an explicit diagnostic and generic note instructions; it does not become holds-nothing. The lookup has a 2 s timeout before the normal five-minute turn bound. The error's extra turn is a brake; it does not waive the existing authorization, duplicate-pending or admission-write guards.\n\nProject, role and instance reach the prompt only through the stated closed grammar; invalid values become a length label. Invalid role/project keys receive a generic command, never executable raw text. Released time shows valid hour/minute digits using the daemon's local offset, with day wrapping and explicit UTC fallback; malformed stamps contribute no raw text. Compaction wake still reads open_assignments through try_holdings_of and uses the shared safe holding label.\n\n## Proof and N001\n\nExact-head CI [42462264870](https://github.com/AI-Substrate/pij-fleet/actions/runs/42462264870) passed. JUnit artifact 13609349771 contains **2234 cases, zero failures/errors**, including all **16 memory_turn_http** cases: released-role holding, delivered/undelivered cutoff, generic store failure, forged instance and overflow. Unit controls cover dedup, local time, grammar, malformed stamp and cap disclosure; the real-round refused-compact and existing open-only wake controls pass.\n\nThe author reports killed refused-as-delivered, unchecked-grammar and silent-cap mutants; these were source-checked, not locally rerun.\n\n**N001, nonblocking proof ceiling:** the timeout branch itself is unexercised. The store-error test proves the shared generic-turn behavior, not the two-second timer trigger. The timeout code was inspected; do not describe that timing path as an executed regression.\n\nWhole-head review, including the previously held changes. Checkout is clean/detached, remote pin matches, and GitHub reports CLEAN. No local Cargo/tests, live queries, dependencies or product edits were performed.\n"
+		}
+	]
+}
