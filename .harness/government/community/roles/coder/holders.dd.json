@@ -500,6 +500,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-back-tapir",
 					"why": "F127 seat id and role grammar (PA digest injection class)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T06:10:16.811Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f130",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "F130 compact skipped the memory turn (spoonbill 15:44)"
 				}
 			]
 		}
