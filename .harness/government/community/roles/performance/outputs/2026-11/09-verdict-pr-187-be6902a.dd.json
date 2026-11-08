@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "be6902a8e5d85cc6f664b077a17bdf75e34e3341",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/187#issuecomment-6723731922",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:187",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `be6902a8e5d85cc6f664b077a17bdf75e34e3341`.\n\nBase-only delta from `31c5113a4454a7cba01bddf410d3df6b694f0480`, cost output `b29c1034e16a4d1bb3026e14a37de0b19a3ccc7f`.\n\n**Patch identity:** range-diff from `b56a990..31c5113` to `b901a64..be6902a` reports exact equality for both commits: `71bf4e6c = 296e085a` and `31c5113a = be6902a8`. The background, admission, PA digest and HTTP registration production files are also byte-identical between the two reviewed heads.\n\n**Base interaction:** #185 rounds 4 and 5 were cost-reviewed at `96f9f41`/`a4202415` and `b901a64`/`7ce8b888`. That base delta changes CLI formatting, directory view formatting/legacy-command guards, tests/docs and adds the machine64/project48 renderers. It does not change the existing `fenced`, name, invalid-text or background-plan helpers. #187's fenced tails/events/titles/scope, folder check and legacy replay reconstruction therefore retain the same bounds, preparation, reads and persistence behavior.\n\nNo new #187 process site, store/network query, writer commit, timer, poll, sweep or extra normal replay is introduced by this rebase. P187-N001 and P187-N002 remain: upstream preparation and malformed-field scans are data-sized; successful v2 persistence avoids reconstruction, but failed persistence can repeat it; batch bytes/record size and I/O latency are not fixed by field fences.\n\n**Merge result, with a qualification:** merging main `3ad4132268d6a9e0a35a515af75307315bae4de2` and this head with `git merge-tree --write-tree` exits cleanly and yields tree **`5460ee62eb3c0167ca1b7fa7dd07b2eaa02a48bd`**. The contribution relative to main has stable patch ID **`c975a1404dd4baa30be49357f80cb5eeee0c84ef`**, identical to `b901a64..be6902a`.\n\nThe merged tree is **not literally the PR head tree**: main additionally contains coder template v4, its catalog entry, template-list expectation and README. Those four files are the entire head-to-merge difference; none touches #187's background, scope, admission or replay code. The catalog becomes 30 rather than 29 static entries, adding one name/entry at construction and one comparison in its existing scans; coder v3 now displays v4 drift through the already-reviewed CLI guard. This is inherited main content, not an extra #187 loop/launch or changed fencing algorithm.\n\n**Exact-head CI:** [42497139958](https://github.com/AI-Substrate/pij-fleet/actions/runs/42497139958), attempt 1, successful Rust job `128781806239`, upload artifact **13624197007**. Metadata pins the full head; JUnit contains **2,261 executed cases passed**, zero failures/errors/skips, with five separately skipped by nextest. Verified the four legacy replay/fallback cases, job-fencing case, inherited full-directory/plain-receipt cases and six spawn guards. Rust lint and Node22/24 succeed. The latest replacement delivers run `42497583183` is successful; GitHub is now CLEAN.\n\nDetached worktree and GitHub heads agree, clean and frozen. Source/merge-tree inspection and CI receipts only; no local build, test, mutation, live replay, benchmark or product edit. CI executed the PR head, not the computed merged tree. Correctness/security remain independent.\n"
+		}
+	]
+}
