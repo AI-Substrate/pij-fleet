@@ -69,6 +69,8 @@ function fixture(): Fixture {
 			'case " $* " in *" --doc "*) case " $* " in *" --no-run "*) echo "error: can\'t skip running doc tests with --no-run" >&2; exit 101;; esac;; esac',
 			'echo "start $1 target=$CARGO_TARGET_DIR incremental=$CARGO_INCREMENTAL" >> "$LOG"',
 			'cat "$CARGO_TARGET_DIR.lock/owner" >> "$LOG"',
+			// The parallelism cap that reached cargo (F126).
+			'echo "jobs $1 build=$CARGO_BUILD_JOBS test=$RUST_TEST_THREADS" >> "$LOG"',
 			'[ "$1" = drop ] && echo 1024 > "$FREE"',
 			// The scheduling cargo runs under: its niceness and the flag the
 			// fake taskpolicy passed down, if one wrapped it.
@@ -108,6 +110,12 @@ function fixture(): Fixture {
 			// Absent unless a test supplies one, as on Linux.
 			PIJ_SHARED_BUILD_TASKPOLICY: join(root, "no-taskpolicy"),
 			PIJ_DISK_FLOOR_GB: "25",
+			// Unset unless a test supplies them: the caps default to 4.
+			PIJ_CARGO_JOBS: "",
+			RUST_TEST_THREADS: "",
+			// Absent, not empty, so only the script's own export can set it
+			// (`just` exports one too, and bash keeps an inherited one exported).
+			CARGO_BUILD_JOBS: undefined,
 			PIJ_ID: "pij-test-seat",
 			LOG: log,
 			FREE: free,
@@ -167,6 +175,43 @@ describe("just shared-build", () => {
 		expect(relative.stderr).toContain("must be absolute");
 		expect(log(f)).toEqual([]);
 		expect(existsSync(f.lock)).toBe(false);
+	});
+
+	it("caps cargo's jobs and test threads at 4 by default, prints the cap, and PIJ_CARGO_JOBS sets both (F126)", async () => {
+		const jobs = (f: Fixture) => log(f).filter((line) => line.startsWith("jobs "));
+		const capped = fixture();
+		const result = await run(capped, ["--", "build", "--then", "test"]);
+		expect(result.code).toBe(0);
+		expect(result.stderr).toContain(
+			"shared-build: cargo jobs: 4 (PIJ_CARGO_JOBS), test threads: 4 (RUST_TEST_THREADS)",
+		);
+		// The build, the test compile and the test run all see the cap.
+		expect(jobs(capped)).toEqual([
+			"jobs build build=4 test=4",
+			"jobs test build=4 test=4",
+			"jobs test build=4 test=4",
+		]);
+
+		const two = fixture();
+		const set = await run(two, ["--", "build"], { PIJ_CARGO_JOBS: "2" });
+		expect(set.stderr).toContain("cargo jobs: 2 (PIJ_CARGO_JOBS), test threads: 2");
+		expect(jobs(two)).toEqual(["jobs build build=2 test=2"]);
+
+		// A caller's own RUST_TEST_THREADS wins over the default test cap.
+		const own = fixture();
+		await run(own, ["--", "test"], { PIJ_CARGO_JOBS: "6", RUST_TEST_THREADS: "1" });
+		expect(jobs(own)).toEqual(["jobs test build=6 test=1", "jobs test build=6 test=1"]);
+	});
+
+	it("refuses a PIJ_CARGO_JOBS that is not a positive whole number, before the lock and any cargo", async () => {
+		for (const bad of ["0", "four", "-2"]) {
+			const f = fixture();
+			const result = await run(f, ["--", "build"], { PIJ_CARGO_JOBS: bad });
+			expect(result.code).toBe(2);
+			expect(result.stderr).toContain("PIJ_CARGO_JOBS must be a positive whole number");
+			expect(log(f)).toEqual([]);
+			expect(existsSync(f.lock)).toBe(false);
+		}
 	});
 
 	it("holds one lock for a --then batch, with the shared env, an owner line and fresh sources", async () => {
@@ -269,7 +314,10 @@ describe("just shared-build", () => {
 			NICENESS: "1",
 			PIJ_SHARED_BUILD_TASKPOLICY: taskpolicy,
 		});
-		expect(result.stderr).toBe("");
+		// Nothing but the cap line (F126): no cargo refusal.
+		expect(result.stderr).toBe(
+			"shared-build: cargo jobs: 4 (PIJ_CARGO_JOBS), test threads: 4 (RUST_TEST_THREADS)\n",
+		);
 		expect(result.code).toBe(0);
 		// #144 F001: cargo compiles doctests during the run, so there is no
 		// compile step to put in background QoS.

@@ -18,6 +18,9 @@
 # Environment:
 #   PIJ_SHARED_TARGET   required, absolute; exported as CARGO_TARGET_DIR
 #   PIJ_DISK_FLOOR_GB   refuse under this many GiB free on the target's volume (25)
+#   PIJ_CARGO_JOBS      cargo's job cap, exported as CARGO_BUILD_JOBS (4), and
+#                       the test-thread cap, exported as RUST_TEST_THREADS
+#                       unless that is already set (F126)
 #   PIJ_ID              seat id for the owner line; else $PIJ_SESSION_ID (set in
 #                       every harness seat), else `pij-rs whoami`, else $USER
 #
@@ -25,6 +28,12 @@
 # A stale lock (its owner pid is gone) is reported with the command that clears
 # it and never cleared here: whether that build is really over is the caller's
 # call, not this script's.
+#
+# Parallelism is capped (F126): load reached about 95 and starved every
+# project's gates, and `nice` does not shorten the run queue. CARGO_BUILD_JOBS
+# caps rustc jobs; RUST_TEST_THREADS (libtest's env form of --test-threads)
+# caps each test binary's threads. An explicit `-- --test-threads N` still
+# wins, as does a RUST_TEST_THREADS the caller set. The cap is printed first.
 #
 # Every cargo command runs under `nice -n 19` and, where it exists (macOS),
 # `taskpolicy -b` (background QoS: efficiency cores, throttled IO), so a build
@@ -39,7 +48,8 @@
 # `--doc --no-run`, so `cargo test --doc` skips the compile step and is one
 # nice-only run (#144 F001).
 #
-# Cost: nothing at rest. Waiting: one df, one mkdir and one sleep per poll
+# Cost: nothing at rest. Builds and test runs are slower but bound the run
+# queue (F126): at most PIJ_CARGO_JOBS rustc jobs and test threads per binary. Waiting: one df, one mkdir and one sleep per poll
 # (20 s) per waiting caller. Holding: one df per cargo command, plus the nice
 # and taskpolicy launches, each of which execs into the next (one or two
 # launches per cargo command, never per poll); a `cargo test` adds one more
@@ -54,6 +64,7 @@ WHOAMI="${PIJ_SHARED_BUILD_WHOAMI-}"          # test seam; default: pij-rs on PA
 NICE="${PIJ_SHARED_BUILD_NICE:-/usr/bin/nice}"                   # test seam
 TASKPOLICY="${PIJ_SHARED_BUILD_TASKPOLICY:-/usr/sbin/taskpolicy}" # test seam
 FLOOR_GB="${PIJ_DISK_FLOOR_GB:-25}"
+JOBS="${PIJ_CARGO_JOBS:-4}"
 
 refuse() {
 	local code=$1
@@ -110,6 +121,14 @@ esac
 case "$POLL" in
 "" | *[!0-9]* | 0) refuse 2 "PIJ_SHARED_BUILD_POLL_SECONDS must be a positive whole number" ;;
 esac
+case "$JOBS" in
+"" | *[!0-9]*) refuse 2 "PIJ_CARGO_JOBS must be a positive whole number of jobs, not '$JOBS'" ;;
+esac
+JOBS=$((10#$JOBS))
+[ "$JOBS" -gt 0 ] || refuse 2 "PIJ_CARGO_JOBS must be a positive whole number of jobs, not '${PIJ_CARGO_JOBS:-}'"
+export CARGO_BUILD_JOBS="$JOBS"
+export RUST_TEST_THREADS="${RUST_TEST_THREADS:-$JOBS}"
+printf 'shared-build: cargo jobs: %s (PIJ_CARGO_JOBS), test threads: %s (RUST_TEST_THREADS)\n' "$CARGO_BUILD_JOBS" "$RUST_TEST_THREADS" >&2
 
 target="${PIJ_SHARED_TARGET:-}"
 [ -n "$target" ] || refuse 2 "PIJ_SHARED_TARGET is not set: name the shared cargo target directory (absolute)"

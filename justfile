@@ -13,6 +13,14 @@
 # works). Without this, {{ARGS}} re-splits and the shell chokes on ().
 set positional-arguments
 
+# Cargo parallelism cap (F126): every recipe that runs cargo builds with at
+# most PIJ_CARGO_JOBS jobs (default 4) and runs each test binary with at most
+# that many threads, unless RUST_TEST_THREADS is already set. `nice` lowers
+# priority but does not shorten the run queue; this does. `just shared-build`
+# applies the same cap itself and prints it.
+export CARGO_BUILD_JOBS := env("PIJ_CARGO_JOBS", "4")
+export RUST_TEST_THREADS := env("RUST_TEST_THREADS", env("PIJ_CARGO_JOBS", "4"))
+
 # Default recipe: list available recipes.
 default:
     @just --list
@@ -59,6 +67,7 @@ rs-install:
     #!/bin/sh
     set -eu
     npm run link -- --check-only
+    echo "cargo jobs: $CARGO_BUILD_JOBS (PIJ_CARGO_JOBS)"
     cargo build --release --locked -p pij-cli
     bin="$(npm prefix -g)/bin"
     mkdir -p "$bin"
@@ -110,6 +119,7 @@ copilot-native-test:
 
 # Keep Cargo artifacts local to this checkout during isolated parallel work.
 copilot-native-rust-test:
+    @echo "cargo jobs: $CARGO_BUILD_JOBS (PIJ_CARGO_JOBS), test threads: $RUST_TEST_THREADS (RUST_TEST_THREADS)"
     CARGO_TARGET_DIR="{{justfile_directory()}}/target" cargo test -p pij-core -p pij-store -p pij-harnesses -p pij-daemon -p pij-cli
 
 # Opt-in actual JS + daemon HTTP + SQLite contract, outside Rust-only/default gates.
@@ -246,6 +256,7 @@ route-inventory-check:
     set -euo pipefail
     background=()
     if [ -x /usr/sbin/taskpolicy ]; then background=(/usr/sbin/taskpolicy -b); fi
+    echo "cargo jobs: $CARGO_BUILD_JOBS (PIJ_CARGO_JOBS), test threads: $RUST_TEST_THREADS (RUST_TEST_THREADS)"
     /usr/bin/nice -n 19 ${background[@]+"${background[@]}"} cargo test --locked -p pij-daemon --lib --no-run
     /usr/bin/nice -n 19 cargo test --locked -p pij-daemon --lib route_inventory_tests
 
@@ -320,6 +331,7 @@ self-check:
 
 # The Rust gate CI runs: lockfile, fmt, clippy (warnings are errors), tests.
 rust-check:
+    @echo "cargo jobs: $CARGO_BUILD_JOBS (PIJ_CARGO_JOBS), test threads: $RUST_TEST_THREADS (RUST_TEST_THREADS)"
     cargo metadata --locked --format-version 1 >/dev/null
     cargo fmt --all --check
     cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -624,6 +636,7 @@ _pij-bin-shape-check global_npm_root pij_bin:
 bounce-rs:
     #!/usr/bin/env sh
     set -eu
+    echo "cargo jobs: $CARGO_BUILD_JOBS (PIJ_CARGO_JOBS)"
     cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
     bin="$(npm prefix -g)/bin/pij-rs"
     old=$(lsof -nP -iTCP:7461 -sTCP:LISTEN -t || true)
