@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "b69cf96b6a6b6e9938f40a35f66ba66113fb4f52",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/170#issuecomment-6715539709",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:170",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #170, exact head `b69cf96b6a6b6e9938f40a35f66ba66113fb4f52`.\n\nReviewed `a0967ab..b69cf96` and dependent preflight/removal ordering. No new high-confidence security vulnerability was identified. The four stderr guards strengthen refusal/spare behavior without expanding deletion policy.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new vulnerability identified | - |\n\n### Guard evidence\n\n- Worktree-inventory stderr refuses the whole run before parsing/removal (`harness/scripts/pr-freeze.ts:687`).\n- Seat-inventory stderr likewise refuses globally (`pr-freeze.ts:598`).\n- PR stderr caches an unavailable verdict, sparing that PR's candidates (`pr-freeze.ts:706-710`).\n- Status stderr spares the candidate, including exit-zero/empty-stdout warnings (`pr-freeze.ts:724-731`).\n\nWhitespace-only stderr is ignored via trimming. Warnings are handled before permissive parsing or candidate verdict creation. Decisions precede removal; spared candidates are not later reconsidered through cached results. These are safety brakes, not new removal permissions.\n\nArgv-only execution, absolute tool paths, strict macOS lsof observation, unsupported-platform refusal and Git removal without force remain intact. No C19/C21 or payload/privacy regression was identified.\n\n### Proof limits\n\nNo-removal assertions appear in `harness/scripts/pr-freeze.test.ts:741,745,753`. The warned-seat fixture also returns malformed inventory (`:544`): its expected warning text distinguishes this guard, but a no-removal assertion alone would also pass under existing malformed-inventory rejection. Reported mutation kills were not independently repeated.\n\nOwn-user-only visibility and snapshot-to-deletion races remain documented limitations; this delta does not establish machine-wide occupancy or lock a candidate against later use.\n\nGitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42433237523` and latest successful Delivers run `42433238035` both identify this SHA and success. The earlier cancelled Delivers run is superseded.\n\nNo local builds, tests, mutation checks, process probes, prune execution, credential reads or deletions were performed.\n"
+		}
+	]
+}
