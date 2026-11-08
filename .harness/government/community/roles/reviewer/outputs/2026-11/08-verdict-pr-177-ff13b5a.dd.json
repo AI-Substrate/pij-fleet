@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ba06-5812-7622-9490-a46864c76af1",
+				"date": "2026-11-08",
+				"head": "ff13b5ad6629cb63ceb3f5a8264c1442018b6cc7",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/177#issuecomment-6718710923",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:177",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #177 round 3 correctness verdict\n\n**PASS-WITH-NOTES** at `ff13b5ad6629cb63ceb3f5a8264c1442018b6cc7`.\n\nDelta review from `b425d072b2bdd3f4b87708cf13c2e70091b13927`. **F001 and F002 are closed.**\n\nThe prime action path now receives queued instances only when its designated seat is not live. It uses the same live_holder boolean derived from the project designation for idle/call_on, rather than interpreting the deliberately empty prime assignment list as missing authority. The actual waiting-request count remains visible. Non-prime roles retain their prior filtering and action behavior.\n\nThe real-store regression first asserts one prime request is queued, then verifies no prime recovery action with a live designation. It tombstones that designated seat and verifies exactly one no-live-holder action, with only `pij project set fleet --prime '<seat>'`. The positive dead case prevents a broken, uniformly-empty action filter from passing the live negative case. The author reports the ungated mutant fails the live case; this was not rerun locally.\n\nThe merges leave community/directory.rs, community/picture.rs, directory_http.rs and CLI main.rs byte-identical to repair commit 2a133c5a. Consequently the prime-only legacy exclusion and the new action gate survive. #182 adds the canonical SeatId grammar/rendering helper and shared identity error handling; these do not rewrite the raw designation membership used by this view or reintroduce legacy rows as liveness. This is a merge-compatibility check, not a whole-PR #182 review.\n\nExact-head CI [42457966410](https://github.com/AI-Substrate/pij-fleet/actions/runs/42457966410) passed. JUnit artifact 13607684002 contains **2221 cases, zero failures/errors**, including the live/dead recovery pair, recent-live-legacy regression, CLI designation rendering, batch atomicity, no-project-docs fallback and merged seat-ID grammar/forged-input controls.\n\nThe prior F119 and assignment-refusal paths are unchanged. Notes remain proof scope only: mutation runs are author evidence, no local product execution or deployed canary was performed, and this does not attest caller-process origin or replace the separately owned security/performance reviews.\n\nCheckout is clean/detached, remote head matches, and GitHub reports CLEAN. No new loop, poll, timer or launch in the repair; no local Cargo/tests, live probes, dependency changes or product edits by this reviewer. #184 remains separately held awaiting its new head.\n"
+		}
+	]
+}
