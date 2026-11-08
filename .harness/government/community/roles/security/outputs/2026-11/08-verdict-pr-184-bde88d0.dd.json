@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "bde88d0f60b0a02db5be3404320096e2875f8401",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/184#issuecomment-6719264141",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:184",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #184, exact head `bde88d0f60b0a02db5be3404320096e2875f8401`.\n\nWhole-PR source review against base `81c9cd055fd9f390cfc94cf5298aa16ecf162638`: 12 changed files. **S184-001 is source-closed**, not policy-accepted. No new exploitable vulnerability was identified. The held `c58d2e9` assessment was never published.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No unresolved vulnerability identified in the reviewed changes | - |\n\n### S184-001 closure\n\n`Holding::label` validates project, role and instance at the rendering sink against `[a-z0-9][a-z0-9-]{0,31}`; rejected text becomes only `invalid (N chars)` (`crates/daemon/src/http/memory_turn.rs:134-174`; `crates/core/src/model.rs:80-82`). Historical/open/released holdings all use this guard. Concrete memory commands require grammatical project and role; otherwise fixed placeholders are used. Instance is never a command argument (`memory_turn.rs:492-505,556-625`).\n\nRelease-time rendering accepts bounded ASCII-digit hour/minute fields and produces numeric output; malformed stamps cannot echo instructions (`memory_turn.rs:181-198`). The prompt does not interpolate caller identity, target seat, release reasons, errors or control bodies.\n\nCompaction-wake resume and parent messages reuse the repaired holding labels (`crates/daemon/src/compaction_wake.rs:208-216,299-322`). This closes the reported new released-instance instruction-laundering path without relying on assignment-time grammar.\n\n### Bounded cutoff and fallback\n\nThe cutoff examines only the target seat's newest 16 compaction rows and accepts settled `woken`, `resumed` or `holds-nothing` (`crates/store/src/community.rs:154-165,330-358`). These settlements follow an exact delivered compact outcome, not queue Done state (`compaction_wake.rs:127-245`); refused/undelivered rows do not advance it.\n\nBoth assignment branches bind the target seat. At most 33 rows are read, open before newest releases; at most 32 are returned, with explicit `holdings_more` disclosure in prompt/receipt/event (`community.rs:338-358`; `memory_turn.rs:587-594,779-835`).\n\nThe two-second bound sends errors/timeouts to `Turn::Unread` and a fixed generic memory turn, not no-holdings or echoed error text (`memory_turn.rs:451-487,556-570`). Cutoff admission time and the 16/32 limits are bounded approximations, not complete context history; an unavailable old cutoff may include extra history, while overflow is disclosed.\n\n### Authority and migration\n\nCompact caller/sender validation occurs before lookup; close retains self/recorded-parent authority (`crates/daemon/src/http/mod.rs:2430-2548`; `crates/daemon/src/http/lifecycle.rs:300-377`). Pending turns remain target-keyed and prompt-ID matched, with fixed `pij-bg` attribution, incarnation checks and close-ownership recheck (`memory_turn.rs:277-287,325-436,640-667,700-720`). No new cross-seat memory-forgery or suppression path was identified.\n\nMigration 0045 adds only the seat/sequence and seat/release indexes, uniquely above main's 44; embedded schema version agrees (`crates/store/migrations/0045_memory_turn_context.sql:12-17`; `crates/store/src/migrate.rs:33-38`).\n\n### Proof and limits\n\nHostile-label, refused-compact, overflow and store-error tests were source-read. The actual timeout branch is not exercised by the supplied proof; mutation claims were not repeated. Hostile-project and hostile compaction-wake integration protection follows shared source guards rather than new explicit integration cases.\n\nThis is not blanket sanitization of inherited prompts: unchanged claim labels and parent seat prose in compaction-wake still interpolate their fields (`compaction_wake.rs:223-230`; `crates/core/src/compaction_wake.rs:109-115`). The closure covers the reported holding-label path, not unrelated historical raw fields.\n\nNo new C19/C21 disclosure was identified. GitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42462264870` and latest successful Delivers run `42462266866` both identify this SHA and success; the earlier cancelled Delivers run is superseded.\n\nNo local tests, builds, probes, credential reads, memory/compact operations, fault injection or mutations were performed.\n"
+		}
+	]
+}
