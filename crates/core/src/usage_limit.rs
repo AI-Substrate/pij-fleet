@@ -175,9 +175,12 @@ pub fn wake_body(
     stopped: &[SeatId],
     late: bool,
 ) -> String {
+    // F132: the quota type is transcript text and the seats are stored ids,
+    // so each shows only when it fits its grammar.
+    let limit_type = crate::render::word(limit_type);
     let seats = stopped
         .iter()
-        .map(SeatId::as_str)
+        .map(SeatId::rendered)
         .collect::<Vec<_>>()
         .join(", ");
     let when = if late {

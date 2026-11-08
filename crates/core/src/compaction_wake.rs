@@ -103,8 +103,9 @@ pub fn resume_body(held: &[String]) -> String {
 #[must_use]
 pub fn parent_body(seat: &SeatId, held: &[String]) -> String {
     format!(
-        "{seat} went idle after a compaction with nothing queued, holding {}. \
+        "{} went idle after a compaction with nothing queued, holding {}. \
          pij sent it one resume message; if it stays idle, check on it.",
+        seat.rendered(),
         join(held)
     )
 }

@@ -503,8 +503,11 @@ async fn tell_requester(
         from_machine: None,
         to: SeatId::from(request.requester.as_str()),
         body: format!(
-            "[pij request closed] your request {} to {address} in {} was closed by {} ({bound}): {}",
-            request.id, request.project, closed.closed_by, closed.why
+            "[pij request closed] your request {} to {address} in {} was closed by {} ({bound}), who wrote: {}",
+            pij_core::render::msg_id(&request.id),
+            request.project,
+            pij_core::render::seat(&closed.closed_by),
+            pij_core::render::fenced(&closed.why, pij_core::render::FENCE_MAX)
         ),
         msg_id: format!("request-closed-{}", request.id),
         in_reply_to: Some(request.id.clone()),

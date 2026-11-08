@@ -1962,6 +1962,8 @@ The full behaviour, state diagram and known residual are in [pa-watchdog.md](pa-
 
 Seat ids, roles and msg ids are seat-reported, and the digest goes into the PA's prompt, so each is rendered only when it fits its grammar (seat ids as above, roles in the closed vocabulary, msg and request ids of letters, digits, `.`, `_`, `:` and `-` up to 128); anything else shows as `invalid (N chars)` (F127). This runs at render time, so stored rows are covered too.
 
+The same rule covers every daemon-authored message (F132, `pij_core::render`), not only the digest: role-queue wakes, request frame headers, time-limit check-ins and notices, close and withdrawn notices, output notices, watchdog and presence messages, the usage-reset wake, memory-turn prompts and compaction wakes. Seat ids, request and msg ids, roles, heads, models, result words, subjects and directory names each show only when they fit their grammar, else `invalid (N chars)`. A reason a message exists to carry (a close's or withdrawal's `--why`) is fenced: escaped onto one line in quotes, at most 500 characters, and named as its author's words. Request bodies stay as written, under a header that names their requester.
+
 The digest reports facts. Policy, such as caps and exemptions, lives in the PA brief (`skills/pij/references/prime/pa.md`).
 
 **Usage-limit reset.** A fleet idle on a usage limit gets no edge nudge, because nothing can run. If any live Claude Code seat in the PA's scope is stopped by a quota rejection when the edge comes, the round records `watchdog.round` `{outcome: "idle-on-limit"}` and sends nothing. The reset wake follows instead:

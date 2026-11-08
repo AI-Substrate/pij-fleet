@@ -1148,8 +1148,11 @@ async fn tell_withdrawn(
         from_machine: None,
         to: SeatId::from(request.requester.as_str()),
         body: format!(
-            "[pij role:{role} request {} withdrawn] Role {role} {gone} by {actor}: {why}. Your request was never delivered. It said:\n{}",
-            request.id, request.body
+            "[pij role:{role} request {} withdrawn] Role {role} {gone} by {}, who wrote: {}. Your request was never delivered. It said:\n{}",
+            pij_core::render::msg_id(&request.id),
+            actor.rendered(),
+            pij_core::render::fenced(why, pij_core::render::FENCE_MAX),
+            request.body
         ),
         msg_id: format!("{}.withdrawn", request.id),
         in_reply_to: None,

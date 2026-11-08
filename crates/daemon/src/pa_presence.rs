@@ -641,10 +641,15 @@ impl PaWatchdog {
             (PresenceVerdict::Send, Some(prime), Some(wake)) if send => {
                 let detail: serde_json::Value =
                     serde_json::from_str(&wake.detail).unwrap_or_default();
+                // Daemon-written, but rendered closed like every field here:
+                // the outcome word only, never an error's cause text.
+                let delivery = detail["delivery"].as_str().unwrap_or("unknown");
                 let receipt = format!(
                     "msg {}, delivery {}",
-                    detail["msg_id"].as_str().unwrap_or("unknown"),
-                    detail["delivery"].as_str().unwrap_or("unknown"),
+                    pij_core::render::msg_id(detail["msg_id"].as_str().unwrap_or("unknown")),
+                    pij_core::render::word(
+                        delivery.split_once(':').map_or(delivery, |(word, _)| word)
+                    ),
                 );
                 let body = pa_unresponsive_body(
                     &prime.id,
