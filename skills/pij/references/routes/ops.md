@@ -9,7 +9,7 @@
 ```bash
 pij-rs ping --json
 pij-rs doctor claude-inbound|claude-hook|claude-statusline --json   # read-only Claude-home audit
-pij-rs daemon --bind <host:port>           # foreground service; use an owned supervisor
+pij-rs daemon --bind <host:port>           # foreground service; use an owned supervisor; port 0 = free port, named in the banner
 pij-rs daemon bounce                       # rebuild, drain, restart, verify health (authorized only)
 ```
 

@@ -2117,6 +2117,9 @@ mod tests {
         ));
         let mut two = open.to_vec();
         two.push(holding("pm", "", seat, "2026-11-01T00:00:00Z", None));
+        // F132 (#185): a seat that can't be shown gets no split prompt, so the
+        // printed one is pij-b's (a canonical seat holding two roles).
+        two.push(holding("pm", "", "pij-b", "2026-11-01T00:00:00Z", None));
         prompts.extend(picture::two_domains(project, &two, &seats));
         for prompt in &prompts {
             printed.extend(prompt.commands.iter().cloned());

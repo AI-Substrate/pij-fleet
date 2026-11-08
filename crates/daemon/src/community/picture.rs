@@ -113,6 +113,14 @@ fn address(row: &Assignment) -> String {
     }
 }
 
+/// Whether a holding can be named in a printed command: its seat and
+/// instance both show as themselves (F132, #185). One that can't is named
+/// in text only, as its length, and gets no command.
+fn printable(row: &Assignment) -> bool {
+    pij_core::model::is_canonical_seat_id(&row.seat)
+        && (row.instance.is_empty() || pij_core::render::is_name(&row.instance))
+}
+
 /// What a new role's standing packet says, to be filled in: `pij/role`
 /// requires one (`--packet <text>` or `--brief <path>`).
 const PACKET: &str = "<what a holder is told at the start of every job>";
@@ -427,10 +435,12 @@ pub fn actions_weighing(
             continue;
         }
         let waiting = queued.iter().filter(|queued| **queued == instance).count();
+        // The instance may be a holding's stored key a broad send copied
+        // into a request (#185, bobcat): shown only through its grammar.
         let address = if instance.is_empty() {
             role.to_string()
         } else {
-            format!("{role}/{instance}")
+            format!("{role}/{}", pij_core::render::name(instance))
         };
         let mut commands = Vec::new();
         let last = rows
@@ -442,7 +452,7 @@ pub fn actions_weighing(
                     .cmp(b.to.as_deref().unwrap_or(&b.from))
             })
             .map(|row| row.seat.as_str());
-        if let Some(last) = last {
+        if let Some(last) = last.filter(|seat| pij_core::model::is_canonical_seat_id(seat)) {
             commands.push(command(&["pij-rs", "revive", last]));
         }
         // C24: the prime is designated, never assigned (review of #177).
@@ -463,7 +473,11 @@ pub fn actions_weighing(
         });
         out.push(json!({
             "role": role,
-            "instance": instance,
+            "instance": if instance.is_empty() {
+                std::borrow::Cow::Borrowed("")
+            } else {
+                pij_core::render::name(instance)
+            },
             "condition": "no-live-holder",
             "says": if role == "prime" {
                 format!(
@@ -534,10 +548,13 @@ fn two_live_holders(
     let count = |row: &&Assignment| open.get(&row.seat).copied().unwrap_or_default();
     let named: Vec<String> = holding
         .iter()
-        .map(|row| match count(row) {
-            0 if open.is_empty() => row.seat.clone(),
-            0 => format!("{}, no open requests", row.seat),
-            n => format!("{}, {n} open request(s)", row.seat),
+        .map(|row| {
+            let seat = pij_core::render::seat(&row.seat);
+            match count(row) {
+                0 if open.is_empty() => seat.into_owned(),
+                0 => format!("{seat}, no open requests"),
+                n => format!("{seat}, {n} open request(s)"),
+            }
         })
         .collect();
     let lead = format!(
@@ -572,8 +589,11 @@ fn two_live_holders(
     json!({
         "role": role,
         "condition": "two-live-holders",
-        "says": format!("{lead}; release all but one ({} kept here: {reason})", kept.seat),
-        "commands": holding.iter().filter(|row| !std::ptr::eq(**row, kept)).map(|row| command(&[
+        "says": format!(
+            "{lead}; release all but one ({} kept here: {reason})",
+            pij_core::render::seat(&kept.seat)
+        ),
+        "commands": holding.iter().filter(|row| !std::ptr::eq(**row, kept) && printable(row)).map(|row| command(&[
             "pij",
             "directory",
             "release",
@@ -916,6 +936,11 @@ pub fn two_domains(
     seats.dedup();
     let mut out = Vec::new();
     for seat in seats {
+        // Every command here names the seat: one that can't be shown as
+        // itself (a legacy row, F132, #185) gets no split recommendation.
+        if !pij_core::model::is_canonical_seat_id(seat) {
+            continue;
+        }
         let mut held: Vec<&Assignment> = rows
             .iter()
             .filter(|row| row.to.is_none() && row.seat == seat)
@@ -931,7 +956,13 @@ pub fn two_domains(
             continue;
         }
         for later in &roles[1..] {
-            let mine: Vec<&&Assignment> = held.iter().filter(|row| row.role == *later).collect();
+            let mine: Vec<&&Assignment> = held
+                .iter()
+                .filter(|row| row.role == *later && printable(row))
+                .collect();
+            if mine.is_empty() {
+                continue;
+            }
             let why = format!(
                 "{seat} carries {} roles; {later} gets its own seat",
                 roles.len()

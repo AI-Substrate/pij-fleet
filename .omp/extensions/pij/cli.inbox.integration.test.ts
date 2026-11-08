@@ -11,7 +11,6 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -346,21 +345,9 @@ describeWithDaemon("public pij inbox lifecycle against a private Rust daemon", (
 			);
 		}
 		await privateTmux();
-		const reservation = createServer();
-		await new Promise<void>((resolve, reject) => {
-			reservation.once("error", reject);
-			reservation.listen(0, "127.0.0.1", resolve);
-		});
-		const binding = reservation.address();
-		await new Promise<void>((resolve, reject) => {
-			reservation.close((error) => (error ? reject(error) : resolve()));
-		});
-		if (!binding || typeof binding === "string" || binding.port === 7461) {
-			throw new Error("private non-production loopback port was not allocated");
-		}
-		addr = `127.0.0.1:${binding.port}`;
 		daemon = own(
-			spawn(RS_BINARY, ["--state-dir", stateDir, "--addr", addr, "daemon", "--bind", addr], {
+			// Port 0: the OS picks a free port and the banner names it (F137).
+			spawn(RS_BINARY, ["--state-dir", stateDir, "daemon", "--bind", "127.0.0.1:0"], {
 				cwd: folder,
 				env: cliEnv({ TMUX: `${join(root, "tmux.sock")},0,0` }),
 				stdio: "pipe",
