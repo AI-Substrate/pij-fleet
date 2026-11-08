@@ -1875,12 +1875,16 @@ export class NativeBridge {
 			throw new NativeError(`${label} received malformed processing snapshot; receiving held`);
 		return state.processing;
 	}
+	/**
+	 * Whether a message not yet consumed when its run ended was dropped, so it
+	 * may be sent again. A message still queued or a run still processing is
+	 * waiting, not dropped, whatever a history gap left uncertain (F124: the
+	 * gap check used to come first and held a steer that was consumed 4.4 s
+	 * later). Only the resend needs that certainty: see
+	 * {@link NativeBridge#waitOutUncertainDiscard}.
+	 */
 	async canRetryDiscarded(completion, message) {
 		const signal = this.receiverController.signal;
-		if (completion.discardUncertain)
-			throw new NativeError(
-				"Native receiver progress gap cannot prove discarded consumption; receiving held without reinjection",
-			);
 		const label = "Native discard recovery";
 		try {
 			const pending = await this.readQueueSnapshot(label);
@@ -1903,9 +1907,7 @@ export class NativeBridge {
 			// cursor is silently stale. Check the independent authority before rearm.
 			if (!completion.consumption) await this.probeReceiver(completion);
 			if (!completion.consumption && completion.discardUncertain)
-				throw new NativeError(
-					"Native receiver progress gap cannot prove discarded consumption; receiving held without reinjection",
-				);
+				return this.waitOutUncertainDiscard(completion);
 			return !completion.consumption;
 		} catch (error) {
 			if (signal.aborted || error instanceof NativeError) throw error;
@@ -1913,6 +1915,31 @@ export class NativeBridge {
 				"Native discard recovery queue, processing or history snapshot failed; receiving held without reinjection",
 			);
 		}
+	}
+	/**
+	 * Queue empty, run idle, consumption unseen, and a history gap means it may
+	 * have been consumed unseen: never resend. Keep waiting, re-reading history
+	 * on the usual backoff with the lease still renewing, so late evidence of
+	 * consumption settles it. Hold only once the gap has outlived
+	 * HOLD_ESCALATION_MS, as a receiver gap does.
+	 */
+	waitOutUncertainDiscard(completion) {
+		completion.uncertainSince ??= this.now();
+		const elapsedMs = this.now() - completion.uncertainSince;
+		if (elapsedMs >= HOLD_ESCALATION_MS)
+			throw new NativeError(
+				"Native receiver progress gap cannot prove discarded consumption; receiving held without reinjection",
+			);
+		if (!completion.uncertainReported) {
+			completion.uncertainReported = true;
+			this.emit("discard-uncertain", {
+				msgId: completion.msgId,
+				jobId: completion.jobId ?? null,
+				nativeMessageId: completion.nativeId,
+				holdAfterMs: HOLD_ESCALATION_MS,
+			});
+		}
+		return false;
 	}
 	async newCompletion(message, replay = false, jobId) {
 		const tail = await this.nativeRpc("eventLog.tail", () => this.native.rpc.eventLog.tail());

@@ -2090,6 +2090,105 @@ fn a_reported_build_parses_only_the_closed_grammar() {
     }
 }
 
+/// F124: a live Copilot seat whose native receiver lease lapsed is flagged
+/// `receiver-lapsed` in the digest, naming how long since it renewed and the
+/// fix: one that never renewed after the daemon started, and one that renewed
+/// and then stopped (pm-001 at 12:31). A seat whose receiver renews, and one
+/// without native delivery, are not.
+#[tokio::test(start_paused = true)]
+async fn a_lapsed_native_receiver_is_flagged_in_the_digest() {
+    // Keeps paused time from auto-advancing while the real store does IO.
+    let clock = tokio::spawn(async {
+        loop {
+            tokio::task::yield_now().await;
+        }
+    });
+    let (services, _store) = services().await;
+    let prime = seat("pij-prime", "/receiver-lapsed", None);
+    services.registry.put(prime.clone()).await.unwrap();
+    services
+        .registry
+        .put(seat("pij-pa", "/receiver-lapsed", Some("pij-prime")))
+        .await
+        .unwrap();
+    services
+        .roles
+        .assert_role(&"pij-prime".into(), &"pij-pa".into(), Some("pa".into()))
+        .await
+        .unwrap();
+    let mut identities = Vec::new();
+    for (n, (id, native)) in [
+        ("pij-silent", true),
+        ("pij-stalled", true),
+        ("pij-renewing", true),
+        ("pij-paneless", false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut copilot = seat(id, "/receiver-lapsed", Some("pij-prime"));
+        copilot.harness = Harness::Copilot;
+        copilot.native_extension_delivery = native;
+        copilot.proc = Some(pij_core::model::ProcIdentity {
+            pid: 4_000 + n as u32,
+            proc_start: 4_000 + n as u64,
+        });
+        services.registry.put(copilot.clone()).await.unwrap();
+        identities.push((
+            copilot.id.clone(),
+            crate::delivery::NativeInboxIdentity {
+                native_session: copilot.harness_session.clone(),
+                pid: copilot.proc.map(|proc| proc.pid),
+                proc_start: copilot.proc.map(|proc| proc.proc_start),
+            },
+        ));
+    }
+    let renew = |id: &str| {
+        let (seat, identity) = identities
+            .iter()
+            .find(|(seat, _)| seat.as_str() == id)
+            .unwrap()
+            .clone();
+        let delivery = services.delivery.clone();
+        async move {
+            delivery
+                .heartbeat_native_receiver(&seat, &identity, 1, 1, None)
+                .await
+                .unwrap();
+        }
+    };
+    renew("pij-stalled").await;
+    tokio::time::advance(std::time::Duration::from_secs(61)).await;
+    renew("pij-renewing").await;
+
+    let watchdog = PaWatchdog::default();
+    let at = now_ms();
+    set_state(&services, &prime, SystemState::Working).await;
+    watchdog.round(&services, INTERVAL, at).await.unwrap();
+    set_state(&services, &prime, SystemState::Idle).await;
+    watchdog
+        .round(&services, INTERVAL, at + 60_000)
+        .await
+        .unwrap();
+    let digests = drain(&services, "pij-pa").await;
+    assert_eq!(digests.len(), 1);
+    let body = &digests[0].body;
+    assert!(
+        body.contains(
+            "pij-silent  receiver-lapsed: native receiver lease lapsed (not renewed by this incarnation since the daemon started), so sends to it are refused (native-extension-unavailable). Reload the seat's extension (extensions_reload)"
+        ),
+        "{body}"
+    );
+    assert!(
+        body.contains(
+            "pij-stalled  receiver-lapsed: native receiver lease lapsed (last renewed 1m ago)"
+        ),
+        "{body}"
+    );
+    assert_eq!(body.matches("receiver-lapsed:").count(), 2, "{body}");
+    clock.abort();
+}
+
 /// F112: a seat whose pane tap the observer refused is flagged in the digest
 /// as `tap-refused`, with the refusal (which names the repair) as its detail.
 #[tokio::test]
