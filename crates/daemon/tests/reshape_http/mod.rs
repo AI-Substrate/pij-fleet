@@ -1171,8 +1171,36 @@ async fn printed_commands_quote_a_hostile_holding_instance() {
     fleet(addr, &repo).await;
     many_holders(addr, &repo, "qa").await;
     let hostile = "x$(id>dollar)`id>tick`;id>semi";
-    // F135: assign refuses this key now; it stands for a legacy stored row.
-    crate::seed_legacy_holding(&rig, "qa", hostile, "pij-holder").await;
+    // F135: assign refuses this key now. A legacy row is made the way one
+    // could exist: a valid key assigned, then rewritten on the governance
+    // branch, where retire reads holdings.
+    let file = repo.root.join("holders.txt");
+    std::fs::write(&file, "qa/legacy pij-holder\n").unwrap();
+    let assigned = directory(
+        addr,
+        &repo,
+        &[
+            "assign",
+            "--batch",
+            file.to_str().unwrap(),
+            "--why",
+            "import",
+        ],
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    let holders = repo.gov.join(format!("{ROLES}/qa/holders.dd.json"));
+    let text = std::fs::read_to_string(&holders).unwrap();
+    assert_eq!(text.matches("\"legacy\"").count(), 1, "{text}");
+    std::fs::write(
+        &holders,
+        text.replace("\"legacy\"", &format!("\"{hostile}\"")),
+    )
+    .unwrap();
+    git(
+        &repo.gov,
+        &["commit", "-qam", "legacy: a hand-written instance key"],
+    );
     let held = directory(addr, &repo, &["retire", "qa", "--why", "w"]).await;
     assert_eq!(refusal_code(&held), "E-RS-DIRECTORY-ROLE-HELD", "{held}");
     let [release] = commands(&held).try_into().expect("one printed release");

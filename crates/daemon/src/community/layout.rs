@@ -72,30 +72,28 @@ pub struct RolePaths {
     pub outputs_keep: PathBuf,
 }
 
-/// Longest instance key a new holding may take (F135).
-pub const INSTANCE_MAX: usize = 64;
+/// Longest instance key a new holding may take (F135), and how much of a
+/// refused one a refusal shows (escaped).
+pub const INSTANCE_MAX: usize = 32;
 
-/// Refuse an instance key a new holding may not take (F135): 1 to
-/// [`INSTANCE_MAX`] ASCII letters, digits, `.`, `_` or `-`, so every holding
-/// can be addressed as `role:<id>/<instance>` and no prompt that names it
-/// carries a newline, quote or control character. The refusal shows the key
-/// escaped and bounded, never raw. Release and the rebuild still read stored
-/// keys as they are, so a row from before this check can still be ended.
+/// Refuse an instance key a new holding may not take (F135): the one name
+/// grammar, [`pij_core::render::is_name`] (`[a-z0-9][a-z0-9-]{0,31}`), which
+/// every message that names a holding renders by. So a recorded key always
+/// shows as itself, and no prompt that names it carries a newline, quote or
+/// control character. The refusal shows the key escaped and bounded, never
+/// raw. Release and the rebuild still read stored keys as they are, so a row
+/// from before this check can still be ended.
 ///
 /// # Errors
 /// `E-RS-ARG` naming the grammar.
 pub fn check_instance(instance: &str) -> Result<(), Refusal> {
-    let fits = (1..=INSTANCE_MAX).contains(&instance.len())
-        && instance
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'));
-    if fits {
+    if pij_core::render::is_name(instance) {
         return Ok(());
     }
     Err(Refusal::new(
         "E-RS-ARG",
         format!(
-            "instance key \"{}\" must be 1-{INSTANCE_MAX} letters, digits, '.', '_' or '-' (the role:<id>/<instance> address)",
+            "instance key \"{}\" must be 1-{INSTANCE_MAX} lowercase letters, digits or '-', not starting with '-'",
             instance
                 .escape_debug()
                 .take(INSTANCE_MAX)
@@ -179,14 +177,7 @@ mod tests {
     /// quote, a control character or a forged frame is refused, escaped.
     #[test]
     fn instance_keys_take_the_role_address_words() {
-        for live in [
-            "f114",
-            "201",
-            "pr-317",
-            "catherine-answers",
-            "flaky-n2",
-            "v1.2_x",
-        ] {
+        for live in ["f114", "201", "pr-317", "catherine-answers", "flaky-n2"] {
             assert!(check_instance(live).is_ok(), "{live}");
         }
         assert!(check_instance(&"a".repeat(INSTANCE_MAX)).is_ok());
@@ -200,6 +191,9 @@ mod tests {
             "pr/1",
             "pr\u{7}",
             "caf\u{e9}",
+            "PR-1",
+            "v1.2_x",
+            "-lead",
             &"a".repeat(INSTANCE_MAX + 1),
         ] {
             let refusal = check_instance(hostile).expect_err(hostile);

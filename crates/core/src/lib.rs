@@ -37,6 +37,7 @@ pub mod outputs;
 pub mod pa_digest;
 pub mod ports;
 pub mod program;
+pub mod render;
 pub mod report;
 pub mod requests;
 pub mod session_status;

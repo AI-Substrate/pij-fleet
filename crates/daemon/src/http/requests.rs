@@ -488,11 +488,11 @@ async fn tell_requester(
     closed: &ClosedRoleRequest,
 ) -> Result<pij_core::model::DeliveryOutcome, String> {
     let request = &closed.request;
-    let address = if request.instance.is_empty() {
-        format!("role:{}", request.role)
-    } else {
-        format!("role:{}/{}", request.role, request.instance)
-    };
+    let address = crate::delivery::role_send::RoleAddress {
+        role: request.role.clone(),
+        instance: request.instance.clone(),
+    }
+    .display();
     let bound = match closed.bound.as_deref() {
         Some("pane (derived)") => "bound by pane",
         Some(_) => "asserted seat id",
@@ -503,8 +503,11 @@ async fn tell_requester(
         from_machine: None,
         to: SeatId::from(request.requester.as_str()),
         body: format!(
-            "[pij request closed] your request {} to {address} in {} was closed by {} ({bound}): {}",
-            request.id, request.project, closed.closed_by, closed.why
+            "[pij request closed] your request {} to {address} in {} was closed by {} ({bound}), who wrote: {}",
+            pij_core::render::msg_id(&request.id),
+            request.project,
+            pij_core::render::seat(&closed.closed_by),
+            pij_core::render::fenced(&closed.why, pij_core::render::FENCE_MAX)
         ),
         msg_id: format!("request-closed-{}", request.id),
         in_reply_to: Some(request.id.clone()),
