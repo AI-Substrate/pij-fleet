@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "1b2710faf2b8e6aceb0c8c461a0366606d3ebb47",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/176#issuecomment-6716901267",
+				"result": "block",
+				"role": "performance",
+				"subject": "pr:176",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: BLOCK P176-F001 / P176-F002** at `1b2710faf2b8e6aceb0c8c461a0366606d3ebb47`.\n\n**Four is a sound provisional default, not the coverage problem.** Requested read-only hardware metadata reports **16 physical / 16 logical CPUs**. With the separately ruled two simultaneous Cargo builds, four jobs each permits eight outer compile jobs, nominally half that CPU count. That is materially more conservative than defaulting each build to the whole machine, but is not a CPU reservation or an optimality benchmark: test bodies, helpers and linkers can fan out.\n\nAt **13:33 +10:00**, load averages were **17.72 / 19.57 / 43.58**. Even the short averages exceed the core count; nothing here establishes spare capacity for raising the default. I ran no Cargo command or stress test and do not lift the prime's two-build/emergency rule. This PR has only the existing per-target shared-build lock, not a new fleet-wide two-build semaphore.\n\n**P176-F001: repository-owned local Cargo paths still escape the cap.**\n\n- `harness/driver/governance-fixture.ts:220-256` constructs a curated environment that excludes the new exports. Its missing-binary fallback at `:357-375` invokes `cargo build` with that environment plus Rust cache homes/target, still without a job default. Thus **even `just smoke` loses the Just exports at this child boundary** (`harness/scripts/smoke.ts:122`). A timeout is not a parallelism cap.\n- The reachable native `pij-rs daemon bounce` path (`crates/cli/src/main.rs:1130-1160`, `bounce/mod.rs:96-112`) builds Cargo directly, supplying no cap when the caller has none. It is not the capped `just bounce-rs` recipe.\n- The standalone `pij-gate` (`crates/testkit/src/bin/gate.rs:124-138`) runs Cargo clippy/test children with `CARGO_INCREMENTAL=0`, but supplies neither Cargo-job nor libtest-thread defaults when invoked outside Just.\n\nThese are not claims that every currently running build is uncapped; the manual ruling may supply ambient settings. They show that the encoded default does not cover every repository-owned local entrypoint, and the fixture actively drops it. There is no tracked `.cargo/config`/`.cargo/config.toml` providing a repository-wide default.\n\n**Required:** apply the same defaults at those actual launch/environment boundaries and add focused fake-exec CI proof with ambient cap variables absent. Preserve the fixture's identity/credential isolation; copy only the non-sensitive resource settings, not the whole parent environment. Do not repair unrelated bounce behavior as part of this.\n\n**P176-F002: two new banner lines add shell launches.** `justfile:122` and `:334` add standalone `@echo` lines to ordinary, non-shebang recipes (`copilot-native-rust-test`, `rust-check`). [Just executes each such line in a fresh shell](https://github.com/casey/just/discussions/1461); `@` hides command echoing, not execution. Each invocation therefore adds one shell launch. The shared-build printf and banners inside existing shebang recipes do not add a process.\n\n**Required for the claimed no-new-launch budget:** put each banner in the first already-existing command/script execution, preserving fail-fast behavior, rather than adding another recipe line. The environment exports themselves need no child process.\n\n**What works:** the shared script exports default **4/4** before locking or starting Cargo; invalid job values refuse; compile and nice-only test phases inherit the settings; caller test-thread settings/explicit libtest arguments retain precedence. Its existing nice/taskpolicy split, target isolation, `CARGO_INCREMENTAL=0`, disk guard and cleanup remain unchanged. Global Just exports reach the direct Cargo recipes and ordinary inherited environments; the fixed native-contract recipe keeps its existing 4 jobs/1 test thread.\n\n**Limit:** this is an adjustable default, not a hard maximum: PIJ_CARGO_JOBS, existing RUST_TEST_THREADS and explicit `-j`/`--test-threads` can override it. RUST_TEST_THREADS limits each libtest binary, not all child/native threads or the number of concurrent Cargo commands. Direct CI Cargo commands remain outside these Just exports, as intended; that exemption must not be used for local builds.\n\n**CI:** [42442545704](https://github.com/AI-Substrate/pij-fleet/actions/runs/42442545704) succeeds at this exact SHA. Node **22 and 24 each execute 20 shared-build tests**, including default/override exports reaching build/test compile/test run, absent inherited CARGO_BUILD_JOBS, and invalid-value refusal before lock/Cargo. Typecheck/Biome and Rust checks pass; Delivers `42442545720` succeeds. Those tests do not cover the escaping launchers or Just's added shell processes.\n\nWorktree and GitHub heads agree; clean and CLEAN/MERGEABLE. No local Cargo, build, test, fake-Cargo run or daemon mutation. The blockers are cap coverage and the extra launches, not the choice of four.\n"
+		}
+	]
+}
