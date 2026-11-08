@@ -975,6 +975,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-double-bobcat",
 					"why": "plan 224 idle-holder nudge #189"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T14:22:43.878Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "190",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "coder template v4 (Fixes: line); spoonbill free while #183 r2 and #187 rebase wait"
 				}
 			]
 		}
