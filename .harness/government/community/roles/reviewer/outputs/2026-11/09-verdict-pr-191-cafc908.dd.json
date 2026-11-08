@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bc04-2469-7251-a6bd-8d8affa34af3",
+				"date": "2026-11-09",
+				"head": "cafc9085aba3ef2c5ffddb6ce638471f467b33ba",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/191#issuecomment-6724164408",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:191",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Trace assign/lineage single and batch, legacy release/rebuild, role address and window-name call sites at cafc908",
+					"exit_code": 0,
+					"log": "Recording paths use new_role_and_instance/check_instance; release and rebuild preserve loose legacy reads. All holding-derived window parts and CLI whole names rendered. N001: inherited RoleAddress refusal raw/unbounded; API documentation overclaims, author confirmed."
+				},
+				{
+					"command": "Inspect f135-mutation-receipts.md, runner and selected original tool.execution_complete mutation outputs; compare source/test transfer",
+					"exit_code": 0,
+					"log": "V1 initial attempt NOT APPLIED, baseline passes. Unique-anchor V1 rerun plus V2-V6/X1-X3 each has panic and FAILED result; restored gate succeeds. Mutated sites unchanged; V killing test body byte-identical at final head. Author executions, no reviewer mutants."
+				},
+				{
+					"command": "Inspect CI 42500185891 artifact 13625501056; node harness/scripts/pr-freeze.ts 191; compare CI merge tree fe16c051",
+					"exit_code": 0,
+					"log": "2265 Rust cases passed, five separately skipped. Six targeted grammar/window/batch tests execute; latest five checks pass. FINAL/CLEAN at exact head. CI synthetic merge tree a7a63bad2c1018c4d2a5e8881b3f5272ea201400 equals head tree."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: PASS-WITH-NOTES\n\nPR #191 at `cafc9085aba3ef2c5ffddb6ce638471f467b33ba`, answering `01a1bc04-2469-7251-a6bd-8d8affa34af3`, against main `a244cb479eed70d4098e72d9d0b0a6f41d0ffda9`. No new correctness blocker.\n\n**Admission:** `check_instance` uses the requested `render::is_name` grammar, and escapes/bounds the E-RS-ARG diagnostic (`crates/daemon/src/community/layout.rs:75-101`). Single assign calls `new_role_and_instance`; assign batch uses the same helper; both lineage forms pass through `past_holding` and that helper (`http/directory.rs:1198-1202,1278-1294,1323,1362,1462-1468,1505-1512`). All batch rows are parsed before the recording writer is called, so a malformed row cannot partially apply. Optional no-instance holdings remain supported.\n\n**Legacy compatibility:** single and batch release retain the loose parser (`http/directory.rs:1201,1614`), with only escaped diagnostic text changed. Rebuild still reads holders documents and checks row invariants without applying the new admission grammar (`community/directory.rs:754-793`; `community/holders.rs:33-59`). No release/rebuild acceptance rule was tightened by this patch.\n\n**Addresses/windows:** role-address instances now use the same name grammar before routing (`delivery/role_send.rs:76-83`). Every holding-derived window name renders project, role and instance (`community/directory.rs:2623-2631`). Both kept-window reasons are fixed text; release's seat-name fallback is rendered; the only rename sink receives those names (`:1621-1693`). CLI holdings receipts additionally check the complete window name through `render::window` (`crates/cli/src/main.rs:3127`; `crates/core/src/render.rs:81-94`). The kept-window regression tests the intended no-rename case, not a live tmux launch; actual rename sanitization is established by the shared formatter and its call sites.\n\n**N001, inherited refusal over-claim:** `RoleAddress::parse` still interpolates the entire raw `to` in its refusal (`delivery/role_send.rs:80-83`), and `http/role_send.rs:260-279` puts that string in `meta`. This branch predates the PR, but the new API paragraph's claim that address refusals are escaped and bounded is inaccurate. The long-address test asserts only E-RS-ROLE-ADDRESS. The author confirmed this limitation. Escape/bound the rejected address and add a hostile-address diagnostic regression, or qualify the documentation; the recording-path E-RS-ARG refusals themselves are escaped/bounded as requested.\n\n**Proof:** CI run `42500185891`, artifact `13625501056`, contains 2,265 passing Rust cases, zero failures/errors; nextest separately reports five skipped cases. The forged-key HTTP test, hostile kept-window test, CLI window line, grammar unit test and existing assign/lineage batch atomicity tests all executed. Rust lint, Node 22/24 checks and delivers passed; `pr-freeze` returned FINAL with matching remote/GitHub SHA and a clean detached worktree.\n\nInspected the author's retained V1-V6/X1-X3 index, mutation runner and original mutation-result events. The first V1 failed its three-match anchor assertion and ran an unmutated passing baseline; it is not a kill. Its unique-anchor rerun and V2-V6/X1-X3 each have an actual panic and FAILED test result. The runner restores each file; subsequent gate output reports success. Guard-source transfer from the reported `9036e10e` and window source committed as `106f36ef` was checked; the V killing test body is byte-identical at this head. These are author executions transferred across unchanged source, not reviewer-run mutants at cafc908.\n\n**Cost/scope:** bounded in-process validation/rendering, with the existing at-most-one window rename per assignment/release and zero rename for a kept window. No new loop, poll, timer, hook, sweep or launch site; no live-rate claim. No local reviewer builds/tests, product edits, credential reads, merge, push or review-HEAD movement. Security and performance verdicts remain independently owned.\n"
+		}
+	]
+}
