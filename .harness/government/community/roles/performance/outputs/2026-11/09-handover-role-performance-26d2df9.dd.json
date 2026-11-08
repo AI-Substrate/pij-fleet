@@ -1,0 +1,32 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "26d2df93dba7bb02dbaf7829928875c52d8961b3",
+				"kind": "handover",
+				"role": "performance",
+				"subject": "role:performance",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "```text\nHOVR/2\nm:{ts:\"?\",phase:\"PA compaction\",feat:\"pij-fleet\",domain:\"performance\"}\nintent:{primary:\"Resume exact-head cost reviews and authorized readings.\",scope:[\"read-only\",\"CI proof\",\"native pij output\"]}\ntimeline:{\n just_completed:\"#18926d2df9 PWN/eae4679; F001/F002 closed; predeploy baseline complete\",\n current:\"PA627k compact boundary; handover, then ONE prompted role-memory note\",\n last_actions:[\"189 security/reviewer still BLOCK\",\"185FINAL96f9f41 cost passed\",\"184 after-reading closed\"]\n}\noutputs:{\n note:\"Since15:30 Nov8. head7/output7; full IDs in canonical records. Never use short --head for a new verdict.\",\n rows:[\n [\"175\",\"d989fa9\",\"PWN\",\"4f8289f\"],\n [\"177\",\"b425d07\",\"PWN\",\"282f375\"],\n [\"177\",\"ff13b5a\",\"PWN\",\"ed512e9\"],\n [\"180\",\"0ffb883\",\"PWN\",\"9f3e754\"],\n [\"180\",\"8790154\",\"PWN\",\"0d6d1e7\"],\n [\"182\",\"516523b\",\"PWN\",\"5a3874c\"],\n [\"183\",\"c940386\",\"BLOCK\",\"0995129\"],\n [\"184\",\"c58d2e9\",\"BLOCK\",\"ebb75aa\"],\n [\"184\",\"bde88d0\",\"PWN\",\"32f98fd\"],\n [\"184\",\"19cbb59\",\"after-note\",\"5e076dd\"],\n [\"185\",\"52d8a56\",\"PWN\",\"a65e0fd\"],\n [\"185\",\"b56a990\",\"PWN\",\"32ef4af\"],\n [\"185\",\"96f9f41\",\"PWN\",\"a420241\"],\n [\"186\",\"880227b\",\"PWN\",\"a47b00a\"],\n [\"187\",\"f0e5561\",\"PWN\",\"e6478db\"],\n [\"187\",\"31c5113\",\"PWN\",\"b29c103\"],\n [\"188\",\"e8bab4e\",\"PWN\",\"1ca76cf\"],\n [\"189\",\"703cde7\",\"BLOCK\",\"8e3931b\"],\n [\"189\",\"26d2df9\",\"PWN+before\",\"eae4679\"]\n ]\n}\nreadings:{\n \"184-after\":\"Nov8 18:39:11->18:40:11 +10;PID45474/schema45;146flat/60.005347s;CPU16.12%;RSS+48KiB;machine177.6/s estimate/175.1 sampled. No compact/lookup sample.\",\n \"189-before\":\"Nov9 00:56:30->00:57:30 +10;PID4004/start00:28:23/schema45/9c3445c2b6;feature absent;146flat/60.005803s;CPU11.93%;RSS-96KiB;machine15.8/s estimate/15.7 sampled. After owed.\",\n \"189-census\":\"S2278,H21,I15;26open roles+3claims,1pending job,0compacts. Wider metadata bracket29spine rows:24activity/1report/4other; NOT minute append rate. Both machine samples no recognized daemon children.\"\n}\nholds:{\n \"183\":\"c940386 BLOCK0995129: unbounded hosted clone/private binder indexes. Await repaired packet. AC9 only joint A1+A2; NEVER bounce A1 alone.\",\n \"189\":\"PWN26 supersedes costBLOCK703; security/newer reviewer BLOCK26. Await replacement/clearance; after-deploy reading owed.\",\n \"187\":\"Last costPWN31; await promised base move onto185FINAL96. No replacement head yet.\",\n \"185\":\"011933d never verdicted: DIRTY/held. Latest costPWN96; no new review owed without packet.\"\n}\ntasks:{pend:[\"189-after-deploy\",\"183-AC9-joint-deploy\",\"pr155-traffic-window\"],note:\"F82 genuine Claude traffic only; quiet/synthetic windows prove nothing. Other requested after-readings already closed.\"}\nruntime:{owned_background_pids:[],owned_shells:[],agents:[],workflows:[],note:\"All helpers complete/consumed, including user-moved819/875. PID4004 is production, never kill. Native receiver stays owned; no re-adopt/second reader.\"}\nanchors:{\n immutable:[\"pij-thorough-ocelot/performance; parent pij-steady-otter; PA pij-watchful-badger\",\"No product edits\",\"Cost pass never clears correctness/security\"],\n user_verbatim:[\"CI is the proof\",\"no local builds, tests or probes\"]\n}\nrules:[\n \"Shared host; reviews CI-only; explicitly authorized readings only. C25 no node_modules symlinks. No Cargo/tests/mutations run.\",\n \"Cargo4jobs/4test threads,max2fleet builds until released; PM permission. CARGO_INCREMENTAL=0,scope-p; compile nice19/taskpolicy-b,tests nice-only.\",\n \"pij output/fullhead only; --answers only role requests; verify commit/index/comment,normal-send completion,report done refs. Never hand-edit DD/ROUTES/LOG.\",\n \"JUnit ID from successful upload,never name/highest. No credential/body reads; SQLite mode=ro metadata.\",\n \"Same healthy PID/start; site sums,cumulative CPU/monotonic time; no cross-bounce subtraction or causal attribution from labels; sampler costs CPU.\",\n \"No head moves,synthetic traffic,self-compact,timers/competing receivers. C19/C21; never push refs/notes. Peer questions active channel.\"\n]\nnext:{task:\"Allow PA compact; respond to prompted memory turn ONCE\",tasks_file:\"?\",why:\"New handover requested after627k\",validate:[\"read role memory first\",\"add one distinct note\",\"end turn; wait pushed resume\"],cmd:\"pij directory memory add performance --project pij-fleet --body-file <path>\"}\nrefs:{\n output_root:\".harness/government/community/roles/performance/outputs/2026-11/\",\n files:\"/Users/jordanknight/.copilot/session-state/9c0e641d-2dde-450e-9fc8-aa4cd3cbc1bb/files/\",\n paths:[\"pr189-performance-26d2df9.md\",\"pr189-before-window.json\",\"pr189-before-context.json\",\"pr184-after-deploy-note.md\",\"pr183-performance-c940386.md\"]\n}\n```\n"
+		}
+	]
+}
