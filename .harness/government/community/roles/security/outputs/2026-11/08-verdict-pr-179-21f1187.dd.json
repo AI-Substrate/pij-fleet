@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "21f11879d8a46a0656c6492b734373defba5e391",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/179#issuecomment-6717597747",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:179",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS\n\nPR #179, exact head `21f11879d8a46a0656c6492b734373defba5e391`.\n\nReviewed the complete `81dd2f3..21f1187` delta: two test files, 32 additions and 9 deletions. Polling changes and explanatory comments only; no product/runtime changes.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerability identified | - |\n\n`crates/tmux/tests/adapter.rs:880-886` uses the bounded capture helper (`:1471-1488`). `crates/tmux/tests/control_mode.rs:699-711` polls windows with a 15-second deadline, 20ms interval and remaining-window diagnostic. No fixture secret, private path, C19/C21 disclosure or harmful argument payload was introduced.\n\nGitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42448774259` and latest successful Delivers run `42448787752` both identify this SHA and success. The earlier cancelled Delivers run is superseded.\n\nNo local tests, builds, tmux operations, probes, credential reads or mutations were performed. Reported mutation failures were not independently repeated.\n"
+		}
+	]
+}
