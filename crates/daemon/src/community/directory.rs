@@ -48,6 +48,8 @@ pub const E_NO_TEMPLATE_VERSION: &str = "E-RS-DIRECTORY-NO-TEMPLATE-VERSION";
 
 /// A past holding overlaps another holding of the same seat and instance.
 pub const E_OVERLAP: &str = "E-RS-DIRECTORY-OVERLAP";
+/// `directory assign prime`: the prime is designated, never assigned (C24).
+pub const E_PRIME_DESIGNATED: &str = "E-RS-DIRECTORY-PRIME-DESIGNATED";
 
 /// Called once after each assign lands (ruling C6); s05 drains the role queue
 /// through it, and the assign waits for it so its receipt can say what was
@@ -407,7 +409,45 @@ impl DirectoryService {
                 .as_array()
                 .and_then(|sections| sections.iter().find(|section| section["name"] == "meta"))
                 .map_or(Value::Null, |meta| meta["value"].clone());
-            let mine: Vec<&Assignment> = rows.iter().filter(|row| &row.role == id).collect();
+            let all: Vec<&Assignment> = rows.iter().filter(|row| &row.role == id).collect();
+            // C24: the prime is designated (`pij project set --prime`), never
+            // assigned, and the designation is its only authority (F117,
+            // review of #177). Legacy prime assignment rows count for nothing,
+            // not liveness and not activity; they are listed only to be
+            // released. Every other role is read from its rows.
+            let is_prime = id == "prime";
+            let designated = is_prime.then_some(prime.as_deref()).flatten();
+            let (mine, legacy): (Vec<&Assignment>, Vec<&Assignment>) = if is_prime {
+                (Vec::new(), all.clone())
+            } else {
+                (all.clone(), Vec::new())
+            };
+            let live_holder = if is_prime {
+                designated.is_some_and(|seat| live_seats.contains(seat))
+            } else {
+                mine.iter()
+                    .any(|row| row.to.is_none() && live_seats.contains(&row.seat))
+            };
+            let legacy: Vec<Value> = legacy
+                .iter()
+                .filter(|row| row.to.is_none() || row.end_pending)
+                .map(|row| {
+                    serde_json::json!({
+                        "seat": row.seat, "instance": row.instance, "since": row.from,
+                        "command": picture::command(&[
+                            "pij",
+                            "directory",
+                            "release",
+                            &holding(id, &row.instance),
+                            &row.seat,
+                            "--why",
+                            "<why>",
+                            "--project",
+                            project,
+                        ]),
+                    })
+                })
+                .collect();
             let live: Vec<Value> = mine
                 .iter()
                 .filter(|row| row.to.is_none() || row.end_pending)
@@ -445,9 +485,12 @@ impl DirectoryService {
                     holders_mode,
                     &mine,
                     live_seats,
+                    // The prime role has no rows to read liveness from, so its
+                    // recovery action is gated on the designation itself: a
+                    // live designated prime needs none (review of #177, F002).
                     &queued
                         .iter()
-                        .filter(|request| request.role == *id)
+                        .filter(|request| request.role == *id && !(is_prime && live_holder))
                         .map(|request| request.instance.as_str())
                         .collect::<Vec<_>>(),
                     memory["latest"].as_str(),
@@ -486,9 +529,7 @@ impl DirectoryService {
                         role: id,
                         created,
                         rows: &mine,
-                        live_holder: mine
-                            .iter()
-                            .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
+                        live_holder,
                         waiting: waiting["count"]
                             .as_u64()
                             .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
@@ -507,14 +548,14 @@ impl DirectoryService {
                 picture::call_on(
                     project,
                     id,
-                    mine.iter()
-                        .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
+                    live_holder,
                     memory["notes"]
                         .as_u64()
                         .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
                 )
             };
-            let owned: Vec<Assignment> = mine.into_iter().cloned().collect();
+            // The lineage is history, so it keeps every row, legacy prime ones too.
+            let owned: Vec<Assignment> = all.into_iter().cloned().collect();
             // A retired role no longer covers a core role's prompt (C22).
             if !retired {
                 made_from.push((id.clone(), meta["template"].as_str().map(str::to_string)));
@@ -536,6 +577,10 @@ impl DirectoryService {
                     .map(|(from, _)| from.clone())
                     .collect::<Vec<_>>(),
                 "live": live,
+                "designated": designated.map(|seat| serde_json::json!({
+                    "seat": seat, "seat_live": live_seats.contains(seat),
+                })),
+                "legacy": legacy,
                 "requests": waiting,
                 "latest_output": picture::latest_output(id, &outputs),
                 "memory": memory,
@@ -1358,6 +1403,17 @@ impl DirectoryService {
                 "an assign batch needs at least one line",
             ));
         };
+        if let Some(prime) = requests.iter().find(|request| request.role == "prime") {
+            return Err(Refusal::new(
+                E_PRIME_DESIGNATED,
+                "the prime is designated, never assigned (C24): directory assign does not apply to it",
+            )
+            .with_next(format!(
+                "Designate it: pij project set {} --prime {}",
+                shell_word(&prime.project),
+                shell_word(prime.seat.id.as_str())
+            )));
+        }
         let closed: Vec<String> = requests
             .iter()
             .filter(|request| request.seat.tombstoned_at.is_some())

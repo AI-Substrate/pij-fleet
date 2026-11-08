@@ -444,24 +444,35 @@ pub fn actions_weighing(
         if let Some(last) = last {
             commands.push(command(&["pij-rs", "revive", last]));
         }
-        commands.push(command(&[
-            "pij",
-            "directory",
-            "assign",
-            &address,
-            "<seat>",
-            "--why",
-            "<why>",
-            "--project",
-            project,
-        ]));
+        // C24: the prime is designated, never assigned (review of #177).
+        commands.push(if role == "prime" {
+            command(&["pij", "project", "set", project, "--prime", "<seat>"])
+        } else {
+            command(&[
+                "pij",
+                "directory",
+                "assign",
+                &address,
+                "<seat>",
+                "--why",
+                "<why>",
+                "--project",
+                project,
+            ])
+        });
         out.push(json!({
             "role": role,
             "instance": instance,
             "condition": "no-live-holder",
-            "says": format!(
-                "{address} has no live holder and {waiting} request(s) waiting; revive its last holder or assign a seat (assigning delivers the queue)"
-            ),
+            "says": if role == "prime" {
+                format!(
+                    "the project has no live designated prime and {waiting} request(s) wait for it; designate a live seat"
+                )
+            } else {
+                format!(
+                    "{address} has no live holder and {waiting} request(s) waiting; revive its last holder or assign a seat (assigning delivers the queue)"
+                )
+            },
             "commands": commands,
         }));
     }
