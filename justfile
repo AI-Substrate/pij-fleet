@@ -631,6 +631,13 @@ _pij-bin-shape-check global_npm_root pij_bin:
 bounce-rs:
     #!/usr/bin/env sh
     set -eu
+    # PIJ_IDLE_NUDGE reaches the daemon (and the LaunchAgent plist) only as 1 or 0: any
+    # other value is refused here, before anything is built, stopped or written (#196 S196-001).
+    case "$(printf %s "${PIJ_IDLE_NUDGE-1}" | tr '[:upper:]' '[:lower:]')" in
+      1|on|true) idle_nudge=1 ;;
+      0|off|false) idle_nudge=0 ;;
+      *) echo "bounce-rs: PIJ_IDLE_NUDGE must be 1, on, true, 0, off or false (case-insensitive); nothing was changed" >&2; exit 2 ;;
+    esac
     # F113: the commit, and the extension source trees the PA digest compares
     # seats' extensions with (ten characters of each id; the OMP extension also
     # loads crates/core/tests/fixtures/control-commands.json). One git launch.
@@ -648,7 +655,7 @@ bounce-rs:
     # The idle-holder nudge is OFF in a bare daemon (Config::idle_nudge, F144) and ON from this recipe
     # and rs-autostart (F147); `PIJ_IDLE_NUDGE=0 just bounce-rs` turns it off for one bounce.
     mkdir -p "$HOME/.pij-rs"
-    (PIJ_RETIRED_HARNESSES="${PIJ_RETIRED_HARNESSES-pi}" PIJ_TELEGRAM_ENV="${PIJ_TELEGRAM_ENV:-$HOME/.pij/telegram.env}" PIJ_IDLE_NUDGE="${PIJ_IDLE_NUDGE-1}" nohup "$bin" daemon >> "$HOME/.pij-rs/daemon.log" 2>&1 &)
+    (PIJ_RETIRED_HARNESSES="${PIJ_RETIRED_HARNESSES-pi}" PIJ_TELEGRAM_ENV="${PIJ_TELEGRAM_ENV:-$HOME/.pij/telegram.env}" PIJ_IDLE_NUDGE="$idle_nudge" nohup "$bin" daemon >> "$HOME/.pij-rs/daemon.log" 2>&1 &)
     sleep 1.5
     new=$(lsof -nP -iTCP:7461 -sTCP:LISTEN -t || true)
     [ -n "$new" ] && [ "$new" != "$old" ] || { echo "bounce-rs: daemon did not come back (old=$old new=$new)" >&2; exit 1; }
@@ -665,6 +672,13 @@ bounce-rs:
 rs-autostart:
     #!/usr/bin/env sh
     set -eu
+    # PIJ_IDLE_NUDGE reaches the daemon (and the LaunchAgent plist) only as 1 or 0: any
+    # other value is refused here, before anything is built, stopped or written (#196 S196-001).
+    case "$(printf %s "${PIJ_IDLE_NUDGE-1}" | tr '[:upper:]' '[:lower:]')" in
+      1|on|true) idle_nudge=1 ;;
+      0|off|false) idle_nudge=0 ;;
+      *) echo "rs-autostart: PIJ_IDLE_NUDGE must be 1, on, true, 0, off or false (case-insensitive); nothing was changed" >&2; exit 2 ;;
+    esac
     label=dev.pij.rs-daemon
     bin="$(npm prefix -g)/bin/pij-rs"
     plist="$HOME/Library/LaunchAgents/$label.plist"
@@ -679,7 +693,7 @@ rs-autostart:
         <key>PATH</key><string>$PATH</string>
         <key>PIJ_RETIRED_HARNESSES</key><string>${PIJ_RETIRED_HARNESSES-pi}</string>
         <key>PIJ_TELEGRAM_ENV</key><string>${PIJ_TELEGRAM_ENV:-$HOME/.pij/telegram.env}</string>
-        <key>PIJ_IDLE_NUDGE</key><string>${PIJ_IDLE_NUDGE-1}</string>
+        <key>PIJ_IDLE_NUDGE</key><string>$idle_nudge</string>
       </dict>
       <key>RunAtLoad</key><true/>
       <key>StandardOutPath</key><string>$HOME/.pij-rs/daemon.log</string>

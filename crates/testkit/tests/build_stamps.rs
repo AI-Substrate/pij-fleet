@@ -65,6 +65,19 @@ fn run(name: &str) -> PathBuf {
 
 /// [`run`], with `env` set for the recipe (as if typed before `just`).
 fn run_with(name: &str, env: &[(&str, &str)]) -> PathBuf {
+    let (scratch, ok) = try_run(name, env);
+    assert!(ok, "`{name}` ran to the end with fakes");
+    scratch
+}
+
+/// [`run_with`], returning whether the recipe succeeded instead of asserting.
+fn try_run(name: &str, env: &[(&str, &str)]) -> (PathBuf, bool) {
+    try_run_seeded(name, env, &[])
+}
+
+/// [`try_run`], with `seed` files (path under the scratch home, contents)
+/// written first, as if a previous run had left them.
+fn try_run_seeded(name: &str, env: &[(&str, &str)], seed: &[(&str, &str)]) -> (PathBuf, bool) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let justfile = std::fs::read_to_string(root.join("justfile")).expect("read the justfile");
     // One scratch per call: tests of the same recipe run in parallel.
@@ -111,6 +124,12 @@ fn run_with(name: &str, env: &[(&str, &str)]) -> PathBuf {
             "[ \"$1\" = daemon ] && env > '{out}/daemon.tmp' && mv '{out}/daemon.tmp' '{out}/daemon.env'; exit 0"
         ),
     );
+    for (path, contents) in seed {
+        let path = scratch.join(path);
+        std::fs::create_dir_all(path.parent().expect("a seeded file's folder"))
+            .expect("seed folder");
+        std::fs::write(path, contents).expect("seed a file");
+    }
     std::fs::write(scratch.join("recipe.sh"), recipe(&justfile, name)).expect("write the recipe");
     let path = format!("{}:/usr/bin:/bin", bin.display());
     let status = Command::new("/bin/sh")
@@ -122,8 +141,7 @@ fn run_with(name: &str, env: &[(&str, &str)]) -> PathBuf {
         .envs(env.iter().copied())
         .status()
         .expect("run the recipe");
-    assert!(status.success(), "`{name}` ran to the end with fakes");
-    scratch
+    (scratch, status.success())
 }
 
 #[test]
@@ -229,4 +247,102 @@ fn rs_autostart_writes_the_idle_nudge_into_the_launch_agent() {
         assert!(plist.contains(expected), "{env:?}: {plist}");
         let _ = std::fs::remove_dir_all(&scratch);
     }
+}
+
+/// A value that would close the plist's string and dict and add a top-level
+/// `Program` key, if it were written raw (#196 S196-001).
+const HOSTILE: &str =
+    "1</string></dict><key>Program</key><string>/tmp/evil</string><dict><key>x</key><string>";
+
+const PLIST: &str = "Library/LaunchAgents/dev.pij.rs-daemon.plist";
+
+/// The written plist parsed for real (Python's `plistlib`, on macOS and the
+/// Linux CI alike; the recipe's own `plutil` is a fake here): its
+/// `PIJ_IDLE_NUDGE` and whether it has a top-level `Program` key.
+fn parsed(plist: &Path) -> String {
+    let out = Command::new("python3")
+        .args([
+            "-c",
+            "import plistlib, sys\nd = plistlib.load(open(sys.argv[1], 'rb'))\nprint(d['EnvironmentVariables']['PIJ_IDLE_NUDGE'], 'Program' in d)",
+        ])
+        .arg(plist)
+        .output()
+        .expect("run python3");
+    assert!(
+        out.status.success(),
+        "the plist parses: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string()
+}
+
+/// S196-001: `PIJ_IDLE_NUDGE` reaches the LaunchAgent only as `1` or `0`.
+/// Each accepted spelling is written as one of them; anything else is refused
+/// and no plist is written.
+#[test]
+fn rs_autostart_writes_only_a_normalized_idle_nudge() {
+    for (value, written) in [
+        ("1", "1"),
+        ("on", "1"),
+        ("TRUE", "1"),
+        ("True", "1"),
+        ("0", "0"),
+        ("off", "0"),
+        ("FALSE", "0"),
+    ] {
+        let scratch = run_with("rs-autostart", &[("PIJ_IDLE_NUDGE", value)]);
+        assert_eq!(
+            parsed(&scratch.join(PLIST)),
+            format!("{written} False"),
+            "{value}"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+    // A hostile or merely malformed value (`&` or `<` would make the plist
+    // invalid) is refused before anything is written: no new plist, and an
+    // installed one is left as it was (review of #196, S196-001 and F001).
+    for value in [HOSTILE, "a&b", "<x>", "yes", ""] {
+        let (scratch, ok) = try_run("rs-autostart", &[("PIJ_IDLE_NUDGE", value)]);
+        assert!(!ok, "{value:?} is refused");
+        assert!(
+            !scratch.join(PLIST).exists(),
+            "{value:?}: no plist is written"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+        let (scratch, ok) = try_run_seeded(
+            "rs-autostart",
+            &[("PIJ_IDLE_NUDGE", value)],
+            &[(PLIST, "the plist already installed")],
+        );
+        assert!(!ok, "{value:?} is refused");
+        assert_eq!(
+            std::fs::read_to_string(scratch.join(PLIST)).expect("the old plist"),
+            "the plist already installed",
+            "{value:?}: the installed plist is untouched"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+}
+
+/// S196-001, the same in `bounce-rs`: an accepted spelling reaches the daemon
+/// as `1` or `0`; anything else is refused before anything is built or
+/// launched.
+#[test]
+fn bounce_rs_passes_only_a_normalized_idle_nudge() {
+    let scratch = run_with("bounce-rs", &[("PIJ_IDLE_NUDGE", "OFF")]);
+    assert!(
+        daemon_env(&scratch)
+            .lines()
+            .any(|line| line == "PIJ_IDLE_NUDGE=0")
+    );
+    let _ = std::fs::remove_dir_all(&scratch);
+    let (scratch, ok) = try_run("bounce-rs", &[("PIJ_IDLE_NUDGE", HOSTILE)]);
+    assert!(!ok, "refused");
+    assert!(!scratch.join("cargo.env").exists(), "nothing was built");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert!(!scratch.join("daemon.env").exists(), "nothing was launched");
+    let _ = std::fs::remove_dir_all(&scratch);
 }
