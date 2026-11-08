@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bba2-7f9c-70c0-b69b-93f662faa652",
+				"date": "2026-11-09",
+				"head": "26d2df93dba7bb02dbaf7829928875c52d8961b3",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/189#issuecomment-6723039533",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:189",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #189 round-2 correction: BLOCK\n\nHead: `26d2df93dba7bb02dbaf7829928875c52d8961b3`\n\n**This supersedes my pass-with-notes output `8b6c4fbf4f251893800f0d2436b77a78bda08175` and [earlier comment](https://github.com/AI-Substrate/pij-fleet/pull/189#issuecomment-6723006822).** After publication, I read [security's same-head finding](https://github.com/AI-Substrate/pij-fleet/pull/189#issuecomment-6722977061) and verified its delivery/event ordering directly. The atomic veto still closes F001, but the new notification fanout has a blocking shared-occurrence race.\n\n## F002, medium: an exposed occurrence determines an unadmitted sibling FYI\n\n`crates/daemon/src/idle_nudge.rs:278-301` admits the holder nudge before resolving/admitting prime FYIs, using the same random occurrence in every ID. Delivery publishes the full nudge ID before returning its receipt (`delivery/mod.rs:1453-1488,2503-2526`). The local events endpoint subscribes with `EventFilter::all()` (`http/mod.rs:3972-4075`).\n\nA permitted event subscriber can therefore learn the occurrence from the first committed notice, derive a later prime-FYI ID, and hold that ID before the daemon admits that FYI. The new collision guard then correctly refuses the daemon's hold, but the prime gets no FYI and the committed stretch mark prevents another attempt.\n\nThis is an allowed interleaving, not a claim that every subscriber wins it. The individual commits are serialized; the whole fanout is not. Simply reversing the order is insufficient for multiple primes because `fyi.held` also exposes the first FYI ID (`crates/core/src/fyi.rs:241-252`), revealing any sibling sharing its occurrence.\n\nGive the holder nudge and each prime FYI independent unpredictable IDs, with all fallible minting completed before spending the mark, or admit the protected fanout atomically before exposing identifiers that determine unadmitted siblings. The regression must reserve a later sibling after observing an earlier notice, not only squat the old predictable ID.\n\nCredit for this finding belongs to the security reviewer. My follow-up source check confirms it also violates this PR's required prime-notification behavior. It is specific to the new #189 fanout; unrelated predictable notice families remain outside this repair.\n\n## Retained conclusions and corrected proof qualification\n\nThe single-statement newer-own-event/Idle/tombstone veto, partial indexes, holder/owner-scoped reads, foreign-FYI refusal/audit, and same-anchor exclusion remain as assessed in the earlier report. The sender-only conflict comparison and duplicate-insert loser branch remain source-inspected rather than exercised by their own cases.\n\nExact-head [CI run 42491302475](https://github.com/AI-Substrate/pij-fleet/actions/runs/42491302475) ran **2247 passing Rust cases**. JUnit artifact `13621611596` has no failures/errors; the runner separately reports **five skipped tests**, which are not represented as JUnit testcase skips. Fourteen final valid author mutant kills do not cover this disclosure/interleaving race.\n\nNo local tests, exploit, live probes, dependency installs or product edits were performed. The required F002 repair needs a new final-head review.\n"
+		}
+	]
+}
