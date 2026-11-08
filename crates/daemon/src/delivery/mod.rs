@@ -147,12 +147,14 @@ pub struct NativeReceiverHeartbeat {
 /// A registered external pull seat, never an extension, relay, or pane consumer.
 /// The receipt reason for a normal message queued for the drain worker because
 /// held FYIs ride along on it (plan 158). It leads with what the sender needs:
-/// the message itself is delivered normally and wakes the seat. It used to say
-/// `fyi-ride-along`, which read as the message being downgraded (F116, F120).
+/// the message is a normal one and wakes the seat when delivered. It promises
+/// no time: a carrier waits behind any running job on its serial key. It used
+/// to say `fyi-ride-along`, which read as the message being downgraded (F116,
+/// F120).
 pub(crate) fn carrying_fyis(count: usize) -> String {
     let plural = if count == 1 { "" } else { "s" };
     format!(
-        "delivers as a normal message within seconds (wakes the seat); carries {count} held FYI{plural}"
+        "queued as a normal message (it wakes the seat when delivered); carries {count} held FYI{plural}"
     )
 }
 
@@ -4923,7 +4925,7 @@ mod tests {
                 assert_eq!(
                     reason.as_deref(),
                     Some(
-                        "delivers as a normal message within seconds (wakes the seat); carries 1 held FYI"
+                        "queued as a normal message (it wakes the seat when delivered); carries 1 held FYI"
                     )
                 );
             }

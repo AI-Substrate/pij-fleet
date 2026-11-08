@@ -2574,7 +2574,7 @@ async fn a_role_send_reaches_its_one_holder_and_records_the_request() {
         seat_send["meta"]
             .as_str()
             .is_some_and(|meta| meta.contains("Drop them to send to the seat")
-                && meta.contains("send to role:<id>")),
+                && meta.contains("send to role:<id>, where you can set a reply")),
         "{seat_send}"
     );
     let instance = send_to(rig.addr, &repo.main, "role:pm-001/a", "req-inst", json!({})).await;
