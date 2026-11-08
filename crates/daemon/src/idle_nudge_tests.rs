@@ -753,12 +753,91 @@ async fn a_cold_holder_is_not_woken_and_its_prime_is_told() {
             )) && body.contains("pij did not wake it"),
             "{case}: {body}"
         );
+        let audited: String = sqlx::query_scalar(
+            "SELECT json_extract(payload, '$.cold_check') FROM spine_events \
+             WHERE kind = 'watchdog.idle-nudge' AND seat = ?1",
+        )
+        .bind(SEAT)
+        .fetch_one(&services.store_pools[0])
+        .await
+        .unwrap();
+        if case == "cold" {
+            assert_eq!(audited, "cold", "never 'forced': the seat was spared");
+        } else {
+            assert!(audited.starts_with("unknown"), "{audited}");
+        }
         assert!(
             round(&services, start + IDLE_NUDGE_AFTER_MS + 2 * MINUTE)
                 .await
                 .is_empty(),
             "{case}: once per stretch"
         );
+    }
+}
+
+/// Review of #195: the mark checks the in-flight work again. If the only
+/// qualifying item ends between the round's read and the mark (the task
+/// holding released, the plan claim released, or the request answered), with
+/// a bare long-lived role holding left, the mark refuses and nothing is sent.
+#[tokio::test]
+async fn the_mark_refuses_once_the_in_flight_work_is_gone() {
+    for case in ["holding", "claim", "request"] {
+        let (services, _store, _config, folder) = services().await;
+        fleet(&services, &folder).await;
+        hold(&services, "crane", "delivery", "").await;
+        match case {
+            "holding" => hold(&services, "crane", "coder", "224").await,
+            "claim" => {
+                services
+                    .watchdogs()
+                    .claim_number("crane", "plan", &SeatId::from(SEAT), "work", 223, 1)
+                    .await
+                    .expect("claim");
+            }
+            _ => request(&services, "req-open", None).await,
+        }
+        let start = crate::http::system_time_ms().unwrap();
+        report(&services, start).await;
+        let now = start + IDLE_NUDGE_AFTER_MS + MINUTE;
+        let seats = services
+            .registry
+            .list(pij_core::ports::SeatFilter::default())
+            .await
+            .unwrap();
+        let merger = seats.iter().find(|seat| seat.id.as_str() == SEAT).unwrap();
+        let in_flight = services.watchdogs().in_flight().await.unwrap();
+        let requests = in_flight
+            .requests
+            .get(&SeatId::from(SEAT))
+            .map_or(&[][..], Vec::as_slice);
+        let due = super::due(&services, merger, requests, now)
+            .await
+            .expect("due");
+        let end = match case {
+            "holding" => {
+                "UPDATE community_assignments SET to_at = '2026-11-09T00:00:00Z' \
+                          WHERE seat = ?1 AND instance = '224'"
+            }
+            "claim" => "UPDATE claims SET released_at = 2 WHERE seat = ?1",
+            _ => "UPDATE role_requests SET answered_at = 2 WHERE holder = ?1",
+        };
+        seat_row(&services, end).await;
+        assert!(
+            super::mark_then_nudge(&services, &seats, &due, now)
+                .await
+                .is_none(),
+            "{case}: the mark is refused"
+        );
+        assert!(
+            !services
+                .watchdogs()
+                .idle_nudged(&SeatId::from(SEAT), due.anchor)
+                .await
+                .unwrap(),
+            "{case}: no mark"
+        );
+        assert!(sent(&services).await.is_empty(), "{case}: no nudge");
+        assert_eq!(fyis(&services, PARENT).await, 0, "{case}: no FYI");
     }
 }
 

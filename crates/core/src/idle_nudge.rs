@@ -30,24 +30,27 @@ pub const IDLE_NUDGE_KIND: &str = "watchdog.idle-nudge";
 /// one task.
 pub const IN_FLIGHT_CLAIM_KINDS: [&str; 2] = ["plan", "fix"];
 
+/// The most digits a task number may have in [`is_task_instance`]. PR, plan
+/// and F-item numbers are three or four digits and will stay far shorter;
+/// the bound keeps the grammar closed, so an arbitrarily long digit string is
+/// never taken for a task.
+pub const TASK_NUMBER_MAX_DIGITS: usize = 9;
+
 /// Whether a role holding's instance names one task: a PR or plan number,
-/// optionally with one letter (`175`, `224`, `183b`), or an F-item (`f144`).
-/// The empty instance (a long-lived role) and named instances
-/// (`questions-context`) are not tasks (F144).
+/// optionally with one letter (`175`, `224`, `183b`), or an F-item (`f144`),
+/// each at most [`TASK_NUMBER_MAX_DIGITS`] digits. The empty instance (a
+/// long-lived role) and named instances (`questions-context`) are not tasks
+/// (F144).
 #[must_use]
 pub fn is_task_instance(instance: &str) -> bool {
-    let bytes = instance.as_bytes();
-    match bytes {
-        [b'f', digits @ ..] if !digits.is_empty() => digits.iter().all(u8::is_ascii_digit),
-        [digits @ .., last] => {
-            let digits = if last.is_ascii_lowercase() {
-                digits
-            } else {
-                bytes
-            };
-            !digits.is_empty() && digits.len() <= 9 && digits.iter().all(u8::is_ascii_digit)
-        }
-        [] => false,
+    let number = |digits: &[u8]| {
+        (1..=TASK_NUMBER_MAX_DIGITS).contains(&digits.len())
+            && digits.iter().all(u8::is_ascii_digit)
+    };
+    match instance.as_bytes() {
+        [b'f', digits @ ..] if !digits.is_empty() => number(digits),
+        [digits @ .., last] if last.is_ascii_lowercase() => number(digits),
+        digits => number(digits),
     }
 }
 
@@ -108,7 +111,15 @@ mod tests {
 
     #[test]
     fn only_a_task_instance_is_in_flight_work() {
-        for task in ["175", "224", "183b", "f144", "f7"] {
+        for task in [
+            "175",
+            "224",
+            "183b",
+            "f144",
+            "f7",
+            "123456789",
+            "f123456789",
+        ] {
             assert!(is_task_instance(task), "{task}");
         }
         for resting in [
@@ -121,6 +132,7 @@ mod tests {
             "1-2",
             "F144",
             "1234567890",
+            "f1234567890",
         ] {
             assert!(!is_task_instance(resting), "{resting:?}");
         }

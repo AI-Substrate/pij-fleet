@@ -99,6 +99,7 @@ async fn in_flight_counts_only_task_work() {
     assert_eq!(
         in_flight.requests[&SeatId::from("pij-asked")],
         [pij_store::OpenRequest {
+            id: "r1".into(),
             project: "crane".into(),
             role: "delivery".into(),
             instance: "7".into(),

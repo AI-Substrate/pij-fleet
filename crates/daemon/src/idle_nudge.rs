@@ -56,6 +56,8 @@ struct Due<'a> {
     idle_ms: u64,
     held: Vec<String>,
     projects: BTreeSet<String>,
+    /// The keys of the in-flight work `held` names, checked again by the mark.
+    work: pij_store::NudgeWork,
 }
 
 /// Nudge this round's idle holders, each once per idle stretch.
@@ -144,7 +146,7 @@ async fn mark_then_nudge(
     };
     match services
         .watchdogs()
-        .mark_idle_nudged(seat, due.anchor, now_ms)
+        .mark_idle_nudged(seat, due.anchor, now_ms, &due.work)
         .await
     {
         Ok(true) => Some(nudge(services, seats, due, &nudge_part, now_ms).await),
@@ -263,12 +265,30 @@ async fn due<'a>(
     if held.is_empty() {
         return None;
     }
+    let work = pij_store::NudgeWork {
+        holdings: holdings
+            .iter()
+            .map(|held| {
+                (
+                    held.project.clone(),
+                    held.role.clone(),
+                    held.instance.clone(),
+                )
+            })
+            .collect(),
+        claims: claims
+            .iter()
+            .map(|claim| (claim.project.clone(), claim.kind.clone(), claim.number))
+            .collect(),
+        requests: requests.iter().map(|request| request.id.clone()).collect(),
+    };
     Some(Due {
         seat,
         anchor,
         idle_ms,
         held,
         projects,
+        work,
     })
 }
 
@@ -330,7 +350,8 @@ async fn nudge(
     let check = crate::http::cold_wake::verdict(services, seat, now_ms).await;
     let warm = matches!(check, Ok(ColdCheck::Clear | ColdCheck::Busy));
     let cold_check = match &check {
-        Ok(verdict) => verdict.receipt_label(true),
+        // Never forced: a nudge spares a cold seat (review of #195).
+        Ok(verdict) => verdict.receipt_label(false),
         Err(cause) => format!("unknown: {cause}"),
     };
     let delivery = if warm {
