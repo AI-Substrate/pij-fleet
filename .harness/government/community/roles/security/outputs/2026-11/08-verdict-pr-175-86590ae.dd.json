@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "86590ae6b4a2745ffa2bb46deda855270eaa9ae3",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/175#issuecomment-6716870536",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:175",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: block** at `86590ae6b4a2745ffa2bb46deda855270eaa9ae3`.\n\nWhole-PR verdict. The held `c87c5e0` assessment was never published.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/daemon/src/pa_watchdog.rs | 1359-1372 | Raw seat-reported build/tree text becomes instruction-bearing content in a daemon-authored PA message | 9/10 |\n\n## New trust-boundary crossing\n\nRegistration accepts `extension_build` as an unrestricted optional string and copies it into the seat descriptor (`crates/daemon/src/http/types.rs:28-30`; `crates/daemon/src/registration.rs:1035-1037`). The stale check requires only a `\" tree:\"` delimiter and inequality with the daemon stamp. It then renders both the entire original build and the unrestricted tree suffix into its anomaly detail.\n\nAn admitted participating seat can report a mismatching tree with newlines, forged message framing or PA-directed instructions in either the prefix or suffix. `FleetView::digest` retains that text verbatim (`crates/core/src/pa_digest.rs:162-176`). The daemon sends the result as an actual `pij-bg` message (`pa_watchdog.rs:357-365,395,564`); the native Copilot receiver injects its unchanged body into the model's next prompt (`.copilot/extensions/pij/store.mjs:1940-1947`).\n\nThe structured sender stays daemon-owned. The defect is lower-trust telemetry being promoted into that sender's model-facing instruction channel, enabling textual author/instruction spoofing rather than merely falsifying a stale signal. A footer-only `displayBuild` fix does not contain this PA sink.\n\nPreconditions: an admitted local seat/shared-key caller in the watched repository, a harness with a daemon tree stamp, and a delivered PA digest. No anonymous remote exploit, automatic shell execution or successful malicious model action was demonstrated. Source establishes the untrusted-content-to-prompt path; no live attack was run.\n\nThis requires no assertion of another seat's identity: malicious own-seat metadata suffices. Private req-10 caller authentication would not sanitize it. C32's inherited F88 residual therefore does not close this newly added telemetry-to-daemon-message sink.\n\n## Required repair\n\nParse a bounded, closed build/tree grammar and render only canonical identifiers, never the original string. Both the build prefix and tree suffix need containment; tree-only validation would leave the prefix injectable. Handle malformed persisted rows as well as new registrations, using explicit repository-standard diagnostic treatment, and label the values as seat-reported telemetry.\n\nAdd CI containment cases for newlines/control characters, forged message delimiters and instruction text in both components, plus valid Copilot and OMP composite identities and missing/legacy fallbacks.\n\n## Other scoped surfaces and evidence\n\nNo separate shell/path injection was established: Git producers use argv and the new build-stamp assignments are quoted. Ping's optional strings are JSON-serialized; public-repository commit/tree IDs are identifiers, not secrets. No changed-line C19/C21 disclosure found. Tree comparison remains telemetry, not permission or verified loaded-code attestation.\n\nLocal and GitHub heads agree; worktree clean; PR CLEAN and ready; all reported checks passed. CI [42443152256](https://github.com/AI-Substrate/pij-fleet/actions/runs/42443152256) tested a synthetic merge with the same tree as this head. JUnit artifact [13602900691](https://github.com/AI-Substrate/pij-fleet/actions/runs/42443152256/artifacts/13602900691) confirms normal stale-digest, extension import-closure, registration readback and reserved-bg-actor controls passed: 2,202 Rust cases, five skipped. Node 22/24 each report 2,258 passed, six skipped. These prove normal behavior, not malicious-metadata containment.\n\nNo local cargo/builds/tests/scripts, installs, credentials, registration/delivery/PA probes, product edits or production/pane/process operations.\n"
+		}
+	]
+}
