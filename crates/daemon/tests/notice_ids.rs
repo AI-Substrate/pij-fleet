@@ -5,8 +5,9 @@
 //!
 //! Scope: non-test source of the daemon and the sidecars (which also enqueue
 //! turns). It reads the shapes ids are built in here: a reserved prefix in a
-//! format string, `msg_id`/`notice_id` assigned from `format!`, and `*_id()`
-//! helpers that `format!` a bare literal.
+//! format string; `msg_id`/`notice_id` assigned from `format!`; `*_id()`
+//! helpers that `format!` a bare literal; and any argument passed where a
+//! function takes `msg_id` or `dedupe_key` (`enqueue_turn`, `bg_msg`, ...).
 
 use std::path::{Path, PathBuf};
 
@@ -25,7 +26,9 @@ fn sources() -> Vec<(PathBuf, String)> {
                 .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("");
-            name != "tests.rs" && !name.ends_with("_tests.rs")
+            name != "tests.rs"
+                && !name.ends_with("_tests.rs")
+                && !path.components().any(|part| part.as_os_str() == "tests")
         })
         .map(|path| {
             let text = std::fs::read_to_string(&path).expect("read source");
@@ -48,6 +51,18 @@ fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
             files.push(path);
         }
     }
+}
+
+/// Literals that look like a mint but are not message ids, each with why.
+const NOT_MESSAGE_IDS: &[(&str, &str)] = &[
+    // A background job's own id (`bg-<started>-<random>`), never a msg_id.
+    ("daemon/src/background.rs", "bg-{started_at}-{:032x}"),
+];
+
+fn exempt(path: &Path, literal: &str) -> bool {
+    NOT_MESSAGE_IDS
+        .iter()
+        .any(|(file, exempt)| path.ends_with(file) && literal == *exempt)
 }
 
 fn line_of(text: &str, at: usize) -> usize {
@@ -113,6 +128,139 @@ fn built_ids(text: &str) -> Vec<(usize, &str)> {
     built
 }
 
+/// The index of the bracket that closes the one opening at `open`, skipping
+/// string literals.
+fn closing(text: &str, open: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut depth = 0_i32;
+    let mut at = open;
+    while at < bytes.len() {
+        match bytes[at] {
+            b'"' => {
+                at += 1;
+                while at < bytes.len() && bytes[at] != b'"' {
+                    at += if bytes[at] == b'\\' { 2 } else { 1 };
+                }
+            }
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            _ => {}
+        }
+        at += 1;
+    }
+    None
+}
+
+/// The top-level, comma-separated items between `open` and its closing bracket,
+/// each with its byte offset.
+fn items(text: &str, open: usize) -> Vec<(usize, &str)> {
+    let Some(close) = closing(text, open) else {
+        return Vec::new();
+    };
+    let mut parts = Vec::new();
+    let mut start = open + 1;
+    let mut at = start;
+    while at < close {
+        match text.as_bytes()[at] {
+            b'(' | b'[' | b'{' | b'"' => {
+                if text.as_bytes()[at] == b'"' {
+                    at = at + 1 + literal_at(text, at + 1).len();
+                } else {
+                    at = closing(text, at).unwrap_or(close);
+                }
+            }
+            b',' => {
+                parts.push((start, text[start..at].trim()));
+                start = at + 1;
+            }
+            _ => {}
+        }
+        at += 1;
+    }
+    if !text[start..close].trim().is_empty() {
+        parts.push((start, text[start..close].trim()));
+    }
+    parts
+}
+
+fn is_ident(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
+}
+
+/// For each function the scan sees, the positions (after any `self`) of its
+/// `msg_id` and `dedupe_key` parameters.
+fn id_parameters(files: &[(PathBuf, String)]) -> Vec<(String, usize)> {
+    let mut found = Vec::new();
+    for (_, text) in files {
+        for (at, _) in text.match_indices("fn ") {
+            if text[..at].chars().next_back().is_some_and(is_ident) {
+                continue;
+            }
+            let name: String = text[at + 3..]
+                .chars()
+                .take_while(|&ch| is_ident(ch))
+                .collect();
+            let Some(open) = text[at..].find('(').map(|offset| at + offset) else {
+                continue;
+            };
+            if text[at + 3 + name.len()..open].contains(['{', ';']) {
+                continue;
+            }
+            let params: Vec<String> = items(text, open)
+                .into_iter()
+                .map(|(_, param)| param.split(':').next().unwrap_or("").trim().to_string())
+                .filter(|param| !param.ends_with("self"))
+                .collect();
+            for (index, param) in params.iter().enumerate() {
+                if matches!(
+                    param.trim_start_matches("mut ").trim(),
+                    "msg_id" | "dedupe_key"
+                ) {
+                    found.push((name.clone(), index));
+                }
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+    found
+}
+
+/// Every argument passed where a function takes an id: a fresh id built from a
+/// bare literal there is a new, unreserved kind.
+fn id_arguments<'a>(text: &'a str, functions: &[(String, usize)]) -> Vec<(usize, &'a str)> {
+    let mut arguments = Vec::new();
+    for (name, index) in functions {
+        let call = format!("{name}(");
+        for (at, _) in text.match_indices(&call) {
+            let before = text[..at].trim_end();
+            if text[..at].chars().next_back().is_some_and(is_ident) || before.ends_with("fn") {
+                continue;
+            }
+            if let Some(&(offset, argument)) = items(text, at + name.len()).get(*index) {
+                arguments.push((offset, argument));
+            }
+        }
+    }
+    arguments
+}
+
+/// A fresh id built from a bare literal: `format!("kind-{}")` or `"kind"`.
+fn bare_literal(argument: &str) -> Option<&str> {
+    let argument = argument.trim();
+    let rest = argument
+        .strip_prefix("format!(")
+        .map(str::trim_start)
+        .unwrap_or(argument);
+    let literal = rest.strip_prefix('"').map(|rest| literal_at(rest, 0))?;
+    (!literal.starts_with('{')).then_some(literal)
+}
+
 #[test]
 fn every_daemon_notice_id_is_minted_through_the_reserved_table() {
     let files = sources();
@@ -122,10 +270,11 @@ fn every_daemon_notice_id_is_minted_through_the_reserved_table() {
     for (path, text) in &files {
         // (A) A reserved prefix spelled out in a format string: a mint that
         // bypasses `NoticeKind::id`.
-        for kind in NoticeKind::ALL {
+        for &kind in NoticeKind::ALL {
             let quoted = format!("\"{}", kind.prefix());
             for (at, _) in text.match_indices(&quoted) {
-                if literal_at(text, at + 1).contains('{') {
+                let literal = literal_at(text, at + 1);
+                if literal.contains('{') && !exempt(path, literal) {
                     found.push(format!(
                         "{}:{}: {:?} spelled out; mint it with NoticeKind::{kind:?}.id(..)",
                         path.display(),
@@ -148,8 +297,27 @@ fn every_daemon_notice_id_is_minted_through_the_reserved_table() {
         }
     }
 
+    // (D) Any id argument: `enqueue_turn(.., format!("bg-{id}-cancelled"))`
+    // hid a whole kind until review found it.
+    let functions = id_parameters(&files);
+    assert!(
+        functions.iter().any(|(name, _)| name == "enqueue_turn"),
+        "the scan must find the id parameters: {functions:?}"
+    );
+    for (path, text) in &files {
+        for (at, argument) in id_arguments(text, &functions) {
+            if let Some(literal) = bare_literal(argument) {
+                found.push(format!(
+                    "{}:{}: id argument built from {literal:?}; add a NoticeKind and mint it there",
+                    path.display(),
+                    line_of(text, at)
+                ));
+            }
+        }
+    }
+
     // (C) Every kind is minted somewhere, so the table is the inventory.
-    for kind in NoticeKind::ALL {
+    for &kind in NoticeKind::ALL {
         let used = format!("NoticeKind::{kind:?}");
         if !files.iter().any(|(_, text)| text.contains(&used)) {
             found.push(format!("{used} is in the table but minted nowhere"));
@@ -176,4 +344,55 @@ fn the_scan_catches_each_shape_of_a_hand_built_id() {
         let bare = built.iter().any(|(_, literal)| !literal.starts_with('{'));
         assert_eq!(bare, caught, "{source}: {built:?}");
     }
+    let functions = vec![("enqueue_turn".to_string(), 4)];
+    for (source, caught) in [
+        (
+            "enqueue_turn(&q, BG, t, body, format!(\"bg-{id}-cancelled\")).await",
+            true,
+        ),
+        (
+            "enqueue_turn(\n &q, BG, t,\n format!(\"x {y}\"),\n \"fixed-id\".to_string())",
+            true,
+        ),
+        (
+            "enqueue_turn(&q, BG, t, body, NoticeKind::SidecarBg.id(&rest))",
+            false,
+        ),
+        (
+            "enqueue_turn(&q, BG, t, body, format!(\"{msg_id}:held\"))",
+            false,
+        ),
+    ] {
+        let bare: Vec<_> = id_arguments(source, &functions)
+            .into_iter()
+            .filter_map(|(_, argument)| bare_literal(argument))
+            .collect();
+        assert_eq!(!bare.is_empty(), caught, "{source}: {bare:?}");
+    }
+}
+
+/// A second origin for the table: the `notice_kinds!` invocation as written
+/// declares exactly the kinds, in order, with exactly the prefixes that the
+/// compiled `ALL` and `prefix()` carry. A macro that dropped a kind from `ALL`
+/// fails here.
+#[test]
+fn the_compiled_table_is_the_declared_one() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/src/notice_id.rs");
+    let text = std::fs::read_to_string(path).expect("read notice_id.rs");
+    let start = text.find("\nnotice_kinds! {").expect("the invocation");
+    let body = &text[start..start + text[start..].find("\n}").expect("its end")];
+    let declared: Vec<(String, String)> = body
+        .lines()
+        .filter_map(|line| {
+            let (kind, prefix) = line.trim().split_once(" => ")?;
+            let prefix = prefix.strip_suffix(',')?.trim_matches('"');
+            Some((kind.to_string(), prefix.to_string()))
+        })
+        .collect();
+    let compiled: Vec<(String, String)> = NoticeKind::ALL
+        .iter()
+        .map(|kind| (format!("{kind:?}"), kind.prefix().to_string()))
+        .collect();
+    assert!(declared.len() > 20, "{declared:?}");
+    assert_eq!(compiled, declared);
 }

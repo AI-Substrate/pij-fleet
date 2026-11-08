@@ -7250,7 +7250,7 @@ async fn caller_ids_in_a_daemon_notice_namespace_are_refused_and_the_notice_land
     ))
     .await;
     let rest = "pij-cold:1794161999665";
-    for kind in NoticeKind::ALL {
+    for &kind in NoticeKind::ALL {
         let id = kind.id(rest);
         let mut attempts = Vec::new();
         for extra in [
@@ -7326,15 +7326,22 @@ async fn caller_ids_in_a_daemon_notice_namespace_are_refused_and_the_notice_land
         1,
         "held once"
     );
+    // A daemon notice and a sidecar background turn (`bg-<id>-terminal`, queued
+    // under its id by the bg worker): each lands under the id a caller tried.
     for _ in 0..2 {
-        delivery
-            .accept(notice(NoticeKind::CompactionWake))
-            .await
-            .expect("the notice is queued under its id");
+        for kind in [NoticeKind::CompactionWake, NoticeKind::SidecarBg] {
+            delivery
+                .accept(notice(kind))
+                .await
+                .expect("the notice is queued under its id");
+        }
     }
     let live = queue.live_payloads();
-    assert_eq!(live.len(), 1, "queued once: {live:?}");
-    assert!(live[0].contains("the daemon's notice"), "{live:?}");
+    assert_eq!(live.len(), 2, "each queued once: {live:?}");
+    assert!(
+        live.iter().all(|job| job.contains("the daemon's notice")),
+        "{live:?}"
+    );
     server.abort();
 }
 

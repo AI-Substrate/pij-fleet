@@ -318,7 +318,7 @@ impl BgWorker {
                 "background job `{id}` cancelled; observed process group {} gone",
                 record.pgid
             ),
-            format!("bg-{id}-cancelled"),
+            pij_core::notice_id::NoticeKind::SidecarBg.id(format!("{id}-cancelled")),
         )
         .await
     }
@@ -432,7 +432,7 @@ impl BgWorker {
                         .unwrap_or_default(),
                     output.trim_end()
                 ),
-                format!("bg-{}-terminal", record.id),
+                pij_core::notice_id::NoticeKind::SidecarBg.id(format!("{}-terminal", record.id)),
             )
             .await?;
         }

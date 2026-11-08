@@ -16,140 +16,98 @@ use std::fmt::Display;
 /// The refusal code for a caller id inside a daemon namespace.
 pub const RESERVED_CODE: &str = "E-RS-MSG-ID-RESERVED";
 
-/// One kind of daemon-authored message, by the id prefix it owns.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NoticeKind {
+/// Declares every kind, its doc and its prefix once, and generates the enum,
+/// [`NoticeKind::ALL`] and [`NoticeKind::prefix`] from that one list: a kind
+/// can't exist without a prefix, or be missing from `ALL`.
+macro_rules! notice_kinds {
+    ($( $(#[$doc:meta])* $kind:ident => $prefix:literal, )+) => {
+        /// One kind of daemon-authored message, by the id prefix it owns.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum NoticeKind {
+            $( $(#[$doc])* $kind, )+
+        }
+
+        impl NoticeKind {
+            /// Every kind, so the reserved table can't miss one.
+            pub const ALL: &'static [Self] = &[ $( Self::$kind, )+ ];
+
+            /// The id prefix this kind owns. These bytes are the dedupe keys of
+            /// rows already in live stores: change one and its notices dedupe
+            /// afresh.
+            #[must_use]
+            pub const fn prefix(self) -> &'static str {
+                match self {
+                    $( Self::$kind => $prefix, )+
+                }
+            }
+        }
+    };
+}
+
+notice_kinds! {
     /// A background job's batches, final turn and cold notices.
-    PijBg,
+    PijBg => "pij-bg:",
+    /// A sidecar background job was cancelled or ended (`pij sidecar bg`).
+    SidecarBg => "bg-",
     /// A message parked after its delivery attempts ran out.
-    ParkNotice,
+    ParkNotice => "park-notice-",
     /// A message held at the hold limit.
-    HoldNotice,
+    HoldNotice => "hold-notice-",
     /// The prime has no live PA.
-    PaMissing,
+    PaMissing => "pa-missing:",
     /// The PA is dormant.
-    PaDormant,
+    PaDormant => "pa-dormant:",
     /// The PA does not answer.
-    PaUnresponsive,
+    PaUnresponsive => "pa-unresponsive:",
     /// Seats over the size limit, told to the prime.
-    LargeSeats,
+    LargeSeats => "large-seats:",
     /// A PA watchdog round.
-    PaWatchdog,
+    PaWatchdog => "pa-watchdog:",
     /// The prime is active, told to the PA.
-    PrimeActive,
+    PrimeActive => "prime-active:",
     /// A usage limit has reset.
-    LimitReset,
+    LimitReset => "limit-reset:",
     /// A steer control was held.
-    SteerControl,
+    SteerControl => "steer-control:",
     /// A watchdog control was held.
-    WatchdogControl,
+    WatchdogControl => "watchdog-control:",
     /// The routing table, after a compact.
-    RoutesAfterCompact,
+    RoutesAfterCompact => "routes-after-compact:",
     /// A role request was closed.
-    RequestClosed,
+    RequestClosed => "request-closed-",
     /// A role request was withdrawn (its role retired or merged).
-    RequestWithdrawn,
+    RequestWithdrawn => "request-withdrawn-",
     /// The memory turn before a compact or close.
-    MemoryTurn,
+    MemoryTurn => "memory-turn-",
     /// A seat a compaction left idle is woken.
-    CompactionWake,
+    CompactionWake => "compaction-wake:",
     /// Its parent is told about that wake.
-    CompactionWakeFyi,
+    CompactionWakeFyi => "compaction-wake-fyi:",
     /// A role request queued for a busy role.
-    RoleQueue,
+    RoleQueue => "role-queue-",
     /// A role request's time-limit check-in.
-    RoleLimitCheckIn,
+    RoleLimitCheckIn => "role-limit-checkin-",
     /// A role request's time-limit notice.
-    RoleLimitNotice,
+    RoleLimitNotice => "role-limit-notice-",
     /// Held FYIs flushed into one turn.
-    FyiFlush,
+    FyiFlush => "fyi-flush-",
     /// A seat idle while holding work.
-    IdleNudge,
+    IdleNudge => "idle-nudge:",
     /// Its prime is told about that nudge.
-    IdleNudgeFyi,
+    IdleNudgeFyi => "idle-nudge-fyi:",
     /// A seat stalled on a modal.
-    ModalStall,
+    ModalStall => "modal-stall:",
     /// An output was written.
-    Output,
+    Output => "output-",
     /// A seat running twice.
-    DoubleSeat,
+    DoubleSeat => "double-seat-",
     /// A chore was defined or ran.
-    Chore,
+    Chore => "chore-",
     /// An inbound Telegram message.
-    Telegram,
+    Telegram => "telegram-",
 }
 
 impl NoticeKind {
-    /// Every kind, so the reserved table cannot miss one.
-    pub const ALL: [Self; 29] = [
-        Self::PijBg,
-        Self::ParkNotice,
-        Self::HoldNotice,
-        Self::PaMissing,
-        Self::PaDormant,
-        Self::PaUnresponsive,
-        Self::LargeSeats,
-        Self::PaWatchdog,
-        Self::PrimeActive,
-        Self::LimitReset,
-        Self::SteerControl,
-        Self::WatchdogControl,
-        Self::RoutesAfterCompact,
-        Self::RequestClosed,
-        Self::RequestWithdrawn,
-        Self::MemoryTurn,
-        Self::CompactionWake,
-        Self::CompactionWakeFyi,
-        Self::RoleQueue,
-        Self::RoleLimitCheckIn,
-        Self::RoleLimitNotice,
-        Self::FyiFlush,
-        Self::IdleNudge,
-        Self::IdleNudgeFyi,
-        Self::ModalStall,
-        Self::Output,
-        Self::DoubleSeat,
-        Self::Chore,
-        Self::Telegram,
-    ];
-
-    /// The id prefix this kind owns. These bytes are the dedupe keys of rows
-    /// already in live stores: change one and its notices dedupe afresh.
-    #[must_use]
-    pub const fn prefix(self) -> &'static str {
-        match self {
-            Self::PijBg => "pij-bg:",
-            Self::ParkNotice => "park-notice-",
-            Self::HoldNotice => "hold-notice-",
-            Self::PaMissing => "pa-missing:",
-            Self::PaDormant => "pa-dormant:",
-            Self::PaUnresponsive => "pa-unresponsive:",
-            Self::LargeSeats => "large-seats:",
-            Self::PaWatchdog => "pa-watchdog:",
-            Self::PrimeActive => "prime-active:",
-            Self::LimitReset => "limit-reset:",
-            Self::SteerControl => "steer-control:",
-            Self::WatchdogControl => "watchdog-control:",
-            Self::RoutesAfterCompact => "routes-after-compact:",
-            Self::RequestClosed => "request-closed-",
-            Self::RequestWithdrawn => "request-withdrawn-",
-            Self::MemoryTurn => "memory-turn-",
-            Self::CompactionWake => "compaction-wake:",
-            Self::CompactionWakeFyi => "compaction-wake-fyi:",
-            Self::RoleQueue => "role-queue-",
-            Self::RoleLimitCheckIn => "role-limit-checkin-",
-            Self::RoleLimitNotice => "role-limit-notice-",
-            Self::FyiFlush => "fyi-flush-",
-            Self::IdleNudge => "idle-nudge:",
-            Self::IdleNudgeFyi => "idle-nudge-fyi:",
-            Self::ModalStall => "modal-stall:",
-            Self::Output => "output-",
-            Self::DoubleSeat => "double-seat-",
-            Self::Chore => "chore-",
-            Self::Telegram => "telegram-",
-        }
-    }
-
     /// This kind's id for one occurrence: its prefix, then `rest`.
     #[must_use]
     pub fn id(self, rest: impl Display) -> String {
@@ -162,7 +120,8 @@ impl NoticeKind {
 #[must_use]
 pub fn reserved(msg_id: &str) -> Option<NoticeKind> {
     NoticeKind::ALL
-        .into_iter()
+        .iter()
+        .copied()
         .find(|kind| msg_id.starts_with(kind.prefix()))
 }
 
@@ -172,7 +131,7 @@ mod tests {
 
     #[test]
     fn every_kind_mints_an_id_in_its_own_reserved_namespace() {
-        for kind in NoticeKind::ALL {
+        for &kind in NoticeKind::ALL {
             let id = kind.id("x");
             assert!(reserved(&id).is_some(), "{id}");
             let prefix = kind.prefix();
@@ -181,7 +140,7 @@ mod tests {
                 "{prefix:?} must end at a separator"
             );
             let unique = NoticeKind::ALL
-                .into_iter()
+                .iter()
                 .filter(|other| other.prefix() == prefix)
                 .count();
             assert_eq!(unique, 1, "{prefix:?} is owned by one kind");
