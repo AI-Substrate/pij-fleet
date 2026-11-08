@@ -55,8 +55,20 @@ impl Server {
             .lines()
             .map(str::to_string)
             .collect();
-        // Let the first pane's printf land before anything captures it.
-        std::thread::sleep(Duration::from_millis(300));
+        // Wait for the first pane's printf to render before anything captures
+        // it; a fixed sleep raced a loaded runner (F123).
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let shown = server.run(&["capture-pane", "-p", "-t", &server.panes[0]]);
+            if shown.contains("%end 1 2 3") {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the first pane's printf did not render; last capture: {shown:?}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
         server
     }
 
@@ -575,6 +587,30 @@ fn windows(server: &Server) -> Vec<String> {
         .collect()
 }
 
+/// One checked `list-windows` read: every window, or why the read failed. A
+/// failed read never looks like an empty server.
+fn read_windows(server: &Server) -> Result<Vec<String>, String> {
+    let output = server.outside(&["list-windows", "-a", "-F", "#{session_name}:#{window_name}"]);
+    if !output.status.success() {
+        return Err(format!(
+            "list-windows failed ({}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect())
+}
+
+/// `_pij` went and the work stayed: a successful read that shows at least one
+/// `work:` window and nothing else. A failed read or an empty list proves
+/// nothing, so it is never a pass.
+fn only_work_windows(read: &Result<Vec<String>, String>) -> bool {
+    matches!(read, Ok(windows) if !windows.is_empty() && windows.iter().all(|w| w.starts_with("work:")))
+}
+
 /// R1 of the #73 recheck: an untargeted command from outside tmux can land a
 /// window in `_pij`. pij must still see it, and it must outlive the control
 /// client, including a later client that attaches to the same `_pij`.
@@ -603,6 +639,7 @@ fn a_foreign_window_in_pij_stays_listed_and_outlives_the_control_client() {
         "only the control pane is hidden"
     );
     drop(adapter);
+    // Negative window: proves the foreign window is NOT destroyed.
     std::thread::sleep(Duration::from_millis(300));
     assert!(
         windows(&server).contains(&foreign),
@@ -612,6 +649,7 @@ fn a_foreign_window_in_pij_stays_listed_and_outlives_the_control_client() {
     let again = server.adapter(true);
     block_on(again.list_panes()).expect("warm again");
     drop(again);
+    // Negative window, as above.
     std::thread::sleep(Duration::from_millis(300));
     assert!(
         windows(&server).contains(&foreign),
@@ -631,7 +669,8 @@ fn a_foreign_window_keeps_the_client_attached_when_pij_is_the_last_session() {
     let before = server.control_clients();
     assert_eq!(before.len(), 1, "{before:?}");
     server.run(&["kill-session", "-t", "work"]);
-    // The subscription is evaluated about once a second.
+    // Negative window: the subscription is evaluated about once a second,
+    // and the client must NOT leave across three of them.
     let settle = Instant::now() + Duration::from_secs(3);
     while Instant::now() < settle {
         let _ = block_on(adapter.list_panes());
@@ -662,6 +701,7 @@ fn a_foreign_pane_split_into_pij_stays_listed_and_outlives_the_control_client() 
         "{foreign} hidden: {listed:?}"
     );
     drop(adapter);
+    // Negative window: proves the foreign pane is NOT destroyed.
     std::thread::sleep(Duration::from_millis(300));
     assert!(
         server
@@ -680,9 +720,42 @@ fn pij_with_only_its_own_window_goes_with_the_client() {
     block_on(adapter.list_panes()).expect("warm");
     assert!(windows(&server).iter().any(|w| w.starts_with("_pij:")));
     drop(adapter);
-    std::thread::sleep(Duration::from_millis(300));
-    let left = windows(&server);
-    assert!(left.iter().all(|w| w.starts_with("work:")), "{left:?}");
+    // `_pij` goes asynchronously after the client detaches: poll for it.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut last = read_windows(&server);
+    while !only_work_windows(&last) {
+        assert!(
+            Instant::now() < deadline,
+            "_pij outlived its client, or no read showed the work window; last read: {last:?}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+        last = read_windows(&server);
+    }
+}
+
+/// The poll above cannot pass vacuously: a failed read, a lost server and an
+/// empty list all fail it; only the work window alone passes.
+#[test]
+fn only_work_windows_needs_a_successful_read_with_a_work_window() {
+    let failed: Result<Vec<String>, String> = Err("list-windows failed".into());
+    assert!(!only_work_windows(&failed));
+    assert!(!only_work_windows(&Ok(Vec::new())));
+    assert!(!only_work_windows(&Ok(vec![
+        "work:main".into(),
+        "_pij:control".into()
+    ])));
+    assert!(!only_work_windows(&Ok(vec!["_pij:control".into()])));
+    assert!(only_work_windows(&Ok(vec!["work:main".into()])));
+
+    let server = Server::start();
+    assert!(only_work_windows(&read_windows(&server)));
+    let _ = server.outside(&["kill-server"]);
+    let lost = read_windows(&server);
+    assert!(
+        lost.is_err(),
+        "a lost server reads as a failure, not as empty: {lost:?}"
+    );
+    assert!(!only_work_windows(&lost));
 }
 
 /// No server running means none is started: `-N` on the control attach.
@@ -732,6 +805,8 @@ fn a_stalled_control_client_is_killed_and_replaced() {
     assert!(stop.success());
     let resume = Resume(pid);
     let resumer = std::thread::spawn(move || {
+        // A timed stop, not a wait: the server stays stopped past the reply
+        // timeout so the read must fall back to a fork.
         std::thread::sleep(Duration::from_secs(4));
         drop(resume);
     });
