@@ -66,6 +66,8 @@ struct RegistryState {
     seats: BTreeMap<String, SeatDescriptor>,
     nonces: BTreeMap<String, NonceRecord>,
     capabilities: BTreeMap<String, CapabilityRow>,
+    /// Seats an unproven tombstone revoked, and why (plan 223).
+    reissue_marks: BTreeMap<String, Option<String>>,
     seq: u64,
     recorder: Recorder,
 }
@@ -89,6 +91,9 @@ impl RegistryState {
             .is_some_and(|row| revoked_by(row, &descriptor))
         {
             self.capabilities.remove(descriptor.id.as_str());
+            if descriptor.tombstoned_at.is_some() {
+                self.mark_unproven(&descriptor.id, descriptor.tombstone_reason.as_deref());
+            }
         }
         let parent = descriptor.parent.clone();
         let previous = self.seats.insert(descriptor.id.0.clone(), descriptor);
@@ -100,6 +105,20 @@ impl RegistryState {
                 parent,
             },
         )
+    }
+
+    /// A tombstone revoked `seat`'s capability: mark it unless proven.
+    fn mark_unproven(&mut self, seat: &SeatId, reason: Option<&str>) {
+        if !pij_core::capability::revocation_proven(reason) {
+            self.reissue_marks
+                .insert(seat.0.clone(), reason.map(str::to_string));
+        }
+    }
+
+    /// A peer bootstrap of a marked seat is refused.
+    fn reissue_refusal(&self, seat: &SeatId, proof: &IssueProof) -> Option<IssueRefusal> {
+        (matches!(proof, IssueProof::Peer) && self.reissue_marks.contains_key(seat.as_str()))
+            .then_some(IssueRefusal::ReissueNeedsNonce)
     }
 
     fn proof_inputs(
@@ -229,7 +248,9 @@ impl Registry for FakeRegistry {
         descriptor.tombstoned_at = Some(seq);
         descriptor.tombstone_reason = Some(reason.to_string());
         end_turn(descriptor);
-        state.capabilities.remove(seat.as_str());
+        if state.capabilities.remove(seat.as_str()).is_some() {
+            state.mark_unproven(seat, Some(reason));
+        }
         Ok(Seq(seq))
     }
 
@@ -255,10 +276,12 @@ impl Registry for FakeRegistry {
             .get_mut(expected.id.as_str())
             .expect("snapshot matched under lock");
         descriptor.tombstoned_at = Some(seq);
-        descriptor.tombstone_reason = Some(reason);
+        descriptor.tombstone_reason = Some(reason.clone());
         descriptor.native_extension_delivery = false;
         end_turn(descriptor);
-        state.capabilities.remove(expected.id.as_str());
+        if state.capabilities.remove(expected.id.as_str()).is_some() {
+            state.mark_unproven(&expected.id, Some(&reason));
+        }
         Ok(Seq(seq))
     }
 
@@ -336,6 +359,9 @@ impl Registry for FakeRegistry {
         now_ms: u64,
     ) -> Result<std::result::Result<(), IssueRefusal>> {
         let state = self.state.lock().expect("fake registry mutex");
+        if let Some(refusal) = state.reissue_refusal(seat, proof) {
+            return Ok(Err(refusal));
+        }
         let (nonce, current) = state.proof_inputs(seat, proof);
         Ok(check_proof(proof, seat, proc, nonce, current, now_ms))
     }
@@ -348,6 +374,9 @@ impl Registry for FakeRegistry {
         retiring: Vec<SeatDescriptor>,
     ) -> Result<IssueOutcome> {
         let mut state = self.state.lock().expect("fake registry mutex");
+        if let Some(refusal) = state.reissue_refusal(&descriptor.id, &issue.proof) {
+            return Ok(IssueOutcome::Refused(refusal));
+        }
         let (nonce, current) = state.proof_inputs(&descriptor.id, &issue.proof);
         let checked = check_proof(
             &issue.proof,
@@ -385,6 +414,7 @@ impl Registry for FakeRegistry {
         state
             .capabilities
             .insert(written.id.0.clone(), issued_row(&written, &issue));
+        state.reissue_marks.remove(written.id.as_str());
         Ok(IssueOutcome::Issued { seq, binding })
     }
 
@@ -2140,6 +2170,15 @@ impl FakeTmux {
             .pane_processes
             .insert(pane.to_string(), process);
         self
+    }
+
+    /// Arrange (or re-arrange) a pane's process on a shared fake.
+    pub fn arrange_pane_process(&self, pane: &str, process: PaneProcess) {
+        self.state
+            .lock()
+            .expect("fake tmux mutex")
+            .pane_processes
+            .insert(pane.to_string(), process);
     }
 
     /// Queue what the next `capture` returns. Queued in order, so a test can

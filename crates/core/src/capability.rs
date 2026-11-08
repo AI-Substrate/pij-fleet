@@ -27,6 +27,29 @@ pub const CAPABILITY_CODE: &str = "E-RS-SEAT-CAPABILITY";
 /// The RETRYABLE refusal for a proofless registration that would move a live
 /// owner's capability (its process, session or owner).
 pub const OWNER_LIVE_CODE: &str = "E-RS-SEAT-OWNER-LIVE";
+/// The refusal for a peer bootstrap of a seat whose capability an unproven
+/// tombstone revoked: only a spawn nonce (revive) or the current capability
+/// re-issues it.
+pub const REISSUE_NONCE_CODE: &str = "E-RS-SEAT-REISSUE-NONCE";
+
+/// Appended by the daemon to a close's reason when the close presented the
+/// seat's own capability; a caller's reason may not carry it.
+pub const CAPABILITY_PROVEN_CLOSE: &str = " [closed with its capability]";
+
+/// Was a tombstone with this reason PROVEN, by the owner's observed death or
+/// by the seat's own capability? Only the daemon writes these reasons (a
+/// close refuses a caller's reason that would read as one). Any other
+/// tombstone that revokes a capability marks the seat: its capability is then
+/// re-issued only by a spawn nonce or its current capability, never by a
+/// peer bootstrap (plan 223 review, close-then-bootstrap).
+pub fn revocation_proven(reason: Option<&str>) -> bool {
+    reason.is_some_and(|reason| {
+        matches!(reason, "observed-dead" | "revive-observed-dead")
+            || reason.starts_with("process-dead-")
+            || reason.starts_with("process-recycled-")
+            || reason.ends_with(CAPABILITY_PROVEN_CLOSE)
+    })
+}
 
 /// One spawn's registration nonce, as stored: its digest, never the nonce.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -181,6 +204,9 @@ pub enum IssueRefusal {
     TokenInvalid,
     /// The registration binds no process: a capability belongs to an incarnation.
     Unbound,
+    /// A peer bootstrap of a seat whose capability an unproven tombstone
+    /// revoked: only a spawn nonce or the current capability re-issues it.
+    ReissueNeedsNonce,
 }
 
 impl IssueRefusal {
@@ -192,6 +218,7 @@ impl IssueRefusal {
                 NONCE_INVALID_CODE
             }
             Self::TokenInvalid | Self::Unbound => CAPABILITY_CODE,
+            Self::ReissueNeedsNonce => REISSUE_NONCE_CODE,
         }
     }
 
@@ -204,6 +231,7 @@ impl IssueRefusal {
             Self::NonceForAnotherSeat => "another-seat",
             Self::TokenInvalid => "not-current",
             Self::Unbound => "unbound",
+            Self::ReissueNeedsNonce => "reissue-nonce",
         }
     }
 
@@ -216,6 +244,7 @@ impl IssueRefusal {
             Self::NonceForAnotherSeat,
             Self::TokenInvalid,
             Self::Unbound,
+            Self::ReissueNeedsNonce,
         ]
         .into_iter()
         .find(|refusal| refusal.code() == code && refusal.detail() == detail)
@@ -258,6 +287,9 @@ impl IssueRefusal {
             }
             Self::Unbound => {
                 "a seat capability belongs to a process incarnation: register with pid and proc_start; nothing was written"
+            }
+            Self::ReissueNeedsNonce => {
+                "the capability was revoked by an unproven close, so no peer can bootstrap a new one; the seat's parent runs `pij-rs revive <seat>` (it mints a nonce); nothing was written"
             }
         }
     }

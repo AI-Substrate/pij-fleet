@@ -47,6 +47,10 @@ pub(crate) enum RegistrationError {
         seat: SeatId,
         pid: u32,
     },
+    /// A peer bootstrap of a seat whose capability an unproven tombstone (a
+    /// close) revoked: only a spawn nonce (revive) or the current capability
+    /// re-issues it; nothing was written.
+    ReissueNeedsNonce(SeatId),
     NativeSessionHold(SeatId),
     /// A same-process session with newer native history holds the seat (plan 168).
     NativeHolderCurrent(SeatId),
@@ -70,8 +74,15 @@ impl std::fmt::Display for RegistrationError {
             Self::OwnerLive { seat, pid } => write!(
                 f,
                 "{}: live owner pid {pid} still holds this session; retry once it exits, \
-                 or if it hangs, have the seat's parent run `pij close {seat}`",
+                 or if it hangs, have the seat's parent run `pij close {seat}` then \
+                 `pij-rs revive {seat}`",
                 pij_core::capability::OWNER_LIVE_CODE
+            ),
+            Self::ReissueNeedsNonce(seat) => write!(
+                f,
+                "{}: the capability was revoked by an unproven close; the parent runs \
+                 `pij-rs revive {seat}` (it mints a nonce); nothing was written",
+                pij_core::capability::REISSUE_NONCE_CODE
             ),
             Self::NativeSessionHold(owner) => write!(
                 f,
@@ -290,6 +301,7 @@ impl RegistrationService {
                     | RegistrationError::InvalidSeatId(_)
                     | RegistrationError::Capability(_)
                     | RegistrationError::Provenance(_)
+                    | RegistrationError::ReissueNeedsNonce(_)
                     | RegistrationError::IndexFull => Outcome::Refused,
                     RegistrationError::Retired { .. } => Outcome::Retired,
                     RegistrationError::Retryable(_) | RegistrationError::OwnerLive { .. } => {
@@ -1820,6 +1832,9 @@ impl RegistrationService {
                 if let Err(error) = self.event_bus.publish(event).await {
                     eprintln!("pij register: {seat}: {NONCE_REUSED_KIND}: {error}");
                 }
+            }
+            IssueRefusal::ReissueNeedsNonce => {
+                return RegistrationError::ReissueNeedsNonce(seat.clone());
             }
             IssueRefusal::NonceUnknown
             | IssueRefusal::NonceForAnotherSeat

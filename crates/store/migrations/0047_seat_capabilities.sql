@@ -42,4 +42,17 @@ CREATE TABLE seat_capabilities (
     via            TEXT NOT NULL CHECK (via IN ('nonce', 'peer', 'rotation'))
 ) STRICT;
 
+-- `seat_reissue_marks`: a seat whose capability was revoked by an UNPROVEN
+-- tombstone (a close, or any tombstone proven neither by the seat's own
+-- capability nor by its owner's observed death), and why. While marked, the
+-- seat's capability is re-issued only by a spawn nonce (spawn or revive) or its
+-- current capability, never by a peer bootstrap (E-RS-SEAT-REISSUE-NONCE). The
+-- mark is written in the transaction that revokes, and a nonce or capability
+-- re-issue clears it in the transaction that issues.
+CREATE TABLE seat_reissue_marks (
+    seat      TEXT PRIMARY KEY,
+    reason    TEXT,
+    marked_at INTEGER NOT NULL
+) STRICT;
+
 PRAGMA user_version = 47;

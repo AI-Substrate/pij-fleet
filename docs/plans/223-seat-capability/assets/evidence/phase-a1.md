@@ -81,6 +81,15 @@ Every fix has a regression, and each regression was run against a mutant that re
 | D9 | `directory memory` and `directory routes` count inside the leaf once read or write is decided; reads are uncounted | `memory_and_routes_count_their_writes_and_never_their_reads` | leaf-level class restored: the memory read counts |
 | P183-F001 | `hosted_by` and `hosts_other` decide nobody, one or many from at most two entries, copying nothing | `hosted_lookups_copy_nothing_out_of_the_index` (256 sessions of 64 KiB) | copy the hosted map: fails |
 
+**Close-then-bootstrap (ruled by pm-001 and the prime after round 2):**
+- **The gap:** a proofless close "as the victim", followed by a peer bootstrap from the attacker's own process, would gain the victim's identity. It is S183-001 by another route.
+- **The mark:** a tombstone that revokes a capability, proven neither by the seat's own capability nor by its owner's observed death, writes a mark with its reason (`seat_reissue_marks`, migration 0047) in the revoking transaction.
+- **While marked:** a peer bootstrap is refused `E-RS-SEAT-REISSUE-NONCE` (403, nothing written), in the store's issuing transaction. Only a spawn or revive nonce, or the current capability, re-issues the seat, and either clears the mark.
+- **Reasons:** a close's `--reason` may not read as a proven one. A close presenting the target's capability is recorded as proven.
+- **The escape is close then revive**, and the `E-RS-SEAT-OWNER-LIVE` text now names both. Revive does not refuse a closed seat whose pane is still present: it launches in a new pane.
+- **Regressions:** `a_proofless_close_then_bootstrap_is_refused_and_revive_reissues` (HTTP) and capability contract section 7 (SQLite and the fake). The reload path (owner observed dead, then a peer bootstrap) is `a_socket_peer_bootstraps_a_capability_and_owns_it`.
+- **Mutants, killed:** with the fake's mark check disabled, the attacker is issued. With SQLite's in-transaction check disabled, the contract fails with "issued where a refusal was due".
+
 **Clients and the retryable refusal (pm-001's reload condition):**
 - **Native Copilot:** `.copilot/extensions/pij/store.mjs:601-608` maps a 409 `pij register` refusal with `details.retryable: true` to a retryable `NativeError`. `extension.mjs:224-256` then retries the whole registration with exponential backoff (`INITIAL_RETRY_MS` doubling to `MAX_RETRY_MS`) until it succeeds. Today's Copilot client registers over TCP and never holds a capability, so it meets this refusal only once A2 is deployed.
 - **OMP:** it does not retry. `rust-runtime.ts:309` (`registerIdentity`) rethrows any refusal except a retired seat, and `index.ts:466-471` marks the boot failed. OMP's owner is its own process, so a reload in the same process is never this case. A2 should add a retry if OMP ever re-registers from a new process while the old one lives.

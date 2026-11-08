@@ -722,6 +722,11 @@ pub(crate) fn current() -> Option<Arc<RequestEvidence>> {
     REQUEST.try_with(Arc::clone).ok()
 }
 
+/// Did the request being handled present `seat`'s live capability?
+pub(crate) fn token_proves(seat: &SeatId) -> bool {
+    current().is_some_and(|evidence| evidence.token == TokenEvidence::Live(seat.clone()))
+}
+
 /// Did the request being handled arrive over the non-loopback listener?
 /// Every capability carrier (the header, a body's `context_token`, a
 /// registration's nonce) is refused there (review S183-003).

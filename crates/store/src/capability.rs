@@ -263,12 +263,13 @@ pub(crate) async fn put_capability(
 }
 
 /// Revoke as [`pij_core::capability::revoked_by`] does: the written seat is
-/// tombstoned, or its process is not the capability's boundary.
+/// tombstoned, or its process is not the capability's boundary. A tombstone
+/// that revokes, unproven, marks the seat.
 pub(crate) async fn revoke_for_write(
     connection: &mut SqliteConnection,
     descriptor: &SeatDescriptor,
 ) -> Result<()> {
-    sqlx::query(
+    let revoked = sqlx::query(
         "DELETE FROM seat_capabilities WHERE seat = ?1 \
          AND (?2 IS NOT NULL OR boundary_pid IS NOT ?3 OR boundary_start IS NOT ?4)",
     )
@@ -276,15 +277,88 @@ pub(crate) async fn revoke_for_write(
     .bind(descriptor.tombstoned_at.map(|at| at as i64))
     .bind(descriptor.proc.map(|proc| i64::from(proc.pid)))
     .bind(start_text(descriptor.proc))
+    .execute(&mut *connection)
+    .await
+    .map_err(adapter_error)?
+    .rows_affected()
+        > 0;
+    if let Some(at) = descriptor.tombstoned_at.filter(|_| revoked) {
+        mark_unproven(
+            connection,
+            &descriptor.id,
+            descriptor.tombstone_reason.as_deref(),
+            at,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Revoke unconditionally: the seat is being tombstoned with `reason`. An
+/// unproven tombstone that revokes marks the seat.
+pub(crate) async fn revoke(
+    connection: &mut SqliteConnection,
+    seat: &SeatId,
+    reason: &str,
+    at: u64,
+) -> Result<()> {
+    let revoked = sqlx::query("DELETE FROM seat_capabilities WHERE seat = ?1")
+        .bind(seat.as_str())
+        .execute(&mut *connection)
+        .await
+        .map_err(adapter_error)?
+        .rows_affected()
+        > 0;
+    if revoked {
+        mark_unproven(connection, seat, Some(reason), at).await?;
+    }
+    Ok(())
+}
+
+/// Mark `seat` when `reason` is no proven revocation
+/// ([`pij_core::capability::revocation_proven`]).
+async fn mark_unproven(
+    connection: &mut SqliteConnection,
+    seat: &SeatId,
+    reason: Option<&str>,
+    at: u64,
+) -> Result<()> {
+    if pij_core::capability::revocation_proven(reason) {
+        return Ok(());
+    }
+    sqlx::query(
+        "INSERT OR REPLACE INTO seat_reissue_marks (seat, reason, marked_at) VALUES (?1, ?2, ?3)",
+    )
+    .bind(seat.as_str())
+    .bind(reason)
+    .bind(sql_ms(at))
     .execute(connection)
     .await
     .map_err(adapter_error)?;
     Ok(())
 }
 
-/// Revoke unconditionally: the seat is being tombstoned.
-pub(crate) async fn revoke(connection: &mut SqliteConnection, seat: &SeatId) -> Result<()> {
-    sqlx::query("DELETE FROM seat_capabilities WHERE seat = ?1")
+/// Is `seat` marked: re-issued only by a nonce or its current capability?
+pub(crate) async fn reissue_marked(
+    connection: &mut SqliteConnection,
+    seat: &SeatId,
+) -> Result<bool> {
+    Ok(
+        sqlx::query_scalar::<_, i64>("SELECT 1 FROM seat_reissue_marks WHERE seat = ?1")
+            .bind(seat.as_str())
+            .fetch_optional(connection)
+            .await
+            .map_err(adapter_error)?
+            .is_some(),
+    )
+}
+
+/// A nonce or capability re-issue clears the mark.
+pub(crate) async fn clear_reissue_mark(
+    connection: &mut SqliteConnection,
+    seat: &SeatId,
+) -> Result<()> {
+    sqlx::query("DELETE FROM seat_reissue_marks WHERE seat = ?1")
         .bind(seat.as_str())
         .execute(connection)
         .await

@@ -1438,6 +1438,16 @@ async fn register(
             envelope(StatusCode::CONFLICT, &answer)
         }
         Err(RegistrationError::Capability(refusal)) => capability_refused(refusal),
+        // Close-then-bootstrap (plan 223 review): refused by name, not
+        // retryable; the seat's parent revives it with a nonce.
+        Err(error @ RegistrationError::ReissueNeedsNonce(_)) => {
+            let mut answer: Envelope<()> =
+                Envelope::refused("pij register", ErrorKind::Refused, error.to_string());
+            answer.details = Some(serde_json::json!({
+                "code": pij_core::capability::REISSUE_NONCE_CODE,
+            }));
+            envelope(StatusCode::FORBIDDEN, &answer)
+        }
         Err(RegistrationError::Provenance(why)) => provenance_refused(why),
         Err(RegistrationError::IndexFull) => {
             let mut answer: Envelope<()> = Envelope::refused(

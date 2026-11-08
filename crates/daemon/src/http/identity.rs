@@ -1107,6 +1107,7 @@ fn adopt_registration_error(error: RegistrationError) -> Response {
         // Adopt never presents a capability proof, so never meets this.
         error @ (RegistrationError::Capability(_)
         | RegistrationError::Provenance(_)
+        | RegistrationError::ReissueNeedsNonce(_)
         | RegistrationError::IndexFull) => refused(ADOPT, error),
         RegistrationError::Runtime(error) => internal(ADOPT, error),
     }

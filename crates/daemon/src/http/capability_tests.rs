@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use pij_core::capability::{IssueProof, OWNER_LIVE_CODE};
+use pij_core::capability::{IssueProof, OWNER_LIVE_CODE, REISSUE_NONCE_CODE};
 use pij_core::model::{Harness, ProcIdentity, SeatDescriptor, SeatId, Seq};
 use pij_core::ports::{Registry, Spine};
 use pij_testkit::fakes::{FakeLiveness, FakeQueue, FakeRegistry, FakeSpine, FakeTmux};
@@ -691,7 +691,8 @@ async fn a_socket_peer_bootstraps_a_capability_and_owns_it() {
         body["meta"],
         format!(
             "{OWNER_LIVE_CODE}: live owner pid 9000 still holds this session; retry once it \
-             exits, or if it hangs, have the seat's parent run `pij close {SEAT}`"
+             exits, or if it hangs, have the seat's parent run `pij close {SEAT}` then \
+             `pij-rs revive {SEAT}`"
         )
     );
     assert_eq!(rig.report(&token).await.0, 200, "the owner's token stands");
@@ -979,14 +980,16 @@ async fn a_proofless_move_of_a_live_owners_seat_commits_nothing() {
     rig.server.abort();
 }
 
-/// Review S183-001's escape (the prime's ruling): an old host that never
-/// exits cannot lock its seat out. `pij close <seat>` by the seat's parent
-/// (or itself) tombstones it, revoking the capability; the new host's retry
-/// then registers and bootstraps.
+/// Close-then-bootstrap (pm-001 and the prime): a PROOFLESS close revokes
+/// the capability and marks the seat, so a peer bootstrap from another
+/// process is refused `E-RS-SEAT-REISSUE-NONCE` and issues nothing. The way
+/// out of a hung owner is the one the refusal names: close, then
+/// `pij-rs revive`, whose nonce issues the capability to the revived process.
 #[tokio::test]
-async fn a_hung_owner_is_escaped_by_closing_the_seat() {
+async fn a_proofless_close_then_bootstrap_is_refused_and_revive_reissues() {
     let rig = Rig::new().await;
-    let (owner, other) = (
+    // The revived process is NEXT, a fresh harness the revive launched.
+    let (owner, other, revived) = (
         ProcIdentity {
             pid: 9_000,
             proc_start: 80,
@@ -995,6 +998,7 @@ async fn a_hung_owner_is_escaped_by_closing_the_seat() {
             pid: 9_001,
             proc_start: 81,
         },
+        NEXT,
     );
     rig.reader
         .set(owner.pid, PROC.pid, "node", owner.proc_start);
@@ -1004,27 +1008,84 @@ async fn a_hung_owner_is_escaped_by_closing_the_seat() {
         .post_from("/v1/register", Rig::claim(SEAT), None, Some(owner))
         .await;
     assert_eq!(status, 200, "{body}");
-    let old = token_of(&body).expect("the old host's capability");
+    let old = token_of(&body).expect("the live owner's capability");
     let (status, _) = rig
         .post_from("/v1/register", Rig::claim(SEAT), None, Some(other))
         .await;
-    assert_eq!(status, 409, "the hung owner still lives");
+    assert_eq!(status, 409, "the owner still lives");
 
-    let (status, body) = rig
-        .post(
-            "/v1/close",
-            json!({"seat": SEAT, "caller": {"PIJ_SESSION_ID": SEAT}}),
-            None,
-        )
-        .await;
+    // A caller's reason may not pass a close off as an observed death.
+    let close = |reason: Option<&str>| {
+        let mut body = json!({"seat": SEAT, "caller": {"PIJ_SESSION_ID": SEAT}});
+        if let Some(reason) = reason {
+            body["reason"] = json!(reason);
+        }
+        rig.post("/v1/close", body, None)
+    };
+    let (status, body) = close(Some("observed-dead")).await;
+    assert_eq!(status, 400, "{body}");
+    // The proofless close "as the victim": public facts only.
+    let (status, body) = close(None).await;
     assert_eq!(status, 200, "{body}");
     let (status, body) = rig
         .post_from("/v1/register", Rig::claim(SEAT), None, Some(other))
         .await;
+    assert_eq!(status, 403, "{body}");
+    assert_eq!(refusal_code(&body), REISSUE_NONCE_CODE);
+    assert_eq!(
+        body["meta"],
+        format!(
+            "{REISSUE_NONCE_CODE}: the capability was revoked by an unproven close; the parent \
+             runs `pij-rs revive {SEAT}` (it mints a nonce); nothing was written"
+        )
+    );
+    assert_eq!(token_of(&body), None);
+    assert_eq!(rig.registry.capability(&SEAT.into()).await.unwrap(), None);
+    assert!(
+        rig.registry
+            .get(&SEAT.into())
+            .await
+            .unwrap()
+            .is_some_and(|seat| seat.tombstoned_at.is_some()),
+        "nothing was written"
+    );
+
+    // The escape: revive mints a nonce; the revived process is issued.
+    rig.tmux.arrange_pane_process(
+        "%100",
+        pij_core::model::PaneProcess {
+            pid: revived.pid,
+            cwd: "/abs/tree".to_string(),
+        },
+    );
+    let (status, body) = rig
+        .post("/v1/revive", json!({"id": SEAT, "session": "fleet"}), None)
+        .await;
     assert_eq!(status, 200, "{body}");
-    let new = token_of(&body).expect("bootstrapped after the escape");
-    assert_ne!(new, old);
-    assert_eq!(rig.report(&old).await.0, 400, "the hung owner's is revoked");
+    let spawn_id = body["data"]["spawn_id"].as_str().unwrap().to_string();
+    let nonce = pij_harnesses::take_nonce_file(&super::spawn_nonce_path(&spawn_id))
+        .expect("the revive's nonce");
+    let mut claim = Rig::claim(SEAT);
+    claim["pid"] = json!(revived.pid);
+    claim["proc_start"] = json!(revived.proc_start);
+    claim["spawn_id"] = json!(spawn_id);
+    claim["spawn_nonce"] = json!(nonce);
+    let (status, body) = rig
+        .post_from("/v1/register", claim, None, Some(revived))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let new = token_of(&body).expect("issued by the revive's nonce");
+    let row = rig
+        .registry
+        .capability(&SEAT.into())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (row.boundary, row.via),
+        (Some(revived), pij_core::capability::CapabilityVia::Nonce)
+    );
+    assert_eq!(rig.report(&old).await.0, 400);
     assert_eq!(rig.report(&new).await.0, 200);
     rig.server.abort();
 }

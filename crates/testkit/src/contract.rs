@@ -598,6 +598,110 @@ pub async fn capability_contract(registry: &dyn Registry) {
             .map(|row| row.digest),
         Some([43; 32])
     );
+
+    // 7. Close-then-bootstrap: a tombstone that revokes a capability UNPROVEN
+    //    marks the seat, so a peer bootstrap is refused and writes nothing; a
+    //    nonce re-issue clears the mark. An observed death or a capability-
+    //    proven close does not mark.
+    let by_peer = CapabilityIssue {
+        proof: IssueProof::Peer,
+        digest: [60; 32],
+        owner: None,
+        now_ms: 600,
+    };
+    for (n, reason, marks) in [
+        (0_u8, "owner-close".to_string(), true),
+        (1, "observed-dead".to_string(), false),
+        (2, "process-dead-and-pane-absent".to_string(), false),
+        (
+            3,
+            format!(
+                "owner-close{}",
+                pij_core::capability::CAPABILITY_PROVEN_CLOSE
+            ),
+            false,
+        ),
+    ] {
+        let id = format!("pij-cap-mark-{n}");
+        let spawn = format!("spawn-mark-{n}");
+        let marked = seat(&id, 40 + u32::from(n));
+        registry
+            .insert_spawn_nonce(nonce(&spawn, &id, 70 + n, 1_000))
+            .await
+            .expect("nonce row");
+        issued(
+            registry
+                .put_issuing(
+                    marked.clone(),
+                    false,
+                    by_nonce(&spawn, 70 + n, 80 + n),
+                    Vec::new(),
+                )
+                .await
+                .expect("issue"),
+        );
+        registry
+            .tombstone(&marked.id, &reason)
+            .await
+            .expect("tombstone");
+        let mut resumed = marked.clone();
+        resumed.proc = proc(50 + u32::from(n));
+        let outcome = registry
+            .put_issuing(resumed.clone(), false, by_peer.clone(), Vec::new())
+            .await
+            .expect("an outcome");
+        if marks {
+            assert_eq!(
+                refused(outcome),
+                IssueRefusal::ReissueNeedsNonce,
+                "{reason}"
+            );
+            assert_eq!(
+                registry
+                    .check_issue(&resumed.id, resumed.proc, &IssueProof::Peer, 600)
+                    .await
+                    .expect("check"),
+                Err(IssueRefusal::ReissueNeedsNonce)
+            );
+            assert!(
+                registry
+                    .get(&marked.id)
+                    .await
+                    .expect("get")
+                    .is_some_and(|seat| seat.tombstoned_at.is_some()),
+                "nothing was written"
+            );
+            assert_eq!(registry.capability(&marked.id).await.expect("read"), None);
+            // A nonce re-issues it and clears the mark.
+            let respawn = format!("respawn-mark-{n}");
+            registry
+                .insert_spawn_nonce(nonce(&respawn, &id, 90 + n, 1_000))
+                .await
+                .expect("nonce row");
+            issued(
+                registry
+                    .put_issuing(
+                        resumed.clone(),
+                        false,
+                        by_nonce(&respawn, 90 + n, 95 + n),
+                        Vec::new(),
+                    )
+                    .await
+                    .expect("re-issue"),
+            );
+            let mut moved = resumed.clone();
+            moved.proc = proc(60 + u32::from(n));
+            registry.put(moved.clone()).await.expect("a new process");
+            issued(
+                registry
+                    .put_issuing(moved, false, by_peer.clone(), Vec::new())
+                    .await
+                    .expect("the mark was cleared"),
+            );
+        } else {
+            issued(outcome);
+        }
+    }
 }
 
 /// Every promise the [`Spine`] port makes, in one place.

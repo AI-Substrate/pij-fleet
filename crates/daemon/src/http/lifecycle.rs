@@ -155,6 +155,16 @@ fn parse(body: Value, operation: Operation) -> std::result::Result<Call, String>
     if matches!(operation, Operation::Close) && call.seat.is_none() {
         return Err("close requires a seat".to_string());
     }
+    // Plan 223: a proven revocation's reasons are the daemon's own; a caller's
+    // reason may not pass a close off as an observed death.
+    if matches!(operation, Operation::Close)
+        && pij_core::capability::revocation_proven(Some(&call.reason))
+    {
+        return Err(format!(
+            "close reason {:?} is reserved for observed deaths and capability-proven closes",
+            call.reason
+        ));
+    }
     Ok(call)
 }
 
@@ -346,6 +356,13 @@ async fn handle(
             if actor.id != expected.id && expected.parent.as_ref() != Some(&actor.id) {
                 return ownership_failure(command, &actor.id, &target, expected.parent.as_ref());
             }
+            // Plan 223: a close presenting the target's own capability is a
+            // proven revocation; any other close that revokes one marks the
+            // seat, so only a nonce (revive) or its capability re-issues it.
+            let mut reason = call.reason;
+            if super::provenance::token_proves(&target) {
+                reason.push_str(pij_core::capability::CAPABILITY_PROVEN_CLOSE);
+            }
             // Plan 201: a role holder writes its memory before it is closed,
             // and so does a seat that released one in this context (F130).
             let turn = if expected.tombstoned_at.is_none() {
@@ -354,15 +371,8 @@ async fn handle(
                 None
             };
             let Some(turn) = turn else {
-                return match close_seat(
-                    &state,
-                    command,
-                    &actor.id,
-                    target,
-                    call.reason,
-                    Some(expected),
-                )
-                .await
+                return match close_seat(&state, command, &actor.id, target, reason, Some(expected))
+                    .await
                 {
                     Ok(data) => envelope(StatusCode::OK, &Envelope::ok(command, data)),
                     Err(response) => *response,
@@ -375,7 +385,7 @@ async fn handle(
                 turn,
                 memory_turn::Then::Close {
                     actor: actor.id,
-                    reason: call.reason,
+                    reason,
                 },
             ) {
                 Ok(held) => envelope(StatusCode::OK, &Envelope::ok(command, held)),

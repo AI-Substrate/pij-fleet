@@ -98,7 +98,7 @@ impl SqliteRegistry {
                     crate::claims::release_for_seat(&mut tx, seat.as_str(), event.at as i64)
                         .await?;
                     // Plan 223: a retired incarnation's capability dies with it.
-                    capability::revoke(&mut tx, &seat).await?;
+                    capability::revoke(&mut tx, &seat, &reason, event.at).await?;
                     let seq = append_in_transaction(&mut tx, &event).await?;
                     // A retired seat's turn is over: `working` must not outlive it.
                     let affected = sqlx::query(
@@ -434,6 +434,9 @@ impl SqliteRegistry {
                         }
                         capability::put_capability(&mut tx, &issued_row(&descriptor, issue))
                             .await?;
+                        // A nonce or the current capability re-issues a marked
+                        // seat; a peer bootstrap never reaches here for one.
+                        capability::clear_reissue_mark(&mut tx, &descriptor.id).await?;
                     }
 
                     tx.commit().await.map_err(adapter_error)?;
@@ -611,6 +614,11 @@ impl Registry for SqliteRegistry {
             }
             IssueProof::Peer | IssueProof::Token { .. } => None,
         };
+        if matches!(proof, IssueProof::Peer)
+            && capability::reissue_marked(&mut connection, seat).await?
+        {
+            return Ok(Err(IssueRefusal::ReissueNeedsNonce));
+        }
         let current = capability::capability(&mut connection, seat).await?;
         Ok(check_proof(
             proof,
@@ -696,6 +704,11 @@ async fn check_issue_in(
         IssueProof::Nonce { spawn_id, .. } => capability::nonce(connection, spawn_id).await?,
         IssueProof::Peer | IssueProof::Token { .. } => None,
     };
+    if matches!(issue.proof, IssueProof::Peer)
+        && capability::reissue_marked(connection, &descriptor.id).await?
+    {
+        return Ok(Err(IssueRefusal::ReissueNeedsNonce));
+    }
     let current = capability::capability(connection, &descriptor.id).await?;
     Ok(check_proof(
         &issue.proof,
