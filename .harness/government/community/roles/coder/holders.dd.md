@@ -56,7 +56,7 @@
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | f123 | 2026-11-08T04:24:50.048Z | 2026-11-08T08:24:02.742Z | pij-steady-otter | pij-steady-otter | F123 tmux capture test flake | #179 merged |
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f113 | 2026-11-08T04:29:35.395Z | — | pij-steady-otter | — | #175 still in review | — |
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f124 | 2026-11-08T04:29:35.728Z | — | pij-steady-otter | — | F124 Copilot receiver false fail-safe drops the lease | — |
-| — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | f127 | 2026-11-08T04:37:28.015Z | — | pij-steady-otter | — | F127 seat id and role grammar (PA digest injection class) | — |
+| — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | f127 | 2026-11-08T04:37:28.015Z | 2026-11-08T08:24:03.169Z | pij-steady-otter | pij-steady-otter | F127 seat id and role grammar (PA digest injection class) | #182 merged |
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f130 | 2026-11-08T06:10:16.811Z | — | pij-steady-otter | — | F130 compact skipped the memory turn (spoonbill 15:44) | — |
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | f132 | 2026-11-08T06:39:21.671Z | — | pij-steady-otter | — | F132 framing exposures in daemon-authored messages | — |
 | — | pij-exuberant-wildcat | copilot | cc88fc7c-b066-44d1-a82d-fa6560786ddf | ops.osk.lan | f122 | 2026-11-08T08:05:40.787Z | — | pij-steady-otter | — | F122 delivered ends coder/f&lt;N&gt; holdings | — |
