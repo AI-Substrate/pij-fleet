@@ -370,7 +370,10 @@
 					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
 					"instance_key": "223",
 					"machine": "ops.osk.lan",
+					"release_why": "C33 (Jordan): trust boundary is the user account; plan 223 stopped, #183 closed unmerged",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-following-marsupial",
+					"to": "2026-11-08T23:42:12.173Z",
 					"why": "plan 223 (req-10 phase 2) from marsupial's own workshop 001"
 				},
 				{
