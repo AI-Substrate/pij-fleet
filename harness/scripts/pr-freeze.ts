@@ -28,15 +28,7 @@
 // by anything else. Exit 2: bad usage or a tool failure. It always prints.
 
 import { spawnSync } from "node:child_process";
-import {
-	accessSync,
-	constants,
-	existsSync,
-	readdirSync,
-	readlinkSync,
-	realpathSync,
-	statSync,
-} from "node:fs";
+import { accessSync, constants, existsSync, realpathSync, statSync } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -483,11 +475,13 @@ export function createWorktree(report: Report, run: Runner, env: Environment): s
 // Everything else is a BRAKE, which can only spare a worktree, never remove
 // one (remove any of them and prune removes the same set or more):
 //   - the worktree has uncommitted or untracked changes, or git can't say;
-//   - a live seat's folder (`pij-rs list`) or any process's cwd is in it;
+//   - a live seat's folder (`pij-rs list`) or the cwd of any of this user's
+//     processes (macOS lsof) is in it;
 //   - it isn't one `--worktree` made: not named review-<pr>-<sha7>, not
 //     detached, or not at that sha;
 //   - gh can't read its PR.
 // If the seat list or the process cwds can't be read, nothing is removed.
+// macOS only: anywhere else it refuses, removing nothing (review of #170).
 // Removal is `git worktree remove` without --force, which refuses a dirty
 // worktree on its own too. On demand only: one gh read per PR, one git status
 // per candidate, one seat list and one cwd listing per run.
@@ -610,23 +604,12 @@ function seatFolders(run: Runner): { id: string; folder: string }[] {
 	});
 }
 
-/** Every process's cwd that this user may inspect: one `lsof -d cwd -F pn`
- *  on macOS, `/proc` on Linux. Unprivileged lsof lists only this user's
- *  processes, so Linux skips other users' pids by owner, the same scope.
- *  Anything unsuccessful, incomplete or malformed throws, so prune removes
- *  nothing (review of #170, S170-001): a nonzero exit (a timeout included),
- *  anything on stderr, or a record that doesn't parse. */
-export function processCwds(
-	run: Runner,
-	platform: string = process.platform,
-	readProc: () => string[] = () => linuxCwds(),
-): { pid: string; cwd: string }[] {
-	if (platform === "linux") {
-		return readProc().map((line) => {
-			const [pid = "?", cwd = ""] = line.split("\t");
-			return { pid, cwd };
-		});
-	}
+/** Every cwd of this user's processes, from one macOS `lsof -d cwd -F pn`
+ *  (unprivileged lsof lists only this user's processes). Anything
+ *  unsuccessful, incomplete or malformed throws, so prune removes nothing
+ *  (review of #170, S170-001): a nonzero exit (a timeout included), anything
+ *  on stderr, or a record that doesn't parse. */
+export function processCwds(run: Runner): { pid: string; cwd: string }[] {
 	const listed = run("/usr/sbin/lsof", ["-d", "cwd", "-F", "pn"]);
 	if (listed.code !== 0 || listed.stderr.trim() !== "") {
 		throw new Error(
@@ -657,45 +640,6 @@ export function processCwds(
 	return cwds;
 }
 
-/** What [`linuxCwds`] reads; injectable for tests. */
-export interface ProcFs {
-	readonly pids: () => string[];
-	readonly owner: (pid: string) => number;
-	readonly cwd: (pid: string) => string;
-	readonly uid: number;
-}
-
-const realProc: ProcFs = {
-	pids: () => readdirSync("/proc").filter((name) => /^\d+$/.test(name)),
-	owner: (pid) => statSync(`/proc/${pid}`).uid,
-	cwd: (pid) => readlinkSync(`/proc/${pid}/cwd`),
-	uid: process.getuid?.() ?? -1,
-};
-
-/** A process that ended between listing and reading: ENOENT or ESRCH. */
-function gone(error: unknown): boolean {
-	const code = (error as { code?: string } | undefined)?.code;
-	return code === "ENOENT" || code === "ESRCH";
-}
-
-/** `<pid>\t<cwd>` for each of this user's processes. A process that ended is
- *  skipped; any other read error throws (S170-001). */
-export function linuxCwds(proc: ProcFs = realProc): string[] {
-	const lines: string[] = [];
-	for (const pid of proc.pids()) {
-		try {
-			if (proc.owner(pid) !== proc.uid) continue;
-			lines.push(`${pid}\t${proc.cwd(pid)}`);
-		} catch (error) {
-			if (gone(error)) continue;
-			throw new Error(
-				`can't read /proc/${pid}/cwd (${error instanceof Error ? error.message : String(error)})`,
-			);
-		}
-	}
-	return lines;
-}
-
 /** The real path, or undefined when it doesn't resolve. */
 function real(path: string): string | undefined {
 	try {
@@ -712,14 +656,22 @@ function spellings(path: string): string[] {
 	return resolved && resolved !== path ? [path, resolved] : [path];
 }
 
+/** Prune's refusal anywhere but macOS: only lsof's listing is trusted to
+ *  prove no process of this user is in a worktree (review of #170). */
+export const MACOS_ONLY =
+	"prune is supported on macOS only: Linux /proc can't prove a worktree is unused";
+
 /** Decide every review worktree and, unless `dryRun`, remove those whose work
- *  is over. Everything is read before anything is removed; a seat list, cwd
- *  listing or child that fails or times out throws, removing nothing. */
+ *  is over. macOS only. Everything is read before anything is removed; a seat
+ *  list, cwd listing or child that fails or times out throws, removing
+ *  nothing. */
 export function prune(
 	run: Runner,
 	dryRun: boolean,
 	cwds: () => { pid: string; cwd: string }[] = () => processCwds(run),
+	platform: string = process.platform,
 ): PruneVerdict[] {
+	if (platform !== "darwin") throw new Error(MACOS_ONLY);
 	const candidates = pruneCandidates(must(run, "git", ["worktree", "list", "--porcelain"]));
 	if (candidates.length === 0) return [];
 	const refuse = (why: string): never => {
@@ -933,6 +885,10 @@ function main(argv: readonly string[]): number {
 		const dryRun = argv.includes("--dry-run");
 		if (argv.some((arg) => arg !== "--prune" && arg !== "--dry-run")) {
 			console.error(USAGE);
+			return 2;
+		}
+		if (process.platform !== "darwin") {
+			console.error(`pr-freeze: ${MACOS_ONLY}`);
 			return 2;
 		}
 		try {

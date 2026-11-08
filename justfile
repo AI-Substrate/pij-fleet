@@ -210,7 +210,8 @@ spawn-rate *ARGS:
 # next step (exit 1). --worktree makes the detached review worktree at that
 # head. Read-only towards the PR; gh and git only. `--prune [--dry-run]` (F107)
 # removes review-<pr>-<sha7> worktrees whose PR merged, closed or moved on;
-# local changes, a live seat's folder or any process's cwd inside one spares it.
+# local changes, a live seat's folder or the cwd of any of this user's processes
+# (macOS lsof) inside one spares it. --prune is macOS only; elsewhere it refuses.
 # Runs on node's own TypeScript stripping, so it needs no node_modules (F109):
 # it works from any review worktree.
 # Is a PR head final for verdicts? `just pr-freeze <pr> [--worktree]`

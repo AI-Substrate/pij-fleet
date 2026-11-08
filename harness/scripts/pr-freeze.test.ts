@@ -12,7 +12,7 @@ import {
 	entry,
 	guard,
 	latestChecks,
-	linuxCwds,
+	MACOS_ONLY,
 	migrationNumbers,
 	type PruneCandidate,
 	processCwds,
@@ -594,7 +594,7 @@ describe("pr-freeze --prune (F107)", () => {
 			const link = join(root, "link-11");
 			symlinkSync(path(11), link);
 			const { run, calls } = fleet(world(path, root));
-			const verdicts = prune(run, false, () => [{ pid: "4242", cwd: link }]);
+			const verdicts = prune(run, false, () => [{ pid: "4242", cwd: link }], "darwin");
 			expect(verdicts.map((verdict) => [basename(verdict.path), verdict.remove])).toEqual([
 				["review-7-a7a0f4a", true],
 				["review-8-a7a0f4a", false],
@@ -629,7 +629,9 @@ describe("pr-freeze --prune (F107)", () => {
 		try {
 			const none = () => [];
 			const dry = fleet(world(path, root));
-			expect(renderPrune(prune(dry.run, true, none), true)).toContain(`would remove ${path(7)}`);
+			expect(renderPrune(prune(dry.run, true, none, "darwin"), true)).toContain(
+				`would remove ${path(7)}`,
+			);
 			expect(dry.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
 
 			for (const broken of [
@@ -638,16 +640,21 @@ describe("pr-freeze --prune (F107)", () => {
 				{ ...world(path, root), slow: [`git -C ${path(11)} status`] },
 			]) {
 				const attempt = fleet(broken);
-				expect(() => prune(attempt.run, false, none)).toThrow(
+				expect(() => prune(attempt.run, false, none, "darwin")).toThrow(
 					/refusing --prune: .*; nothing was removed/,
 				);
 				expect(attempt.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
 			}
 			const blind = fleet(world(path, root));
 			expect(() =>
-				prune(blind.run, false, () => {
-					throw new Error("lsof did not list every cwd");
-				}),
+				prune(
+					blind.run,
+					false,
+					() => {
+						throw new Error("lsof did not list every cwd");
+					},
+					"darwin",
+				),
 			).toThrow(/refusing --prune: can't tell which worktrees are in use/);
 			expect(blind.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
 		} finally {
@@ -674,7 +681,7 @@ describe("pr-freeze --prune (F107)", () => {
 				{ state: "open", headRefOid: OTHER },
 			]) {
 				const attempt = fleet(only({ 7: payload as { state: string; headRefOid: string } }));
-				const [verdict] = prune(attempt.run, false, none);
+				const [verdict] = prune(attempt.run, false, none, "darwin");
 				expect(verdict?.remove, JSON.stringify(payload)).toBe(false);
 				expect(attempt.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
 			}
@@ -690,7 +697,7 @@ describe("pr-freeze --prune (F107)", () => {
 						seat as unknown as { id: string; folder: string },
 					]),
 				);
-				expect(() => prune(attempt.run, false, none), JSON.stringify(seat)).toThrow(
+				expect(() => prune(attempt.run, false, none, "darwin"), JSON.stringify(seat)).toThrow(
 					/refusing --prune: can't tell which worktrees are in use \(pij-rs list seat 0 has no usable id and folder/,
 				);
 				expect(attempt.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
@@ -699,7 +706,7 @@ describe("pr-freeze --prune (F107)", () => {
 			const sound = fleet(
 				only({ 7: { state: "MERGED", headRefOid: SHA } }, [{ id: "pij-x", folder: "/elsewhere" }]),
 			);
-			expect(prune(sound.run, false, none)[0]?.remove).toBe(true);
+			expect(prune(sound.run, false, none, "darwin")[0]?.remove).toBe(true);
 		} finally {
 			done();
 		}
@@ -710,7 +717,7 @@ describe("pr-freeze --prune (F107)", () => {
 			(stdout: string, code = 0, stderr = ""): Runner =>
 			() => ({ code, stdout, stderr });
 		const good = "p12\nfcwd\nn/work/a\np13\nfcwd\nn/work/b\n";
-		expect(processCwds(lsof(good), "darwin")).toEqual([
+		expect(processCwds(lsof(good))).toEqual([
 			{ pid: "12", cwd: "/work/a" },
 			{ pid: "13", cwd: "/work/b" },
 		]);
@@ -727,36 +734,21 @@ describe("pr-freeze --prune (F107)", () => {
 			["p12\nn\n", 0, ""],
 			["", 0, ""],
 		] as const) {
-			expect(() => processCwds(lsof(stdout, code, stderr), "darwin")).toThrow();
+			expect(() => processCwds(lsof(stdout, code, stderr))).toThrow();
 		}
 	});
 
-	it("on Linux skips only ended processes and other users', and refuses any other read error", () => {
-		const fail = (code: string) => () => {
-			throw Object.assign(new Error(code), { code });
-		};
-		const proc = (cwd: Record<string, () => string>, owners: Record<string, number> = {}) => ({
-			pids: () => Object.keys(cwd),
-			owner: (pid: string) => owners[pid] ?? 501,
-			cwd: (pid: string) => (cwd[pid] ?? fail("ENOENT"))(),
-			uid: 501,
-		});
-		expect(
-			linuxCwds(
-				proc(
-					{ "9": () => "/work/c", "10": fail("ENOENT"), "11": fail("ESRCH"), "12": fail("EACCES") },
-					{ "12": 0 },
-				),
-			),
-		).toEqual(["9\t/work/c"]);
-		expect(() => linuxCwds(proc({ "9": () => "/work/c", "10": fail("EACCES") }))).toThrow(
-			/can't read \/proc\/10\/cwd/,
-		);
-		expect(() => linuxCwds(proc({ "9": fail("EIO") }))).toThrow();
-		expect(() => linuxCwds(proc({ "9": fail("EPERM") }))).toThrow(/can't read \/proc\/9\/cwd/);
-		expect(processCwds(fake(good()).run, "linux", () => ["9\t/work/c"])).toEqual([
-			{ pid: "9", cwd: "/work/c" },
-		]);
+	it("refuses on any platform but macOS, before reading or removing anything", () => {
+		const { root, path, done } = dirs();
+		try {
+			for (const platform of ["linux", "win32", "freebsd"]) {
+				const attempt = fleet(world(path, root));
+				expect(() => prune(attempt.run, false, () => [], platform)).toThrow(MACOS_ONLY);
+				expect(attempt.calls).toEqual([]);
+			}
+		} finally {
+			done();
+		}
 	});
 
 	it("launches git, gh and pij-rs by absolute paths resolved once (P170-F001)", () => {
