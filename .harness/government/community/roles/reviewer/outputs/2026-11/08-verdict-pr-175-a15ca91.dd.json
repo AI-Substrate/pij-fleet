@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b969-185f-7e43-9110-f37eec42523e",
+				"date": "2026-11-08",
+				"head": "a15ca91102780f99c5412b017cb8d40e5e0c8332",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/175#issuecomment-6717328185",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:175",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "CI run 42446591166, junit-linux",
+					"exit_code": 0,
+					"log": "2204 passing Rust cases, zero failures/errors; grammar, digest and both current closure tests passed; https://github.com/AI-Substrate/pij-fleet/actions/runs/42446591166"
+				},
+				{
+					"command": "Author-run existing-binary P5/P6 closure probes",
+					"exit_code": 0,
+					"log": "P5/P6 incorrectly passed (ok), while the compact outside-import positive control failed. Source restored byte-identical; nice-only, test-threads=4; no builds or pushes. Full receipts summarized in verdict body."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #175 round-3 correctness verdict\n\n**BLOCK** at `a15ca91102780f99c5412b017cb8d40e5e0c8332`. The commit-only false positive and the new build/tree rendering exposure are addressed, but the closure guard still silently accepts escaping computed loads.\n\n## F001, P2: computed escaping paths still disappear from the closure\n\n`crates/testkit/tests/extension_closure.rs:24-30,110-119`\n\nThe collector discards any relative string containing a newline before the closure's `${` refusal runs. A newline inside a template interpolation expression is legal JavaScript and does not become a newline in the resulting path:\n\n```js\nawait import(`../../../crates/${\n  \"core\"\n}/tests/fixtures/control-commands.json`, { with: { type: \"json\" } });\n```\n\nThis expression resolves to the existing outside JSON path, but the collector returns no specifier, so neither the computed-path refusal nor the outside-root check runs.\n\nThe same fail-open class exists without a newline:\n\n```js\nawait import(\n  \"../../../crates/\" + \"core\" + \"/tests/fixtures/control-commands.json\",\n  { with: { type: \"json\" } },\n);\n```\n\nOnly the escaping directory literal is collected. `resolve` does not return a file for it, and the closure silently ignores it. There is no `${` to trigger the refusal.\n\n**Both confirmed by the coder using the existing round-3 test binary:** baseline passed; the compact outside-import positive control failed; the multiline-interpolation P5 and concatenation P6 probes each passed. The source was restored byte-identical after each run, with nice-only execution, four test threads, no builds and no pushes. The reviewer did not execute local tests.\n\n**Fix the class:** escaping dependencies that cannot be resolved/covered must fail the guard rather than vanish during newline filtering or optional resolution. Add P5 and P6 regressions, and state the lexical coverage limit accurately. Dropping only the newline filter repairs P5 but leaves P6. Do not describe the current scanner as unable to pass blind.\n\n## Whole-PR checks that pass\n\n- **Original false-positive concern:** producer identities and daemon stamps now compare the relevant committed extension subtree IDs, not checkout commits. Docs/skills changes outside those trees and daemon-only changes leave the compared IDs unchanged. The OMP identity includes the shared control-commands JSON blob in both producer and build stamps.\n- **Load forms:** current literal static imports, JSON imports, side-effect imports and re-exports are covered by the conservative collector. The prior comment-separated and newline-between-keyword-and-literal probes now fail correctly. Computed paths remain the blocker above.\n- **Build/tree rendering:** parsing happens from stored rows at render time. The build and tree grammar restricts emitted identifiers to the documented lowercase-hex forms. Malformed trees/stamps are not compared; malformed build prefixes render only their character count. The detail uses reconstructed identifiers labelled `seat-reported`, not raw caller text (`crates/daemon/src/pa_watchdog.rs:1341-1403`). This closes the changed-field rendering problem; it does not certify other digest fields.\n- **Fallbacks and tests:** the digest test covers same-tree newer commits, dirty prefixes, OMP outside-root changes, absent metadata, hash/no-tree cases, Claude exclusion, malformed stamps and hostile build/tree framing/control characters. Pi shares the OMP match arm; Codex is excluded by the remaining-harness branch.\n- **Presentation:** OMP's footer and published name use `displayBuild`; registration retains the complete tree identity. No new timer, poll, store/registry read or daemon launch is added by the comparison. Producer/build stamp calls remain at load/build boundaries, not per digest.\n\n## Evidence and limits\n\nCI run `42446591166` associated with this exact head passed. JUnit records **2,204 passing Rust cases, zero failures/errors**, including the digest, closed-grammar and both closure tests. That passing baseline lacks P5/P6; the author-run negative probes demonstrate the missing coverage.\n\n`pr-freeze` reported FINAL at this full SHA, with matching heads, CLEAN and successful latest checks. `git diff --check origin/main...HEAD` passed. The detached review worktree remains unchanged.\n\nNo local reviewer builds/tests, installs, credentials, live-fleet probes, merge or push. The pre-existing seat-id/asserted-role rendering issue is separately tracked as F127 and is not re-opened by this verdict. Hash/old/unstamped cases are unassessed, not proof of freshness; dirty working-tree bytes and package dependencies are not attested by committed tree IDs.\n"
+		}
+	]
+}
