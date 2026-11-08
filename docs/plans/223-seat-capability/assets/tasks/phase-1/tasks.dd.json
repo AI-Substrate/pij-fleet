@@ -18,11 +18,193 @@
     },
     {
       "name": "tasks",
-      "value": []
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Inventory: LOW notes and operation classes",
+          "phase": "ph-00df",
+          "state": "checked",
+          "success": "Squirrel's three LOW notes fixed; every seat-authority entry lists its operation classes; the sensor checks operations include the class and an implicit HEAD carries its GET's classification.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001",
+          "receipt": "../../evidence/phase-a1.md#ac1-inventory"
+        },
+        {
+          "id": "tk-0002",
+          "title": "The secured issuer",
+          "phase": "ph-00df",
+          "state": "checked",
+          "success": "Migration 0045 (seat_nonces, seat_capabilities); a nonce through a 0600 file; issuance in one store transaction only on a nonce, the peer path or the current token; public facts get no token and no context grant; two-phase rotation; every tombstone revokes; digests rebuild after a restart.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0002",
+          "receipt": "../../evidence/phase-a1.md#ac2-the-issuer"
+        },
+        {
+          "id": "tk-0003",
+          "title": "The socket, peer credentials and the boundary walk",
+          "phase": "ph-00df",
+          "state": "checked",
+          "success": "daemon.sock (0600) on the same router; peer read at accept; a fresh in-process walk of at most 16 hops to the nearest boundary, no cache, the H->M->S->P regression; the boundary index capped at 4,096.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003",
+          "receipt": "../../evidence/phase-a1.md#ac3-socket-and-walk"
+        },
+        {
+          "id": "tk-0004",
+          "title": "One owned session",
+          "phase": "ph-00df",
+          "state": "checked",
+          "success": "A boundary hosting two or more live sessions proves nothing tokenless, with the ruled E-RS-SEAT-AMBIGUOUS text; ownership moves only by token or after the owner is observed dead.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004",
+          "receipt": "../../evidence/phase-a1.md#ac4-one-owned-session"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Secret handling",
+          "phase": "ph-00df",
+          "state": "checked",
+          "success": "Tokens only in the owner's memory and its registration response; never in env, argv, /health, roster, cards or spine; the nonce file is 0600 and unlinked on read; the remote listener refuses capability-bearing requests; a probe failure counts as neither.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0005",
+          "receipt": "../../evidence/phase-a1.md#ac5-secrets"
+        },
+        {
+          "id": "tk-0006",
+          "title": "Every client presents the capability (A2)",
+          "phase": "ph-00df",
+          "state": "unchecked",
+          "success": "Phase A2, stacked on A1: Copilot, OMP and Pi send the token over the socket; the shim, pij-rs and hooks act through peer credentials.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0006",
+          "receipt": "../../evidence/phase-a1.md#ac6-clients"
+        },
+        {
+          "id": "tk-0007",
+          "title": "Counting by operation",
+          "phase": "ph-00df",
+          "state": "checked",
+          "success": "/health capabilities: 8 classes x token, peer, neither, plus nonce first registrations, counted by operation (argv leaf, implicit HEAD with its GET); nothing refused.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0007",
+          "receipt": "../../evidence/phase-a1.md#ac7-counters"
+        },
+        {
+          "id": "tk-0008",
+          "title": "Cost",
+          "phase": "ph-00df",
+          "state": "unchecked",
+          "success": "No new launch; a tokenless walk measured at about 23 us; live before-and-after readings at the A1 plus A2 deploy.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0009"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0008",
+          "receipt": "../../evidence/phase-a1.md#ac9-cost"
+        },
+        {
+          "id": "tk-0009",
+          "title": "Docs and states",
+          "phase": "ph-00df",
+          "state": "unchecked",
+          "success": "The Seat authority section, the refusal table and enforcement state, F88's ledger row, the skill's no-/new rule; checked with the verdicts.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0010"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0009",
+          "receipt": "../../evidence/phase-a1.md#ac10-docs"
+        }
+      ]
     },
     {
       "name": "done_when",
-      "value": {}
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "Squirrel's three LOW notes fixed; every seat-authority entry lists its operation classes; the sensor checks operations include the class and an implicit HEAD carries its GET's classification.",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "Migration 0045 (seat_nonces, seat_capabilities); a nonce through a 0600 file; issuance in one store transaction only on a nonce, the peer path or the current token; public facts get no token and no context grant; two-phase rotation; every tombstone revokes; digests rebuild after a restart.",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "daemon.sock (0600) on the same router; peer read at accept; a fresh in-process walk of at most 16 hops to the nearest boundary, no cache, the H->M->S->P regression; the boundary index capped at 4,096.",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0004",
+            "assertion": "A boundary hosting two or more live sessions proves nothing tokenless, with the ruled E-RS-SEAT-AMBIGUOUS text; ownership moves only by token or after the owner is observed dead.",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0005",
+            "assertion": "Tokens only in the owner's memory and its registration response; never in env, argv, /health, roster, cards or spine; the nonce file is 0600 and unlinked on read; the remote listener refuses capability-bearing requests; a probe failure counts as neither.",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0006",
+            "assertion": "Phase A2, stacked on A1: Copilot, OMP and Pi send the token over the socket; the shim, pij-rs and hooks act through peer credentials.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+          }
+        ],
+        "tk-0007": [
+          {
+            "id": "dw-0007",
+            "assertion": "/health capabilities: 8 classes x token, peer, neither, plus nonce first registrations, counted by operation (argv leaf, implicit HEAD with its GET); nothing refused.",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0007"
+          }
+        ],
+        "tk-0008": [
+          {
+            "id": "dw-0008",
+            "assertion": "No new launch; a tokenless walk measured at about 23 us; live before-and-after readings at the A1 plus A2 deploy.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0009"
+          }
+        ],
+        "tk-0009": [
+          {
+            "id": "dw-0009",
+            "assertion": "The Seat authority section, the refusal table and enforcement state, F88's ledger row, the skill's no-/new rule; checked with the verdicts.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0010"
+          }
+        ]
+      }
     },
     {
       "name": "goals",

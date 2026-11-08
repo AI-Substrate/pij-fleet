@@ -42,32 +42,37 @@
         {
           "id": "ac-0001",
           "claim": "Inventory metadata is correct before anything consumes it. Squirrel's three LOW notes on #163 (governance 7e537dc) are fixed in harness/scripts/route-inventory.json: the registration entry describes the ordinary (non-native) branch's guard, not only native N; POST background's authority names parent; the compact-self send aliases name their parent-authorized controls. Every seat-authority entry names the operation class the gate uses (send-as, inbox-claim, controls, role-and-holder, outputs, registration, activity, attribution), and shared handlers that reach a write through another URI list each operation they reach (workshop contract e). Implicit HEAD keeps its GET's class.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "assets/evidence/phase-a1.md#ac1-inventory"
         },
         {
           "id": "ac-0002",
           "claim": "The issuer is secured first (workshop contracts a and b). Spawn and revive mint a single-use nonce (32 bytes from the OS random source), store only its digest with spawn id, intended seat, harness, issue time and expiry, and pass the nonce to the harness through the spawn environment. Registration presenting it does, in ONE store transaction: find an unconsumed, unexpired nonce matching spawn and intended seat; mark it consumed; create or bind the incarnation; store the new token's digest (32 independent random bytes). Any failure commits nothing; the loser of a race is refused E-RS-SPAWN-NONCE-USED and an anomaly is recorded. A registration carrying only public facts (TCP or socket, no nonce, no peer-credential boundary) still registers as today but gets NO token and NO context grant (closes F88 row 2); the context grant is issued only through this issuer and is folded into the capability. Rotation is two-phase (the old digest stays valid until the new token is first presented). Tombstone, supersede and observed-dead owner delete the incarnation's digests in the transaction that records the change. Nonce and token digests persist across a daemon bounce (one migration: main's highest + 1 at push time). Expired nonces are dropped when their spawn is next touched or at daemon start; no sweep.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "receipt": "assets/evidence/phase-a1.md#ac2-the-issuer"
         },
         {
           "id": "ac-0003",
           "claim": "Peer credentials on a Unix socket, and the boundary walk (workshop contract c). The daemon adds `<state-dir>/daemon.sock` (0600, in a 0700 directory) serving the same router as TCP. Credentials come only from `UnixStream::peer_cred()` on the accepted stream, read once at accept; a missing pid, an error, or a uid other than the daemon's refuses every seat-authority request on that connection, never falling back to body identifiers. The peer's start is read in-process at accept and re-read on every request. A tokenless request walks from the peer pid to the NEAREST registered harness boundary (pid plus start), at most 16 hops, every hop read fresh, in-process only (`parent_and_name` and `observed_start`; on Linux the parent from /proc/<pid>/stat field 4); never the ProcLiveness wrapper, never `ps`. Reaching pid 1, launchd or a tmux server, using up 16 hops, or an unreadable hop is refused E-RS-SEAT-PROVENANCE. No ancestry cache. The only index is boundary (pid, start) to live incarnations, maintained by registration events in the same transactions, capped at 4,096 entries (a new registration at the cap is refused E-RS-SEAT-INDEX-FULL; nothing is evicted). Adopted and hand-started seats bootstrap their token through this path at registration over the socket.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "receipt": "assets/evidence/phase-a1.md#ac3-socket-and-walk"
         },
         {
           "id": "ac-0004",
           "claim": "One owned session per incarnation (workshop session ownership, ruled by the prime 08 Nov). The owner is the process that bootstrapped the incarnation (Copilot: that session's extension host; OMP, Pi, Claude, Codex: the harness process) and holds the token in memory. Ownership moves only by presenting the current token or after the owner is observed dead. A boundary owning two or more live sessions refuses tokenless authority with exactly: `E-RS-SEAT-AMBIGUOUS: this Copilot process hosts more than one live session; start a fresh seat (pij-rs revive --fresh), don't /new` (the harness name adjusted for non-Copilot). Public session ids and precedence observations never decide ownership; the extension hosts' own token-bearing requests are unaffected.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "receipt": "assets/evidence/phase-a1.md#ac4-one-owned-session"
         },
         {
           "id": "ac-0005",
           "claim": "Secrets stay where the workshop puts them (contract d). Tokens live only in the owning process's memory and the registration response to it: never in a subprocess environment or argv, and never in diagnostics, logs, /health, the roster, cards or the spine. The nonce is the only secret in an environment, single-use and peer-checked at use (a nonce registration must arrive over the socket from a process whose nearest boundary is the spawned pane's process). The optional remote listener never accepts a capability-bearing request; paired machines keep their three-route scope. A socket or probe failure never falls back to key-plus-identifiers authority: it is counted as neither, and refused once its class is enforced.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005",
+          "receipt": "assets/evidence/phase-a1.md#ac5-secrets"
         },
         {
           "id": "ac-0006",
@@ -78,8 +83,9 @@
         {
           "id": "ac-0007",
           "claim": "Counting by operation (phase 2a). The daemon counts every seat-authority operation, by class and outcome (token, peer-credential, neither) plus nonce-authenticated first registrations, as bounded counters in /health (class x outcome, no per-seat or per-request rows). Counting follows the operation, wherever it is reached (shared handlers, aliases, implicit HEAD), not the URI.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007",
+          "receipt": "assets/evidence/phase-a1.md#ac7-counters"
         },
         {
           "id": "ac-0008",

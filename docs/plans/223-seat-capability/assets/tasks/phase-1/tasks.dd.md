@@ -33,13 +33,75 @@ _Empty._
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | Inventory: LOW notes and operation classes | — | ph-00df | [x] checked | — | ../../evidence/phase-a1.md#ac1-inventory | [tk-0001](tasks.dd.md#done-when) | Squirrel's three LOW notes fixed; every seat-authority entry lists its operation classes; the sensor checks operations include the class and an implicit HEAD carries its GET's classification. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | The secured issuer | — | ph-00df | [x] checked | — | ../../evidence/phase-a1.md#ac2-the-issuer | [tk-0002](tasks.dd.md#done-when) | Migration 0045 (seat_nonces, seat_capabilities); a nonce through a 0600 file; issuance in one store transaction only on a nonce, the peer path or the current token; public facts get no token and no context grant; two-phase rotation; every tombstone revokes; digests rebuild after a restart. | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | The socket, peer credentials and the boundary walk | — | ph-00df | [x] checked | — | ../../evidence/phase-a1.md#ac3-socket-and-walk | [tk-0003](tasks.dd.md#done-when) | daemon.sock (0600) on the same router; peer read at accept; a fresh in-process walk of at most 16 hops to the nearest boundary, no cache, the H-&gt;M-&gt;S-&gt;P regression; the boundary index capped at 4,096. | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | One owned session | — | ph-00df | [x] checked | — | ../../evidence/phase-a1.md#ac4-one-owned-session | [tk-0004](tasks.dd.md#done-when) | A boundary hosting two or more live sessions proves nothing tokenless, with the ruled E-RS-SEAT-AMBIGUOUS text; ownership moves only by token or after the owner is observed dead. | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Secret handling | — | ph-00df | [x] checked | — | ../../evidence/phase-a1.md#ac5-secrets | [tk-0005](tasks.dd.md#done-when) | Tokens only in the owner's memory and its registration response; never in env, argv, /health, roster, cards or spine; the nonce file is 0600 and unlinked on read; the remote listener refuses capability-bearing requests; a probe failure counts as neither. | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | Every client presents the capability (A2) | — | ph-00df | [ ] unchecked | — | ../../evidence/phase-a1.md#ac6-clients | [tk-0006](tasks.dd.md#done-when) | Phase A2, stacked on A1: Copilot, OMP and Pi send the token over the socket; the shim, pij-rs and hooks act through peer credentials. | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0007 | Counting by operation | — | ph-00df | [x] checked | — | ../../evidence/phase-a1.md#ac7-counters | [tk-0007](tasks.dd.md#done-when) | /health capabilities: 8 classes x token, peer, neither, plus nonce first registrations, counted by operation (argv leaf, implicit HEAD with its GET); nothing refused. | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0008 | Cost | — | ph-00df | [ ] unchecked | — | ../../evidence/phase-a1.md#ac9-cost | [tk-0008](tasks.dd.md#done-when) | No new launch; a tokenless walk measured at about 23 us; live before-and-after readings at the A1 plus A2 deploy. | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0009 | Docs and states | — | ph-00df | [ ] unchecked | — | ../../evidence/phase-a1.md#ac10-docs | [tk-0009](tasks.dd.md#done-when) | The Seat authority section, the refusal table and enforcement state, F88's ledger row, the skill's no-/new rule; checked with the verdicts. | — | [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
 ## Done when
 
-_No fields._
+### tk-0001
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0001 | Squirrel's three LOW notes fixed; every seat-authority entry lists its operation classes; the sensor checks operations include the class and an implicit HEAD carries its GET's classification. | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | Migration 0045 (seat_nonces, seat_capabilities); a nonce through a 0600 file; issuance in one store transaction only on a nonce, the peer path or the current token; public facts get no token and no context grant; two-phase rotation; every tombstone revokes; digests rebuild after a restart. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0003
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0003 | daemon.sock (0600) on the same router; peer read at accept; a fresh in-process walk of at most 16 hops to the nearest boundary, no cache, the H-&gt;M-&gt;S-&gt;P regression; the boundary index capped at 4,096. | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0004
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0004 | A boundary hosting two or more live sessions proves nothing tokenless, with the ruled E-RS-SEAT-AMBIGUOUS text; ownership moves only by token or after the owner is observed dead. | [x] checked | [bp-0004](../../backpressure.dd.md#rows) |
+
+### tk-0005
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0005 | Tokens only in the owner's memory and its registration response; never in env, argv, /health, roster, cards or spine; the nonce file is 0600 and unlinked on read; the remote listener refuses capability-bearing requests; a probe failure counts as neither. | [x] checked | [bp-0005](../../backpressure.dd.md#rows) |
+
+### tk-0006
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0006 | Phase A2, stacked on A1: Copilot, OMP and Pi send the token over the socket; the shim, pij-rs and hooks act through peer credentials. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+
+### tk-0007
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0007 | /health capabilities: 8 classes x token, peer, neither, plus nonce first registrations, counted by operation (argv leaf, implicit HEAD with its GET); nothing refused. | [x] checked | [bp-0007](../../backpressure.dd.md#rows) |
+
+### tk-0008
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0008 | No new launch; a tokenless walk measured at about 23 us; live before-and-after readings at the A1 plus A2 deploy. | [ ] unchecked | [bp-0009](../../backpressure.dd.md#rows) |
+
+### tk-0009
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0009 | The Seat authority section, the refusal table and enforcement state, F88's ledger row, the skill's no-/new rule; checked with the verdicts. | [ ] unchecked | [bp-0010](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "`just route-inventory-check` (and the route_inventory_tests) pass with the corrected entries; a test fails if a seat-authority entry has no operation class.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Daemon tests: nonce registration issues a token once; a replayed or expired nonce is refused by name; two concurrent registrations with one nonce yield one token and one E-RS-SPAWN-NONCE-USED plus an anomaly; a public-facts registration gets neither token nor context grant (and the old reissue path is gone); rotation keeps the old token valid until the new one is presented; tombstone, supersede and observed-dead revoke; a bounce keeps a live seat's token valid; a fault injected mid-transaction leaves no consumed nonce and no digest.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {
@@ -41,7 +41,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Daemon tests: a pid outside any seat tree is refused; a bash-tool-shaped child two hops below its harness passes as that seat; the walk stops at the nearest boundary and never validates through a shared tmux server or launchd; spoonbill's H to M to S to P chain (M dies, S is reparented) refuses P; a dead connector's inherited connection is refused on the next request; a uid mismatch and a missing pid refuse; the index cap refuses the 4,097th registration; an adopted seat over the socket gets a token. macOS clippy and tests run locally before push (CI is Linux only).",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {
@@ -51,7 +51,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Daemon tests: two live sessions under one Copilot boundary make a shim-shaped tokenless request refused with the ruled text, while each host's token request passes; after one session's owner dies, tokenless authority returns; a public session id never moves ownership.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {
@@ -61,7 +61,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Tests: a registration response is the only serialization carrying the token (assert over /health, roster, cards, spine events and the daemon log for a seeded token); a remote-listener request with a token is refused; the socket-failure path is counted as neither.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {
@@ -81,7 +81,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Daemon tests: a token send, a peer-credential send and an asserted-only send each increment the right counter; the same operation reached through an alias and through HEAD counts in its class; the counters are bounded (no growth with seats or requests).",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {
