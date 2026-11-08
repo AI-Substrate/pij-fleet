@@ -84,3 +84,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 178 | 2026-11-08T04:17:26.113Z | 2026-11-08T04:24:59.844Z | pij-steady-otter | pij-far-jackal | #174 follow-up #178 | PR #178 merged (c2c8b1c90466) |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 179 | 2026-11-08T04:37:27.285Z | 2026-11-08T05:53:26.830Z | pij-steady-otter | pij-far-jackal | F123 tmux test flake #179 | PR #179 merged (179b1c15a391) |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 180 | 2026-11-08T05:05:40.599Z | 2026-11-08T06:07:09.429Z | pij-steady-otter | pij-far-jackal | F124 receiver lease #180 | PR #180 merged (c7eb6abc6c80) |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 181 | 2026-11-08T06:13:52.980Z | — | pij-steady-otter | — | F125 ready-SHA line #181 | — |

@@ -857,6 +857,16 @@
 					"seat": "pij-double-bobcat",
 					"to": "2026-11-08T06:07:09.429Z",
 					"why": "F124 receiver lease #180"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T06:13:52.980Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "181",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F125 ready-SHA line #181"
 				}
 			]
 		}
