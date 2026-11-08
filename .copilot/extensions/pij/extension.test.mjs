@@ -918,7 +918,7 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		assert.equal(registration.extension_path, await realpath(import.meta.dirname));
 		assert.match(
 			registration.extension_build,
-			/^(?:[0-9a-f]{7,10}(?:\+dirty)?|hash:[0-9a-f]{12})$/,
+			/^(?:[0-9a-f]{10}(?:\+dirty)? tree:[0-9a-f]{10}|hash:[0-9a-f]{12})$/,
 		);
 		assert.equal(f.requests.find((r) => r.path === "/v1/send").body.from, registration.id);
 		assert.equal(f.events.filter((e) => e.kind === "native-send").length, 1);

@@ -47,7 +47,7 @@ function git(directory: string, ...args: string[]): string {
 	}).trim();
 }
 
-function repository(): { root: string; extension: string; sha: string } {
+function repository(): { root: string; extension: string; sha: string; tree: string } {
 	const root = tempRoot();
 	const extension = extensionTree(join(root, "extension with spaces"));
 	writeSource(root, "unrelated.txt", "unrelated\n");
@@ -56,7 +56,12 @@ function repository(): { root: string; extension: string; sha: string } {
 	git(root, "config", "user.name", "pij test");
 	git(root, "add", "--", "extension with spaces", "unrelated.txt");
 	git(root, "commit", "--quiet", "-m", "initial");
-	return { root, extension, sha: git(root, "rev-parse", "--short=10", "HEAD") };
+	return {
+		root,
+		extension,
+		sha: git(root, "rev-parse", "--short=10", "HEAD"),
+		tree: git(root, "rev-parse", "HEAD:extension with spaces").slice(0, 10),
+	};
 }
 
 afterEach(() => {
@@ -66,11 +71,11 @@ afterEach(() => {
 });
 
 describe("computeExtensionBuildIdentity", () => {
-	it("reports the ten-character HEAD for a clean extension", () => {
-		const { extension, sha } = repository();
+	it("reports the ten-character HEAD and the directory's tree for a clean extension", () => {
+		const { extension, sha, tree } = repository();
 
 		expect(computeExtensionBuildIdentity(extension)).toEqual({
-			extension_build: sha,
+			extension_build: `${sha} tree:${tree}`,
 			extension_path: realpathSync(extension),
 		});
 	});
@@ -80,21 +85,51 @@ describe("computeExtensionBuildIdentity", () => {
 		"staged",
 		"untracked",
 	])("marks the extension dirty for %s extension changes", (change) => {
-		const { root, extension, sha } = repository();
+		const { root, extension, sha, tree } = repository();
 		const path = change === "untracked" ? "core/new.ts" : "index.ts";
 		writeSource(extension, path, "export const changed = true;\n");
 		if (change === "staged") git(root, "add", "--", join(extension, path));
 
-		expect(computeExtensionBuildIdentity(extension).extension_build).toBe(`${sha}+dirty`);
+		expect(computeExtensionBuildIdentity(extension).extension_build).toBe(
+			`${sha}+dirty tree:${tree}`,
+		);
 	});
 
 	it("does not mark the extension dirty for unrelated repository changes", () => {
-		const { root, extension, sha } = repository();
+		const { root, extension, sha, tree } = repository();
 		writeSource(root, "unrelated.txt", "changed\n");
 		git(root, "add", "unrelated.txt");
 		writeSource(root, "untracked.txt", "new\n");
 
-		expect(computeExtensionBuildIdentity(extension).extension_build).toBe(sha);
+		expect(computeExtensionBuildIdentity(extension).extension_build).toBe(`${sha} tree:${tree}`);
+	});
+
+	it("joins each outside root's id to the tree, so a change there changes the identity", () => {
+		// F113: the OMP extension imports one file from outside its directory.
+		const root = tempRoot();
+		const extension = extensionTree(join(root, ".omp/extensions/pij"));
+		const outside = "crates/core/tests/fixtures/control-commands.json";
+		writeSource(root, outside, "[]\n");
+		git(root, "init", "--quiet");
+		git(root, "config", "user.email", "pij@example.test");
+		git(root, "config", "user.name", "pij test");
+		git(root, "add", "--", ".omp", "crates");
+		git(root, "commit", "--quiet", "-m", "initial");
+		const ids = () =>
+			[
+				git(root, "rev-parse", "HEAD:.omp/extensions/pij"),
+				git(root, "rev-parse", `HEAD:${outside}`),
+			]
+				.map((id) => id.slice(0, 10))
+				.join("+");
+		const before = computeExtensionBuildIdentity(extension).extension_build;
+		expect(before).toBe(`${git(root, "rev-parse", "--short=10", "HEAD")} tree:${ids()}`);
+
+		writeSource(root, outside, '["compact"]\n');
+		git(root, "commit", "--quiet", "-am", "outside only");
+		const after = computeExtensionBuildIdentity(extension).extension_build;
+		expect(after.split(" tree:")[1]).toBe(ids());
+		expect(after.split(" tree:")[1]).not.toBe(before.split(" tree:")[1]);
 	});
 
 	it("resolves symlinks before choosing the source repository and dirty scope", () => {
@@ -105,7 +140,7 @@ describe("computeExtensionBuildIdentity", () => {
 		writeSource(source.extension, "index.ts", "export const changed = true;\n");
 
 		expect(computeExtensionBuildIdentity(linked)).toEqual({
-			extension_build: `${source.sha}+dirty`,
+			extension_build: `${source.sha}+dirty tree:${source.tree}`,
 			extension_path: realpathSync(source.extension),
 		});
 	});
