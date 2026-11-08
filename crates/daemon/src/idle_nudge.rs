@@ -58,6 +58,10 @@ pub(crate) async fn round(
     seats: &[SeatDescriptor],
     now_ms: u64,
 ) -> Vec<RoundOutcome> {
+    // Off by default (F144) until the nudge only qualifies real in-flight work.
+    if !services.idle_nudge {
+        return Vec::new();
+    }
     let store = services.watchdogs();
     let holding: Vec<SeatId> = match store.holding_seats().await {
         Ok(holding) => holding,

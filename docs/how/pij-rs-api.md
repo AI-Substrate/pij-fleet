@@ -2090,6 +2090,8 @@ A compaction can end a seat's turn with nothing queued, and nothing wakes it (F1
 
 A seat can sit idle while it holds work for reasons other than a compaction: a plain send it finished, a missed message, a turn that just stopped (F136: a merger held its role for hours after a plain send, with no role request and no time limit to escalate). Plan 222 only covers the compaction case, and s12's limits only cover role requests. So the PA watchdog's 60 s round also nudges a holder that has done nothing of its own for an hour. It adds no timer, poll or launch.
 
+**Off by default (F144).** As merged, the nudge treated a resting long-lived role holder (docs-system, delivery, security, a merger) as stalled work and cold-woke specialists overnight. It now runs only when the daemon starts with `PIJ_IDLE_NUDGE` set to `1`, `on` or `true`, until it nudges only real in-flight work.
+
 - **Who is looked at.** Only seats that hold work: an open role holding or an open claim, read as one `UNION` over the `community_assignments_open_by_seat` and `claims_open_by_seat` partial indexes. A seat that holds nothing is never read.
 - **When it fires.** A holder is nudged when all of these hold:
   - it is live, untombstoned and `idle`;

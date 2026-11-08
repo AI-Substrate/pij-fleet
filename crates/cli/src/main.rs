@@ -2701,6 +2701,13 @@ async fn run_daemon(
         .ok()
         .filter(|server| !server.is_empty());
     config.insecure_bind = insecure_bind;
+    // Off unless asked for (F144): the idle-holder nudge woke resting holders.
+    config.idle_nudge = std::env::var("PIJ_IDLE_NUDGE").is_ok_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "on" | "true"
+        )
+    });
     if let Some(pairing) = pairing {
         config.machine_alias = Some(pairing.machine);
         config.peers = pairing.peers;

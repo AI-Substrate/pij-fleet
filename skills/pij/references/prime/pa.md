@@ -67,7 +67,8 @@ the handover files you check, you are read-only.
      stalled, send **one** specific ask. If it is done, tell the prime in your round line.
    - A seat holding a role or a claim that does nothing of its own for an hour, with nothing queued
      and no background job, is sent one `idle N min while holding ...; resume, report blocked, or
-     release.` by pij itself, and its prime an FYI (plan 224), once per idle stretch. Don't send
+     release.` by pij itself (when the daemon runs with `PIJ_IDLE_NUDGE=1`; off by default, F144),
+     and its prime an FYI (plan 224), once per idle stretch. Don't send
      your own on top; if it stays idle after the nudge, that is the stall to report.
    - A `pij-bg` message that a seat **has shown a dialog** (plan 219): capture its pane first
      (`tmux capture-pane -p -t <pane>`) and check the dialog is still there, then clear it with the
