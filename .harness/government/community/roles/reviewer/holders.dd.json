@@ -907,7 +907,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "183",
 					"machine": "ops.osk.lan",
+					"release_why": "C33 (Jordan): trust boundary is the user account; plan 223 stopped, #183 closed unmerged",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T23:42:12.656Z",
 					"why": "plan 223 A1 seat capabilities #183 (reviewed workshop 001 on #163)"
 				},
 				{
