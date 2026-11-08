@@ -48,3 +48,4 @@
 | — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 223 | 2026-11-07T21:36:51.315Z | — | pij-steady-otter | — | plan 223 (req-10 phase 2) from marsupial's own workshop 001 | — |
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f112 | 2026-11-07T21:52:50.049Z | 2026-11-07T22:49:17.009Z | pij-steady-otter | pij-steady-otter | F112: per-tick whole-machine ps census in the legacy tap-writer check (ocelot 4029f72) | #169 merged a2cc5e7 |
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | f114 | 2026-11-08T00:05:47.003Z | — | pij-steady-otter | — | F114 death sweep misses paneless dead pi seats; F115 PA digest repeats delivered holds | — |
+| — | pij-exuberant-wildcat | copilot | cc88fc7c-b066-44d1-a82d-fa6560786ddf | ops.osk.lan | f107 | 2026-11-08T00:21:02.078Z | — | pij-steady-otter | — | F107 and F109: pr-freeze tooling | — |

@@ -395,6 +395,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-back-tapir",
 					"why": "F114 death sweep misses paneless dead pi seats; F115 PA digest repeats delivered holds"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T00:21:02.078Z",
+					"harness": "copilot",
+					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
+					"instance_key": "f107",
+					"machine": "ops.osk.lan",
+					"seat": "pij-exuberant-wildcat",
+					"why": "F107 and F109: pr-freeze tooling"
 				}
 			]
 		}
