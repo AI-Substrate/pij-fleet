@@ -514,6 +514,28 @@ export interface PruneVerdict {
 	readonly why: string;
 }
 
+const FULL_SHA = /^[0-9a-f]{40}$/;
+
+/** The PR as gh printed it, validated (review of #170, F001): state MERGED,
+ *  CLOSED or OPEN, and an OPEN PR's head a full sha. Anything else is
+ *  undefined, which spares the PR's worktrees. */
+export function prState(stdout: string): PrState | undefined {
+	let parsed: { state?: unknown; headRefOid?: unknown };
+	try {
+		parsed = JSON.parse(stdout) as { state?: unknown; headRefOid?: unknown };
+	} catch {
+		return undefined;
+	}
+	const { state, headRefOid } = parsed ?? {};
+	if (state === "MERGED" || state === "CLOSED") {
+		return { state, headRefOid: typeof headRefOid === "string" ? headRefOid : "" };
+	}
+	if (state === "OPEN" && typeof headRefOid === "string" && FULL_SHA.test(headRefOid)) {
+		return { state, headRefOid };
+	}
+	return undefined;
+}
+
 /** Every worktree named `review-<pr>-<sha7>`. */
 export function pruneCandidates(porcelain: string): PruneCandidate[] {
 	const found: PruneCandidate[] = [];
@@ -548,6 +570,10 @@ export function decide(
 	let over: string;
 	if (pr.state === "MERGED" || pr.state === "CLOSED") {
 		over = `PR #${candidate.pr} is ${pr.state.toLowerCase()}`;
+	} else if (pr.state !== "OPEN" || !FULL_SHA.test(pr.headRefOid)) {
+		return keep(
+			`gh reported PR #${candidate.pr} as ${JSON.stringify(pr)}, which says nothing usable`,
+		);
 	} else if (pr.headRefOid !== candidate.head) {
 		over = `PR #${candidate.pr}'s head moved on to ${short(pr.headRefOid)}`;
 	} else {
@@ -559,15 +585,29 @@ export function decide(
 }
 
 /** The folders of every live seat, from `pij-rs --json list`. */
+/** Every live seat's folder. A row without a string id and a non-empty
+ *  string folder makes the whole inventory unreadable (review of #170, F002):
+ *  a dropped row would be a seat prune can't see. */
 function seatFolders(run: Runner): { id: string; folder: string }[] {
 	const listed = JSON.parse(must(run, "pij-rs", ["--json", "list"])) as {
-		data?: { seats?: { id?: string; folder?: string }[] };
+		data?: { seats?: unknown };
 	};
 	const seats = listed.data?.seats;
 	if (!Array.isArray(seats)) throw new Error("pij-rs list returned no seats array");
-	return seats
-		.filter((seat) => typeof seat.folder === "string" && seat.folder !== "")
-		.map((seat) => ({ id: seat.id ?? "?", folder: seat.folder as string }));
+	return seats.map((seat: unknown, index) => {
+		const row = seat as { id?: unknown; folder?: unknown } | null;
+		if (
+			typeof row?.id !== "string" ||
+			row.id === "" ||
+			typeof row.folder !== "string" ||
+			row.folder === ""
+		) {
+			throw new Error(
+				`pij-rs list seat ${index} has no usable id and folder: ${JSON.stringify(seat)}`,
+			);
+		}
+		return { id: row.id, folder: row.folder };
+	});
 }
 
 /** Every process's cwd that this user may inspect: one `lsof -d cwd -F pn`
@@ -595,18 +635,24 @@ export function processCwds(
 	}
 	const cwds: { pid: string; cwd: string }[] = [];
 	let pid: string | undefined;
+	// Each process record must carry its cwd: a pid with none is incomplete.
+	let named = true;
 	for (const line of listed.stdout.split("\n")) {
 		if (line === "") continue;
 		if (/^p\d+$/.test(line)) {
+			if (!named) throw new Error(`lsof listed pid ${pid} with no cwd`);
 			pid = line.slice(1);
-		} else if (line.startsWith("f")) {
+			named = false;
+		} else if (line.startsWith("f") && pid !== undefined) {
 			// The file descriptor field: cwd, as asked.
-		} else if (line.startsWith("n") && line.length > 1 && pid !== undefined) {
+		} else if (line.startsWith("n") && line.length > 1 && pid !== undefined && !named) {
 			cwds.push({ pid, cwd: line.slice(1) });
+			named = true;
 		} else {
 			throw new Error(`lsof printed a record that doesn't parse: ${JSON.stringify(line)}`);
 		}
 	}
+	if (!named) throw new Error(`lsof listed pid ${pid} with no cwd`);
 	if (cwds.length === 0) throw new Error("lsof listed no process cwds");
 	return cwds;
 }
@@ -696,7 +742,7 @@ export function prune(
 	for (const pr of new Set(candidates.map((candidate) => candidate.pr))) {
 		const view = run("gh", ["pr", "view", String(pr), "--json", "state,headRefOid"]);
 		timedOut(view, `gh pr view ${pr}`);
-		states.set(pr, view.code === 0 ? (JSON.parse(view.stdout) as PrState) : undefined);
+		states.set(pr, view.code === 0 ? prState(view.stdout) : undefined);
 	}
 	const decided: PruneVerdict[] = [];
 	for (const candidate of candidates) {

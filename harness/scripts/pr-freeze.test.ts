@@ -16,6 +16,7 @@ import {
 	migrationNumbers,
 	type PruneCandidate,
 	processCwds,
+	prState,
 	prune,
 	type Ran,
 	type Runner,
@@ -483,8 +484,41 @@ describe("pr-freeze --prune (F107)", () => {
 			expect(decide(candidate(), current, dirty, busy).remove).toBe(false);
 		}
 		expect(decide(candidate(), undefined, undefined, undefined).remove).toBe(false);
+		// F001: decide spares a state it doesn't know, or an OPEN head that isn't a full sha.
+		for (const pr of [
+			{ state: "UNKNOWN", headRefOid: OTHER },
+			{ state: "OPEN", headRefOid: "" },
+			{ state: "OPEN", headRefOid: "08f7482" },
+		]) {
+			expect(decide(candidate(), pr, undefined, undefined).remove).toBe(false);
+		}
 		expect(decide(candidate({ detached: false }), merged, undefined, undefined).remove).toBe(false);
 		expect(decide(candidate({ head: OTHER }), merged, undefined, undefined).remove).toBe(false);
+	});
+
+	it("validates gh's PR before anything uses it (bobcat F001)", () => {
+		expect(prState(JSON.stringify({ state: "MERGED", headRefOid: SHA }))).toEqual({
+			state: "MERGED",
+			headRefOid: SHA,
+		});
+		expect(prState(JSON.stringify({ state: "CLOSED" }))).toEqual({
+			state: "CLOSED",
+			headRefOid: "",
+		});
+		expect(prState(JSON.stringify({ state: "OPEN", headRefOid: OTHER }))).toEqual({
+			state: "OPEN",
+			headRefOid: OTHER,
+		});
+		for (const stdout of [
+			JSON.stringify({ state: "OPEN" }),
+			JSON.stringify({ state: "OPEN", headRefOid: "08f7482" }),
+			JSON.stringify({}),
+			JSON.stringify({ state: "UNKNOWN", headRefOid: OTHER }),
+			"null",
+			"not json",
+		]) {
+			expect(prState(stdout), stdout).toBe(undefined);
+		}
 	});
 
 	interface Fleet {
@@ -621,6 +655,56 @@ describe("pr-freeze --prune (F107)", () => {
 		}
 	});
 
+	it("spares a PR gh reports unusably and refuses a malformed seat row (bobcat F001, F002)", () => {
+		const { root, path, done } = dirs();
+		try {
+			const none = () => [];
+			// One unused worktree of PR 7; only gh's answer for it varies.
+			const only = (prs: Fleet["prs"], seats: Fleet["seats"] = []): Fleet => ({
+				...world(path, root),
+				worktrees: at(path(7)),
+				prs,
+				seats,
+			});
+			for (const payload of [
+				{ state: "OPEN" },
+				{},
+				{ state: "UNKNOWN", headRefOid: OTHER },
+				{ state: "OPEN", headRefOid: "08f7482" },
+				{ state: "open", headRefOid: OTHER },
+			]) {
+				const attempt = fleet(only({ 7: payload as { state: string; headRefOid: string } }));
+				const [verdict] = prune(attempt.run, false, none);
+				expect(verdict?.remove, JSON.stringify(payload)).toBe(false);
+				expect(attempt.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+			}
+			for (const seat of [
+				{ id: "pij-reviewer" },
+				{ id: "pij-reviewer", folder: 7 },
+				{ id: "pij-reviewer", folder: "" },
+				{ folder: path(7) },
+				null,
+			]) {
+				const attempt = fleet(
+					only({ 7: { state: "MERGED", headRefOid: SHA } }, [
+						seat as unknown as { id: string; folder: string },
+					]),
+				);
+				expect(() => prune(attempt.run, false, none), JSON.stringify(seat)).toThrow(
+					/refusing --prune: can't tell which worktrees are in use \(pij-rs list seat 0 has no usable id and folder/,
+				);
+				expect(attempt.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+			}
+			// The positive control: the same worktree, a merged PR and sound rows, is removed.
+			const sound = fleet(
+				only({ 7: { state: "MERGED", headRefOid: SHA } }, [{ id: "pij-x", folder: "/elsewhere" }]),
+			);
+			expect(prune(sound.run, false, none)[0]?.remove).toBe(true);
+		} finally {
+			done();
+		}
+	});
+
 	it("refuses an lsof listing that failed, said anything on stderr, or doesn't parse (S170-001)", () => {
 		const lsof =
 			(stdout: string, code = 0, stderr = ""): Runner =>
@@ -635,6 +719,10 @@ describe("pr-freeze --prune (F107)", () => {
 			[good, 0, "lsof: WARNING: can't stat() nfs file system"],
 			[good, 127, "timed out after 60s"],
 			["n/work/a\n", 0, ""],
+			["p123\n", 0, ""],
+			["p12\nfcwd\nn/work/a\np13\n", 0, ""],
+			["p12\nfcwd\nn/work/a\np13\nfcwd\np14\nfcwd\nn/work/c\n", 0, ""],
+			["p12\nfcwd\nn/work/a\nn/work/b\n", 0, ""],
 			["p12\nx?\nn/work/a\n", 0, ""],
 			["p12\nn\n", 0, ""],
 			["", 0, ""],
@@ -665,6 +753,7 @@ describe("pr-freeze --prune (F107)", () => {
 			/can't read \/proc\/10\/cwd/,
 		);
 		expect(() => linuxCwds(proc({ "9": fail("EIO") }))).toThrow();
+		expect(() => linuxCwds(proc({ "9": fail("EPERM") }))).toThrow(/can't read \/proc\/9\/cwd/);
 		expect(processCwds(fake(good()).run, "linux", () => ["9\t/work/c"])).toEqual([
 			{ pid: "9", cwd: "/work/c" },
 		]);
