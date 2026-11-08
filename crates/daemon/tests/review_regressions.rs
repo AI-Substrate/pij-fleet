@@ -150,14 +150,29 @@ async fn a_failed_boot_cannot_brick_the_running_daemon() {
         // baseline), created at construction. This assertion is about credential
         // LITTER — a stray file that looks like a key — not about every artifact
         // a subsystem legitimately owns.
+        // "daemon.sock" is the live daemon's own socket (plan 223); it is
+        // bound only where the state path fits the platform's socket path
+        // limit, and a failed boot must leave it in place (checked below).
         .filter(|name| {
-            name != "daemon.key" && name != pij_daemon::DAEMON_RUNTIME_FILE && name != "sidecars"
+            name != "daemon.key"
+                && name != pij_daemon::DAEMON_RUNTIME_FILE
+                && name != "sidecars"
+                && name != "daemon.sock"
         })
         .collect();
     assert!(
         strays.is_empty(),
         "unexpected files in the state dir: {strays:?}"
     );
+    // Plan 223: when the live daemon bound its socket, the failed boot left
+    // it answering (a stale-socket unlink happens only after a failed connect).
+    let socket = dir.join("daemon.sock");
+    if socket.exists() {
+        assert!(
+            std::os::unix::net::UnixStream::connect(&socket).is_ok(),
+            "a failed boot must not unlink the running daemon's socket"
+        );
+    }
 
     first.shutdown().await.expect("shutdown");
     let _ = std::fs::remove_dir_all(dir);
