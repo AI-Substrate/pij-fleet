@@ -154,11 +154,13 @@ impl FleetView {
             .filter(|row| row.size.cold_wake.would_refuse)
             .count();
         let mut text = format!(
-            "[pij watchdog] fleet idle for {} ({}) — {} seats: {working} working, {} idle, {cold} cold ❄",
+            "[pij watchdog] fleet idle for {} (scope {}) — {} seats: {working} working, {} idle, {cold} cold ❄",
             self.prime
                 .as_ref()
                 .map_or(Cow::Borrowed("your fleet"), SeatId::rendered),
-            self.scope,
+            // A path has no closed grammar: fenced (F133). It is the
+            // repository's common git dir, or a seat's folder git can't place.
+            render::fenced(&self.scope, render::FENCE_MAX),
             self.rows.len(),
             self.rows.len() - working,
         );
