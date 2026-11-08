@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "31c5113a4454a7cba01bddf410d3df6b694f0480",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/187#issuecomment-6722027046",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:187",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes**, delta only, at `31c5113a4454a7cba01bddf410d3df6b694f0480`.\n\nThe ordinary legacy batch/final replay paths now reconstruct job-derived text through current renderers before use, including the Wake-to-Cold case and missing-content fallback. No new confirmed caller-exploitable injection or C19/C21 disclosure was established.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new confirmed delta vulnerability | - |\n\n## Base and version boundary\n\nRange-diff confirms `99f6d7b` rebased as `71bf4e6` without executable changes; its only difference is difficulty-document context. The base is #185 `b56a990`, with its previously recorded qualifications. The new feature is `31c5113`.\n\nNew internally created plans carry numeric `v:2`. Missing, malformed or different versions take legacy handling after decoding; undecodable plan JSON fails without sending its text (`crates/daemon/src/background.rs:167-190`). The marker is an internal writer/version contract, not cryptographic validation of arbitrary database edits.\n\n## Rebuild and failure behavior\n\nBatch and final replay discard the legacy body/subject and derive new content from job/batch rows using the same current helpers as a fresh decision. The resulting plan retains its channel, escalation route and recorded notice file. Cold leads replace the subject; the recognized, newline-free cold-facts prefix is retained rather than treating the old subject as data (`background.rs:192-239,869-884,1438-1508`).\n\nContent reconstruction failure produces the short title-fenced “could not rebuild” notice, not the legacy body. The replacement is encoded/versioned and written before `hand_off`; a replacement-store failure propagates and prevents using the old plan (`background.rs:986-1008`). Preserved files/routes remain the existing internal plan's references, not new caller-supplied destinations.\n\nThe tests cover serial double ticks, route/file/fact preservation, one cold FYI/notice on downgrade, and the fallback. This is not evidence of arbitrary concurrent or mixed-version writer safety.\n\n## Narrow proof limitations\n\nThe fresh-decision race winner deserves a stronger check: `decide` takes the record returned by `record_handoff`, then discards `decode_plan`'s legacy flag (`background.rs:1024-1029`). Current writers stamp v2, but an old writer inserting a legacy row between the earlier absence read and that insert is not covered by the replay tests. Recheck the winning record's version, or explicitly constrain mixed-version writers before claiming every possible stored-plan read is protected. No ordinary external plan setter or current-process legacy-producing path was established here.\n\nRetained cold facts are selected by prefix/delimiter/newline checks, not a complete numeric grammar. This review relies on their existing internal producer; it does not certify malicious database tampering or every legacy metadata field as attested.\n\nOriginal F133/F134 quoted rendering remains structural, not shell quoting or semantic prompt-injection prevention. File-backed/source prose remains untrusted; the separately noted raw directory CLI boundary in #185 is not re-reviewed or claimed fixed.\n\n## CI and receipts\n\nLocal and GitHub heads agree; worktree clean; current checks succeeded. CI [42482942573](https://github.com/AI-Substrate/pij-fleet/actions/runs/42482942573) tested synthetic merge `fd67ea6`, incorporating this exact head. JUnit artifact [13618302496](https://github.com/AI-Substrate/pij-fleet/actions/runs/42482942573/artifacts/13618302496) has 2,258 passing cases, no failures, five separately skipped.\n\nConfirmed executed: all four legacy Wake/Cold/downgrade/rebuild-failure cases. The provided M0-M7 receipts record applied mutations, expected failures, restoration comparisons and a final green run; they were read, not independently rerun or treated as CI mutation evidence. ddocs was UNAVAILABLE.\n\nNo local cargo/builds/tests/scripts, hostile/native-model replay, credentials, product edits or production/background/delivery/pane/process probes. A future #185 rebase requires a new exact-head delta.\n"
+		}
+	]
+}
