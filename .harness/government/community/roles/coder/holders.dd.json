@@ -665,6 +665,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-back-tapir",
 					"why": "F148 spawn exit-status race (from closed #183)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T23:52:09.048Z",
+					"harness": "copilot",
+					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
+					"instance_key": "f149",
+					"machine": "ops.osk.lan",
+					"seat": "pij-exuberant-wildcat",
+					"why": "F149 priority: pij close held by memory-turn never completes"
 				}
 			]
 		}
