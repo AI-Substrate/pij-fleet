@@ -1005,7 +1005,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "191",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #191 merged (97fd5883faf1)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T17:27:08.169Z",
 					"why": "F135 instance grammar + window names; spoonbill free until #183 r3"
 				}
 			]
