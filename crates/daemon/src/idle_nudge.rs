@@ -25,8 +25,9 @@
 //!
 //! A read that fails skips the seat for this round; it never sends. Every
 //! label in both messages is rendered: seat ids through
-//! [`SeatId::rendered`], roles, instances, projects and claim kinds through
-//! the holdings' word grammar (`invalid (N chars)` otherwise).
+//! [`pij_core::render::seat`], roles, instances, projects and claim kinds
+//! through [`pij_core::render`]'s name and word grammars (`invalid (N chars)`
+//! otherwise).
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -39,7 +40,7 @@ use pij_core::model::{SeatDescriptor, SeatId, SystemState};
 use serde_json::json;
 
 use crate::Services;
-use crate::http::memory_turn::{shown, try_holdings_of};
+use crate::http::memory_turn::try_holdings_of;
 use crate::pa_watchdog::{RoundOutcome, audit, bg_msg, outcome_text, wake_pa_receipt};
 
 /// One idle holder due a nudge: what it holds, rendered, and the projects.
@@ -208,9 +209,9 @@ async fn due<'a>(services: &Services, seat: &'a SeatDescriptor, now_ms: u64) -> 
     held.extend(claims.iter().map(|claim| {
         format!(
             "{} {} (project {})",
-            shown(&claim.kind),
+            pij_core::render::word(&claim.kind),
             pij_core::claims::format(&claim.kind, claim.number),
-            shown(&claim.project)
+            pij_core::render::name(&claim.project)
         )
     }));
     if held.is_empty() {

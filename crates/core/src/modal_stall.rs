@@ -144,9 +144,10 @@ pub fn is_candidate(seat: &SeatDescriptor, last_own_event_ms: Option<u64>, now_m
 #[must_use]
 pub fn stall_body(seat: &SeatId, harness: Harness, stall: &ModalStall, now_ms: u64) -> String {
     format!(
-        "pij: {seat} ({harness}) has been silent for {}, with {} on screen, while pij reads it working.\n\
+        "pij: {} ({harness}) has been silent for {}, with {} on screen, while pij reads it working.\n\
          It clears with: {}. Look at the pane first (tmux capture-pane -p -t <pane>), then clear it, and ask the seat in text what it wanted. Never choose an option for it.\n\
          pij will not tell you again until the seat records a new event.",
+        seat.rendered(),
         human_duration(now_ms.saturating_sub(stall.quiet_since_ms)),
         stall.dialog,
         stall.clears,

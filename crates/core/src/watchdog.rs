@@ -13,6 +13,8 @@
 //! fleet that went idle on a usage limit is woken at the reset instead
 //! ([`crate::usage_limit`]).
 
+use std::borrow::Cow;
+
 use crate::config::Config;
 use crate::model::{SeatDescriptor, SeatId, SemanticState, SystemState};
 
@@ -91,7 +93,8 @@ pub const PRIME_ACTIVE_REASON: &str = "prime-active";
 /// The prime-active wake's text: why the PA is woken, then the fleet digest.
 pub fn prime_active_body(prime: &SeatId, digest: &str) -> String {
     format!(
-        "[pij watchdog] {prime} is active again after the fleet went idle: resume your plan.\n\n{digest}"
+        "[pij watchdog] {} is active again after the fleet went idle: resume your plan.\n\n{digest}",
+        prime.rendered()
     )
 }
 
@@ -432,15 +435,16 @@ pub fn optin_nudge(seat: &SeatId, quiet_secs: u64, optin: &WatchdogOptIn) -> Str
     let who = if optin.set_by == optin.seat {
         "you".to_string()
     } else {
-        optin.set_by.to_string()
+        optin.set_by.rendered().into_owned()
     };
     format!(
-        "[pij watchdog] {seat}: quiet {} (watchdog on every {}, set by {who}). \
+        "[pij watchdog] {}: quiet {} (watchdog on every {}, set by {who}). \
          Keep going if working, and report with `pij report now \"<did>\" \"<next>\"`. \
          If this unit of work is finished, run `pij report state done`; \
          if you are idle but available, run `pij report state ready`, \
          and this watchdog stays quiet until you next work. \
          No more work coming? Stop this watchdog: `pij watchdog off`.",
+        seat.rendered(),
         crate::cold_wake::human_duration(quiet_secs.saturating_mul(1_000)),
         crate::cold_wake::human_duration(optin.interval_secs.saturating_mul(1_000)),
     )
@@ -775,8 +779,9 @@ pub fn pa_missing_body(
     folder: &str,
 ) -> String {
     let lead = format!(
-        "[pij watchdog] {prime}: your fleet has been working for {} with no live PA, so \
+        "[pij watchdog] {}: your fleet has been working for {} with no live PA, so \
          nobody is watching seat sizes, stalls or queued requests.",
+        prime.rendered(),
         crate::cold_wake::human_duration(active_ms)
     );
     let spawn = format!(
@@ -785,9 +790,10 @@ pub fn pa_missing_body(
     );
     match last_pa {
         Some(pa) => format!(
-            "{lead} The last PA was {pa}. Revive it: `pij-rs revive {}` (add `--fresh` for a \
+            "{lead} The last PA was {}. Revive it: `pij-rs revive {}` (add `--fresh` for a \
              blank conversation), or start a new one: `{spawn}`.",
-            crate::directory::shell_word(pa.as_str())
+            pa.rendered(),
+            crate::directory::shell_word(&pa.rendered())
         ),
         None => format!("{lead} Start one: `{spawn}`."),
     }
@@ -796,8 +802,9 @@ pub fn pa_missing_body(
 /// The dormant wake to the PA: why, then the fleet digest.
 pub fn pa_dormant_body(pa: &SeatId, quiet_ms: u64, digest: &str) -> String {
     format!(
-        "[pij watchdog] {pa}: your fleet is working but you have taken no turn for {}. \
+        "[pij watchdog] {}: your fleet is working but you have taken no turn for {}. \
          Check the fleet now, and report with `pij report now \"<did>\" \"<next>\"`.\n\n{digest}",
+        pa.rendered(),
         crate::cold_wake::human_duration(quiet_ms)
     )
 }
@@ -811,13 +818,15 @@ pub fn pa_unresponsive_body(
     wake_receipt: &str,
 ) -> String {
     format!(
-        "[pij watchdog] {prime}: your PA {pa} has taken no turn for {}, and has not answered \
+        "[pij watchdog] {}: your PA {} has taken no turn for {}, and has not answered \
          the dormant wake sent {} ago ({wake_receipt}). It may be wedged, waiting on a \
          question, or holding a message in its composer. Check its pane; revive it \
          (`pij-rs revive {}`); or replace it.",
+        prime.rendered(),
+        pa.rendered(),
         crate::cold_wake::human_duration(quiet_ms),
         crate::cold_wake::human_duration(woken_ago_ms),
-        crate::directory::shell_word(pa.as_str()),
+        crate::directory::shell_word(&pa.rendered()),
     )
 }
 
@@ -840,7 +849,7 @@ pub fn large_seats_body(seats: &[LargeSeat], pas: &[SeatId]) -> String {
         "none".to_string()
     } else {
         pas.iter()
-            .map(SeatId::as_str)
+            .map(SeatId::rendered)
             .collect::<Vec<_>>()
             .join(", ")
     };
@@ -851,10 +860,14 @@ pub fn large_seats_body(seats: &[LargeSeat], pas: &[SeatId]) -> String {
     for seat in seats {
         text.push_str(&format!(
             "\n- {} {} role {} model {}",
-            seat.seat,
+            seat.seat.rendered(),
             crate::cold_wake::human_tokens(seat.tokens),
-            seat.role.as_deref().unwrap_or("none"),
-            seat.model.as_deref().unwrap_or("unknown"),
+            seat.role
+                .as_deref()
+                .map_or(Cow::Borrowed("none"), crate::render::role),
+            seat.model
+                .as_deref()
+                .map_or(Cow::Borrowed("unknown"), crate::render::model),
         ));
     }
     text
@@ -1134,8 +1147,12 @@ mod tests {
     /// does neither.
     #[test]
     fn large_seats_cross_once_and_rearm_under_the_line() {
-        let (a, b, c, d): (SeatId, SeatId, SeatId, SeatId) =
-            ("a".into(), "b".into(), "c".into(), "d".into());
+        let (a, b, c, d): (SeatId, SeatId, SeatId, SeatId) = (
+            "pij-a".into(),
+            "pij-b".into(),
+            "pij-c".into(),
+            "pij-d".into(),
+        );
         let sizes = [
             (&a, Some(LARGE_SEAT_TOKENS + 1)),
             (&b, Some(LARGE_SEAT_TOKENS + 1)),
@@ -1157,7 +1174,7 @@ mod tests {
         assert_eq!(
             body,
             "[pij watchdog] over 600k tokens in your fleet (PA: none):\n\
-             - a 650k role worker model unknown"
+             - pij-a 650k role worker model unknown"
         );
     }
 }

@@ -833,8 +833,8 @@ impl DeliveryService {
             return Err(PijError::NotDeliverable {
                 seat: recipient,
                 reason: format!(
-                    "{FYI_ID_TAKEN}: FYI id {:?} is already held for another sender or recipient",
-                    msg.msg_id.escape_debug().take(64).collect::<String>()
+                    "{FYI_ID_TAKEN}: FYI id {} is already held for another sender or recipient",
+                    pij_core::render::msg_id(&msg.msg_id)
                 ),
             });
         }

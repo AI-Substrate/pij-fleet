@@ -44,7 +44,7 @@ pub fn prime_body(seat: &SeatId, idle_ms: u64, held: &[String]) -> String {
     format!(
         "{} has been idle {} while holding {}, with nothing queued. \
          pij sent it one nudge (resume, report blocked, or release); if it stays idle, check on it.",
-        seat.rendered(),
+        crate::render::seat(seat.as_str()),
         minutes(idle_ms),
         join(held)
     )
