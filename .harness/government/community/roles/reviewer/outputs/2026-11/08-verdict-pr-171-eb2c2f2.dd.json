@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b8af-ac65-7bb3-bc76-c3aa281bea67",
+				"date": "2026-11-08",
+				"head": "eb2c2f205669b4614714172d44f1b751c587ae8f",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/171#issuecomment-6715439290",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:171",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N001: qualify req-04 any refusal as any policy refusal before implementation; force overrides messaging limits, not provenance or unrelated admission failures."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "ddocs validate docs/project/prds/003-seat-permissions.dd.json",
+					"exit_code": 0,
+					"log": "0 errors, 0 warnings"
+				},
+				{
+					"command": "ddocs validate docs/project/workstreams/003-seat-permissions.dd.json",
+					"exit_code": 0,
+					"log": "0 errors, 0 warnings"
+				},
+				{
+					"command": "node harness/scripts/pr-freeze.ts 171",
+					"exit_code": 0,
+					"log": "FINAL at eb2c2f205669b4614714172d44f1b751c587ae8f; matching heads, CLEAN, successful latest checks, ready"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #171 correctness verdict\n\n**PASS-WITH-NOTES** at `eb2c2f205669b4614714172d44f1b751c587ae8f`. The policy answers and #112 clarifications are reflected in the requirements and workstream. No blocking correctness findings.\n\n## Policy fidelity\n\n- **q-02:** req-02 explicitly limits outbound recipients, not inbound senders. Req-04 adds an audited force override with a reason, and req-05's reply-refusal test accounts for that override (`docs/project/prds/003-seat-permissions.dd.json:95,115-129`). This is a messaging-policy override, not removal of caller-provenance checks.\n- **q-03:** req-03 preserves immediate-parent reachability, makes the seat's own community prime the guaranteed prime, and falls back to any prime on the machine when that community prime is dead, tombstoned or absent (`:105-109`). It does not replace the available community prime with an arbitrary one.\n- **q-04:** the operator, Telegram bridge and system messages are exempt from seat permissions only as proven identities. The requirement explicitly rejects a caller merely claiming one of those identities (`:105-109,225`). No claimable exemption was approved.\n\nAll three questions are marked answered with those decisions (`:207-225`); the draft's prior defaults are not the new normative answers.\n\n## #112 notes and workstream state\n\nReq-10 now checks the claimed caller's capability, not each operation subject's capability (`PRD :179-181`; `docs/project/workstreams/003-seat-permissions.dd.json:28`). Req-11 explicitly separates unforced refusal tests from operator/forced success paths and distinguishes designation authority from caller proof (`PRD :192`).\n\nWorkstream s02 has no dependency on s01 and explicitly permits parallel work (`workstream :33-39`). s01 stays in-progress, distinguishing shipped phase 1 from ongoing phase 2. s03-s05 stay planned; only their unanswered-question barrier was removed. The real ordering dependencies remain: s03 depends on s01, and s04/s05 depend on s03 (`:23-76`). No requirement or implementation step is falsely marked shipped.\n\n## N001: qualify \"any refusal\" in req-04\n\nAt `PRD :115`, use **\"any policy refusal\"** rather than the unqualified \"any refusal\" before implementation. The paragraph is already about permissions and req-10 still requires proven caller identity, so this is a nonblocking clarification. Jordan authorized overriding messaging limits, not authentication failures, missing recipients or unrelated admission errors. This verdict does not approve bypassing those checks.\n\n## Verification\n\nBoth changed canonical documents passed read-only `ddocs validate` with **0 errors and 0 warnings**. `git diff --check origin/main...HEAD` passed. `pr-freeze` reported FINAL at this full SHA, with matching heads, CLEAN, ready and successful latest checks. CI run `42432263849` passed Node 22/24 and Rust lint/test; Delivers `42432264023` passed.\n\nNo local builds or tests. No product edits, credentials, merge or push. The four changed files are the PRD/workstream sources and their generated Markdown; the detached worktree remains clean at the requested head. This is policy/document review, not proof of implemented permissions.\n"
+		}
+	]
+}
