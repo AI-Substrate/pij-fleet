@@ -432,9 +432,13 @@ impl DirectoryService {
                 .iter()
                 .filter(|row| row.to.is_none() || row.end_pending)
                 .map(|row| {
+                    // F132: a release command is printed only for keys it can
+                    // show; the raw row stays in the JSON to address it by hand.
+                    let printable = pij_core::model::is_canonical_seat_id(&row.seat)
+                        && (row.instance.is_empty() || pij_core::render::is_name(&row.instance));
                     serde_json::json!({
                         "seat": row.seat, "instance": row.instance, "since": row.from,
-                        "command": picture::command(&[
+                        "command": printable.then(|| picture::command(&[
                             "pij",
                             "directory",
                             "release",
@@ -444,7 +448,7 @@ impl DirectoryService {
                             "<why>",
                             "--project",
                             project,
-                        ]),
+                        ])),
                     })
                 })
                 .collect();

@@ -119,6 +119,18 @@ pub fn subject(subject: &str) -> Cow<'_, str> {
     closed(subject, fits)
 }
 
+/// A machine name a holding recorded: letters, digits, `.`, `_` and `-`, at
+/// most 64 (a host name).
+pub fn machine(machine: &str) -> Cow<'_, str> {
+    closed(
+        machine,
+        (1..=64).contains(&machine.len())
+            && machine
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')),
+    )
+}
+
 /// How much of a fenced reason a generated notice shows.
 pub const FENCE_MAX: usize = 500;
 

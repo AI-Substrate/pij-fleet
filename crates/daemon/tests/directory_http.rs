@@ -2940,7 +2940,7 @@ async fn the_directory_view_never_prints_a_hostile_stored_seat_or_instance() {
         }
         descriptor
     };
-    for id in [seat, live, "pij-gone"] {
+    for id in [seat, live, "pij-gone", "pij-old", "pij-older"] {
         rig.services
             .registry
             .put(register(id, false))
@@ -2954,6 +2954,53 @@ async fn the_directory_view_never_prints_a_hostile_stored_seat_or_instance() {
     seed_legacy_holding(&rig, "reviewer", "f2", "pij-gone").await;
     seed_legacy_holding(&rig, "pm-001", "", live).await;
     seed_legacy_holding(&rig, "pm-001", "", "pij-holder").await;
+    // Legacy prime assignments are listed with a release command: only for
+    // keys that can be shown.
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "prime",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    // Prime rows carry no seat role (one seat holds `prime`).
+    for (key, holder) in [
+        ("", seat),
+        ("", "pij-old"),
+        ("f9\n$(id>dollar)", "pij-older"),
+    ] {
+        let row = pij_store::Assignment {
+            project: "fleet".into(),
+            role: "prime".into(),
+            instance: key.into(),
+            seat: holder.into(),
+            harness: None,
+            session: None,
+            machine: None,
+            from: "2026-11-01T00:00:00Z".into(),
+            to: None,
+            assigned_by: SEAT.into(),
+            released_by: None,
+            why: "legacy".into(),
+            release_why: None,
+            end_pending: false,
+        };
+        rig.store
+            .record_assignment_committed(&row, None, 1)
+            .await
+            .expect("seed a legacy prime row");
+    }
     for id in [seat, "pij-gone"] {
         rig.services.registry.put(register(id, true)).await.unwrap();
     }
@@ -3083,6 +3130,32 @@ async fn the_directory_view_never_prints_a_hostile_stored_seat_or_instance() {
             "{words:?}"
         );
     }
+    let prime = view["data"]["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|role| role["id"] == "prime")
+        .unwrap_or_else(|| panic!("the prime role: {view}"));
+    let legacy = prime["legacy"].as_array().unwrap();
+    let hostile = legacy
+        .iter()
+        .find(|row| row["seat"] == seat)
+        .unwrap_or_else(|| panic!("the hostile legacy row, raw: {prime}"));
+    assert_eq!(hostile["instance"], "", "{prime}");
+    assert_eq!(hostile["command"], Value::Null, "{prime}");
+    let keyed = legacy
+        .iter()
+        .find(|row| row["seat"] == "pij-older")
+        .unwrap_or_else(|| panic!("the hostile-instance legacy row: {prime}"));
+    assert_eq!(keyed["command"], Value::Null, "{prime}");
+    let old = legacy
+        .iter()
+        .find(|row| row["seat"] == "pij-old")
+        .unwrap_or_else(|| panic!("the pij-old legacy row: {prime}"));
+    assert_eq!(
+        old["command"], "pij directory release prime pij-old --why '<why>' --project fleet",
+        "{prime}"
+    );
     rig.server.abort();
 }
 
