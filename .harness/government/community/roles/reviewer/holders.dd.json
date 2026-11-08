@@ -1048,7 +1048,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "195",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #195 merged (9a33e1761ae0)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T22:23:11.819Z",
 					"why": "F144 part 2 nudge qualification"
 				}
 			]
