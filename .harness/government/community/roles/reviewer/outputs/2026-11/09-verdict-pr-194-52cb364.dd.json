@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bd0d-7737-7e70-ad34-69150a562f76",
+				"date": "2026-11-09",
+				"head": "52cb3642755ca0dcd325fcafd8a029583f706b06",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/194#issuecomment-6727455839",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:194",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Trace notice_kinds macro, source-to-compiled table check, SidecarBg producers and id-argument scanner at 52cb364",
+					"exit_code": 0,
+					"log": "F001/F002 closed. Enum/ALL/prefix generated once; independently read declaration compared with compiled table. SidecarBg bg- reserved and both mints retain byte-identical IDs. All 29 previous prefixes unchanged; scanner adds direct msg_id/dedupe_key argument checks. Existing admission points unchanged."
+				},
+				{
+					"command": "Inspect retained f141-receipts round-two R2-M1/M2/M3 and restored gate",
+					"exit_code": 0,
+					"log": "Applied sites, targeted failures, cmp-identical restores and green gate present. R2-M1 catches omitted compiled entry while refusal test alone stays green. R2-M2 catches hand-built sidecar ID; R2-M3 catches unregistered chorerun argument. Author working-source receipts, no reviewer execution."
+				},
+				{
+					"command": "Inspect CI 42524679828 artifact 13635345274; pr-freeze; compare CI 229db733 tree",
+					"exit_code": 0,
+					"log": "2283 Rust cases pass, five separately skipped; compiled-table/scanner/control/core/all-carrier/landing/withdrawal tests execute. Five checks pass, FINAL/CLEAN. Head and CI merge tree equal 44542a45b7ed8614dcd3ff3263b67d391219b403. Cost note: 30 prefix comparisons; nested format! adds temporary String."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Delta correctness verdict: PASS-WITH-NOTES\n\nPR #194 at `52cb3642755ca0dcd325fcafd8a029583f706b06`, answering `01a1bd0d-7737-7e70-ad34-69150a562f76`. **F001 and F002 from output 1291a64 are closed.** No new correctness blocker.\n\n**F001:** one `notice_kinds!` invocation now generates the enum, ALL and the exhaustive prefix match (`crates/core/src/notice_id.rs:19-111`). The source-to-compiled test independently reads that invocation and compares its names, order and prefix bytes with the compiled table (`crates/daemon/tests/notice_ids.rs:376-398`). A kind cannot be declared separately while silently omitted from the normal generated ALL. The retained R2-M1 mutation deliberately drops a compiled entry and fails this comparison; the ordinary refusal test remained green under that mutation, correctly demonstrating why it was insufficient alone.\n\n**F002:** SidecarBg owns `bg-`, and both background-sidecar cancellation and terminal mints now use it (`notice_id.rs:49-50`; `crates/sidecars/src/background.rs:321,435`). Their emitted bytes remain `bg-<id>-cancelled` and `bg-<id>-terminal`. All 29 previous table prefixes are unchanged; the table now has 30 kinds. Existing send/Telegram admission guards and shim behavior are unchanged.\n\nThe scanner additionally discovers msg_id/dedupe_key parameter positions and checks direct call arguments, including nested formatting (`notice_ids.rs:194-257,293-316`). Its controls cover the formerly missed enqueue_turn argument shape. R2-M2 restores the old hand-built cancel ID and fails both the known-prefix and argument checks; R2-M3 introduces an unknown chorerun prefix through enqueue_turn and fails the argument check.\n\n**Evidence:** inspected the retained applied-site, failure, cmp-identical restoration and restored-gate receipts for R2-M1/M2/M3. These are author executions on the working tree subsequently committed as the repair, not reviewer-run mutants. Exact-head CI `42524679828`, artifact `13635345274`, has **2,283 passing Rust cases**, zero failures/errors; nextest separately reports five skipped cases. The compiled-table comparison, scanner/control, core reservation and extended caller-admission/landing tests all executed. The latter covers all 30 kinds and proves representative internal FYI, daemon queue and SidecarBg queue admissions dedupe once; it is not 30 separate emitter/model-delivery executions. The withdrawal-retry regression also passed.\n\n**Boundaries/notes:** the scanner is a lexical consistency gate for its declared constructor shapes, not complete Rust data-flow proof. Ordinary next_message_id/shim message IDs remain outside this reserved-notice scope, as the PR explicitly records for follow-up. The already documented possible duplicate on an upgrade-spanning old withdrawal retry remains unchanged.\n\n**N001, carried cost wording:** the PR body still says 29 comparisons and one String allocation at every mint. Reservation now checks 30 prefixes; `.id(format!(...))` creates an intermediate String plus the final ID. This does not add a loop, poll, timer or process launch, but the cost description should say so.\n\n`pr-freeze` returned FINAL/CLEAN with matching remote/GitHub SHA and a clean detached worktree. The conflict-free merge with main has the same tree as this head, `44542a45b7ed8614dcd3ff3263b67d391219b403`. Rust lint, Node 22/24 and delivers passed. No local reviewer builds/tests, product edits, credential reads, live-fleet probes, merge, push or review-HEAD movement. Other role verdicts remain independently owned.\n"
+		}
+	]
+}
