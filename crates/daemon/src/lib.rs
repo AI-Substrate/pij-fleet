@@ -197,6 +197,8 @@ pub struct Services {
     store_pools: [pij_store::StorePool; 2],
     /// Machine-local spawn policy, shared with clients through daemon health.
     pub retired_harnesses: Arc<[Harness]>,
+    /// Whether the idle-holder nudge runs ([`pij_core::config::Config::idle_nudge`]).
+    pub idle_nudge: bool,
     /// Claude configuration homes whose `sessions/<pid>.json` records the
     /// daemon reads as each Claude process's own report of its conversation.
     pub claude_homes: Arc<[std::path::PathBuf]>,
@@ -650,6 +652,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         status,
         store_pools,
         retired_harnesses: config.retired_harnesses.clone().into(),
+        idle_nudge: config.idle_nudge,
         claude_homes: pij_harnesses::claude_homes().into(),
         // Beside the sidecars' own state (`<state>/sidecars`), as `bg` is.
         telegram_attachments: pane_signal_dir
