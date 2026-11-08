@@ -927,7 +927,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "185",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #185 merged (3ad4132268d6)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-08T15:49:18.683Z",
 					"why": "F132 daemon-message rendering #185"
 				},
 				{
