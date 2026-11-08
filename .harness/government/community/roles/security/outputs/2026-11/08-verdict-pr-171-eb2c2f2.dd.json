@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "eb2c2f205669b4614714172d44f1b751c587ae8f",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/171#issuecomment-6715438527",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:171",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass** at `eb2c2f205669b4614714172d44f1b751c587ae8f`.\n\nThe requirement text preserves the authenticated-origin boundary for q-04 and requires a reason and audit for forced policy overrides. No C19/C21 disclosure or scoped security finding found in the four-document delta.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No scoped findings | - |\n\n`req-03` and the answered `q-04` explicitly limit the operator, Telegram bridge and system-message exemption to a proven identity through `req-10`, never a bypass a seat can claim. Its acceptance criterion requires claimed operator/bridge/system senders to receive no exemption (`docs/project/prds/003-seat-permissions.dd.json:103-109,220-225`).\n\n`req-10` separately rejects machine-key-only caller proof and requires the claimed caller's privately bootstrapped incarnation capability before identity-dependent authority checks. The clarified done_when and workstream s01 do not confuse the caller with the operation's target (`PRD:173-181`; `docs/project/workstreams/003-seat-permissions.dd.json:23-30`). Reading these requirements together, a label or the machine bearer alone cannot establish an exempt origin.\n\n`req-04` requires `--force` with a reason and one spine event naming sender, recipient, policy and reason; its done_when requires the audit event and reason. This is the q-02 outbound-policy override, not an exemption from req-10 authentication (`PRD:113-119`). The workstream carries proven-only exemptions and audited forced sends into s04, which still depends on s03 and thereby s01. Removing answered-question waits does not remove the authentication dependency.\n\nThe rendered changes retain the same constraints. All requirements remain planned; s01 remains in-progress and permission steps remain planned. This PR answers policy questions, not implementation or deployed enforcement.\n\nLocal and GitHub heads agree; worktree clean; PR CLEAN and ready; all five checks succeeded. CI [42432263849](https://github.com/AI-Substrate/pij-fleet/actions/runs/42432263849) and [Delivers 42432264023](https://github.com/AI-Substrate/pij-fleet/actions/runs/42432264023) supply execution evidence. ddocs reported UNAVAILABLE, so green CI does not independently establish full-schema validation or reproduce the author's local ddocs receipts.\n\nDirect documentation-delta review. No local builds/tests, dependency installs, credentials, product edits or production/pane/process probes; no unrelated implementation review.\n"
+		}
+	]
+}
