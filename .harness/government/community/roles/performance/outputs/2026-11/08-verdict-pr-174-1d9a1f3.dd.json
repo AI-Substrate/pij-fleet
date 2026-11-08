@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "1d9a1f30fbee5b3bce5b09a8bb084947a9dba997",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/174#issuecomment-6716304972",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:174",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"#174 after-deploy same-incarnation launch/CPU/RSS reading and machine sample; confirm the four leftovers retire while their queued jobs remain."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `1d9a1f30fbee5b3bce5b09a8bb084947a9dba997`.\n\n**F114's new pane probe launches nothing.** The new path is reached only for a refreshed, non-tombstoned descriptor with `proc == None`; no recorded pane means no probe. `list_panes_without_launch` uses `control.query_live`, whose `may_start = false` prevents client creation. Unavailable/failed control returns unknown, never the ordinary forking `list_panes` fallback. The default port implementation also refuses observation rather than launching. Bound/healthy seats keep the prior path.\n\n**P174-N001: the cost is not strictly one query per such seat per tick.** The reaper checks eligibility once, then checks it again before a non-dry-run tombstone. Define B as current never-bound, pane-recorded seats and C as those whose first observation is eligible. The added strict-probe budget is **B+C calls per existing default 5-second sweep**, at most **2B**; actual control requests require a live client. Retained/unknown seats get one check; eligible seats get two even if the final CAS conflicts. Four consistently absent leftovers therefore take up to **eight**, not four, pane-list reads on their retirement sweep.\n\nEvery successful read returns/parses the session/server pane list and scans it for the recorded ID. With F returned panes, this is O((B+C)*F) parsing/search work, with no shared per-sweep pane snapshot. Path and output bytes also matter. The existing synchronous control read can wait up to its 3-second reply timeout; it adds no fork but can occupy the caller and delay the serialized tick. The existing scheduler does not overlap or burst-catch-up slow sweeps.\n\nThe predicate limits the work to never-bound seats, **not to a hard cardinality of four**. There is no new cap, expiry or probe backoff. A present pane with no registration can keep taking this path indefinitely; a healthy registration window is brief by observation, not an enforced deadline. The four retire only when both observations and the CAS succeed. Additional steady-state probe work is zero when B=0, not a guarantee while the control client is unavailable or new pre-bind seats remain. Existing registry list/get work and bound-seat probes continue.\n\nRetirement keeps the existing tombstone/notice machinery. The strict eligibility probe is process-free; a notice to a surviving parent still uses existing delivery and its possible launches. Queued jobs are retained, not deleted. No new executable site, loop or timer is added; the six spawn guards are unchanged and pass.\n\n**F115's added write:** only an admitted dormant digest with listed holds calls the existing `flag_shown` helper. It uses the IDs already in the view: one schema check, one owned transaction and **H UPSERT statements** for H listed job IDs, plus O(H) ID copying. It is not one constant-size SQL statement. Empty/refused/failed-admission digests skip it; store errors are logged. The existing dormant claim gates attempts per quiet stretch (default 30 minutes), so this is not a write every PA tick. “Shown” means the digest was admitted as delivered/queued/held, not that the PA/model read it. Other digest paths already use this helper.\n\n**CI:** [42438560763](https://github.com/AI-Substrate/pij-fleet/actions/runs/42438560763) succeeds at this exact SHA. The successful Rust job's log identifies **artifact 13600641909**, whose JUnit records **2,199 executed cases, zero failures/errors**; nextest separately reports five skipped tests. Verified reaper absence/presence/unavailable/error/no-pane cases, never-bound death-sweep/obituary, HTTP reap, dormant non-repetition, tombstoned-recipient queue retention and all six spawn guards.\n\nThe real-tmux `list_panes_without_launch_never_starts_a_client_or_forks` case passes: cold/disabled do not launch; an explicitly warmed client returns a real pane without increasing launch records. This is execution proof on Linux CI, not a new live macOS workload measurement. Rust lint and Node 22/24 checks pass; Delivers `42438573592` succeeds, while its cancelled duplicate is not proof.\n\nWorktree and GitHub heads agree; clean and CLEAN/MERGEABLE. No local build, test, mutation, live reap or probe. **After-deploy launch/CPU/RSS readings and the four-retired/queued-jobs-kept reading remain owed.** The per-never-bound-seat RPC shape is accepted with the corrected count and conditional steady-state claim, not presented as a globally bounded or free sweep.\n"
+		}
+	]
+}
