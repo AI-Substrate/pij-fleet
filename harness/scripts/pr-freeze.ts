@@ -28,8 +28,16 @@
 // by anything else. Exit 2: bad usage or a tool failure. It always prints.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readlinkSync, realpathSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import {
+	accessSync,
+	constants,
+	existsSync,
+	readdirSync,
+	readlinkSync,
+	realpathSync,
+	statSync,
+} from "node:fs";
+import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** One finished command. */
@@ -37,6 +45,8 @@ export interface Ran {
 	readonly code: number;
 	readonly stdout: string;
 	readonly stderr: string;
+	/** Killed at the child timeout ([`CHILD_TIMEOUT_MS`]). */
+	readonly timedOut?: boolean;
 }
 
 /** Runs a program with arguments (never a shell) and optional stdin. */
@@ -560,11 +570,16 @@ function seatFolders(run: Runner): { id: string; folder: string }[] {
 		.map((seat) => ({ id: seat.id ?? "?", folder: seat.folder as string }));
 }
 
-/** Every process's cwd: /proc on Linux, else one `lsof -d cwd -F pn`. */
+/** Every process's cwd that this user may inspect: one `lsof -d cwd -F pn`
+ *  on macOS, `/proc` on Linux. Unprivileged lsof lists only this user's
+ *  processes, so Linux skips other users' pids by owner, the same scope.
+ *  Anything unsuccessful, incomplete or malformed throws, so prune removes
+ *  nothing (review of #170, S170-001): a nonzero exit (a timeout included),
+ *  anything on stderr, or a record that doesn't parse. */
 export function processCwds(
 	run: Runner,
 	platform: string = process.platform,
-	readProc: () => string[] = linuxCwds,
+	readProc: () => string[] = () => linuxCwds(),
 ): { pid: string; cwd: string }[] {
 	if (platform === "linux") {
 		return readProc().map((line) => {
@@ -572,43 +587,88 @@ export function processCwds(
 			return { pid, cwd };
 		});
 	}
-	// lsof exits 1 when it can't read some processes; its output still counts.
 	const listed = run("/usr/sbin/lsof", ["-d", "cwd", "-F", "pn"]);
-	if (listed.stdout.trim() === "") {
-		throw new Error(`lsof listed no process cwds (${listed.code}): ${listed.stderr.trim()}`);
+	if (listed.code !== 0 || listed.stderr.trim() !== "") {
+		throw new Error(
+			`lsof did not list every cwd (exit ${listed.code}${listed.timedOut ? ", timed out" : ""}): ${listed.stderr.trim() || "no message"}`,
+		);
 	}
 	const cwds: { pid: string; cwd: string }[] = [];
-	let pid = "?";
+	let pid: string | undefined;
 	for (const line of listed.stdout.split("\n")) {
-		if (line.startsWith("p")) pid = line.slice(1);
-		else if (line.startsWith("n")) cwds.push({ pid, cwd: line.slice(1) });
+		if (line === "") continue;
+		if (/^p\d+$/.test(line)) {
+			pid = line.slice(1);
+		} else if (line.startsWith("f")) {
+			// The file descriptor field: cwd, as asked.
+		} else if (line.startsWith("n") && line.length > 1 && pid !== undefined) {
+			cwds.push({ pid, cwd: line.slice(1) });
+		} else {
+			throw new Error(`lsof printed a record that doesn't parse: ${JSON.stringify(line)}`);
+		}
 	}
+	if (cwds.length === 0) throw new Error("lsof listed no process cwds");
 	return cwds;
 }
 
-function linuxCwds(): string[] {
+/** What [`linuxCwds`] reads; injectable for tests. */
+export interface ProcFs {
+	readonly pids: () => string[];
+	readonly owner: (pid: string) => number;
+	readonly cwd: (pid: string) => string;
+	readonly uid: number;
+}
+
+const realProc: ProcFs = {
+	pids: () => readdirSync("/proc").filter((name) => /^\d+$/.test(name)),
+	owner: (pid) => statSync(`/proc/${pid}`).uid,
+	cwd: (pid) => readlinkSync(`/proc/${pid}/cwd`),
+	uid: process.getuid?.() ?? -1,
+};
+
+/** A process that ended between listing and reading: ENOENT or ESRCH. */
+function gone(error: unknown): boolean {
+	const code = (error as { code?: string } | undefined)?.code;
+	return code === "ENOENT" || code === "ESRCH";
+}
+
+/** `<pid>\t<cwd>` for each of this user's processes. A process that ended is
+ *  skipped; any other read error throws (S170-001). */
+export function linuxCwds(proc: ProcFs = realProc): string[] {
 	const lines: string[] = [];
-	for (const pid of readdirSync("/proc").filter((name) => /^\d+$/.test(name))) {
+	for (const pid of proc.pids()) {
 		try {
-			lines.push(`${pid}\t${readlinkSync(`/proc/${pid}/cwd`)}`);
-		} catch {
-			// A process that ended, or one we may not read, has no cwd to spare.
+			if (proc.owner(pid) !== proc.uid) continue;
+			lines.push(`${pid}\t${proc.cwd(pid)}`);
+		} catch (error) {
+			if (gone(error)) continue;
+			throw new Error(
+				`can't read /proc/${pid}/cwd (${error instanceof Error ? error.message : String(error)})`,
+			);
 		}
 	}
 	return lines;
 }
 
-/** Real path when it resolves, else the path as given. */
-function real(path: string): string {
+/** The real path, or undefined when it doesn't resolve. */
+function real(path: string): string | undefined {
 	try {
 		return realpathSync(path);
 	} catch {
-		return path;
+		return undefined;
 	}
 }
 
+/** `path` and its real path, when that differs: both sides of a comparison
+ *  get both forms (S170-001), so a symlinked spelling still matches. */
+function spellings(path: string): string[] {
+	const resolved = real(path);
+	return resolved && resolved !== path ? [path, resolved] : [path];
+}
+
 /** Decide every review worktree and, unless `dryRun`, remove those whose work
- *  is over. Throws (removing nothing) when the seats or cwds can't be read. */
+ *  is over. Everything is read before anything is removed; a seat list, cwd
+ *  listing or child that fails or times out throws, removing nothing. */
 export function prune(
 	run: Runner,
 	dryRun: boolean,
@@ -616,22 +676,29 @@ export function prune(
 ): PruneVerdict[] {
 	const candidates = pruneCandidates(must(run, "git", ["worktree", "list", "--porcelain"]));
 	if (candidates.length === 0) return [];
-	let seats: { id: string; folder: string }[];
-	let processes: { pid: string; cwd: string }[];
+	const refuse = (why: string): never => {
+		throw new Error(`refusing --prune: ${why}; nothing was removed`);
+	};
+	let seats: { id: string; folders: string[] }[] = [];
+	let processes: { pid: string; cwds: string[] }[] = [];
 	try {
-		seats = seatFolders(run);
-		processes = cwds();
+		seats = seatFolders(run).map((seat) => ({ id: seat.id, folders: spellings(seat.folder) }));
+		processes = cwds().map((proc) => ({ pid: proc.pid, cwds: spellings(proc.cwd) }));
 	} catch (error) {
-		throw new Error(
-			`refusing --prune: can't tell which worktrees are in use (${error instanceof Error ? error.message : String(error)}); nothing was removed`,
+		refuse(
+			`can't tell which worktrees are in use (${error instanceof Error ? error.message : String(error)})`,
 		);
 	}
+	const timedOut = (ran: Ran, what: string) => {
+		if (ran.timedOut) refuse(`${what} timed out`);
+	};
 	const states = new Map<number, PrState | undefined>();
 	for (const pr of new Set(candidates.map((candidate) => candidate.pr))) {
 		const view = run("gh", ["pr", "view", String(pr), "--json", "state,headRefOid"]);
+		timedOut(view, `gh pr view ${pr}`);
 		states.set(pr, view.code === 0 ? (JSON.parse(view.stdout) as PrState) : undefined);
 	}
-	const verdicts: PruneVerdict[] = [];
+	const decided: PruneVerdict[] = [];
 	for (const candidate of candidates) {
 		const status = run("git", [
 			"-C",
@@ -640,31 +707,51 @@ export function prune(
 			"--porcelain",
 			"--untracked-files=all",
 		]);
+		timedOut(status, `git status in ${candidate.path}`);
 		const dirty =
 			status.code !== 0
 				? "git status can't read it"
 				: status.stdout.trim() !== ""
 					? "it has local changes"
 					: undefined;
-		const paths = [candidate.path, real(candidate.path)];
-		const seat = seats.find((seat) => paths.some((path) => within(real(seat.folder), path)));
-		const proc = processes.find((proc) => paths.some((path) => within(proc.cwd, path)));
-		const busy = seat
-			? `seat ${seat.id}'s folder is in it`
-			: proc
-				? `process ${proc.pid}'s cwd is in it`
-				: undefined;
-		const verdict = decide(candidate, states.get(candidate.pr), dirty, busy);
-		if (verdict.remove && !dryRun) {
-			const removed = run("git", ["worktree", "remove", candidate.path]);
-			if (removed.code !== 0) {
-				verdicts.push({
-					path: candidate.path,
-					remove: false,
-					why: `${verdict.why}, but git worktree remove refused: ${removed.stderr.trim()}`,
-				});
-				continue;
-			}
+		const resolved = real(candidate.path);
+		const paths = resolved ? [candidate.path, resolved] : [];
+		const seat = seats.find((seat) =>
+			seat.folders.some((folder) => paths.some((path) => within(folder, path))),
+		);
+		const proc = processes.find((proc) =>
+			proc.cwds.some((cwd) => paths.some((path) => within(cwd, path))),
+		);
+		const busy = !resolved
+			? "its path doesn't resolve, so pij can't tell who is in it"
+			: seat
+				? `seat ${seat.id}'s folder is in it`
+				: proc
+					? `process ${proc.pid}'s cwd is in it`
+					: undefined;
+		decided.push(decide(candidate, states.get(candidate.pr), dirty, busy));
+	}
+	if (dryRun) return decided;
+	const verdicts: PruneVerdict[] = [];
+	let stopped: string | undefined;
+	for (const verdict of decided) {
+		if (!verdict.remove) {
+			verdicts.push(verdict);
+			continue;
+		}
+		if (stopped) {
+			verdicts.push({ ...verdict, remove: false, why: `${verdict.why}, but ${stopped}` });
+			continue;
+		}
+		const removed = run("git", ["worktree", "remove", verdict.path]);
+		if (removed.code !== 0) {
+			if (removed.timedOut) stopped = "an earlier removal timed out, so prune stopped";
+			verdicts.push({
+				...verdict,
+				remove: false,
+				why: `${verdict.why}, but git worktree remove ${removed.timedOut ? "timed out" : `refused: ${removed.stderr.trim()}`}`,
+			});
+			continue;
 		}
 		verdicts.push(verdict);
 	}
@@ -706,14 +793,74 @@ export function render(report: Report): string {
 	return lines.join("\n");
 }
 
+/** How long any one child (git, gh, pij-rs, lsof) may run. A timeout is a
+ *  failure: prune refuses and removes nothing (review of #170). */
+export const CHILD_TIMEOUT_MS = 60_000;
+
 const spawnRunner: Runner = (program, args, input) => {
-	const result = spawnSync(program, args, { encoding: "utf8", input, maxBuffer: 64 * 1024 * 1024 });
+	const result = spawnSync(program, args, {
+		encoding: "utf8",
+		input,
+		maxBuffer: 64 * 1024 * 1024,
+		timeout: CHILD_TIMEOUT_MS,
+	});
+	const timedOut = (result.error as { code?: string } | undefined)?.code === "ETIMEDOUT";
 	return {
 		code: result.status ?? (result.error ? 127 : 1),
 		stdout: result.stdout ?? "",
-		stderr: result.stderr ?? (result.error ? String(result.error) : ""),
+		stderr: timedOut
+			? `timed out after ${CHILD_TIMEOUT_MS / 1000}s`
+			: (result.stderr ?? (result.error ? String(result.error) : "")),
+		timedOut,
 	};
 };
+
+/** Whether `file` is an executable regular file. */
+function executable(file: string): boolean {
+	try {
+		accessSync(file, constants.X_OK);
+		return statSync(file).isFile();
+	} catch {
+		return false;
+	}
+}
+
+/** Each of `tools` as an absolute path, found once by walking PATH in-process
+ *  (no `which`, no launch). Relative PATH entries are skipped. Throws naming
+ *  every tool that isn't found (review of #170, P170-F001). */
+export function resolveTools(
+	tools: readonly string[],
+	path: string = process.env.PATH ?? "",
+	isExecutable: (file: string) => boolean = executable,
+): Map<string, string> {
+	const dirs = path.split(delimiter).filter((dir) => dir !== "" && isAbsolute(dir));
+	const found = new Map<string, string>();
+	const missing: string[] = [];
+	for (const tool of tools) {
+		const hit = dirs.map((dir) => join(dir, tool)).find(isExecutable);
+		if (hit) found.set(tool, hit);
+		else missing.push(tool);
+	}
+	if (missing.length > 0) {
+		throw new Error(
+			`${missing.join(", ")} not found on PATH; install ${missing.length > 1 ? "them" : "it"} or add ${missing.length > 1 ? "their" : "its"} directory to PATH, then rerun`,
+		);
+	}
+	return found;
+}
+
+/** `base`, launching each bare tool name by its resolved absolute path. A
+ *  bare name that wasn't resolved is refused, never launched by PATH. */
+export function resolvedRunner(tools: ReadonlyMap<string, string>, base: Runner): Runner {
+	return (program, args, input) => {
+		if (isAbsolute(program)) return base(program, args, input);
+		const path = tools.get(program);
+		if (!path) {
+			return { code: 127, stdout: "", stderr: `${program} was not resolved to an absolute path` };
+		}
+		return base(path, args, input);
+	};
+}
 
 /** The built pij-delivers-check: PIJ_DELIVERS_CHECK, the shared target, or this tree's target. */
 function findDeliversCheck(root: string): string | undefined {
@@ -743,7 +890,8 @@ function main(argv: readonly string[]): number {
 			return 2;
 		}
 		try {
-			console.log(renderPrune(prune(spawnRunner, dryRun), dryRun));
+			const run = resolvedRunner(resolveTools(["git", "gh", "pij-rs"]), spawnRunner);
+			console.log(renderPrune(prune(run, dryRun), dryRun));
 			return 0;
 		} catch (error) {
 			console.error(`pr-freeze: ${error instanceof Error ? error.message : String(error)}`);
@@ -758,12 +906,13 @@ function main(argv: readonly string[]): number {
 		return 2;
 	}
 	try {
-		const root = must(spawnRunner, "git", ["rev-parse", "--show-toplevel"]).trim();
+		const run = resolvedRunner(resolveTools(["git", "gh"]), spawnRunner);
+		const root = must(run, "git", ["rev-parse", "--show-toplevel"]).trim();
 		const env: Environment = { root, deliversCheck: findDeliversCheck(root) };
-		const report = check(pr, spawnRunner, env);
+		const report = check(pr, run, env);
 		console.log(render(report));
 		if (worktree) {
-			console.log(`review worktree: ${createWorktree(report, spawnRunner, env)}`);
+			console.log(`review worktree: ${createWorktree(report, run, env)}`);
 		}
 		return report.final ? 0 : 1;
 	} catch (error) {
