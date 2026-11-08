@@ -13,7 +13,7 @@ Phase A ships as two count-only PRs: A1 (the daemon, this file) and A2 (the clie
 
 ## AC2: the issuer
 
-- **Migration 0045** (`seat_nonces`, `seat_capabilities`, SCHEMA_VERSION 45, above main's 0044).
+- **Migration 0046** (`seat_nonces`, `seat_capabilities`, SCHEMA_VERSION 46; 0045 is held by #184).
 - **The nonce:**
   - Spawn and revive mint a 32-byte nonce, store its SHA-256 with spawn, seat, harness and a 15-minute expiry (`NONCE_TTL`), and write it to a 0600 `create_new` file beside the spawn's status file.
   - `pij-rs __spawn-child --nonce-file` reads and unlinks the file and sets `PIJ_SPAWN_NONCE` on the harness only, so it is never in argv (Codex's shell environment doesn't get it either).

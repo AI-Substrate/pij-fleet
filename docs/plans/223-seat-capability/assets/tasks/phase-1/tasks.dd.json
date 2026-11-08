@@ -36,7 +36,7 @@
           "title": "The secured issuer",
           "phase": "ph-00df",
           "state": "checked",
-          "success": "Migration 0045 (seat_nonces, seat_capabilities); a nonce through a 0600 file; issuance in one store transaction only on a nonce, the peer path or the current token; public facts get no token and no context grant; two-phase rotation; every tombstone revokes; digests rebuild after a restart.",
+          "success": "Migration 0046 (seat_nonces, seat_capabilities); a nonce through a 0600 file; issuance in one store transaction only on a nonce, the peer path or the current token; public facts get no token and no context grant; two-phase rotation; every tombstone revokes; digests rebuild after a restart.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
@@ -143,7 +143,7 @@
         "tk-0002": [
           {
             "id": "dw-0002",
-            "assertion": "Migration 0045 (seat_nonces, seat_capabilities); a nonce through a 0600 file; issuance in one store transaction only on a nonce, the peer path or the current token; public facts get no token and no context grant; two-phase rotation; every tombstone revokes; digests rebuild after a restart.",
+            "assertion": "Migration 0046 (seat_nonces, seat_capabilities); a nonce through a 0600 file; issuance in one store transaction only on a nonce, the peer path or the current token; public facts get no token and no context grant; two-phase rotation; every tombstone revokes; digests rebuild after a restart.",
             "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }
