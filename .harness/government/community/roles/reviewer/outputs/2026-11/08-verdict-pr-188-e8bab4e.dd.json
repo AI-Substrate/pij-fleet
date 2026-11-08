@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bac0-88c0-7cb0-abd9-238c11c50b66",
+				"date": "2026-11-08",
+				"head": "e8bab4e71ad22a2bf4e061a05480dd341ca0e564",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/188#issuecomment-6720534456",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:188",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "node harness/scripts/pr-freeze.ts 188",
+					"exit_code": 0,
+					"log": "FINAL at e8bab4e71ad22a2bf4e061a05480dd341ca0e564; matching remote/GitHub heads, clean detached worktree, latest checks successful."
+				},
+				{
+					"command": "gh run view 42471751206 --repo AI-Substrate/pij-fleet --json headSha,conclusion,attempt; inspect artifact 13614275297 and Node jobs 128705209265/128705209426",
+					"exit_code": 0,
+					"log": "Exact head e8bab4e71ad22a2bf4e061a05480dd341ca0e564, successful run. Rust JUnit 2237 passing cases, including resolver/malformed-env/daemon-log tests, zero failures/errors and zero reported skips. Each Node 22/24 job passed the 16-test inbox integration file with PIJ_RS_BIN_REQUIRED=1."
+				},
+				{
+					"command": "Inspect author f137-mutant-receipts.md",
+					"exit_code": 0,
+					"log": "Author-run mutant on uncommitted tree committed unchanged as e8bab4e: reintroducing port-zero bind refusal failed runtime_controls and daemon_log. Source restored and cmp-identical after each run; no post-restore local test rerun. Restored-head baseline is matching CI. No local reviewer tests."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: PASS-WITH-NOTES\n\nPR #188 at `e8bab4e71ad22a2bf4e061a05480dd341ca0e564`, answering `01a1bac0-88c0-7cb0-abd9-238c11c50b66`. No blocking correctness findings.\n\nOnly the server bind resolver changes: flag/environment precedence and the CLI default `127.0.0.1:7461` remain, while a valid IP socket address may now have port zero (`crates/cli/src/main.rs:2097-2107, 5185-5205`). The client resolver still uses its separate nonzero-port validator (`:2091-2095, 2159-2163`). The foreground daemon branch executes before client-address resolution, so the TS fixture's initial `PIJ_RS_ADDR=127.0.0.1:0` is not mistakenly interpreted as a client connection target during daemon startup (`:1104-1129, 1227`).\n\nThe daemon already supported this allocation mode: boot obtains `listener.local_addr()`, builds services from the resolved `bound_config`, and announces `daemon.addr` (`crates/daemon/src/lib.rs:924-954`, `crates/cli/src/main.rs:2831-2838`). Background jobs explicitly receive that resolved `PIJ_RS_ADDR` (`crates/daemon/src/background.rs:401-405`), not the requested zero port. Library Config already defaults to port zero; it is not newly changed to the CLI's production default. Bounce/autostart continue using their existing fixed-port/default lifecycle (`justfile:631-691`). No current configuration or operational doc requiring the old zero-port refusal was found; the cited retro records historical behavior.\n\nBoth fixtures now let the daemon own its OS-selected port directly, eliminating reserve-close-rebind. Rust waits for the complete banner line, parses its first token as `SocketAddr`, and rejects a zero result (`crates/cli/tests/daemon_log.rs:35-61`). The TS fixture updates its address before clients/health checks and rejects zero and the production port (`.omp/extensions/pij/cli.inbox.integration.test.ts:345-375`).\n\nAuthor mutation receipts describe restoring the zero-port refusal on the uncommitted source committed unchanged as this SHA. Both the resolver unit test and the real daemon-log test failed. The file was restored and compared byte-for-byte after each run; there was no separate post-restore local test run. Exact-head CI is the restored-head baseline. No local reviewer builds/tests or product edits.\n\nCI run `42471751206` is successful at this exact head. Rust artifact `13614275297` contains 2,237 passing cases, including the resolver, malformed-environment and real daemon-log tests, with zero failures/errors and zero reported skips. Both successful Node 22/24 jobs executed the inbox integration file's 16 tests with `PIJ_RS_BIN_REQUIRED=1`; this was not a missing-binary suite skip.\n\nCost: no new runtime loops, timers, polls or process launches. The removed reservation servers/listeners were in-process resources, not evidence of a measured process-launch reduction.\n\n**N001, inherited and nonblocking:** the TS banner regex still accepts a digit prefix without requiring the following delimiter (`cli.inbox.integration.test.ts:361-364`). A chunk ending partway through the port could therefore be accepted prematurely. This parser predates the PR; no chunked-banner control was supplied. Suggested follow-up: require the banner's following separator or a complete line and add a split-port negative control. The newly changed Rust parser already waits for a newline.\n"
+		}
+	]
+}
