@@ -751,7 +751,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "172",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #172 merged (de22758c5adf)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T01:35:41.265Z",
 					"why": "F118 route line #172"
 				}
 			]
