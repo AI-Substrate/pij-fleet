@@ -1852,6 +1852,70 @@ async fn clearing_another_anomaly_does_not_resurrect_a_cleared_stale_card() {
     );
 }
 
+/// F113: a seat whose extension was built from a different commit than the
+/// daemon is flagged `stale-extension`, naming both builds and the fix. A
+/// `+dirty` suffix, a longer short sha of the same commit and a `hash:` build
+/// are not flagged, and a daemon with no stamped commit flags nothing.
+#[tokio::test]
+async fn a_seat_on_another_extension_build_is_flagged_in_the_digest() {
+    let (mut services, _store) = services().await;
+    services.build_commit = Some("cb0ce436f3".into());
+    let prime = seat("pij-prime", "/stale-extension", None);
+    services.registry.put(prime.clone()).await.unwrap();
+    services
+        .registry
+        .put(seat("pij-pa", "/stale-extension", Some("pij-prime")))
+        .await
+        .unwrap();
+    services
+        .roles
+        .assert_role(&"pij-prime".into(), &"pij-pa".into(), Some("pa".into()))
+        .await
+        .unwrap();
+    for (id, build) in [
+        ("pij-stale", "0c4078197c"),
+        ("pij-dirty", "cb0ce436f3+dirty"),
+        ("pij-longer", "cb0ce436f3e"),
+        ("pij-hashed", "hash:0123456789ab"),
+    ] {
+        let mut worker = seat(id, "/stale-extension", Some("pij-prime"));
+        worker.harness = Harness::Copilot;
+        worker.extension_build = Some(build.into());
+        services.registry.put(worker).await.unwrap();
+    }
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+    let digest = |services: &crate::Services, at: u64| {
+        let (watchdog, prime) = (&watchdog, &prime);
+        let services = services.clone();
+        async move {
+            set_state(&services, prime, SystemState::Working).await;
+            watchdog.round(&services, INTERVAL, at).await.unwrap();
+            set_state(&services, prime, SystemState::Idle).await;
+            watchdog
+                .round(&services, INTERVAL, at + 60_000)
+                .await
+                .unwrap();
+            let digests = drain(&services, "pij-pa").await;
+            assert_eq!(digests.len(), 1);
+            digests[0].body.clone()
+        }
+    };
+
+    let body = digest(&services, start).await;
+    assert!(
+        body.contains(
+            "pij-stale  stale-extension: extension build 0c4078197c, daemon build cb0ce436f3. Reload"
+        ),
+        "{body}"
+    );
+    assert_eq!(body.matches("stale-extension:").count(), 1, "{body}");
+
+    services.build_commit = None;
+    let body = digest(&services, start + 120_000).await;
+    assert!(!body.contains("stale-extension:"), "{body}");
+}
+
 /// F112: a seat whose pane tap the observer refused is flagged in the digest
 /// as `tap-refused`, with the refusal (which names the repair) as its detail.
 #[tokio::test]

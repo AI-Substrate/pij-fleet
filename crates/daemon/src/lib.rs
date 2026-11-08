@@ -65,6 +65,11 @@ pub use auth::BootKey;
 /// The build id reported in the event stream's Hello line.
 pub const BUILD: &str = concat!("pij-rs ", env!("CARGO_PKG_VERSION"));
 
+/// The git commit this daemon was built from (`git rev-parse --short=10 HEAD`),
+/// stamped by `just rs-install` and `just bounce-rs`; `None` for other builds.
+/// The PA digest compares seats' extension builds with it (F113).
+pub const BUILD_COMMIT: Option<&str> = option_env!("PIJ_BUILD_COMMIT");
+
 /// File naming the exact process that won the daemon bind.
 pub const DAEMON_RUNTIME_FILE: &str = "daemon.runtime.json";
 
@@ -109,6 +114,9 @@ pub struct Services {
     pub interaction: Arc<InteractionGate>,
     /// Panes whose tap the pane observer could not attach (F112), for the PA digest.
     pub tap_refusals: Arc<pane_observer::TapRefusals>,
+    /// The commit this daemon was built from ([`BUILD_COMMIT`]), for the PA
+    /// digest's stale-extension check.
+    pub build_commit: Option<String>,
     /// Per-harness adapters, one per `Harness` variant.
     ///
     /// A registry rather than a single `Arc<dyn HarnessPort>`: the wave-0 shape
@@ -601,6 +609,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         tmux,
         interaction,
         tap_refusals: Arc::new(pane_observer::TapRefusals::new()),
+        build_commit: BUILD_COMMIT.map(str::to_string),
         harnesses,
         liveness,
         session_status,

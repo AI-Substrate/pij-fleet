@@ -59,7 +59,8 @@ rs-install:
     #!/bin/sh
     set -eu
     npm run link -- --check-only
-    cargo build --release --locked -p pij-cli
+    # The PA digest compares seats' extension builds with this (F113).
+    PIJ_BUILD_COMMIT="$(git rev-parse --short=10 HEAD)" cargo build --release --locked -p pij-cli
     bin="$(npm prefix -g)/bin"
     mkdir -p "$bin"
     ln -sfn "$(pwd)/target/release/pij-rs" "$bin/pij-rs"
@@ -624,7 +625,7 @@ _pij-bin-shape-check global_npm_root pij_bin:
 bounce-rs:
     #!/usr/bin/env sh
     set -eu
-    cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
+    PIJ_BUILD_COMMIT="$(git rev-parse --short=10 HEAD)" cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
     bin="$(npm prefix -g)/bin/pij-rs"
     old=$(lsof -nP -iTCP:7461 -sTCP:LISTEN -t || true)
     [ -n "$old" ] && kill "$old" && sleep 0.5

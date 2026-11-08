@@ -1000,6 +1000,7 @@ impl PaWatchdog {
             .collect::<Vec<_>>();
         let mut anomalies = stale_cards(services, &rows, now_ms).await;
         anomalies.extend(refused_taps(services, &rows));
+        anomalies.extend(stale_extensions(services, &rows));
         let queued = queued_requests(services, pa, now_ms).await;
         let held = held_messages(services, &rows, now_ms).await;
         FleetView {
@@ -1335,6 +1336,43 @@ async fn queued_requests(
 ///
 /// Reads follow the fleet and its stale cards, never history. The other
 /// kinds stay with `pij anomalies`.
+/// Seats whose extension was built from a different commit than this daemon
+/// (F113): steering held 15-36 minutes on seats still running the extension
+/// from before C31, and nothing showed it. Only seats that report a git build
+/// are compared: the Copilot native and OMP extensions, which load from the
+/// same checkout the daemon is built from. Claude and Codex seats report none,
+/// and a `hash:` build (no git) has no commit to compare. `+dirty` is ignored.
+/// A different commit is all it checks, with no ancestry walk; one short sha
+/// may be longer than the other, so a prefix match counts as the same. Reads
+/// the seat rows the round already has: no launch.
+fn stale_extensions(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly> {
+    let Some(daemon) = services.build_commit.as_deref() else {
+        return Vec::new();
+    };
+    rows.iter()
+        .filter_map(|row| {
+            let build = row.seat.extension_build.as_deref()?;
+            let commit = build.strip_suffix("+dirty").unwrap_or(build);
+            if commit.is_empty()
+                || commit.starts_with("hash:")
+                || commit.starts_with(daemon)
+                || daemon.starts_with(commit)
+            {
+                return None;
+            }
+            Some(FleetAnomaly {
+                seat: row.seat.id.clone(),
+                kind: "stale-extension".to_string(),
+                detail: format!(
+                    "extension build {build}, daemon build {daemon}. Reload the seat's extension \
+                     (Copilot: extensions_reload; OMP: /reload), or revive it if its launch flags \
+                     changed; if the extension is the newer, the daemon needs `just bounce-rs`"
+                ),
+            })
+        })
+        .collect()
+}
+
 /// Seats whose pane tap the observer could not attach (F112): an in-memory
 /// read, no launch. Each one's detail is the refusal, naming the repair.
 fn refused_taps(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly> {
