@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b9a7-2f2c-7342-bbae-3117b0833b80",
+				"date": "2026-11-08",
+				"head": "b425d072b2bdd3f4b87708cf13c2e70091b13927",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/177#issuecomment-6717868279",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:177",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #177 round 2 correctness verdict\n\n**BLOCK** at `b425d072b2bdd3f4b87708cf13c2e70091b13927`.\n\nReviewed f1d9e654 and its composition with main. F001's legacy-row exclusion is repaired. The new prime-specific recovery action still does not use designation liveness.\n\n## F002, P2: a queued request reports a live designated prime as missing\n\nDirectoryService::view correctly computes live_holder from the designated seat for the prime role and makes mine empty. But its call to picture::actions_weighing passes only that empty assignment list, not live_holder (`community/directory.rs`, actions call after the legacy/live construction).\n\nactions_weighing derives its live holding list solely from those rows. For prime it is therefore always empty. Any queued prime instance enters the no-live-holder branch, which now says `the project has no live designated prime` and offers `pij project set ... --prime ...` (`community/picture.rs:415-474`).\n\nThus a single view can correctly report designated.seat_live=true while simultaneously recommending replacing/designating the prime because it supposedly has none. Pending requests may exist independently of the live designation; queue presence must not contradict that canonical liveness. This is deterministic from the same view snapshot, not a later-renewal race.\n\nGate prime recovery actions on the already-computed designated-seat liveness, or pass that fact explicitly to the prime action path. Do not invent a synthetic assignment to make a generic holder check work. Keep generic role behavior unchanged.\n\nAdd the missing positive/negative pair: a queued prime request with a live designation must not emit no-live-holder/project-set recovery; with a dead or absent designation it must offer project set and never directory assign prime. The new legacy regression contains no queued prime request, so it does not exercise this branch. Keep its idle and call_on phases separate, since waiting requests and memory intentionally affect those recommendations.\n\nThis is source-derived; no live role request or project designation was changed.\n\n## F001 closure and preserved behavior\n\n- Prime mine is empty: legacy rows feed neither live, effective liveness nor RoleActivity.rows. Only designated-seat membership in the live-seat set supplies liveness. Ordinary roles retain assignment-based behavior.\n- Open legacy rows appear as ignored legacy metadata with a release command preserving the instance and using the existing shell-word command builder. Lineage retains historical rows rather than deleting them.\n- For active prime roles the renderer displays the designation/not-live status or no designated prime, then the separate legacy annotation; legacy metadata cannot take the normal holder position.\n- The real-store regression uses a RECENT live legacy row and an old role document. It checks live designation visibility, empty live, the legacy command, then tombstones the designation and verifies idle despite the recent row. After adding memory it verifies call_on. Those distinct phases detect both legacy-as-liveness and legacy-as-idle-activity, rather than merely testing an empty holder list.\n- The author reports three killed mutations: legacy timestamps in idle, legacy liveness, and legacy rows in live. They were not rerun here. Git diff verified the repair source/test files and F119 claims handler are unchanged between f1d9e654 and the merged review head.\n- F119 and the all-or-nothing assign-prime refusal remain unchanged from the prior review; this round does not reopen them.\n\n## Proof, merge and resource scope\n\nExact-head CI [42451094504](https://github.com/AI-Substrate/pij-fleet/actions/runs/42451094504) passed. JUnit artifact 13605378771 contains **2206 cases, zero failures/errors**, including the new recent-legacy regression, CLI designation/legacy rendering, no-project-docs fallback and batch controls. Green CI does not cover F002's live-designation-plus-queued-request state.\n\nThe main merge carries #176/#178; it did not alter the repair's directory, picture, CLI, integration-test or claims code. No new loop, timer, poll or launch: this is directory-view/command generation over already-read data.\n\nCheckout is clean/detached, remote full head matches, and GitHub reports CLEAN. No Cargo, local product tests, live probes, dependencies or product edits were performed by this reviewer.\n"
+		}
+	]
+}
