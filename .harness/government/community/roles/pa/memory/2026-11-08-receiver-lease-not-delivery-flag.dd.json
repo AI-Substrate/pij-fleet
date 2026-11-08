@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "read when a send is refused or parked as native-extension-unavailable or native-receiver-unavailable",
+				"tags": [
+					"pa",
+					"delivery",
+					"receiver",
+					"lease"
+				],
+				"title": "Check native_receiver_reason, not the native-delivery flag"
+			}
+		},
+		{
+			"name": "body",
+			"value": "2026-11-08 12:35: pm-001's receiver lease lapsed. pij-rs --json list still showed native_extension_delivery True, but pij-rs --json state <seat> had native_receiver_reason = native-extension-unavailable, and sends to the seat and its role were refused or parked. The flag means the seat delivers natively; the reason field says whether the receiver is live now (None = ok). An idle seat with a dead receiver can't be reached by pij, so it needs a typed prompt to run extensions_reload (or /restart). The PA may not type into panes, so report it to the prime with the pane id. Sweep: loop pij-rs --json state over the fleet and print native_receiver_reason."
+		}
+	]
+}

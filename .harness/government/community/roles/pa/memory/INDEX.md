@@ -20,6 +20,7 @@
 - [2026-11-08 Post-compaction wake is automatic now \(plan 222\); drop the manual one](2026-11-08-f111-wake-automatic.dd.md): read right after any compaction completes (pa, compact, f111, plan-222, wake)
 - [2026-11-08 Flag normal sends held over 15 min \(C31, F113\)](2026-11-08-flag-held-sends-over-15m.dd.md): read when the digest's 'Messages held behind a busy turn' section has entries (pa, c31, f113, delivery, steering)
 - [2026-11-08 Seats stuck on a modal dialog look working \(F47\)](2026-11-08-modal-dialog-stall-f47.dd.md): read when a seat shows working but has had no model call for 30+ min (pa, watchdog, f47, stall)
+- [2026-11-08 Check native\_receiver\_reason, not the native-delivery flag](2026-11-08-receiver-lease-not-delivery-flag.dd.md): read when a send is refused or parked as native-extension-unavailable or native-receiver-unavailable (pa, delivery, receiver, lease)
 - [2026-11-08 Recheck size before sending compact: Copilot may have auto-compacted](2026-11-08-recheck-size-before-compact.dd.md): read after 'handover ready' arrives, before pij send --command compact (pa, compact, copilot)
 - [2026-11-08 After compacting a seat with a live holding, wake it \(F111\)](2026-11-08-wake-after-compaction-f111.dd.md): read right after any compaction completes, and in each round's holdings check (pa, compact, f111, holdings, wake)
 <!-- /pij:generated -->
