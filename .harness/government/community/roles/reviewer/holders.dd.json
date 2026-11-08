@@ -966,7 +966,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "187",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #187 merged (a244cb479eed)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T16:06:36.491Z",
 					"why": "F134/F133 #187"
 				},
 				{

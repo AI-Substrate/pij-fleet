@@ -572,7 +572,10 @@
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"instance_key": "f134",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #187 merged (a244cb479eed)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-08T16:06:36.491Z",
 					"why": "F133 PA scope path rendering, F134 background tail fencing"
 				},
 				{
