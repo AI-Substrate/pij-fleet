@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b9af-98e4-7141-ab83-8ba41deeee42",
+				"date": "2026-11-08",
+				"head": "09225b0c2126cef406fe44fcbfc2931086c57044",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/179#issuecomment-6717935062",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:179",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #179 round 3 correctness verdict\n\n**PASS-WITH-NOTES** at `09225b0c2126cef406fe44fcbfc2931086c57044`.\n\nReviewed the single-commit delta from `21f11879d8a46a0656c6492b734373defba5e391`. **F001 and F002 are closed**; no blocking code finding remains.\n\n## F002 closure\n\nThe cleanup poll now uses read_windows, which checks the tmux exit status and returns an error containing the status/diagnostic instead of converting failure into an empty server. The poll retains that Result and retries; if no valid observation arrives, the deadline prints the last read, including an error.\n\nonly_work_windows requires Ok, a nonempty window list, and every window in work:. It cannot accept a failed read or all([]). That is a positive surviving-work witness as well as an absence-of-_pij condition.\n\nThe new regression rejects a failed read, empty successful result, mixed work/_pij and _pij-only lists, then accepts work:main. It also first observes the real isolated server successfully, requests its kill, and verifies the later read is an error and cannot pass. The author reports restoring the old vacuous predicate fails this test; that mutation was not rerun locally.\n\nThe older unchecked windows helper remains in presence assertions, not the repaired absence poll. The other introduced waits retain their fail-closed behavior: Server::start uses status-checked run and a nonempty printf marker; capture_until_contains fails on read errors and requires its specific marker. The original zero/one/oversized capture and restored-keyboard assertions remain.\n\n## CI and notes\n\nExact-head CI [42450878231](https://github.com/AI-Substrate/pij-fleet/actions/runs/42450878231), final attempt 2, passed. Artifact 13606246396 matches the final job timing and contains **2202 cases, zero failures/errors**, including all **39 adapter** and **18 control-mode** cases and the new error/nonempty regression.\n\nThe earlier artifact 13605886831 records two failures in unchanged tests: telegram_reply_uses_only_the_persisted_outbound_binding_and_refuses_when_unbound and superseded_intent_and_audit_survive_reopen. The final full rerun passed; this is not a first-attempt-green claim or a diagnosis of those unrelated failures.\n\nThe 15 s timeout is checked between reads, not an independent cancellation budget for a blocked child. Existing deliberate negative windows, pacing, stagger and timed stop remain. The earlier minor table-caption note also remains: the production 25 ms sleep is already inside a bounded pipe-state verification poll, not pacing.\n\nTest-only change; no new production loop, timer or launch site. The cleanup poll uses the existing 20 ms retry cadence and isolated fixture. No Cargo, local product tests, tmux, live load/spawn probe, dependencies or product edits were performed by this reviewer. Checkout is clean/detached, matches the remote full head, and GitHub reports CLEAN.\n"
+		}
+	]
+}
