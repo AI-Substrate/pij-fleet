@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "b56a990a5f373a31488530b17c96cfc134c88226",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/185#issuecomment-6721688514",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:185",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `b56a990a5f373a31488530b17c96cfc134c88226`.\n\nDelta-only review from cost-passed `52d8a56`, output `a65e0fd5a844808f70781c2514eda5cacccc194e`: own fix `97d6da3d`, plus the already cost-reviewed #188 main merge. No product merge-conflict hunk changes the fix.\n\n**Command selection cost:** several-holder/no-such-instance refusals now make a linear search for a canonical seat before offering a seat command. Each canonical predicate is bounded by the 64-byte seat grammar; the several-holder search is currently computed even if a unique instance supplies the eventual command. No canonical candidate means no seat send, or a literal assign placeholder. These are generated strings, not executed sends/assignments.\n\n**Picture cost:** the existing queued-instance, holder and two-domain traversals gain bounded seat/name predicates. Revive advice validates its chosen last holder; release advice filters unprintable rows; two-domain advice skips bad seats/instances. No store query, timer, recurring pass or process site is added. Existing history/grouping/uniqueness scaling remains; this is not a constant-cost whole view.\n\nBad instances are rendered in both the address and the action's instance field, so the inherited invalid-text character count can run twice. Listings still render all rows. Filtering can save downstream command/String generation, while the authoritative lineage/live JSON remains raw as intended; neither that JSON's byte size nor existing invalid-input scans are newly capped. Prior P185-N001 scan/fence-expansion qualifications remain.\n\n**Exact-head CI:** [42481314004](https://github.com/AI-Substrate/pij-fleet/actions/runs/42481314004), successful Rust job `128733656835`, upload artifact **13617358702**: **2,251 executed cases passed**, zero failures/errors, five separately skipped. The new several-holder refusal and generated-picture HTTP cases execute, as do existing picture/command controls and all six spawn guards. Rust lint, Node22/24 and replacement delivers checks succeed. Author T1-T5 mutations were not rerun.\n\nWorktree/GitHub frozen heads agree, clean and CLEAN. No local build, test, mutation, live view/send or performance probe. Source/CI support the guard delta; correctness/security verdicts at the new head remain separate.\n"
+		}
+	]
+}
