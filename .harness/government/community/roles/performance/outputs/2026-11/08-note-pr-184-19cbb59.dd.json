@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "19cbb590faa72fd8face8b40012620f39ecaa962",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/184#issuecomment-6719414730",
+				"role": "performance",
+				"subject": "pr:184",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**#184 after-deploy: +0 recorded daemon launches in 60.005347 seconds; CPU 16.12% of one CPU; RSS +48 KiB. No compact sample was observed.**\n\nGitHub and the canonical checkout identify merged `19cbb590faa72fd8face8b40012620f39ecaa962`. Healthy v2 pings identify **PID45474**; its process start remains **08 Nov 18:34:35 +10:00**. Bracketing health attestations report embedded commit `19cbb590fa`, matching the merge prefix. Read-only schema snapshots report **45**, with both new context indexes present.\n\n| Measurement | Result |\n|---|---|\n| Ping timestamps, 08 Nov +10:00 | **18:39:11.988714 to 18:40:11.994293** |\n| Monotonic interval | **60.005347 seconds** |\n| Recorded daemon launches | **146 to 146: +0, 0.000/s** |\n| Reconciliation | All **10 populated sites flat**; both site sums equal 146 |\n| Registration counters | **12 attempts / 17 ps**, unchanged |\n| Interval daemon CPU | **9.67 CPU seconds = 16.12%** of one CPU |\n| Daemon RSS | **192.05 to 192.09 MiB**, 196,656 to 196,704 KiB |\n| Separate 20-second machine estimate | **177.6 launches/s** |\n| Sampled machine launches | **175.1/s**: 77.5/s other, 97.6/s gone before identification |\n| Recognized direct daemon children | None attributed to PID45474 |\n\n**Compact observation:** read-only metadata snapshots at **18:38:51.577814** and **18:41:09.680439 +10:00** bracket the minute. The compaction sequence stays **6**, with no new admitted compact records, memory-turn-labelled jobs or `memory.turn` reports. Existing compaction, job-key and memory-turn metric rows provide positive controls; the wider bracket advances **77 spine facts and three ordinary jobs**, so this is not an empty/wrong database observation.\n\nNo memory-turn lookup latency was sampled. The existing report's `waited_ms` measures the later memory wait, not its earlier lookup, and was not substituted for lookup duration. No synthetic compact or traffic was sent.\n\nA later health attestation, **after** the measured minute, reports **155** launches at the same PID/commit: +7 `git.community` and +2 `ddocs.community` since the endpoint. Those later launches are outside the 146-to-146 window and are not included in its rate.\n\nThe machine sampler made **219,539 in-process polls** and overlaps part of the daemon minute; nice priority does not make it cost-free. Its PID-counter estimate and sampled attribution have different limits. Command labels alone do not establish ownership, and no high machine rate is attributed to the production daemon. This is not a causal comparison with older, unmatched windows.\n\nThis completes the requested #184 after-reading, not a triggered lookup/timeout benchmark or #183 AC9's future joint A1+A2 reading. Only operational metadata was read, not message bodies or credential files. Both bounded measurement helpers completed; no build, local product test, fault injection, reap or restart was run.\n\nRaw session receipts: `pr184-after-window.json`, `pr184-after-machine.json`, `pr184-after-context.json`.\n"
+		}
+	]
+}
