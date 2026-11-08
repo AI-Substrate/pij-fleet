@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b890-fb37-7d82-929f-183b54abccd6",
+				"date": "2026-11-08",
+				"head": "bfe2301bdbf6cc62d7f720270fabc11a8fcc17df",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/170#issuecomment-6715207439",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:170",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #170 correctness verdict\n\n**BLOCK** at `bfe2301bdbf6cc62d7f720270fabc11a8fcc17df`.\n\nThe dependency-free runner works and the dirty/cwd/seat brakes detect their positive cases, but destructive pruning does not fail closed on several unknown inputs. Approved built-in-only fake-IO witnesses confirmed the cases below; no actual pruning/removal was performed.\n\n## F001, P2: malformed PR state/head can authorize removal\n\nprune casts successful gh JSON to PrState without validation (`pr-freeze.ts:629-633`). decide treats every non-MERGED/non-CLOSED state as a changed-head case when headRefOid differs (`:542-547`); it does not require state OPEN and a valid head.\n\nThe fake runner returning `{state:\"OPEN\"}` with no head, `{}`, or `{state:\"UNKNOWN\",headRefOid:<another sha>}` causes current code to authorize git worktree remove for a clean/free candidate. A missing head is therefore mistaken for a positive head change.\n\nValidate the decision input. An OPEN PR needs a valid head before comparing; an unknown/malformed state must spare that PR's worktrees, not select them. Do not treat a TypeScript cast as proof of a readable authoritative response.\n\n## F002, P2: malformed live-seat rows silently remove coverage\n\nseatFolders checks only that data.seats is an array, then filters out missing/non-string/empty folder entries (`:551-560`). A malformed row can represent the seat using a candidate, but it vanishes from the brake rather than making the usage inventory unreadable.\n\nThe approved witness supplied a live-seat entry missing folder, and another with a numeric folder. Both caused the current code to authorize a fake removal instead of refusing the run.\n\nValidate required usage data before pruning. Unknown seat-folder evidence must fail closed for the run with no removals, rather than become “no seat uses it.”\n\n## F003, P2: partial/unreadable cwd enumeration is accepted\n\nThis corroborates herring's **S170-001**:\n\n- processCwds accepts nonempty lsof output regardless of exit status (`:575-586`), including partial/error output; a nonempty PID-only output can even produce an empty cwd array successfully.\n- linuxCwds catches every readlink error, including EACCES/EPERM, and skips that process (`:589-600`).\n\nA missing process in either case is treated as not using any candidate. The fake-IO witness confirmed an error/partial lsof result, a no-cwd parse, and a Linux permission failure can reach an authorized fake removal.\n\nRefuse incomplete/unreadable usage evidence. Only a positively understood non-cwd/exited-process case may be skipped; permission/parse/command failure is not absence of usage. Successful parsing of one unrelated process does not establish a complete inventory.\n\n## Requested mutation and positive proof\n\npm-001 explicitly authorized session-only Node built-in fake-IO mutations (message eec2e1c08c2219cc-000000000000002e). No vitest/node_modules, real git/gh/pij/lsof calls, live --prune or physical removal occurred in that execution.\n\nThe real exported functions were imported with Node's strip-types flags. The fake runner records removal calls and performs none:\n\n- positive unused-merged case selects one fake removal; dry-run selects no removal call;\n- deleting the dirty guard is killed by untracked-data and unreadable-status cases;\n- deleting the busy guard is killed by nested process-cwd and live-seat-folder cases;\n- non-review names, branch-attached candidates, mismatched name/head and an OPEN PR at the current head remain spared.\n\nUsing a fake removal operation matters: the real git dirty backstop cannot mask a deleted explicit dirty brake.\n\nEvidence retained in session files: `pr170-fake-io-mutations.mjs`, its log and isolated source variants. The malformed-input cases are labelled CONFIRMED GAP, not safety passes.\n\n## Runner, selection and other brakes\n\nF109's recipe uses Node strip-types directly. The script imports only Node builtins; no tsx/harness dependency remains. Exact-head CI **42429696026** passed; Node 22 executed all **28 pr-freeze tests**, with 2252 tests passed/six skipped overall. The symlink/entry test now invokes the same Node flags as the recipe.\n\nSelection is restricted to registered git worktrees whose basename exactly matches review-<pr>-<sha7>. Nonmatching fleet-review/ordinary paths are never candidates. Detached/name-head checks, dirty or unreadable status, normal readable seat/cwd matches and --dry-run work. Removal omits --force; malformed JSON that throws before the removal loop removes nothing.\n\n**Ownership qualification:** the “made by --worktree” check is structural naming/detached/head evidence, not a creation receipt. A manually created exact-matching review worktree is indistinguishable; do not claim stronger provenance unless that namespace is explicitly reserved or a creation marker is added.\n\nThe checkout is detached/clean and matches the remote CLEAN/ready head. Apart from the approved fake-IO checks, no local product build/test, dependency change, live process probe or worktree mutation was run.\n"
+		}
+	]
+}
