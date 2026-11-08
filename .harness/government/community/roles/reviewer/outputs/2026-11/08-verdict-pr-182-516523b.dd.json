@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b9d6-628e-7690-8bfa-164113ad562c",
+				"date": "2026-11-08",
+				"head": "516523b6f1d773c9902b597c5b38ccc03e4f9417",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/182#issuecomment-6718263133",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:182",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "node harness/scripts/pr-freeze.ts 182",
+					"exit_code": 0,
+					"log": "FINAL: #182 at 516523b6f1d773c9902b597c5b38ccc03e4f9417; detached worktree clean, remote and GitHub head agree, all latest checks passed."
+				},
+				{
+					"command": "Inspect exact-head CI run 42454424975 artifact 13607366481 junit.xml",
+					"exit_code": 0,
+					"log": "CI headSha 516523b6f1d773c9902b597c5b38ccc03e4f9417, success; 2215 Rust cases, 0 failures, 0 skips. New seat grammar, all 190988 generated names, defensive digest, registration service and HTTP refusal regressions executed; existing prebind/adopt/revive tests passed."
+				},
+				{
+					"command": "Inspect author mutation receipts and git diff fd062d61..516523b -- guarded files",
+					"exit_code": 0,
+					"log": "Author-run pre-merge mutations, not exact-head mutation runs: registration A2 minted a forged seat; removing spawn guard dispatched one; raw digest seat/role/msg mutations exposed framing. Guarded functions unchanged at reviewed head; later delta is anomaly footnote and unrelated health metadata. Restored exact-head baseline is green CI. Other digest seat-id sites were not individually mutated."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: PASS-WITH-NOTES\n\nPR #182 at `516523b6f1d773c9902b597c5b38ccc03e4f9417`, answering `01a1b9d6-628e-7690-8bfa-164113ad562c`.\n\nNo blocking correctness findings.\n\n## Entry-point coverage\n\n`crates/daemon/src/registration.rs:825-835` checks the final candidate under registration exclusion when no existing target was selected. The descriptor subsequently clones that target or constructs the checked candidate (`registration.rs:1017-1019`); it does not rename an existing row to the child's discarded candidate. Ordinary, native and paneless registration converge here, as do adoption/reclaim and the Claude/Codex binders. Native/paneless name selection happens before this check.\n\nSpawn validates explicit nonblank ids before lookup or launch (`crates/daemon/src/http/mod.rs:1364-1370`). Automatic allocation uses the memorable-name generator. Revive requires an existing row and passes its recorded id to the shared launch path with `allow_absent: false` (`crates/daemon/src/http/revive.rs:408-442`). Link loads a live target and changes its parent/role without changing its id (`crates/store/src/role_assertion.rs:253-284`). Descriptor reconciliation updates two existing rows and refuses absent rows, not a new alias mint (`crates/store/src/orchestration.rs:200-244`). Federation stamps machine/view metadata and merges retained roster views, not registry identities (`crates/daemon/src/http/mod.rs:3895-3909`, `crates/daemon/src/federation/fanin.rs:116-136`). No additional production seat-mint or seat-id rename path was found.\n\n## Grammar, rendering and proof\n\nThe seat grammar bounds the byte length before splitting, rejects empty words, and accepts only lowercase ASCII letters/digits after `pij-` (`crates/core/src/model.rs:30-41`). Refusals use bounded `escape_debug` output; the seat refusal additionally Debug-quotes it. The role/adopt refusals also escape controls rather than interpolating raw input (`model.rs:61-72`, `crates/core/src/orchestration/governance.rs:183-194`, `crates/daemon/src/http/identity.rs:600-615`).\n\nEvery direct digest seat-id rendering, including table width, uses `rendered()`. Role and message/request-id renderers have closed grammars; invalid text is replaced by its character count at render time (`crates/core/src/pa_digest.rs:140-158, 170-312`). This protects the reviewed fields in stored rows too. It is not an attestation of caller identity or a claim that all other digest text has been sanitized.\n\nExact-head CI run `42454424975` passed at this SHA. Artifact `13607366481` contains 2,215 executed Rust tests, zero failures and zero skips. The new grammar, exhaustive 190,988-name generator, digest, registration-service and HTTP refusal tests all ran, alongside existing prebind/adopt/revive regressions. Source inspection confirms the generator only formats corpus words, rather than copying seed text into ids (`crates/core/src/names.rs:176-183`).\n\nAuthor mutation receipts distinguish the weak registration HTTP control from the strong A2 service control, which actually minted the forged id when its guard was removed. Removing the spawn guard dispatched a forged id; restoring raw digest seat/role/msg rendering exposed the forged framing. These mutations ran on the pre-merge implementation later committed as `fd062d61`, not this exact head. I checked the guarded files' delta: only the digest's anomaly footnote and unrelated health metadata changed. Restored exact-head baseline proof is CI. Other individual digest seat-id sites were not separately mutated; the shared renderer and site assertions cover them.\n\nNo local reviewer builds/tests, product edits or review-HEAD movement. No new background loops, timers, polls or process launches: checks run in-process on mint/spawn and the existing digest render. Invalid-text character counting is linear in the input length; this is not a blanket constant-time claim.\n\n## N001: documentation exception for blank spawn ids\n\n`docs/how/pij-rs-api.md:911` describes every invalid spawn id as `E-RS-SEAT-ID`, but the earlier empty/whitespace check still returns its existing generic nonempty-argument refusal (`http/mod.rs:1359-1363`). The author confirmed this preservation is intentional; these inputs still cannot mint or launch anything. Nonblocking: qualify the documentation as applying to nonblank ids, rather than changing the preserved behavior.\n"
+		}
+	]
+}
