@@ -58,6 +58,23 @@ pub fn name(name: &str) -> Cow<'_, str> {
     closed(name, is_name(name))
 }
 
+/// Whether `slug` is a project slug as `pij project create` makes one:
+/// lowercase letters and digits in hyphen-joined runs, at most 48.
+pub fn is_project(slug: &str) -> bool {
+    (1..=48).contains(&slug.len())
+        && slug.split('-').all(|run| {
+            !run.is_empty()
+                && run
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        })
+}
+
+/// A project slug ([`is_project`]).
+pub fn project(slug: &str) -> Cow<'_, str> {
+    closed(slug, is_project(slug))
+}
+
 /// A seat role: the closed vocabulary.
 pub fn role(role: &str) -> Cow<'_, str> {
     closed(role, SEAT_ROLES.contains(&role))

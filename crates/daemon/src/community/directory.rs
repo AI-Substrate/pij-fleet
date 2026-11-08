@@ -618,7 +618,10 @@ impl DirectoryService {
         // F21: a missing prime role document is not a missing prime.
         for prompt in prompts.iter_mut().filter(|prompt| prompt.role == "prime") {
             prompt.note = Some(match &prime {
-                Some(seat) => format!("the project's prime is {seat}; this adds the prime role's document"),
+                Some(seat) => format!(
+                    "the project's prime is {}; this adds the prime role's document",
+                    pij_core::render::seat(seat)
+                ),
                 None => "this adds the prime role's document; the project records no designated prime either".to_string(),
             });
         }
