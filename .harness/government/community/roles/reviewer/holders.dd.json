@@ -937,7 +937,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "186",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #186 merged (ae8e7ee24dbc)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T09:24:59.338Z",
 					"why": "F122 delivered ends coder/f<N> via Fixes: line #186"
 				}
 			]
