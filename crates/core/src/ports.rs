@@ -972,6 +972,15 @@ pub trait TmuxPort: Send + Sync {
         Ok(None)
     }
 
+    /// Every pane, as [`Self::list_panes`] answers, but only when this can be
+    /// read without launching a process (over an already-live tmux control
+    /// client); `Ok(None)` when it can't. Never starts a client and never
+    /// forks: for a caller on a per-tick, per-seat path (F114). The default
+    /// answers `None`.
+    async fn list_panes_without_launch(&self) -> Result<Option<Vec<Pane>>> {
+        Ok(None)
+    }
+
     /// Attach an output tap for `pane`, writing raw terminal bytes to `sink`.
     /// Return success only after the world reports the pipe live: a lying attach
     /// feeds zero bytes into a policy that reads zero as HUMAN NOT TYPING, so the
