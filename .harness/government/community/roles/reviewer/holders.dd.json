@@ -815,6 +815,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-double-bobcat",
 					"why": "F119/F117 #177"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T04:17:26.113Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "178",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "#174 follow-up #178"
 				}
 			]
 		}
