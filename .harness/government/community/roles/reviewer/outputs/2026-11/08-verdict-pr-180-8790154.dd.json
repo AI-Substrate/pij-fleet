@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b9be-e967-7e32-aaab-d5e0e3eab3c3",
+				"date": "2026-11-08",
+				"head": "8790154bbbe3db0297011c00cebb49739ea283ba",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/180#issuecomment-6718037585",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:180",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #180 merge-delta correctness verdict\n\n**PASS-WITH-NOTES** at `8790154bbbe3db0297011c00cebb49739ea283ba`.\n\nDelta only from the previously reviewed `0ffb88381f6ea11ed6d8816affe2b20b238d7621`: one merge of main/#175. This is not a fresh whole-PR review of #175.\n\n- The digest footer names both stale extensions and lapsed native receivers, alongside stale cards and refused pane taps.\n- fleet() appends stale_extensions and then lapsed_receivers; neither replaces the other. Both detector functions and their tests remain present.\n- The API's Needs-a-look list and the PA brief retain both anomaly descriptions. The difficulties ledger retains F124 while adding F113.\n- The Copilot store module changes only its extensionBuildIdentity helper to carry main's tree stamp. F124's queue/processing-before-uncertainty, wait/no-resend behavior and hard-hold stop code are unchanged. progress.test.mjs and the Rust delivery/lease/transport code are unchanged from the prior head.\n\nExact-head CI [42452702429](https://github.com/AI-Substrate/pij-fleet/actions/runs/42452702429) passed. Node 24 explicitly passes all three F124 replay/wait/escalation cases; its main native suite reports 333 passed/zero failures. JUnit artifact 13605668666 contains **2210 cases, zero failures/errors**, including the stale-extension detector, its parser controls, lapsed-native-receiver detector and native lease-expiry/transport regression.\n\nThe prior nonblocking N001 remains: no executed no-resend-veto/heartbeat-stop mutant or post-hard-hold heartbeat assertion was added by this merge. Do not expand the proof claim.\n\nNo merge-induced regression found in the scoped composition. The footer resolution adds no loop or launch. Checkout is clean/detached and matches the remote full head; GitHub reports CLEAN. No local Cargo/tests, live probe, dependencies, daemon action or product edits were performed.\n"
+		}
+	]
+}
