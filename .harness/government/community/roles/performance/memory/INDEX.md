@@ -12,4 +12,5 @@
 <!-- pij:generated -->
 - [2026-11-08 F112 after-reading and post-compact queue](2026-11-08-f112-after-reading-and-post-compact.dd.md): After compaction, use latest handover and await PM frozen heads (handover, cost)
 - [2026-11-08 F112: preserve tap ownership before optimizing retries](2026-11-08-f112-preserve-tap-ownership-before.dd.md): When changing tap adoption rollback or investigating legacy launch storms (tmux, ownership, launches)
+- [2026-11-08 ROUTES timing: aggregate bound versus whole writes](2026-11-08-routes-timing-aggregate-bound-versus.dd.md): When evaluating ROUTES recomputation cost or scaling a governance directory (routes, cost, measurement)
 <!-- /pij:generated -->
