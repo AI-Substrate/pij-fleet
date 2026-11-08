@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b94d-e94f-7731-a358-9e13da7c1b3c",
+				"date": "2026-11-08",
+				"head": "1d199da44afd12bb88ef2c978fcbc5e6e2e49d0a",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/177#issuecomment-6717023432",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:177",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #177 correctness verdict\n\n**BLOCK** at `1d199da44afd12bb88ef2c978fcbc5e6e2e49d0a`.\n\nF119's NotFound-only fallback and F117's assignment refusal are correct in the inspected paths. F117 does not yet handle legacy prime holdings consistently with C24.\n\n## F001, P2: legacy prime holdings still hide and stand in for the designation\n\nThe PM clarified that the project designation is the ONLY prime authority under C24. Legacy prime assignment rows are unsupported and must be ignored for authority, idle review, call_on and ordinary holder display. The PM also confirmed such rows exist in practice; that inventory is PM-supplied evidence, not a new reviewer live-store probe.\n\nDirectoryService::view still includes ordinary prime assignment rows in live_holder (`community/directory.rs:412-419`). For a live legacy holder and a dead/missing designated prime, designated.seat_live is correctly false, but the old row makes live_holder true. That suppresses both picture::idle and picture::call_on. The same legacy rows are passed into RoleActivity.rows (`:493-498`), so their timestamps can also suppress an idle review even after the boolean is corrected.\n\nThe view also puts the old rows in role.live. render_directory_at prefers those rows and consults designated only for an empty holder list (`cli/src/main.rs:3242-3299`). Consequently a legacy row hides the designated prime, whether the designation is live or dead.\n\nBlocking new `assign prime` calls does not remove or neutralize existing rows. The passing new HTTP test begins with no prime holding and the CLI test supplies live=[], so neither can detect this defect.\n\nFor the prime role, derive effective liveness solely from the designated seat and do not treat legacy holding timestamps as prime activity. Always display the designation (including its not-live status); legacy rows may remain visible only as explicitly ignored history with a valid release repair. Other roles should retain their current holder semantics.\n\nAdd focused legacy-row regressions: a live old holder must not hide a different live designated prime; after that designation is tombstoned/missing, the old holder must not suppress the applicable idle/call_on recommendations. Exercise idle with no memory/output/request and call_on with memory, since those are distinct policy cases. Include a recent legacy timestamp so clearing only the boolean cannot make the test pass.\n\nThis is a source-derived counterexample, independently checked against the consuming helpers and confirmed as a real supported-state defect by the PM. No local mutation or live store edit was run.\n\n## Confirmed checks\n\n- PermissionDenied and every other non-NotFound docs/project lookup error return E-RS-DELIVERS before recording delivery or ending holdings. symlink_metadata also treats an existing symlink/entry as present rather than silently following a missing target. Permission-denial handling was source-inspected, not separately exercised by a new CI fixture.\n- Only DeliversError::Missing can use the no-docs fallback; malformed addresses still refuse. The existing docs-present missing-line case remains a refusal. The new real-store controls verify an absent docs/project produces an explicit note, no delivered addresses, and ends the eligible reviewer holding.\n- With no legacy holdings, designated liveness is taken from registered, untombstoned seats; a registry read error refuses the view. A dead/missing designation is not counted as live in that normal case.\n- Single assign delegates to assign_many. The prime check scans the entire batch before pending reads, draft creation, writer commit or assignment hooks. The new test places a valid reviewer assignment BEFORE the forbidden prime assignment and proves the branch head is unchanged after refusal. The repair names project set --prime, with dynamic arguments shell-quoted.\n\n## Proof and resource scope\n\nExact-head CI [42444430321](https://github.com/AI-Substrate/pij-fleet/actions/runs/42444430321) passed: JUnit artifact 13603221217 contains **2204 executed cases, zero failures/errors**, including the new docs fallback, holding closure, designation/refusal and CLI rendering tests, plus existing all-or-nothing batch and delivery replay controls. Green CI does not cover F001's missing legacy-row scenario.\n\nNo new loop, timer, poll or launch. Missing-line delivery adds one in-process metadata read; directory rendering reuses the already-read project and live-seat set. No Cargo, local product tests, dependency changes, live census or product edits were performed. The checkout is clean/detached and matches the remote full head; GitHub reports CLEAN.\n"
+		}
+	]
+}
