@@ -743,6 +743,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-08T01:10:29.642Z",
 					"why": "PRD 003 answers docs #171"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T01:31:34.248Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "172",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F118 route line #172"
 				}
 			]
 		}
