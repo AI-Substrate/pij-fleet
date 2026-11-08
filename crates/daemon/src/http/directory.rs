@@ -1195,7 +1195,11 @@ async fn hold(
         .get("why")
         .filter(|why| !why.trim().is_empty())
         .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
-    let (role, instance) = role_and_instance(target)?;
+    let (role, instance) = if call.leaf == "assign" {
+        new_role_and_instance(target)?
+    } else {
+        role_and_instance(target)?
+    };
     let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
     let seat_id = SeatId::from(seat.as_str());
     let directory = &state.services.directory;
@@ -1355,7 +1359,7 @@ fn past_holding(
     to: Option<&str>,
 ) -> Result<pij_store::Assignment, Refusal> {
     use crate::community::holders::{parse_time, stamp};
-    let (role, instance) = role_and_instance(target)?;
+    let (role, instance) = new_role_and_instance(target)?;
     let when = |flag: &str, given: Option<&str>| -> Result<time::OffsetDateTime, Refusal> {
         let given = given
             .ok_or_else(|| Refusal::new("E-RS-ARG", format!("--{flag} <time> is required")))?;
@@ -1432,15 +1436,33 @@ async fn require_prime(state: &AppState, actor: &SeatId, project: &str) -> Resul
     }
 }
 
-/// `<role>[/<instance>]`, checked.
+/// `<role>[/<instance>]`, checked loosely: release reads a stored key as it
+/// is, so a holding from before F135 can still be ended.
 fn role_and_instance(target: &str) -> Result<(&str, &str), Refusal> {
     let (role, instance) = target.split_once('/').unwrap_or((target, ""));
     RolePaths::new(role)?;
     if instance.contains('/') || instance.trim() != instance {
         return Err(Refusal::new(
             "E-RS-ARG",
-            format!("bad instance key {instance:?}"),
+            format!(
+                "bad instance key \"{}\"",
+                instance
+                    .escape_debug()
+                    .take(crate::community::layout::INSTANCE_MAX)
+                    .collect::<String>()
+            ),
         ));
+    }
+    Ok((role, instance))
+}
+
+/// `<role>[/<instance>]` for a holding about to be recorded (assign, single
+/// or batch, and a past holding): a non-empty instance takes the closed
+/// grammar (F135, [`crate::community::layout::check_instance`]).
+fn new_role_and_instance(target: &str) -> Result<(&str, &str), Refusal> {
+    let (role, instance) = role_and_instance(target)?;
+    if !instance.is_empty() {
+        crate::community::layout::check_instance(instance)?;
     }
     Ok((role, instance))
 }
@@ -1480,7 +1502,7 @@ async fn assign_batch(
             problems.push(format!("line {number}: want `<role>[/<instance>] <seat>`"));
             continue;
         };
-        let (role, instance) = match role_and_instance(target) {
+        let (role, instance) = match new_role_and_instance(target) {
             Ok(parsed) => parsed,
             Err(refusal) => {
                 problems.push(format!("line {number}: {}", refusal.message));
