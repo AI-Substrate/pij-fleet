@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "81dd2f36fc76f441774b7a01f5bc72473be3a424",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/179#issuecomment-6717320366",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:179",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS\n\nPR #179, exact head `81dd2f36fc76f441774b7a01f5bc72473be3a424`.\n\nThe complete small diff is test/documentation-only: render polling in `crates/tmux/tests/adapter.rs:177,1463-1483`, fixture polling in `crates/tmux/tests/control_mode.rs:58-71`, and explanatory text in `docs/difficulties.md:103`. No product code or production behavior changes.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerability identified | - |\n\nBoth polls have 15-second deadlines and 20ms intervals; isolated-server teardown remains intact. No fixture secret, private machine path, C19/C21 disclosure or harmful shell/argument interpolation was introduced.\n\nGitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42447292932` and Delivers run `42447292848` both identify this SHA and success.\n\nNo local tests, builds, tmux operations, probes, credential reads or mutations were performed.\n"
+		}
+	]
+}
