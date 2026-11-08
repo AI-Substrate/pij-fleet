@@ -3287,6 +3287,7 @@ fn render_directory_at(
                         }
                     );
                 }
+                None if role["id"] == "prime" => out.push_str("no designated prime"),
                 None => out.push_str("no holder"),
             },
             [only] => out.push_str(only),
@@ -3296,6 +3297,16 @@ fn render_directory_at(
                     let _ = write!(out, "\n    {holder}");
                 }
             }
+        }
+        // Review of #177: a legacy prime assignment is never the prime (C24).
+        for legacy in list(&role["legacy"]) {
+            let _ = write!(
+                out,
+                "\n    legacy prime assignment, ignored: {} since {}; release with {}",
+                text(&legacy["seat"]),
+                local_time(&legacy["since"], &zone),
+                text(&legacy["command"])
+            );
         }
         let merged: Vec<&str> = role["merged_from"]
             .as_array()
@@ -4236,6 +4247,30 @@ mod tests {
         assert!(
             super::render_directory_at(&view(false), |_| ten)
                 .contains("pij-crane (designated prime, seat not live)")
+        );
+        // Review of #177: a legacy prime row never hides the designation; it
+        // is listed as ignored, with its release. With no designation, it is
+        // still never shown as the holder.
+        let legacy = serde_json::json!([{"seat": "pij-old", "instance": "",
+            "since": "2026-11-07T23:00:00Z",
+            "command": "pij directory release prime pij-old --why '<why>' --project fleet"}]);
+        let mut both = view(true);
+        both["roles"][0]["legacy"] = legacy.clone();
+        let text = super::render_directory_at(&both, |_| ten);
+        assert!(
+            text.contains(
+                "\n  prime (core, one): pij-crane (designated prime)\n    legacy prime assignment, ignored: pij-old since 2026-11-08 09:00 +10:00; release with pij directory release prime pij-old --why '<why>' --project fleet"
+            ),
+            "{text}"
+        );
+        let mut none = view(true);
+        none["prime"] = serde_json::Value::Null;
+        none["roles"][0]["designated"] = serde_json::Value::Null;
+        none["roles"][0]["legacy"] = legacy;
+        let text = super::render_directory_at(&none, |_| ten);
+        assert!(
+            text.contains("\n  prime (core, one): no designated prime\n    legacy prime assignment, ignored: pij-old"),
+            "{text}"
         );
     }
 

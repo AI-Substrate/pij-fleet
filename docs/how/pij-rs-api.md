@@ -1357,9 +1357,17 @@ role also carries:
 - `live[].seat_live`: whether the holder's seat is registered and not tombstoned;
 - `designated`: for the `prime` role only, the project's designated prime
   `{seat, seat_live}` (its `prime_id`), else `null`. The prime is designated,
-  never assigned (C24), so this is the prime role's holder: the human view
-  prints `<seat> (designated prime)`, and it counts as a live holder for the
-  idle review and `call_on` (F117);
+  never assigned (C24), and the designation is its only authority (F117,
+  review of #177). The human view always prints it, as `<seat> (designated
+  prime)` or `no designated prime`, and only its seat's liveness counts as the
+  prime role's live holder for the idle review and `call_on`;
+- `legacy`: for the `prime` role, each open legacy prime assignment row
+  `{seat, instance, since, command}`. Such rows are unsupported and count for
+  nothing: they are not the prime role's holder (its `live` is always empty),
+  not liveness and not activity. The human view prints `legacy prime
+  assignment, ignored: <seat> ...; release with <command>`. The lineage still
+  shows them. A waiting request for the prime with no live designated prime
+  gets `pij project set <project> --prime <seat>`, never an assign;
 - `requests`: `{count, oldest_at}` of its queued requests (s05), or `null`;
 - `latest_output`: its newest output (s06) `{kind, subject, head, result, writer, at, path}`, or `null`;
 - `memory`: `{notes, latest}`, the number of memory notes (s07) and the newest

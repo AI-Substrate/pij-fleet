@@ -409,14 +409,45 @@ impl DirectoryService {
                 .as_array()
                 .and_then(|sections| sections.iter().find(|section| section["name"] == "meta"))
                 .map_or(Value::Null, |meta| meta["value"].clone());
-            let mine: Vec<&Assignment> = rows.iter().filter(|row| &row.role == id).collect();
+            let all: Vec<&Assignment> = rows.iter().filter(|row| &row.role == id).collect();
             // C24: the prime is designated (`pij project set --prime`), never
-            // assigned, so the prime role's holder is the designation (F117).
-            let designated = (id == "prime").then_some(prime.as_deref()).flatten();
-            let live_holder = mine
+            // assigned, and the designation is its only authority (F117,
+            // review of #177). Legacy prime assignment rows count for nothing,
+            // not liveness and not activity; they are listed only to be
+            // released. Every other role is read from its rows.
+            let is_prime = id == "prime";
+            let designated = is_prime.then_some(prime.as_deref()).flatten();
+            let (mine, legacy): (Vec<&Assignment>, Vec<&Assignment>) = if is_prime {
+                (Vec::new(), all.clone())
+            } else {
+                (all.clone(), Vec::new())
+            };
+            let live_holder = if is_prime {
+                designated.is_some_and(|seat| live_seats.contains(seat))
+            } else {
+                mine.iter()
+                    .any(|row| row.to.is_none() && live_seats.contains(&row.seat))
+            };
+            let legacy: Vec<Value> = legacy
                 .iter()
-                .any(|row| row.to.is_none() && live_seats.contains(&row.seat))
-                || designated.is_some_and(|seat| live_seats.contains(seat));
+                .filter(|row| row.to.is_none() || row.end_pending)
+                .map(|row| {
+                    serde_json::json!({
+                        "seat": row.seat, "instance": row.instance, "since": row.from,
+                        "command": picture::command(&[
+                            "pij",
+                            "directory",
+                            "release",
+                            &holding(id, &row.instance),
+                            &row.seat,
+                            "--why",
+                            "<why>",
+                            "--project",
+                            project,
+                        ]),
+                    })
+                })
+                .collect();
             let live: Vec<Value> = mine
                 .iter()
                 .filter(|row| row.to.is_none() || row.end_pending)
@@ -520,7 +551,8 @@ impl DirectoryService {
                         .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
                 )
             };
-            let owned: Vec<Assignment> = mine.into_iter().cloned().collect();
+            // The lineage is history, so it keeps every row, legacy prime ones too.
+            let owned: Vec<Assignment> = all.into_iter().cloned().collect();
             // A retired role no longer covers a core role's prompt (C22).
             if !retired {
                 made_from.push((id.clone(), meta["template"].as_str().map(str::to_string)));
@@ -545,6 +577,7 @@ impl DirectoryService {
                 "designated": designated.map(|seat| serde_json::json!({
                     "seat": seat, "seat_live": live_seats.contains(seat),
                 })),
+                "legacy": legacy,
                 "requests": waiting,
                 "latest_output": picture::latest_output(id, &outputs),
                 "memory": memory,
