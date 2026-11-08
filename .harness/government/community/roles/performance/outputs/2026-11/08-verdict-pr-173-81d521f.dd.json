@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "81d521fc80834ae5d4916140043765fbc65e0414",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/173#issuecomment-6716194623",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:173",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `81d521fc80834ae5d4916140043765fbc65e0414`. **P173-N001's time-promise concern is closed.**\n\nOne-commit wording-only delta from [round 1](https://github.com/AI-Substrate/pij-fleet/pull/173#issuecomment-6715853666), governance `6086318`. The receipt now says it is queued normally and wakes the seat **when delivered**. The API names waiting behind a running serial-key job and marks the 381/381 timing as observed history, not a promise. F121 now describes reply/deadline settings as optional.\n\nNo count extraction, queue/admission path, read/write, claim, launch, timer or scheduling change. Only literal text, comments, matching assertions and docs changed. The prior cost qualification remains: N comes from the existing returned claim event, with JSON parsing/allocation proportional to its ID payload; there is no added database read. Queued admission is still not model-completion proof.\n\n**CI:** [42437402711](https://github.com/AI-Substrate/pij-fleet/actions/runs/42437402711) succeeds at this exact SHA. The successful Rust retry, job `128601325956`, reports **2,195 executed tests passed** and five skipped tests. Its uploaded **artifact ID 13600700967** independently records 2,195 cases with zero failures/errors, including updated carrier wording, F121, failed-claim fallback, normal-carrier integration and six spawn guards.\n\nArtifact provenance matters here: the run retains three `junit-linux` artifacts. A name-only download initially selected an older failing artifact (`capture_proves_zero_and_more_than_the_pane_contains`); the exact ID from the successful retry's upload log resolves it, and that case passes in the correct artifact. No stale artifact is treated as current proof. Rust lint and Node 22/24 checks also pass; Delivers `42437431689` succeeds, while its cancelled duplicate is not proof.\n\nWorktree and GitHub heads agree; clean and CLEAN/MERGEABLE. No local build, test, mutation, live send or deployment probe. No new performance blocker.\n"
+		}
+	]
+}
