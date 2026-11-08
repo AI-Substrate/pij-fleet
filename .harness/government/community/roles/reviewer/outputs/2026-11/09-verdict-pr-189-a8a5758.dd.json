@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bbd1-c3f1-7f52-83e6-4ef5b1c3a67a",
+				"date": "2026-11-09",
+				"head": "a8a5758702ce7208172f8af6d635c458dc754b43",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/189#issuecomment-6723624630",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:189",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #189 round-3 exact-head delta: PASS-WITH-NOTES\n\nHead: `a8a5758702ce7208172f8af6d635c458dc754b43`\n\nDelta against `26d2df93dba7bb02dbaf7829928875c52d8961b3` and corrective reviewer output `f1e7de4af1b4b954f61b6ce50d9e5dafe8c3ab96`. **F002 is closed. F001's atomic mark veto is unchanged.**\n\n**Merge limitation:** GitHub now reports this PR **DIRTY** after #185 merged at `3ad4132`. PM identified the sole conflict as `crates/daemon/src/http/memory_turn.rs` and explicitly authorized publication of this historical exact-head delta in message `d5604144db541747-0000000000000001`. This verdict is not current-base merge/integration proof. The reconciled head requires a merge-only delta review.\n\n## F002 closure\n\nEvery iteration of the prime loop now calls `occurrence()` independently (`crates/daemon/src/idle_nudge.rs:290-307`). The resulting FYI ID uses that fresh 16-byte OS-random part, not the holder nudge's part or a value shared across primes.\n\nThe holder ID and earlier FYI IDs remain observable, but they no longer determine a later sibling ID. The new part is used only for its own hold, whose identifying event follows the row's commit. This closes both holder-to-prime and prime-to-prime preemption from the shared occurrence. It relies on OS randomness and 128-bit unpredictability, not a guarantee that random values can never collide.\n\nThe two-project/two-prime regression requires both FYIs held, checks their expected seat/anchor/prime shape and 32-character parts, and proves each differs from the known nudge part and from the other FYI. Source formatting establishes lowercase hex; this is not a live exploit/interleaving or cryptographic test.\n\nAuthor receipts `m224r3.py`, `m224r3.out` and `m224r3-baseline.out` show the eight-case positive baseline and two valid kills: reusing the nudge part and sharing one new part among all primes. Each mutant returns exit 101 and fails the intended regression; seven other cases pass. No reviewer-owned mutant was executed.\n\n## Failure behavior and retained notes\n\nA failed holder draw still marks nothing. A failed **prime** draw occurs after the mark, holds nothing for that prime, records an error in its outcome/audit, and continues to other primes. This is the packet's explicit fail-closed disposition, not durable retry or guaranteed fanout. RNG-failure injection remains unexercised.\n\nThe sender-only FYI collision comparison and duplicate-anchor insert-loser path remain source-inspected, as recorded in the previous verdict. Other predictable daemon notice namespaces remain outside this repair. No changes were made to the atomic veto, partial indexes, owner-scoped background reads, generic FYI conflict refusal/audit, labels or plan-222 suppression.\n\n## Evidence and cost\n\n[CI run 42495647410](https://github.com/AI-Substrate/pij-fleet/actions/runs/42495647410), associated with this exact head, attempt 1: **2248 Rust cases passed; five skipped**. JUnit artifact `13623159044` corresponds to the successful Rust job. The new two-prime regression, previous squat/refusal case, three-way mark veto and once-per-stretch/restart cases ran. Both Node checks and Rust lint passed. These checks precede the current-base conflict. Same-head security and performance verdicts are pass-with-notes.\n\nThe delta is one commit touching three files; `git diff --check` passed and the detached worktree is unchanged. No local builds, tests, dependency installations, exploit or live-system probes were run.\n\n**Cost:** no new loop, timer, poll, read or launch. The existing once-per-stretch fanout adds one 16-byte in-process RNG draw per selected prime, rather than sharing the holder's draw. Normal 60-second watchdog cadence and persisted one-attempt semantics are unchanged.\n"
+		}
+	]
+}
