@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b950-11bd-78d2-a500-aba7150d8066",
+				"date": "2026-11-08",
+				"head": "001a3b8406f694c2b77ff69dddda5ae47e69a480",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/176#issuecomment-6717071332",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:176",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #176 round 2 correctness verdict\n\n**PASS-WITH-NOTES** at `001a3b8406f694c2b77ff69dddda5ae47e69a480`.\n\nReviewed the single-commit delta from `1b2710faf2b8e6aceb0c8c461a0366606d3ebb47`. The checkout is clean/detached and matches the authorized remote head; GitHub reports CLEAN.\n\n## Coverage and precedence\n\nThe tracked .cargo/config.toml contains only build.jobs=4 and env.RUST_TEST_THREADS={value=\"4\", force=false}. Cargo discovers configuration from its working directory and ancestors, independently of a curated child environment ([Cargo reference](https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure)).\n\nThe formerly missed entrypoints use the required cwd: governance-fixture.ts:363-380 builds with projectRoot; bounce/mod.rs:96-109 builds with repo_root; pij-gate sets current_dir(&root) for its stages. Recipe invocations likewise run in the checkout. The checkout has no second .cargo/config file shadowing the new TOML.\n\nFor direct Cargo, CARGO_BUILD_JOBS overrides build.jobs; the normal --jobs option can override it. A caller's environment RUST_TEST_THREADS wins over the non-forcing config default, and explicit libtest --test-threads wins over that environment. Shared-build remains deliberately different: it overwrites CARGO_BUILD_JOBS from PIJ_CARGO_JOBS/default, preserves a nonempty caller RUST_TEST_THREADS, and otherwise exports the same PIJ cap. PIJ_CARGO_JOBS is not a new direct-Cargo option outside that wrapper.\n\nThe script's executable cap/validation code is unchanged. The justfile is byte-identical to main at 28d7c7bd: global exports and separate echo recipe lines are removed. Only the existing shared-build shell prints its built-in printf diagnostic. The old standalone banners did add recipe-shell invocations; round 2 removes that cost.\n\n## CI, worktrees and cache\n\nCI now picks up the repository defaults, unlike round 1's recipe-only exports. Exact-head CI [42444630104](https://github.com/AI-Substrate/pij-fleet/actions/runs/42444630104), attempt 1, passed Rust lint, Rust tests and both Node matrix jobs. The inspected Node 24 log confirms all 20 shared-build cases passed and 2259 passed/six skipped overall.\n\nDiscovery is physical cwd ancestry, not Git worktree membership or manifest-path lookup. Sibling worktrees do not inherit main's config merely because they share a Git repository; they need a checkout containing this file. A Cargo command launched outside the checkout with only --manifest-path does not acquire this repository config. The named entrypoints avoid that limitation by setting cwd inside the repo.\n\nNo target-dir, compiler flags, profiles, target triples, lockfile sources or incremental settings change. The config does not move or delete cache artifacts. Existing per-target locking, source freshness, CARGO_TARGET_DIR and CARGO_INCREMENTAL handling remain unchanged. No repository Rust source reads these variable names for application behavior; ordinary Cargo environment/fingerprint handling remains Cargo-owned.\n\n## Proof ceilings and retained note\n\nThe author-supplied env-i probe table reports default 4/4, CARGO_BUILD_JOBS=2 overriding jobs, caller RUST_TEST_THREADS=1 overriding the default, subdirectory discovery, and a config-removed positive control showing 16 jobs/no thread variable. These are author measurements, not reviewer-local runs.\n\nPrior **N001** remains: shared-build's fake fixture inherits RUST_TEST_THREADS=\"\", so a plain assignment can retain its inherited export flag. It does not independently mutation-prove that export boundary, particularly PIJ_CARGO_JOBS-to-test-thread mapping when the real caller leaves RUST_TEST_THREADS absent. The production export is correct, and the fixture's CARGO_BUILD_JOBS omission still correctly prevents an ambient value masking its export.\n\nThese are defaults, not a hard fleet admission mechanism. Explicit overrides remain possible; the temporary two-build fleet limit still requires PM coordination. Nextest's number of test processes is separate from each libtest binary's thread cap.\n\nNo Cargo, local product tests, dependency changes, cache mutation, daemon bounce or live load/spawn measurement was performed by this reviewer.\n"
+		}
+	]
+}
