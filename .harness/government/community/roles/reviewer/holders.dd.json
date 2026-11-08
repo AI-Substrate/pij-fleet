@@ -920,7 +920,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "183b",
 					"machine": "ops.osk.lan",
+					"release_why": "C33 (Jordan): trust boundary is the user account; plan 223 stopped, #183 closed unmerged",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-08T23:42:13.083Z",
 					"why": "second reviewer on #183 (scaling rule: security-critical CS-4)"
 				},
 				{
