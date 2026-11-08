@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "3f023b8f67db2d55ffa92996ed99b7b01d675a6b",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/189#issuecomment-6724309055",
+				"role": "performance",
+				"subject": "pr:189",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"F143: per-loop tick count and cumulative duration are not observable yet; census budget is not isolated measured idle-nudge CPU."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**#189 after-deploy reading complete** for merge `3f023b8f67db2d55ffa92996ed99b7b01d675a6b`, **schema 46**, healthy **PID 32577**, start **09 Nov 02:45:00 +10:00**. Bracketing metadata pings report matching embedded commit `3f023b8f67`; the generic version label is not source proof.\n\n| Reading, 09 Nov +10:00 | Result |\n|---|---|\n| Daemon minute | **02:52:02.271964 to 02:53:02.277020**, **60.004832 monotonic seconds**; same PID/start |\n| Recorded launches | **130 to 130: +0**, **0.000/s**; all ten populated sites flat, each snapshot's site sum equals its total |\n| Registrations | **11 to 11**, registration ps **15 to 15** |\n| Whole-daemon CPU | Cumulative **67.69 to 75.55 CPU seconds**: **7.86 CPU seconds**, **13.10% of one CPU** |\n| RSS | **210,288 to 210,336 KiB**, **205.359 to 205.406 MiB**, **+48 KiB** |\n| Machine sample | 20 seconds, wrapper bracket **02:52:16 to 02:52:37**: **10.9 launches/s estimate**, **10.8/s sampled** |\n| Machine attribution | **8.6/s other**, **2.2/s gone before attribution**; no recognized direct daemon children or status-line runs |\n\nThe machine sampler made **253,632 polls** and overlapped the daemon minute. It costs CPU despite being an observation; attribution is a lower bound and truncated command labels do not prove owners.\n\n**Observed census and the new loop's budget.** Read-only snapshots at **02:51:29.387984** and **02:53:33.315032** agree:\n\n- **S=2,278** snapshot rows, **H=20** distinct holders, **I=15** live idle holders.\n- **21** open role rows plus **1** open claim; **0** pending compactions; **1** global pending/unnotified background job.\n- All 15 idle holders have an own event **less than one hour old**; none is compacting, lacks an own event, or is past-hour marked/unmarked.\n\nAt that census, each configured **60-second watchdog round** adds one open-holder UNION read, a **2,278-entry reference map**, **20** holder lookups/filter tests, one empty pending-compaction read and **15** indexed own-event seeks. That is **17 main data reads plus 17 per-method schema-version PRAGMA reads**. Each eligible idle holder gets one own-event seek; nonholders get no individual idle-nudge query, although their existing snapshot rows enter the map.\n\nThis branch stops at the hour check: no mark read/write, owner-job seek, queue peek, late holdings/label preparation, random mint or notification is needed **at the observed snapshots**. This is the source-derived cost for the measured census, not a trace of every executed statement or a claim that intermediate states never changed.\n\nEight persisted idle-nudge marks carry the earlier round timestamp **02:46:01.086**. Their count/latest timestamp stay unchanged across the bracket, and its 56 new spine records contain **no `watchdog.idle-nudge` event**. The instrument can observe the marks positively; the quiet window is not being called proof that the loop never runs. Those 56 records span the wider bracket, not the exact minute.\n\n**Timing gap: F143.** There is no current per-loop tick counter or cumulative duration around `idle_nudge::round`; `TickLoop` and watchdog outcome audits do not expose one. Therefore **13.10% is the daemon's interval CPU, not idle-nudge CPU**, and no isolated observed ms/tick or exact tick count is claimed. PM accepted census plus aggregate CPU and opened **F143** for per-loop tick count/cumulative duration on `/health` or ping. That instrumentation gap remains separately tracked.\n\n**Feature-off comparison:** the earlier schema-45/PID4004 baseline in output `eae4679` had zero launches/60.005803s, **11.93%** daemon CPU, RSS **197.11 to 197.02 MiB**, machine **15.8/s**, and S/H/I=2,278/21/15. This window is **+1.17 percentage points** whole-daemon CPU, with H=20 and different open rows, traffic, load and intervening code. It is not an isolated #189 CPU tax. Counters were compared as interval deltas, never subtracted across the bounce.\n\nBoth new indexes are present; the live store was positively bound to this seat's known report cursor before reading metadata. No local build/test, mutation, synthetic nudge, bounce, SQL timing benchmark or profiler was run. Cold migration/index-build and per-append latency were not measured. The requested #189 deployment reading is filed; **joint A1+A2 AC9 remains owed**.\n\nRaw receipts: `pr189-after-window.json`, `pr189-after-machine.json`, `pr189-after-machine-times.txt`, `pr189-after-context.json`.\n"
+		}
+	]
+}
