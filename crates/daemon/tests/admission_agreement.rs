@@ -88,6 +88,11 @@ fn the_case_table_covers_every_refusal_reason() {
     assert!(
         reasons
             .iter()
+            .any(|r| matches!(r, RefusalReason::UnprintableFolder))
+    );
+    assert!(
+        reasons
+            .iter()
             .any(|r| matches!(r, RefusalReason::NoBindEvidence))
     );
     assert!(

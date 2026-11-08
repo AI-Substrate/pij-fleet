@@ -2014,7 +2014,7 @@ The full behaviour, state diagram and known residual are in [pa-watchdog.md](pa-
 
 **Nudge.** The PA receives one message from `pij_core::BG_ACTOR` (`pij-bg`), built by `pij_core::pa_digest`:
 
-- a headline with seat, working, idle and ❄ counts;
+- a headline with the scope, seat, working, idle and ❄ counts. The scope is the repository's common git dir, or a seat's folder git can't place. A path has no closed grammar, so it is fenced (`scope "<path>"`: escaped, quoted), and a folder or spawn `--cwd` with a control character or line break is refused where it is set (admission `UnprintableFolder`, F133);
 - a **Needs a look** list:
   - seats `SeatDescriptor::nudgeable` that have been quiet for a whole interval;
   - seats that declared `waiting`, `hold`, `blocked` or `question`;
