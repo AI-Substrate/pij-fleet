@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "26d2df93dba7bb02dbaf7829928875c52d8961b3",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/189#issuecomment-6723117382",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:189",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After-deploy same-incarnation spawn/CPU/RSS minute and machine spawn-rate; predeploy baseline recorded at PID4004/schema45/9c3445c2b6"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `26d2df93dba7bb02dbaf7829928875c52d8961b3`.\n\nDelta against BLOCK `703cde7`, output `8e3931b49dc44cb6d21c946dee15336cf77668a0`. **P189-F001/F002 are closed:** the own-event selection excludes idle/malformed activity in the index, candidate membership is no longer quadratic, and the global full-job read is replaced by an active-owner existence seek.\n\n**Steady-state budget per existing 60-second tick.** Counts below are main data queries; the store methods retain their schema guards. Let S be the existing snapshot size, H distinct holding seats, I live idle holders, C pending compactions and R open holding/claim rows.\n\n| Condition | New work |\n|---|---|\n| Every tick | One UNION over the two open-row partial indexes, reading/deduplicating R rows into H IDs. H=0 returns immediately. |\n| H>0 | One reference HashMap over S snapshot rows, then H lookups/filter tests: O(S+H), not the former O(S+I x H). No descriptor clone or individual nonholder query. |\n| I>0 | One global pending-compaction read and its set construction, still proportional to C. This is shared work, not strictly holder-only. |\n| Each idle holder not compacting | One keyed reverse own-event seek. No event/no hour elapsed stops here. Working/missing/tombstoned holders get no individual query. |\n| Past the hour | One `(seat,anchor)` mark existence read. An already-marked anchor stops here. |\n| Unmarked past-hour holder | One indexed owner/live-job EXISTS. If not busy, existing queue peek, then open holdings/claims reads and label/sort work. |\n| Still due | One 16-byte random occurrence before an owned conditional mark transaction; winner alone attempts the nudge. |\n\nAt the observed baseline, S=**2,278**, H=**21**, I=**15**: one 2,278-entry reference map, 21 lookups and at most 15 own-event seeks per tick, before compaction/age skips. It is not zero snapshot work, but no longer a holders-per-seat nested scan. Past-hour eligibility was not measured.\n\n**Indexes and append cost.** `spine_own_events(seat,seq,at)` has the same predicate used by the indexed latest-own and veto-range queries. Idle activity is absent from its entries, so it cannot form the old trailing candidate run. `background_jobs_live_by_owner(owner)` contains queued/running jobs only, excluding unrelated/terminal-job materialization.\n\nEvery spine append must evaluate the new partial-index eligibility predicate. Its kind gates precede the JSON CASE: reports qualify directly; activity validates JSON and extracts state; unrelated kinds need no own-index entry. Idle/malformed activity still pays its eligibility check but inserts nothing. Matching reports/non-idle activity add one B-tree entry and normal index-page/cache/disk maintenance. This is not a new process, but it is **additional append work**, with activity JSON work dependent on payload size. Migration builds both indexes over existing spine/job history once; that cold build is not covered by a steady-state CPU number.\n\n**Conditional mark and IDs.** The INSERT SELECT adds a current-seat PK check and an indexed own-event-after-anchor veto inside the existing transaction. It does not atomically recheck every earlier queue/job/holding condition. A veto inserts/sends nothing. Randomness is **one** 16-byte fill per mark attempt, converted to 32 hex characters and reused in the owner/FYI IDs; it is spent even when the mark is vetoed, not freshly drawn per prime.\n\nThe bound remains one owner attempt plus D FYIs for distinct live primes, or one fallback parent, not a universal two messages. Prime reads/live checks and unbounded open-holding label sizes remain once-per-nudge costs. Delivery/model wake work is real despite no new launch site.\n\nThe coupled FYI fix also affects other retries: an existing `(origin,id)` now causes a PK sender/recipient check. A same-pair retry adds that read; a different-pair collision records `fyi.refused` and returns an explicit error. New FYIs do not take the duplicate lookup. No new timer or community writer commit.\n\n**Authorized pre-deploy baseline, not a measurement of this code.** Schema remained **45**, `spine_own_events` absent, healthy **PID4004**, start **09 Nov 00:28:23 +10:00**, embedded commit `9c3445c2b6`.\n\n| Reading, 09 Nov +10:00 | Result |\n|---|---|\n| Ping minute | **00:56:30.249339 to 00:57:30.255481**, 60.005803 monotonic seconds |\n| Recorded daemon launches | **146 to 146: +0**; all nine populated sites flat/reconciled |\n| Daemon CPU | **7.16 CPU seconds = 11.93%** of one CPU |\n| RSS | **197.11 to 197.02 MiB**, 201,840 to 201,744 KiB (-96 KiB) |\n| Separate 20-second machine sample | **15.8/s estimate**, 15.7/s sampled; 13.1/s other, 2.6/s gone; no recognized direct daemon children |\n\nMetadata snapshots at 00:54:23.678057 and 00:58:47.550648 both show S/H/I=2,278/21/15. The **wider bracket**, not the precise minute, contains 29 new spine records: one report.now, 24 seat.activity and four other records. Activity states/payloads were not read, so no exact future own-entry count is claimed. Initial open rows were 26 role holdings plus three claims; pending jobs/compactions were 1/0. The sampler made 254,720 polls, overlaps the minute and costs CPU despite nice priority. No matched post-deploy comparison or new-index write latency was measured.\n\n**Exact-head CI:** [42491302475](https://github.com/AI-Substrate/pij-fleet/actions/runs/42491302475), successful Rust job `128764068608`, artifact **13621611596**: **2,247 executed cases passed**, zero failures/errors, five separately skipped. Verified keyed own/veto/owner plans with no temp B-tree, the 2,000-idle-tail/malformed/idle-only cases, mark-veto/busy/squatted-FYI/restart/rearm cases and all six spawn guards. Rust lint, Node22/24 and replacement delivers checks succeed. No local build, product test, mutation or query-plan benchmark; only the authorized production baseline/metadata reading.\n\nFrozen worktree/GitHub heads agree, clean and CLEAN. Both measurement helpers completed. After-deploy spawn/CPU/RSS comparison remains owed; migration/append latency was not measured. Correctness/security verdicts are independent. Raw receipts: `pr189-before-window.json`, `pr189-before-machine.json`, `pr189-before-context.json`.\n"
+		}
+	]
+}
