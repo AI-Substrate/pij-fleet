@@ -6580,10 +6580,12 @@ impl pij_daemon::community::gh::PullRequests for MergedGh {
                 .find(|(pr, _)| *pr == number)
                 .map(|(_, at)| at.clone()),
             // PR 240 has no Delivers: line at all (F119).
-            body: if number == 240 {
-                "## What changed\n".into()
-            } else {
-                "Delivers: none\n".into()
+            body: match number {
+                240 => "## What changed\n".into(),
+                // F122: a Fixes: line, and a malformed one.
+                250 | 253 => "Delivers: none\nFixes: F122, F117, F118\n".into(),
+                251 => "Delivers: none\nFixes: F122, see notes\n".into(),
+                _ => "Delivers: none\n".into(),
             },
             files: vec![
                 "docs/plans/215-holdings-followups/plan.dd.json".into(),
@@ -7098,7 +7100,13 @@ async fn a_reassignment_between_the_choice_and_the_commit_survives() {
         .unwrap();
     let directory = &rig.services.directory;
     let (targets, later) = directory
-        .finished_by("fleet", 231, &[215].into(), merged)
+        .finished_by(
+            "fleet",
+            231,
+            &[215].into(),
+            &std::collections::BTreeSet::new(),
+            merged,
+        )
         .await
         .unwrap();
     assert_eq!(targets.len(), 2, "{targets:?}");
@@ -7506,5 +7514,137 @@ async fn the_prime_recovery_action_follows_the_designations_liveness() {
             .starts_with("the project has no live designated prime and 1 request(s)"),
         "{actions:?}"
     );
+    rig.server.abort();
+}
+
+/// F122: a PR body's `Fixes:` line ends the coder/f<N> holdings it names,
+/// under the same merge-time cutoff as every other delivered release; no line
+/// ends none, and a malformed line refuses before anything is recorded.
+#[tokio::test]
+async fn a_fixes_line_ends_the_f_item_coder_holdings_it_names() {
+    let (repo, rig) = delivered_rig("pij-delivered-fixes").await;
+    let lines = "coder/f122 pij-holder\ncoder/f117 pij-second\ncoder/f999 pij-holder\ncoder/f300 pij-second\n";
+    assert_eq!(batch(&rig, &repo, "assign", lines).await["ok"], true);
+    merge_now(250);
+    // Assigned after the merge: new work under a named key.
+    assert_eq!(
+        batch(&rig, &repo, "assign", "coder/f118 pij-holder\n").await["ok"],
+        true
+    );
+
+    // A malformed Fixes: line refuses, recording and writing nothing.
+    merge_now(251);
+    let start = head(&repo);
+    let bad = call(rig.addr, "/v1/delivered", &["delivered", "251"], &repo.main).await;
+    assert_eq!(bad["details"]["code"], "E-RS-FIXES", "{bad}");
+    assert!(bad.to_string().contains("see"), "{bad}");
+    assert_eq!(head(&repo), start);
+    assert_eq!(
+        open_holdings(&rig).await.len(),
+        5,
+        "a refused run ends nothing"
+    );
+
+    // No Fixes: line: no F-item holding ends.
+    merge_now(252);
+    let none = call(rig.addr, "/v1/delivered", &["delivered", "252"], &repo.main).await;
+    assert_eq!(none["ok"], true, "{none}");
+    assert_eq!(none["data"]["holdings"], json!([]), "{none}");
+
+    let fixed = call(rig.addr, "/v1/delivered", &["delivered", "250"], &repo.main).await;
+    assert_eq!(fixed["ok"], true, "{fixed}");
+    assert_eq!(
+        released(&fixed["data"]["holdings"]),
+        ["coder/f117 pij-second", "coder/f122 pij-holder"]
+    );
+    assert!(
+        fixed["data"]["notes"]
+            .to_string()
+            .contains("holding left open: coder/f118 pij-holder began at"),
+        "{fixed}"
+    );
+    assert_eq!(
+        open_holdings(&rig).await,
+        [
+            "coder/f118 pij-holder",
+            "coder/f300 pij-second",
+            "coder/f999 pij-holder"
+        ]
+    );
+    rig.server.abort();
+}
+
+/// F122: an F-item target is pinned to the holding chosen before the writer
+/// lock, as plan targets are (#168): a release and reassignment of the same
+/// seat and key in between leaves the new holding.
+#[tokio::test]
+async fn an_f_item_target_is_pinned_to_the_holding_it_chose() {
+    use pij_daemon::community::directory::Unmatched;
+    let (repo, rig) = delivered_rig("pij-delivered-fixes-pinned").await;
+    assert_eq!(
+        batch(&rig, &repo, "assign", "coder/f122 pij-holder\n").await["ok"],
+        true
+    );
+    merge_now(253);
+    let merged = MERGED_AT
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(pr, _)| *pr == 253)
+        .map(|(_, at)| pij_daemon::community::holders::parse_time(at).unwrap())
+        .unwrap();
+    let directory = &rig.services.directory;
+    let (targets, later) = directory
+        .finished_by(
+            "fleet",
+            253,
+            &std::collections::BTreeSet::new(),
+            &[122].into(),
+            merged,
+        )
+        .await
+        .unwrap();
+    assert_eq!(targets.len(), 1, "{targets:?}");
+    assert!(later.is_empty(), "{later:?}");
+    for leaf in ["release", "assign"] {
+        let done = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                leaf,
+                "coder/f122",
+                "pij-holder",
+                "--why",
+                "next",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let new = rig.store.open_assignments("pij-holder").await.unwrap();
+    let released = directory
+        .release_many(
+            "fleet",
+            repo.main.clone(),
+            targets,
+            &SeatId::from(SEAT),
+            "PR #253 merged",
+            Unmatched::Skip,
+        )
+        .await;
+    let skipped = match released {
+        Ok(released) => released.skipped,
+        Err(refusal) => vec![refusal.message],
+    };
+    assert!(
+        skipped
+            .iter()
+            .any(|why| why.contains("pij-holder's coder/f122 holding from ")
+                && why.contains("is not open")),
+        "{skipped:?}"
+    );
+    assert_eq!(rig.store.open_assignments("pij-holder").await.unwrap(), new);
     rig.server.abort();
 }
