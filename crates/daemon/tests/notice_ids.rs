@@ -32,14 +32,118 @@ fn sources() -> Vec<(PathBuf, String)> {
         })
         .map(|path| {
             let text = std::fs::read_to_string(&path).expect("read source");
-            // Test modules keep their literal ids: they are fixtures, not mints.
-            let live = text
-                .find("#[cfg(test)]\nmod ")
-                .map_or(text.as_str(), |at| &text[..at])
-                .to_string();
-            (path, live)
+            // Test items keep their literal ids: they are fixtures, not mints.
+            (path, strip_test_items(&text))
         })
         .collect()
+}
+
+/// Where the token opening at `at` ends (exclusive), when it is one whose
+/// contents must not be read as code: a string, raw string, char literal or
+/// comment. A lifetime (`'a`) is not one.
+fn skip_opaque(bytes: &[u8], at: usize) -> Option<usize> {
+    let rest = &bytes[at..];
+    if rest.starts_with(b"//") {
+        return Some(at + rest.iter().position(|&b| b == b'\n').unwrap_or(rest.len()));
+    }
+    if rest.starts_with(b"/*") {
+        return Some(
+            at + 2
+                + rest[2..]
+                    .windows(2)
+                    .position(|w| w == b"*/")
+                    .map_or(rest.len() - 2, |end| end + 2),
+        );
+    }
+    if rest.starts_with(b"r\"") || rest.starts_with(b"r#") {
+        let hashes = rest[1..].iter().take_while(|&&b| b == b'#').count();
+        if rest.get(1 + hashes) == Some(&b'"') {
+            let mut close = vec![b'"'];
+            close.extend(std::iter::repeat_n(b'#', hashes));
+            let body = 2 + hashes;
+            let end = rest[body..]
+                .windows(close.len())
+                .position(|w| w == close.as_slice())
+                .map_or(rest.len(), |end| body + end + close.len());
+            return Some(at + end);
+        }
+    }
+    match rest.first() {
+        Some(b'"') => {
+            let mut end = 1;
+            while end < rest.len() && rest[end] != b'"' {
+                end += if rest[end] == b'\\' { 2 } else { 1 };
+            }
+            Some(at + (end + 1).min(rest.len()))
+        }
+        Some(b'\'') => {
+            // A char literal: 'x' or an escape ('\n', '\u{1b}'); else a lifetime.
+            if rest.get(1) == Some(&b'\\') {
+                rest.iter()
+                    .skip(2)
+                    .position(|&b| b == b'\'')
+                    .map(|end| at + end + 3)
+            } else {
+                let width = std::str::from_utf8(&rest[1..rest.len().min(5)])
+                    .ok()
+                    .or_else(|| std::str::from_utf8(&rest[1..rest.len().min(2)]).ok())
+                    .and_then(|text| text.chars().next())
+                    .map_or(1, char::len_utf8);
+                (rest.get(1 + width) == Some(&b'\'')).then_some(at + 2 + width)
+            }
+        }
+        _ => None,
+    }
+}
+
+/// `text` with every `#[cfg(test)]` item blanked out (spaces, newlines kept,
+/// so offsets and line numbers hold): an external `mod x;`, an inline module
+/// or function and its body, a field, a statement. Production code after it is
+/// still scanned. When unsure where an item ends it stops early, at the first
+/// `;`, `,` or block at its own depth, so an error leaves test code in (a
+/// false finding) and never blanks production code (a missed one).
+fn strip_test_items(text: &str) -> String {
+    const MARK: &str = "#[cfg(test)]";
+    let mut bytes = text.as_bytes().to_vec();
+    let source = text.as_bytes();
+    let mut from = 0;
+    while let Some(found) = text[from..].find(MARK) {
+        let start = from + found;
+        let mut at = start + MARK.len();
+        let mut depth = 0_i32;
+        let mut end = source.len();
+        while at < source.len() {
+            if let Some(next) = skip_opaque(source, at) {
+                at = next;
+                continue;
+            }
+            match source[at] {
+                b'(' | b'[' => depth += 1,
+                b')' | b']' => depth -= 1,
+                b';' | b',' if depth == 0 => {
+                    end = at + 1;
+                    break;
+                }
+                b'{' if depth == 0 => {
+                    end = closing(text, at).map_or(source.len(), |close| close + 1);
+                    break;
+                }
+                b'}' if depth == 0 => {
+                    end = at;
+                    break;
+                }
+                _ => {}
+            }
+            at += 1;
+        }
+        for byte in &mut bytes[start..end] {
+            if *byte != b'\n' {
+                *byte = b' ';
+            }
+        }
+        from = end.max(start + MARK.len());
+    }
+    String::from_utf8(bytes).expect("only ASCII bytes were replaced, whole tokens at a time")
 }
 
 fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
@@ -135,13 +239,11 @@ fn closing(text: &str, open: usize) -> Option<usize> {
     let mut depth = 0_i32;
     let mut at = open;
     while at < bytes.len() {
+        if let Some(next) = skip_opaque(bytes, at) {
+            at = next;
+            continue;
+        }
         match bytes[at] {
-            b'"' => {
-                at += 1;
-                while at < bytes.len() && bytes[at] != b'"' {
-                    at += if bytes[at] == b'\\' { 2 } else { 1 };
-                }
-            }
             b'(' | b'[' | b'{' => depth += 1,
             b')' | b']' | b'}' => {
                 depth -= 1;
@@ -395,4 +497,48 @@ fn the_compiled_table_is_the_declared_one() {
         .collect();
     assert!(declared.len() > 20, "{declared:?}");
     assert_eq!(compiled, declared);
+}
+
+/// Herring's blocker at 52cb364: the scan cut each file at its first
+/// `#[cfg(test)] mod`, and `http/mod.rs` declares external test modules
+/// before production code (the sidecar guard, Telegram staging). Only test
+/// items are blanked now; what follows them is still read.
+#[test]
+fn production_after_a_test_module_declaration_is_still_scanned() {
+    let synthetic = "fn a() {}\n#[cfg(test)]\nmod tests;\n#[cfg(test)]\nmod more {\n    fn f() { let s = r#\"}{\"#; let c = '{'; }\n}\nfn live() { let msg_id = format!(\"pa-missing:{}\", 1); }\n";
+    let stripped = strip_test_items(synthetic);
+    assert_eq!(stripped.len(), synthetic.len(), "offsets hold");
+    assert_eq!(
+        stripped.lines().count(),
+        synthetic.lines().count(),
+        "lines hold"
+    );
+    assert!(
+        !stripped.contains("mod tests") && !stripped.contains("mod more"),
+        "{stripped}"
+    );
+    assert!(
+        stripped.contains("fn live() { let msg_id = format!(\"pa-missing:{}\", 1); }"),
+        "{stripped}"
+    );
+    assert_eq!(built_ids(&stripped).len(), 1, "the live mint is read");
+
+    // The real file, as the scan reads it (through `sources()`).
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/http/mod.rs");
+    let text = std::fs::read_to_string(&path).expect("read http/mod.rs");
+    let first_test = text.find("#[cfg(test)]\nmod ").expect("its test modules");
+    let guard = text
+        .rfind("reserved_msg_id(\"pij sidecar\"")
+        .expect("the sidecar guard");
+    assert!(guard > first_test, "the guard follows the test modules");
+    let scanned = sources()
+        .into_iter()
+        .find(|(file, _)| file.ends_with("daemon/src/http/mod.rs"))
+        .map(|(_, scanned)| scanned)
+        .expect("the scan reads http/mod.rs");
+    assert_eq!(
+        scanned.get(guard..guard + 30),
+        text.get(guard..guard + 30),
+        "the sidecar guard after the test modules is scanned"
+    );
 }
