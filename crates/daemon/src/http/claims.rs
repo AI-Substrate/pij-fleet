@@ -15,6 +15,7 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use pij_core::claims::{self, Address, Cell, Edit};
 use pij_core::model::{Envelope, ErrorKind, SeatId};
+use pij_core::render;
 use pij_store::{ClaimKey, DeliveryRecord, ReleaseOutcome};
 use serde_json::{Value, json};
 
@@ -185,7 +186,11 @@ async fn claim(
         .await
         .map_err(store_refusal)?;
     let formatted = claims::format(kind, claim.number);
-    let mut line = format!("{kind} {formatted} claimed by {actor} for {subject:?} in {project}");
+    let mut line = format!(
+        "{kind} {formatted} claimed by {} for {} in {project}",
+        render::seat(actor.as_str()),
+        render::fenced(&subject, render::FENCE_MAX)
+    );
     if typed != kind {
         line.push_str(&format!(" ({typed} is {kind}'s old name)"));
     }
@@ -237,7 +242,10 @@ async fn release(
     match outcome {
         ReleaseOutcome::Released(claim) => {
             let mut data = serde_json::to_value(&claim).expect("a claim serialises");
-            data["line"] = json!(format!("{named} released by {actor}"));
+            data["line"] = json!(format!(
+                "{named} released by {}",
+                render::seat(actor.as_str())
+            ));
             Ok(data)
         }
         ReleaseOutcome::Unknown => Err(Refusal::new(
@@ -312,7 +320,7 @@ async fn delivered(
         Some(seat) => Some(live_seat(state, &seat).await?.ok_or_else(|| {
             Refusal::new(
                 "E-RS-NOT-FOUND",
-                format!("--pm {seat}: no live seat by that name"),
+                format!("--pm {}: no live seat by that name", render::seat(&seat)),
             )
         })?),
         None => None,
@@ -371,7 +379,9 @@ async fn delivered(
         && flag != told.as_str()
     {
         notes.push(format!(
-            "--pm {flag} not used: {told} holds the PM role for this workstream"
+            "--pm {} not used: {} holds the PM role for this workstream",
+            render::seat(&flag),
+            render::seat(told.as_str())
         ));
     }
     let releases: Vec<(String, u64)> =
@@ -432,11 +442,14 @@ async fn delivered(
         "it delivers no row (`Delivers: none`)".to_string()
     } else {
         match (replay, &told_pm) {
-            (false, Some(pm)) => format!("posted on {pm}'s card"),
+            (false, Some(pm)) => format!("posted on {}'s card", render::seat(pm)),
             (false, None) => {
                 "no PM was told: no live pm holder for this workstream and no --pm".to_string()
             }
-            (true, Some(pm)) => format!("already recorded; {pm}'s card was told the first time"),
+            (true, Some(pm)) => format!(
+                "already recorded; {}'s card was told the first time",
+                render::seat(pm)
+            ),
             (true, None) => "already recorded; no PM was told the first time".to_string(),
         }
     };
@@ -446,10 +459,11 @@ async fn delivered(
         && told_pm.as_deref() != Some(requested.as_str())
     {
         notes.push(format!(
-            "{requested} was not told: PR #{number} was already recorded{}, and a replay does not resend it",
+            "{} was not told: PR #{number} was already recorded{}, and a replay does not resend it",
+            render::seat(requested.as_str()),
             told_pm
                 .as_deref()
-                .map(|earlier| format!(" for {earlier}"))
+                .map(|earlier| format!(" for {}", render::seat(earlier)))
                 .unwrap_or_default()
         ));
     }

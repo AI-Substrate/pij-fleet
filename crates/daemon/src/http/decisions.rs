@@ -143,7 +143,7 @@ impl DecisionService {
             });
         }
         Ok(
-            json!({"seat":decision.asked_by,"seq":seq,"line":format!("question recorded: {}",decision.id),"decision":decision,"assignment_id":assignment_id,"refs":refs}),
+            json!({"seat":decision.asked_by,"seq":seq,"line":format!("question recorded: {}", pij_core::render::msg_id(&decision.id)),"decision":decision,"assignment_id":assignment_id,"refs":refs}),
         )
     }
 
@@ -324,7 +324,7 @@ impl DecisionService {
         receipt["seq"] = json!(seq);
         receipt["line"] = json!(format!(
             "verified {} done at spine {}",
-            receipt["seat"].as_str().unwrap_or_default(),
+            pij_core::render::seat(receipt["seat"].as_str().unwrap_or_default()),
             receipt["done_seq"]
         ));
         Ok(receipt)

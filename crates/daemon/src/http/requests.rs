@@ -9,10 +9,13 @@
 //! answered or abandoned, which stops its time limit (F83). Store reads, one
 //! write and at most one FYI; nothing is launched.
 
+use std::borrow::Cow;
+
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
 use pij_core::model::{Envelope, ErrorKind, Event, Msg, SeatId};
+use pij_core::render;
 use pij_store::{
     CloseOutcome, ClosedOrOpen, ClosedRoleRequest, REQUESTS_LIST_LIMIT, RequestState, RoleRequest,
 };
@@ -278,8 +281,10 @@ async fn withdraw(
         return Err(Refusal::new(
             "E-RS-OWNERSHIP",
             format!(
-                "request {id} was sent by {}; only its requester, the PA of {} or the prime withdraws it",
-                request.requester, request.project
+                "request {} was sent by {}; only its requester, the PA of {} or the prime withdraws it",
+                render::msg_id(id),
+                render::seat(&request.requester),
+                render::project(&request.project)
             ),
         ));
     }
@@ -299,7 +304,7 @@ async fn withdraw(
     {
         CloseOutcome::Closed(closed) => {
             let mut data = closed_entry(&closed);
-            data["line"] = json!(format!("request {id} withdrawn by {actor}: {why}"));
+            data["line"] = json!(closed_line(id, "withdrawn", actor.as_str(), &why));
             Ok(data)
         }
         CloseOutcome::OtherState(request) => Err(not_queued(&request)),
@@ -353,11 +358,17 @@ async fn close(
                 };
                 data["line"] = json!(match &told {
                     Ok(_) => format!(
-                        "request {id} was already closed by {}; its notice to {} is sent now{ignored}",
-                        closed.closed_by, closed.request.requester
+                        "request {} was already closed by {}; its notice to {} is sent now{ignored}",
+                        render::msg_id(id),
+                        render::seat(&closed.closed_by),
+                        render::seat(&closed.request.requester)
                     ),
                     Err(cause) => not_told_line(
-                        &format!("request {id} was already closed by {}", closed.closed_by),
+                        &format!(
+                            "request {} was already closed by {}",
+                            render::msg_id(id),
+                            render::seat(&closed.closed_by)
+                        ),
                         &closed,
                         cause,
                     ),
@@ -395,7 +406,7 @@ async fn close(
         CloseOutcome::Unknown => return Err(unknown(id)),
     };
     let mut data = closed_entry(&closed);
-    let line = format!("request {id} closed by {actor}: {why}");
+    let line = closed_line(id, "closed", actor.as_str(), &why);
     if notice == "quiet" {
         data["line"] = json!(line);
         data["told"] = Value::Null;
@@ -428,10 +439,13 @@ async fn may_close(
         "E-RS-OWNERSHIP",
         format!(
             "request {} was sent by {} to {}; only its requester, its holder, the PA of {} or the prime closes it",
-            request.id,
-            request.requester,
-            request.holder.as_deref().unwrap_or("no holder yet"),
-            request.project
+            render::msg_id(&request.id),
+            render::seat(&request.requester),
+            request
+                .holder
+                .as_deref()
+                .map_or(Cow::Borrowed("no holder yet"), render::seat),
+            render::project(&request.project)
         ),
     ))
 }
@@ -471,11 +485,26 @@ fn told_value(
     }
 }
 
-fn not_told_line(head: &str, closed: &ClosedRoleRequest, cause: &str) -> String {
+/// F142: a close or withdraw receipt line. The id and closer show through
+/// their grammars and the reason fenced, as the closer's words.
+fn closed_line(id: &str, verb: &str, actor: &str, why: &str) -> String {
     format!(
-        "{head}; but {} was NOT told ({cause}). Run {} again to send the notice",
-        closed.request.requester,
+        "request {} {verb} by {}, who wrote: {}",
+        render::msg_id(id),
+        render::seat(actor),
+        render::fenced(why, render::FENCE_MAX)
+    )
+}
+
+fn not_told_line(head: &str, closed: &ClosedRoleRequest, cause: &str) -> String {
+    let again = if render::msg_id(&closed.request.id) == closed.request.id.as_str() {
         crate::community::picture::command(&["pij", "requests", "close", &closed.request.id])
+    } else {
+        "`pij requests close` with the raw id from --json".to_string()
+    };
+    format!(
+        "{head}; but {} was NOT told ({cause}). Run {again} again to send the notice",
+        render::seat(&closed.request.requester),
     )
 }
 
@@ -583,8 +612,11 @@ fn closed_entry(closed: &ClosedRoleRequest) -> Value {
 }
 
 fn unknown(id: &str) -> Refusal {
-    Refusal::new("E-RS-NOT-FOUND", format!("no role request {id}"))
-        .with_next("List them: pij requests --state queued")
+    Refusal::new(
+        "E-RS-NOT-FOUND",
+        format!("no role request {}", render::msg_id(id)),
+    )
+    .with_next("List them: pij requests --state queued")
 }
 
 fn not_queued(request: &RoleRequest) -> Refusal {
@@ -592,9 +624,12 @@ fn not_queued(request: &RoleRequest) -> Refusal {
         E_REQUEST_NOT_QUEUED,
         format!(
             "request {} is {} to {}; only a queued request can be withdrawn",
-            request.id,
+            render::msg_id(&request.id),
             request.state.as_str(),
-            request.holder.as_deref().unwrap_or("its holder")
+            request
+                .holder
+                .as_deref()
+                .map_or(Cow::Borrowed("its holder"), render::seat)
         ),
     )
 }
@@ -604,11 +639,11 @@ fn not_delivered(request: &RoleRequest) -> Refusal {
         E_REQUEST_NOT_DELIVERED,
         format!(
             "request {} is {}; only a delivered request can be closed",
-            request.id,
+            render::msg_id(&request.id),
             request.state.as_str()
         ),
     );
-    if request.state == RequestState::Queued {
+    if request.state == RequestState::Queued && render::msg_id(&request.id) == request.id.as_str() {
         refusal.with_next(crate::community::picture::command(&[
             "pij",
             "requests",
@@ -626,8 +661,10 @@ fn already_closed(closed: &ClosedRoleRequest) -> Refusal {
     Refusal::new(
         E_REQUEST_CLOSED,
         format!(
-            "request {} was already closed by {}: {}",
-            closed.request.id, closed.closed_by, closed.why
+            "request {} was already closed by {}, who wrote: {}",
+            render::msg_id(&closed.request.id),
+            render::seat(&closed.closed_by),
+            render::fenced(&closed.why, render::FENCE_MAX)
         ),
     )
 }
