@@ -79,5 +79,5 @@
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 173 | 2026-11-08T01:48:39.858Z | 2026-11-08T02:32:33.300Z | pij-steady-otter | pij-far-jackal | F116/F120 receipt wording, F121 #173 | PR #173 merged (b93a3439a2e4) |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 175 | 2026-11-08T02:30:39.457Z | — | pij-steady-otter | — | stale-extension anomaly #175 (F113 follow-up) | — |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 174 | 2026-11-08T02:31:28.384Z | 2026-11-08T02:50:39.484Z | pij-steady-otter | pij-far-jackal | F114/F115 #174 | PR #174 merged (28d7c7bd792d) |
-| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 176 | 2026-11-08T03:29:19.435Z | — | pij-steady-otter | — | F126 cargo job cap #176 | — |
+| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 176 | 2026-11-08T03:29:19.435Z | 2026-11-08T04:10:32.101Z | pij-steady-otter | pij-far-jackal | F126 cargo job cap #176 | PR #176 merged (1517f2e93c9f) |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 177 | 2026-11-08T03:57:33.097Z | — | pij-steady-otter | — | F119/F117 #177 | — |
