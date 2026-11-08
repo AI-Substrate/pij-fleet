@@ -1053,6 +1053,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-08T22:23:11.819Z",
 					"why": "F144 part 2 nudge qualification"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T22:40:15.882Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "196",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F147 recipes pass PIJ_IDLE_NUDGE"
 				}
 			]
 		}

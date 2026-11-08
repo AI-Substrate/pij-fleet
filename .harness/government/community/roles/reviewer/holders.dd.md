@@ -100,3 +100,4 @@
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 193 | 2026-11-08T18:17:02.721Z | — | pij-steady-otter | — | F142: bobcat traced the close/withdraw lines and pij state on #185 | — |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 194 | 2026-11-08T20:11:57.218Z | — | pij-steady-otter | — | F141 reserved daemon notice ids | — |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 195 | 2026-11-08T20:42:25.980Z | 2026-11-08T22:23:11.819Z | pij-steady-otter | pij-far-jackal | F144 part 2 nudge qualification | PR #195 merged (9a33e1761ae0) |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 196 | 2026-11-08T22:40:15.882Z | — | pij-steady-otter | — | F147 recipes pass PIJ_IDLE_NUDGE | — |
