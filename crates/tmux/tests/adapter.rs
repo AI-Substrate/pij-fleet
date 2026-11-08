@@ -306,6 +306,7 @@ async fn staged_submit_excludes_human_input_mid_body_and_before_enter() {
 
     for _ in 0..8 {
         session.run(["send-keys", "-t", &pane.id, "-l", "MID-HUMAN"]);
+        // Pacing, not a wait: spreads human keys across the staged paste.
         std::thread::sleep(Duration::from_millis(15));
     }
     let (result, staged) = staging.await.expect("stage task");
@@ -593,6 +594,7 @@ async fn clear_staged_leftover_sends_one_backspace_per_leftover_character() {
     // dd waits for one byte more than the clear sends: only the clear's bytes
     // are there, and no Enter followed them.
     let observed = wait_for_file(&output_path, expected.len(), EVENTUALLY);
+    // Negative window: proves no further byte (no Enter) arrives.
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(
         fs::read(&output_path).expect("read clear capture"),
@@ -651,6 +653,7 @@ async fn clear_staged_leftover_refuses_a_composer_a_human_touched() {
     );
     tmux.abort_submit(&staged).await.expect("release");
     wait_for_pane_input(&session, &pane.id, false, EVENTUALLY);
+    // Negative window: proves the refusal sends no byte.
     std::thread::sleep(Duration::from_millis(300));
     assert!(
         fs::read(&output_path).map_or(true, |bytes| bytes.is_empty()),
@@ -873,11 +876,12 @@ fn watchdog_expiry_before_disable_cannot_strand_input() {
     assert!(submit_marker(&session, &pane.id).is_empty());
 
     session.run(["send-keys", "-t", &pane.id, "-l", "HUMAN-KEYBOARD-WORKS"]);
-    std::thread::sleep(Duration::from_millis(50));
-    let capture = session.run(["capture-pane", "-p", "-t", &pane.id]);
-    assert!(
-        String::from_utf8_lossy(&capture.stdout).contains("HUMAN-KEYBOARD-WORKS"),
-        "human input must work after the stopped daemon resumes"
+    // Rendering is asynchronous to send-keys (F123): wait for the text.
+    capture_until_contains(
+        &TmuxAdapter::for_server(&session.server, &session.tap_root),
+        &pane.id,
+        "HUMAN-KEYBOARD-WORKS",
+        EVENTUALLY,
     );
 }
 
@@ -1052,6 +1056,8 @@ fn stale_watchdog_cannot_release_a_later_adapter_transaction() {
     let first = block_on(first_adapter.acquire_submit(&pane.id)).expect("first transaction");
     fs::write(&first_token, &first.token).expect("name the first transaction");
     block_on(first_adapter.abort_submit(&first)).expect("first transaction aborts");
+    // Stagger, not a wait: the second transaction's watchdog runs behind the
+    // first's; the wrapper, not this gap, fixes their order.
     std::thread::sleep(Duration::from_millis(300));
     let second_adapter = TmuxAdapter::with_binary(&wrapper, &session.tap_root);
     let second = block_on(second_adapter.acquire_submit(&pane.id)).expect("later transaction");
@@ -2085,6 +2091,7 @@ fn rename_window_names_the_panes_window_with_one_recorded_launch() {
     block_on(tmux.rename_window(&pane.id, &hostile)).expect("hostile rename");
     let name = session.run(["display-message", "-p", "-t", &pane.id, "#{window_name}"]);
     assert_eq!(String::from_utf8_lossy(&name.stdout).trim(), hostile);
+    // Negative window: proves the name started no tmux job.
     std::thread::sleep(std::time::Duration::from_millis(300));
     assert!(!marker.exists(), "the name ran a tmux job");
 }

@@ -615,6 +615,7 @@ fn a_foreign_window_in_pij_stays_listed_and_outlives_the_control_client() {
         "only the control pane is hidden"
     );
     drop(adapter);
+    // Negative window: proves the foreign window is NOT destroyed.
     std::thread::sleep(Duration::from_millis(300));
     assert!(
         windows(&server).contains(&foreign),
@@ -624,6 +625,7 @@ fn a_foreign_window_in_pij_stays_listed_and_outlives_the_control_client() {
     let again = server.adapter(true);
     block_on(again.list_panes()).expect("warm again");
     drop(again);
+    // Negative window, as above.
     std::thread::sleep(Duration::from_millis(300));
     assert!(
         windows(&server).contains(&foreign),
@@ -643,7 +645,8 @@ fn a_foreign_window_keeps_the_client_attached_when_pij_is_the_last_session() {
     let before = server.control_clients();
     assert_eq!(before.len(), 1, "{before:?}");
     server.run(&["kill-session", "-t", "work"]);
-    // The subscription is evaluated about once a second.
+    // Negative window: the subscription is evaluated about once a second,
+    // and the client must NOT leave across three of them.
     let settle = Instant::now() + Duration::from_secs(3);
     while Instant::now() < settle {
         let _ = block_on(adapter.list_panes());
@@ -674,6 +677,7 @@ fn a_foreign_pane_split_into_pij_stays_listed_and_outlives_the_control_client() 
         "{foreign} hidden: {listed:?}"
     );
     drop(adapter);
+    // Negative window: proves the foreign pane is NOT destroyed.
     std::thread::sleep(Duration::from_millis(300));
     assert!(
         server
@@ -692,9 +696,19 @@ fn pij_with_only_its_own_window_goes_with_the_client() {
     block_on(adapter.list_panes()).expect("warm");
     assert!(windows(&server).iter().any(|w| w.starts_with("_pij:")));
     drop(adapter);
-    std::thread::sleep(Duration::from_millis(300));
-    let left = windows(&server);
-    assert!(left.iter().all(|w| w.starts_with("work:")), "{left:?}");
+    // `_pij` goes asynchronously after the client detaches: poll for it.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let left = windows(&server);
+        if left.iter().all(|w| w.starts_with("work:")) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "_pij outlived its client; windows left: {left:?}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 /// No server running means none is started: `-N` on the control attach.
@@ -744,6 +758,8 @@ fn a_stalled_control_client_is_killed_and_replaced() {
     assert!(stop.success());
     let resume = Resume(pid);
     let resumer = std::thread::spawn(move || {
+        // A timed stop, not a wait: the server stays stopped past the reply
+        // timeout so the read must fall back to a fork.
         std::thread::sleep(Duration::from_secs(4));
         drop(resume);
     });
