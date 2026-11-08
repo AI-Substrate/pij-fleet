@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "34381a8add95a35d602b1421bf0145056f23c9e9",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/191#issuecomment-6724646398",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:191",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS\n\nPR #191, exact head `34381a8add95a35d602b1421bf0145056f23c9e9`.\n\nDelta review from `cafc908`: the refused-address diagnostic, its HTTP assertion and API wording. Prior admission, legacy window/receipt rendering and release/rebuild authority findings stand. Merged #189 functionality is not independently re-reviewed by this verdict.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new vulnerability identified | - |\n\nThe parser's invalid-address branch uses `escape_debug()` before taking `ADDRESS_SHOWN = 64` output characters (`crates/daemon/src/delivery/role_send.rs:45-46,69-96`). Control characters and quotes are escaped, and the displayed tail is bounded. Existing role/instance acceptance predicates and valid-address construction are unchanged; malformed role addresses still refuse rather than fall through.\n\nThe HTTP assertion supplies forged framing, newlines and a 200-character tail and checks the named refusal, no control characters or unescaped frame, and a short response (`crates/daemon/tests/directory_http.rs`, `a_forged_instance_key_is_refused_wherever_a_holding_is_recorded`). Its under-200-byte assertion covers that fixture, not a universal byte bound: the implementation caps escaped characters. The API accurately distinguishes the key's 32-character display bound from the address's 64-character bound.\n\nNo new C19/C21 disclosure was identified. GitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42504164647` and latest successful Delivers run `42504165651` both identify this SHA and success; the earlier cancelled Delivers run is superseded.\n\nNo local tests, builds, mutation checks, tmux operations, credential reads or payload execution were performed. Immutable Git-object inspection verified the diagnostic change; claimed Y1/Y2 mutation kills were not repeated.\n"
+		}
+	]
+}
