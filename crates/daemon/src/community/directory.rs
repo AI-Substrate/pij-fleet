@@ -2074,7 +2074,8 @@ impl DirectoryService {
 
     /// The open holdings PR `pr` finished (plan 215, F70), each pinned to
     /// its exact holding (its `from`) for [`Self::release_many`]: the
-    /// [`PR_ROLES`] keyed by the PR, and `coder` keyed by each of `plans`.
+    /// [`PR_ROLES`] keyed by the PR, `coder` keyed by each of `plans`, and
+    /// `coder/f<N>` for each F-item in `fixes` (the PR's `Fixes:` line, F122).
     /// Only a holding that began before `merged` is one (review of #168): the
     /// merge time binds the release to the work the PR ended, so a key
     /// reassigned after the merge is new work and comes back as a note
@@ -2088,6 +2089,7 @@ impl DirectoryService {
         project: &str,
         pr: u64,
         plans: &std::collections::BTreeSet<u64>,
+        fixes: &std::collections::BTreeSet<u64>,
         merged: time::OffsetDateTime,
     ) -> Result<(Vec<ReleaseTarget>, Vec<String>), Refusal> {
         let pr = pr.to_string();
@@ -2101,10 +2103,11 @@ impl DirectoryService {
         {
             let finished = (PR_ROLES.contains(&held.role.as_str()) && held.instance == pr)
                 || (held.role == "coder"
-                    && held
+                    && (held
                         .instance
                         .parse::<u64>()
-                        .is_ok_and(|plan| plans.contains(&plan)));
+                        .is_ok_and(|plan| plans.contains(&plan))
+                        || fix_number(&held.instance).is_some_and(|fix| fixes.contains(&fix))));
             if !finished || held.to.is_some() || held.end_pending {
                 continue;
             }
@@ -2289,6 +2292,14 @@ impl DirectoryService {
         .await
         .map_err(|error| Refusal::new(E_GOV_GIT, format!("the writer stopped: {error}")))?
     }
+}
+
+/// The F-item a `coder/f<N>` instance names (F122): `f` and digits only.
+fn fix_number(instance: &str) -> Option<u64> {
+    instance
+        .strip_prefix('f')
+        .filter(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+        .and_then(|digits| digits.parse().ok())
 }
 
 fn instance_suffix(instance: &str) -> String {

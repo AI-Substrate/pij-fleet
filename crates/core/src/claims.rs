@@ -44,6 +44,8 @@ pub const MAX_KIND_LEN: usize = 32;
 
 /// The PR body line that names what a PR delivered.
 pub const DELIVERS: &str = "Delivers:";
+/// The PR body line naming the F-items a PR fixes (F122).
+pub const FIXES: &str = "Fixes:";
 
 /// `pij claim|claims|delivered --help`: one text for the three verbs, shared
 /// by the native CLI (no daemon needed) and the daemon (shim callers).
@@ -70,9 +72,10 @@ the checkout, a missing line reads as `none`), records them, posts on
 the PM's card (the live pm-<workstream> holder, else --pm) and PRINTS the
 `ddocs set` edits for the PM's next docs PR. It changes no project file and pushes
 nothing. It ends the holdings the PR finished (reviewer, security and performance
-for the PR, coder for each plan its files touch), only those begun before the
-merge, in one directory commit, printing one line each; a re-run ends nothing
-more.
+for the PR, coder for each plan its files touch, and coder/f<N> for each F-item
+a `Fixes: F119, F117` line names), only those begun before the merge, in one
+directory commit, printing one line each; a re-run ends nothing more. Without a
+Fixes: line no F-item holding ends; a malformed one refuses.
 
 The project is --project, else the one whose repository holds your directory.
 ";
@@ -302,6 +305,80 @@ pub fn delivers(body: &str) -> Result<Vec<Address>, DeliversError> {
     Ok(addresses)
 }
 
+/// A `Fixes:` line that doesn't parse (F122).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FixesError {
+    /// The token that is not `F<number>`, or empty when the line names nothing.
+    pub token: String,
+    /// The whole line, as written.
+    pub line: String,
+}
+
+impl fmt::Display for FixesError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.token.is_empty() {
+            write!(f, "the line {:?} names no F-item", self.line)?;
+        } else {
+            write!(
+                f,
+                "the line {:?} names {:?}, which is not an F-item",
+                self.line, self.token
+            )?;
+        }
+        write!(
+            f,
+            "; write F-numbers separated by commas, as `{FIXES} F119, F117`, or leave the line out"
+        )
+    }
+}
+
+/// The F-item numbers every `Fixes:` line in `body` names (`Fixes: F119,
+/// F117`), deduplicated in order (F122). Parsed as strictly as `Delivers:`:
+/// each token is `F` and digits, separated by commas or whitespace, with
+/// backticks around it ignored. No line gives an empty list: pij never
+/// guesses F-items from a title or prose.
+///
+/// # Errors
+/// [`FixesError`] for a line that names nothing, or a token that isn't
+/// `F<number>`.
+pub fn fixes(body: &str) -> Result<Vec<u64>, FixesError> {
+    let mut found = Vec::new();
+    for written in body.lines() {
+        let line = written.trim().trim_start_matches(['-', '*', ' ']);
+        let Some(rest) = line
+            .get(..FIXES.len())
+            .filter(|head| head.eq_ignore_ascii_case(FIXES))
+            .map(|_| &line[FIXES.len()..])
+        else {
+            continue;
+        };
+        let bad = |token: &str| FixesError {
+            token: token.into(),
+            line: written.trim().into(),
+        };
+        let mut named = false;
+        for token in rest.split(|c: char| c == ',' || c.is_whitespace()) {
+            let token = token.trim_matches(|c| matches!(c, '`' | '*'));
+            if token.is_empty() {
+                continue;
+            }
+            let number = token
+                .strip_prefix('F')
+                .filter(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+                .and_then(|digits| digits.parse::<u64>().ok())
+                .ok_or_else(|| bad(token))?;
+            named = true;
+            if !found.contains(&number) {
+                found.push(number);
+            }
+        }
+        if !named {
+            return Err(bad(""));
+        }
+    }
+    Ok(found)
+}
+
 /// A `delivered_by` cell (a comma-separated PR list such as `#110, #113`)
 /// with every PR in `prs` it does not name appended, in order; `None` when it
 /// already names them all. Never drops what the cell holds: the caller passes
@@ -389,6 +466,33 @@ fn quote(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// F122: `Fixes:` names F-items strictly; no line names none.
+    #[test]
+    fn fixes_lines_name_f_items_strictly() {
+        assert_eq!(
+            fixes("## What changed\nFixes F119 in a title\n"),
+            Ok(vec![])
+        );
+        assert_eq!(
+            fixes("Delivers: none\nFixes: F119, F117 `F119`\n- fixes: F12\n"),
+            Ok(vec![119, 117, 12])
+        );
+        for (body, token) in [
+            ("Fixes: F119, f117", "f117"),
+            ("Fixes: 119", "119"),
+            ("Fixes: F12a", "F12a"),
+            ("Fixes: F", "F"),
+            ("Fixes: F119 and F117", "and"),
+            ("Fixes: none", "none"),
+            ("Fixes:", ""),
+            ("Fixes: , ,", ""),
+        ] {
+            let error = fixes(body).expect_err(body);
+            assert_eq!(error.token, token, "{body}");
+            assert!(error.to_string().contains("Fixes: F119, F117"), "{error}");
+        }
+    }
     use serde_json::json;
 
     #[test]
