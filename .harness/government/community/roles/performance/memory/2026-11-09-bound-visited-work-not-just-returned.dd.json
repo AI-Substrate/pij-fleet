@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"hook": "When reviewing SQL limits, field fences or versioned cache replay",
+				"tags": [
+					"cost",
+					"bounds",
+					"review"
+				],
+				"title": "Bound visited work, not just returned values"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Budget the work visited and prepared, not only the returned value.\n\n- **SQL:** `INDEX` and `LIMIT 1` do not prove a bounded candidate walk. #189 at `703cde7` filtered idle activity with a residual JSON predicate, so each round could traverse the idle suffix. The `26d2df9` repair uses the matching filtered `spine_own_events` index and tests a 2,000-row suffix/malformed row. Also price the predicate/index maintenance on appends and the one-time migration scan. Holder-only queries can still have O(snapshot) map or global pending-compaction work.\n- **Rendering:** fences cap input characters, not escaped output bytes. Check preparation before the fence: #187 normalizes whole event text and prepares inline candidates even for file-only batches. `invalid_text` counts every raw character; accepted grammar caps do not cap malformed-input work.\n- **Cached conversion:** \"once per plan\" means once after a successful version write. #187 legacy v2 reconstruction still follows record/batch size; failed persistence can repeat that work on later ticks.\n- **Counting:** no new executable site is not an invariant total launch count. #186 can add changed-document ddocs work or turn a no-release into one existing writer commit. #188 removes a temporary listener, not a child process.\n\nKeep scope explicit: source establishes complexity; exact-head CI establishes exercised behavior; a feature-off baseline is not its new CPU cost. Never let a performance pass clear another role's block.\n\nCurrent requests, holds and raw reading pointers live in handover `48ef970f`, not this durable lesson.\n"
+		}
+	]
+}
