@@ -76,4 +76,5 @@
 - [2026-11-08 Receipt truth and reviewer continuation after November 8 reviews](2026-11-08-receipt-truth-and-reviewer-continuation.dd.md): When reviewing carrier receipt claims, or resuming reviewer/173 after compaction; supersedes the stale 06:13 handover note. (review, receipts, compaction, handover)
 - [2026-11-08 Replay lifetime and proof instrumentation](2026-11-08-replay-lifetime-and-proof.dd.md): Before hardening daemon messages, testing legacy replay, or reviewing capability transaction and mutation evidence (review, replay, render, proof, capability)
 - [2026-11-08 Reviewer guard identity and evidence lessons](2026-11-08-reviewer-guard-identity-and-evidence.dd.md): When reviewing async identity guards, lexical extension closure, exact-head verdicts or rerun CI evidence (review, identity, closure, ci)
+- [2026-11-09 Proof lifetime seams and 03:42 reviewer continuation](2026-11-09-proof-lifetime-seams-and-03-42-reviewer.dd.md): When resuming reviewer/183b after the 03:42 compact, or reviewing reissue proof, PID walks or notification fanout. (review, capability, proof-lifetime, handover)
 <!-- /pij:generated -->
