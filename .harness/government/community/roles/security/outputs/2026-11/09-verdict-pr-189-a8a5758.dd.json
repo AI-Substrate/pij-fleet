@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "a8a5758702ce7208172f8af6d635c458dc754b43",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/189#issuecomment-6723535308",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:189",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes**, round-three delta only, at `a8a5758702ce7208172f8af6d635c458dc754b43`, against `26d2df93dba7bb02dbaf7829928875c52d8961b3` (migration 0046).\n\nS189-001 is closed for the scoped idle-holder nudge and its prime FYIs. The shared-occurrence race is removed for every iteration of the prime loop, not merely for the first prime. No new security finding was established in this delta.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new scoped vulnerabilities found; S189-001 closed | - |\n\n## Closure\n\nThe holder nudge retains its own 16-byte OS-random part, minted before the stretch mark (`idle_nudge.rs:118-136,264-278`). Each prime-loop iteration now calls `occurrence()` again and constructs its FYI using only that independently minted value (`idle_nudge.rs:290-307`). It does not reuse the nudge part, an earlier prime's part or a value cached outside the loop.\n\nThe holder's ID and earlier `fyi.held` IDs remain observable as before, but none determines a later prime FYI's random part. The next part has not even been generated while an earlier identifying event is published. The only use of the new part is the corresponding `hold_fyi`; that path publishes its identifying held event after committing that row. Observing it then is too late to reserve it first.\n\nThis reasoning applies to any number of selected primes: every iteration repeats the fresh draw. It relies on `getrandom::fill` and ordinary 128-bit unpredictability, not a guarantee that independently random values can never collide.\n\nThe previous transactional conflicting-sender/recipient refusal and `fyi.refused` audit are untouched by this three-file delta. After a legitimate hold, an external caller cannot replace it as a different sender/recipient or obtain a false Held response. Same-sender/same-recipient retries still retain the original FYI. No new sender override, listener exposure, shell/path execution or C19/C21 disclosure is added.\n\n## Failure and retained scope\n\nA failed nudge draw still logs an error before marking. A prime FYI draw happens after the mark: failure holds nothing for that prime and records `error: ...` in its outcome/audit; the loop continues to other primes. This is fail-closed issuance of an ID, not durable retry of the spent notification attempt. No RNG-failure injection was executed or verified in CI.\n\nThe six other daemon FYI notice families still have their documented namespace exposure despite generic refuse-and-audit. The normal-message identity namespace is unchanged. They remain F141; this verdict is not global daemon-prefix protection or certification of every site's error handling.\n\nPrior full-label cross-project fanout, cancellation/mark-before-send and failed-audit logging qualifications remain. The new identity repair does not add project-isolated labels, message-ownership enforcement or guaranteed delivery after failure.\n\n## Evidence\n\nLocal/remote/GitHub heads agree; shared worktree clean; PR CLEAN. The delta is one commit modifying the nudge implementation, its focused test and API description.\n\nCI [42495647410](https://github.com/AI-Substrate/pij-fleet/actions/runs/42495647410) succeeded, checking synthetic merge `37d7864`, which includes this exact head and main `9c3445c2`.\n\nJUnit artifact [13623159044](https://github.com/AI-Substrate/pij-fleet/actions/runs/42495647410/artifacts/13623159044) contains 2,248 passing cases, no failures; the runner separately reports five skipped. `each_prime_fyi_id_follows_from_nothing_published` executes with two projects/two primes and confirms distinct 32-character parts, distinct from the known nudge part. Source formatting supplies lowercase hex; the test does not independently assert every character's hex grammar or constitute a cryptographic proof.\n\nThe old-ID squat/refusal test, three-way stretch veto and once-per-stretch/restart test also executed successfully. Both Node checks, Rust lint/test and the current Delivers check are green; an earlier Delivers run was cancelled.\n\nThe two new mutant kills are author claims, not independently rerun mutations. No local builds/tests, hostile/live-system probes, credential reads or product edits.\n"
+		}
+	]
+}
