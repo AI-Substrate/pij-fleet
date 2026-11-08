@@ -1,24 +1,38 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
 	check,
 	checkState,
 	createWorktree,
+	decide,
 	entry,
 	guard,
 	latestChecks,
+	MACOS_ONLY,
 	migrationNumbers,
+	type PruneCandidate,
+	processCwds,
+	prState,
+	prune,
 	type Ran,
 	type Runner,
 	render,
+	renderPrune,
+	resolvedRunner,
+	resolveTools,
 } from "./pr-freeze.js";
 
 const SCRIPT = resolve(import.meta.dirname, "pr-freeze.ts");
-const TSX = resolve(import.meta.dirname, "..", "..", "node_modules", ".bin", "tsx");
+/** How the `pr-freeze` recipe runs it: node alone, no node_modules (F109). */
+const NODE = [
+	process.execPath,
+	"--experimental-strip-types",
+	"--disable-warning=ExperimentalWarning",
+];
 
 const PR = 7;
 const HEAD = "a7a0f4a470532ae54d0103528b2bf338abff3bfe";
@@ -418,11 +432,409 @@ describe("pr-freeze (plan 220, F92)", () => {
 			expect(entry(url, SCRIPT)).toEqual({ kind: "run" });
 			expect(entry(url, dir)).toEqual({ kind: "import" });
 			expect(entry(url, undefined)).toEqual({ kind: "import" });
-			const result = spawnSync(TSX, [link], { encoding: "utf8" });
+			const [node = process.execPath, ...flags] = NODE;
+			const result = spawnSync(node, [...flags, link], { encoding: "utf8" });
 			expect(result.status).toBe(2);
 			expect(result.stderr).toContain("usage: just pr-freeze <pr number>");
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("pr-freeze --prune (F107)", () => {
+	const SHA = HEAD;
+	const at = (path: string, head = SHA, detached = true) =>
+		`worktree ${path}\nHEAD ${head}\n${detached ? "detached" : "branch refs/heads/x"}\n`;
+	const candidate = (over: Partial<PruneCandidate> = {}): PruneCandidate => ({
+		path: `/work/review-7-${SHA.slice(0, 7)}`,
+		pr: 7,
+		sha7: SHA.slice(0, 7),
+		head: SHA,
+		detached: true,
+		...over,
+	});
+
+	it("only the PR's state decides; local changes and use only ever spare", () => {
+		const merged = { state: "MERGED", headRefOid: SHA };
+		const moved = { state: "OPEN", headRefOid: OTHER };
+		const current = { state: "OPEN", headRefOid: SHA };
+		expect(decide(candidate(), merged, undefined, undefined)).toMatchObject({
+			remove: true,
+			why: "PR #7 is merged",
+		});
+		expect(
+			decide(candidate(), { state: "CLOSED", headRefOid: SHA }, undefined, undefined).remove,
+		).toBe(true);
+		expect(decide(candidate(), moved, undefined, undefined)).toMatchObject({
+			remove: true,
+			why: "PR #7's head moved on to 08f7482",
+		});
+		expect(decide(candidate(), current, undefined, undefined)).toMatchObject({
+			remove: false,
+			why: "PR #7 is open at this head",
+		});
+		// Brakes: each spares a worktree the state would remove, and never
+		// turns a keep into a remove.
+		for (const [dirty, busy] of [
+			["it has local changes", undefined],
+			[undefined, "seat pij-x's folder is in it"],
+		] as const) {
+			expect(decide(candidate(), merged, dirty, busy).remove).toBe(false);
+			expect(decide(candidate(), current, dirty, busy).remove).toBe(false);
+		}
+		expect(decide(candidate(), undefined, undefined, undefined).remove).toBe(false);
+		// F001: decide spares a state it doesn't know, or an OPEN head that isn't a full sha.
+		for (const pr of [
+			{ state: "UNKNOWN", headRefOid: OTHER },
+			{ state: "OPEN", headRefOid: "" },
+			{ state: "OPEN", headRefOid: "08f7482" },
+		]) {
+			expect(decide(candidate(), pr, undefined, undefined).remove).toBe(false);
+		}
+		expect(decide(candidate({ detached: false }), merged, undefined, undefined).remove).toBe(false);
+		expect(decide(candidate({ head: OTHER }), merged, undefined, undefined).remove).toBe(false);
+	});
+
+	it("validates gh's PR before anything uses it (bobcat F001)", () => {
+		expect(prState(JSON.stringify({ state: "MERGED", headRefOid: SHA }))).toEqual({
+			state: "MERGED",
+			headRefOid: SHA,
+		});
+		expect(prState(JSON.stringify({ state: "CLOSED" }))).toEqual({
+			state: "CLOSED",
+			headRefOid: "",
+		});
+		expect(prState(JSON.stringify({ state: "OPEN", headRefOid: OTHER }))).toEqual({
+			state: "OPEN",
+			headRefOid: OTHER,
+		});
+		for (const stdout of [
+			JSON.stringify({ state: "OPEN" }),
+			JSON.stringify({ state: "OPEN", headRefOid: "08f7482" }),
+			JSON.stringify({}),
+			JSON.stringify({ state: "UNKNOWN", headRefOid: OTHER }),
+			"null",
+			"not json",
+		]) {
+			expect(prState(stdout), stdout).toBe(undefined);
+		}
+	});
+
+	interface Fleet {
+		worktrees: string;
+		prs: Record<number, { state: string; headRefOid: string } | null>;
+		dirty: string[];
+		seats: { id: string; folder: string }[] | null;
+		slow: string[];
+		/** Calls (by prefix) that exit 0 but warn on stderr. */
+		warn?: Record<string, string>;
+	}
+
+	function fleet(world: Fleet): { run: Runner; calls: string[] } {
+		const calls: string[] = [];
+		const run: Runner = (program, args) => {
+			const call = [program, ...args].join(" ");
+			calls.push(call);
+			if (world.slow.some((slow) => call.startsWith(slow))) {
+				return { code: 127, stdout: "", stderr: "timed out after 60s", timedOut: true };
+			}
+			const warned = Object.entries(world.warn ?? {}).find(([prefix]) => call.startsWith(prefix));
+			if (warned) {
+				const listing = args[0] === "worktree" ? world.worktrees : program === "pij-rs" ? "{}" : "";
+				return {
+					code: 0,
+					stdout: program === "gh" ? JSON.stringify(world.prs[Number(args[2])]) : listing,
+					stderr: warned[1],
+				};
+			}
+			if (program === "pij-rs") {
+				return world.seats
+					? ok(JSON.stringify({ ok: true, data: { seats: world.seats } }))
+					: { code: 1, stdout: "", stderr: "daemon down" };
+			}
+			if (program === "gh") {
+				const pr = world.prs[Number(args[2])];
+				return pr ? ok(JSON.stringify(pr)) : { code: 1, stdout: "", stderr: "no PR" };
+			}
+			if (args[0] === "-C") return ok(world.dirty.includes(args[1] ?? "") ? "?? notes.md\n" : "");
+			if (args[0] === "worktree" && args[1] === "list") return ok(world.worktrees);
+			if (args[0] === "worktree" && args[1] === "remove") return ok();
+			return { code: 1, stdout: "", stderr: `unexpected ${program} ${args.join(" ")}` };
+		};
+		return { run, calls };
+	}
+
+	/** Real directories, so realpath resolves (an unresolvable one is spared). */
+	function dirs(): { root: string; path: (pr: number) => string; done: () => void } {
+		const root = realpathSync(mkdtempSync(join(tmpdir(), "pr-freeze-prune-")));
+		const path = (pr: number) => {
+			const dir = join(root, `review-${pr}-${SHA.slice(0, 7)}`);
+			mkdirSync(dir, { recursive: true });
+			return dir;
+		};
+		return { root, path, done: () => rmSync(root, { recursive: true, force: true }) };
+	}
+
+	function world(path: (pr: number) => string, root: string): Fleet {
+		return {
+			worktrees: [
+				`worktree ${ROOT}\nHEAD ${MAIN}\nbranch refs/heads/main\n`,
+				...[7, 8, 9, 10, 11].map((pr) => at(path(pr))),
+				at(join(root, `review-12-${SHA.slice(0, 7)}`)),
+				at("/work/fleet-review-113"),
+			].join("\n"),
+			prs: {
+				7: { state: "MERGED", headRefOid: SHA },
+				8: { state: "OPEN", headRefOid: SHA },
+				9: { state: "CLOSED", headRefOid: SHA },
+				10: { state: "OPEN", headRefOid: OTHER },
+				11: { state: "MERGED", headRefOid: SHA },
+				12: { state: "MERGED", headRefOid: SHA },
+			},
+			dirty: [path(9)],
+			seats: [{ id: "pij-reviewer", folder: `${path(10)}/crates` }],
+			slow: [],
+		};
+	}
+
+	it("removes only worktrees whose work is over and that nothing is using", () => {
+		const { root, path, done } = dirs();
+		try {
+			// The process sits in #11's worktree through a symlinked spelling.
+			const link = join(root, "link-11");
+			symlinkSync(path(11), link);
+			const { run, calls } = fleet(world(path, root));
+			const verdicts = prune(run, false, () => [{ pid: "4242", cwd: link }], "darwin");
+			expect(verdicts.map((verdict) => [basename(verdict.path), verdict.remove])).toEqual([
+				["review-7-a7a0f4a", true],
+				["review-8-a7a0f4a", false],
+				["review-9-a7a0f4a", false],
+				["review-10-a7a0f4a", false],
+				["review-11-a7a0f4a", false],
+				["review-12-a7a0f4a", false],
+			]);
+			expect(calls.filter((call) => call.startsWith("git worktree remove"))).toEqual([
+				`git worktree remove ${path(7)}`,
+			]);
+			const text = renderPrune(verdicts, false);
+			expect(text).toContain("1 of 6 removed");
+			// The policy also removes an OPEN PR's worktree whose head moved on;
+			// here a seat's folder spares it.
+			expect(text).toContain(
+				"PR #10's head moved on to 08f7482, but seat pij-reviewer's folder is in it",
+			);
+			expect(text).toContain("PR #9 is closed, but it has local changes");
+			expect(text).toContain("PR #11 is merged, but process 4242's cwd is in it");
+			expect(text).toContain(
+				"PR #12 is merged, but its path doesn't resolve, so pij can't tell who is in it",
+			);
+			expect(text).not.toContain("fleet-review-113");
+		} finally {
+			done();
+		}
+	});
+
+	it("reads everything first; an unreadable seat list, cwd listing or a timeout removes nothing", () => {
+		const { root, path, done } = dirs();
+		try {
+			const none = () => [];
+			const dry = fleet(world(path, root));
+			expect(renderPrune(prune(dry.run, true, none, "darwin"), true)).toContain(
+				`would remove ${path(7)}`,
+			);
+			expect(dry.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+
+			for (const broken of [
+				{ ...world(path, root), seats: null },
+				{ ...world(path, root), slow: ["gh pr view 9"] },
+				{ ...world(path, root), slow: [`git -C ${path(11)} status`] },
+			]) {
+				const attempt = fleet(broken);
+				expect(() => prune(attempt.run, false, none, "darwin")).toThrow(
+					/refusing --prune: .*; nothing was removed/,
+				);
+				expect(attempt.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+			}
+			const blind = fleet(world(path, root));
+			expect(() =>
+				prune(
+					blind.run,
+					false,
+					() => {
+						throw new Error("lsof did not list every cwd");
+					},
+					"darwin",
+				),
+			).toThrow(/refusing --prune: can't tell which worktrees are in use/);
+			expect(blind.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+		} finally {
+			done();
+		}
+	});
+
+	it("spares a PR gh reports unusably and refuses a malformed seat row (bobcat F001, F002)", () => {
+		const { root, path, done } = dirs();
+		try {
+			const none = () => [];
+			// One unused worktree of PR 7; only gh's answer for it varies.
+			const only = (prs: Fleet["prs"], seats: Fleet["seats"] = []): Fleet => ({
+				...world(path, root),
+				worktrees: at(path(7)),
+				prs,
+				seats,
+			});
+			for (const payload of [
+				{ state: "OPEN" },
+				{},
+				{ state: "UNKNOWN", headRefOid: OTHER },
+				{ state: "OPEN", headRefOid: "08f7482" },
+				{ state: "open", headRefOid: OTHER },
+			]) {
+				const attempt = fleet(only({ 7: payload as { state: string; headRefOid: string } }));
+				const [verdict] = prune(attempt.run, false, none, "darwin");
+				expect(verdict?.remove, JSON.stringify(payload)).toBe(false);
+				expect(attempt.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+			}
+			for (const seat of [
+				{ id: "pij-reviewer" },
+				{ id: "pij-reviewer", folder: 7 },
+				{ id: "pij-reviewer", folder: "" },
+				{ folder: path(7) },
+				null,
+			]) {
+				const attempt = fleet(
+					only({ 7: { state: "MERGED", headRefOid: SHA } }, [
+						seat as unknown as { id: string; folder: string },
+					]),
+				);
+				expect(() => prune(attempt.run, false, none, "darwin"), JSON.stringify(seat)).toThrow(
+					/refusing --prune: can't tell which worktrees are in use \(pij-rs list seat 0 has no usable id and folder/,
+				);
+				expect(attempt.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+			}
+			// The positive control: the same worktree, a merged PR and sound rows, is removed.
+			const sound = fleet(
+				only({ 7: { state: "MERGED", headRefOid: SHA } }, [{ id: "pij-x", folder: "/elsewhere" }]),
+			);
+			expect(prune(sound.run, false, none, "darwin")[0]?.remove).toBe(true);
+		} finally {
+			done();
+		}
+	});
+
+	it("spares or refuses on any stderr from a read that decides removal (bobcat F004)", () => {
+		const { root, path, done } = dirs();
+		try {
+			const none = () => [];
+			const merged = (warn: Record<string, string>): Fleet => ({
+				...world(path, root),
+				worktrees: at(path(7)),
+				warn,
+			});
+			const unreadable = "warning: could not open directory 'untracked/': Permission denied";
+			// Bobcat's case: git status exits 0 with nothing listed, but warns.
+			const status = fleet(merged({ [`git -C ${path(7)} status`]: unreadable }));
+			const [spared] = prune(status.run, false, none, "darwin");
+			expect(spared?.remove).toBe(false);
+			expect(spared?.why).toContain(`git status warned: ${unreadable}`);
+			expect(status.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+			// gh answering with a warning beside the JSON spares the PR's worktrees.
+			const gh = fleet(merged({ "gh pr view 7": "warning: partial response" }));
+			expect(prune(gh.run, false, none, "darwin")[0]?.remove).toBe(false);
+			expect(gh.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+			// A warning on the worktree list or the seat list refuses the run.
+			for (const warn of [
+				{ "git worktree list": "warning: unable to read worktree metadata" },
+				{ "pij-rs --json list": "warning: registry partially read" },
+			]) {
+				const attempt = fleet(merged(warn));
+				expect(() => prune(attempt.run, false, none, "darwin")).toThrow(/warned/);
+				expect(attempt.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+			}
+			// The positive control: no warnings, removed.
+			expect(prune(fleet(merged({})).run, false, none, "darwin")[0]?.remove).toBe(true);
+		} finally {
+			done();
+		}
+	});
+
+	it("refuses an lsof listing that failed, said anything on stderr, or doesn't parse (S170-001)", () => {
+		const lsof =
+			(stdout: string, code = 0, stderr = ""): Runner =>
+			() => ({ code, stdout, stderr });
+		const good = "p12\nfcwd\nn/work/a\np13\nfcwd\nn/work/b\n";
+		expect(processCwds(lsof(good))).toEqual([
+			{ pid: "12", cwd: "/work/a" },
+			{ pid: "13", cwd: "/work/b" },
+		]);
+		for (const [stdout, code, stderr] of [
+			[good, 1, "lsof: denied"],
+			[good, 0, "lsof: WARNING: can't stat() nfs file system"],
+			[good, 127, "timed out after 60s"],
+			["n/work/a\n", 0, ""],
+			["p123\n", 0, ""],
+			["p12\nfcwd\nn/work/a\np13\n", 0, ""],
+			["p12\nfcwd\nn/work/a\np13\nfcwd\np14\nfcwd\nn/work/c\n", 0, ""],
+			["p12\nfcwd\nn/work/a\nn/work/b\n", 0, ""],
+			["p12\nx?\nn/work/a\n", 0, ""],
+			["p12\nn\n", 0, ""],
+			["", 0, ""],
+		] as const) {
+			expect(() => processCwds(lsof(stdout, code, stderr))).toThrow();
+		}
+	});
+
+	it("refuses on any platform but macOS, before reading or removing anything", () => {
+		const { root, path, done } = dirs();
+		try {
+			for (const platform of ["linux", "win32", "freebsd"]) {
+				const attempt = fleet(world(path, root));
+				expect(() => prune(attempt.run, false, () => [], platform)).toThrow(MACOS_ONLY);
+				expect(attempt.calls).toEqual([]);
+			}
+		} finally {
+			done();
+		}
+	});
+
+	it("launches git, gh and pij-rs by absolute paths resolved once (P170-F001)", () => {
+		const probed: string[] = [];
+		const tools = resolveTools(["git", "gh", "pij-rs"], "relative:/opt/a:/usr/bin", (file) => {
+			probed.push(file);
+			return file === "/usr/bin/git" || file === "/opt/a/gh" || file === "/opt/a/pij-rs";
+		});
+		expect([...tools]).toEqual([
+			["git", "/usr/bin/git"],
+			["gh", "/opt/a/gh"],
+			["pij-rs", "/opt/a/pij-rs"],
+		]);
+		expect(probed.some((file) => file.startsWith("relative"))).toBe(false);
+		const resolved = probed.length;
+		const launched: string[] = [];
+		const run = resolvedRunner(tools, (program) => {
+			launched.push(program);
+			return ok();
+		});
+		for (let i = 0; i < 3; i++) {
+			run("git", ["status"]);
+			run("gh", ["pr", "view", "7"]);
+		}
+		run("/usr/sbin/lsof", ["-d", "cwd"]);
+		expect(launched).toEqual([
+			"/usr/bin/git",
+			"/opt/a/gh",
+			"/usr/bin/git",
+			"/opt/a/gh",
+			"/usr/bin/git",
+			"/opt/a/gh",
+			"/usr/sbin/lsof",
+		]);
+		expect(probed.length).toBe(resolved);
+		expect(run("ps", []).code).toBe(127);
+		expect(launched).not.toContain("ps");
+		expect(() => resolveTools(["git", "gh"], "/nowhere", () => false)).toThrow(
+			"git, gh not found on PATH",
+		);
 	});
 });
