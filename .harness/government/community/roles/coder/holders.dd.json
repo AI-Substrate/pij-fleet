@@ -630,7 +630,10 @@
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"instance_key": "f141",
 					"machine": "ops.osk.lan",
+					"release_why": "C33: #194 (F141) closed unmerged, same class",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-08T23:42:13.482Z",
 					"why": "F141 predictable daemon notice ids; delivery path owner"
 				},
 				{
