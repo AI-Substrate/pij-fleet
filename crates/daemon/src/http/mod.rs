@@ -1366,6 +1366,7 @@ async fn register(
         }
 
         Err(RegistrationError::Refused(reason)) => refused("pij register", reason),
+        Err(RegistrationError::InvalidSeatId(reason)) => seat_id_refused("pij register", reason),
         Err(RegistrationError::Retired { seat, reason }) => {
             retired_seat_refused("pij register", &seat, reason)
         }
@@ -1528,6 +1529,13 @@ async fn launch_seat_locked(
         && id.as_str().trim().is_empty()
     {
         return refused(command_name, "--id must be non-empty when supplied");
+    }
+    // F127: a spawn's explicit id takes the closed grammar (every live id fits
+    // it). A revive names an existing row and is looked up below.
+    if existing_policy.allow_absent
+        && let Some(Err(reason)) = request.id.as_ref().map(pij_core::model::check_seat_id)
+    {
+        return seat_id_refused(command_name, reason);
     }
     if !Path::new(&request.cwd).is_absolute() {
         return refused(
@@ -4757,6 +4765,14 @@ pub(crate) const SEAT_RETIRED_CODE: &str = "E-RS-SEAT-RETIRED";
 pub(crate) fn retired_seat_refused(command: &str, seat: &SeatId, reason: String) -> Response {
     let mut answer: Envelope<()> = Envelope::refused(command, ErrorKind::Refused, reason);
     answer.details = Some(serde_json::json!({ "code": SEAT_RETIRED_CODE, "seat": seat }));
+    envelope(StatusCode::BAD_REQUEST, &answer)
+}
+
+/// A seat id outside the closed grammar (F127), refused before it is stored.
+/// The details carry the code, never the id.
+pub(crate) fn seat_id_refused(command: &str, reason: String) -> Response {
+    let mut answer: Envelope<()> = Envelope::refused(command, ErrorKind::Refused, reason);
+    answer.details = Some(serde_json::json!({ "code": pij_core::model::SEAT_ID_REFUSAL }));
     envelope(StatusCode::BAD_REQUEST, &answer)
 }
 

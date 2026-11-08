@@ -184,8 +184,10 @@ fn check_role_in(role: &str, allowed: &[&str]) -> Result<(), String> {
     if allowed.contains(&role) {
         Ok(())
     } else {
+        // Escaped and bounded: a refused role is seat-reported text (F127).
         Err(format!(
-            "role `{role}` is not allowed here; allowed: {}",
+            "role `{}` is not allowed here; allowed: {}",
+            role.escape_debug().take(64).collect::<String>(),
             allowed.join(", ")
         ))
     }
