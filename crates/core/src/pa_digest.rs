@@ -12,8 +12,8 @@ use std::borrow::Cow;
 use std::fmt::Write;
 
 use crate::cold_wake::{SeatSize, human_duration, human_tokens};
-use crate::model::{SeatDescriptor, SeatId, SemanticState, SystemState, invalid_text};
-use crate::orchestration::SEAT_ROLES;
+use crate::model::{SeatDescriptor, SeatId, SemanticState, SystemState};
+use crate::render;
 use crate::session_status::CacheState;
 
 /// One seat in the PA's fleet, with its size facts on the daemon clock.
@@ -134,29 +134,10 @@ fn attention(row: &FleetRow, interval_ms: u64) -> Option<String> {
     }
 }
 
-/// A message or request id as the digest shows it: itself when it fits the
-/// ids pij and its clients mint (letters, digits, `.`, `_`, `:`, `-`; at most
-/// 128), else its length (F127). The id is caller-chosen.
-fn rendered_msg_id(id: &str) -> Cow<'_, str> {
-    let minted = (1..=128).contains(&id.len())
-        && id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'));
-    if minted {
-        Cow::Borrowed(id)
-    } else {
-        Cow::Owned(invalid_text(id))
-    }
-}
-
 /// A seat's role as the digest shows it: one of the closed vocabulary, `-`
 /// for none, else its length (F127). A stored row may predate the vocabulary.
 fn rendered_role(role: Option<&str>) -> Cow<'_, str> {
-    match role {
-        None => Cow::Borrowed("-"),
-        Some(role) if SEAT_ROLES.contains(&role) => Cow::Borrowed(role),
-        Some(role) => Cow::Owned(invalid_text(role)),
-    }
+    role.map_or(Cow::Borrowed("-"), render::role)
 }
 
 impl FleetView {
@@ -219,7 +200,7 @@ impl FleetView {
                     "\n  {} in {}: request {} from {}, waiting {}",
                     request.address,
                     request.project,
-                    rendered_msg_id(&request.id),
+                    render::msg_id(&request.id),
                     request.requester.rendered(),
                     human_duration(request.waiting_ms)
                 );
@@ -235,7 +216,7 @@ impl FleetView {
                     "\n  {} in {}: request {} from {} to {}, waiting {}",
                     request.address,
                     request.project,
-                    rendered_msg_id(&request.id),
+                    render::msg_id(&request.id),
                     request.requester.rendered(),
                     request
                         .delivering_to
@@ -258,7 +239,7 @@ impl FleetView {
                         .as_ref()
                         .map_or(Cow::Borrowed("?"), SeatId::rendered),
                     held.recipient.rendered(),
-                    rendered_msg_id(&held.msg_id),
+                    render::msg_id(&held.msg_id),
                     human_duration(held.held_ms),
                     if held.still_queued {
                         ", still queued"

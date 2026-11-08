@@ -28,16 +28,7 @@ impl SeatId {
     /// by single hyphens, at most [`SEAT_ID_MAX_BYTES`] bytes. Every generated
     /// name fits it.
     pub fn is_canonical(&self) -> bool {
-        let Some(words) = self.0.strip_prefix("pij-") else {
-            return false;
-        };
-        self.0.len() <= SEAT_ID_MAX_BYTES
-            && words.split('-').all(|word| {
-                !word.is_empty()
-                    && word
-                        .bytes()
-                        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
-            })
+        is_canonical_seat_id(&self.0)
     }
 
     /// The id as daemon-authored text shows it: itself when canonical, else
@@ -51,6 +42,21 @@ impl SeatId {
             std::borrow::Cow::Owned(invalid_text(&self.0))
         }
     }
+}
+
+/// [`SeatId::is_canonical`] for a seat id held as text (a stored row's
+/// requester or holder).
+pub fn is_canonical_seat_id(id: &str) -> bool {
+    let Some(words) = id.strip_prefix("pij-") else {
+        return false;
+    };
+    id.len() <= SEAT_ID_MAX_BYTES
+        && words.split('-').all(|word| {
+            !word.is_empty()
+                && word
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        })
 }
 
 /// Refuse a seat id outside the closed grammar ([`SeatId::is_canonical`]),

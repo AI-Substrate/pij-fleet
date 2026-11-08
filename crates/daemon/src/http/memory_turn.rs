@@ -128,9 +128,9 @@ pub(crate) struct Holding {
 impl Holding {
     /// `role/instance (project p)`, as every prompt names it, and
     /// `, released HH:MM` (local time) for a released one. Each part is shown
-    /// only when it fits [`word`], else as `invalid (N chars)`: a role's
-    /// instance is chosen by whoever assigns it, and this text goes into a
-    /// daemon-authored prompt (#184 review, S184-001).
+    /// only when it fits [`pij_core::render::name`], else as `invalid (N
+    /// chars)`: a role's instance is chosen by whoever assigns it, and this
+    /// text goes into a daemon-authored prompt (#184 review, S184-001; F132).
     pub(crate) fn label(&self) -> String {
         let instance = if self.instance.is_empty() {
             String::new()
@@ -154,25 +154,15 @@ impl Holding {
     }
 }
 
-/// The closed grammar a project, role or instance must fit to appear in a
-/// memory prompt: `[a-z0-9][a-z0-9-]{0,31}`, the shape of every one in use
-/// (`pij-fleet`, `pm-001`, `175`, `f114`, `questions-context`).
+/// Whether a project, role or instance may appear in a memory prompt as it
+/// is: [`pij_core::render::is_name`], the one grammar for directory names.
 fn word(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    (1..=32).contains(&bytes.len())
-        && bytes[0] != b'-'
-        && bytes
-            .iter()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+    pij_core::render::is_name(text)
 }
 
 /// `text` when it fits [`word`], else its length only.
 fn shown(text: &str) -> std::borrow::Cow<'_, str> {
-    if word(text) {
-        std::borrow::Cow::Borrowed(text)
-    } else {
-        std::borrow::Cow::Owned(pij_core::model::invalid_text(text))
-    }
+    pij_core::render::name(text)
 }
 
 /// The `HH:MM` of a holders stamp (`YYYY-MM-DDTHH:MM:SS.mmmZ`, UTC) at

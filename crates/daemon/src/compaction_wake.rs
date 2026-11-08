@@ -222,9 +222,9 @@ async fn step(
         Ok(claims) => held.extend(claims.iter().map(|claim| {
             format!(
                 "{} {} (project {})",
-                claim.kind,
+                pij_core::render::word(&claim.kind),
                 pij_core::claims::format(&claim.kind, claim.number),
-                claim.project
+                pij_core::render::name(&claim.project)
             )
         })),
         Err(cause) => {
