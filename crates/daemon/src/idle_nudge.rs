@@ -2,29 +2,33 @@
 //!
 //! Rides the PA watchdog's 60 s round: no timer, poll or launch of its own,
 //! and no work for a seat that holds nothing. Each round reads which seats
-//! hold work (an open role holding or an open claim: two partial-index reads),
-//! and only for those that are registered, untombstoned and idle, in order,
-//! cheapest first:
+//! hold work (an open role holding or an open claim: two partial-index reads)
+//! and looks up each in the round's registry snapshot. For those that are
+//! untombstoned and idle, in order, cheapest first:
 //!
-//! 1. it owns a live (queued or running) background job, or its compaction
-//!    wake (plan 222) is still pending: skip (one read each per round, for
-//!    all seats together);
-//! 2. its last own event ([`pij_core::idle_nudge::OWN_KINDS`]) is younger than
-//!    [`IDLE_NUDGE_AFTER_MS`], or it has none: skip (one seek per own kind);
+//! 1. its compaction wake (plan 222) is still pending: skip (one read of the
+//!    pending rows per round, for all seats together);
+//! 2. its newest own event (a report, or `seat.activity` other than idle) is
+//!    younger than [`IDLE_NUDGE_AFTER_MS`], or it has none: skip (one seek on
+//!    the `spine_own_events` partial index, whatever idle activity trails it);
 //! 3. it was already nudged for that event's stretch: skip (one key read);
-//! 4. something is queued for it: skip (one queue peek);
-//! 5. it holds nothing any more: skip (the holdings and claims reads);
-//! 6. otherwise it is marked nudged for the stretch FIRST (the store refuses a
-//!    second mark, so a restart or an overlapping round never sends twice),
-//!    then sent one normal message from `pij-bg`, and its prime an FYI: the
-//!    designated prime of each project it holds work in, else its live parent.
+//! 4. it owns a queued or running background job: skip (one owner seek);
+//! 5. something is queued for it: skip (one queue peek);
+//! 6. it holds nothing any more: skip (the holdings and claims reads);
+//! 7. otherwise it is marked nudged for the stretch FIRST, then sent one
+//!    normal message from `pij-bg`, and its prime an FYI: the designated prime
+//!    of each project it holds work in, else its live parent. The mark is
+//!    refused, and nothing sent, if it is already there (a restart or an
+//!    overlapping round) or the stretch ended since step 2: an own event
+//!    after it, or the seat no longer live and idle (checked in the same
+//!    statement as the insert).
 //!
 //! A read that fails skips the seat for this round; it never sends. Every
 //! label in both messages is rendered: seat ids through
 //! [`SeatId::rendered`], roles, instances, projects and claim kinds through
 //! the holdings' word grammar (`invalid (N chars)` otherwise).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use pij_core::BG_ACTOR;
 use pij_core::delivery::{control_kind, delivery_kind};
@@ -61,40 +65,25 @@ pub(crate) async fn round(
             return Vec::new();
         }
     };
-    let candidates: Vec<&SeatDescriptor> = seats
+    if holding.is_empty() {
+        return Vec::new();
+    }
+    // Driven from the holders (P189-F002): one map of the snapshot, then a
+    // lookup per holder, never a scan of the holders per seat.
+    let by_id: HashMap<&SeatId, &SeatDescriptor> =
+        seats.iter().map(|seat| (&seat.id, seat)).collect();
+    let candidates: Vec<&SeatDescriptor> = holding
         .iter()
+        .filter_map(|id| by_id.get(id).copied())
         .filter(|seat| {
             seat.tombstoned_at.is_none()
                 && seat.state == SystemState::Idle
                 && seat.id.as_str() != BG_ACTOR
-                && holding.contains(&seat.id)
         })
         .collect();
     if candidates.is_empty() {
         return Vec::new();
     }
-    // A failed read skips everyone this round: neither is ever "nothing".
-    let busy: BTreeSet<SeatId> =
-        match pij_store::background::SqliteBackground::new(services.store_pools[1].clone())
-            .pending()
-            .await
-        {
-            Ok(jobs) => jobs
-                .into_iter()
-                .filter(|job| {
-                    matches!(
-                        job.state,
-                        pij_core::background::BackgroundState::Queued
-                            | pij_core::background::BackgroundState::Running
-                    )
-                })
-                .map(|job| job.owner)
-                .collect(),
-            Err(cause) => {
-                eprintln!("pa watchdog: idle nudge: background jobs: {cause}");
-                return Vec::new();
-            }
-        };
     let compacting: BTreeSet<SeatId> = match store.pending_compactions().await {
         Ok(pending) => pending.into_iter().map(|row| row.seat).collect(),
         Err(cause) => {
@@ -104,27 +93,52 @@ pub(crate) async fn round(
     };
     let mut outcomes = Vec::new();
     for seat in candidates {
-        if busy.contains(&seat.id) || compacting.contains(&seat.id) {
+        if compacting.contains(&seat.id) {
             continue;
         }
         let Some(due) = due(services, seat, now_ms).await else {
             continue;
         };
-        // Persist before the send (P9): only the call that adds the mark sends.
-        match store.mark_idle_nudged(&seat.id, due.anchor, now_ms).await {
-            Ok(true) => {}
-            Ok(false) => continue,
-            Err(cause) => {
-                eprintln!("pa watchdog: idle nudge: mark {}: {cause}", seat.id);
-                continue;
-            }
+        if let Some(outcome) = mark_then_nudge(services, seats, &due, now_ms).await {
+            outcomes.push(outcome);
         }
-        outcomes.push(nudge(services, seats, &due, now_ms).await);
     }
     outcomes
 }
 
-/// Steps 2 to 5 for one idle holder: `Some` when it is due a nudge.
+/// Persist before the send (P9): only the call that adds the mark sends. The
+/// mark is refused if the stretch ended since `due` read it (an own event, or
+/// the seat no longer idle), and then nothing is sent (review of #189).
+async fn mark_then_nudge(
+    services: &Services,
+    seats: &[SeatDescriptor],
+    due: &Due<'_>,
+    now_ms: u64,
+) -> Option<RoundOutcome> {
+    let seat = &due.seat.id;
+    // Minted before the mark, so a failure marks nothing.
+    let occurrence = match occurrence() {
+        Ok(occurrence) => occurrence,
+        Err(cause) => {
+            eprintln!("pa watchdog: idle nudge: id for {seat}: {cause}");
+            return None;
+        }
+    };
+    match services
+        .watchdogs()
+        .mark_idle_nudged(seat, due.anchor, now_ms)
+        .await
+    {
+        Ok(true) => Some(nudge(services, seats, due, &occurrence, now_ms).await),
+        Ok(false) => None,
+        Err(cause) => {
+            eprintln!("pa watchdog: idle nudge: mark {seat}: {cause}");
+            None
+        }
+    }
+}
+
+/// Steps 2 to 6 for one idle holder: `Some` when it is due a nudge.
 async fn due<'a>(services: &Services, seat: &'a SeatDescriptor, now_ms: u64) -> Option<Due<'a>> {
     let store = services.watchdogs();
     let log = |what: &str, cause: &dyn std::fmt::Display| {
@@ -147,6 +161,15 @@ async fn due<'a>(services: &Services, seat: &'a SeatDescriptor, now_ms: u64) -> 
         Ok(true) => return None,
         Err(cause) => {
             log("nudge mark", &cause);
+            return None;
+        }
+    }
+    // A failed read is never "owns nothing": the seat is skipped this round.
+    match store.owns_live_job(&seat.id).await {
+        Ok(false) => {}
+        Ok(true) => return None,
+        Err(cause) => {
+            log("background jobs", &cause);
             return None;
         }
     }
@@ -235,14 +258,24 @@ async fn primes(services: &Services, seats: &[SeatDescriptor], due: &Due<'_>) ->
     told
 }
 
+/// A per-occurrence id part nobody outside the daemon can predict, so no
+/// caller can take the nudge's or an FYI's id first (S189-001). Idempotency
+/// comes from the mark, not from the id.
+fn occurrence() -> Result<String, getrandom::Error> {
+    let mut bytes = [0_u8; 16];
+    getrandom::fill(&mut bytes)?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
 async fn nudge(
     services: &Services,
     seats: &[SeatDescriptor],
     due: &Due<'_>,
+    occurrence: &str,
     now_ms: u64,
 ) -> RoundOutcome {
     let seat = due.seat;
-    let msg_id = format!("idle-nudge:{}:{}", seat.id, due.anchor);
+    let msg_id = format!("idle-nudge:{}:{}:{occurrence}", seat.id, due.anchor);
     let (outcome, cold_check) = wake_pa_receipt(
         services,
         seat,
@@ -260,7 +293,10 @@ async fn nudge(
             .hold_fyi(bg_msg(
                 &prime,
                 prime_body(&seat.id, due.idle_ms, &due.held),
-                format!("idle-nudge-fyi:{}:{}:{prime}", seat.id, due.anchor),
+                format!(
+                    "idle-nudge-fyi:{}:{}:{occurrence}:{prime}",
+                    seat.id, due.anchor
+                ),
             ))
             .await;
         let word = outcome_text(

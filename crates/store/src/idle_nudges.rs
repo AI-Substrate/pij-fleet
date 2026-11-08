@@ -5,7 +5,6 @@
 //! never nudges twice for one stretch.
 
 use pij_core::error::Result;
-use pij_core::idle_nudge::OWN_KINDS;
 use pij_core::model::SeatId;
 use sqlx::Row;
 
@@ -19,12 +18,39 @@ const HOLDING_SEATS_SQL: &str = "SELECT seat FROM community_assignments \
      UNION SELECT seat FROM claims INDEXED BY claims_open_by_seat WHERE released_at IS NULL \
      ORDER BY seat";
 
-/// The seat's newest event of one own kind (`seat.activity` other than idle,
-/// for that kind): one seek down `spine_by_seat_kind`.
-const LAST_OWN_SQL: &str = "SELECT seq, at FROM spine_events INDEXED BY spine_by_seat_kind \
-     WHERE seat = ?1 AND kind = ?2 \
-     AND NOT (kind = 'seat.activity' AND json_extract(payload, '$.state') = 'idle') \
-     ORDER BY seq DESC LIMIT 1";
+/// An own event (`spine_own_events`' predicate, verbatim from migration 0046):
+/// a report, or `seat.activity` other than idle.
+const OWN_EVENT: &str = "(kind IN ('report.now', 'report.state') \
+     OR (kind = 'seat.activity' \
+     AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.state') END != 'idle'))";
+
+/// The seat's newest own event: one reverse seek on `spine_own_events`.
+fn last_own_sql() -> String {
+    format!(
+        "SELECT seq, at FROM spine_events INDEXED BY spine_own_events \
+         WHERE seat = ?1 AND {OWN_EVENT} ORDER BY seq DESC LIMIT 1"
+    )
+}
+
+/// The mark, added only while the stretch still stands at commit: the seat is
+/// live and idle, and it has no own event after `anchor` (one range seek on
+/// the same index). A veto inserts nothing, so nothing is sent (review of
+/// #189: an own event between the round's read and this write). Brakes only:
+/// each condition can refuse a mark, none can add one.
+fn mark_sql() -> String {
+    format!(
+        "INSERT OR IGNORE INTO idle_nudges (seat, anchor, nudged_at) SELECT ?1, ?2, ?3 \
+         WHERE EXISTS (SELECT 1 FROM seats WHERE id = ?1 AND state = 'idle' AND tombstoned_at IS NULL) \
+         AND NOT EXISTS (SELECT 1 FROM spine_events INDEXED BY spine_own_events \
+         WHERE seat = ?1 AND {OWN_EVENT} AND seq > ?2)"
+    )
+}
+
+/// Whether `seat` owns a live (queued or running) background job: one seek on
+/// `background_jobs_live_by_owner`.
+const OWNS_LIVE_JOB_SQL: &str = "SELECT EXISTS (SELECT 1 FROM background_jobs \
+     INDEXED BY background_jobs_live_by_owner \
+     WHERE owner = ?1 AND state IN ('queued', 'running'))";
 
 impl SqliteOrchestration {
     /// Every seat that holds work: an open role holding or an open claim.
@@ -46,32 +72,42 @@ impl SqliteOrchestration {
             .collect()
     }
 
-    /// `seat`'s last own event ([`OWN_KINDS`]; `seat.activity` idle doesn't
-    /// count), as `(spine seq, at)`, or `None` when it has none. One seek per
-    /// own kind.
+    /// `seat`'s newest own event (a report, or `seat.activity` other than
+    /// idle), as `(spine seq, at)`, or `None` when it has none. One seek,
+    /// whatever idle activity trails it.
     ///
     /// # Errors
     /// Store failures, or an out-of-range stored value.
     pub async fn last_own_event(&self, seat: &SeatId) -> Result<Option<(u64, u64)>> {
         require_current_schema(&self.pool).await?;
-        let mut last: Option<(u64, u64)> = None;
-        for kind in OWN_KINDS {
-            let Some(row) = sqlx::query(LAST_OWN_SQL)
-                .bind(seat.as_str())
-                .bind(kind)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(adapter_error)?
-            else {
-                continue;
-            };
-            let seq = sql_u64(row.try_get("seq").map_err(adapter_error)?, "seq")?;
-            let at = sql_u64(row.try_get("at").map_err(adapter_error)?, "at")?;
-            if last.is_none_or(|(newest, _)| seq > newest) {
-                last = Some((seq, at));
-            }
-        }
-        Ok(last)
+        let Some(row) = sqlx::query(&last_own_sql())
+            .bind(seat.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(adapter_error)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some((
+            sql_u64(row.try_get("seq").map_err(adapter_error)?, "seq")?,
+            sql_u64(row.try_get("at").map_err(adapter_error)?, "at")?,
+        )))
+    }
+
+    /// Whether `seat` owns a queued or running background job.
+    ///
+    /// # Errors
+    /// Store failures.
+    pub async fn owns_live_job(&self, seat: &SeatId) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let found: i64 = sqlx::query(OWNS_LIVE_JOB_SQL)
+            .bind(seat.as_str())
+            .fetch_one(&self.pool)
+            .await
+            .map_err(adapter_error)?
+            .try_get(0)
+            .map_err(adapter_error)?;
+        Ok(found != 0)
     }
 
     /// Whether `seat` was already nudged for the stretch its event `anchor`
@@ -95,9 +131,11 @@ impl SqliteOrchestration {
     }
 
     /// Mark `seat` nudged for the stretch `anchor` began, at `at`. `true` when
-    /// this call added the mark, which alone authorizes the one nudge; a mark
-    /// already there (a restart, an overlapping round) is `false`. Committed by
-    /// an owned write, so it completes even if the caller is dropped.
+    /// this call added the mark, which alone authorizes the one nudge. `false`
+    /// when a mark is already there (a restart, an overlapping round), or when
+    /// the stretch no longer stands at commit: the seat posted an own event
+    /// after `anchor`, or is no longer live and idle. Committed by an owned
+    /// write, so it completes even if the caller is dropped.
     ///
     /// # Errors
     /// Store failures, or an out-of-range value.
@@ -108,16 +146,14 @@ impl SqliteOrchestration {
         let (anchor, at) = (sql_i64(anchor, "anchor")?, sql_i64(at, "nudged_at")?);
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
-            let inserted = sqlx::query(
-                "INSERT OR IGNORE INTO idle_nudges (seat, anchor, nudged_at) VALUES (?1, ?2, ?3)",
-            )
-            .bind(&seat)
-            .bind(anchor)
-            .bind(at)
-            .execute(&mut *tx)
-            .await
-            .map_err(adapter_error)?
-            .rows_affected()
+            let inserted = sqlx::query(&mark_sql())
+                .bind(&seat)
+                .bind(anchor)
+                .bind(at)
+                .execute(&mut *tx)
+                .await
+                .map_err(adapter_error)?
+                .rows_affected()
                 > 0;
             tx.commit().await.map_err(adapter_error)?;
             Ok(inserted)
@@ -158,14 +194,26 @@ mod tests {
         )
         .await;
         let last = plan(
-            format!("EXPLAIN QUERY PLAN {}", super::LAST_OWN_SQL),
-            vec!["pij-x", "report.now"],
+            format!("EXPLAIN QUERY PLAN {}", super::last_own_sql()),
+            vec!["pij-x"],
+        )
+        .await;
+        let mark = plan(
+            format!("EXPLAIN QUERY PLAN {}", super::mark_sql()),
+            vec!["pij-x", "7", "1"],
+        )
+        .await;
+        let jobs = plan(
+            format!("EXPLAIN QUERY PLAN {}", super::OWNS_LIVE_JOB_SQL),
+            vec!["pij-x"],
         )
         .await;
         for (index, plan) in [
             ("community_assignments_open_by_seat", &holding),
             ("claims_open_by_seat", &holding),
-            ("spine_by_seat_kind", &last),
+            ("spine_own_events", &last),
+            ("spine_own_events", &mark),
+            ("background_jobs_live_by_owner", &jobs),
         ] {
             let text = plan.join("\n");
             assert!(
@@ -174,20 +222,75 @@ mod tests {
                 "{index} unused:\n{text}"
             );
             assert!(
-                !plan
-                    .iter()
-                    .any(|line| (line.starts_with("SCAN spine_events")
-                        || line.starts_with("SCAN community_assignments")
-                        || line.starts_with("SCAN claims"))
-                        && !line.contains("INDEX")),
+                !plan.iter().any(|line| line.starts_with("SCAN")
+                    && !line.starts_with("SCAN CONSTANT ROW")
+                    && !line.contains("INDEX")),
                 "a table scan:\n{text}"
             );
         }
-        assert!(
-            last.iter()
-                .any(|line| line.starts_with("SEARCH spine_events")),
-            "the last own event is a seek:\n{}",
-            last.join("\n")
+        // Idle activity is not in `spine_own_events` at all, so a seek on it
+        // never walks an idle tail (P189-F001); and the newest is read off
+        // the index order, never sorted.
+        for (what, plan) in [("last own event", &last), ("veto", &mark), ("jobs", &jobs)] {
+            let text = plan.join("\n");
+            assert!(
+                plan.iter().any(|line| line.starts_with("SEARCH")
+                    && line.contains("INDEX")
+                    && (line.contains("(seat=?") || line.contains("(owner=?"))),
+                "{what} is a keyed seek:\n{text}"
+            );
+            assert!(!text.contains("TEMP B-TREE"), "{what} sorts:\n{text}");
+        }
+    }
+
+    /// P189-F001: the newest own event is found behind a long idle tail, and
+    /// a seat with only idle activity has none; a malformed payload never
+    /// fails the spine write the partial index guards.
+    #[tokio::test]
+    async fn the_newest_own_event_survives_a_long_idle_tail() {
+        let pool = crate::open("").await.expect("memory");
+        let store = crate::SqliteOrchestration::new(pool.clone());
+        let event = |seat: &'static str, kind: &'static str, at: u64, payload: &'static str| {
+            let spine = crate::SqliteSpine::new(pool.clone());
+            async move {
+                pij_core::ports::Spine::append(
+                    &spine,
+                    pij_core::model::Event {
+                        seq: None,
+                        v: 1,
+                        at,
+                        kind: kind.into(),
+                        seat: Some(seat.into()),
+                        payload: payload.into(),
+                    },
+                )
+                .await
+                .expect("spine write")
+                .0
+            }
+        };
+        let working = r#"{"state":"working"}"#;
+        let idle = r#"{"state":"idle"}"#;
+        event("pij-a", "report.now", 10, "{}").await;
+        let turn = event("pij-a", "seat.activity", 20, working).await;
+        for at in 0..2_000 {
+            event("pij-a", "seat.activity", 100 + at, idle).await;
+        }
+        event("pij-a", "seat.activity", 5_000, "not json").await;
+        event("pij-b", "seat.activity", 30, idle).await;
+        event("pij-b", "report.now", 40, "{}").await;
+        assert_eq!(
+            store.last_own_event(&"pij-a".into()).await.unwrap(),
+            Some((turn, 20)),
+            "the turn, newer than the report, behind 2000 idle records and a malformed one"
+        );
+        for at in 0..2_000 {
+            event("pij-c", "seat.activity", at, idle).await;
+        }
+        assert_eq!(
+            store.last_own_event(&"pij-c".into()).await.unwrap(),
+            None,
+            "only idle activity is no own event"
         );
     }
 }

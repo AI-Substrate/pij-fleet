@@ -353,6 +353,191 @@ async fn work_in_hand_or_nothing_held_suppresses_the_nudge() {
     }
 }
 
+/// Review of #189: the stretch is checked again where the mark is written. A
+/// seat that posted an own event, went busy, or was tombstoned after the
+/// round read it as due gets no mark, no nudge and no FYI.
+#[tokio::test]
+async fn a_stretch_that_ends_before_the_mark_sends_nothing() {
+    for case in ["own-event", "not-idle", "tombstoned"] {
+        let (services, _store, _config, folder) = services().await;
+        fleet(&services, &folder).await;
+        hold(&services, "crane", "merger", "").await;
+        let start = crate::http::system_time_ms().unwrap();
+        report(&services, start).await;
+        let now = start + IDLE_NUDGE_AFTER_MS + MINUTE;
+        let seats = services
+            .registry
+            .list(pij_core::ports::SeatFilter::default())
+            .await
+            .unwrap();
+        let merger = seats.iter().find(|seat| seat.id.as_str() == SEAT).unwrap();
+        let due = super::due(&services, merger, now).await.expect("due");
+        // Each case ends the stretch one way only, so each condition of the
+        // mark is proved on its own.
+        match case {
+            "own-event" => report(&services, now).await,
+            "not-idle" => {
+                seat_row(
+                    &services,
+                    "UPDATE seats SET state = 'working' WHERE id = ?1",
+                )
+                .await
+            }
+            _ => {
+                seat_row(
+                    &services,
+                    "UPDATE seats SET tombstoned_at = 1 WHERE id = ?1",
+                )
+                .await
+            }
+        }
+        assert!(
+            super::mark_then_nudge(&services, &seats, &due, now)
+                .await
+                .is_none(),
+            "{case}: the mark is refused"
+        );
+        assert!(
+            !services
+                .watchdogs()
+                .idle_nudged(&SeatId::from(SEAT), due.anchor)
+                .await
+                .unwrap(),
+            "{case}: no mark"
+        );
+        assert!(sent(&services).await.is_empty(), "{case}: no nudge");
+        assert_eq!(fyis(&services, PARENT).await, 0, "{case}: no FYI");
+    }
+}
+
+async fn seat_row(services: &crate::Services, sql: &str) {
+    sqlx::query(sql)
+        .bind(SEAT)
+        .execute(&services.store_pools[0])
+        .await
+        .unwrap();
+}
+
+/// The round's own snapshot decides who is a candidate: a seat it sees busy
+/// is never read further, even where the stored row still says idle (the
+/// mark's re-check is the second, independent layer).
+#[tokio::test]
+async fn a_seat_the_snapshot_sees_busy_is_not_a_candidate() {
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    hold(&services, "crane", "merger", "").await;
+    let start = crate::http::system_time_ms().unwrap();
+    report(&services, start).await;
+    let now = start + IDLE_NUDGE_AFTER_MS + MINUTE;
+    let mut seats = services
+        .registry
+        .list(pij_core::ports::SeatFilter::default())
+        .await
+        .unwrap();
+    for seat in &mut seats {
+        if seat.id.as_str() == SEAT {
+            seat.state = SystemState::Working;
+        }
+    }
+    assert!(super::round(&services, &seats, now).await.is_empty());
+    assert!(sent(&services).await.is_empty());
+    for seat in &mut seats {
+        seat.state = SystemState::Idle;
+    }
+    assert_eq!(
+        super::round(&services, &seats, now).await.len(),
+        1,
+        "otherwise due"
+    );
+}
+
+/// S189-001: an FYI id squatted by an ordinary local caller neither hides the
+/// daemon's notice nor reads as held. Delivery refuses and audits an id held
+/// for another sender or recipient (a same-sender retry is still one FYI),
+/// and the nudge's ids carry a per-occurrence part, so the old predictable id
+/// taken first changes nothing: the real prime still hears.
+#[tokio::test]
+async fn a_squatted_fyi_id_neither_hides_nor_fakes_the_notice() {
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    sqlx::query(
+        "INSERT INTO projects (slug, created_by, created_at, prime_id) VALUES ('crane', ?1, 1, ?2)",
+    )
+    .bind(PARENT)
+    .bind(PRIME)
+    .execute(&services.store_pools[0])
+    .await
+    .unwrap();
+    hold(&services, "crane", "merger", "").await;
+    let start = crate::http::system_time_ms().unwrap();
+    report(&services, start).await;
+    let anchor = services
+        .watchdogs()
+        .last_own_event(&SeatId::from(SEAT))
+        .await
+        .unwrap()
+        .unwrap()
+        .0;
+    let mut squat = crate::pa_watchdog::bg_msg(
+        &SeatId::from(PARENT),
+        "not from pij".into(),
+        format!("idle-nudge-fyi:{SEAT}:{anchor}:{PRIME}"),
+    );
+    squat.from = SeatId::from(SEAT);
+    services
+        .delivery
+        .hold_fyi(squat.clone())
+        .await
+        .expect("held");
+    services
+        .delivery
+        .hold_fyi(squat.clone())
+        .await
+        .expect("the same sender's retry to the same seat is the same FYI");
+    let mut taken = squat.clone();
+    taken.to = SeatId::from(PRIME);
+    let refused = services.delivery.hold_fyi(taken).await.unwrap_err();
+    assert!(
+        refused.to_string().contains("E-RS-FYI-ID-TAKEN"),
+        "{refused}"
+    );
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM spine_events WHERE kind = 'fyi.refused' AND seat = ?1 \
+         AND json_extract(payload, '$.held_recipient') = ?2",
+    )
+    .bind(PRIME)
+    .bind(PARENT)
+    .fetch_one(&services.store_pools[0])
+    .await
+    .unwrap();
+    assert_eq!(
+        audited, 1,
+        "the refusal is audited on the intended recipient"
+    );
+    assert_eq!(fyis(&services, PRIME).await, 0, "nothing held for it");
+
+    assert_eq!(
+        round(&services, start + IDLE_NUDGE_AFTER_MS + MINUTE).await,
+        vec![RoundOutcome::IdleNudge {
+            seat: SEAT.into(),
+            delivery: "queued".into(),
+            primes: vec![(PRIME.into(), "held".into())],
+        }]
+    );
+    assert_eq!(
+        fyis(&services, PRIME).await,
+        1,
+        "the real prime still hears"
+    );
+    let nudge = sent(&services).await;
+    assert_eq!(nudge.len(), 1);
+    assert_ne!(
+        nudge[0].msg_id,
+        format!("idle-nudge:{SEAT}:{anchor}"),
+        "the nudge id is not predictable"
+    );
+}
+
 /// bp-0001: a hostile holding label is never shown raw, to the seat or its
 /// prime.
 #[tokio::test]

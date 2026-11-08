@@ -19,12 +19,6 @@ use crate::model::SeatId;
 /// work posts own events, so only a genuinely stalled seat crosses it.
 pub const IDLE_NUDGE_AFTER_MS: u64 = 60 * 60 * 1_000;
 
-/// The seat's own events, the ones that start or re-arm an idle stretch:
-/// `seat.activity` other than idle (a turn starting), and its reports. A
-/// message pushed to it is not its own event, so the nudge itself never
-/// re-arms the stretch it was sent for.
-pub const OWN_KINDS: [&str; 3] = ["seat.activity", "report.now", "report.state"];
-
 /// The audit event kind for a nudge.
 pub const IDLE_NUDGE_KIND: &str = "watchdog.idle-nudge";
 

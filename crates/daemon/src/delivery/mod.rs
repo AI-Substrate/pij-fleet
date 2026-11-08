@@ -43,6 +43,8 @@ pub(crate) const OUTCOME_EVENT_KIND: &str = "delivery.outcome";
 /// found that nothing published this at all, so a client could observe that a
 /// message had been delivered to it without ever being able to read it.
 const PUSHED_EVENT_KIND: &str = "message.pushed";
+/// An FYI id already held, from this origin, for another sender or recipient.
+pub(crate) const FYI_ID_TAKEN: &str = "E-RS-FYI-ID-TAKEN";
 const NATIVE_RECEIVER_UNAVAILABLE: &str = "native-extension-unavailable";
 const NATIVE_RECEIVER_RENEWAL_DIVISOR: u64 = 3;
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
@@ -814,12 +816,28 @@ impl DeliveryService {
         };
         let queue = Arc::clone(&self.queue);
         let spine = self.event_bus.raw_spine();
-        self.event_bus
+        let recipient = fyi.recipient.clone();
+        let refused = self
+            .event_bus
             .publish_committed_batch(async move {
                 let events = queue.hold_fyi(&fyi, spine.as_ref()).await?;
-                Ok((events, ()))
+                let refused = events
+                    .iter()
+                    .any(|event| event.kind == pij_core::fyi::FYI_REFUSED_KIND);
+                Ok((events, refused))
             })
             .await?;
+        // The id is already held for another sender or recipient: nothing was
+        // held, and saying "held" would lose this FYI silently (S189-001).
+        if refused {
+            return Err(PijError::NotDeliverable {
+                seat: recipient,
+                reason: format!(
+                    "{FYI_ID_TAKEN}: FYI id {:?} is already held for another sender or recipient",
+                    msg.msg_id.escape_debug().take(64).collect::<String>()
+                ),
+            });
+        }
         Ok(Receipt {
             msg_id: msg.msg_id,
             outcome: DeliveryOutcome::Held {

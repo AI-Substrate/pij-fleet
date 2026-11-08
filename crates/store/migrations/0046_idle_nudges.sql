@@ -13,4 +13,23 @@ CREATE TABLE idle_nudges (
     PRIMARY KEY (seat, anchor)
 ) STRICT;
 
+-- Every own event of a seat, the ones that start or re-arm an idle stretch:
+-- its reports, and `seat.activity` other than idle (a turn starting). Idle
+-- activity is left out by the index itself, so the newest own event is one
+-- reverse seek and "any own event after the anchor" one range seek, however
+-- many idle records trail it (review of #189, P189-F001). The predicate is
+-- repeated verbatim in crates/store/src/idle_nudges.rs (`OWN_EVENT`); the
+-- queries name this index with INDEXED BY, so SQLite refuses them if the two
+-- ever drift apart. `json_valid` keeps a malformed payload from failing the
+-- spine write: such a row is simply not an own event.
+CREATE INDEX spine_own_events ON spine_events (seat, seq, at)
+    WHERE kind IN ('report.now', 'report.state')
+       OR (kind = 'seat.activity'
+           AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.state') END != 'idle');
+
+-- A seat's live (queued or running) background jobs, by owner: one seek per
+-- idle holder instead of reading every pending job (P189-F002).
+CREATE INDEX background_jobs_live_by_owner ON background_jobs (owner)
+    WHERE state IN ('queued', 'running');
+
 PRAGMA user_version = 46;
