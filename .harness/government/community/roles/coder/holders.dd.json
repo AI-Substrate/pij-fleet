@@ -253,7 +253,10 @@
 					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
 					"instance_key": "215",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #168 merged (c7d660c5dc8c)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-exuberant-wildcat",
+					"to": "2026-11-08T00:20:05.572Z",
 					"why": "plan 215 holdings end with their work"
 				},
 				{
