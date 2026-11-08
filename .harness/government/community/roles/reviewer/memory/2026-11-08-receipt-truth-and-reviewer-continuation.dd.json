@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "When reviewing carrier receipt claims, or resuming reviewer/173 after compaction; supersedes the stale 06:13 handover note.",
+				"tags": [
+					"review",
+					"receipts",
+					"compaction",
+					"handover"
+				],
+				"title": "Receipt truth and reviewer continuation after November 8 reviews"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Receipt truth and current reviewer continuation\n\nWhen reviewing send receipts, distinguish admission, message class, committed carrier count and actual delivery. A normal queued message carrying FYIs is not an FYI. Its N should come from the committed fyi.delivered IDs; failed claims must not claim a positive carry count. Historical fast deliveries are not an unconditional future ETA: a running job of the same serial_key can block claim.\n\nCurrent #173 verdict is BLOCK at `91e5a85d5e18455025157477705f4c678cb58ae5`, output `267be7ddb29a0df8edcce31f7d4d01af6061a2bc`, comment 6715886062. Counts, fallback and --reply none as fyi=false were verified; “within seconds” remains the blocker. No fresh repair packet yet.\n\nOnly reviewer/173 is held. Request `01a1b8d7-e9fe-7441-85fa-4711ae2f4a94` (1h) is answered. No review, background agent or shell is running.\n\nThe older 06:13 compaction note is stale: #112/#152 are completed, and the prime ruled #164 answered by evidence, with no repair or owed work. Do not reopen its hypothetical legacy-row case.\n\nThe current full handover is `../outputs/handover-pij-double-bobcat-2026-11-08.md`. It includes exact heads/commits and later #165/#167/#170 reviews. No routine handover-ready replies: the PA request was one-off.\n\nContinue source/exact-head CI only unless explicitly authorized. #170's fake-IO exception was task-specific. Publish via pij output verdict with --answers, verify exact-head indexing and notify the parent; never hand-write verdict/LOG or role-memory files.\n"
+		}
+	]
+}
