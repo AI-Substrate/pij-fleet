@@ -852,7 +852,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "180",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #180 merged (c7eb6abc6c80)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-08T06:07:09.429Z",
 					"why": "F124 receiver lease #180"
 				}
 			]
