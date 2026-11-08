@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b9f7-6895-79c0-b493-8c0653e9ec5c",
+				"date": "2026-11-08",
+				"head": "c58d2e9a015dacdf41e07756c3501429a23ca3c0",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/184#issuecomment-6719309070",
+				"requester": "pij-steady-otter",
+				"role": "reviewer",
+				"subject": "pr:184",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#184 original request superseded, without a verdict\n\nRequest 01a1b9f7-6895-79c0-b493-8c0653e9ec5c concerned c58d2e9a015dacdf41e07756c3501429a23ca3c0. The PM held that head before a verdict was written, then replaced it with the whole-head round-2 request 01a1ba3f-8ab4-7632-bfd4-a0287b4786e6 at bde88d0f60b0a02db5be3404320096e2875f8401.\n\nThe old head was never assigned a reviewer verdict. This note answers only the superseded request and closes its obsolete deadline; it neither grades c58d2e9 nor broadens any review. The replacement head has its separate verdict/request.\n"
+		}
+	]
+}
