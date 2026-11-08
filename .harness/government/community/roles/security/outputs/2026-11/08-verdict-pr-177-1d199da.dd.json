@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "1d199da44afd12bb88ef2c978fcbc5e6e2e49d0a",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/177#issuecomment-6717006573",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:177",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #177, exact head `1d199da44afd12bb88ef2c978fcbc5e6e2e49d0a`.\n\nThe complete eight-file diff against base `28d7c7bd792d33e91fe5ca2be4de43dc2236f0e3` and the directly dependent project-path, delivered and prime-view boundaries were source-reviewed. No high-confidence new exploitable vulnerability was identified.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new vulnerability identified | - |\n\n### F119: path and missing-line gate\n\nThe selected project's stored repository wins over caller cwd; absolute cwd is a fallback only when that project has no stored repo (`crates/daemon/src/http/directory.rs:1799-1842`). Project matching recognizes canonical paths and common Git directories but retains the stored path (`:1852-1867`). Merely invoking delivered from another linked worktree does not override a populated stored repository.\n\n`symlink_metadata` treats an existing final `docs/project` symlink, even a dangling one, as present. Non-NotFound failures refuse (`crates/daemon/src/http/claims.rs:583-596`). A missing intermediate path, including a dangling parent `docs` symlink, can still produce NotFound and count as absence. Successful metadata does not require an actual directory or canonical containment.\n\nThe project path is not normalized to an immutable canonical main checkout. Existing project create/set accepts caller-relative repo paths (`crates/daemon/src/http/governance.rs:621-638,709-723,752-768`); a stored subdirectory, alternate checkout or mutable repo symlink can affect the lookup. This requires existing filesystem/project-mapping control, not a new per-call docs-path override. The verdict does not certify resistance to authorized mapping or filesystem changes.\n\nDelivered still parses a numeric PR, uses the selected checkout's repository, requires merged state and a merge commit, and relaxes only `DeliversError::Missing`, which also includes an empty line; malformed addresses refuse (`crates/daemon/src/http/claims.rs:303-355`). Repository identity comes from Git origin/GH discovery, not a caller-supplied PR URL (`crates/daemon/src/community/gh.rs:120-136,207-248`).\n\nExisting release authority is unchanged: matching holdings are scoped to the selected project and PR/plan, require a pre-merge start and an exact holding under the writer lock (`crates/daemon/src/community/directory.rs:1939-1946,2050-2100`). Missing merge time releases nothing; writer failures give a retry refusal (`crates/daemon/src/http/claims.rs:501-560`). Existing any-seat release authority is documented at `docs/how/pij-rs-api.md:1752-1755`, not newly justified by a blanket C32 exemption for holding changes.\n\n### F117: designation remains separate from authority\n\nThe view uses the selected project's `prime_id`, not a global designation or caller's role label (`crates/daemon/src/community/directory.rs:359-365,415-419,545-547`). Its live predicate is untombstoned registry membership, not fresh process-liveness proof (`crates/daemon/src/http/directory.rs:587-598`).\n\nDesignation decorates the view and affects idle/call-on recommendations without writing assignments. Output/answers authorization independently reads stored holdings, the recorded request holder and that request project's prime (`crates/daemon/src/http/output.rs:228-266`). Existing legacy holder rows remain separate; the CLI designation fallback applies when the displayed holder list is empty (`crates/cli/src/main.rs:3277-3298`).\n\nBoth single and batch prime assignment reach the same refusal before pending processing or commits (`crates/daemon/src/community/directory.rs:1347-1349,1370-1392`; `crates/daemon/src/http/directory.rs:1528-1534`). No new prime impersonation or view-to-permission laundering was identified.\n\n### Proof\n\nNo new C19/C21 disclosure was identified. GitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42444430321` and Delivers run `42444430260` both identify this SHA and success.\n\nNo local builds, tests, cargo runs, symlink/path experiments, delivered/prime operations, credential reads or mutations were performed. Filesystem behavior is source-derived; exact-head CI is the execution proof.\n"
+		}
+	]
+}
