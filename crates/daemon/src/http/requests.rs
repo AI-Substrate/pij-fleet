@@ -59,9 +59,13 @@ pub(crate) async fn handle(
     // A pane is checked by the daemon (and an asserted id that disagrees with
     // it is refused by the ladder); an asserted id alone is only known to
     // exist (security review of #149, S003, F88).
+    // Withdraw and close are holder actions; the listing is a read.
+    let class = matches!(leaf, Some("withdraw" | "close"))
+        .then_some(super::provenance::OperationClass::RoleAndHolder);
     let (actor, caller) = match resolve_seat(
         &state,
         command,
+        class,
         request.caller.session_id.clone(),
         request.caller.pane.clone(),
     )

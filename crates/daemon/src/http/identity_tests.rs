@@ -68,6 +68,18 @@ async fn world_on(
     proc: ProcIdentity,
     claude_homes: Vec<std::path::PathBuf>,
 ) -> World {
+    world_with(registry, pane_alive, proc, claude_homes, None).await
+}
+
+/// [`world_on`], served as if over the socket (plan 223) with `reader` as
+/// the in-process process table, when one is given.
+async fn world_with(
+    registry: Arc<FakeRegistry>,
+    pane_alive: bool,
+    proc: ProcIdentity,
+    claude_homes: Vec<std::path::PathBuf>,
+    reader: Option<Arc<dyn super::provenance::ProcReader>>,
+) -> World {
     let pid = proc.pid;
     let spine = Arc::new(FakeSpine::new());
     let mut services = test_services(
@@ -103,7 +115,17 @@ async fn world_on(
         PANE,
         "codex-native",
     )]));
-    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let router = match reader {
+        Some(reader) => {
+            services.proc_reader = reader;
+            super::provenance::test_support::socket_peers(router_with_config(
+                services,
+                config("key", &[]),
+            ))
+        }
+        None => router_with_config(services, config("key", &[])),
+    };
+    let (addr, server) = spawn(router).await;
     World {
         addr,
         registry,
@@ -1908,5 +1930,79 @@ async fn reclaim_is_guarded_by_caller_harness_and_death_then_audited() {
         "{:?}",
         refusal.meta
     );
+    world.server.abort();
+}
+
+/// Plan 223 (deviation 8): over the socket, adopt's `--harness-session`
+/// exception takes the requesting process from the peer read at accept (no
+/// lsof) and applies the same ancestry rule: a peer inside the pane's harness
+/// tree is accepted, one outside it is refused and nothing is written.
+#[tokio::test]
+async fn a_socket_adopt_corroborates_the_harness_session_by_its_peer() {
+    use super::provenance::test_support::{FakeReader, PEER_HEADER, peer_header};
+    let inside = ProcIdentity {
+        pid: 5_000,
+        proc_start: 9,
+    };
+    let outside = ProcIdentity {
+        pid: 6_000,
+        proc_start: 9,
+    };
+    let reader = Arc::new(
+        FakeReader::default()
+            .with(1, 0, "launchd", 1)
+            .with(PID, 1, "omp", PROC_START)
+            .with(inside.pid, PID, "pij", inside.proc_start)
+            .with(outside.pid, 1, "pij", outside.proc_start),
+    );
+    let adopt_from = |addr: SocketAddr, peer: ProcIdentity| async move {
+        reqwest::Client::new()
+            .post(format!("http://{addr}/v1/adopt"))
+            .bearer_auth("key")
+            .header(PEER_HEADER, peer_header(peer))
+            .json(&serde_json::json!({
+                "argv": ["adopt", PANE, "--harness", "omp", "--harness-session", "omp-s1"],
+            }))
+            .send()
+            .await
+            .expect("adopt")
+    };
+    let proc = ProcIdentity {
+        pid: PID,
+        proc_start: PROC_START,
+    };
+
+    let refused_world = world_with(
+        Arc::new(FakeRegistry::new()),
+        true,
+        proc,
+        Vec::new(),
+        Some(Arc::clone(&reader) as Arc<dyn super::provenance::ProcReader>),
+    )
+    .await;
+    let refused = refusal_envelope(adopt_from(refused_world.addr, outside).await).await;
+    assert!(
+        refused
+            .meta
+            .as_deref()
+            .is_some_and(|meta| meta.contains("harness process tree")),
+        "{refused:?}"
+    );
+    assert!(live_seats(&refused_world.registry).await.is_empty());
+    refused_world.server.abort();
+
+    let world = world_with(
+        Arc::new(FakeRegistry::new()),
+        true,
+        proc,
+        Vec::new(),
+        Some(reader as Arc<dyn super::provenance::ProcReader>),
+    )
+    .await;
+    let response = adopt_from(world.addr, inside).await;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let seats = live_seats(&world.registry).await;
+    assert_eq!(seats.len(), 1);
+    assert_eq!(seats[0].harness_session.as_deref(), Some("omp-s1"));
     world.server.abort();
 }

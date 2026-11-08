@@ -4188,7 +4188,10 @@ impl GrantRig {
             u64::MAX,
         )
         .await;
-        let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+        let (addr, server) = spawn(super::provenance::test_support::socket_peers(
+            router_with_config(services, config("native-key", &[])),
+        ))
+        .await;
         Self {
             victim,
             host,
@@ -4236,6 +4239,12 @@ impl GrantRig {
         native_http_response(
             self.client
                 .post(format!("http://{}/v1/register", self.addr))
+                .header(
+                    super::provenance::test_support::PEER_HEADER,
+                    super::provenance::test_support::peer_header(
+                        seat.proc.expect("a native seat has its host"),
+                    ),
+                )
                 .json(&body),
             reqwest::StatusCode::OK,
         )
@@ -4340,6 +4349,10 @@ async fn public_facts_get_no_grant_and_a_nonce_issues_once_f88_row_2() {
     let replay = native_http_response(
         rig.client
             .post(format!("http://{}/v1/register", rig.addr))
+            .header(
+                super::provenance::test_support::PEER_HEADER,
+                super::provenance::test_support::peer_header(rig.victim.proc.unwrap()),
+            )
             .json(&body),
         reqwest::StatusCode::CONFLICT,
     )

@@ -354,6 +354,25 @@ pub fn parent_and_name(pid: u32) -> Option<(u32, String)> {
     Some((info.pbsi_ppid.0, name))
 }
 
+/// Linux: the same two facts from `/proc/<pid>/stat` (plan 223), read
+/// in-process: field 4 is the parent pid, field 2 the parenthesised `comm`.
+/// `None` when the kernel has no such process or will not say.
+#[cfg(target_os = "linux")]
+#[must_use]
+pub fn parent_and_name(pid: u32) -> Option<(u32, String)> {
+    linux_parent_and_name(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)
+}
+
+/// Parse `/proc/<pid>/stat`: the name may hold spaces or `)`, so it runs to
+/// the LAST `)`; the parent is the second field after it (field 4).
+#[cfg(any(target_os = "linux", test))]
+fn linux_parent_and_name(stat: &str) -> Option<(u32, String)> {
+    let (head, rest) = stat.rsplit_once(')')?;
+    let (_, name) = head.split_once('(')?;
+    let parent = rest.split_whitespace().nth(4 - 3)?.parse().ok()?;
+    Some((parent, name.to_string()))
+}
+
 /// Read the host's current UTC offset in minutes, in-process.
 ///
 /// Spawn binding uses this only for a fresh process, so the current offset is
@@ -750,6 +769,21 @@ mod tests {
         let dead = child.id();
         child.wait().expect("reap");
         assert_eq!(super::parent_and_name(dead), None);
+    }
+
+    /// Plan 223: Linux's parent read takes field 4 after the LAST `)`, so a
+    /// name holding spaces or parentheses cannot shift it.
+    #[test]
+    fn linux_parent_and_name_reads_field_four_after_the_name() {
+        assert_eq!(
+            super::linux_parent_and_name("4242 (tmux: server) S 1 4242 4242 0 -1"),
+            Some((1, "tmux: server".to_string()))
+        );
+        assert_eq!(
+            super::linux_parent_and_name("77 (a) b) (c) R 76 77 77 0"),
+            Some((76, "a) b) (c".to_string()))
+        );
+        assert_eq!(super::linux_parent_and_name("77 (bash"), None);
     }
 
     /// Plan 207 (#127): the in-process offset is the one `date +%z` prints.

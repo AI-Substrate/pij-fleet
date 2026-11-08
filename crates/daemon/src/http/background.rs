@@ -334,7 +334,16 @@ pub(super) async fn kill(
 async fn execute(state: &AppState, caller: CallerContext, call: Call) -> Response {
     let name = call.name();
     let caller_cwd = caller.cwd.clone();
-    let owner = match identity::resolve_seat(state, name, caller.session_id, caller.pane).await {
+    // Every bg verb, owner reads included, is a control (workshop contract e).
+    let owner = match identity::resolve_seat(
+        state,
+        name,
+        Some(super::provenance::OperationClass::Controls),
+        caller.session_id,
+        caller.pane,
+    )
+    .await
+    {
         identity::Resolved::Seat(owner, _) => owner,
         identity::Resolved::Refusal(response) => return response,
     };

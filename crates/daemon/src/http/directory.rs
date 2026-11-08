@@ -493,6 +493,18 @@ impl Arguments {
     }
 }
 
+/// The operation a directory leaf is (plan 223 AC7): holding and lineage are
+/// holder and prime actions, reads are machine-public, and every other write
+/// forges only authorship.
+fn directory_class(leaf: &str) -> Option<super::provenance::OperationClass> {
+    use super::provenance::OperationClass;
+    match leaf {
+        "view" | "templates" | "template-diff" => None,
+        "assign" | "release" | "lineage" | "memory" => Some(OperationClass::RoleAndHolder),
+        _ => Some(OperationClass::Attribution),
+    }
+}
+
 /// `POST /v1/directory`.
 pub(crate) async fn handle(
     State(state): State<AppState>,
@@ -523,6 +535,7 @@ pub(crate) async fn handle(
     let actor = match resolve_seat(
         &state,
         COMMAND,
+        directory_class(&call.leaf),
         request.caller.session_id.clone(),
         request.caller.pane.clone(),
     )

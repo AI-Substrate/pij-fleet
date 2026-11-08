@@ -127,6 +127,14 @@ pub struct Services {
     /// Each live incarnation's capability digest (plan 223), rebuilt from the
     /// store at start and resynced by registration.
     pub capabilities: Arc<capability::Capabilities>,
+    /// Registered harness boundaries and the live seats they host (plan 223
+    /// AC3), rebuilt from one roster read at start and kept exact from
+    /// committed registry facts.
+    pub boundaries: Arc<http::provenance::Boundaries>,
+    /// The in-process process reader the boundary walk uses (never `ps`).
+    pub proc_reader: Arc<dyn http::provenance::ProcReader>,
+    /// Seat-authority operations by class and proof (plan 223 AC7).
+    pub capability_counts: Arc<http::provenance::CapabilityCounts>,
     /// Usage-limit rejections from harness transcripts (plan 172 R3): the PA
     /// watchdog's limit-reset wake. Blocking; called off the reactor.
     pub usage_limits: Arc<dyn pij_core::usage_limit::UsageLimitSource>,
@@ -218,6 +226,9 @@ pub struct Daemon {
     pub remote: http::RemoteListener,
     /// The per-boot bearer key.
     pub key: BootKey,
+    /// `<state-dir>/daemon.sock` when it is served (plan 223 AC3); `None`
+    /// when it could not be bound (the reason was logged; TCP serves alone).
+    pub socket: Option<PathBuf>,
     event_bus: Arc<events::EventBus>,
     delivery: Arc<delivery::DeliveryService>,
     store_pools: [pij_store::StorePool; 2],
@@ -510,6 +521,11 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
     // read back (one read), so a seat holding a token carries on after a bounce.
     let capabilities = Arc::new(capability::Capabilities::default());
     capability::restore(registry.as_ref(), &capabilities, http::system_time_ms()?).await?;
+    let boundaries = Arc::new(http::provenance::Boundaries::default());
+    let roster = registry
+        .list(pij_core::ports::SeatFilter::default())
+        .await?;
+    boundaries.lock().rebuild(&roster);
     let reported_context = Arc::new(reported_context::ReportedContext::default());
     let session_status: Arc<dyn SessionStatusPort> = Arc::new(
         reported_context::WithReportedContext::new(transcripts, Arc::clone(&reported_context)),
@@ -619,6 +635,9 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         session_status,
         reported_context,
         capabilities,
+        boundaries,
+        proc_reader: Arc::new(http::provenance::KernelReader),
+        capability_counts: Arc::default(),
         usage_limits,
         delivery,
         roles,
@@ -916,6 +935,20 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
     //    that listener — local clients and hooks keep loopback, never an exit.
     let (listener, remote_listener, remote) =
         bind_listeners(requested, !config.peers.is_empty(), config.insecure_bind).await?;
+    // 2b. The Unix socket (plan 223 AC3), only now that this boot holds the
+    //     TCP port (the single-instance guard). Best effort, like the remote
+    //     listener: a socket that cannot be bound (a long state path on macOS,
+    //     whose sun_path holds 104 bytes) leaves TCP serving alone.
+    let socket = match serve::bind_socket(&state_dir) {
+        Ok(bound) => Some(bound),
+        Err(error) => {
+            eprintln!(
+                "pij-rs: {} not served ({error}); TCP serves alone",
+                state_dir.join(serve::SOCKET_FILE).display()
+            );
+            None
+        }
+    };
     let addr = match &remote {
         // A wildcard listener already serves loopback; tell clients loopback.
         http::RemoteListener::Listening { addr, .. } if addr.ip().is_unspecified() => {
@@ -1133,6 +1166,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
     let event_bus = Arc::clone(&services.event_bus);
     let delivery = Arc::clone(&services.delivery);
     let store_pools = services.store_pools.clone();
+    let proc_reader = Arc::clone(&services.proc_reader);
     let router = http::router_with_federation(
         services,
         http::HttpConfig {
@@ -1152,6 +1186,28 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         serve::IDLE_CONNECTION_TIMEOUT,
         stopped(shutdown_rx.clone()),
     );
+    let socket_path = socket.as_ref().map(|_| state_dir.join(serve::SOCKET_FILE));
+    let unix = {
+        let (router, stop, path) = (
+            router.clone(),
+            stopped(shutdown_rx.clone()),
+            socket_path.clone(),
+        );
+        async move {
+            if let (Some((listener, uid)), Some(path)) = (socket, path) {
+                serve::serve_unix(
+                    listener,
+                    router,
+                    serve::IDLE_CONNECTION_TIMEOUT,
+                    uid,
+                    proc_reader,
+                    stop,
+                )
+                .await;
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    };
     let joined = match remote_listener {
         Some(remote_listener) => {
             let remote = serve::serve(
@@ -1161,16 +1217,19 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
                 stopped(shutdown_rx),
             );
             tokio::spawn(async move {
-                tokio::join!(local, remote);
+                tokio::join!(local, remote, unix);
             })
         }
-        None => tokio::spawn(local),
+        None => tokio::spawn(async move {
+            tokio::join!(local, unix);
+        }),
     };
 
     Ok(Daemon {
         addr,
         remote,
         key,
+        socket: socket_path,
         event_bus,
         delivery,
         store_pools,

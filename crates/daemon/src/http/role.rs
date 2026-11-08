@@ -525,7 +525,14 @@ pub(crate) async fn role(
         Ok(call) => call,
         Err(error) => return error.into_response(COMMAND),
     };
-    let actor = match resolve_seat(&state, COMMAND, call.caller.session_id, call.caller.pane).await
+    let actor = match resolve_seat(
+        &state,
+        COMMAND,
+        Some(super::provenance::OperationClass::RoleAndHolder),
+        call.caller.session_id,
+        call.caller.pane,
+    )
+    .await
     {
         Resolved::Seat(seat, _) => seat,
         Resolved::Refusal(response) => return response,
@@ -624,7 +631,15 @@ pub(crate) async fn link(
         Ok(call) => call,
         Err(error) => return error.into_response(LINK),
     };
-    let actor = match resolve_seat(&state, LINK, caller.session_id, caller.pane).await {
+    let actor = match resolve_seat(
+        &state,
+        LINK,
+        Some(super::provenance::OperationClass::RoleAndHolder),
+        caller.session_id,
+        caller.pane,
+    )
+    .await
+    {
         Resolved::Seat(seat, _) => seat,
         Resolved::Refusal(response) => return response,
     };

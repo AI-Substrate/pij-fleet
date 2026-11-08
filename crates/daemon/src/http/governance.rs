@@ -555,6 +555,7 @@ pub(crate) async fn handle(
     let actor = match resolve_seat(
         &state,
         &command,
+        super::provenance::governance_class(&call.family, &call.leaf),
         request.caller.session_id.clone(),
         request.caller.pane.clone(),
     )

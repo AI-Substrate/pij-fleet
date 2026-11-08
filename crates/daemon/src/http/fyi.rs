@@ -51,6 +51,11 @@ pub(crate) async fn claim(
     State(state): State<AppState>,
     Json(request): Json<ClaimRequest>,
 ) -> Response {
+    // Hook binding (guard B): counted, never refused for its proof (plan 223).
+    super::provenance::count(
+        &state.services,
+        super::provenance::OperationClass::InboxClaim,
+    );
     if !HOOK_VIAS.contains(&request.via.as_str()) {
         return refused(
             CLAIM,
@@ -227,6 +232,7 @@ pub(crate) async fn activity(
     State(state): State<AppState>,
     Json(request): Json<ActivityRequest>,
 ) -> Response {
+    super::provenance::count(&state.services, super::provenance::OperationClass::Activity);
     let observed = match request.state.as_str() {
         "working" => SystemState::Working,
         "idle" => SystemState::Idle,

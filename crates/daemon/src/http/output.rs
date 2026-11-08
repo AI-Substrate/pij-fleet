@@ -114,9 +114,12 @@ pub(crate) async fn handle(
         Ok(call) => call,
         Err(refusal) => return refused(&refusal),
     };
+    // The argv leaf, not the URI: `output` publishes; `outputs` reads.
+    let class = (family != "outputs").then_some(super::provenance::OperationClass::Outputs);
     let actor = match resolve_seat(
         &state,
         command,
+        class,
         request.caller.session_id.clone(),
         request.caller.pane.clone(),
     )

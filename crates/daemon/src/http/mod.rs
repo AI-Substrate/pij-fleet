@@ -20,6 +20,7 @@ mod identity;
 mod lifecycle;
 pub mod memory_turn;
 mod output;
+pub mod provenance;
 mod report;
 mod requests;
 mod revive;
@@ -574,7 +575,21 @@ fn router_with_optional_federation(
         Arc::clone(&services.roles),
     )
     .with_native_delivery(Arc::clone(&services.delivery))
-    .with_capabilities(Arc::clone(&services.capabilities));
+    .with_capabilities(Arc::clone(&services.capabilities))
+    .with_provenance(
+        Arc::clone(&services.boundaries),
+        Arc::clone(&services.proc_reader),
+    );
+    // Plan 223: the digest map and the boundary index follow every committed
+    // registry fact, in order, so a tombstone or a new process is seen at once.
+    {
+        let capabilities = Arc::clone(&services.capabilities);
+        let boundaries = Arc::clone(&services.boundaries);
+        services.event_bus.observe(Arc::new(move |event| {
+            capabilities.follow(event);
+            boundaries.lock().follow(event);
+        }));
+    }
     let state = AppState {
         services,
         auth: config.auth,
@@ -759,6 +774,25 @@ async fn require_bearer(
     mut request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
+    // Plan 223 (contract d): a capability never travels over the network, so
+    // the non-loopback listener refuses any request carrying one.
+    let remote = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .is_some_and(|axum::extract::ConnectInfo(peer)| !peer.ip().is_loopback());
+    if remote && headers.contains_key(crate::capability::CAPABILITY_HEADER) {
+        let mut answer: Envelope<()> = Envelope::refused(
+            "auth",
+            ErrorKind::Refused,
+            format!(
+                "{}: a seat capability is accepted only on the local socket or loopback, \
+                 never over the network",
+                provenance::PROVENANCE_CODE
+            ),
+        );
+        answer.details = Some(serde_json::json!({ "code": provenance::PROVENANCE_CODE }));
+        return envelope(StatusCode::FORBIDDEN, &answer);
+    }
     let presented = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -770,7 +804,19 @@ async fn require_bearer(
             return refusal;
         }
         request.extensions_mut().insert(identity);
-        return next.run(request).await;
+        // Plan 223: the request's proof evidence, read lazily by the
+        // operations that count it.
+        let evidence = provenance::RequestEvidence::new(
+            headers
+                .get(crate::capability::CAPABILITY_HEADER)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string),
+            request
+                .extensions()
+                .get::<provenance::SocketPeer>()
+                .cloned(),
+        );
+        return provenance::scoped(evidence, next.run(request)).await;
     }
     envelope(
         StatusCode::UNAUTHORIZED,
@@ -802,6 +848,9 @@ struct Health<'a> {
     /// Registration attempts by path, mode and outcome, with the ancestry
     /// `ps` reads they paid (plan 211).
     registrations: crate::registration::attempts::AttemptCounts,
+    /// Seat-authority operations by class and proof, and first nonce
+    /// registrations (plan 223 AC7). Bounded: no per-seat rows.
+    capabilities: provenance::CountsSnapshot,
 }
 
 #[derive(serde::Serialize)]
@@ -836,6 +885,7 @@ async fn health(State(state): State<AppState>) -> Response {
             .map(|path| path.display().to_string()),
         spawns: pij_core::spawns::snapshot(),
         registrations: state.registration.attempts().snapshot(),
+        capabilities: state.services.capability_counts.snapshot(),
     };
     match checked {
         Ok(()) => envelope(StatusCode::OK, &Envelope::ok("pij ping", data)),
@@ -981,35 +1031,62 @@ struct RegistrationResponse {
     /// with public facts alone registers without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     capability: Option<String>,
+    /// Why a socket registration that presented no evidence was not issued
+    /// a capability by its peer (path b): unreadable provenance, another
+    /// live session on its harness (`E-RS-SEAT-AMBIGUOUS`), or a live owner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    capability_withheld: Option<String>,
 }
 
 /// What a registration presents (plan 223).
 enum Presented {
-    /// Evidence for a new capability: the spawn's nonce (path a), an explicit
-    /// rotation (path c) or, with AC3, the socket peer's boundary (path b,
-    /// [`IssueProof::Peer`]).
-    Issue(IssueProof),
+    /// Evidence for a new capability: the spawn's nonce (path a, over the
+    /// socket) or an explicit rotation (path c). `owner` is the socket peer.
+    Issue {
+        proof: IssueProof,
+        owner: Option<ProcIdentity>,
+    },
     /// The current capability, kept by a same-incarnation re-registration.
     Hold {
         digest: pij_core::capability::Digest,
         token: String,
     },
+    /// No evidence, over the socket: path b, if its checks pass.
+    Bootstrap(ProcIdentity),
+}
+
+/// Why a registration's presented evidence is refused before anything runs.
+enum PresentedRefusal {
+    Capability(IssueRefusal),
+    Provenance(String),
 }
 
 /// Read what a registration presents: the capability in
 /// [`crate::capability::CAPABILITY_HEADER`] (held, or rotated with `rotate`),
-/// else the spawn's nonce in `spawn_nonce` with its `spawn_id`. `None`:
-/// public facts only, so no capability.
+/// else the spawn's nonce in `spawn_nonce` with its `spawn_id` (only over the
+/// socket), else, over the socket, the peer itself. `None`: public facts only
+/// over TCP, so no capability.
 fn presented(
     headers: &HeaderMap,
     request: &RegistrationRequest,
-) -> std::result::Result<Option<Presented>, IssueRefusal> {
+    socket: Option<&provenance::SocketPeer>,
+) -> std::result::Result<Option<Presented>, PresentedRefusal> {
     use crate::capability::{CAPABILITY_HEADER, digest_of};
+    let peer = match socket {
+        Some(provenance::SocketPeer::Proven(peer)) => Some(*peer),
+        _ => None,
+    };
     if let Some(value) = headers.get(CAPABILITY_HEADER) {
-        let token = value.to_str().map_err(|_| IssueRefusal::TokenInvalid)?;
-        let digest = digest_of(token).ok_or(IssueRefusal::TokenInvalid)?;
+        let token = value
+            .to_str()
+            .map_err(|_| PresentedRefusal::Capability(IssueRefusal::TokenInvalid))?;
+        let digest =
+            digest_of(token).ok_or(PresentedRefusal::Capability(IssueRefusal::TokenInvalid))?;
         return Ok(Some(if request.rotate {
-            Presented::Issue(IssueProof::Token { digest })
+            Presented::Issue {
+                proof: IssueProof::Token { digest },
+                owner: peer,
+            }
         } else {
             Presented::Hold {
                 digest,
@@ -1018,19 +1095,45 @@ fn presented(
         }));
     }
     let Some(nonce) = request.spawn_nonce.as_deref() else {
-        return Ok(None);
+        return Ok(peer.map(Presented::Bootstrap));
+    };
+    // A nonce is peer-checked at use (contract b): only over the socket.
+    let owner = match socket {
+        Some(provenance::SocketPeer::Proven(peer)) => *peer,
+        Some(provenance::SocketPeer::Failed(why)) => {
+            return Err(PresentedRefusal::Provenance(why.clone()));
+        }
+        None => {
+            return Err(PresentedRefusal::Provenance(
+                "a spawn nonce is accepted only over the daemon's Unix socket \
+                 (<state-dir>/daemon.sock), never over TCP; the nonce was not consumed"
+                    .to_string(),
+            ));
+        }
     };
     let spawn_id = request
         .claim
         .spawn_id
         .clone()
         .filter(|spawn| !spawn.is_empty())
-        .ok_or(IssueRefusal::NonceUnknown)?;
-    let digest = digest_of(nonce).ok_or(IssueRefusal::NonceUnknown)?;
-    Ok(Some(Presented::Issue(IssueProof::Nonce {
-        spawn_id,
-        digest,
-    })))
+        .ok_or(PresentedRefusal::Capability(IssueRefusal::NonceUnknown))?;
+    let digest =
+        digest_of(nonce).ok_or(PresentedRefusal::Capability(IssueRefusal::NonceUnknown))?;
+    Ok(Some(Presented::Issue {
+        proof: IssueProof::Nonce { spawn_id, digest },
+        owner: Some(owner),
+    }))
+}
+
+/// A registration refused for its provenance: nothing was written.
+fn provenance_refused(why: impl std::fmt::Display) -> Response {
+    let mut answer: Envelope<()> = Envelope::refused(
+        "pij register",
+        ErrorKind::Refused,
+        format!("{}: {why}", provenance::PROVENANCE_CODE),
+    );
+    answer.details = Some(serde_json::json!({ "code": provenance::PROVENANCE_CODE }));
+    envelope(StatusCode::BAD_REQUEST, &answer)
 }
 
 /// A refused capability proof: nothing was written.
@@ -1054,6 +1157,7 @@ fn capability_refused(refusal: IssueRefusal) -> Response {
 /// otherwise `same`, and flatten the descriptor into this response only.
 async fn register(
     State(state): State<AppState>,
+    socket: Option<Extension<provenance::SocketPeer>>,
     headers: HeaderMap,
     Json(mut request): Json<RegistrationRequest>,
 ) -> Response {
@@ -1078,27 +1182,52 @@ async fn register(
     }
     // Plan 223: a capability is minted only for presented evidence, and only
     // reaches the caller if the registration commits it.
-    let issue = match presented(&headers, &request) {
-        Ok(None) => None,
-        Ok(Some(Presented::Hold { digest, token })) => Some((CapabilityClaim::Hold(digest), token)),
-        Ok(Some(Presented::Issue(proof))) => match (crate::capability::mint(), system_time_ms()) {
-            (Ok(secret), Ok(now_ms)) => Some((
-                CapabilityClaim::Issue(CapabilityIssue {
-                    proof,
-                    digest: secret.digest(),
-                    owner: None,
-                    now_ms,
-                }),
-                secret.into_plaintext(),
-            )),
-            (Err(error), _) | (_, Err(error)) => {
-                early(&request.claim, Outcome::Error).await;
-                return internal("pij register", error);
-            }
-        },
-        Err(refusal) => {
+    provenance::count(&state.services, provenance::OperationClass::Registration);
+    let socket = socket.map(|Extension(peer)| peer);
+    let withheld = Arc::new(std::sync::OnceLock::new());
+    let mut nonce_first = false;
+    let wanted = match presented(&headers, &request, socket.as_ref()) {
+        Ok(None) => Ok(None),
+        Ok(Some(Presented::Hold { digest, token })) => Err((digest, token)),
+        Ok(Some(Presented::Issue { proof, owner })) => Ok(Some((proof, owner, false))),
+        Ok(Some(Presented::Bootstrap(peer))) => Ok(Some((IssueProof::Peer, Some(peer), true))),
+        Err(PresentedRefusal::Capability(refusal)) => {
             early(&request.claim, Outcome::Refused).await;
             return capability_refused(refusal);
+        }
+        Err(PresentedRefusal::Provenance(why)) => {
+            early(&request.claim, Outcome::Refused).await;
+            return provenance_refused(why);
+        }
+    };
+    let issue = match wanted {
+        Err((digest, token)) => Some((CapabilityClaim::Hold(digest), token)),
+        Ok(None) => None,
+        Ok(Some((proof, owner, bootstrap))) => {
+            match (crate::capability::mint(), system_time_ms()) {
+                (Ok(secret), Ok(now_ms)) => {
+                    nonce_first = matches!(proof, IssueProof::Nonce { .. });
+                    let issue = CapabilityIssue {
+                        proof,
+                        digest: secret.digest(),
+                        owner,
+                        now_ms,
+                    };
+                    let claim = if bootstrap {
+                        CapabilityClaim::Bootstrap {
+                            issue,
+                            withheld: Arc::clone(&withheld),
+                        }
+                    } else {
+                        CapabilityClaim::Issue(issue)
+                    };
+                    Some((claim, secret.into_plaintext()))
+                }
+                (Err(error), _) | (_, Err(error)) => {
+                    early(&request.claim, Outcome::Error).await;
+                    return internal("pij register", error);
+                }
+            }
         }
     };
     // Native claims carry their own verified host tuple. Do not replace it with
@@ -1212,6 +1341,10 @@ async fn register(
                     .check(&descriptor, token)
                     .valid()
             });
+            if nonce_first && capability.is_some() {
+                state.services.capability_counts.nonce_registered();
+            }
+            let capability_withheld = withheld.get().cloned();
             let mut answer = Envelope::ok(
                 "pij register",
                 RegistrationResponse {
@@ -1221,6 +1354,7 @@ async fn register(
                     typing_grace_ms: Some(state.typing_grace_ms),
                     context_token: capability.clone(),
                     capability,
+                    capability_withheld,
                 },
             );
             answer.meta = meta;
@@ -1252,6 +1386,16 @@ async fn register(
             envelope(StatusCode::CONFLICT, &answer)
         }
         Err(RegistrationError::Capability(refusal)) => capability_refused(refusal),
+        Err(RegistrationError::Provenance(why)) => provenance_refused(why),
+        Err(RegistrationError::IndexFull) => {
+            let mut answer: Envelope<()> = Envelope::refused(
+                "pij register",
+                ErrorKind::Refused,
+                RegistrationError::IndexFull.to_string(),
+            );
+            answer.details = Some(serde_json::json!({ "code": provenance::INDEX_FULL_CODE }));
+            envelope(StatusCode::SERVICE_UNAVAILABLE, &answer)
+        }
         Err(RegistrationError::Runtime(error)) => internal("pij register", error),
     }
 }
@@ -1322,6 +1466,7 @@ pub(crate) struct ExistingSeatPolicy {
 }
 
 async fn spawn_seat(State(state): State<AppState>, Json(request): Json<SpawnRequest>) -> Response {
+    provenance::count(&state.services, provenance::OperationClass::RoleAndHolder);
     if state.services.retired_harnesses.contains(&request.harness) && !request.allow_retired {
         let alternative = if request.harness == Harness::Omp {
             "use another harness"
@@ -1398,13 +1543,18 @@ async fn launch_seat_locked(
                 return role::RoleError::Invalid(reason).into_response(command_name);
             }
             let caller = request.caller.take().unwrap_or_default();
-            let actor =
-                match identity::resolve_seat(state, command_name, caller.session_id, caller.pane)
-                    .await
-                {
-                    identity::Resolved::Seat(seat, _) => seat.id,
-                    identity::Resolved::Refusal(response) => return response,
-                };
+            let actor = match identity::resolve_seat(
+                state,
+                command_name,
+                Some(provenance::OperationClass::RoleAndHolder),
+                caller.session_id,
+                caller.pane,
+            )
+            .await
+            {
+                identity::Resolved::Seat(seat, _) => seat.id,
+                identity::Resolved::Refusal(response) => return response,
+            };
             if let Some(parent) = request.parent.as_ref().filter(|parent| **parent != actor) {
                 return role::RoleError::Placement {
                     code: "E-RS-OWNERSHIP",
@@ -2005,6 +2155,16 @@ async fn send(
     Extension(caller): Extension<auth::AuthenticatedMachine>,
     Json(mut request): Json<SendBodyRequest>,
 ) -> Response {
+    // `from` is asserted here (guard A): count the operation by its argv, a
+    // `--command` being a control (plan 223 AC7).
+    provenance::count(
+        &state.services,
+        if request.command.is_some() {
+            provenance::OperationClass::Controls
+        } else {
+            provenance::OperationClass::SendAs
+        },
+    );
     if request.message.from.0 == pij_core::BG_ACTOR {
         return refused(
             "pij send",
@@ -2325,7 +2485,15 @@ pub(crate) async fn reply_sender(
             "no caller identity context (no TMUX_PANE or PIJ_SESSION_ID)",
         ));
     }
-    match identity::resolve_seat(state, "pij send", session.clone(), pane.clone()).await {
+    match identity::resolve_seat(
+        state,
+        "pij send",
+        Some(provenance::OperationClass::SendAs),
+        session.clone(),
+        pane.clone(),
+    )
+    .await
+    {
         identity::Resolved::Seat(seat, by) if seat.id != *from => {
             Err(sender(&seat.id, by.as_str()))
         }
@@ -2541,14 +2709,21 @@ pub(crate) async fn send_control(
             "E-RS-CONTROL-IDENTITY: an asserted seat or process alone cannot authorize a control; supply the caller pane",
         );
     };
-    let actor =
-        match identity::resolve_seat(state, name, caller.session_id, Some(pane.clone())).await {
-            identity::Resolved::Seat(seat, identity::ResolvedBy::Pane) => seat,
-            identity::Resolved::Seat(_, _) => {
-                return refused(name, "E-RS-CONTROL-IDENTITY: caller was not pane-derived");
-            }
-            identity::Resolved::Refusal(response) => return response,
-        };
+    let actor = match identity::resolve_seat(
+        state,
+        name,
+        Some(provenance::OperationClass::Controls),
+        caller.session_id,
+        Some(pane.clone()),
+    )
+    .await
+    {
+        identity::Resolved::Seat(seat, identity::ResolvedBy::Pane) => seat,
+        identity::Resolved::Seat(_, _) => {
+            return refused(name, "E-RS-CONTROL-IDENTITY: caller was not pane-derived");
+        }
+        identity::Resolved::Refusal(response) => return response,
+    };
     if request
         .asserted_from
         .as_ref()
@@ -2689,6 +2864,8 @@ pub use crate::delivery::TURN_WAIT_HOLD;
 /// Read one inbox message. The default path claims it for explicit client ack;
 /// `peek=true` is observation-only and never changes queue state.
 async fn inbox(State(state): State<AppState>, Query(query): Query<InboxQuery>) -> Response {
+    // Native tuple (guard N); implicit HEAD reaches here too and counts with GET.
+    provenance::count(&state.services, provenance::OperationClass::InboxClaim);
     if query.peek {
         let result = state
             .services
@@ -3114,6 +3291,7 @@ async fn operator_release_inbox(
     let actor = match identity::resolve_seat(
         &state,
         COMMAND,
+        Some(provenance::OperationClass::Controls),
         request.caller.session_id,
         request.caller.pane,
     )
@@ -3187,6 +3365,7 @@ async fn heartbeat_inbox(
     State(state): State<AppState>,
     Json(request): Json<InboxHeartbeatRequest>,
 ) -> Response {
+    provenance::count(&state.services, provenance::OperationClass::InboxClaim);
     let identity = crate::delivery::NativeInboxIdentity {
         native_session: request.native_session,
         pid: request.pid,
@@ -3253,6 +3432,7 @@ async fn ack_inbox(
     Extension(authenticated): Extension<auth::AuthenticatedMachine>,
     Json(request): Json<InboxAckRequest>,
 ) -> Response {
+    provenance::count(&state.services, provenance::OperationClass::InboxClaim);
     if let Some(outcome) = request.delivery_outcome.as_deref() {
         if outcome != "undelivered:harness-swallowed" || request.control_outcome.is_some() {
             return refused(
@@ -4337,7 +4517,15 @@ async fn report(State(state): State<AppState>, Json(request): Json<ReportRequest
     // hold would otherwise land in the rs spine under a name rs has never heard
     // of, invisible to the store the seat really lives in, with every surface
     // reporting success. That is the split-brain this plan exists to prevent.
-    let seat = match identity::resolve_seat(&state, command, asserted, pane).await {
+    let seat = match identity::resolve_seat(
+        &state,
+        command,
+        Some(provenance::OperationClass::Activity),
+        asserted,
+        pane,
+    )
+    .await
+    {
         identity::Resolved::Seat(descriptor, _) => descriptor.id,
         identity::Resolved::Refusal(response) => return response,
     };

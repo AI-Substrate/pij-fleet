@@ -47,7 +47,15 @@ pub struct EventBus {
     // A held row must publish its admission facts before a worker can ack it.
     // Never held across transport IO; only queue and receipt publication.
     pub(crate) socket_delivery_order: Mutex<()>,
+    /// In-memory views kept exact from committed facts (plan 223: the
+    /// capability digests and the boundary index), called in sequence order
+    /// under the publication guard, before live subscribers see the fact.
+    observers: std::sync::RwLock<Vec<Observer>>,
 }
+
+/// A synchronous follower of committed facts. It must be cheap and must not
+/// publish: it runs under the publication guard.
+pub type Observer = Arc<dyn Fn(&Event) + Send + Sync>;
 
 impl EventBus {
     /// Build a bus with a bounded per-subscriber live buffer.
@@ -67,7 +75,16 @@ impl EventBus {
             live,
             publish_lock: Arc::new(Mutex::new(())),
             socket_delivery_order: Mutex::new(()),
+            observers: std::sync::RwLock::default(),
         })
+    }
+
+    /// Follow every committed fact from now on (see [`Observer`]).
+    pub fn observe(&self, observer: Observer) {
+        self.observers
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(observer);
     }
 
     /// Persist `event`, then make the persisted fact visible to live subscribers.
@@ -136,6 +153,11 @@ impl EventBus {
     {
         let guard = self.publish_lock.clone().lock_owned().await;
         let live = self.live.clone();
+        let observers = self
+            .observers
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         tokio::spawn(async move {
             let _guard = guard;
             let (events, result) = commit.await?;
@@ -144,6 +166,11 @@ impl EventBus {
                     adapter: "daemon/events".into(),
                     message: "publication callback committed without its event sequence".into(),
                 });
+            }
+            for event in events.as_ref() {
+                for observer in &observers {
+                    observer(event);
+                }
             }
             for event in events {
                 let _ = live.send(event);

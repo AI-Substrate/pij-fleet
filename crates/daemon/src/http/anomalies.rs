@@ -405,6 +405,7 @@ pub(crate) async fn list_post(
     let actor = match resolve_seat(
         &state,
         "pij anomalies",
+        None,
         request.caller.session_id,
         request.caller.pane,
     )

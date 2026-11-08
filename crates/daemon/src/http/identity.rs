@@ -461,11 +461,18 @@ async fn reclaim_target(
     target: &str,
     harness: &str,
 ) -> Result<(SeatId, SeatDescriptor), Response> {
-    let actor =
-        match resolve_seat(state, ADOPT, caller.session_id.clone(), caller.pane.clone()).await {
-            Resolved::Seat(actor, _) => actor.id,
-            Resolved::Refusal(response) => return Err(response),
-        };
+    let actor = match resolve_seat(
+        state,
+        ADOPT,
+        Some(super::provenance::OperationClass::Registration),
+        caller.session_id.clone(),
+        caller.pane.clone(),
+    )
+    .await
+    {
+        Resolved::Seat(actor, _) => actor.id,
+        Resolved::Refusal(response) => return Err(response),
+    };
     let seat = match state.services.registry.get(&SeatId::from(target)).await {
         Ok(Some(seat)) => seat,
         Ok(None) => {
@@ -531,7 +538,7 @@ async fn reclaim_target(
 /// client end of this very connection, and one `ps` snapshot supplies the parent
 /// chain. Any failure answers `false`, which refuses; it never admits.
 fn caller_descends_from(peer: SocketAddr, host: u32) -> bool {
-    let Some(mut pid) = peer_pid(peer) else {
+    let Some(pid) = peer_pid(peer) else {
         return false;
     };
     pij_core::spawns::record("ps.identity-caller-ancestry");
@@ -549,12 +556,38 @@ fn caller_descends_from(peer: SocketAddr, host: u32) -> bool {
             Some((fields.next()?.parse().ok()?, fields.next()?.parse().ok()?))
         })
         .collect();
+    descends_from(pid, host, |pid| parents.get(&pid).copied())
+}
+
+/// Plan 223 (deviation 8): the same question over the Unix socket. The
+/// requesting process is the peer read at accept, still the process that
+/// connected (its start re-read in-process); its parents are read in-process.
+/// No `lsof`, no `ps`. Any failure answers `false`, which refuses.
+fn socket_caller_descends_from(
+    reader: &dyn super::provenance::ProcReader,
+    peer: &super::provenance::SocketPeer,
+    host: u32,
+) -> bool {
+    let super::provenance::SocketPeer::Proven(peer) = peer else {
+        return false;
+    };
+    if reader.start(peer.pid) != Some(peer.proc_start) {
+        return false;
+    }
+    descends_from(peer.pid, host, |pid| {
+        reader.parent_and_name(pid).map(|(parent, _)| parent)
+    })
+}
+
+/// The ancestry rule both transports apply: `pid` is `host`, or one of its
+/// parents within 64 steps is, never through pid 1 or a self-parent.
+fn descends_from(mut pid: u32, host: u32, parent_of: impl Fn(u32) -> Option<u32>) -> bool {
     for _ in 0..64 {
         if pid == host {
             return true;
         }
-        match parents.get(&pid) {
-            Some(&parent) if parent > 1 && parent != pid => pid = parent,
+        match parent_of(pid) {
+            Some(parent) if parent > 1 && parent != pid => pid = parent,
             _ => return false,
         }
     }
@@ -594,8 +627,14 @@ const PHONEHOME: &str = "pij phonehome";
 pub(crate) async fn adopt(
     State(state): State<AppState>,
     connection: Option<Extension<ConnectInfo<SocketAddr>>>,
+    socket: Option<Extension<super::provenance::SocketPeer>>,
     Json(request): Json<IdentityRequest>,
 ) -> Response {
+    // Adoption is counted as registration (plan 223 AC7).
+    super::provenance::count(
+        &state.services,
+        super::provenance::OperationClass::Registration,
+    );
     if let Some(asserted) = request.id.as_deref() {
         // ac-1147: ONE MINTER, and it is here. `register` keeps the
         // caller-supplied case for callers that legitimately hold a name; adopt
@@ -784,13 +823,20 @@ pub(crate) async fn adopt(
             None => None,
             Some(session) => {
                 let host = proc.expect("a paned adopt has a process identity").pid;
-                let descends = match connection {
-                    Some(Extension(ConnectInfo(peer))) => {
+                let descends = match (socket, connection) {
+                    // Over the socket the requesting process is the peer read
+                    // at accept; over TCP, lsof names it, as before.
+                    (Some(Extension(peer)), _) => socket_caller_descends_from(
+                        state.services.proc_reader.as_ref(),
+                        &peer,
+                        host,
+                    ),
+                    (None, Some(Extension(ConnectInfo(peer)))) => {
                         tokio::task::spawn_blocking(move || caller_descends_from(peer, host))
                             .await
                             .unwrap_or(false)
                     }
-                    None => false,
+                    (None, None) => false,
                 };
                 if !descends {
                     return refused(
@@ -1002,6 +1048,7 @@ pub(crate) async fn adopt(
                     // Adopt presents no nonce or capability (plan 223).
                     context_token: None,
                     capability: None,
+                    capability_withheld: None,
                 },
             );
             answer.meta = Some(format!(
@@ -1044,7 +1091,9 @@ fn adopt_registration_error(error: RegistrationError) -> Response {
             envelope(StatusCode::CONFLICT, &answer)
         }
         // Adopt never presents a capability proof, so never meets this.
-        error @ RegistrationError::Capability(_) => refused(ADOPT, error),
+        error @ (RegistrationError::Capability(_)
+        | RegistrationError::Provenance(_)
+        | RegistrationError::IndexFull) => refused(ADOPT, error),
         RegistrationError::Runtime(error) => internal(ADOPT, error),
     }
 }
@@ -1079,7 +1128,7 @@ async fn whoami_resolved(
     pane: Option<String>,
     caller: Option<&CallerContext>,
 ) -> Response {
-    let resolved = resolve_seat(&state, WHOAMI, asserted, pane).await;
+    let resolved = resolve_seat(&state, WHOAMI, None, asserted, pane).await;
     let seat = match &resolved {
         Resolved::Seat(descriptor, _) => Some(descriptor),
         Resolved::Refusal(_) => None,
@@ -1152,10 +1201,11 @@ pub(crate) async fn phonehome(
     let caller = request.caller.unwrap_or_default();
     let asserted = request.seat.or(query.seat).or(caller.session_id);
     let pane = request.pane.or(query.pane).or(caller.pane);
-    let (descriptor, resolved_by) = match resolve_seat(&state, PHONEHOME, asserted, pane).await {
-        Resolved::Seat(descriptor, resolved_by) => (descriptor, resolved_by),
-        Resolved::Refusal(response) => return response,
-    };
+    let (descriptor, resolved_by) =
+        match resolve_seat(&state, PHONEHOME, None, asserted, pane).await {
+            Resolved::Seat(descriptor, resolved_by) => (descriptor, resolved_by),
+            Resolved::Refusal(response) => return response,
+        };
     // Re-observe rather than re-derive. `adopt` bound this seat synchronously, so
     // there is nothing to poll for: the only open question is whether the process
     // it bound is still the process that is there.
@@ -1222,12 +1272,21 @@ pub(crate) async fn phonehome(
 /// they disagree, the assertion loses — that disagreement is what impersonation
 /// looks like, and preferring the claim is how one seat comes to answer as
 /// another.
+///
+/// `class` is the operation the caller is resolved for (plan 223 AC7): its
+/// proof (token, peer or neither) is counted once per request, and nothing is
+/// refused for it in phase A. `None` for a machine-public read, which is not
+/// counted.
 pub(crate) async fn resolve_seat(
     state: &AppState,
     command: &str,
+    class: Option<super::provenance::OperationClass>,
     asserted: Option<String>,
     pane: Option<String>,
 ) -> Resolved {
+    if let Some(class) = class {
+        super::provenance::count(&state.services, class);
+    }
     if asserted.as_deref() == Some(pij_core::BG_ACTOR) {
         return Resolved::Refusal(refused(
             command,

@@ -206,6 +206,7 @@ pub(super) async fn revive_seat(
     State(state): State<AppState>,
     body: std::result::Result<Json<ReviveRequest>, JsonRejection>,
 ) -> Response {
+    super::provenance::count(&state.services, super::provenance::OperationClass::Controls);
     let request = match body {
         Ok(Json(request)) => request,
         Err(error) => return argument_failure(error.body_text()),
@@ -317,6 +318,7 @@ pub(super) async fn revive_seat(
             let actor = match resolve_seat(
                 &state,
                 COMMAND,
+                Some(super::provenance::OperationClass::Controls),
                 request.caller.session_id,
                 request.caller.pane,
             )

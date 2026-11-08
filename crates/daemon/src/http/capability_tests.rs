@@ -10,6 +10,7 @@ use pij_core::ports::{Registry, Spine};
 use pij_testkit::fakes::{FakeLiveness, FakeQueue, FakeRegistry, FakeSpine, FakeTmux};
 use serde_json::{Value, json};
 
+use super::provenance::test_support::{FakeReader, PEER_HEADER, peer_header, socket_peers};
 use super::tests::{config, spawn, test_services};
 use super::*;
 use crate::capability::{CAPABILITY_HEADER, digest_of, test_support::nonce_for};
@@ -31,13 +32,27 @@ struct Rig {
     registry: Arc<dyn Registry>,
     spine: Arc<FakeSpine>,
     tmux: Arc<FakeTmux>,
+    reader: Arc<FakeReader>,
+    counts: Arc<provenance::CapabilityCounts>,
     addr: std::net::SocketAddr,
     server: tokio::task::JoinHandle<()>,
     client: reqwest::Client,
 }
 
+/// The harness processes' table: both are children of launchd.
+fn reader() -> FakeReader {
+    FakeReader::default()
+        .with(1, 0, "launchd", 1)
+        .with(PROC.pid, 1, "omp", PROC.proc_start)
+        .with(NEXT.pid, 1, "omp", NEXT.proc_start)
+}
+
 impl Rig {
     async fn new() -> Self {
+        Self::with_boundaries(provenance::Boundaries::default()).await
+    }
+
+    async fn with_boundaries(boundaries: provenance::Boundaries) -> Self {
         let spine = Arc::new(FakeSpine::new());
         let tmux = Arc::new(FakeTmux::new());
         let mut services = test_services(
@@ -48,12 +63,22 @@ impl Rig {
         .await;
         services.liveness = Arc::new(FakeLiveness::new().with_proc(PROC).with_proc(NEXT));
         services.tmux = tmux.clone();
+        let reader = Arc::new(reader());
+        services.proc_reader = Arc::clone(&reader) as Arc<dyn provenance::ProcReader>;
+        services.boundaries = Arc::new(boundaries);
+        let counts = Arc::clone(&services.capability_counts);
         let registry = Arc::clone(&services.registry);
-        let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+        let (addr, server) = spawn(socket_peers(router_with_config(
+            services,
+            config("key", &[]),
+        )))
+        .await;
         Self {
             registry,
             spine,
             tmux,
+            reader,
+            counts,
             addr,
             server,
             client: reqwest::Client::new(),
@@ -73,6 +98,17 @@ impl Rig {
     }
 
     async fn post(&self, path: &str, body: Value, capability: Option<&str>) -> (u16, Value) {
+        self.post_from(path, body, capability, None).await
+    }
+
+    /// `peer`: as if over the socket from that process.
+    async fn post_from(
+        &self,
+        path: &str,
+        body: Value,
+        capability: Option<&str>,
+        peer: Option<ProcIdentity>,
+    ) -> (u16, Value) {
         let mut request = self
             .client
             .post(format!("http://{}{path}", self.addr))
@@ -80,13 +116,18 @@ impl Rig {
         if let Some(capability) = capability {
             request = request.header(CAPABILITY_HEADER, capability);
         }
+        if let Some(peer) = peer {
+            request = request.header(PEER_HEADER, peer_header(peer));
+        }
         let response = request.json(&body).send().await.expect("request");
         let status = response.status().as_u16();
         (status, response.json().await.expect("envelope"))
     }
 
+    /// A nonce travels over the socket, from the harness itself.
     async fn register(&self, body: Value) -> (u16, Value) {
-        self.post("/v1/register", body, None).await
+        let peer = body.get("spawn_nonce").map(|_| PROC);
+        self.post_from("/v1/register", body, None, peer).await
     }
 
     async fn register_with_nonce(&self, seat: &str, nonce: &str) -> (u16, Value) {
@@ -549,4 +590,266 @@ async fn dropping_an_expired_nonce_row_removes_its_leftover_file() {
     assert!(live_file.exists(), "a live spawn's handoff stays");
     std::fs::remove_file(live_file).unwrap();
     rig.server.abort();
+}
+
+/// Plan 223 AC3/AC5: a nonce is peer-checked at use. Over TCP it is refused
+/// `E-RS-SEAT-PROVENANCE`; over the socket from a process that does not
+/// descend from the claimed harness, too. Neither consumes it.
+#[tokio::test]
+async fn a_nonce_over_tcp_or_from_another_process_is_refused_and_not_consumed() {
+    let rig = Rig::new().await;
+    let nonce = rig.nonce(SEAT, u64::MAX).await;
+    let mut claim = Rig::claim(SEAT);
+    claim["spawn_nonce"] = json!(nonce);
+    for peer in [None, Some(NEXT)] {
+        let (status, refused) = rig
+            .post_from("/v1/register", claim.clone(), None, peer)
+            .await;
+        assert_eq!(status, 400, "{refused}");
+        assert_eq!(refusal_code(&refused), "E-RS-SEAT-PROVENANCE", "{refused}");
+        assert_eq!(rig.registry.get(&SEAT.into()).await.unwrap(), None);
+    }
+    let (status, body) = rig.register(claim).await;
+    assert_eq!(status, 200, "the nonce was not consumed: {body}");
+    assert!(token_of(&body).is_some());
+    assert_eq!(rig.counts.snapshot().nonce_first_registrations, 1);
+    let row = rig
+        .registry
+        .capability(&SEAT.into())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!((row.owner, row.boundary), (Some(PROC), Some(PROC)));
+    rig.server.abort();
+}
+
+/// Plan 223 AC3/AC4, path b: a socket registration with no evidence is
+/// issued by its peer when the peer's nearest boundary is the claimed
+/// harness. The owner is the peer; ownership then moves only by the token
+/// or after the owner is observed dead.
+#[tokio::test]
+async fn a_socket_peer_bootstraps_a_capability_and_owns_it() {
+    let rig = Rig::new().await;
+    let owner = ProcIdentity {
+        pid: 9_000,
+        proc_start: 80,
+    };
+    let other = ProcIdentity {
+        pid: 9_001,
+        proc_start: 81,
+    };
+    rig.reader
+        .set(owner.pid, PROC.pid, "node", owner.proc_start);
+    rig.reader
+        .set(other.pid, PROC.pid, "node", other.proc_start);
+    let (status, body) = rig
+        .post_from("/v1/register", Rig::claim(SEAT), None, Some(owner))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let token = token_of(&body).expect("issued by the peer");
+    let row = rig
+        .registry
+        .capability(&SEAT.into())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (row.owner, row.boundary, row.via),
+        (
+            Some(owner),
+            Some(PROC),
+            pij_core::capability::CapabilityVia::Peer
+        )
+    );
+
+    let (status, body) = rig
+        .post_from("/v1/register", Rig::claim(SEAT), None, Some(other))
+        .await;
+    assert_eq!(status, 200, "registers, as before: {body}");
+    assert_eq!(token_of(&body), None);
+    assert!(
+        body["data"]["capability_withheld"]
+            .as_str()
+            .unwrap()
+            .contains("a live owner holds"),
+        "{body}"
+    );
+    assert_eq!(rig.report(&token).await.0, 200, "the owner's token stands");
+
+    rig.reader.kill(owner.pid);
+    let (status, body) = rig
+        .post_from("/v1/register", Rig::claim(SEAT), None, Some(other))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert!(token_of(&body).is_some(), "the owner was observed dead");
+    assert_eq!(rig.report(&token).await.0, 400, "the old owner's is gone");
+
+    // A peer outside the harness gets nothing, and says why.
+    let (status, body) = rig
+        .post_from("/v1/register", Rig::claim(SEAT), None, Some(NEXT))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        body["data"]["capability_withheld"]
+            .as_str()
+            .unwrap()
+            .starts_with("E-RS-SEAT-PROVENANCE"),
+        "{body}"
+    );
+    rig.server.abort();
+}
+
+/// Plan 223 AC3: at the cap, a NEW boundary is refused by name and nothing
+/// is evicted; a boundary already held still registers.
+#[tokio::test]
+async fn the_index_cap_refuses_a_new_boundary_and_evicts_nothing() {
+    let rig = Rig::with_boundaries(provenance::Boundaries::with_cap(1)).await;
+    assert_eq!(rig.register(Rig::claim(SEAT)).await.0, 200);
+    let mut second = Rig::claim("pij-second");
+    second["pid"] = json!(NEXT.pid);
+    second["proc_start"] = json!(NEXT.proc_start);
+    let (status, refused) = rig.register(second).await;
+    assert_eq!(status, 503, "{refused}");
+    assert_eq!(refusal_code(&refused), "E-RS-SEAT-INDEX-FULL");
+    assert_eq!(rig.registry.get(&"pij-second".into()).await.unwrap(), None);
+    assert_eq!(rig.register(Rig::claim(SEAT)).await.0, 200, "still held");
+    rig.server.abort();
+}
+
+/// Plan 223 AC7: every seat-authority operation counts once, by class and
+/// proof, following the argv leaf; machine-public reads, and a handler that
+/// resolves twice, add nothing more. HEAD counts with its GET. Nothing is
+/// refused for the proof.
+#[tokio::test]
+async fn counts_follow_the_operation_and_its_proof() {
+    let rig = Rig::new().await;
+    let nonce = rig.nonce(SEAT, u64::MAX).await;
+    let token = token_of(&rig.register_with_nonce(SEAT, &nonce).await.1).unwrap();
+    let tally = |class: &str| rig.counts.snapshot().classes[class];
+    let activity = json!({"seat": SEAT, "native_session": SESSION, "state": "idle"});
+
+    let before = tally("activity");
+    assert_eq!(
+        rig.post_from("/v1/activity", activity.clone(), Some(&token), None)
+            .await
+            .0,
+        200
+    );
+    assert_eq!(
+        rig.post_from("/v1/activity", activity.clone(), None, Some(PROC))
+            .await
+            .0,
+        200
+    );
+    assert_eq!(
+        rig.post_from("/v1/activity", activity.clone(), None, None)
+            .await
+            .0,
+        200,
+        "never refused for its proof"
+    );
+    let after = tally("activity");
+    assert_eq!(
+        (
+            after.token - before.token,
+            after.peer - before.peer,
+            after.neither - before.neither
+        ),
+        (1, 1, 1)
+    );
+
+    let caller = json!({"PIJ_SESSION_ID": SEAT});
+    let before = rig.counts.snapshot();
+    let _ = rig
+        .post(
+            "/v1/claims",
+            json!({"argv": ["claims"], "caller": caller}),
+            None,
+        )
+        .await;
+    let _ = rig
+        .client
+        .get(format!("http://{}/v1/seats", rig.addr))
+        .bearer_auth("key")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rig.counts.snapshot(), before, "reads are machine-public");
+    let _ = rig
+        .post(
+            "/v1/claim",
+            json!({"argv": ["claim", "--json"], "caller": caller}),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(
+        tally("role-and-holder").token - before.classes["role-and-holder"].token,
+        1,
+        "the claim leaf"
+    );
+    let head = rig
+        .client
+        .head(format!("http://{}/v1/inbox?seat={SEAT}", rig.addr))
+        .bearer_auth("key")
+        .send()
+        .await
+        .unwrap();
+    assert!(head.status().as_u16() < 500, "{}", head.status());
+    assert_eq!(
+        tally("inbox-claim").neither - before.classes["inbox-claim"].neither,
+        1,
+        "HEAD counts with its GET"
+    );
+
+    let health: Value = rig
+        .client
+        .get(format!("http://{}/health", rig.addr))
+        .bearer_auth("key")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let classes = health["data"]["capabilities"]["classes"]
+        .as_object()
+        .unwrap();
+    assert_eq!(classes.len(), 8, "{health}");
+    assert_eq!(
+        health["data"]["capabilities"]["nonce_first_registrations"],
+        1
+    );
+    assert!(!health.to_string().contains(&token));
+    rig.server.abort();
+}
+
+/// Plan 223 AC5: the non-loopback listener never accepts a capability.
+#[tokio::test]
+async fn the_remote_listener_refuses_a_capability_header() {
+    let services = test_services(
+        Arc::new(FakeRegistry::new()),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    let remote: std::net::SocketAddr = "100.64.0.7:41000".parse().unwrap();
+    let router = router_with_config(services, config("key", &[]))
+        .layer(axum::Extension(axum::extract::ConnectInfo(remote)));
+    let (addr, server) = spawn(router).await;
+    let client = reqwest::Client::new();
+    let health = |capability: Option<&str>| {
+        let mut request = client
+            .get(format!("http://{addr}/health"))
+            .bearer_auth("key");
+        if let Some(capability) = capability {
+            request = request.header(CAPABILITY_HEADER, capability);
+        }
+        request.send()
+    };
+    let refused = health(Some(&"0".repeat(64))).await.unwrap();
+    assert_eq!(refused.status().as_u16(), 403);
+    let body: Value = refused.json().await.unwrap();
+    assert_eq!(refusal_code(&body), "E-RS-SEAT-PROVENANCE", "{body}");
+    assert_eq!(health(None).await.unwrap().status().as_u16(), 200);
+    server.abort();
 }

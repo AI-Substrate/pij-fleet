@@ -590,6 +590,7 @@ pub(crate) async fn list_post(
     match resolve_seat(
         &state,
         "pij decisions",
+        None,
         request.caller.session_id,
         request.caller.pane,
     )
@@ -635,6 +636,7 @@ pub(crate) async fn answer_post(
     let actor = match resolve_seat(
         &state,
         command,
+        Some(super::provenance::OperationClass::RoleAndHolder),
         request.caller.session_id.take(),
         request.caller.pane.take(),
     )

@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use pij_core::capability::{CapabilityIssue, IssueOutcome, IssueProof, IssueRefusal, check_held};
 
 use crate::capability::CapabilityClaim;
+use crate::http::provenance::{Boundaries, KernelReader, ProcReader, ambiguous, walk};
 use pij_core::error::PijError;
 use pij_core::model::{Event, Harness, ProcIdentity, SeatDescriptor, SeatId};
 use pij_core::names::memorable_pij_id_candidates;
@@ -37,6 +38,11 @@ pub(crate) enum RegistrationError {
     NativeHolderCurrent(SeatId),
     /// The presented capability proof was refused (plan 223); nothing was written.
     Capability(IssueRefusal),
+    /// The socket peer does not descend from the claimed harness, or its
+    /// evidence was unreadable (`E-RS-SEAT-PROVENANCE`); nothing was written.
+    Provenance(String),
+    /// A new harness boundary at the index cap (`E-RS-SEAT-INDEX-FULL`).
+    IndexFull,
     Runtime(PijError),
 }
 
@@ -57,6 +63,18 @@ impl std::fmt::Display for RegistrationError {
             Self::Capability(refusal) => {
                 write!(f, "{}: {}", refusal.code(), refusal.reason())
             }
+            Self::Provenance(why) => write!(
+                f,
+                "{}: {why}; nothing was written",
+                crate::http::provenance::PROVENANCE_CODE
+            ),
+            Self::IndexFull => write!(
+                f,
+                "{}: this daemon already tracks {} harness processes, so a new one cannot \
+                 register; nothing was evicted and nothing was written",
+                crate::http::provenance::INDEX_FULL_CODE,
+                crate::http::provenance::INDEX_CAP
+            ),
             Self::Runtime(error) => error.fmt(f),
         }
     }
@@ -78,6 +96,11 @@ pub(crate) struct RegistrationService {
     /// The daemon's capability digests, resynced from the store under the
     /// registration lock after every commit (plan 223).
     capabilities: Arc<crate::capability::Capabilities>,
+    /// Registered harness boundaries (plan 223 AC3): the cap, and the walk's
+    /// stops.
+    boundaries: Arc<Boundaries>,
+    /// The in-process reader the nonce and peer checks walk with.
+    reader: Arc<dyn ProcReader>,
 }
 
 struct NativeHandoff {
@@ -115,7 +138,20 @@ impl RegistrationService {
             native_receivers: None,
             attempts: Arc::default(),
             capabilities: Arc::default(),
+            boundaries: Arc::default(),
+            reader: Arc::new(KernelReader),
         }
+    }
+
+    /// Share the daemon's boundary index and process reader (plan 223 AC3).
+    pub(crate) fn with_provenance(
+        mut self,
+        boundaries: Arc<Boundaries>,
+        reader: Arc<dyn ProcReader>,
+    ) -> Self {
+        self.boundaries = boundaries;
+        self.reader = reader;
+        self
     }
 
     /// Share the daemon's capability digests (plan 223).
@@ -226,9 +262,10 @@ impl RegistrationService {
             ),
             Err(error) => (
                 match error {
-                    RegistrationError::Refused(_) | RegistrationError::Capability(_) => {
-                        Outcome::Refused
-                    }
+                    RegistrationError::Refused(_)
+                    | RegistrationError::Capability(_)
+                    | RegistrationError::Provenance(_)
+                    | RegistrationError::IndexFull => Outcome::Refused,
                     RegistrationError::Retired { .. } => Outcome::Retired,
                     RegistrationError::Retryable(_) => Outcome::Retryable,
                     RegistrationError::NativeSessionHold(_) => Outcome::SessionHold,
@@ -1159,8 +1196,35 @@ impl RegistrationService {
         // Plan 223: a refused proof refuses before the first write below (a
         // retirement, a supersede, a config event); the issuing commit checks
         // again, so a race is still refused with nothing of the seat written.
+        // Plan 223 AC3: a new harness boundary at the cap is refused by name;
+        // nothing is evicted.
+        if let Some(boundary) = descriptor.proc
+            && !self.boundaries.lock().admits(boundary)
+        {
+            return Err(RegistrationError::IndexFull);
+        }
+        // Path b's checks decide here whether it issues at all.
+        let bootstrap = match issue {
+            Some(CapabilityClaim::Bootstrap { issue, withheld }) => {
+                match self.bootstrap_refusal(&descriptor, issue).await {
+                    Ok(None) => Some(issue),
+                    Ok(Some(why)) => {
+                        let _ = withheld.set(why);
+                        None
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            _ => None,
+        };
         match issue {
             Some(CapabilityClaim::Issue(issue)) => {
+                // A nonce must come from the spawned harness: the socket
+                // peer's nearest boundary is the claimed process (AC3, AC5).
+                if let IssueProof::Nonce { .. } = &issue.proof {
+                    self.peer_reaches(&descriptor, issue)
+                        .map_err(RegistrationError::Provenance)?;
+                }
                 if let Err(refusal) = self
                     .registry
                     .check_issue(&descriptor.id, descriptor.proc, &issue.proof, issue.now_ms)
@@ -1182,10 +1246,11 @@ impl RegistrationService {
                 check_held(current.as_ref(), &descriptor.id, descriptor.proc, digest)
                     .map_err(RegistrationError::Capability)?;
             }
-            None => {}
+            Some(CapabilityClaim::Bootstrap { .. }) | None => {}
         }
 
         if !matches!(issue, Some(CapabilityClaim::Issue(_)))
+            && bootstrap.is_none()
             && paneless.is_some()
             && existing == Some(&descriptor)
         {
@@ -1294,8 +1359,12 @@ impl RegistrationService {
                 .await
                 .map_err(RegistrationError::Runtime)?;
         }
-        let committed = match issue {
-            Some(CapabilityClaim::Issue(issue)) => match self
+        let issuing = match issue {
+            Some(CapabilityClaim::Issue(issue)) => Some(issue),
+            _ => bootstrap,
+        };
+        let committed = match issuing {
+            Some(issue) => match self
                 .registry
                 .put_issuing(descriptor.clone(), !parent_claimed, issue.clone())
                 .await
@@ -1415,6 +1484,79 @@ impl RegistrationService {
 /// 211, AC3: a retired context that keeps retrying pays no `ps`) and again
 /// under the registration lock, where it decides.
 impl RegistrationService {
+    /// Does the issuance's owner (the socket peer) walk to the registration's
+    /// own claimed process before any other registered harness?
+    fn peer_reaches(
+        &self,
+        descriptor: &SeatDescriptor,
+        issue: &CapabilityIssue,
+    ) -> std::result::Result<(), String> {
+        let peer = issue.owner.ok_or_else(|| {
+            "this registration did not arrive over the daemon's socket".to_string()
+        })?;
+        let target = descriptor
+            .proc
+            .ok_or_else(|| "the registration binds no process".to_string())?;
+        let reached = walk(self.reader.as_ref(), peer, Some(target), |boundary| {
+            self.boundaries.lock().contains(boundary)
+        })?;
+        if reached != target {
+            return Err(format!(
+                "the connecting process's nearest registered harness is pid {}, not the \
+                 claimed process {}",
+                reached.pid, target.pid
+            ));
+        }
+        Ok(())
+    }
+
+    /// Why path b may not issue, if it may not: the peer must reach the
+    /// claimed harness, that harness must host no other live session, and no
+    /// live owner may hold the seat's capability (ownership moves only by the
+    /// token or after the owner is observed dead).
+    async fn bootstrap_refusal(
+        &self,
+        descriptor: &SeatDescriptor,
+        issue: &CapabilityIssue,
+    ) -> std::result::Result<Option<String>, RegistrationError> {
+        if let Err(why) = self.peer_reaches(descriptor, issue) {
+            return Ok(Some(format!(
+                "{}: {why}",
+                crate::http::provenance::PROVENANCE_CODE
+            )));
+        }
+        let Some(boundary) = descriptor.proc else {
+            return Ok(Some("the registration binds no process".to_string()));
+        };
+        if self
+            .boundaries
+            .lock()
+            .hosted(boundary)
+            .iter()
+            .any(|(seat, _)| *seat != descriptor.id)
+        {
+            return Ok(Some(ambiguous(descriptor.harness)));
+        }
+        let current = self
+            .registry
+            .capability(&descriptor.id)
+            .await
+            .map_err(RegistrationError::Runtime)?;
+        if let Some(row) = current {
+            let owner_alive = row
+                .owner
+                .is_none_or(|owner| self.reader.start(owner.pid) == Some(owner.proc_start));
+            if owner_alive {
+                return Ok(Some(format!(
+                    "{}: a live owner holds this seat's capability; present it (with rotate) \
+                     to move it",
+                    pij_core::capability::CAPABILITY_CODE
+                )));
+            }
+        }
+        Ok(None)
+    }
+
     /// Make the daemon's digest map follow the store for `seat`. A failed read
     /// forgets the seat: the map may be stricter than the store, never looser.
     async fn sync_capability(&self, seat: &SeatId) {

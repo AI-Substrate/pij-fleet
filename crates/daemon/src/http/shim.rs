@@ -59,6 +59,7 @@ use pij_core::model::{Destination, Harness, Msg, SeatDescriptor, SeatId};
 use pij_core::ports::SeatFilter;
 
 use super::identity::{self, CallerContext, Resolved};
+use super::provenance::OperationClass;
 use super::{AppState, envelope, internal, refused};
 use crate::delivery::{NativeInboxIdentity, paneless_pull};
 
@@ -592,7 +593,7 @@ async fn send_attachment(
         Ok(path) => path,
         Err(why) => return refused(SEND, why),
     };
-    let from = match subject(state, SEND, caller).await {
+    let from = match subject(state, SEND, OperationClass::SendAs, caller).await {
         Ok(seat) => seat.id,
         Err(response) => return *response,
     };
@@ -704,7 +705,14 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
         )
         .await;
     }
-    let from = match subject(&state, SEND, request.caller.as_ref()).await {
+    let from = match subject(
+        &state,
+        SEND,
+        OperationClass::SendAs,
+        request.caller.as_ref(),
+    )
+    .await
+    {
         Ok(seat) => seat.id,
         Err(response) => return *response,
     };
@@ -855,7 +863,14 @@ pub(crate) async fn shim_inbox(State(state): State<AppState>, body: axum::body::
         Ok(wait) => wait,
         Err(why) => return refused(INBOX, why),
     };
-    let reader = match subject(&state, INBOX, request.caller.as_ref()).await {
+    let reader = match subject(
+        &state,
+        INBOX,
+        OperationClass::InboxClaim,
+        request.caller.as_ref(),
+    )
+    .await
+    {
         Ok(seat) => seat,
         Err(response) => return *response,
     };
@@ -937,7 +952,14 @@ pub(crate) async fn shim_inbox_ack(
     };
     // The reader is derived BEFORE the ack, so an unresolvable caller cannot
     // retire another seat's message.
-    let reader = match subject(&state, INBOX, request.caller.as_ref()).await {
+    let reader = match subject(
+        &state,
+        INBOX,
+        OperationClass::InboxClaim,
+        request.caller.as_ref(),
+    )
+    .await
+    {
         Ok(reader) => reader,
         Err(response) => return *response,
     };
@@ -1127,11 +1149,12 @@ fn decode(body: &[u8], command: &'static str) -> Decoded {
 async fn subject(
     state: &AppState,
     command: &'static str,
+    class: OperationClass,
     caller: Option<&CallerContext>,
 ) -> std::result::Result<SeatDescriptor, Box<Response>> {
     let asserted = caller.and_then(|caller| caller.session_id.clone());
     let pane = caller.and_then(|caller| caller.pane.clone());
-    let resolved = identity::resolve_seat(state, command, asserted, pane).await;
+    let resolved = identity::resolve_seat(state, command, Some(class), asserted, pane).await;
     let seat = match &resolved {
         Resolved::Seat(descriptor, _) => Some(descriptor),
         Resolved::Refusal(_) => None,

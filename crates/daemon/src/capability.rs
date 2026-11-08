@@ -45,6 +45,17 @@ pub(crate) enum CapabilityClaim {
     /// asking to rotate: it keeps that capability, and nothing is written to
     /// the capability table.
     Hold(Digest),
+    /// Path b (AC3): no evidence presented, over the socket. Issued
+    /// ([`pij_core::capability::IssueProof::Peer`], owner = the peer) only if
+    /// the peer's nearest boundary is the claimed harness, that boundary hosts
+    /// no other live session, and no live owner holds the seat's capability;
+    /// otherwise the seat registers without one and `withheld` says why.
+    Bootstrap {
+        /// The issuance, should the checks pass.
+        issue: CapabilityIssue,
+        /// Why it was not issued.
+        withheld: std::sync::Arc<std::sync::OnceLock<String>>,
+    },
 }
 
 /// Drop a spawn's nonce handoff file that no launch wrapper consumed (a
@@ -225,6 +236,32 @@ impl DigestMap {
         Verdict::Invalid
     }
 
+    /// The seat whose live capability `digest` is (current, or the previous
+    /// one still valid during a rotation), confirmed by a constant-time
+    /// compare of the stored digest.
+    pub fn holder(&self, digest: &Digest) -> Option<&SeatId> {
+        let seat = self.seat_of(digest)?;
+        let held = self.by_seat.get(seat)?;
+        (constant_time_eq(&held.digest, digest)
+            || held
+                .prev
+                .as_ref()
+                .is_some_and(|prev| constant_time_eq(prev, digest)))
+        .then_some(seat)
+    }
+
+    /// Follow a committed seat write: a tombstone or a new process revoked the
+    /// seat's capability in the store, so it goes here too.
+    pub fn follow(&mut self, seat: &SeatDescriptor) {
+        if self
+            .by_seat
+            .get(&seat.id)
+            .is_some_and(|held| seat.tombstoned_at.is_some() || held.boundary != seat.proc)
+        {
+            self.forget(&seat.id);
+        }
+    }
+
     /// The new capability was presented: retire the previous one.
     pub fn retire_previous(&mut self, seat: &SeatId) {
         if let Some(prev) = self.by_seat.get_mut(seat).and_then(|held| held.prev.take()) {
@@ -276,6 +313,31 @@ impl Capabilities {
         match digest_of(presented) {
             Some(digest) => self.lock().verify(&seat.id, seat.proc, &digest),
             None => Verdict::Invalid,
+        }
+    }
+
+    /// The seat `presented` is the live capability of (per-request proof).
+    pub fn holder(&self, presented: &str) -> Option<SeatId> {
+        let digest = digest_of(presented)?;
+        self.lock().holder(&digest).cloned()
+    }
+
+    /// Follow one committed registry fact (the event bus's observer): a
+    /// tombstone or a seat written onto another process drops its capability,
+    /// as the store did in the same transaction.
+    pub fn follow(&self, event: &pij_core::model::Event) {
+        match event.kind.as_str() {
+            "seat.tombstone" => {
+                if let Some(seat) = &event.seat {
+                    self.lock().forget(seat);
+                }
+            }
+            "seat.put" => {
+                if let Ok(seat) = serde_json::from_str::<SeatDescriptor>(&event.payload) {
+                    self.lock().follow(&seat);
+                }
+            }
+            _ => {}
         }
     }
 

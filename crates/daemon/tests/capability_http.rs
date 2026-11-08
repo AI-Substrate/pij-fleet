@@ -1,6 +1,7 @@
 //! Plan 223 AC2, pm-001's point 1: a live seat's capability survives a daemon
 //! restart. The store keeps only digests; the daemon rebuilds its digest map
-//! from one read at start.
+//! from one read at start. AC3: the spawn nonce arrives over the daemon's
+//! Unix socket, and a socket request proves its peer.
 
 use std::path::PathBuf;
 
@@ -26,7 +27,9 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let store = FreshStore::new();
-        let state = PathBuf::from(store.path()).with_extension("cap-state");
+        // Short: macOS caps a socket path (sun_path) at 104 bytes.
+        let state = PathBuf::from(format!("/tmp/pij-cr{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&state);
         std::fs::create_dir_all(&state).unwrap();
         let config = Config {
             adapters: Adapters {
@@ -68,6 +71,26 @@ async fn post(daemon: &Daemon, path: &str, body: Value, capability: Option<&str>
     }
     let response = request.json(&body).send().await.unwrap();
     (response.status().as_u16(), response.json().await.unwrap())
+}
+
+/// One request over the daemon's Unix socket, as a client on it sends it.
+async fn socket_post(daemon: &Daemon, path: &str, body: Value) -> (u16, Value) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let socket = daemon.socket.as_ref().expect("the socket is served");
+    let mut stream = tokio::net::UnixStream::connect(socket).await.unwrap();
+    let body = body.to_string();
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nHost: pij\r\nAuthorization: Bearer {}\r\n\
+         Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        daemon.key.token,
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.unwrap();
+    let (head, body) = response.split_once("\r\n\r\n").unwrap();
+    let status = head.split_whitespace().nth(1).unwrap().parse().unwrap();
+    (status, serde_json::from_str(body).unwrap())
 }
 
 async fn report(daemon: &Daemon, token: &str, tokens: u64) -> (u16, Value) {
@@ -128,7 +151,14 @@ async fn a_live_seats_capability_still_works_after_a_daemon_restart() {
         .unwrap()
         .unwrap();
     let daemon = fixture.boot().await;
-    let (status, registered) = post(
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let socket = daemon.socket.clone().expect("the socket is served");
+        let mode =
+            |path: &std::path::Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!((mode(&socket), mode(&fixture.state)), (0o600, 0o700));
+    }
+    let (status, registered) = socket_post(
         &daemon,
         "/v1/register",
         json!({
@@ -141,7 +171,6 @@ async fn a_live_seats_capability_still_works_after_a_daemon_restart() {
             "spawn_nonce": nonce.plaintext(),
             "harness_session": SESSION,
         }),
-        None,
     )
     .await;
     assert_eq!(status, 200, "{registered}");
@@ -150,7 +179,30 @@ async fn a_live_seats_capability_still_works_after_a_daemon_restart() {
         .expect("a capability")
         .to_string();
     assert_eq!(report(&daemon, &token, 1_000).await.0, 200);
+    // A socket request from this process (the registered harness) proves
+    // its caller by peer credentials; the TCP report above, whose capability
+    // rides only in its body, proves neither (the header carries proof).
+    let (status, reply) = socket_post(
+        &daemon,
+        "/v1/activity",
+        json!({"seat": SEAT, "native_session": SESSION, "state": "idle"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    let health: Value = serde_json::from_str(&read(&daemon, "/health").await).unwrap();
+    let activity = &health["data"]["capabilities"]["classes"]["activity"];
+    assert_eq!(
+        (activity["peer"].as_u64(), activity["neither"].as_u64()),
+        (Some(1), Some(1)),
+        "{health}"
+    );
+    assert_eq!(
+        health["data"]["capabilities"]["nonce_first_registrations"],
+        1
+    );
+    let socket = daemon.socket.clone().unwrap();
     daemon.shutdown().await.unwrap();
+    assert!(!socket.exists(), "the socket goes with its daemon");
 
     let daemon = fixture.boot().await;
     let (status, reply) = report(&daemon, &token, 2_000).await;

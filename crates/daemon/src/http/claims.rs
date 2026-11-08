@@ -113,9 +113,12 @@ pub(crate) async fn handle(
             &Envelope::ok(command, json!({"help": claims::HELP})),
         );
     }
+    // The verb, not the URI: listing claims is machine-wide.
+    let class = (verb != "claims").then_some(super::provenance::OperationClass::RoleAndHolder);
     let actor = match resolve_seat(
         &state,
         &command,
+        class,
         request.caller.session_id.clone(),
         request.caller.pane.clone(),
     )

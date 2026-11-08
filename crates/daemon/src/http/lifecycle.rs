@@ -290,7 +290,18 @@ async fn handle(
         Ok(call) => call,
         Err(reason) => return argument_failure(command, reason),
     };
-    let actor = match resolve_seat(&state, command, call.caller.session_id, call.caller.pane).await
+    let class = match operation {
+        Operation::Close => super::provenance::OperationClass::Controls,
+        Operation::Reap => super::provenance::OperationClass::Attribution,
+    };
+    let actor = match resolve_seat(
+        &state,
+        command,
+        Some(class),
+        call.caller.session_id,
+        call.caller.pane,
+    )
+    .await
     {
         Resolved::Seat(seat, _) => seat,
         Resolved::Refusal(response) => return response,

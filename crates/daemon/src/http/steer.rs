@@ -118,7 +118,14 @@ pub(crate) async fn steer(
         Ok(call) => call,
         Err(message) => return invalid(message),
     };
-    let actor = match resolve_seat(&state, COMMAND, call.caller.session_id, call.caller.pane).await
+    let actor = match resolve_seat(
+        &state,
+        COMMAND,
+        Some(super::provenance::OperationClass::Attribution),
+        call.caller.session_id,
+        call.caller.pane,
+    )
+    .await
     {
         Resolved::Seat(seat, _) => seat,
         Resolved::Refusal(response) => return response,
