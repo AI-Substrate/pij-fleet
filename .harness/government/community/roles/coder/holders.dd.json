@@ -405,6 +405,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-exuberant-wildcat",
 					"why": "F107 and F109: pr-freeze tooling"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T01:04:56.309Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f116",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "F116/F120 sends silently downgraded to fyi-ride-along; F113 steering holds"
 				}
 			]
 		}
