@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "fc757341ec21aa3001d9f3fa91221cf0d39c8022",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/190#issuecomment-6722693994",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:190",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS\n\nPR #190, exact head `fc757341ec21aa3001d9f3fa91221cf0d39c8022`.\n\nThe complete four-file diff and shipped-byte pin mechanism were reviewed at immutable Git objects. Coder v4 adds structured PR-body metadata guidance, not broader coder authority. No security vulnerability or C19/C21 disclosure was identified.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerability identified | - |\n\nThe v3-to-v4 comparison changes only version, one scope rule, the matching packet sentence and changelog. The packet still confines work to its step and branch; merging, other roles' work and unrequested shared-daemon changes remain out of scope. Credential/secret restrictions, quoted placeholder arguments and apostrophe handling are unchanged (`templates/roles/coder/v4/role.dd.json:24-38,55-61`). `Fixes: F119, F117` is structured issue metadata, not an executable command or arbitrary governance path.\n\nSHIPPED embeds actual template bytes via `include_bytes!` (`crates/daemon/src/community/templates.rs:46-64`). The independent literal v4 pin is SHA-256 `314bd876f4fd7213c1f4cdaa0e01e28287db36dc8c5ca4a60623e5885a36f2fd` (`:698-705`); directly hashing the committed v4 bytes produces that exact digest. The test recomputes SHA-256 of embedded bytes and compares it to the literal pin, with a catalog-size assertion (`:837-854`).\n\nCoder v1-v3 files and their pin values are unchanged. The HTTP test expects versions 1-4, and the README links v4. Minor non-security prose mismatch: the PR body says 30 to 31 catalog rows, while the source diff is 29 to 30. This does not affect the content pin.\n\nGitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42489081563` and Delivers run `42489081558` both identify this SHA and success.\n\nNo local builds, tests, template installation, credential reads or mutations were performed. Direct byte hashing was read-only validation, not a local test-suite run.\n"
+		}
+	]
+}
