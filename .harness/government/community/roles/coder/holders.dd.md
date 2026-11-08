@@ -63,3 +63,4 @@
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | f135 | 2026-11-08T08:23:56.174Z | — | pij-steady-otter | — | F135 instance admission grammar | — |
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f134 | 2026-11-08T08:35:10.878Z | — | pij-steady-otter | — | F133 PA scope path rendering, F134 background tail fencing | — |
 | — | pij-exuberant-wildcat | copilot | cc88fc7c-b066-44d1-a82d-fa6560786ddf | ops.osk.lan | 224 | 2026-11-08T09:26:08.043Z | — | pij-steady-otter | — | plan 224 idle-holder nudge (F136) | — |
+| — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f137 | 2026-11-08T10:15:07.834Z | — | pij-steady-otter | — | F137 daemon --bind :0 for the inbox integration test race | — |

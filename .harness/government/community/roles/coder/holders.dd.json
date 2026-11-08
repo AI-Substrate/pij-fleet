@@ -581,6 +581,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-exuberant-wildcat",
 					"why": "plan 224 idle-holder nudge (F136)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T10:15:07.834Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f137",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "F137 daemon --bind :0 for the inbox integration test race"
 				}
 			]
 		}
