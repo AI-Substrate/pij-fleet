@@ -81,4 +81,4 @@
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 174 | 2026-11-08T02:31:28.384Z | 2026-11-08T02:50:39.484Z | pij-steady-otter | pij-far-jackal | F114/F115 #174 | PR #174 merged (28d7c7bd792d) |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 176 | 2026-11-08T03:29:19.435Z | 2026-11-08T04:10:32.101Z | pij-steady-otter | pij-far-jackal | F126 cargo job cap #176 | PR #176 merged (1517f2e93c9f) |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 177 | 2026-11-08T03:57:33.097Z | — | pij-steady-otter | — | F119/F117 #177 | — |
-| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 178 | 2026-11-08T04:17:26.113Z | — | pij-steady-otter | — | #174 follow-up #178 | — |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 178 | 2026-11-08T04:17:26.113Z | 2026-11-08T04:24:59.844Z | pij-steady-otter | pij-far-jackal | #174 follow-up #178 | PR #178 merged (c2c8b1c90466) |

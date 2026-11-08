@@ -823,7 +823,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "178",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #178 merged (c2c8b1c90466)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T04:24:59.844Z",
 					"why": "#174 follow-up #178"
 				}
 			]
