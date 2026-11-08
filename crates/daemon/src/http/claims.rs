@@ -256,15 +256,18 @@ async fn release(
         ReleaseOutcome::AlreadyReleased(claim) => Err(Refusal::new(
             E_CLAIM_RELEASED,
             format!(
-                "{named} was already released ({})",
-                claim.release_reason.unwrap_or_default()
+                "{named} was already released, reason {}",
+                render::fenced(
+                    claim.release_reason.as_deref().unwrap_or_default(),
+                    render::FENCE_MAX
+                )
             ),
         )),
         ReleaseOutcome::NotOwner(claim) => Err(Refusal::new(
             "E-RS-OWNERSHIP",
             format!(
                 "{named} is held by {}; only that seat or the prime releases it",
-                claim.seat
+                render::seat(&claim.seat)
             ),
         )),
     }
@@ -730,6 +733,10 @@ async fn edits(
                 }
             }
             "steps" => match plans.iter().collect::<Vec<_>>().as_slice() {
+                [plan] if !claims::is_plain_folder(plan) => notes.push(format!(
+                    "{address}: the PR's plan folder ({}) can't be recorded as it is; set its plan by hand",
+                    claims::shown_folder(plan)
+                )),
                 [plan] => match current("plan") {
                     Cell::Unknown(why) => notes.push(skipped("plan", &why)),
                     Cell::Text(text) if text == **plan => {}
@@ -740,7 +747,11 @@ async fn edits(
                 )),
                 _ => notes.push(format!(
                     "{address}: the PR touches several plan folders ({}); set its plan by hand",
-                    plans.iter().cloned().collect::<Vec<_>>().join(", ")
+                    plans
+                        .iter()
+                        .map(|plan| claims::shown_folder(plan))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 )),
             },
             _ => notes.push(format!(

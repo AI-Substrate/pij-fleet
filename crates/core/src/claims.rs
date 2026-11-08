@@ -171,6 +171,28 @@ pub fn plan_folders<'a>(paths: impl IntoIterator<Item = &'a str>) -> BTreeSet<St
         .collect()
 }
 
+/// Whether a plan folder from [`plan_folders`] can be shown and recorded as
+/// it is (F142): `docs/plans/` then letters, digits, `-`, `_` or `.`, at most
+/// 96 in all. A PR's file paths come from GitHub and can hold any character.
+pub fn is_plain_folder(folder: &str) -> bool {
+    folder.len() <= 96
+        && folder.strip_prefix("docs/plans/").is_some_and(|entry| {
+            !entry.is_empty()
+                && entry
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        })
+}
+
+/// A plan folder in text: as it is when [`is_plain_folder`], else its length.
+pub fn shown_folder(folder: &str) -> std::borrow::Cow<'_, str> {
+    if is_plain_folder(folder) {
+        std::borrow::Cow::Borrowed(folder)
+    } else {
+        std::borrow::Cow::Owned(crate::model::invalid_text(folder))
+    }
+}
+
 /// One delivered ddocs address: `<path>#<section>/<id>`.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Address {
@@ -199,7 +221,9 @@ impl Address {
                 .all(|part| !part.is_empty() && part != "." && part != "..");
         (path.ends_with(".dd.json")
             && relative
-            && path.chars().all(|c| !c.is_whitespace() && c != '\'')
+            && path
+                .chars()
+                .all(|c| !c.is_whitespace() && !c.is_control() && c != '\'')
             && plain(section)
             && plain(id))
         .then(|| Self {
@@ -465,6 +489,20 @@ fn quote(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// F142 (bobcat F005, #193): a Delivers address with a control character
+    /// in its path is refused, as whitespace and quotes are.
+    #[test]
+    fn an_address_path_takes_no_control_character() {
+        assert!(Address::parse("docs/project/prds/001.dd.json#requirements/req-07").is_some());
+        for hostile in [
+            "docs/\u{1b}[2Jx.dd.json#requirements/req-07",
+            "docs/a\u{7}.dd.json#steps/s05",
+            "docs/a\u{0}b.dd.json#steps/s05",
+        ] {
+            assert!(Address::parse(hostile).is_none(), "{hostile:?}");
+        }
+    }
+
     use super::*;
 
     /// F122: `Fixes:` names F-items strictly; no line names none.

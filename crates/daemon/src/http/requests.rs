@@ -14,6 +14,7 @@ use std::borrow::Cow;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
+use pij_core::error::PijError;
 use pij_core::model::{Envelope, ErrorKind, Event, Msg, SeatId};
 use pij_core::render;
 use pij_store::{
@@ -456,7 +457,7 @@ async fn may_close(
 async fn notify_owned(
     state: &AppState,
     closed: &ClosedRoleRequest,
-) -> Result<pij_core::model::DeliveryOutcome, String> {
+) -> Result<pij_core::model::DeliveryOutcome, &'static str> {
     let (state, closed) = (state.clone(), closed.clone());
     tokio::spawn(async move {
         let outcome = tell_requester(&state, &closed).await?;
@@ -466,16 +467,30 @@ async fn notify_owned(
             .store()
             .close_notice_told(&closed.request.id)
             .await
-            .map_err(|cause| format!("the FYI was held, but marking it told failed: {cause}"))?;
+            .map_err(|_| "the FYI was held, but marking it told failed")?;
         Ok(outcome)
     })
     .await
-    .unwrap_or_else(|cause| Err(format!("the notice task failed: {cause}")))
+    .unwrap_or(Err("the notice task failed"))
+}
+
+/// Why a close's notice was not held, in a closed vocabulary (F142, #193
+/// round 2): a delivery error can carry the recipient's raw id, so its text
+/// never reaches a receipt line.
+fn notice_failure(error: &PijError) -> &'static str {
+    match error {
+        PijError::NoRegistryEntry { .. } => "the requester's seat is not registered",
+        PijError::SeatIsGone { .. } => "the requester's seat is closed",
+        PijError::NotDeliverable { .. } => "the requester's seat cannot take messages",
+        PijError::SelfAddressed { .. } => "the requester is the daemon itself",
+        PijError::DeliveryAuditFailed { .. } => "the delivery audit failed",
+        _ => "delivery refused the FYI",
+    }
 }
 
 fn told_value(
     closed: &ClosedRoleRequest,
-    told: Result<pij_core::model::DeliveryOutcome, String>,
+    told: Result<pij_core::model::DeliveryOutcome, &'static str>,
 ) -> Value {
     match told {
         Ok(outcome) => json!({"seat": closed.request.requester, "outcome": outcome}),
@@ -515,7 +530,7 @@ fn not_told_line(head: &str, closed: &ClosedRoleRequest, cause: &str) -> String 
 async fn tell_requester(
     state: &AppState,
     closed: &ClosedRoleRequest,
-) -> Result<pij_core::model::DeliveryOutcome, String> {
+) -> Result<pij_core::model::DeliveryOutcome, &'static str> {
     let request = &closed.request;
     let address = crate::delivery::role_send::RoleAddress {
         role: request.role.clone(),
@@ -548,7 +563,7 @@ async fn tell_requester(
         .hold_fyi(msg)
         .await
         .map(|receipt| receipt.outcome)
-        .map_err(|error| error.to_string())
+        .map_err(|error| notice_failure(&error))
 }
 
 /// The requester; a seat holding the request's project's `pa` role; or the
