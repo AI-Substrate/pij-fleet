@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "read right after any compaction completes",
+				"tags": [
+					"pa",
+					"compact",
+					"f111",
+					"plan-222",
+					"wake"
+				],
+				"title": "Post-compaction wake is automatic now (plan 222); drop the manual one"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Supersedes rule (1) of 'After compacting a seat with a live holding, wake it (F111)'. Since #167 (plan 222) merged 2026-11-08 09:41, the daemon wakes a seat that goes idle after a compaction while holding work: one resume message from pij-bg, plus a parent FYI. First live case: bobcat at 12:21, holding reviewer/173; it resumed on its handover. pm-001 12:21: drop the manual post-compaction wake. Keep (a) the handover handshake before a compact, and (b) the round check: flag to pm-001 any seat that stays idle after its resume, and any seat with a live holding and no own event for over an hour. The wake is one attempt with no retry (herring's #167 note), so a missed one shows up as (b)."
+		}
+	]
+}
