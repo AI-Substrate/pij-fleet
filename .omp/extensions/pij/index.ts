@@ -7,7 +7,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { type DaemonGeneration, detectDaemonGeneration } from "./adapters/daemon-http.js";
-import { computeExtensionBuildIdentity } from "./adapters/extension-build.js";
+import { computeExtensionBuildIdentity, displayBuild } from "./adapters/extension-build.js";
 import { GitRepositoryAdapter } from "./adapters/git-repository.js";
 import type { CommandControl } from "./adapters/pi-runtime.js";
 import {
@@ -279,7 +279,7 @@ export default function (pi: ExtensionAPI): void {
 			name,
 			daemonGeneration,
 			undefined,
-			extensionIdentity.extension_build,
+			displayBuild(extensionIdentity.extension_build),
 		).then((result) => {
 			if (ompSessionNamePublication === publication && result.took) state.took = true;
 		});
@@ -478,7 +478,7 @@ export default function (pi: ExtensionAPI): void {
 		else
 			ctx.ui.setStatus(
 				PIJ_STATUS_KEY,
-				`${self} · rs-v1 · ext ${extensionIdentity.extension_build}`,
+				`${self} · rs-v1 · ext ${displayBuild(extensionIdentity.extension_build)}`,
 			);
 		ctx.ui.notify(
 			`pij: detected rs daemon at ${generation.location.addr}; registered ${self}`,
@@ -564,7 +564,7 @@ export default function (pi: ExtensionAPI): void {
 				publication.self,
 				publication.daemonGeneration,
 				[0],
-				extensionIdentity.extension_build,
+				displayBuild(extensionIdentity.extension_build),
 			).then((result) => {
 				if (ompSessionNamePublication !== publication || !result.took) return;
 				publication.state.took = true;

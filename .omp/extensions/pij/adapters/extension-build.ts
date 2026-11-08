@@ -18,6 +18,11 @@ export interface ExtensionBuildIdentity {
  */
 export const OUTSIDE_ROOTS = ["../../../crates/core/tests/fixtures/control-commands.json"] as const;
 
+/** The build as shown in the footer and session name: without its ` tree:` part. */
+export function displayBuild(extensionBuild: string): string {
+	return extensionBuild.split(" tree:")[0] ?? extensionBuild;
+}
+
 /** Ten characters of each object id, joined: the identity's `tree:` part. */
 function treeIdentity(ids: readonly string[]): string {
 	return ids.map((id) => id.slice(0, 10)).join("+");
