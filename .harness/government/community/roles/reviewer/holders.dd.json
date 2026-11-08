@@ -1040,6 +1040,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "F141 reserved daemon notice ids"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T20:42:25.980Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "195",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F144 part 2 nudge qualification"
 				}
 			]
 		}
