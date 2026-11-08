@@ -8,10 +8,12 @@
 //! exemptions, when to compact) lives in the PA brief, never here — the digest
 //! reports facts and flags states, it does not tell the PA what to do.
 
+use std::borrow::Cow;
 use std::fmt::Write;
 
 use crate::cold_wake::{SeatSize, human_duration, human_tokens};
-use crate::model::{SeatDescriptor, SeatId, SemanticState, SystemState};
+use crate::model::{SeatDescriptor, SeatId, SemanticState, SystemState, invalid_text};
+use crate::orchestration::SEAT_ROLES;
 use crate::session_status::CacheState;
 
 /// One seat in the PA's fleet, with its size facts on the daemon clock.
@@ -132,6 +134,31 @@ fn attention(row: &FleetRow, interval_ms: u64) -> Option<String> {
     }
 }
 
+/// A message or request id as the digest shows it: itself when it fits the
+/// ids pij and its clients mint (letters, digits, `.`, `_`, `:`, `-`; at most
+/// 128), else its length (F127). The id is caller-chosen.
+fn rendered_msg_id(id: &str) -> Cow<'_, str> {
+    let minted = (1..=128).contains(&id.len())
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'));
+    if minted {
+        Cow::Borrowed(id)
+    } else {
+        Cow::Owned(invalid_text(id))
+    }
+}
+
+/// A seat's role as the digest shows it: one of the closed vocabulary, `-`
+/// for none, else its length (F127). A stored row may predate the vocabulary.
+fn rendered_role(role: Option<&str>) -> Cow<'_, str> {
+    match role {
+        None => Cow::Borrowed("-"),
+        Some(role) if SEAT_ROLES.contains(&role) => Cow::Borrowed(role),
+        Some(role) => Cow::Owned(invalid_text(role)),
+    }
+}
+
 impl FleetView {
     /// The nudge text: a headline, what needs a look, and every seat by size.
     pub fn digest(&self) -> String {
@@ -147,7 +174,9 @@ impl FleetView {
             .count();
         let mut text = format!(
             "[pij watchdog] fleet idle for {} ({}) — {} seats: {working} working, {} idle, {cold} cold ❄",
-            self.prime.as_ref().map_or("your fleet", SeatId::as_str),
+            self.prime
+                .as_ref()
+                .map_or(Cow::Borrowed("your fleet"), SeatId::rendered),
             self.scope,
             self.rows.len(),
             self.rows.len() - working,
@@ -158,12 +187,13 @@ impl FleetView {
             .iter()
             .filter(|row| row.seat.id != self.pa)
             .filter_map(|row| {
-                attention(row, self.interval_ms).map(|why| (row.seat.id.to_string(), why))
+                attention(row, self.interval_ms)
+                    .map(|why| (row.seat.id.rendered().into_owned(), why))
             })
             .collect();
         flagged.extend(self.anomalies.iter().map(|anomaly| {
             (
-                anomaly.seat.to_string(),
+                anomaly.seat.rendered().into_owned(),
                 format!("{}: {}", anomaly.kind, anomaly.detail),
             )
         }));
@@ -189,8 +219,8 @@ impl FleetView {
                     "\n  {} in {}: request {} from {}, waiting {}",
                     request.address,
                     request.project,
-                    request.id,
-                    request.requester,
+                    rendered_msg_id(&request.id),
+                    request.requester.rendered(),
                     human_duration(request.waiting_ms)
                 );
             }
@@ -205,9 +235,12 @@ impl FleetView {
                     "\n  {} in {}: request {} from {} to {}, waiting {}",
                     request.address,
                     request.project,
-                    request.id,
-                    request.requester,
-                    request.delivering_to.as_ref().map_or("?", SeatId::as_str),
+                    rendered_msg_id(&request.id),
+                    request.requester.rendered(),
+                    request
+                        .delivering_to
+                        .as_ref()
+                        .map_or(Cow::Borrowed("?"), SeatId::rendered),
                     human_duration(request.waiting_ms)
                 );
             }
@@ -221,9 +254,11 @@ impl FleetView {
                 let _ = write!(
                     text,
                     "\n  {} to {}: msg {} held {}{}",
-                    held.sender.as_ref().map_or("?", SeatId::as_str),
-                    held.recipient,
-                    held.msg_id,
+                    held.sender
+                        .as_ref()
+                        .map_or(Cow::Borrowed("?"), SeatId::rendered),
+                    held.recipient.rendered(),
+                    rendered_msg_id(&held.msg_id),
                     human_duration(held.held_ms),
                     if held.still_queued {
                         ", still queued"
@@ -243,7 +278,7 @@ impl FleetView {
         });
         let width = rows
             .iter()
-            .map(|row| row.seat.id.as_str().len())
+            .map(|row| row.seat.id.rendered().len())
             .max()
             .unwrap_or(4)
             .max(4);
@@ -272,8 +307,8 @@ impl FleetView {
             let _ = write!(
                 text,
                 "\n  {:width$}  {:6}  {:7}  {:8}  {:>5}  {:>6}  {cache}{wake}{you}",
-                row.seat.id.as_str(),
-                row.seat.role.as_deref().unwrap_or("-"),
+                row.seat.id.rendered(),
+                rendered_role(row.seat.role.as_deref()),
                 row.seat.state.as_str(),
                 row.seat.semantic_state.map_or("-", SemanticState::as_str),
                 row.size
