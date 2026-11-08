@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "880227b01abc6d7fce8d3677c0904798e09fee36",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/186#issuecomment-6719760836",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:186",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `880227b01abc6d7fce8d3677c0904798e09fee36`.\n\nLight whole-PR review against `19cbb590faa72fd8face8b40012620f39ecaa962`. No new executable launch site, standalone network/store query, polling loop or timer. `delivered` parses the PR body it already obtained; the CI/pr-freeze check calls the same parser inside its existing checker process.\n\n**P186-N001, parse/match scaling:** `claims::fixes` makes an additional body-line scan, parses digit tokens to u64 and deduplicates with `Vec::contains`. With T tokens and U distinct numbers, duplicate checking is O(T x U), quadratic in the all-distinct worst case, with O(U) retained numbers. `delivered` then builds a BTreeSet. `finished_by` reuses its existing project-assignment read and history scan, adding an `f`-number parse and set lookup for coder instances; that parse can still run when the Fixes set is empty. This is on-demand body/history work, not a fixed fleet tick cost or a constant-time whole verb.\n\n**Launch/commit answer:** the release targets are collected together and passed to the unchanged `release_many` **once**, not once per F-number. There is no second writer invocation or new launch sequence per F-item. Merge-time cutoff and exact holding pins remain in that same path. The normal seven Git calls per commit remain; helper work still scales with changed DD documents and seats. An added coder holding can add a newly changed holders document, and therefore two existing ddocs calls, even when the writer was already going to commit.\n\nThe qualification is newly eligible work: a PR that formerly had zero release targets can now have F-item targets and pay **one existing community writer commit**, normally seven Git calls plus two ddocs calls per changed DD document, and existing receipt/window work. It is not unconditional zero additional launches/commits versus the old no-release outcome. No targets still skip the writer; malformed Fixes refuses before delivery records/releases. The CI checker adds parsing and output formatting, not another command or commit.\n\n**Exact-head CI:** [42464104904](https://github.com/AI-Substrate/pij-fleet/actions/runs/42464104904), successful Rust job `128679518410`, exact upload artifact **13611176783**: **2,237 executed cases passed**, zero failures/errors, five separately skipped. Verified strict Fixes parsing, named F-item releases/malformed and absent-line controls, cutoff/reassignment pinning, the updated checker case and all six spawn guards. Rust lint, Node22/24 and delivers checks succeed. Source establishes the single writer-call shape; no local commit-count or timing probe was run.\n\nClean worktree; local/GitHub heads agree and GitHub reports CLEAN. No local build, test, mutation, live delivered invocation, dependency change or product edit. #185 remains held pending its replacement head.\n"
+		}
+	]
+}
