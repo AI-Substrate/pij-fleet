@@ -1,22 +1,72 @@
 //! Idle-holder nudges (plan 224, F136, migration 0046).
 //!
-//! The PA watchdog round reads which seats hold work, each such idle seat's
+//! The PA watchdog round reads which seats have in-flight work, each such idle seat's
 //! last own event, and marks a stretch nudged BEFORE it sends, so a restart
 //! never nudges twice for one stretch.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use pij_core::error::Result;
+use pij_core::idle_nudge::{IN_FLIGHT_CLAIM_KINDS, is_task_instance};
 use pij_core::model::SeatId;
 use sqlx::Row;
 
 use crate::migrate::{begin_write, owned_write, require_current_schema};
 use crate::orchestration::{SqliteOrchestration, adapter_error, sql_i64, sql_u64};
 
-/// Every seat with an open role holding or an open claim: two reads of
-/// partial indexes (`community_assignments_open_by_seat`, `claims_open_by_seat`).
-const HOLDING_SEATS_SQL: &str = "SELECT seat FROM community_assignments \
-     INDEXED BY community_assignments_open_by_seat WHERE to_at IS NULL \
-     UNION SELECT seat FROM claims INDEXED BY claims_open_by_seat WHERE released_at IS NULL \
-     ORDER BY seat";
+/// Open role holdings with an instance, for [`pij_core::idle_nudge::is_task_instance`]
+/// to qualify: the partial index of open rows (`community_assignments_open_by_seat`).
+const TASK_HOLDINGS_SQL: &str = "SELECT seat, instance FROM community_assignments \
+     INDEXED BY community_assignments_open_by_seat WHERE to_at IS NULL AND instance != ''";
+
+/// Seats with an open claim of an in-flight kind
+/// ([`pij_core::idle_nudge::IN_FLIGHT_CLAIM_KINDS`]): the partial index of open
+/// claims (`claims_open_by_seat`).
+const WORK_CLAIMS_SQL: &str = "SELECT DISTINCT seat FROM claims INDEXED BY claims_open_by_seat \
+     WHERE released_at IS NULL AND kind IN (?1, ?2)";
+
+/// Role requests delivered to a holder and not answered. A request that is
+/// answered and closed leaves `role_requests` (migration 0040), so the table
+/// holds only open requests: queued, being delivered, or delivered.
+const UNANSWERED_REQUESTS_SQL: &str = "SELECT id, holder, project, role, instance FROM role_requests \
+     WHERE state = 'delivered' AND answered_at IS NULL AND holder IS NOT NULL";
+
+/// A delivered role request a seat has not answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenRequest {
+    /// The request id.
+    pub id: String,
+    /// The request's project.
+    pub project: String,
+    /// The role it was sent to.
+    pub role: String,
+    /// The role's instance, empty for none.
+    pub instance: String,
+}
+
+/// The in-flight work a nudge names: the keys the conditional mark checks
+/// again, so a nudge is never sent for work that ended since the round read
+/// it (review of #195).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct NudgeWork {
+    /// Task holdings as `(project, role, instance)`.
+    pub holdings: Vec<(String, String, String)>,
+    /// Work claims as `(project, kind, number)`.
+    pub claims: Vec<(String, String, u64)>,
+    /// Unanswered delivered request ids.
+    pub requests: Vec<String>,
+}
+
+/// The seats with real in-flight work (F144): a per-task instance holding, an
+/// open plan or fix claim, or a delivered role request not yet answered. A
+/// bare long-lived role holding is not in-flight work by itself.
+#[derive(Debug, Default)]
+pub struct InFlight {
+    /// Every seat with in-flight work.
+    pub seats: BTreeSet<SeatId>,
+    /// Each seat's unanswered delivered requests.
+    pub requests: BTreeMap<SeatId, Vec<OpenRequest>>,
+}
 
 /// An own event (`spine_own_events`' predicate, verbatim from migration 0046):
 /// a report, or `seat.activity` other than idle.
@@ -33,18 +83,45 @@ fn last_own_sql() -> String {
 }
 
 /// The mark, added only while the stretch still stands at commit: the seat is
-/// live and idle, and it has no own event after `anchor` (one range seek on
-/// the same index). A veto inserts nothing, so nothing is sent (review of
-/// #189: an own event between the round's read and this write). Brakes only:
+/// live and idle, it has no own event after `anchor` (one range seek on the
+/// same index), and at least one item of the in-flight work the nudge names
+/// is still open: the same task holding, the same work claim, or the same
+/// request still delivered and unanswered (`?4`, `?5`, `?6`: JSON arrays of
+/// [`NudgeWork`]'s keys, each looked up through the seat's open-row index or
+/// the request's primary key). A veto inserts nothing, so nothing is sent
+/// (review of #189: an own event between the round's read and this write;
+/// review of #195: work that ended since the round read it). Brakes only:
 /// each condition can refuse a mark, none can add one.
 fn mark_sql() -> String {
     format!(
         "INSERT OR IGNORE INTO idle_nudges (seat, anchor, nudged_at) SELECT ?1, ?2, ?3 \
          WHERE EXISTS (SELECT 1 FROM seats WHERE id = ?1 AND state = 'idle' AND tombstoned_at IS NULL) \
          AND NOT EXISTS (SELECT 1 FROM spine_events INDEXED BY spine_own_events \
-         WHERE seat = ?1 AND {OWN_EVENT} AND seq > ?2)"
+         WHERE seat = ?1 AND {OWN_EVENT} AND seq > ?2) \
+         AND ({HOLDING_STILL_OPEN} OR {CLAIM_STILL_OPEN} OR {REQUEST_STILL_OPEN})"
     )
 }
+
+/// One of the nudge's task holdings is still open.
+const HOLDING_STILL_OPEN: &str = "EXISTS (SELECT 1 FROM json_each(?4) AS held \
+     JOIN community_assignments AS a INDEXED BY community_assignments_open_by_seat \
+     ON a.seat = ?1 AND a.to_at IS NULL \
+     AND a.project = json_extract(held.value, '$[0]') \
+     AND a.role = json_extract(held.value, '$[1]') \
+     AND a.instance = json_extract(held.value, '$[2]'))";
+
+/// One of the nudge's work claims is still open.
+const CLAIM_STILL_OPEN: &str = "EXISTS (SELECT 1 FROM json_each(?5) AS held \
+     JOIN claims AS c INDEXED BY claims_open_by_seat \
+     ON c.seat = ?1 AND c.released_at IS NULL \
+     AND c.project = json_extract(held.value, '$[0]') \
+     AND c.kind = json_extract(held.value, '$[1]') \
+     AND c.number = json_extract(held.value, '$[2]'))";
+
+/// One of the nudge's requests is still delivered to the seat and unanswered.
+const REQUEST_STILL_OPEN: &str = "EXISTS (SELECT 1 FROM json_each(?6) AS held \
+     JOIN role_requests AS r ON r.id = held.value \
+     WHERE r.holder = ?1 AND r.state = 'delivered' AND r.answered_at IS NULL)";
 
 /// Whether `seat` owns a live (queued or running) background job: one seek on
 /// `background_jobs_live_by_owner`.
@@ -53,23 +130,56 @@ const OWNS_LIVE_JOB_SQL: &str = "SELECT EXISTS (SELECT 1 FROM background_jobs \
      WHERE owner = ?1 AND state IN ('queued', 'running'))";
 
 impl SqliteOrchestration {
-    /// Every seat that holds work: an open role holding or an open claim.
+    /// The seats with real in-flight work ([`InFlight`]): three reads per
+    /// round, none per seat.
     ///
     /// # Errors
     /// Store failures.
-    pub async fn holding_seats(&self) -> Result<Vec<SeatId>> {
+    pub async fn in_flight(&self) -> Result<InFlight> {
         require_current_schema(&self.pool).await?;
-        sqlx::query(HOLDING_SEATS_SQL)
+        let mut in_flight = InFlight::default();
+        for row in sqlx::query(TASK_HOLDINGS_SQL)
             .fetch_all(&self.pool)
             .await
             .map_err(adapter_error)?
-            .iter()
-            .map(|row| {
-                row.try_get::<String, _>("seat")
-                    .map(SeatId)
-                    .map_err(adapter_error)
-            })
-            .collect()
+        {
+            let instance: String = row.try_get("instance").map_err(adapter_error)?;
+            if is_task_instance(&instance) {
+                in_flight
+                    .seats
+                    .insert(SeatId(row.try_get("seat").map_err(adapter_error)?));
+            }
+        }
+        for row in sqlx::query(WORK_CLAIMS_SQL)
+            .bind(IN_FLIGHT_CLAIM_KINDS[0])
+            .bind(IN_FLIGHT_CLAIM_KINDS[1])
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?
+        {
+            in_flight
+                .seats
+                .insert(SeatId(row.try_get("seat").map_err(adapter_error)?));
+        }
+        for row in sqlx::query(UNANSWERED_REQUESTS_SQL)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?
+        {
+            let holder = SeatId(row.try_get("holder").map_err(adapter_error)?);
+            in_flight.seats.insert(holder.clone());
+            in_flight
+                .requests
+                .entry(holder)
+                .or_default()
+                .push(OpenRequest {
+                    id: row.try_get("id").map_err(adapter_error)?,
+                    project: row.try_get("project").map_err(adapter_error)?,
+                    role: row.try_get("role").map_err(adapter_error)?,
+                    instance: row.try_get("instance").map_err(adapter_error)?,
+                });
+        }
+        Ok(in_flight)
     }
 
     /// `seat`'s newest own event (a report, or `seat.activity` other than
@@ -134,22 +244,41 @@ impl SqliteOrchestration {
     /// this call added the mark, which alone authorizes the one nudge. `false`
     /// when a mark is already there (a restart, an overlapping round), or when
     /// the stretch no longer stands at commit: the seat posted an own event
-    /// after `anchor`, or is no longer live and idle. Committed by an owned
+    /// after `anchor`, is no longer live and idle, or none of `work` is still
+    /// open (review of #195). Committed by an owned
     /// write, so it completes even if the caller is dropped.
     ///
     /// # Errors
     /// Store failures, or an out-of-range value.
-    pub async fn mark_idle_nudged(&self, seat: &SeatId, anchor: u64, at: u64) -> Result<bool> {
+    pub async fn mark_idle_nudged(
+        &self,
+        seat: &SeatId,
+        anchor: u64,
+        at: u64,
+        work: &NudgeWork,
+    ) -> Result<bool> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
         let seat = seat.to_string();
         let (anchor, at) = (sql_i64(anchor, "anchor")?, sql_i64(at, "nudged_at")?);
+        let json = |value: serde_json::Result<String>| {
+            value.map_err(|cause| pij_core::error::PijError::Adapter {
+                adapter: "store/idle-nudges".to_string(),
+                message: format!("nudge work keys: {cause}"),
+            })
+        };
+        let holdings = json(serde_json::to_string(&work.holdings))?;
+        let claims = json(serde_json::to_string(&work.claims))?;
+        let requests = json(serde_json::to_string(&work.requests))?;
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
             let inserted = sqlx::query(&mark_sql())
                 .bind(&seat)
                 .bind(anchor)
                 .bind(at)
+                .bind(&holdings)
+                .bind(&claims)
+                .bind(&requests)
                 .execute(&mut *tx)
                 .await
                 .map_err(adapter_error)?
@@ -188,9 +317,14 @@ mod tests {
                     .collect::<Vec<String>>()
             }
         };
-        let holding = plan(
-            format!("EXPLAIN QUERY PLAN {}", super::HOLDING_SEATS_SQL),
+        let holdings = plan(
+            format!("EXPLAIN QUERY PLAN {}", super::TASK_HOLDINGS_SQL),
             vec![],
+        )
+        .await;
+        let claims = plan(
+            format!("EXPLAIN QUERY PLAN {}", super::WORK_CLAIMS_SQL),
+            vec!["plan", "fix"],
         )
         .await;
         let last = plan(
@@ -200,7 +334,7 @@ mod tests {
         .await;
         let mark = plan(
             format!("EXPLAIN QUERY PLAN {}", super::mark_sql()),
-            vec!["pij-x", "7", "1"],
+            vec!["pij-x", "7", "1", "[]", "[]", "[]"],
         )
         .await;
         let jobs = plan(
@@ -209,8 +343,8 @@ mod tests {
         )
         .await;
         for (index, plan) in [
-            ("community_assignments_open_by_seat", &holding),
-            ("claims_open_by_seat", &holding),
+            ("community_assignments_open_by_seat", &holdings),
+            ("claims_open_by_seat", &claims),
             ("spine_own_events", &last),
             ("spine_own_events", &mark),
             ("background_jobs_live_by_owner", &jobs),
