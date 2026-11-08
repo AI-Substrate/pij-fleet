@@ -65,7 +65,8 @@ checkout. A claim is released when its seat closes, when `pij delivered` sees
 its number in a merged PR's files, or by its seat or the prime.
 
 `pij delivered` is run once by whoever merges (ruling C23). It reads the PR with
-gh, takes the addresses from the body's `Delivers:` line, records them, posts on
+gh, takes the addresses from the body's `Delivers:` line (with no docs/project in
+the checkout, a missing line reads as `none`), records them, posts on
 the PM's card (the live pm-<workstream> holder, else --pm) and PRINTS the
 `ddocs set` edits for the PM's next docs PR. It changes no project file and pushes
 nothing. It ends the holdings the PR finished (reviewer, security and performance
