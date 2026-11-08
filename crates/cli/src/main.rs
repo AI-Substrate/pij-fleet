@@ -3283,7 +3283,22 @@ fn render_directory_at(
                 }
                 None => out.push_str("retired"),
             },
-            [] => out.push_str("no holder"),
+            [] => match role["designated"]["seat"].as_str() {
+                // C24: the prime role's holder is the designation (F117).
+                Some(seat) => {
+                    let _ = write!(
+                        out,
+                        "{seat} (designated prime{})",
+                        if role["designated"]["seat_live"] == false {
+                            ", seat not live"
+                        } else {
+                            ""
+                        }
+                    );
+                }
+                None if role["id"] == "prime" => out.push_str("no designated prime"),
+                None => out.push_str("no holder"),
+            },
             [only] => out.push_str(only),
             many => {
                 let _ = write!(out, "{} holders", many.len());
@@ -3291,6 +3306,16 @@ fn render_directory_at(
                     let _ = write!(out, "\n    {holder}");
                 }
             }
+        }
+        // Review of #177: a legacy prime assignment is never the prime (C24).
+        for legacy in list(&role["legacy"]) {
+            let _ = write!(
+                out,
+                "\n    legacy prime assignment, ignored: {} since {}; release with {}",
+                text(&legacy["seat"]),
+                local_time(&legacy["since"], &zone),
+                text(&legacy["command"])
+            );
         }
         let merged: Vec<&str> = role["merged_from"]
             .as_array()
@@ -4242,6 +4267,56 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("old (general, one): retired"), "{text}");
+    }
+
+    /// F117 (C24): the prime role's holder is the project's designation, not
+    /// "no holder".
+    #[test]
+    fn the_prime_role_renders_its_designated_seat() {
+        let view = |live: bool| {
+            serde_json::json!({
+                "project": "fleet", "prime": "pij-crane", "prime_document": true, "pending": [],
+                "roles": [{"id": "prime", "kind": "core", "holders": "one", "live": [],
+                    "designated": {"seat": "pij-crane", "seat_live": live},
+                    "memory": {"notes": 0, "latest": null}}],
+                "actions": [], "prompts": [], "reviews": [],
+            })
+        };
+        let ten = time::UtcOffset::from_hms(10, 0, 0).unwrap();
+        let text = super::render_directory_at(&view(true), |_| ten);
+        assert!(
+            text.contains("\n  prime (core, one): pij-crane (designated prime)\n"),
+            "{text}"
+        );
+        assert!(!text.contains("no holder"), "{text}");
+        assert!(
+            super::render_directory_at(&view(false), |_| ten)
+                .contains("pij-crane (designated prime, seat not live)")
+        );
+        // Review of #177: a legacy prime row never hides the designation; it
+        // is listed as ignored, with its release. With no designation, it is
+        // still never shown as the holder.
+        let legacy = serde_json::json!([{"seat": "pij-old", "instance": "",
+            "since": "2026-11-07T23:00:00Z",
+            "command": "pij directory release prime pij-old --why '<why>' --project fleet"}]);
+        let mut both = view(true);
+        both["roles"][0]["legacy"] = legacy.clone();
+        let text = super::render_directory_at(&both, |_| ten);
+        assert!(
+            text.contains(
+                "\n  prime (core, one): pij-crane (designated prime)\n    legacy prime assignment, ignored: pij-old since 2026-11-08 09:00 +10:00; release with pij directory release prime pij-old --why '<why>' --project fleet"
+            ),
+            "{text}"
+        );
+        let mut none = view(true);
+        none["prime"] = serde_json::Value::Null;
+        none["roles"][0]["designated"] = serde_json::Value::Null;
+        none["roles"][0]["legacy"] = legacy;
+        let text = super::render_directory_at(&none, |_| ten);
+        assert!(
+            text.contains("\n  prime (core, one): no designated prime\n    legacy prime assignment, ignored: pij-old"),
+            "{text}"
+        );
     }
 
     /// Plan 203: the prime, holders one per line for a many-holder role, local

@@ -337,8 +337,23 @@ async fn delivered(
             format!("PR #{number} is merged but gh named no merge commit"),
         )
     })?;
-    let addresses = claims::delivers(&pull.body)
-        .map_err(|error| Refusal::new(E_DELIVERS, format!("PR #{number}: {error}")))?;
+    // F119: a project with no docs/project has no rows to deliver, so a
+    // missing Delivers: line there reads as `none` (with a note), and the
+    // holdings still end. Where docs/project exists, the line is required.
+    let mut missing_line = None;
+    let addresses = match claims::delivers(&pull.body) {
+        Ok(addresses) => addresses,
+        Err(claims::DeliversError::Missing) if !has_project_docs(&repo)? => {
+            missing_line = Some(format!(
+                "PR #{number} has no Delivers: line; {} has no {PROJECT_DOCS}, so it is read as `Delivers: none`",
+                repo.display()
+            ));
+            Vec::new()
+        }
+        Err(error) => {
+            return Err(Refusal::new(E_DELIVERS, format!("PR #{number}: {error}")));
+        }
+    };
 
     let (pm, pm_source) = match holder_pm(state, &project, &addresses).await? {
         Some(holder) => (Some(holder), "holder"),
@@ -347,7 +362,7 @@ async fn delivered(
             None => (None, "none"),
         },
     };
-    let mut notes = Vec::new();
+    let mut notes: Vec<String> = missing_line.into_iter().collect();
     if let (Some(flag), Some(told)) = (call.get("pm"), &pm)
         && pm_source == "holder"
         && flag != told.as_str()
@@ -560,6 +575,26 @@ async fn end_holdings(
     let mut receipts = released.receipts;
     super::directory::windows_after_release(state, &mut receipts).await;
     Ok(receipts)
+}
+
+/// The folder whose PRDs and workstreams a `Delivers:` line addresses.
+const PROJECT_DOCS: &str = "docs/project";
+
+/// Whether the project's checkout has [`PROJECT_DOCS`], read in-process. Only
+/// a folder that is not there is absent: a read that fails refuses, so the
+/// `Delivers:` line stays required unless pij can see it isn't needed.
+fn has_project_docs(repo: &Path) -> Result<bool, Refusal> {
+    match std::fs::symlink_metadata(repo.join(PROJECT_DOCS)) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(Refusal::new(
+            E_DELIVERS,
+            format!(
+                "cannot tell whether {} has {PROJECT_DOCS} ({error}), so the Delivers: line is required",
+                repo.display()
+            ),
+        )),
+    }
 }
 
 /// The live holder of the project's `pm-<workstream>` role for the workstreams

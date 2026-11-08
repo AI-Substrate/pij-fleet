@@ -6590,7 +6590,8 @@ async fn steering_is_switched_per_seat_read_with_the_claim_and_noted_on_receipts
 
 // Plan 215: holdings end with their work.
 
-/// Answers every PR as merged, touching plan 215's folder; `Delivers: none`.
+/// Answers every PR as merged, touching plan 215's folder; `Delivers: none`,
+/// except PR 240, which has no `Delivers:` line.
 /// Its merge time is what [`merge_now`] set for that PR number, else none.
 struct MergedGh;
 
@@ -6622,7 +6623,12 @@ impl pij_daemon::community::gh::PullRequests for MergedGh {
                 .iter()
                 .find(|(pr, _)| *pr == number)
                 .map(|(_, at)| at.clone()),
-            body: "Delivers: none\n".into(),
+            // PR 240 has no Delivers: line at all (F119).
+            body: if number == 240 {
+                "## What changed\n".into()
+            } else {
+                "Delivers: none\n".into()
+            },
             files: vec![
                 "docs/plans/215-holdings-followups/plan.dd.json".into(),
                 "crates/daemon/src/lib.rs".into(),
@@ -7190,5 +7196,359 @@ async fn a_reassignment_between_the_choice_and_the_commit_survives() {
     );
     let coder = holders_at_head(&repo, "coder");
     assert!(coder.last().unwrap()["to"].is_null(), "{coder:?}");
+    rig.server.abort();
+}
+
+/// F119: in a project with no docs/project, a merged PR with no `Delivers:`
+/// line reads as `none` (with a note), and its holdings still end.
+#[tokio::test]
+async fn delivered_without_a_delivers_line_ends_holdings_where_there_are_no_project_docs() {
+    let (repo, rig) = delivered_rig("pij-delivered-no-line").await;
+    assert!(!repo.main.join("docs/project").exists());
+    assert_eq!(
+        batch(&rig, &repo, "assign", "reviewer/240 pij-holder\n").await["ok"],
+        true
+    );
+    merge_now(240);
+    let data = call(rig.addr, "/v1/delivered", &["delivered", "240"], &repo.main).await;
+    assert_eq!(data["ok"], true, "{data}");
+    assert_eq!(
+        released(&data["data"]["holdings"]),
+        ["reviewer/240 pij-holder"]
+    );
+    assert_eq!(data["data"]["addresses"], json!([]));
+    assert!(
+        data["data"]["notes"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("PR #240 has no Delivers: line;")
+            && data["data"]["notes"][0]
+                .as_str()
+                .unwrap()
+                .ends_with("has no docs/project, so it is read as `Delivers: none`"),
+        "{data}"
+    );
+    rig.server.abort();
+}
+
+/// F117 (C24): the prime is designated, never assigned. The picture shows the
+/// project's designated prime as the prime role's holder, and `directory
+/// assign prime`, single or in a batch, refuses naming the verb that
+/// designates it.
+#[tokio::test]
+async fn the_prime_role_shows_the_designation_and_assign_refuses_it() {
+    let repo = repo("pij-directory-prime-designated");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles_and_prime(rig.addr, &repo, &["--prime", "pij-second"]).await;
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "prime",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+
+    let shown = view(rig.addr, &repo).await;
+    let roles = shown["data"]["roles"].as_array().unwrap();
+    let prime = roles.iter().find(|role| role["id"] == "prime").unwrap();
+    assert_eq!(
+        prime["designated"],
+        json!({"seat": "pij-second", "seat_live": true}),
+        "{prime}"
+    );
+    assert_eq!(prime["live"], json!([]), "no holders row is written");
+    let reviewer = roles.iter().find(|role| role["id"] == "reviewer").unwrap();
+    assert_eq!(reviewer["designated"], Value::Null);
+
+    let start = head(&repo);
+    let single = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "assign", "prime", "pij-holder", "--why", "w"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(
+        single["details"]["code"], "E-RS-DIRECTORY-PRIME-DESIGNATED",
+        "{single}"
+    );
+    assert_eq!(
+        single["details"]["next"],
+        "Designate it: pij project set fleet --prime pij-holder"
+    );
+    let batched = batch(
+        &rig,
+        &repo,
+        "assign",
+        "reviewer/1 pij-holder\nprime pij-holder\n",
+    )
+    .await;
+    assert_eq!(
+        batched["details"]["code"], "E-RS-DIRECTORY-PRIME-DESIGNATED",
+        "{batched}"
+    );
+    assert_eq!(head(&repo), start, "nothing written");
+    rig.server.abort();
+}
+
+/// Review of #177 (bobcat F001), ruling C24: the project's designation is the
+/// prime's only authority. A legacy prime assignment row, however recent and
+/// whatever its seat's state, neither hides the designated prime nor stands in
+/// for it: it doesn't count as a live holder or as activity for the idle
+/// review and `call_on`, and the view lists it only to be released.
+#[tokio::test]
+async fn a_legacy_prime_assignment_never_stands_in_for_the_designation() {
+    let repo = repo("pij-directory-legacy-prime");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles_and_prime(rig.addr, &repo, &["--prime", "pij-second"]).await;
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "prime",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    // An old role document, so only a holding could make the role look active.
+    let document = repo
+        .gov
+        .join(".harness/government/community/roles/prime/role.dd.json");
+    let mut role: Value =
+        serde_json::from_str(&std::fs::read_to_string(&document).unwrap()).unwrap();
+    for section in role["sections"].as_array_mut().unwrap() {
+        if section["name"] == "changelog" {
+            for row in section["value"].as_array_mut().unwrap() {
+                row["date"] = json!("2026-01-01");
+            }
+        }
+    }
+    std::fs::write(&document, serde_json::to_string_pretty(&role).unwrap()).unwrap();
+    git(&repo.gov, &["commit", "-qam", "an old prime role"]);
+    // A RECENT legacy assignment of a different, live seat.
+    rig.store
+        .record_assignment_committed(
+            &pij_store::Assignment {
+                project: "fleet".into(),
+                role: "prime".into(),
+                instance: String::new(),
+                seat: "pij-holder".into(),
+                harness: None,
+                session: None,
+                machine: None,
+                from: pij_daemon::community::holders::now(),
+                to: None,
+                assigned_by: SEAT.into(),
+                released_by: None,
+                why: "legacy".into(),
+                release_why: None,
+                end_pending: false,
+            },
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+    let prime_of = |view: &Value| {
+        view["data"]["roles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|role| role["id"] == "prime")
+            .unwrap()
+            .clone()
+    };
+    let idle = |view: &Value| {
+        view["data"]["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|review| review["role"] == "prime" && review["kind"] == "idle")
+    };
+
+    // A live legacy holder doesn't hide a different live designated prime.
+    let shown = view(rig.addr, &repo).await;
+    let prime = prime_of(&shown);
+    assert_eq!(
+        prime["designated"],
+        json!({"seat": "pij-second", "seat_live": true})
+    );
+    assert_eq!(prime["live"], json!([]), "{prime}");
+    assert_eq!(prime["legacy"][0]["seat"], "pij-holder");
+    assert_eq!(
+        prime["legacy"][0]["command"],
+        "pij directory release prime pij-holder --why '<why>' --project fleet"
+    );
+    assert!(!idle(&shown), "a live designated prime is not idle");
+
+    // The designation tombstoned: the recent, live legacy row suppresses
+    // neither the idle review nor call_on.
+    let mut gone = rig
+        .services
+        .registry
+        .get(&SeatId::from("pij-second"))
+        .await
+        .unwrap()
+        .unwrap();
+    gone.tombstoned_at = Some(1);
+    rig.services.registry.put(gone).await.unwrap();
+    let shown = view(rig.addr, &repo).await;
+    let prime = prime_of(&shown);
+    assert_eq!(
+        prime["designated"],
+        json!({"seat": "pij-second", "seat_live": false})
+    );
+    assert!(idle(&shown), "{}", shown["data"]["reviews"]);
+    assert_eq!(
+        prime["call_on"],
+        Value::Null,
+        "no memory, so nothing to call on"
+    );
+    let note = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "memory",
+            "add",
+            "prime",
+            "--title",
+            "how merges go",
+            "--hook",
+            "before a merge",
+            "--body",
+            "the body\n",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(note["ok"], true, "{note}");
+    let shown = view(rig.addr, &repo).await;
+    assert!(
+        prime_of(&shown)["call_on"]
+            .as_str()
+            .is_some_and(|call| call.starts_with("pij send role:prime")),
+        "a cold prime role with memory is called on: {}",
+        prime_of(&shown)
+    );
+    rig.server.abort();
+}
+
+/// Review of #177 (bobcat F002): a request waiting for the prime gets the
+/// recovery action (`pij project set ... --prime`) only when the designated
+/// prime is not live; a live designation needs none.
+#[tokio::test]
+async fn the_prime_recovery_action_follows_the_designations_liveness() {
+    let repo = repo("pij-directory-prime-recovery");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles_and_prime(rig.addr, &repo, &["--prime", "pij-second"]).await;
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "prime",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    rig.store
+        .record_role_request(&pij_store::RoleRequest {
+            id: "prime-waits".into(),
+            project: "fleet".into(),
+            role: "prime".into(),
+            instance: String::new(),
+            requester: SEAT.into(),
+            body: "please".into(),
+            in_reply_to: None,
+            fyi: false,
+            reply: pij_store::ReplyMode::Wake,
+            limit_ms: None,
+            holder: None,
+            state: pij_store::RequestState::Queued,
+            created_at: 1,
+            delivered_at: None,
+            checkin_at: None,
+            escalated_at: None,
+            answered_at: None,
+        })
+        .await
+        .unwrap();
+    let prime_actions = |view: &Value| -> Vec<Value> {
+        view["data"]["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|action| action["role"] == "prime")
+            .cloned()
+            .collect()
+    };
+
+    let live = view(rig.addr, &repo).await;
+    let waiting = live["data"]["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|role| role["id"] == "prime")
+        .map(|role| role["requests"]["count"].clone());
+    assert_eq!(waiting, Some(json!(1)), "the request waits: {live}");
+    assert_eq!(
+        prime_actions(&live),
+        Vec::<Value>::new(),
+        "a live designation needs no recovery"
+    );
+
+    let mut gone = rig
+        .services
+        .registry
+        .get(&SeatId::from("pij-second"))
+        .await
+        .unwrap()
+        .unwrap();
+    gone.tombstoned_at = Some(1);
+    rig.services.registry.put(gone).await.unwrap();
+    let dead = view(rig.addr, &repo).await;
+    let actions = prime_actions(&dead);
+    assert_eq!(actions.len(), 1, "{actions:?}");
+    assert_eq!(actions[0]["condition"], "no-live-holder");
+    assert_eq!(
+        actions[0]["commands"],
+        json!(["pij project set fleet --prime '<seat>'"])
+    );
+    assert!(
+        actions[0]["says"]
+            .as_str()
+            .unwrap()
+            .starts_with("the project has no live designated prime and 1 request(s)"),
+        "{actions:?}"
+    );
     rig.server.abort();
 }
