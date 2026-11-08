@@ -403,7 +403,10 @@
 					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
 					"instance_key": "f107",
 					"machine": "ops.osk.lan",
+					"release_why": "#170 merged f8d2cab",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-exuberant-wildcat",
+					"to": "2026-11-08T01:31:40.121Z",
 					"why": "F107 and F109: pr-freeze tooling"
 				},
 				{
