@@ -387,6 +387,12 @@ fn several_holders(send: &RoleSend, several: &[(&Assignment, SeatDescriptor)]) -
                 == 1
     });
     let shared = several.iter().any(|(row, _)| !row.instance.is_empty());
+    // A seat named in a printed command must show as itself (#185, bobcat):
+    // the first holder whose id fits the seat grammar, else no seat at all.
+    let seat = several
+        .iter()
+        .map(|(_, seat)| &seat.id)
+        .find(|id| id.is_canonical());
     match unique {
         // The role address keeps its project, wherever the line is run
         // (review of #149, F003).
@@ -402,25 +408,28 @@ fn several_holders(send: &RoleSend, several: &[(&Assignment, SeatDescriptor)]) -
             "--project",
             &send.project,
         ])),
-        None if shared => Refusal::new(
-            E_ROLE_HOLDERS,
-            format!(
-                "{head}; no instance has a single holder, so no instance address picks one. \
-                 Send to a seat, or release one of the shared holdings"
-            ),
-        )
-        .with_next(command(&[
-            "pij",
-            "send",
-            several[0].1.id.as_str(),
-            "<text>",
-        ])),
+        None if shared => {
+            let refusal = Refusal::new(
+                E_ROLE_HOLDERS,
+                format!(
+                    "{head}; no instance has a single holder, so no instance address picks one. \
+                     Send to a seat, or release one of the shared holdings"
+                ),
+            );
+            match seat {
+                Some(seat) => refusal.with_next(command(&["pij", "send", seat.as_str(), "<text>"])),
+                None => refusal,
+            }
+        }
         None => Refusal::new(
             E_ROLE_HOLDERS,
             format!(
-                "{head}; none has an instance, so an instance cannot pick one. Send to a seat \
-                 ({}), or give each holding an instance, as per-PR verdict roles do",
-                command(&["pij", "send", several[0].1.id.as_str(), "<text>"])
+                "{head}; none has an instance, so an instance cannot pick one. Send to a seat{}, \
+                 or give each holding an instance, as per-PR verdict roles do",
+                seat.map_or_else(String::new, |seat| format!(
+                    " ({})",
+                    command(&["pij", "send", seat.as_str(), "<text>"])
+                ))
             ),
         )
         .with_next(command(&[
@@ -428,7 +437,7 @@ fn several_holders(send: &RoleSend, several: &[(&Assignment, SeatDescriptor)]) -
             "directory",
             "assign",
             &format!("{role}/<instance>"),
-            several[0].1.id.as_str(),
+            seat.map_or("<seat>", SeatId::as_str),
             "--why",
             "<why>",
             "--project",
@@ -446,7 +455,7 @@ fn no_such_instance(send: &RoleSend, live: &[SeatId]) -> Refusal {
     match live {
         [_] | [] => refusal(format!(
             "role {role} has one holder and no holding has instance {}; address it as {ROLE_PREFIX}{role}",
-            send.address.instance
+            render::name(&send.address.instance)
         ))
         .with_next(command(&[
             "pij",
@@ -456,17 +465,25 @@ fn no_such_instance(send: &RoleSend, live: &[SeatId]) -> Refusal {
             "--project",
             &send.project,
         ])),
-        several => refusal(format!(
-            "role {role} has one holder, but {} seats hold it ({}) and none has instance {}; send to a seat",
-            several.len(),
-            several
-                .iter()
-                .map(SeatId::as_str)
-                .collect::<Vec<_>>()
-                .join(", "),
-            send.address.instance
-        ))
-        .with_next(command(&["pij", "send", several[0].as_str(), "<text>"])),
+        several => {
+            let refused = refusal(format!(
+                "role {role} has one holder, but {} seats hold it ({}) and none has instance {}; send to a seat",
+                several.len(),
+                several
+                    .iter()
+                    .map(SeatId::rendered)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                render::name(&send.address.instance)
+            ));
+            // A printed seat must show as itself (#185, bobcat).
+            match several.iter().find(|id| id.is_canonical()) {
+                Some(seat) => {
+                    refused.with_next(command(&["pij", "send", seat.as_str(), "<text>"]))
+                }
+                None => refused,
+            }
+        }
     }
 }
 
