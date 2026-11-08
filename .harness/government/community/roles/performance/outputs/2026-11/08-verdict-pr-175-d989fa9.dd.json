@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "d989fa951e5cfe21eaf77a4b620dde1c0821ea2d",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/175#issuecomment-6717794952",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:175",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `d989fa951e5cfe21eaf77a4b620dde1c0821ea2d`.\n\nDelta review of `59950a5..d989fa9` against the previous BLOCK output `08dc7187452f3797f7dbb8e761604fe265369a5f`. Both cost blockers are closed; the prior whole-PR build/load/cache qualifications still apply.\n\n**P175-F001 closed: build stamps no longer escape from either recipe.** `justfile:66-69,638-643` stores shortened values in unexported shell variables and sets `PIJ_BUILD_COMMIT`, `PIJ_EXT_TREE_COPILOT` and `PIJ_EXT_TREE_OMP` on the Cargo command only. The later daemon launch does not inherit stamps introduced by the recipe. `build_stamps.rs` executes the actual recipe bodies with a cleared environment and fakes: both Cargo invocations receive the three expected values, while the bounce's daemon receives none. This directly tests the production-script boundary, without compiling or bouncing. The reported export mutant is coder evidence, not a mutation run by this reviewer. Caller-supplied exported stamps are not cleared; the fix prevents the recipes from introducing the leak.\n\n**P175-F002 closed: bounded work before allocation/scanning.** `pa_watchdog.rs:1346-1366,1381-1424` parses the two daemon stamps once per digest, not per row. Whole seat builds over 238 bytes stop before `split_once`; trees over 163 and prefixes over 69 stop before further parsing. `splitn(5)` limits the temporary tree vector to five references, rejects a fifth component, and accepted joins contain at most 163 bytes. Invalid-prefix reporting uses constant-time byte length instead of a character walk. Widest accepted forms, over-limit text, large hex/delimiter inputs and an oversized stored-row build are covered. Source ordering establishes the work bound; result tests alone do not prove allocation complexity. The bound covers this added parser, not the pre-existing loading/cloning/storage of an unrestricted seat field.\n\n**Cost carried forward:** no new production process site, store read, timer or retry loop in this delta. Existing digest work is bounded parsing/comparison per relevant row, plus two daemon-stamp parses per digest. Healthy extension loads retain two Git launches; OMP can retry its first rev-parse on any exception, not only a missing outside file. Install/bounce retains one four-object Git call and four printf command-substitution evaluations per build.\n\n`PIJ_BUILD_COMMIT` still changes with every HEAD and is compiled into the daemon library with `option_env!`. Docs-only stamped builds can therefore rebuild that unit and applicable dependents, despite producing no stale-extension alert. Tree changes and same-profile stamped/unstamped transitions also affect matching unit caches. This is not a global cache flush; profiles/target directories and unrelated dependency units remain separate. `CARGO_INCREMENTAL=0` does not disable Cargo's whole-unit freshness cache. Shared-build's existing source touches remain a separate freshness cost. No cache-timing experiment or live deployment reading was run.\n\n**Exact-head CI proof:** [ci 42450838653](https://github.com/AI-Substrate/pij-fleet/actions/runs/42450838653), successful Rust job `128639519814`, upload artifact **13605786840**: **2,208 executed cases passed**, five separately skipped. The exact-ID JUnit has zero failures/errors and includes both build-stamp isolation tests, the grammar/digest cases, three closure cases and all six launch guards. Rust lint and Node22/24 checks succeed; the replacement delivers run `42450854436` succeeds. The two new test-only shell executions are on-demand CI work, not fleet launches, and are outside the daemon launch-site scanner's intended scope.\n\nWorktree/GitHub exact heads agree; worktree clean and PR CLEAN. Read-only review: no local Cargo, tests, mutation, probe, restart or product edit. This cost verdict does not replace correctness/security verdicts or close F127.\n"
+		}
+	]
+}
