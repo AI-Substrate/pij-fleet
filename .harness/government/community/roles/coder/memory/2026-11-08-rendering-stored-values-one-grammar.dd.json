@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Open before rendering or admitting a seat id, instance, project or request id, before printing a repair command built from stored rows, or before testing hostile legacy rows (F127, F132, F135)",
+				"tags": [
+					"render",
+					"security",
+					"grammar",
+					"commands",
+					"tests"
+				],
+				"title": "Rendering stored values: one grammar, commands are a sink too, seeding legacy rows"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Adds to the \"Daemon-authored text and bounded reads\" note, from #182, #185 (three rounds) and F135.\n\n1. One grammar per kind, shared by render and admission. Directory names (project, role, holding instance) use pij_core::render::is_name ([a-z0-9][a-z0-9-]{0,31}); seat ids use SeatId::is_canonical (F127); msg ids use render::msg_id. F135's assign check calls the same is_name, so anything recorded always shows as itself. A second, parallel grammar (#184's memory-turn `word`) became a merge conflict and a review finding. Before choosing a grammar, check every live value read-only (sqlite3 \"file:$HOME/.pij-rs/pij.sqlite?mode=ro\", plus the governance holders and outputs documents).\n2. A rendered listing isn't enough: printed commands and `next` are sinks too. shell_word quoting keeps a newline intact inside the quotes. When a stored seat or instance can't be shown, choose a canonical alternative (the first canonical holder), print no command, or use a placeholder (<seat>). Never print a command built from the raw value. Bobcat blocked #185 twice on exactly this: several-holders fallbacks and picture actions_weighing (revive/assign).\n3. Values travel. A broad role send copies the holding's stored instance into request.instance, and a restart requeue keeps it. So every text that names a request's address must render it: RoleAddress::display does it once.\n4. Leave structured JSON data that operators act on (the view's lineage/live) as stored, JSON-escaped. Render prose and commands. Say so in the PR body.\n5. Seeding legacy rows in tests:\n   - Store-read paths: rig.store.record_assignment_committed with community::holders::seat_role_for(role), or role sends refuse E-RS-ROLE-MISMATCH. Register a non-canonical seat straight in the registry.\n   - Paths that read the governance holders document (retire): assign a valid key, rewrite it in repo.gov's holders.dd.json, then commit.\n   - Release and rebuild stay loose so a legacy row can still be ended.\n6. Test traps:\n   - response.to_string().contains(\"pij send\") matches the envelope's own \"command\" field, so assert on meta and details.next.\n   - cargo test takes several filters only after `--` (`test -p pij-daemon --lib -- a b`); before it, cargo errors and a grep pipeline prints nothing.\n   - A mutant only bites when the fixture makes the guarded row the one a command would pick. Order hostile seats first (pij-a...).\n"
+		}
+	]
+}
