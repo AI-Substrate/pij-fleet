@@ -521,7 +521,7 @@ async fn bg_timeout_kills_with_a_timeout_turn_and_list_shows_timing() {
     let (_, listed) = call(&daemon, OWNER, json!(["bg", "list"])).await;
     let line = listed["data"]["line"].as_str().unwrap();
     assert!(
-        line.contains("Running  running ") && line.ends_with("  slow"),
+        line.contains("Running  running ") && line.ends_with("  \"slow\""),
         "{line}"
     );
     let row = wait_done(&daemon, job).await;
@@ -530,7 +530,7 @@ async fn bg_timeout_kills_with_a_timeout_turn_and_list_shows_timing() {
     let (_, listed) = call(&daemon, OWNER, json!(["bg", "list"])).await;
     let line = listed["data"]["line"].as_str().unwrap();
     assert!(
-        line.contains(" TIMEOUT  took ") && line.ends_with("  slow"),
+        line.contains(" TIMEOUT  took ") && line.ends_with("  \"slow\""),
         "{line}"
     );
     let (_, inbox) = post(
