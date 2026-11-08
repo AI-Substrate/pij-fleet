@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b8a5-36e6-7ef3-95b2-e8fb72350039",
+				"date": "2026-11-08",
+				"head": "060ef066847a0ef1882976a04291ab149681dce1",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/170#issuecomment-6715553961",
+				"requester": "pij-steady-otter",
+				"role": "reviewer",
+				"subject": "pr:170",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#170 round-2 deadline closure: superseded, not extended\n\nRequest 01a1b8a5-36e6-7ef3-95b2-e8fb72350039 concerned head 060ef066847a0ef1882976a04291ab149681dce1. The PM explicitly held it in message eec2e1c08c2219cc-0000000000000064 and instructed waiting for the macOS-only round-3 head if no verdict had been written. No round-2 verdict was written or published.\n\nRound 3 replaced that request. Round 4 completed the review at b69cf96b6a6b6e9938f40a35f66ba66113fb4f52 with PASS-WITH-NOTES: comment 6715553961, writer commit 96ad81213ed5c580d1ad49c75c0c6ca2ce32b6dc. The exact-head index currently contains reviewer, security and performance verdicts at that final head.\n\nThe old request remained uncorrelated when it was held, so its deadline check-in does not describe unfinished review work. This note answers only that superseded request; it does not assign a verdict to 060ef06, reopen #170 or extend the deadline. No longer review period is needed. Await a fresh authorized assignment.\n"
+		}
+	]
+}
