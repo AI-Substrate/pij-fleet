@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "ff13b5ad6629cb63ceb3f5a8264c1442018b6cc7",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/177#issuecomment-6718680868",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:177",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `ff13b5ad6629cb63ceb3f5a8264c1442018b6cc7`.\n\nDelta-only review from passed `b425d07`, output `282f375e12e622d4d6ef7b662b769b1d4834e54c`: `2a133c5a` plus the two main merges. The fix changes one queued-request filter; product directory/picture/claims code is unchanged between that fix and this final head. Both merges have documentation-only combined conflicts.\n\n**Gate cost:** `community/directory.rs:485-498` reuses the already-computed `is_prime` and designation-based `live_holder`. It adds a constant boolean test for requests whose role matches, inside the existing iteration. No extra project/registry/store read, liveness lookup, allocation site, executable, timer or per-tick work.\n\nThe existing queued-heads query and per-role request traversal still happen; this is not a shortcut that removes those scans. For a live designated prime, the action-input vector is empty, saving its queued-instance enumeration and false recovery-command/JSON formatting. The waiting-request count remains visible and no request is consumed/closed. For a dead/missing designation the existing `project set` advice remains. Advice is text, not an executed project change or process launch.\n\nPrior P177-N001 newly admitted delivery/writer costs and P177-N002 reference-vector/legacy-output costs remain. Inherited #175/#180/#182 build/load, digest and invalid-field scan qualifications remain; this delta does not reopen those reviews or add a lifecycle timer.\n\n**Exact-head CI:** [42457966410](https://github.com/AI-Substrate/pij-fleet/actions/runs/42457966410), successful Rust job `128660930653`, exact upload artifact **13607684002**: **2,221 executed cases passed**, zero failures/errors, five separately skipped. Verified the live-designation-plus-queued-request / tombstoned-designation regression pair, recent legacy-row regression, no-project-docs delivery case and all six spawn guards. Rust lint, Node22/24 and delivers checks succeed. The author's ungated mutation result was not rerun locally.\n\nSource and CI support the requested F002 gate repair; this cost verdict does not replace the new-head correctness/security verdicts. Clean worktree, matching frozen local/GitHub heads and CLEAN. No local build, test, mutation, live role/view call or performance probe.\n"
+		}
+	]
+}
