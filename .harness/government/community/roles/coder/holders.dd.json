@@ -616,6 +616,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-exuberant-wildcat",
 					"why": "F144 urgent: plan 224 idle nudge wakes resting specialists (C30); fast follow-up"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T18:17:17.140Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f141",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "F141 predictable daemon notice ids; delivery path owner"
 				}
 			]
 		}
