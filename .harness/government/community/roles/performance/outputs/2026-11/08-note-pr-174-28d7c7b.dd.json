@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "28d7c7bd792d33e91fe5ca2be4de43dc2236f0e3",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/commit/28d7c7bd792d33e91fe5ca2be4de43dc2236f0e3",
+				"role": "performance",
+				"subject": "pr:174",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**#174 after-deploy: +0 recorded daemon launches/60.011701 seconds; B=0 in both registry snapshots. The four known rows are tombstoned and their nine queued jobs remain pending.**\n\nGitHub and the canonical checkout identify merged `28d7c7bd792d33e91fe5ca2be4de43dc2236f0e3`. Both healthy v2 pings identify **PID92503**, with unchanged process start **08 Nov 12:50:37 +10:00**. Read-only schema checks report **44**. The generic build label is not an independently embedded source SHA.\n\n| Measurement | Result |\n|---|---|\n| Ping timestamps, 08 Nov +10:00 | **13:08:33.666066 to 13:09:33.677981** |\n| Monotonic interval | **60.011701 seconds** |\n| Recorded launches | **174 to 174: +0, 0.000/s** |\n| Reconciliation | All **10 populated sites flat**; each snapshot's site counts sum to 174 |\n| Registration counters | **13 attempts / 18 ps**, unchanged |\n| Interval daemon CPU | **8.50 CPU seconds = 14.16%** of one CPU |\n| Daemon RSS | **201.64 to 201.64 MiB**, unchanged at 206,480 KiB |\n| Separate 20-second machine PID-counter estimate | **34.0 launches/s** |\n| Machine sampled launches | **15.1/s**: **10.9/s other**, **4.2/s gone before identification**; no recognized direct daemon-child contribution |\n\n**B verification:** the read-only registry snapshots bracket the ping interval, at **13:08:23.779134** and **13:09:40.779256 +10:00**. Each has **43 non-tombstoned rows, all 43 with both PID and process start**, zero half-identities and zero never-bound rows. B uses the exact new-path predicate: non-tombstoned, no PID/start, recorded pane. The four retired rows provide a positive control for those same fields; their PID/start are null but tombstones exclude them. No extra liveness scan of all 43 processes was performed.\n\n| Retired row | Pane | Queued job IDs, unchanged across snapshots |\n|---|---|---|\n| pij-cheerful-orlandine | %2431 | 9873, 9904 |\n| pij-free-flute | %1961 | 9879, 9910 |\n| pij-irregular-apocalypse | %1963 | 9883, 9912 |\n| pij-kind-alpaca | %3408 | 1193, 9884, 9913 |\n\nAll four retain `tombstone_reason: observed-dead`, with tombstones **12:50:43.206 to 12:50:43.216 +10:00**. All nine listed jobs are still `pending`; only their identity/status metadata was read, not message payloads.\n\nBy the reviewed predicate, the new never-bound pane probe is bypassed for these observed post-retirement rosters. **There is no dedicated live pane-probe counter:** zero launches alone would not prove zero fork-free control requests, and two B snapshots do not measure every instant between them. This validates the expected B=0 state and its source gate, not a universal zero-work guarantee when future pre-bind seats appear.\n\nThe machine sampler identified PID92503 and made **145,171 in-process polls**; it overlaps part of the daemon minute and consumes CPU despite nice priority. Its attribution is a lower bound, and its PID-counter estimate has different limits from sampled sightings. Do not compare this workload causally with older windows or subtract counters across bounces.\n\nThis completes the requested cost and four-retired/jobs-kept reading. It is not a dormant-PA wake/flag-latency canary. No build, local test, fault injection, synthetic traffic, reap or restart was run. All bounded measurement helpers completed.\n\nRaw session receipts: `pr174-after-window.json`, `pr174-after-machine.json`, `pr174-after-bindings.json`.\n"
+		}
+	]
+}
