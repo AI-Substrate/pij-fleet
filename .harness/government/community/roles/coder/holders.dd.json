@@ -490,6 +490,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-swift-kestrel",
 					"why": "F124 Copilot receiver false fail-safe drops the lease"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T04:37:28.015Z",
+					"harness": "copilot",
+					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
+					"instance_key": "f127",
+					"machine": "ops.osk.lan",
+					"seat": "pij-back-tapir",
+					"why": "F127 seat id and role grammar (PA digest injection class)"
 				}
 			]
 		}
