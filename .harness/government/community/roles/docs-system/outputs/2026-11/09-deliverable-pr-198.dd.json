@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bd8b-094e-74f2-afd7-4fe096d1c8aa",
+				"date": "2026-11-09",
+				"kind": "deliverable",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/198",
+				"requester": "pij-steady-otter",
+				"role": "docs-system",
+				"subject": "pr:198",
+				"writer": "pij-leading-guan",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PRD 003 req-10 dropped by ruling C33: #198\n\n#198 (branch docs/c33-req10-dropped). pr-freeze says FINAL at 534221808135ed39b3927d189505f38b73cebbe5: CLEAN, all 5 checks pass, no migration. Delivers: docs/project/prds/003-seat-permissions.dd.json#requirements/req-10. No Fixes line.\n\nDone as asked:\n1. req-10 is `dropped`. The PRD lifecycle enum has `dropped`, so no schema change was needed. Its note cites C33 (2026-11-09) and gives the why in one sentence.\n2. C32's residuals are now accepted permanently: C33 amended C32 in place, and nothing waits on req-10. The PRD never named C32; the \"fixed once, here\" wording was in req-10's own source and note, which the note now supersedes.\n3. Workshop 001 is untouched. The PRD didn't link it before; req-10's note now names it as kept for a future shared or multi-user host.\n4. req-10's note lists what C33 keeps: the misattribution guards (derive the caller where the daemon knows it, refuse contradictory claims), the closed grammars and safe rendering of F127, F132, F135 and F142, and plan 221's route-inventory sensor.\n\nBeyond the packet, for you to accept or revert:\n- req-03 based the operator, bridge and system-message exemption on \"a proven identity (req-10)\". That would leave a planned row depending on a dropped one, so it now reads \"an identity the daemon derives itself, never as a bypass a seat can claim\", which is C33's kept guard. The q-04 answer stays in Jordan's words.\n- Workstream 003, to keep states true: s01, which delivers req-10, is `abandoned`, with a note that plan 223 stopped, #183 closed, and plan 221's sensor and workshop are kept. s03 no longer depends on s01, s04's exemption wording follows req-03, and the goal no longer puts caller proof first.\n\nChecks: ddocs validate is 0/0 on both docs, and ddocs build is current. ddocs-check (11 docs), coverage-check (0 exempted), local-path-check and biome all pass.\n"
+		}
+	]
+}
