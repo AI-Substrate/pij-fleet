@@ -295,7 +295,8 @@ async fn wake(
     held: &[String],
     now_ms: u64,
 ) -> RoundOutcome {
-    let msg_id = format!("compaction-wake:{}:{}", seat.id, compaction.msg_id);
+    let msg_id = pij_core::notice_id::NoticeKind::CompactionWake
+        .id(format!("{}:{}", seat.id, compaction.msg_id));
     let (outcome, cold_check) = wake_pa_receipt(
         services,
         seat,
@@ -317,7 +318,8 @@ async fn wake(
                 .hold_fyi(bg_msg(
                     parent,
                     parent_body(&seat.id, held),
-                    format!("compaction-wake-fyi:{}:{}", seat.id, compaction.msg_id),
+                    pij_core::notice_id::NoticeKind::CompactionWakeFyi
+                        .id(format!("{}:{}", seat.id, compaction.msg_id)),
                 ))
                 .await;
             let word = outcome_text(

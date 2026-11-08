@@ -867,7 +867,8 @@ impl BackgroundService {
         batch: &EventBatch,
         now: u64,
     ) -> Result<()> {
-        let msg_id = format!("pij-bg:{}:batch:{}", job.job_id, batch.batch_no);
+        let msg_id = pij_core::notice_id::NoticeKind::PijBg
+            .id(format!("{}:batch:{}", job.job_id, batch.batch_no));
         let (plan, replay) = match self.recorded_plan(job, &msg_id).await? {
             Some((plan, false)) => (plan, true),
             Some((plan, true)) => {
@@ -1378,7 +1379,7 @@ impl BackgroundService {
             String::new()
         };
         let body = completion_turn(job, &output);
-        let msg_id = format!("pij-bg:{}:finished", job.job_id);
+        let msg_id = pij_core::notice_id::NoticeKind::PijBg.id(format!("{}:finished", job.job_id));
         let kind = match job.state {
             BackgroundState::Done => "bg.finished",
             BackgroundState::Killed => "bg.killed",

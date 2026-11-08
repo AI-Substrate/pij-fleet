@@ -7223,6 +7223,121 @@ async fn forwarded_ids_stay_raw_and_local_ids_cannot_contain_at() {
     server.abort();
 }
 
+/// F141: a daemon notice's id is its dedupe key, and most are predictable, so a
+/// caller who held one first would suppress the notice: the FYI path refuses
+/// the daemon's hold as a foreign id, and the queue deduplicates the daemon's
+/// send onto the caller's message. No caller id may sit in a daemon namespace,
+/// by any route: local or paired `/v1/send` (plain, FYI or role-addressed) and
+/// both Telegram sidecar forms. The notice then lands under its id, once.
+#[tokio::test]
+async fn caller_ids_in_a_daemon_notice_namespace_are_refused_and_the_notice_lands() {
+    use pij_core::notice_id::{NoticeKind, RESERVED_CODE};
+    let queue = Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy"));
+    let services = test_services(
+        Arc::new(
+            FakeRegistry::new()
+                .with_seat(SeatDescriptor::new("pij-cold", Harness::Omp, "/abs/tree"))
+                .with_seat(SeatDescriptor::new("pij-sender", Harness::Omp, "/abs/tree")),
+        ),
+        queue.clone(),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    let delivery = Arc::clone(&services.delivery);
+    let (addr, server) = spawn(router_with_config(
+        services,
+        config("key", &[("laptop", COLD_PEER_KEY)]),
+    ))
+    .await;
+    let rest = "pij-cold:1794161999665";
+    for kind in NoticeKind::ALL {
+        let id = kind.id(rest);
+        let mut attempts = Vec::new();
+        for extra in [
+            serde_json::json!({}),
+            serde_json::json!({"fyi": true}),
+            serde_json::json!({"to": {"seat": "role:pm-001"}}),
+        ] {
+            attempts.push((
+                "local",
+                post_json(addr, "/v1/send", cold_send(&id, extra)).await,
+            ));
+        }
+        for extra in [serde_json::json!({}), serde_json::json!({"fyi": true})] {
+            attempts.push((
+                "peer",
+                post_json_as(addr, "/v1/send", cold_send(&id, extra), COLD_PEER_KEY).await,
+            ));
+        }
+        attempts.push((
+            "telegram",
+            post_json(
+                addr,
+                "/v1/sidecar",
+                serde_json::json!({"sidecar": "telegram", "request": {
+                    "from": "pij-sender", "body": "hi", "msg_id": id, "chat_id": null,
+                }}),
+            )
+            .await,
+        ));
+        attempts.push((
+            "telegram document",
+            post_json(
+                addr,
+                "/v1/sidecar",
+                serde_json::json!({"sidecar": "telegram_document", "request": {
+                    "from": "pij-sender", "files": ["/abs/file.txt"], "caption": null,
+                    "body": null, "msg_id": id, "chat_id": null,
+                }}),
+            )
+            .await,
+        ));
+        for (route, (status, reply)) in attempts {
+            assert_eq!(status, 400, "{route} {id}: {reply}");
+            assert!(
+                reply["meta"]
+                    .as_str()
+                    .is_some_and(|meta| meta.starts_with(RESERVED_CODE)),
+                "{route} {id}: {reply}"
+            );
+        }
+    }
+    assert_eq!(queue.live_len(), 0, "no squat was queued");
+    let cold = SeatId::from("pij-cold");
+    assert_eq!(delivery.pending_fyi_count(&cold).await.unwrap(), 0);
+
+    let notice = |kind: NoticeKind| Msg {
+        from: SeatId::from(pij_core::BG_ACTOR),
+        to: cold.clone(),
+        body: "the daemon's notice".to_string(),
+        msg_id: kind.id(rest),
+        from_machine: None,
+        in_reply_to: None,
+        command: None,
+    };
+    for _ in 0..2 {
+        delivery
+            .hold_fyi(notice(NoticeKind::CompactionWakeFyi))
+            .await
+            .expect("the FYI notice is held under its id");
+    }
+    assert_eq!(
+        delivery.pending_fyi_count(&cold).await.unwrap(),
+        1,
+        "held once"
+    );
+    for _ in 0..2 {
+        delivery
+            .accept(notice(NoticeKind::CompactionWake))
+            .await
+            .expect("the notice is queued under its id");
+    }
+    let live = queue.live_payloads();
+    assert_eq!(live.len(), 1, "queued once: {live:?}");
+    assert!(live[0].contains("the daemon's notice"), "{live:?}");
+    server.abort();
+}
+
 /// Review F07: two overlapping sends of one message both wait for, and both
 /// receive, the receiver's refusal; one is never left holding a dead waiter.
 #[tokio::test]

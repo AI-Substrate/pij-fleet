@@ -220,7 +220,8 @@ pub(crate) async fn steer(
                     },
                     target.id
                 ),
-                msg_id: format!("steer-control:{}:{now}", target.id),
+                msg_id: pij_core::notice_id::NoticeKind::SteerControl
+                    .id(format!("{}:{now}", target.id)),
                 from_machine: None,
                 in_reply_to: None,
                 command: None,

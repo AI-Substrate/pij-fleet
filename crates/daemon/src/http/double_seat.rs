@@ -210,10 +210,10 @@ pub(crate) async fn refused(state: &AppState, command: &str, double: &Double) ->
 /// The notice's id, which is also its dedupe key: one per (live seat, stray
 /// process). A pid alone is recycled at boot, so the start is part of the key.
 fn notice_id(double: &Double) -> String {
-    format!(
-        "double-seat-{}-{}-{}",
+    pij_core::notice_id::NoticeKind::DoubleSeat.id(format!(
+        "{}-{}-{}",
         double.live.seat, double.stray.pid, double.stray.proc_start
-    )
+    ))
 }
 
 fn notice_body(double: &Double) -> String {

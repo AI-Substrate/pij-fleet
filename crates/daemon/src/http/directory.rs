@@ -1154,7 +1154,9 @@ async fn tell_withdrawn(
             pij_core::render::fenced(why, pij_core::render::FENCE_MAX),
             request.body
         ),
-        msg_id: format!("{}.withdrawn", request.id),
+        // In the daemon's namespace (F141): "<request id>.withdrawn" was
+        // built from the sender's own msg id, which it could pre-hold.
+        msg_id: pij_core::notice_id::NoticeKind::RequestWithdrawn.id(&request.id),
         in_reply_to: None,
         command: None,
     };

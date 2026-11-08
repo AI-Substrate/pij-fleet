@@ -570,7 +570,8 @@ impl PaWatchdog {
             }
             if edge {
                 let view = self.fleet(services, pa, scope, interval_secs, now_ms).await;
-                let msg_id = format!("pa-watchdog:{}:{now_ms}", pa.id);
+                let msg_id =
+                    pij_core::notice_id::NoticeKind::PaWatchdog.id(format!("{}:{now_ms}", pa.id));
                 let (delivery, cold_check) = wake_pa(
                     services,
                     pa,
@@ -616,7 +617,8 @@ impl PaWatchdog {
             let mut delivery = None;
             if verdict == PrimeVerdict::Wake {
                 let view = self.fleet(services, pa, scope, interval_secs, now_ms).await;
-                let msg_id = format!("prime-active:{}:{now_ms}", pa.id);
+                let msg_id =
+                    pij_core::notice_id::NoticeKind::PrimeActive.id(format!("{}:{now_ms}", pa.id));
                 let body = prime_active_body(&prime.id, &view.digest());
                 let (sent, cold_check) =
                     wake_pa(services, pa, body, msg_id, PRIME_ACTIVE_REASON, now_ms).await;
@@ -775,7 +777,8 @@ impl PaWatchdog {
             {
                 None => ("no-target".to_string(), None),
                 Some(seat) => {
-                    let msg_id = format!("limit-reset:{resets_at}:{}", seat.id);
+                    let msg_id = pij_core::notice_id::NoticeKind::LimitReset
+                        .id(format!("{resets_at}:{}", seat.id));
                     let local = pij_harnesses::local_clock_text(*resets_at, None)
                         .unwrap_or_else(|| format!("{resets_at} UTC epoch"));
                     let body = wake_body(&stop.limit_type, *resets_at, &local, &stop.seats, late);

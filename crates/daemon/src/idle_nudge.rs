@@ -280,7 +280,8 @@ async fn nudge(
     now_ms: u64,
 ) -> RoundOutcome {
     let seat = due.seat;
-    let msg_id = format!("idle-nudge:{}:{}:{nudge_part}", seat.id, due.anchor);
+    let msg_id = pij_core::notice_id::NoticeKind::IdleNudge
+        .id(format!("{}:{}:{nudge_part}", seat.id, due.anchor));
     let (outcome, cold_check) = wake_pa_receipt(
         services,
         seat,
@@ -302,7 +303,8 @@ async fn nudge(
                 .hold_fyi(bg_msg(
                     &prime,
                     prime_body(&seat.id, due.idle_ms, &due.held),
-                    format!("idle-nudge-fyi:{}:{}:{own}:{prime}", seat.id, due.anchor),
+                    pij_core::notice_id::NoticeKind::IdleNudgeFyi
+                        .id(format!("{}:{}:{own}:{prime}", seat.id, due.anchor)),
                 ))
                 .await
                 .map(|receipt| receipt.outcome)

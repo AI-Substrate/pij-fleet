@@ -468,7 +468,8 @@ impl PaWatchdog {
                 }
                 let last_pa = last_pa(seats, prime, &scope.key, &self.repos).await;
                 let body = pa_missing_body(&prime.id, missing_for, last_pa.as_ref(), &prime.folder);
-                let msg_id = format!("pa-missing:{}:{now_ms}", prime.id);
+                let msg_id =
+                    pij_core::notice_id::NoticeKind::PaMissing.id(format!("{}:{now_ms}", prime.id));
                 let (delivery, cold_check) = wake_pa(
                     services,
                     prime,
@@ -585,7 +586,8 @@ impl PaWatchdog {
                     .fleet(services, pa, view_scope, interval_secs, now_ms)
                     .await;
                 let body = pa_dormant_body(&pa.id, quiet_ms, &view.digest());
-                let msg_id = format!("pa-dormant:{}:{now_ms}", pa.id);
+                let msg_id =
+                    pij_core::notice_id::NoticeKind::PaDormant.id(format!("{}:{now_ms}", pa.id));
                 let (delivery, cold_check) = wake_pa(
                     services,
                     pa,
@@ -658,7 +660,8 @@ impl PaWatchdog {
                     now_ms.saturating_sub(wake.claimed_at_ms),
                     &receipt,
                 );
-                let msg_id = format!("pa-unresponsive:{}:{now_ms}", pa.id);
+                let msg_id = pij_core::notice_id::NoticeKind::PaUnresponsive
+                    .id(format!("{}:{now_ms}", pa.id));
                 let (delivery, cold_check) = wake_pa(
                     services,
                     prime,
@@ -784,7 +787,8 @@ impl PaWatchdog {
             }
             let pas: Vec<SeatId> = scope.pas.iter().map(|pa| pa.id.clone()).collect();
             let body = large_seats_body(&large, &pas);
-            let msg_id = format!("large-seats:{}:{now_ms}", prime.id);
+            let msg_id =
+                pij_core::notice_id::NoticeKind::LargeSeats.id(format!("{}:{now_ms}", prime.id));
             let delivery = match services
                 .delivery
                 .hold_fyi(bg_msg(&prime.id, body, msg_id.clone()))

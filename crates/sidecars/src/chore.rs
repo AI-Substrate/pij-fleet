@@ -172,7 +172,8 @@ impl ChoreWorker {
                     "pij-chore",
                     &target,
                     format!("chore `{name}` defined"),
-                    format!("chore-{name}-defined-{}", now_ms()?),
+                    pij_core::notice_id::NoticeKind::Chore
+                        .id(format!("{name}-defined-{}", now_ms()?)),
                 )
                 .await
             }
@@ -214,7 +215,7 @@ impl ChoreWorker {
                     "pij-chore",
                     &target,
                     report,
-                    format!("chore-run-{}", now_ms()?),
+                    pij_core::notice_id::NoticeKind::Chore.id(format!("run-{}", now_ms()?)),
                 )
                 .await
             }
@@ -239,7 +240,8 @@ impl ChoreWorker {
                     "pij-chore",
                     &target,
                     format!("chore `{name}` baseline acknowledged"),
-                    format!("chore-{name}-acked-{}", now_ms()?),
+                    pij_core::notice_id::NoticeKind::Chore
+                        .id(format!("{name}-acked-{}", now_ms()?)),
                 )
                 .await
             }

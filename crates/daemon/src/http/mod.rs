@@ -1952,6 +1952,10 @@ async fn send(
             "pij-bg is a daemon-owned sender; callers cannot impersonate it",
         );
     }
+    // Before any route: local or paired, plain, FYI, role or control.
+    if let Some(refusal) = reserved_msg_id("pij send", &request.message.msg_id) {
+        return refusal;
+    }
     // The sending machine comes from the KEY, never from the body (plan 164
     // ruling 3): a peer is stamped with its configured alias, and a local
     // caller cannot pose as a forward to slip past this daemon's rules.
@@ -2339,6 +2343,23 @@ fn at_in_msg_id(msg_id: &str) -> Option<Response> {
     })
 }
 
+/// A caller id inside a daemon notice's namespace (F141). A notice's id is its
+/// dedupe key and most are predictable, so a caller holding one first would
+/// suppress the notice; no caller may submit an id with a daemon prefix.
+fn reserved_msg_id(command: &str, msg_id: &str) -> Option<Response> {
+    pij_core::notice_id::reserved(msg_id).map(|kind| {
+        refused(
+            command,
+            format!(
+                "{}: msg_id {} is in the daemon's {kind:?} namespace (`{}`), which only daemon notices use; omit the id to let pij mint one",
+                pij_core::notice_id::RESERVED_CODE,
+                pij_core::render::msg_id(msg_id),
+                kind.prefix()
+            ),
+        )
+    })
+}
+
 /// One remote send, from either the native or the shim route: durably queued
 /// for the federation worker, answered inline with the peer's receipt or
 /// refusal when it comes within the federation policy's first-attempt wait.
@@ -2578,7 +2599,8 @@ pub(crate) async fn admit_control(
         // the memory turn held gets it too. Keyed to the compact's recipient and
         // id: a replay holds nothing new, and another seat's compact with the same
         // id still gets its own.
-        let id = format!("routes-after-compact:{target}:{}", receipt.msg_id);
+        let id = pij_core::notice_id::NoticeKind::RoutesAfterCompact
+            .id(format!("{target}:{}", receipt.msg_id));
         routes::deliver(
             &state.services,
             &target,
@@ -4609,6 +4631,16 @@ async fn sidecar(
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_nanos() as u64)
     );
+    // A Telegram send's id is its queue dedupe key, shared with the daemon's own
+    // Telegram notices (F141).
+    let telegram_id = match &request {
+        SidecarRequest::Telegram(send) => Some(send.msg_id.as_str()),
+        SidecarRequest::TelegramDocument(document) => Some(document.msg_id.as_str()),
+        SidecarRequest::Bg(_) | SidecarRequest::Chore(_) => None,
+    };
+    if let Some(refusal) = telegram_id.and_then(|id| reserved_msg_id("pij sidecar", id)) {
+        return refusal;
+    }
     let job = match &request {
         SidecarRequest::Telegram(send) => pij_sidecars::telegram::send_job(send),
         SidecarRequest::TelegramDocument(document) => {

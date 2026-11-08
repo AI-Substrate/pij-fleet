@@ -692,7 +692,7 @@ async fn run(
         .event_bus
         .subscribe_live(EventFilter::kinds([OUTCOME_EVENT_KIND, ACTIVITY]).for_seat(seat.clone()));
     let at = now_ms();
-    let msg_id = format!("memory-turn-{seat}-{at}");
+    let msg_id = pij_core::notice_id::NoticeKind::MemoryTurn.id(format!("{seat}-{at}"));
     // Admission runs under the same deadline as the wait: a transport hold
     // (Claude's socket grace) must not outlast the bound. The turn owns the
     // admission as a task, so past the bound it keeps it and records how it

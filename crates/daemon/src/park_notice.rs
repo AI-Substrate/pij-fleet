@@ -101,13 +101,13 @@ pub const HOLD_NOTICE_KIND: &str = "delivery.hold-notice";
 /// The stable notice id for one parked job: the queue's dedupe key.
 #[must_use]
 pub fn notice_id(job_id: JobId) -> String {
-    format!("park-notice-{}", job_id.0)
+    pij_core::notice_id::NoticeKind::ParkNotice.id(format!("{}", job_id.0))
 }
 
 /// The stable notice id for one job held at the hold limit.
 #[must_use]
 pub fn hold_notice_id(job_id: JobId) -> String {
-    format!("hold-notice-{}", job_id.0)
+    pij_core::notice_id::NoticeKind::HoldNotice.id(format!("{}", job_id.0))
 }
 
 fn hold_body(held: &HoldLimit) -> String {

@@ -509,7 +509,7 @@ async fn tell_requester(
             pij_core::render::seat(&closed.closed_by),
             pij_core::render::fenced(&closed.why, pij_core::render::FENCE_MAX)
         ),
-        msg_id: format!("request-closed-{}", request.id),
+        msg_id: pij_core::notice_id::NoticeKind::RequestClosed.id(&request.id),
         in_reply_to: Some(request.id.clone()),
         command: None,
     };

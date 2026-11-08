@@ -237,7 +237,8 @@ async fn tell(
         {
             continue;
         }
-        let msg_id = format!("modal-stall:{}:{}:{}", seat.id, stall.quiet_seq, target.id);
+        let msg_id = pij_core::notice_id::NoticeKind::ModalStall
+            .id(format!("{}:{}:{}", seat.id, stall.quiet_seq, target.id));
         let body = stall_body(&seat.id, seat.harness, stall, now_ms);
         match services
             .watchdogs()

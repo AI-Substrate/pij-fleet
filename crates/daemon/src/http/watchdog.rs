@@ -345,7 +345,8 @@ pub(crate) async fn watchdog(
                      `pij watchdog status {}`. Stop it any time: `pij watchdog off`.",
                     target.id
                 ),
-                msg_id: format!("watchdog-control:{}:{epoch}", target.id),
+                msg_id: pij_core::notice_id::NoticeKind::WatchdogControl
+                    .id(format!("{}:{epoch}", target.id)),
                 from_machine: None,
                 in_reply_to: None,
                 command: None,

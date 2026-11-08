@@ -724,7 +724,7 @@ async fn wake(
         services,
         &target,
         body,
-        format!("role-queue-{}", request.id),
+        pij_core::notice_id::NoticeKind::RoleQueue.id(&request.id),
         "role-queue",
         now_ms,
     )
@@ -1447,8 +1447,8 @@ fn limit_kind(stage: LimitStage) -> &'static str {
 
 fn limit_msg_id(stage: LimitStage, request: &RoleRequest) -> String {
     match stage {
-        LimitStage::CheckIn => format!("role-limit-checkin-{}", request.id),
-        LimitStage::Notice => format!("role-limit-notice-{}", request.id),
+        LimitStage::CheckIn => pij_core::notice_id::NoticeKind::RoleLimitCheckIn.id(&request.id),
+        LimitStage::Notice => pij_core::notice_id::NoticeKind::RoleLimitNotice.id(&request.id),
     }
 }
 

@@ -905,7 +905,7 @@ impl DeliveryService {
             from: SeatId::from(pij_core::BG_ACTOR),
             to: recipient.id.clone(),
             body: String::new(),
-            msg_id: format!("fyi-flush-{}-{at}", recipient.id),
+            msg_id: pij_core::notice_id::NoticeKind::FyiFlush.id(format!("{}-{at}", recipient.id)),
             from_machine: None,
             in_reply_to: None,
             command: None,

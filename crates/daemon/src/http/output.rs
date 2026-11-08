@@ -445,7 +445,7 @@ async fn refused_reason(response: Response) -> String {
 /// #137, F002): one commit holds one output, so two outputs never share it,
 /// while a replay of one notice keeps the same id and stays idempotent.
 fn notice_id(project: &str, commit: &str) -> String {
-    format!("output-{project}-{commit}")
+    pij_core::notice_id::NoticeKind::Output.id(format!("{project}-{commit}"))
 }
 
 /// The seat above the writer: its recorded parent when live, else the

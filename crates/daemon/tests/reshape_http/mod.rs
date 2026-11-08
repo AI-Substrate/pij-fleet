@@ -838,7 +838,7 @@ async fn an_unfinished_withdrawal_is_finished_by_the_same_command() {
             from_machine: None,
             to: SeatId::from("pij-holder"),
             body: "told before the store failed".into(),
-            msg_id: "req-left.withdrawn".into(),
+            msg_id: "request-withdrawn-req-left".into(),
             in_reply_to: None,
             command: None,
         })

@@ -33,6 +33,7 @@ pub mod liveness;
 pub mod modal_stall;
 pub mod model;
 pub mod names;
+pub mod notice_id;
 pub mod orchestration;
 pub mod outputs;
 pub mod pa_digest;

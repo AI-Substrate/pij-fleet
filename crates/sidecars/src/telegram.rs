@@ -1172,7 +1172,7 @@ impl TelegramWorker {
             return Ok(());
         };
         let binding: Binding = serde_json::from_str(&binding.payload).map_err(codec_error)?;
-        let msg_id = format!("telegram-{}", update.update_id);
+        let msg_id = pij_core::notice_id::NoticeKind::Telegram.id(format!("{}", update.update_id));
         enqueue_turn(
             &self.queue,
             "pij-telegram",
