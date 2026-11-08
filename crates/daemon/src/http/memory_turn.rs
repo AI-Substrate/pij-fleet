@@ -167,7 +167,7 @@ fn word(text: &str) -> bool {
 }
 
 /// `text` when it fits [`word`], else its length only.
-fn shown(text: &str) -> std::borrow::Cow<'_, str> {
+pub(crate) fn shown(text: &str) -> std::borrow::Cow<'_, str> {
     if word(text) {
         std::borrow::Cow::Borrowed(text)
     } else {
