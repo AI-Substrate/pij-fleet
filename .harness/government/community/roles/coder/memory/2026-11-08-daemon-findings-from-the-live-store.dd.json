@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Open before diagnosing a watchdog or sweep that did not fire, changing what the death sweep retires, or canarying a launch flag or cargo cap",
+				"tags": [
+					"diagnosis",
+					"watchdog",
+					"reaper",
+					"compaction",
+					"canary",
+					"cost"
+				],
+				"title": "Daemon findings from the live store; compaction, reaper and cap lessons"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Learned on F108, F110, F111 (plan 222), F114/F115 and F126 (2026-11-08).\n\n- Diagnose from the live store first, read-only, then confirm from a second origin. Use `sqlite3 \"file:$HOME/.pij-rs/pij.sqlite?mode=ro\"` (spine_events by seat and seq; watchdog.round outcomes) and the harness's own log (~/.copilot/session-state/<id>/events.jsonl). F108 was a reader ack (delivery.inbox-ack) counting as the seat's own activity; F115 was the dormant-PA digest path never flagging. Both came out of the rows in minutes.\n- Compaction leaves no \"done\" event. Copilot posts nothing after a delivered /compact. Claude's /compact posts exactly one seat.activity idle. So \"own activity since X\" must exclude idle, and the settle needs a time bound.\n- Once-only writes:\n  - persist BEFORE admitting (an owned_write survives a dropped caller; refuse if it fails);\n  - order by a durable sequence (AUTOINCREMENT), never the wall clock;\n  - put the veto inside the marking UPDATE (NOT EXISTS a newer pending row), not in a snapshot taken earlier.\n- Destructive rules: name the input that decides (the policy) and each check that can only keep (a brake). Check existing contracts before making anything terminal: a tombstone keeps queued jobs because resume delivers them (the prime's ruling A).\n- Per-tick, per-seat reads must not launch. Use the TmuxPort *_without_launch variants (control client only; None means wait), and add one with a real-tmux no-fork test.\n- A rule change in the reaper or sweep can break integration witnesses in other binaries (lifecycle_http pinned the old \"unknown\"). CI's cargo test stops at the first failing binary, so run `-p pij-cli --no-fail-fast` and `-p pij-daemon --tests --no-fail-fast` locally.\n- To canary an unmerged launch flag on the live daemon: `pij-rs spawn --bin /tmp/x/<harness>`, where that wrapper execs the real CLI with the flag prepended. Use a control seat without the flag for a positive.\n- Cargo caps live in the repo's .cargo/config.toml (jobs 4, RUST_TEST_THREADS 4 force=false). Before trusting such a mechanism, prove it in a scratch crate under `env -i PATH=<toolchain bin>:/usr/bin:/bin`: the build script prints NUM_JOBS, the test prints its env, and removing the config is the control.\n"
+		}
+	]
+}
