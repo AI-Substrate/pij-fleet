@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b8f9-620f-7740-99fd-a7ab04ba31c1",
+				"date": "2026-11-08",
+				"head": "81d521fc80834ae5d4916140043765fbc65e0414",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/173#issuecomment-6716169982",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:173",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #173 round 2 correctness verdict\n\n**PASS-WITH-NOTES** at `81d521fc80834ae5d4916140043765fbc65e0414`.\n\nReviewed the single-commit delta from `91e5a85d5e18455025157477705f4c678cb58ae5`. The checkout is clean and detached, matches the authorized remote head, and GitHub reports CLEAN.\n\n## Closures\n\n- **F001 closed:** the receipt now states admission accurately: `queued as a normal message (it wakes the seat when delivered); carries N held FYIs`. There is no delivery-time promise. The API documentation acknowledges the running-same-serial-key exclusion in `crates/store/src/queue.rs` and explicitly labels 381/381 deliveries within five seconds as observed history, not a promise. The peer skill uses the same corrected receipt.\n- **F121 qualification closed:** `where you can set a reply mode and a time limit` accurately describes optional configuration. It no longer implies every role request has a limit; the unchanged limit parser can still return None.\n- The delta changes wording and its assertions only. Committed-ID counting, failed-claim/plain fallback, admission/routing and ordinary delivery for role `--reply none` remain unchanged from the prior review.\n\n## Proof\n\nExact-head CI [42437402711](https://github.com/AI-Substrate/pij-fleet/actions/runs/42437402711), final attempt 3, passed Rust lint, Rust tests and Node 22/24 checks. Final JUnit artifact `13600700967`, matched by creation time and test timestamp to the successful job, contains **2195 executed cases, zero failures/errors**; the runner separately reports five skipped tests.\n\nExecuted passing controls include the updated pane-bound carrier receipt, failed FYI claim/plain fallback, failing carrier preservation, role-only refusal advice, and `a_send_carrying_held_fyis_is_a_normal_delivery_never_an_fyi`, which covers normal role reply-none delivery.\n\nAn earlier attempt's artifact records a failure in unchanged `pij-tmux::adapter::capture_proves_zero_and_more_than_the_pane_contains`. The final full rerun passed; this is not a first-attempt-green claim.\n\n## Retained nonblocking note and scope\n\nThe existing count decoder ignores malformed event JSON/ids rather than reporting an unknown count. Current typed producer shapes are covered; this unchanged limitation is not an outstanding wording repair.\n\nNo new delivery guarantee, origin-authentication claim or historical timing measurement is inferred. No local product builds/tests, mutations, dependencies, live queue probes or product edits were performed. Review evidence is source inspection plus exact-head CI; security and performance verdicts remain independently owned.\n"
+		}
+	]
+}
