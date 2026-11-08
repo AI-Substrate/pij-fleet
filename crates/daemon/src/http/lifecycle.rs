@@ -335,13 +335,14 @@ async fn handle(
             if actor.id != expected.id && expected.parent.as_ref() != Some(&actor.id) {
                 return ownership_failure(command, &actor.id, &target, expected.parent.as_ref());
             }
-            // Plan 201: a role holder writes its memory before it is closed.
-            let holdings = if expected.tombstoned_at.is_none() {
-                memory_turn::holdings(&state, &target).await
+            // Plan 201: a role holder writes its memory before it is closed,
+            // and so does a seat that released one in this context (F130).
+            let turn = if expected.tombstoned_at.is_none() {
+                memory_turn::turn_for(&state, &target).await
             } else {
-                Vec::new()
+                None
             };
-            if holdings.is_empty() {
+            let Some(turn) = turn else {
                 return match close_seat(
                     &state,
                     command,
@@ -355,12 +356,12 @@ async fn handle(
                     Ok(data) => envelope(StatusCode::OK, &Envelope::ok(command, data)),
                     Err(response) => *response,
                 };
-            }
+            };
             match memory_turn::hold(
                 &state,
                 command,
                 expected,
-                holdings,
+                turn,
                 memory_turn::Then::Close {
                     actor: actor.id,
                     reason: call.reason,

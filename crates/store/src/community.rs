@@ -287,6 +287,34 @@ impl SqliteOrchestration {
         rows.iter().map(assignment).collect()
     }
 
+    /// `seat`'s holdings in its current context (F130): every open one, and
+    /// each closed since the seat's last done compact, or since the seat
+    /// existed when it has never been compacted (seat ids are never reused).
+    /// What a seat learned in a holding stays in its context after the
+    /// release, until a compact clears it. A compact queues as a control
+    /// (`delivery-control:<seat>`, Copilot) or with the seat's bodies
+    /// (`delivery:<seat>`). One query: `jobs_serial` walked newest first to
+    /// the seat's last done compact (so it reads only what the seat received
+    /// since), and the seat's assignment rows.
+    pub async fn context_assignments(&self, seat: &str) -> Result<Vec<Assignment>> {
+        require_current_schema(&self.pool).await?;
+        let rows = sqlx::query(&format!(
+            "SELECT {ASSIGNMENT_COLUMNS} FROM community_assignments \
+             WHERE seat = ?1 AND (to_at IS NULL OR to_at > COALESCE(( \
+                 SELECT strftime('%Y-%m-%dT%H:%M:%fZ', acked_at, 'unixepoch') FROM jobs \
+                 WHERE serial_key = ?1 AND state = 'done' \
+                   AND kind IN ('delivery:' || ?1, 'delivery-control:' || ?1) \
+                   AND json_extract(payload, '$.command') = 'compact' \
+                 ORDER BY id DESC LIMIT 1), '')) \
+             ORDER BY project, role, instance, from_at"
+        ))
+        .bind(seat)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        rows.iter().map(assignment).collect()
+    }
+
     /// Every holding in `project`, open and closed, in a stable order.
     pub async fn assignments(&self, project: &str) -> Result<Vec<Assignment>> {
         require_current_schema(&self.pool).await?;

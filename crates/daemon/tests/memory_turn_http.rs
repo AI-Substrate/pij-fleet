@@ -673,3 +673,179 @@ async fn an_admission_slower_than_the_bound_still_ends_at_the_bound() {
     assert!(tombstoned(&rig, "holder").await);
     rig.server.abort();
 }
+
+/// Replace project fleet's holdings with `rows` (seat, role/instance, released).
+async fn set_holdings(rig: &Rig, rows: &[(&str, &str, Option<&str>)]) {
+    let rows: Vec<Assignment> = rows
+        .iter()
+        .map(|(seat, holding, to)| {
+            let (role, instance) = holding.split_once('/').unwrap_or((holding, ""));
+            Assignment {
+                project: "fleet".to_string(),
+                role: role.to_string(),
+                instance: instance.to_string(),
+                seat: (*seat).to_string(),
+                harness: Some("omp".to_string()),
+                session: None,
+                machine: None,
+                from: "2026-11-06T00:00:00.000Z".to_string(),
+                to: to.map(str::to_string),
+                assigned_by: "prime".to_string(),
+                released_by: to.map(|_| "prime".to_string()),
+                why: "review".to_string(),
+                release_why: to.map(|_| "merged".to_string()),
+                end_pending: false,
+            }
+        })
+        .collect();
+    pij_store::SqliteOrchestration::new(pij_store::open(&rig._store.path()).await.expect("store"))
+        .replace_assignments("fleet", &rows)
+        .await
+        .expect("holdings");
+}
+
+fn compact_as(seat: &str, caller: &str, msg_id: &str) -> Value {
+    let mut body = compact(seat, caller);
+    body["msg_id"] = json!(msg_id);
+    body
+}
+
+/// F130, pij-whole-spoonbill at 15:44: reviewer/175 was released on its PR's
+/// merge four minutes before the PA's compact. It holds nothing open, but
+/// what it learned is still in its context, so the compact is held for a
+/// memory turn that names the released holding.
+#[tokio::test]
+async fn a_compact_after_a_release_in_this_context_is_held_for_the_released_role() {
+    let rig = rig(Duration::from_secs(30), &[]).await;
+    set_holdings(
+        &rig,
+        &[("holder", "reviewer/175", Some("2026-11-08T05:40:59.568Z"))],
+    )
+    .await;
+    let held = post(rig.addr, "/v1/send", compact("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    held_compact_receipt(&held, "compact-holder");
+    assert_eq!(
+        held["data"]["memory_turn"]["holdings"],
+        json!([{"project": "fleet", "role": "reviewer", "instance": "175",
+                "released_at": "2026-11-08T05:40:59.568Z"}]),
+        "{held}"
+    );
+    let prompt = prompt_for(&rig, "holder").await;
+    assert!(
+        prompt
+            .body
+            .contains("and you held reviewer/175 (project fleet, released "),
+        "{}",
+        prompt.body
+    );
+    assert!(
+        prompt
+            .body
+            .contains("pij directory memory add reviewer --project fleet"),
+        "{}",
+        prompt.body
+    );
+    take_turn(&rig, "holder", &prompt).await;
+    let turn = turn_event(&rig, "holder").await;
+    assert_eq!(turn["then"], "compact admitted", "{turn}");
+    assert_eq!(
+        turn["holdings"][0]["released_at"],
+        "2026-11-08T05:40:59.568Z"
+    );
+    rig.server.abort();
+}
+
+/// F130: a compact clears the context, so a holding released before the
+/// seat's last done compact asks for nothing more.
+#[tokio::test]
+async fn a_release_before_the_last_done_compact_is_not_asked_again() {
+    let rig = rig(Duration::from_secs(30), &[]).await;
+    set_holdings(
+        &rig,
+        &[("holder", "reviewer/175", Some("2026-11-06T05:40:59.568Z"))],
+    )
+    .await;
+    let first = post(
+        rig.addr,
+        "/v1/send",
+        compact_as("holder", "prime", "compact-1"),
+    )
+    .await;
+    assert_eq!(first["data"]["held"], "memory-turn", "{first}");
+    let prompt = prompt_for(&rig, "holder").await;
+    take_turn(&rig, "holder", &prompt).await;
+    assert_eq!(turn_event(&rig, "holder").await["then"], "compact admitted");
+    // The harness runs the compact (an OMP seat's compact queues with its
+    // bodies; a Copilot seat's as a control: the query reads both).
+    let (job, _) = rig
+        .queue
+        .claim(&[delivery_kind(&"holder".into())], "test-harness")
+        .await
+        .unwrap()
+        .expect("the compact is queued");
+    rig.queue
+        .ack(job, pij_core::model::Outcome::Done)
+        .await
+        .unwrap();
+
+    let second = post(
+        rig.addr,
+        "/v1/send",
+        compact_as("holder", "prime", "compact-2"),
+    )
+    .await;
+    assert_eq!(second["ok"], true, "{second}");
+    assert!(second["data"]["held"].is_null(), "{second}");
+    assert!(compact_queued(&rig, "holder").await);
+    rig.server.abort();
+}
+
+/// F130: when the store can't read a seat's holdings, a compact or close is
+/// never refused and never runs without asking: it takes a generic memory
+/// turn. A brake: it only ever adds a turn.
+#[tokio::test]
+async fn an_unreadable_store_takes_a_generic_memory_turn_never_a_refusal() {
+    let rig = rig(Duration::from_secs(30), &["holder"]).await;
+    let pool = pij_store::open(&rig._store.path()).await.unwrap();
+    sqlx::query("ALTER TABLE community_assignments RENAME TO pij_test_assignments_away")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let compacted = post(rig.addr, "/v1/send", compact("holder", "prime")).await;
+    assert_eq!(compacted["ok"], true, "{compacted}");
+    assert_eq!(compacted["data"]["held"], "memory-turn", "{compacted}");
+    assert_eq!(
+        compacted["data"]["memory_turn"]["holdings_unread"], true,
+        "{compacted}"
+    );
+    let closed = post(rig.addr, "/v1/close", close("plain", "prime")).await;
+    assert_eq!(closed["ok"], true, "{closed}");
+    assert_eq!(closed["data"]["held"], "memory-turn", "{closed}");
+    for seat in ["holder", "plain"] {
+        let prompt = prompt_for(&rig, seat).await;
+        assert!(
+            prompt.body.contains("pij couldn't read your holdings")
+                && prompt.body.contains(
+                    "Write a note for any role you held in this context, or end your turn"
+                ),
+            "{}",
+            prompt.body
+        );
+    }
+    sqlx::query("ALTER TABLE pij_test_assignments_away RENAME TO community_assignments")
+        .execute(&pool)
+        .await
+        .unwrap();
+    for seat in ["holder", "plain"] {
+        let prompt = prompt_for(&rig, seat).await;
+        take_turn(&rig, seat, &prompt).await;
+    }
+    let compact_turn = turn_event(&rig, "holder").await;
+    assert_eq!(compact_turn["then"], "compact admitted", "{compact_turn}");
+    assert_eq!(compact_turn["holdings_unread"], true, "{compact_turn}");
+    let close_turn = turn_event(&rig, "plain").await;
+    assert_eq!(close_turn["then"], "closed", "{close_turn}");
+    assert!(tombstoned(&rig, "plain").await);
+    rig.server.abort();
+}

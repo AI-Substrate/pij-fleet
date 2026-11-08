@@ -1595,10 +1595,17 @@ Plus every writer refusal above. Cost: one writer commit per note (git 7, ddocs
 
 #### The memory turn
 
-Before a `compact` control or `pij close` of a seat that holds a role, the
-daemon asks that seat to write what it learned. It reads the seat's open
-holdings (one indexed query; a seat with none is compacted or closed exactly
-as before), delivers one prompt from `pij-bg` naming each role and project and
+Before a `compact` control or `pij close` of a seat that holds a role, or
+held one in its current context, the daemon asks that seat to write what it
+learned. It reads the seat's holdings in this context (F130): every open one,
+and each released since the seat's last done compact, or since the seat
+existed when it has never been compacted. A role released on its PR's merge is
+still in the seat's context until a compact clears it. One query: the jobs
+index walked newest first to the seat's last done compact (either kind:
+`delivery:<seat>`, or `delivery-control:<seat>` for Copilot), then the seat's
+assignment rows. A seat that held nothing in this context is compacted or
+closed exactly as before. The daemon delivers one prompt from `pij-bg` naming
+each role and project, a released one as `released HH:MM` (local time), and
 the `pij directory memory add` command, then holds the action until the prompt
 is delivered and the seat next publishes `idle`, or until the bound passes,
 after which it proceeds anyway. The bound is one constant, 5 minutes
@@ -1629,6 +1636,14 @@ ordinary activity changes during the turn do not block it. The native CLI's
 `send --command compact` and `compact-self` print the held receipt with its
 `held` and `memory_turn`.
 
+When the store can't read the seat's holdings, the compact or close is
+neither refused nor run without asking: it takes a generic memory turn ("pij
+couldn't read your holdings; write a note for any role you held in this
+context, or end your turn"), and `data.memory_turn` and the event carry
+`holdings_unread: true`. That is a brake, not a policy: it can only add a turn,
+never block or skip the action, so a seat whose context is full is never
+stranded by a store error.
+
 A seat has at most one memory turn pending. A second compact or close for it
 while one is held is refused with `E-RS-MEMORY-TURN-PENDING` (HTTP 409); it is
 never a second turn or a second action.
@@ -1651,9 +1666,11 @@ is only published on a change from working, so the first idle after that
 boundary ends the turn that read the prompt, whether the prompt started that
 turn or arrived during it.
 
-Cost: one live subscription per pending memory turn (only for role holders
-being compacted or closed), one delivery, one spine event and one deadline; no
-poll and no launch. Anyone else pays one store query.
+Cost: one live subscription per pending memory turn (only for seats that
+held a role in this context, being compacted or closed), one delivery, one
+spine event and one deadline; no poll and no launch. Anyone else pays the one
+holdings query, which reads at most what the seat received since its last
+compact.
 
 ## Number claims and delivery at merge (plan 196)
 

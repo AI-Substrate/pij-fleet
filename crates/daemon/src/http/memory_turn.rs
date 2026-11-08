@@ -1,10 +1,12 @@
 //! The memory turn (plan 201, AC2; blueprint c-memory-hook).
 //!
-//! Before pij compacts or closes a seat that holds a role, it asks that seat
+//! Before pij compacts or closes a seat that holds a role, or held one in its
+//! current context (released since its last compact, F130), it asks that seat
 //! to write what it learned into the role's memory and holds the compact or
 //! close until the seat's turn ends, or [`BOUND`] passes, after which it
-//! proceeds and says so. A seat holding no role is compacted or closed
-//! directly.
+//! proceeds and says so. A seat that held no role in its context is compacted
+//! or closed directly. When the store can't say, the seat gets a generic turn
+//! anyway: a brake, which only ever adds a turn.
 //!
 //! The caller is answered `held` at once and the action runs in the daemon,
 //! so no client's request timeout (Copilot's 65 s, Node fetch's 300 s) can cut
@@ -18,7 +20,8 @@
 //! change from working, so the first idle after delivery is the end of the turn
 //! that read the prompt, whether it started that turn or arrived mid-turn.
 //!
-//! Cost: one indexed holdings query per compact or close. For a holder being
+//! Cost: one holdings query per compact or close (a `jobs_serial` seek and the
+//! seat's assignment rows). For a holder being
 //! compacted or closed, one live subscription while its turn is pending, one
 //! delivery, one spine event and one deadline. No poll, no launch.
 
@@ -115,18 +118,61 @@ pub(crate) struct Holding {
     pub(crate) role: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub(crate) instance: String,
+    /// When it was released, for a holding closed in this context (F130):
+    /// the holders stamp, UTC.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) released_at: Option<String>,
 }
 
 impl Holding {
-    /// `role/instance (project p)`, as every prompt names it.
+    /// `role/instance (project p)`, as every prompt names it, and
+    /// `, released HH:MM` (local time) for a released one.
     pub(crate) fn label(&self) -> String {
         let instance = if self.instance.is_empty() {
             String::new()
         } else {
             format!("/{}", self.instance)
         };
-        format!("{}{instance} (project {})", self.role, self.project)
+        let released = self.released_at.as_deref().map_or_else(String::new, |at| {
+            format!(
+                ", released {}",
+                local_hh_mm(at, pij_harnesses::proc::local_utc_offset_minutes().ok())
+            )
+        });
+        format!(
+            "{}{instance} (project {}{released})",
+            self.role, self.project
+        )
     }
+}
+
+/// The `HH:MM` of a holders stamp (`YYYY-MM-DDTHH:MM:SS.mmmZ`, UTC) at
+/// `offset` minutes from UTC; `HH:MM UTC` when the offset is unknown, and the
+/// stamp itself when it is not one.
+fn local_hh_mm(stamp: &str, offset: Option<i32>) -> String {
+    let field =
+        |range: std::ops::Range<usize>| stamp.get(range).and_then(|text| text.parse::<i32>().ok());
+    let (Some(hours), Some(minutes)) = (field(11..13), field(14..16)) else {
+        return stamp.to_string();
+    };
+    match offset {
+        Some(offset) => {
+            let local = (hours * 60 + minutes + offset).rem_euclid(24 * 60);
+            format!("{:02}:{:02}", local / 60, local % 60)
+        }
+        None => format!("{hours:02}:{minutes:02} UTC"),
+    }
+}
+
+/// What a compact or close asks the seat to write memory for.
+pub(crate) enum Turn {
+    /// Its holdings in this context: open, and released since its last
+    /// compact.
+    Holdings(Vec<Holding>),
+    /// The store could not say. The turn is taken anyway with a generic
+    /// prompt: a brake, never a refusal, since refusing a compact could strand
+    /// a seat whose context is full (F130).
+    Unread,
 }
 
 /// What a compact or close receipt says about its memory turn.
@@ -134,6 +180,10 @@ impl Holding {
 pub(crate) struct Report {
     pub(crate) action: Action,
     pub(crate) holdings: Vec<Holding>,
+    /// The store could not read the seat's holdings, so the prompt was the
+    /// generic one.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) holdings_unread: bool,
     /// The prompt's msg_id.
     pub(crate) prompt: String,
     pub(crate) ended: Ended,
@@ -184,7 +234,7 @@ pub(crate) fn hold(
     state: &AppState,
     command: &str,
     seat: SeatDescriptor,
-    holdings: Vec<Holding>,
+    turn: Turn,
     then: Then,
 ) -> Result<Value, Box<Response>> {
     // One pending memory turn per seat: a repeat compact or close is refused
@@ -216,11 +266,11 @@ pub(crate) fn hold(
         Then::Close { .. } => json!({"seat": seat.id}),
     };
     answer["held"] = json!(HELD);
-    answer["memory_turn"] = held(action, &holdings, bound);
+    answer["memory_turn"] = held(action, &turn, bound);
     let state = state.clone();
     tokio::spawn(async move {
         let (mut report, late) =
-            run(&state, &seat.id, holdings, action, bound, held_at, deadline).await;
+            run(&state, &seat.id, turn, action, bound, held_at, deadline).await;
         let (then, closed) = proceed(&state, &seat, then).await;
         // Free the seat before the event is visible, so a reader of the event
         // can always take the next turn.
@@ -358,12 +408,63 @@ async fn record(state: &AppState, seat: &SeatId, report: &Report) {
     }
 }
 
-/// The seat's open holdings: one indexed query. Empty for a non-holder, or
-/// when the store cannot say (the action then runs as it always did).
-pub(crate) async fn holdings(state: &AppState, seat: &SeatId) -> Vec<Holding> {
-    try_holdings_of(&state.services, seat)
+/// The memory turn a compact or close of `seat` takes, if any: its holdings
+/// in this context, or the generic turn when the store can't say (F130).
+/// `None` only when the store says it held nothing in this context.
+pub(crate) async fn turn_for(state: &AppState, seat: &SeatId) -> Option<Turn> {
+    match state
+        .services
+        .directory
+        .store()
+        .context_assignments(seat.as_str())
         .await
-        .unwrap_or_default()
+    {
+        Ok(rows) => {
+            let holdings = context_holdings(rows);
+            (!holdings.is_empty()).then_some(Turn::Holdings(holdings))
+        }
+        Err(error) => {
+            eprintln!(
+                "pij-rs could not read {seat}'s holdings; taking a generic memory turn: {error}"
+            );
+            Some(Turn::Unread)
+        }
+    }
+}
+
+/// One holding per role and instance, open ones first: a role released and
+/// assigned again in this context is held, not released.
+pub(crate) fn context_holdings(rows: Vec<pij_store::Assignment>) -> Vec<Holding> {
+    let mut holdings: Vec<Holding> = rows
+        .into_iter()
+        .map(|row| Holding {
+            project: row.project,
+            role: row.role,
+            instance: row.instance,
+            released_at: row.to,
+        })
+        .collect();
+    holdings.sort_by(|a, b| {
+        (
+            &a.project,
+            &a.role,
+            &a.instance,
+            a.released_at.is_some(),
+            &b.released_at,
+        )
+            .cmp(&(
+                &b.project,
+                &b.role,
+                &b.instance,
+                b.released_at.is_some(),
+                &a.released_at,
+            ))
+    });
+    holdings.dedup_by(|later, kept| {
+        (&later.project, &later.role, &later.instance)
+            == (&kept.project, &kept.role, &kept.instance)
+    });
+    holdings
 }
 
 /// The seat's open holdings, or the store's error: for a caller whose
@@ -386,6 +487,7 @@ pub(crate) async fn try_holdings_of(
             project: row.project,
             role: row.role,
             instance: row.instance,
+            released_at: None,
         })
         .collect();
     holdings.sort_by(|a, b| {
@@ -395,19 +497,42 @@ pub(crate) async fn try_holdings_of(
     Ok(holdings)
 }
 
-/// The prompt a holder gets before `action`.
-pub(crate) fn prompt(action: Action, holdings: &[Holding], bound: Duration) -> String {
-    let verb = match action {
-        Action::Compact => "compact",
-        Action::Close => "close",
+/// The prompt a seat gets before `action`.
+pub(crate) fn prompt(action: Action, turn: &Turn, bound: Duration) -> String {
+    let verb = verb(action);
+    let holdings = match turn {
+        Turn::Holdings(holdings) => holdings.as_slice(),
+        Turn::Unread => {
+            return format!(
+                "pij memory turn: pij is about to {verb} this seat, and pij couldn't read your holdings.\n\n\
+                 Write a note for any role you held in this context, or end your turn:\n\n  \
+                 pij directory memory <role> --project <project>\n  \
+                 pij directory memory add <role> --project <project> --title \"<title>\" --hook \"<when to open it>\" \
+                 --tags \"<a,b>\" --body-file - <<'PIJ'\n  <what you learned>\n  PIJ\n\
+                 \nThen end your turn. The {verb} runs when this turn ends, or after {} minutes without it.",
+                bound.as_secs().div_ceil(60)
+            );
+        }
     };
-    let held: Vec<String> = holdings.iter().map(Holding::label).collect();
+    let list = |released: bool| {
+        holdings
+            .iter()
+            .filter(|holding| holding.released_at.is_some() == released)
+            .map(Holding::label)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let (open, released) = (list(false), list(true));
+    let held = match (open.is_empty(), released.is_empty()) {
+        (false, true) => format!("you hold {open}"),
+        (true, false) => format!("you held {released} in this context"),
+        _ => format!("you hold {open}, and held {released} in this context"),
+    };
     let mut text = format!(
-        "pij memory turn: pij is about to {verb} this seat, and you hold {}.\n\n\
+        "pij memory turn: pij is about to {verb} this seat, and {held}.\n\n\
          Before that, write one note with what you learned that the next holder of the role should know \
          (more only if they are truly separate): short, with a hook that says when to open it. Read the \
-         role's notes first so you add rather than repeat.\n",
-        held.join(", ")
+         role's notes first so you add rather than repeat.\n"
     );
     let mut seen: Vec<(&str, &str)> = Vec::new();
     for holding in holdings {
@@ -491,7 +616,7 @@ fn settled(
 async fn run(
     state: &AppState,
     seat: &SeatId,
-    holdings: Vec<Holding>,
+    turn: Turn,
     action: Action,
     bound: Duration,
     started: Instant,
@@ -512,7 +637,7 @@ async fn run(
     let msg = Msg {
         from: SeatId::from(pij_core::BG_ACTOR),
         to: seat.clone(),
-        body: prompt(action, &holdings, bound),
+        body: prompt(action, &turn, bound),
         msg_id: msg_id.clone(),
         from_machine: None,
         in_reply_to: None,
@@ -580,9 +705,14 @@ async fn run(
             verb(action)
         )),
     };
+    let (holdings, holdings_unread) = match turn {
+        Turn::Holdings(holdings) => (holdings, false),
+        Turn::Unread => (Vec::new(), true),
+    };
     let report = Report {
         action,
         holdings,
+        holdings_unread,
         prompt: msg_id,
         ended,
         waited_ms,
@@ -596,17 +726,28 @@ async fn run(
 }
 
 /// The `memory_turn` a holder's compact or close answers with at once.
-fn held(action: Action, holdings: &[Holding], bound: Duration) -> Value {
-    json!({
+fn held(action: Action, turn: &Turn, bound: Duration) -> Value {
+    let (holdings, why) = match turn {
+        Turn::Holdings(holdings) => (
+            holdings.as_slice(),
+            "this seat holds or held a role in this context",
+        ),
+        Turn::Unread => (&[][..], "pij couldn't read this seat's holdings"),
+    };
+    let mut answer = json!({
         "action": action,
         "holdings": holdings,
         "bound_ms": millis(bound),
         "note": format!(
-            "this seat holds a role, so pij asked it to write its memory; the {} runs when its turn ends, or after {}s",
+            "{why}, so pij asked it to write its memory; the {} runs when its turn ends, or after {}s",
             verb(action),
             bound.as_secs()
         ),
-    })
+    });
+    if matches!(turn, Turn::Unread) {
+        answer["holdings_unread"] = json!(true);
+    }
+    answer
 }
 
 fn verb(action: Action) -> &'static str {
@@ -648,6 +789,7 @@ mod tests {
             project: "fleet".to_string(),
             role: role.to_string(),
             instance: instance.to_string(),
+            released_at: None,
         }
     }
 
@@ -755,15 +897,141 @@ mod tests {
         }
     }
 
+    fn row(role: &str, instance: &str, to: Option<&str>) -> pij_store::Assignment {
+        pij_store::Assignment {
+            project: "fleet".to_string(),
+            role: role.to_string(),
+            instance: instance.to_string(),
+            seat: "s".to_string(),
+            harness: None,
+            session: None,
+            machine: None,
+            from: "2026-11-08T00:00:00.000Z".to_string(),
+            to: to.map(str::to_string),
+            assigned_by: "p".to_string(),
+            released_by: None,
+            why: "w".to_string(),
+            release_why: None,
+            end_pending: false,
+        }
+    }
+
+    /// F130: the time a holding was released, in the seat's local time.
+    #[test]
+    fn a_release_stamp_reads_as_local_hours_and_minutes() {
+        let stamp = "2026-11-08T05:40:59.568Z";
+        assert_eq!(local_hh_mm(stamp, Some(600)), "15:40");
+        assert_eq!(local_hh_mm(stamp, Some(0)), "05:40");
+        assert_eq!(local_hh_mm(stamp, Some(-360)), "23:40", "the day before");
+        assert_eq!(local_hh_mm("2026-11-08T22:30:00.000Z", Some(150)), "01:00");
+        assert_eq!(local_hh_mm(stamp, None), "05:40 UTC");
+        assert_eq!(local_hh_mm("soon", Some(600)), "soon");
+    }
+
+    /// F130: one holding per role and instance; a role released and assigned
+    /// again in this context is held, and of two releases the later is named.
+    #[test]
+    fn context_holdings_name_each_role_once_open_first() {
+        let holdings = context_holdings(vec![
+            row("reviewer", "175", Some("2026-11-08T05:40:59.568Z")),
+            row("reviewer", "178", Some("2026-11-08T04:24:59.844Z")),
+            row("reviewer", "178", Some("2026-11-08T03:00:00.000Z")),
+            row("coder", "f1", Some("2026-11-08T01:00:00.000Z")),
+            row("coder", "f1", None),
+        ]);
+        let named: Vec<(String, Option<String>)> = holdings
+            .iter()
+            .map(|holding| {
+                (
+                    format!("{}/{}", holding.role, holding.instance),
+                    holding.released_at.clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            named,
+            [
+                ("coder/f1".to_string(), None),
+                (
+                    "reviewer/175".to_string(),
+                    Some("2026-11-08T05:40:59.568Z".to_string())
+                ),
+                (
+                    "reviewer/178".to_string(),
+                    Some("2026-11-08T04:24:59.844Z".to_string())
+                ),
+            ]
+        );
+    }
+
+    /// F130: a released holding is named as released, beside or without the
+    /// open ones, and its role still gets the memory commands.
+    #[test]
+    fn the_prompt_names_released_holdings_as_held_in_this_context() {
+        let mut released = holding("reviewer", "175");
+        released.released_at = Some("2026-11-08T05:40:59.568Z".to_string());
+        let only = prompt(
+            Action::Compact,
+            &Turn::Holdings(vec![released.clone()]),
+            BOUND,
+        );
+        assert!(
+            only.contains("and you held reviewer/175 (project fleet, released "),
+            "{only}"
+        );
+        assert!(only.contains("in this context."), "{only}");
+        assert!(
+            only.contains("pij directory memory add reviewer --project fleet"),
+            "{only}"
+        );
+        let both = prompt(
+            Action::Compact,
+            &Turn::Holdings(vec![holding("pm-001", ""), released]),
+            BOUND,
+        );
+        assert!(
+            both.contains("and you hold pm-001 (project fleet), and held reviewer/175 (project fleet, released "),
+            "{both}"
+        );
+        assert!(
+            both.contains("pij directory memory add pm-001 --project fleet"),
+            "{both}"
+        );
+        assert!(
+            both.contains("pij directory memory add reviewer --project fleet"),
+            "{both}"
+        );
+    }
+
+    /// F130: when the store can't say, the prompt asks for a note for any role
+    /// held in this context, or none.
+    #[test]
+    fn the_generic_prompt_asks_for_any_role_held_in_this_context() {
+        let text = prompt(Action::Close, &Turn::Unread, BOUND);
+        assert!(
+            text.contains("about to close this seat, and pij couldn't read your holdings"),
+            "{text}"
+        );
+        assert!(
+            text.contains("Write a note for any role you held in this context, or end your turn"),
+            "{text}"
+        );
+        assert!(
+            text.contains("pij directory memory add <role> --project <project>"),
+            "{text}"
+        );
+        assert!(text.ends_with("after 5 minutes without it."), "{text}");
+    }
+
     #[test]
     fn the_prompt_names_each_role_once_with_its_project_and_the_bound() {
         let text = prompt(
             Action::Close,
-            &[
+            &Turn::Holdings(vec![
                 holding("reviewer", "114"),
                 holding("reviewer", "115"),
                 holding("pm-001", ""),
-            ],
+            ]),
             BOUND,
         );
         assert!(text.contains("about to close this seat"), "{text}");
