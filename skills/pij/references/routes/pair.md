@@ -104,7 +104,9 @@ Builtin subagents are not peers here: a coder or reviewer is a real pij seat.
 `/builder 6 implement --plan "<plan.dd.json>"` (or follow the builder skill's
 `references/stages/60-implement.md` by hand); worktree, branch, base SHA; the frozen scope and
 fence; forbidden paths; git and machine rules (§ C11, § C12); what *done* means (ACs with
-receipts, gates, PR); reply only with `pij send <you> --body-file <file>`.
+receipts, gates, PR); before reporting a head ready, `git ls-remote origin <branch>` must print
+the exact SHA it names, in any repo (in pij-fleet `just pr-freeze <pr>` also checks it); reply only
+with `pij send <you> --body-file <file>`.
 
 **Reviewer packet**: the plan path, the exact head SHA (the one `just pr-freeze <pr>` called
 FINAL; a verdict on any other head is void), `/builder 7 review --plan "<path>"`,
