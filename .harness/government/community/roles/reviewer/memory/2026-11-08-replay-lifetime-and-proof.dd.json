@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Before hardening daemon messages, testing legacy replay, or reviewing capability transaction and mutation evidence",
+				"tags": [
+					"review",
+					"replay",
+					"render",
+					"proof",
+					"capability"
+				],
+				"title": "Replay lifetime and proof instrumentation"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Replay lifetime and proof instrumentation\n\nHardening a producer does not harden its materialized cache. In #187, background hand-offs persisted already-rendered body, subject and cold-lead strings. Replay skipped the new field fences, and a Wake-to-Cold downgrade built a new notice from the old subject. Review both raw rows and stored renderings. Version the rendering lifetime and rebuild legacy unadmitted plans through current helpers before admission. Preserve channel, target, message identity, notice file and trusted cold facts; record the replacement before use. A reconstruction failure must not restore the old unsafe text. Already-admitted work must retain its idempotence rules.\n\nUpgrade probes need real old shapes. Record a never-admitted decision at a failpoint, replace it with the historical unversioned representation, then replay through the production path. Cover warm Wake, Cold final, Wake-to-Cold with a raw stored subject, and failed reconstruction. Tick twice and check transport/FYI counts, routing, version and file evidence, not only a formatter's output. The #187 M0 control failed all four legacy cases; the ordinary fresh-row tests had previously missed this class.\n\nMutation summaries are not receipts. Retain the applied change and its unique-match assertion, command, failure output/result, source basis, restoration comparison and restored GREEN. A lost “each killed” paragraph cannot be credited as executed guard proof. If a rebase moves the evidence, compare the guarded source and tests and use matching-head CI; say explicitly when the mutation ran on a predecessor tree.\n\nA negative-write oracle must exercise a possible write. #186's malformed Fixes test used Delivers: none, which produced no delivery row/event even if parsing moved too late. Use a real delivered address and inspect delivery rows and spine events, alongside the refusal and governance documents. Include a valid-body positive control.\n\nLet the process that owns a listener allocate its port. #188 removed reserve-close-rebind; the daemon binds port zero and reports its actual address. Consume a complete readiness token or line, not an early digit prefix from an arbitrary stream chunk. Server bind zero and client connection zero have different semantics.\n\nFor capability issuers, selection-time prechecks do not make earlier side effects atomic with issuance. Review predecessor retirement and all alternate tombstone writers. Public re-registration must not erase a private live-owner anchor so a later bootstrap bypasses it. Rotation retirement must cover every presentation path and pin the confirmed generation. A global cap needs shared admission serialization across binders, not merely a shared lookup map. Treat these as review invariants; source findings and planned fixes are not runtime repair proof.\n"
+		}
+	]
+}
