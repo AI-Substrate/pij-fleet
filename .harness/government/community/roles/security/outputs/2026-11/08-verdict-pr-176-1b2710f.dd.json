@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "1b2710faf2b8e6aceb0c8c461a0366606d3ebb47",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/176#issuecomment-6716761024",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:176",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `1b2710faf2b8e6aceb0c8c461a0366606d3ebb47`.\n\nNo reachable shell injection or C19/C21 disclosure found. The cap changes leave lock ownership, target confinement and disk-floor logic unchanged.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | ⚪ LOW | harness/scripts/shared-build.sh; justfile | 130-131; 20-21 | Override validation is partial: caller-supplied test threads and direct justfile exports are not positive-integer checked | 10/10 |\n\nThis is a nonblocking validation/diagnostic qualification, not demonstrated command execution. Bad overrides can reach Cargo/libtest rather than fail at the shared-build preflight; arbitrary caller-local diagnostic formatting is not escaped.\n\n`PIJ_CARGO_JOBS` in shared-build defaults to 4 when unset/empty, rejects non-digits before arithmetic, converts leading-zero decimal input with `10#`, and requires a positive result before lock acquisition or cargo. Shell metacharacters, signs and whitespace cannot reach that arithmetic expression (`shared-build.sh:67,124-131`). Bash's fixed-width arithmetic has no explicit overflow/range guard here; this is not an arbitrary-precision or maximum-fleet-cap validator.\n\nAn explicit nonempty `RUST_TEST_THREADS` is passed through without equivalent checking. The justfile exports likewise copy environment strings directly. Both remain environment data: shell-variable expansion does not recursively execute embedded substitutions, and the printed shared-build line uses a fixed format with quoted `%s` arguments. Recipe echoes also double-quote their expansions. These values are not inserted into the script's command-evaluation text.\n\nThe complete four-file delta changes caps, diagnostics, documentation and focused tests only. Existing lock/disk-floor logic, cargo argv handling, scheduling wrappers and package locks are unchanged.\n\nLocal and remote heads agree; worktree clean; PR CLEAN and ready. Exact-head CI [42442545704](https://github.com/AI-Substrate/pij-fleet/actions/runs/42442545704) and [Delivers 42442545720](https://github.com/AI-Substrate/pij-fleet/actions/runs/42442545720) succeeded; all five checks passed. The Node 22 log confirms `shared-build.test.ts` passed 20/20, including exported default/override propagation and invalid-job refusal before lock/cargo. No dedicated hostile-thread-string or arithmetic-overflow regression was added. ddocs was UNAVAILABLE.\n\nSource/CI review only. No local cargo, builds, tests or script execution, installs, credentials, edits or production/pane/process probes. This verdict does not authorize exceeding the current fleet-load limits.\n"
+		}
+	]
+}
