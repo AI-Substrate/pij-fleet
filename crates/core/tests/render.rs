@@ -182,3 +182,31 @@ fn the_compaction_parent_fyi_renders_the_seat_closed() {
     assert_clean(&text);
     assert!(text.starts_with(&invalid(FORGED_SEAT)), "{text}");
 }
+
+/// Squirrel (#185): a legacy stored seat id in the modal-stall notice.
+#[test]
+fn the_modal_stall_notice_renders_the_seat_closed() {
+    let stall = pij_core::modal_stall::ModalStall {
+        seat: SeatId::from(FORGED_SEAT),
+        quiet_seq: 1,
+        quiet_since_ms: 0,
+        claimed_at_ms: 0,
+        dialog: "a follow-up dialog".into(),
+        key: "copilot-follow-up".into(),
+        clears: "Esc".into(),
+        open: true,
+        told: Vec::new(),
+        attempts: std::collections::BTreeMap::new(),
+    };
+    let text = pij_core::modal_stall::stall_body(
+        &SeatId::from(FORGED_SEAT),
+        pij_core::model::Harness::Copilot,
+        &stall,
+        1_500_000,
+    );
+    assert_clean(&text);
+    assert!(
+        text.starts_with(&format!("pij: {} (", invalid(FORGED_SEAT))),
+        "{text}"
+    );
+}

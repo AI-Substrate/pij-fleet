@@ -72,7 +72,7 @@ pij directory memory '<role>' [--note '<slug>']  # the index, or one note
 pij directory memory add '<role>' --title '<t>' --hook '<one line>' [--tags '<a,b>'] --body-file '<path>'
 ```
 
-- Before a role holder is compacted or closed, pij gives it a memory turn and holds the compact or close until that turn ends. Check the note landed and that its INDEX line reads well.
+- Before a role holder is compacted or closed (including one that released a role since its last compact), pij gives it a memory turn and holds the compact or close until that turn ends. Check the note landed and that its INDEX line reads well.
 - The view's `memory-stale` action marks a role whose last 2 closes left no memory note, with the holder's `memory add` line. Nudge the holder; never write its memory for it.
 
 ## Every role holder

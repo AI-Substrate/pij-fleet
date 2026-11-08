@@ -39,17 +39,23 @@ pub fn msg_id(id: &str) -> Cow<'_, str> {
     )
 }
 
-/// A name a directory row carries (a holding's instance, a project, a role
-/// id): letters, digits, `.`, `_` and `-`, at most 64. Holding instances are
-/// checked only for `/` and edge whitespace when stored.
+/// Whether `name` is a directory name a daemon-authored message may show as
+/// it is: `[a-z0-9][a-z0-9-]{0,31}`, the shape of every project, role and
+/// holding instance in use (`pij-fleet`, `pm-001`, `175`, `f114`,
+/// `questions-context`). The one grammar for them: the memory turn (#184),
+/// role addresses and every other message use it.
+pub fn is_name(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    (1..=32).contains(&bytes.len())
+        && bytes[0] != b'-'
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+}
+
+/// A directory name ([`is_name`]): a project, role or holding instance.
 pub fn name(name: &str) -> Cow<'_, str> {
-    closed(
-        name,
-        (1..=64).contains(&name.len())
-            && name
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')),
-    )
+    closed(name, is_name(name))
 }
 
 /// A seat role: the closed vocabulary.

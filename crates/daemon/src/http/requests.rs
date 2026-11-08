@@ -488,11 +488,11 @@ async fn tell_requester(
     closed: &ClosedRoleRequest,
 ) -> Result<pij_core::model::DeliveryOutcome, String> {
     let request = &closed.request;
-    let address = if request.instance.is_empty() {
-        format!("role:{}", request.role)
-    } else {
-        format!("role:{}/{}", request.role, request.instance)
-    };
+    let address = crate::delivery::role_send::RoleAddress {
+        role: request.role.clone(),
+        instance: request.instance.clone(),
+    }
+    .display();
     let bound = match closed.bound.as_deref() {
         Some("pane (derived)") => "bound by pane",
         Some(_) => "asserted seat id",
