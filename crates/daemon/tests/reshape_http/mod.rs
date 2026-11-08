@@ -1171,21 +1171,8 @@ async fn printed_commands_quote_a_hostile_holding_instance() {
     fleet(addr, &repo).await;
     many_holders(addr, &repo, "qa").await;
     let hostile = "x$(id>dollar)`id>tick`;id>semi";
-    let file = repo.root.join("holders.txt");
-    std::fs::write(&file, format!("qa/{hostile} pij-holder\n")).unwrap();
-    let assigned = directory(
-        addr,
-        &repo,
-        &[
-            "assign",
-            "--batch",
-            file.to_str().unwrap(),
-            "--why",
-            "import",
-        ],
-    )
-    .await;
-    assert_eq!(assigned["ok"], true, "{assigned}");
+    // F135: assign refuses this key now; it stands for a legacy stored row.
+    crate::seed_legacy_holding(&rig, "qa", hostile, "pij-holder").await;
     let held = directory(addr, &repo, &["retire", "qa", "--why", "w"]).await;
     assert_eq!(refusal_code(&held), "E-RS-DIRECTORY-ROLE-HELD", "{held}");
     let [release] = commands(&held).try_into().expect("one printed release");

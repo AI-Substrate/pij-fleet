@@ -1029,6 +1029,13 @@ drain the role queue. A second live holder of a one-holder role succeeds with
 as written, `seat_role` and `flushed` (pending close-ends this write carried to the branch;
 only those lose their pending mark).
 
+An instance key a holding is recorded with (`assign`, single or `--batch`, and
+`lineage add`, single or `--batch`) takes a closed grammar (F135): 1-64 ASCII
+letters, digits, `.`, `_` or `-`, the same words a `role:<id>/<instance>`
+address accepts (which now caps the instance at 64 too). Anything else refuses
+`E-RS-ARG`, showing the key escaped and bounded. `release` and `rebuild` still
+read a stored key as it is, so a holding recorded before the check can be ended.
+
 `pij directory assign --batch <file> --why <text>` (plan 208, F16) reads one
 `<role>[/<instance>] <seat>` per line (blank and `#` lines skipped) and records
 every holding in one writer commit (`community: assign <n> holdings`), all or

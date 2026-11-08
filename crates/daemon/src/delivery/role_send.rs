@@ -72,7 +72,11 @@ impl RoleAddress {
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
         };
-        if !word(role) || (rest.contains('/') && !word(instance)) {
+        // F135: an instance takes the holding grammar, length included, so a
+        // request can only name an instance a holding could have.
+        let instance_fits =
+            word(instance) && instance.len() <= crate::community::layout::INSTANCE_MAX;
+        if !word(role) || (rest.contains('/') && !instance_fits) {
             return Some(Err(Refusal::new(
                 E_ROLE_ADDRESS,
                 format!("`{to}` is not role:<id> or role:<id>/<instance>"),
