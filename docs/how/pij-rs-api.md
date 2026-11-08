@@ -1600,12 +1600,19 @@ Plus every writer refusal above. Cost: one writer commit per note (git 7, ddocs
 Before a `compact` control or `pij close` of a seat that holds a role, or
 held one in its current context, the daemon asks that seat to write what it
 learned. It reads the seat's holdings in this context (F130): every open one,
-and each released since the seat's last done compact, or since the seat
-existed when it has never been compacted. A role released on its PR's merge is
-still in the seat's context until a compact clears it. One query: the jobs
-index walked newest first to the seat's last done compact (either kind:
-`delivery:<seat>`, or `delivery-control:<seat>` for Copilot), then the seat's
-assignment rows. A seat that held nothing in this context is compacted or
+and each released since the seat's last delivered compact. A role released on
+its PR's merge is still in the seat's context until a compact clears it. The
+cutoff is the admission time of the newest compact that plan 222's round
+settled after seeing it delivered (`woken`, `resumed` or `holds-nothing`),
+among the seat's 16 newest compactions (`compaction_wakes`, which records
+every compact `admit_control` admits, of either queue kind). Queue state never
+counts: a refused compact is acked `done` for replay safety, and settles
+`undelivered`. With no delivered compact on record, every release counts. Two
+indexed reads (migration 0045), both bounded: the seat's compaction rows by
+`(seat, seq)`, and its holdings by `(seat, to_at)`, open ones then releases
+newest first, 32 at most (`CONTEXT_HOLDINGS`). Past that, the prompt says there
+were more than 32 and asks for notes on the ones the seat remembers. A seat that
+held nothing in this context is compacted or
 closed exactly as before. The daemon delivers one prompt from `pij-bg` naming
 each role and project, a released one as `released HH:MM` (local time), and
 the `pij directory memory add` command, then holds the action until the prompt
@@ -1638,8 +1645,16 @@ ordinary activity changes during the turn do not block it. The native CLI's
 `send --command compact` and `compact-self` print the held receipt with its
 `held` and `memory_turn`.
 
-When the store can't read the seat's holdings, the compact or close is
-neither refused nor run without asking: it takes a generic memory turn ("pij
+A project, role or instance appears in the prompt only when it fits
+`[a-z0-9][a-z0-9-]{0,31}`, the shape of every one in use; otherwise it shows as
+`invalid (N chars)`, and a role or project that can't be shown gets the generic
+`pij directory memory add <role> --project <project>` command (#184 review,
+S184-001). A role's instance is chosen by whoever assigns it, and the prompt is
+daemon-authored. A release time shows only its digits.
+
+When the store can't read the seat's holdings, or the lookup takes longer than
+2 s (`LOOKUP_BOUND`), the compact or close is neither refused nor run without
+asking: it takes a generic memory turn ("pij
 couldn't read your holdings; write a note for any role you held in this
 context, or end your turn"), and `data.memory_turn` and the event carry
 `holdings_unread: true`. That is a brake, not a policy: it can only add a turn,
@@ -1670,9 +1685,8 @@ turn or arrived during it.
 
 Cost: one live subscription per pending memory turn (only for seats that
 held a role in this context, being compacted or closed), one delivery, one
-spine event and one deadline; no poll and no launch. Anyone else pays the one
-holdings query, which reads at most what the seat received since its last
-compact.
+spine event and one deadline; no poll and no launch. Anyone else pays the two
+bounded, indexed holdings reads.
 
 ## Number claims and delivery at merge (plan 196)
 

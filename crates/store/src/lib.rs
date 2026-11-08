@@ -28,7 +28,10 @@ pub mod status;
 pub mod steering;
 
 pub use claims::{Claim, ClaimKey, DeliveryCommit, DeliveryNote, DeliveryRecord, ReleaseOutcome};
-pub use community::{Assignment, AssignmentCommit, CommunityPointer};
+pub use community::{
+    Assignment, AssignmentCommit, CONTEXT_COMPACTIONS, CONTEXT_HOLDINGS, CommunityPointer,
+    ContextAssignments,
+};
 pub use governance::GovernanceOutcome;
 pub use held::{HELD_FLAG_LIMIT, HELD_FLAG_SECS, HeldDelivery};
 pub use migrate::{SCHEMA_VERSION, StorePool, open, require_current_schema, schema_version};
