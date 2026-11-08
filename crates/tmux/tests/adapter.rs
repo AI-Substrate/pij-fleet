@@ -174,11 +174,9 @@ fn capture_proves_zero_and_more_than_the_pane_contains() {
         .expect("isolated session pane");
 
     block_on(tmux.send_keys(&pane.id, "boundary-text")).expect("type in isolated pane");
+    let overlong = capture_until_contains(&tmux, &pane.id, "boundary-text", EVENTUALLY);
     let zero = block_on(tmux.capture(&pane.id, 0)).expect("zero-line capture");
     assert_eq!(zero, "", "zero requested lines means zero returned lines");
-
-    let overlong = block_on(tmux.capture(&pane.id, u32::MAX)).expect("overlong capture");
-    assert!(overlong.contains("boundary-text"), "{overlong:?}");
     assert_eq!(
         block_on(tmux.capture(&pane.id, 1)).expect("one-line capture"),
         overlong.lines().last().unwrap_or_default(),
@@ -1459,6 +1457,28 @@ fn wait_for_pane_input(session: &TestSession, pane: &str, off: bool, timeout: Du
             );
         }
         std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// `send_keys` returns once tmux has the keys, not once the pane has echoed
+/// them: CI captured 23 blank rows straight after typing (F123, #173).
+fn capture_until_contains(
+    tmux: &TmuxAdapter,
+    pane: &str,
+    needle: &str,
+    timeout: Duration,
+) -> String {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let capture = block_on(tmux.capture(pane, u32::MAX)).expect("overlong capture");
+        if capture.contains(needle) {
+            return capture;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "pane {pane} did not show {needle:?} within {timeout:?}; last capture: {capture:?}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
 

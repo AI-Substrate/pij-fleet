@@ -55,8 +55,20 @@ impl Server {
             .lines()
             .map(str::to_string)
             .collect();
-        // Let the first pane's printf land before anything captures it.
-        std::thread::sleep(Duration::from_millis(300));
+        // Wait for the first pane's printf to render before anything captures
+        // it; a fixed sleep raced a loaded runner (F123).
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let shown = server.run(&["capture-pane", "-p", "-t", &server.panes[0]]);
+            if shown.contains("%end 1 2 3") {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the first pane's printf did not render; last capture: {shown:?}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
         server
     }
 
