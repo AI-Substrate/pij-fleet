@@ -68,7 +68,7 @@ the handover files you check, you are read-only.
    - A seat with in-flight work (a task holding like `coder/224`, a plan or fix claim, or an unanswered
      role request) that does nothing of its own for an hour, with nothing queued
      and no background job, is sent one `idle N min while holding ...; resume, report blocked, or
-     release.` by pij itself (when the daemon runs with `PIJ_IDLE_NUDGE=1`; off by default, F144),
+     release.` by pij itself (on in the fleet: `just bounce-rs` and `just rs-autostart` start the daemon with `PIJ_IDLE_NUDGE=1`, F147),
      and its prime an FYI (plan 224), once per idle stretch. Don't send
      your own on top; if it stays idle after the nudge, that is the stall to report. A cold seat is
      never woken for it: its prime gets the FYI instead (F144). A resting specialist (a bare

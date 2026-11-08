@@ -7,6 +7,11 @@
 //! exported stamp would compile those with production's identity. This runs
 //! each recipe's own body with fakes for every external command (no git, no
 //! compiler, no daemon, no bounce) and reads the environment each one saw.
+//!
+//! The same harness proves the daemon environment the fleet recipes pass: the
+//! idle-holder nudge is off in a bare daemon and on from `bounce-rs` and the
+//! LaunchAgent `rs-autostart` writes, unless `PIJ_IDLE_NUDGE` says otherwise
+//! when they run (F147).
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -55,9 +60,20 @@ fn stamps(env: &Path) -> Vec<String> {
 }
 
 fn run(name: &str) -> PathBuf {
+    run_with(name, &[])
+}
+
+/// [`run`], with `env` set for the recipe (as if typed before `just`).
+fn run_with(name: &str, env: &[(&str, &str)]) -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let justfile = std::fs::read_to_string(root.join("justfile")).expect("read the justfile");
-    let scratch = std::env::temp_dir().join(format!("pij-stamps-{name}-{}", std::process::id()));
+    // One scratch per call: tests of the same recipe run in parallel.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let scratch = std::env::temp_dir().join(format!(
+        "pij-stamps-{name}-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     let _ = std::fs::remove_dir_all(&scratch);
     let bin = scratch.join("bin");
     let global = scratch.join("global");
@@ -86,6 +102,8 @@ fn run(name: &str) -> PathBuf {
         &format!("[ -f '{out}/lsof' ] && echo 4242; touch '{out}/lsof'; exit 0"),
     );
     fake(&bin, "sleep", "exit 0");
+    fake(&bin, "plutil", "exit 0");
+    fake(&bin, "launchctl", "exit 0");
     fake(
         &global.join("bin"),
         "pij-rs",
@@ -101,6 +119,7 @@ fn run(name: &str) -> PathBuf {
         .env_clear()
         .env("PATH", path)
         .env("HOME", &scratch)
+        .envs(env.iter().copied())
         .status()
         .expect("run the recipe");
     assert!(status.success(), "`{name}` ran to the end with fakes");
@@ -160,4 +179,54 @@ fn rs_install_stamps_cargo_and_exports_nothing() {
         );
     }
     let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// The environment the daemon `bounce-rs` launched was given.
+fn daemon_env(scratch: &Path) -> String {
+    let daemon = scratch.join("daemon.env");
+    for _ in 0..100 {
+        if daemon.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    std::fs::read_to_string(&daemon).expect("the daemon recorded its environment")
+}
+
+/// F147: `bounce-rs` starts the daemon with the idle nudge on, and
+/// `PIJ_IDLE_NUDGE=0 just bounce-rs` turns it off for that bounce.
+#[test]
+fn bounce_rs_turns_the_idle_nudge_on_unless_told_otherwise() {
+    for (env, expected) in [
+        (&[][..], "PIJ_IDLE_NUDGE=1"),
+        (&[("PIJ_IDLE_NUDGE", "0")][..], "PIJ_IDLE_NUDGE=0"),
+    ] {
+        let scratch = run_with("bounce-rs", env);
+        let seen = daemon_env(&scratch);
+        assert!(
+            seen.lines().any(|line| line == expected),
+            "{env:?}: the daemon sees {expected}"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+}
+
+/// F147: the LaunchAgent `rs-autostart` writes starts the daemon at login
+/// with the same setting.
+#[test]
+fn rs_autostart_writes_the_idle_nudge_into_the_launch_agent() {
+    for (env, expected) in [
+        (&[][..], "<key>PIJ_IDLE_NUDGE</key><string>1</string>"),
+        (
+            &[("PIJ_IDLE_NUDGE", "0")][..],
+            "<key>PIJ_IDLE_NUDGE</key><string>0</string>",
+        ),
+    ] {
+        let scratch = run_with("rs-autostart", env);
+        let plist =
+            std::fs::read_to_string(scratch.join("Library/LaunchAgents/dev.pij.rs-daemon.plist"))
+                .expect("rs-autostart wrote its plist");
+        assert!(plist.contains(expected), "{env:?}: {plist}");
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
 }

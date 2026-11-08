@@ -645,8 +645,10 @@ bounce-rs:
     old=$(lsof -nP -iTCP:7461 -sTCP:LISTEN -t || true)
     [ -n "$old" ] && kill "$old" && sleep 0.5
     # Telegram worker is OPT-IN by env (crates/daemon/src/lib.rs); a bare restart silently turns it off.
+    # The idle-holder nudge is OFF in a bare daemon (Config::idle_nudge, F144) and ON from this recipe
+    # and rs-autostart (F147); `PIJ_IDLE_NUDGE=0 just bounce-rs` turns it off for one bounce.
     mkdir -p "$HOME/.pij-rs"
-    (PIJ_RETIRED_HARNESSES="${PIJ_RETIRED_HARNESSES-pi}" PIJ_TELEGRAM_ENV="${PIJ_TELEGRAM_ENV:-$HOME/.pij/telegram.env}" nohup "$bin" daemon >> "$HOME/.pij-rs/daemon.log" 2>&1 &)
+    (PIJ_RETIRED_HARNESSES="${PIJ_RETIRED_HARNESSES-pi}" PIJ_TELEGRAM_ENV="${PIJ_TELEGRAM_ENV:-$HOME/.pij/telegram.env}" PIJ_IDLE_NUDGE="${PIJ_IDLE_NUDGE-1}" nohup "$bin" daemon >> "$HOME/.pij-rs/daemon.log" 2>&1 &)
     sleep 1.5
     new=$(lsof -nP -iTCP:7461 -sTCP:LISTEN -t || true)
     [ -n "$new" ] && [ "$new" != "$old" ] || { echo "bounce-rs: daemon did not come back (old=$old new=$new)" >&2; exit 1; }
@@ -658,7 +660,8 @@ bounce-rs:
 # upgrade launchd killed the ad-hoc (cargo linker-signed) binary at login with
 # OS_REASON_CODESIGNING "Launch Constraint Violation" while a shell ran it fine.
 # No KeepAlive on purpose: bounce-rs kills and relaunches by port, and a KeepAlive
-# respawn would race it for 7461. Env mirrors bounce-rs; PATH is captured from this shell.
+# respawn would race it for 7461. Env mirrors bounce-rs (the idle nudge ON unless
+# PIJ_IDLE_NUDGE=0 when this runs, F147); PATH is captured from this shell.
 rs-autostart:
     #!/usr/bin/env sh
     set -eu
@@ -676,6 +679,7 @@ rs-autostart:
         <key>PATH</key><string>$PATH</string>
         <key>PIJ_RETIRED_HARNESSES</key><string>${PIJ_RETIRED_HARNESSES-pi}</string>
         <key>PIJ_TELEGRAM_ENV</key><string>${PIJ_TELEGRAM_ENV:-$HOME/.pij/telegram.env}</string>
+        <key>PIJ_IDLE_NUDGE</key><string>${PIJ_IDLE_NUDGE-1}</string>
       </dict>
       <key>RunAtLoad</key><true/>
       <key>StandardOutPath</key><string>$HOME/.pij-rs/daemon.log</string>
