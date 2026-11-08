@@ -442,7 +442,10 @@
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"instance_key": "f113",
 					"machine": "ops.osk.lan",
+					"release_why": "#175 holds it until merge; keep",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-08T04:29:35.072Z",
 					"why": "stale-extension anomaly in the PA digest (F113 follow-up)"
 				},
 				{
