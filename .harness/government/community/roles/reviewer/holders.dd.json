@@ -894,7 +894,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "184",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #184 merged (19cbb590faa7)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-08T08:34:38.081Z",
 					"why": "F130 memory turn covers released holdings #184"
 				},
 				{
