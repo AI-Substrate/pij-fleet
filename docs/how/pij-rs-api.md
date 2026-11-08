@@ -1735,9 +1735,13 @@ pij never prints a replacement for a cell it cannot see. `data.notes[]` says
 what was skipped and why.
 
 It then ends the holdings the PR finished (plan 215, F70): each open
-`reviewer/<pr>`, `security/<pr>` and `performance/<pr>`, and `coder/<plan>` for
+`reviewer/<pr>`, `security/<pr>` and `performance/<pr>`, `coder/<plan>` for
 each plan number in the PR's `docs/plans/NNN-*` files (the scan that releases
-claims). The plan paths a PR touches select which coder holdings end; they are
+claims), and `coder/f<N>` for each F-item the body's `Fixes:` line names (F122).
+`Fixes: F119, F117` is parsed as strictly as `Delivers:`: each token is `F` and
+digits, separated by commas or whitespace. A body with no `Fixes:` line ends no
+F-item holding (pij never guesses from the title), and a malformed one refuses
+`E-RS-FIXES` before anything is recorded. The plan paths a PR touches select which coder holdings end; they are
 not proof the plan's work is complete. Only a holding whose `from` is before
 the PR's `mergedAt` ends: the merge time binds the release to the work the PR
 ended, so a key reassigned after the merge (new work under the same
@@ -1774,6 +1778,7 @@ registered seat can run them. That is F88's root, owned by PRD 003 req-10
 | `E-RS-CLAIM-SCAN` | the project's checkout, or a folder of that kind's numbers, exists but cannot be read; nothing is claimed |
 | `E-RS-NOT-FOUND` | `--pm` names no live seat, or `--project` no project |
 | `E-RS-PR-NOT-MERGED` | gh says the PR is open or closed unmerged |
+| `E-RS-FIXES` | the body's `Fixes:` line names nothing, or a token that is not `F<number>` (F122); nothing is recorded |
 | `E-RS-DELIVERS` | the body has no `Delivers:` line in a project whose checkout has `docs/project` (or pij can't tell whether it has one), or names something that is not a ddocs address (the refusal quotes the whole line and shows the form to write) |
 | `E-RS-GH-MISSING` | gh is not installed or `PIJ_GH` is not an absolute executable; the next step installs it and restarts the daemon |
 | `E-RS-GH-AUTH` | gh is not signed in for the daemon's user; the next step is `gh auth login` |

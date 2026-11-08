@@ -45,6 +45,12 @@ fn a_pr_body_passes_only_with_none_or_full_addresses() {
         assert!(!ok, "{bad:?} passed: {out}");
     }
 
+    // F122: a Fixes: line must parse too; with none, nothing changes.
+    let (ok, out) = check("Delivers: none\nFixes: F119, F117\n");
+    assert!(ok && out.contains("Fixes: F119, F117"), "{out}");
+    let (ok, out) = check("Delivers: none\nFixes: F119 and F117\n");
+    assert!(!ok && out.contains("not an F-item"), "{out}");
+
     // The template's placeholder fails until someone fills it in.
     let template = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
