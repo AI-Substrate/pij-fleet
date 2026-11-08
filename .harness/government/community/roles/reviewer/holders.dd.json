@@ -1018,7 +1018,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "192",
 					"machine": "ops.osk.lan",
+					"release_why": "#192 merged 9603be6 without a Fixes line (on purpose); the review is done",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T22:49:59.049Z",
 					"why": "F144 part 1 urgent switch"
 				},
 				{
