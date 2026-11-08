@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "8790154bbbe3db0297011c00cebb49739ea283ba",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/180#issuecomment-6718025081",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:180",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `8790154bbbe3db0297011c00cebb49739ea283ba`.\n\nDelta-only review from passed `0ffb883`, output `9f3e754b04a1637ccb013d00d59a4829b146afde`. The sole new first-parent commit merges main `ca74f46`; that main tree is byte-identical to #175's already cost-reviewed `d989fa9`, output `4f8289f29d390c232885e8aff897668f9bffc09a`.\n\nThe combined source diff preserves both anomaly calls, both test families and both documentation entries. The footer now accurately names stale cards, refused pane taps, stale extensions and lapsed native receivers. Delivery's lease implementation is unchanged from `0ffb883`; the extension store's inherited difference is #175's previously reviewed build-identity code, with no combined-conflict hunk changing receiver recovery.\n\n**Merge cost:** the two existing additions compose once per constructed digest: #175's bounded stamp/seat parsing and #180's descriptor-copy/one-lease-map-lock scan. The footer adds fixed text bytes only. No duplicate digest pass, new executable site, read, backoff, heartbeat, independent timer or per-normal-tick work is introduced by the resolution. #180's prior 250 ms-to-5 s observation retry, default 20 s heartbeat, 10-minute threshold rather than hard deadline, and P180-N001 full-descriptor cloning qualifications remain. #175's load/build/cache costs also remain; this merge does not eliminate full-HEAD stamp recompilation.\n\n**CI at this exact SHA:** [42452702429](https://github.com/AI-Substrate/pij-fleet/actions/runs/42452702429), successful Rust job `128645120916`, exact upload artifact **13605668666**: **2,210 executed cases passed**, zero failures/errors, five separately skipped. Verified lapsed-receiver and stale-extension digest cases, closed grammar, receiver expiry/transport, both build-stamp isolation tests and all six spawn guards. Node22's exact-job log executes all three F124 incident/uncertainty cases and reports 333 native tests passed; Node22/24, Rust lint and delivers checks succeed.\n\nClean worktree; frozen local/GitHub heads agree and GitHub reports CLEAN. No local build, test, mutation, probe, restart or product edit. Existing cost notes are carried forward, not reopened or claimed as new live measurements.\n"
+		}
+	]
+}
