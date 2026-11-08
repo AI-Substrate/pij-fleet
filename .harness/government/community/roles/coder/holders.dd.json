@@ -393,7 +393,10 @@
 					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
 					"instance_key": "f114",
 					"machine": "ops.osk.lan",
+					"release_why": "#178 merged c2c8b1c9",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-back-tapir",
+					"to": "2026-11-08T04:27:03.826Z",
 					"why": "F114 death sweep misses paneless dead pi seats; F115 PA digest repeats delivered holds"
 				},
 				{
