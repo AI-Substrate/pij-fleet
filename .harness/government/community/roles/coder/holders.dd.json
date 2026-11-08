@@ -645,6 +645,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-exuberant-wildcat",
 					"why": "F147: bounce-rs/rs-autostart pass PIJ_IDLE_NUDGE"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T23:43:02.455Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f139",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "F139 stuck bg final turn for a gone owner (#197)"
 				}
 			]
 		}
