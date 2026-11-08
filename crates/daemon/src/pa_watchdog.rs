@@ -1337,25 +1337,33 @@ async fn queued_requests(
 /// ([`reported_tree`], [`reported_build`]) at render time, which covers
 /// persisted rows as well as new registrations. Only the parsed identifiers
 /// are ever rendered, labelled as seat-reported; a tree that does not parse
-/// is not compared.
+/// is not compared. Parsing is bounded by the grammar's own longest build, so
+/// a hostile stored value costs no more than a valid one.
 fn stale_extensions(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly> {
     let trees = &services.extension_trees;
+    // The daemon's own stamps, parsed once per digest.
+    let copilot = trees.copilot.as_deref().and_then(reported_tree);
+    let omp = trees.omp.as_deref().and_then(reported_tree);
     rows.iter()
         .filter_map(|row| {
             let stamp = match row.seat.harness {
-                Harness::Copilot => trees.copilot.as_deref(),
-                Harness::Omp | Harness::Pi => trees.omp.as_deref(),
+                Harness::Copilot => copilot.as_deref(),
+                Harness::Omp | Harness::Pi => omp.as_deref(),
                 _ => None,
-            }
-            .and_then(reported_tree)?;
+            }?;
             let build = row.seat.extension_build.as_deref()?;
+            // Longer than any build the grammar allows: not compared, and no
+            // work proportional to a hostile stored value (#175 review).
+            if build.len() > MAX_REPORTED_BUILD {
+                return None;
+            }
             let (prefix, tree) = build.split_once(" tree:")?;
             let tree = reported_tree(tree)?;
             if tree == stamp {
                 return None;
             }
             let prefix = reported_build(prefix)
-                .unwrap_or_else(|| format!("unparseable ({} chars)", prefix.chars().count()));
+                .unwrap_or_else(|| format!("unparseable ({} bytes)", prefix.len()));
             Some(FleetAnomaly {
                 seat: row.seat.id.clone(),
                 kind: "stale-extension".to_string(),
@@ -1369,6 +1377,13 @@ fn stale_extensions(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly>
         })
         .collect()
 }
+
+/// The longest ` tree:` part the grammar allows: four 40-hex ids, `+`-joined.
+const MAX_REPORTED_TREE: usize = 4 * 40 + 3;
+/// The longest build prefix the grammar allows: `hash:` and 64 hex.
+const MAX_REPORTED_PREFIX: usize = "hash:".len() + 64;
+/// The longest whole `extension_build` the grammar allows.
+const MAX_REPORTED_BUILD: usize = MAX_REPORTED_PREFIX + " tree:".len() + MAX_REPORTED_TREE;
 
 /// A git object id as the extensions and the justfile shorten it: 7 to 40
 /// lowercase hex characters.
@@ -1385,13 +1400,19 @@ fn lower_hex(text: &str, lengths: std::ops::RangeInclusive<usize>) -> bool {
 /// and each outside root's). Returned only when it parses, so the result is
 /// made of nothing but those ids.
 fn reported_tree(text: &str) -> Option<String> {
-    let ids: Vec<&str> = text.split('+').collect();
+    if text.len() > MAX_REPORTED_TREE {
+        return None;
+    }
+    let ids: Vec<&str> = text.splitn(5, '+').collect();
     ((1..=4).contains(&ids.len()) && ids.iter().all(|id| object_id(id))).then(|| ids.join("+"))
 }
 
 /// The part of a reported build before ` tree:`: a commit with an optional
 /// `+dirty`, or the `hash:` of a standalone install's sources (12 to 64 hex).
 fn reported_build(text: &str) -> Option<String> {
+    if text.len() > MAX_REPORTED_PREFIX {
+        return None;
+    }
     if let Some(hash) = text.strip_prefix("hash:") {
         return lower_hex(hash, 12..=64).then(|| format!("hash:{hash}"));
     }

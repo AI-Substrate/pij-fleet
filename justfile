@@ -63,8 +63,10 @@ rs-install:
     # seats' extensions with (ten characters of each id; the OMP extension also
     # loads crates/core/tests/fixtures/control-commands.json). One git launch.
     set -- $(git rev-parse HEAD HEAD:.copilot/extensions/pij HEAD:.omp/extensions/pij HEAD:crates/core/tests/fixtures/control-commands.json)
-    export PIJ_BUILD_COMMIT="$(printf %.10s "$1")" PIJ_EXT_TREE_COPILOT="$(printf %.10s "$2")" PIJ_EXT_TREE_OMP="$(printf %.10s "$3")+$(printf %.10s "$4")"
-    cargo build --release --locked -p pij-cli
+    commit="$(printf %.10s "$1")" copilot="$(printf %.10s "$2")" omp="$(printf %.10s "$3")+$(printf %.10s "$4")"
+    # Stamped on this command only, never exported (#175 review, P175-F001).
+    PIJ_BUILD_COMMIT="$commit" PIJ_EXT_TREE_COPILOT="$copilot" PIJ_EXT_TREE_OMP="$omp" \
+        cargo build --release --locked -p pij-cli
     bin="$(npm prefix -g)/bin"
     mkdir -p "$bin"
     ln -sfn "$(pwd)/target/release/pij-rs" "$bin/pij-rs"
@@ -633,8 +635,12 @@ bounce-rs:
     # seats' extensions with (ten characters of each id; the OMP extension also
     # loads crates/core/tests/fixtures/control-commands.json). One git launch.
     set -- $(git rev-parse HEAD HEAD:.copilot/extensions/pij HEAD:.omp/extensions/pij HEAD:crates/core/tests/fixtures/control-commands.json)
-    export PIJ_BUILD_COMMIT="$(printf %.10s "$1")" PIJ_EXT_TREE_COPILOT="$(printf %.10s "$2")" PIJ_EXT_TREE_OMP="$(printf %.10s "$3")+$(printf %.10s "$4")"
-    cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
+    commit="$(printf %.10s "$1")" copilot="$(printf %.10s "$2")" omp="$(printf %.10s "$3")+$(printf %.10s "$4")"
+    # Stamped on this command only, never exported: the daemon launched below
+    # passes its environment to every job it runs, including cargo in other
+    # worktrees (#175 review, P175-F001).
+    PIJ_BUILD_COMMIT="$commit" PIJ_EXT_TREE_COPILOT="$copilot" PIJ_EXT_TREE_OMP="$omp" \
+        cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
     bin="$(npm prefix -g)/bin/pij-rs"
     old=$(lsof -nP -iTCP:7461 -sTCP:LISTEN -t || true)
     [ -n "$old" ] && kill "$old" && sleep 0.5

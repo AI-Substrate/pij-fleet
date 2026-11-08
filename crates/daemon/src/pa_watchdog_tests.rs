@@ -1931,6 +1931,12 @@ async fn a_seat_on_another_extension_build_is_flagged_in_the_digest() {
         worker.extension_build = Some(build.into());
         services.registry.put(worker).await.unwrap();
     }
+    // Longer than any build the grammar allows, with a valid, differing tree
+    // at the end: not compared, and parsed no further than its length.
+    let mut oversized = seat("pij-oversized", "/stale-extension", Some("pij-prime"));
+    oversized.harness = Harness::Copilot;
+    oversized.extension_build = Some(format!("{} tree:5555555555", "+".repeat(1 << 20)));
+    services.registry.put(oversized).await.unwrap();
     let mut missing = seat("pij-missing", "/stale-extension", Some("pij-prime"));
     missing.harness = Harness::Copilot;
     services.registry.put(missing).await.unwrap();
@@ -1970,13 +1976,13 @@ async fn a_seat_on_another_extension_build_is_flagged_in_the_digest() {
     // its length.
     assert!(
         body.contains(
-            "pij-forged-prefix  stale-extension: seat-reported extension tree 2222222222 (seat-reported build unparseable (89 chars))"
+            "pij-forged-prefix  stale-extension: seat-reported extension tree 2222222222 (seat-reported build unparseable (89 bytes))"
         ),
         "{body}"
     );
     assert!(
         body.contains(
-            "pij-control-prefix  stale-extension: seat-reported extension tree bbbbbbbbbb+eeeeeeeeee (seat-reported build unparseable (14 chars))"
+            "pij-control-prefix  stale-extension: seat-reported extension tree bbbbbbbbbb+eeeeeeeeee (seat-reported build unparseable (14 bytes))"
         ),
         "{body}"
     );
@@ -1988,6 +1994,7 @@ async fn a_seat_on_another_extension_build_is_flagged_in_the_digest() {
         "PA: close",
         "3333333333",
         "4444444444",
+        "5555555555",
         "\u{1b}",
         "\u{7}",
     ] {
@@ -2023,6 +2030,21 @@ fn a_reported_build_parses_only_the_closed_grammar() {
         "1234567+89abcde+0123456789+fedcba9876",
     ] {
         assert_eq!(reported_tree(tree).as_deref(), Some(tree), "{tree}");
+    }
+    // The longest tree and build the grammar allows still parse; anything
+    // longer is refused on its length, before any splitting.
+    let widest = [full; 4].join("+");
+    assert_eq!(reported_tree(&widest).as_deref(), Some(widest.as_str()));
+    assert_eq!(reported_tree(&format!("{widest}0")), None);
+    let hash = format!("hash:{}", "0".repeat(64));
+    assert_eq!(reported_build(&hash).as_deref(), Some(hash.as_str()));
+    for oversized in [
+        "+".repeat(1 << 20),
+        "a".repeat(1 << 20),
+        format!("{full}+").repeat(1 << 14),
+    ] {
+        assert_eq!(reported_tree(&oversized), None);
+        assert_eq!(reported_build(&oversized), None);
     }
     for tree in [
         "",
