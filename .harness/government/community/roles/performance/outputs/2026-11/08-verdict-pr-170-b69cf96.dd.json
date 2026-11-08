@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "b69cf96b6a6b6e9938f40a35f66ba66113fb4f52",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/170#issuecomment-6715542711",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:170",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `b69cf96b6a6b6e9938f40a35f66ba66113fb4f52`.\n\nOne-commit delta from [round 3](https://github.com/AI-Substrate/pij-fleet/pull/170#issuecomment-6715411679), governance `4b0dcb9`. P170-F001 remains closed; the soft/per-child timeout qualification P170-N001 stands.\n\n**No launch added or repeated.** `quiet` replaces `must` for the worktree/seat inventories and invokes the same runner once. The gh/status guards inspect the stderr already returned by their existing commands. Trimming, first-line extraction and diagnostics cost O(stderr bytes); there is no retry, inventory reread, new process, timer or daemon mutation.\n\nNonempty **trimmed** stderr on worktree/seat inventories refuses before removal; on gh it leaves that PR's state unusable, and on status it spares the candidate. This can reduce subsequent work/removal calls, not increase them. The warning-free macOS direct-call model remains **3 + P + C + R**, with the same single lsof/seat snapshots and cached absolute executable paths. Non-macOS prune still refuses before resolution or child/daemon calls.\n\n**CI:** [42433237523](https://github.com/AI-Substrate/pij-fleet/actions/runs/42433237523) succeeds at this exact SHA. Node **22 and 24 each execute 33 pr-freeze tests**. Read the new case: exit-zero/empty-stdout git status with an unreadable warning causes no removal; gh warnings spare; worktree/seat warnings refuse; a no-warning positive control removes. These are injected command results, not a live unreadable-filesystem run. The supplied mutation claim was not rerun locally. Typecheck/Biome and Rust checks succeed; Delivers `42433238035` succeeds, while its cancelled duplicate is not proof.\n\nWorktree and GitHub heads agree; clean and CLEAN/MERGEABLE. No local build, test, mutation, live dry-run, cwd census or prune. No new performance blocker; separate correctness/security review remains independent.\n"
+		}
+	]
+}
