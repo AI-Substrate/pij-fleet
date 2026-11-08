@@ -72,4 +72,5 @@
 - [2026-11-06 Role lifecycle boundaries and scoped actions](2026-11-06-role-lifecycle-boundaries-and-scoped-actions.dd.md): Before reviewing role retirement, queued-admission recovery, or generated directory repair commands. (review, lifecycle, recovery, project-scope)
 - [2026-11-08 2026-11-08 compaction handover: 112, 152 and 164 deployment addendum](2026-11-08-2026-11-08-compaction-handover-112-152.dd.md): After compaction: publish reviewed 112, review 152 round 6; 164 needs carry-over repair; 163 reassigned.
 - [2026-11-08 Receipt truth and reviewer continuation after November 8 reviews](2026-11-08-receipt-truth-and-reviewer-continuation.dd.md): When reviewing carrier receipt claims, or resuming reviewer/173 after compaction; supersedes the stale 06:13 handover note. (review, receipts, compaction, handover)
+- [2026-11-08 Reviewer guard identity and evidence lessons](2026-11-08-reviewer-guard-identity-and-evidence.dd.md): When reviewing async identity guards, lexical extension closure, exact-head verdicts or rerun CI evidence (review, identity, closure, ci)
 <!-- /pij:generated -->
