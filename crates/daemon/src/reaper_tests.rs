@@ -831,3 +831,97 @@ async fn death_sweep_retires_a_never_bound_seat_whose_pane_is_gone() {
         message.body
     );
 }
+
+/// A registry whose seat binds its process at the last moment: just before
+/// the reaper's conditional tombstone, after both pane reads.
+struct BindsBeforeCommit {
+    inner: Arc<dyn Registry>,
+    bound: SeatDescriptor,
+}
+#[async_trait]
+impl Registry for BindsBeforeCommit {
+    async fn get(&self, seat: &pij_core::model::SeatId) -> Result<Option<SeatDescriptor>> {
+        self.inner.get(seat).await
+    }
+    async fn put(&self, descriptor: SeatDescriptor) -> Result<pij_core::model::Seq> {
+        self.inner.put(descriptor).await
+    }
+    async fn put_reporting(
+        &self,
+        d: SeatDescriptor,
+    ) -> Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
+        self.inner.put_reporting(d).await
+    }
+    async fn put_reporting_keeping_parent(
+        &self,
+        d: SeatDescriptor,
+    ) -> Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
+        self.inner.put_reporting_keeping_parent(d).await
+    }
+    async fn list(&self, filter: pij_core::ports::SeatFilter) -> Result<Vec<SeatDescriptor>> {
+        self.inner.list(filter).await
+    }
+    async fn tombstone(
+        &self,
+        seat: &pij_core::model::SeatId,
+        reason: &str,
+    ) -> Result<pij_core::model::Seq> {
+        self.inner.tombstone(seat, reason).await
+    }
+    async fn tombstone_if_unchanged(
+        &self,
+        expected: SeatDescriptor,
+        reason: String,
+    ) -> Result<pij_core::model::Seq> {
+        self.inner.put(self.bound.clone()).await?;
+        self.inner.tombstone_if_unchanged(expected, reason).await
+    }
+    async fn set_activity(
+        &self,
+        seat: &pij_core::model::SeatId,
+        state: pij_core::model::SystemState,
+        reason: Option<&str>,
+    ) -> Result<Option<pij_core::model::Seq>> {
+        self.inner.set_activity(seat, state, reason).await
+    }
+}
+
+/// Review of #174 (bobcat): a never-bound seat whose harness registers its
+/// process after the reaper read its pane as absent, but before the
+/// tombstone, is not retired: the conditional tombstone sees the changed row
+/// and refuses, the bind stands, and no tombstone event is written.
+#[tokio::test]
+async fn a_bind_between_the_pane_read_and_the_tombstone_is_preserved() {
+    let (services, _store) = services().await;
+    let mut unbound = seat();
+    unbound.proc = None;
+    let before = services.registry.put(unbound.clone()).await.unwrap();
+    let mut bound = unbound.clone();
+    bound.proc = Some(ProcIdentity {
+        pid: 4321,
+        proc_start: 123,
+    });
+    let registry = BindsBeforeCommit {
+        inner: services.registry.clone(),
+        bound: bound.clone(),
+    };
+    let receipt = reap(&registry, &FakeLiveness::new(), &FakeTmux::new(), false)
+        .await
+        .unwrap();
+    assert_eq!(receipt.candidates.len(), 1, "the pane read found it absent");
+    assert!(receipt.reaped.is_empty(), "{receipt:?}");
+    assert_eq!(receipt.unverifiable[0].reason, "incarnation-changed");
+    let kept = services.registry.get(&bound.id).await.unwrap().unwrap();
+    assert_eq!(kept.proc, bound.proc);
+    assert!(kept.tombstoned_at.is_none());
+    assert!(
+        services
+            .spine
+            .tail(None, before)
+            .await
+            .unwrap()
+            .iter()
+            .all(|event| event.kind != "seat.tombstone"),
+        "no stale tombstone"
+    );
+}
