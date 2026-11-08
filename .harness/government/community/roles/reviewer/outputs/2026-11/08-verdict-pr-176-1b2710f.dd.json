@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b934-11db-7d42-9c78-19aea18ac225",
+				"date": "2026-11-08",
+				"head": "1b2710faf2b8e6aceb0c8c461a0366606d3ebb47",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/176#issuecomment-6716765503",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:176",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #176 correctness verdict\n\n**PASS-WITH-NOTES** at `1b2710faf2b8e6aceb0c8c461a0366606d3ebb47`.\n\nThe reviewed checkout is clean/detached, matches the authorized remote head, and GitHub reports CLEAN. The change implements a per-invocation default, not a fleet-wide admission semaphore.\n\n## Cap and override precedence\n\nshared-build.sh derives JOBS from PIJ_CARGO_JOBS, defaulting to 4; rejects nondigits and zero/nonpositive values with exit 2 before target/lock creation or Cargo; normalizes accepted digits and explicitly exports CARGO_BUILD_JOBS. It exports RUST_TEST_THREADS from a nonempty caller value, otherwise the same cap, and prints both before work.\n\nThe original test argv still reaches the nice-only run unchanged. Only the separate compile step removes arguments after `--`. An explicit `-- --test-threads N` therefore remains authoritative over the environment; a caller's nonempty RUST_TEST_THREADS remains authoritative over the default. The standard libtest source selects opts.test_threads before its environment fallback ([selection](https://doc.rust-lang.org/src/test/lib.rs.html#392), [fallback](https://doc.rust-lang.org/src/test/helpers/concurrency.rs.html#7)). This is source/contract evidence, not a new local libtest run. The Rust manual still supports the environment form, although it labels it deprecated.\n\nA caller's CARGO_BUILD_JOBS is intentionally replaced by PIJ_CARGO_JOBS/default, not preserved. Explicit Cargo job flags and test-thread overrides are not rewritten or hard-clamped. These configured overrides do not waive the separate temporary fleet instruction to use four jobs/test threads and coordinate build slots.\n\n## Recipe inventory\n\njustfile:21-22 exports the two variables for every recipe. All direct Cargo sites are covered: rs-install, copilot-native-rust-test, route-inventory-check, rust-check and bounce-rs; shared-build additionally exports them itself. Install/self-check delegate to these covered recipes. The remaining direct Cargo recipe, copilot-native-contract-test, deliberately keeps its existing CARGO_BUILD_JOBS=4 and explicit --test-threads=1. No direct Cargo recipe is omitted.\n\nCI's Cargo commands are direct workflow commands, outside those recipe environments; ci.yml is unchanged. Recipe exports do not mutate the parent CI shell's environment.\n\n## Tests and N001\n\nExact-head CI [42442545704](https://github.com/AI-Substrate/pij-fleet/actions/runs/42442545704), attempt 1, passed all four jobs. Node 22 and 24 each executed all **20 shared-build tests** successfully; each reports 2259 passed/six skipped overall. Lint/typecheck also passed.\n\nThe fake Cargo records the environment actually reaching the build, test compile and test run. Controls verify default 4/4, PIJ_CARGO_JOBS=2, caller RUST_TEST_THREADS=1 over jobs=6, named refusal for 0/four/-2 with no lock/no Cargo, and the preserved doc-only scheduling path.\n\nThe fixture's CARGO_BUILD_JOBS=undefined is important: Node omits it from the child's environment, so an inherited just export cannot make a plain shell assignment look exported. The author reports that removing the Cargo export fails the cap control; the inspected fixture/assertions support that witness, and the final unmutated CI passes. No mutation was rerun here.\n\n**N001, nonblocking oracle gap:** the fixture still supplies RUST_TEST_THREADS=\"\" rather than omitting it (shared-build.test.ts:110-118). Bash keeps an inherited variable exported after reassignment. Consequently the same cap test would not independently detect replacing `export RUST_TEST_THREADS=...` with a plain assignment. The production code correctly exports it; omit that fixture variable in a future export-regression witness rather than claiming both export boundaries are independently mutation-proven.\n\n## Resource scope\n\nNo new loop, poll, timer or launch site. The change adds environment assignments and one cap diagnostic per shared-build invocation, plus diagnostics in the named recipes. Defaults bound Cargo build jobs and libtest concurrency per test binary to four, subject to the intentional overrides. Existing per-target locking, polling, nice/taskpolicy wrappers and signal cleanup are unchanged.\n\nThis does not enforce the temporary two-build fleet-wide limit across different targets. Slot coordination and live fleet measurements remain PM/performance-owned. No Cargo, local product tests, live load/spawn probes, dependency changes or product edits were performed by this reviewer.\n"
+		}
+	]
+}
