@@ -929,6 +929,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-double-bobcat",
 					"why": "F132 daemon-message rendering #185"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T08:48:00.632Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "186",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F122 delivered ends coder/f<N> via Fixes: line #186"
 				}
 			]
 		}

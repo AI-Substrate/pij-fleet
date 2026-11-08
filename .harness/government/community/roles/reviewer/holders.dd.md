@@ -90,3 +90,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 183 | 2026-11-08T08:08:45.039Z | — | pij-steady-otter | — | plan 223 A1 seat capabilities #183 (reviewed workshop 001 on #163) | — |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 183b | 2026-11-08T08:08:56.909Z | — | pij-steady-otter | — | second reviewer on #183 (scaling rule: security-critical CS-4) | — |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 185 | 2026-11-08T08:23:55.036Z | — | pij-steady-otter | — | F132 daemon-message rendering #185 | — |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 186 | 2026-11-08T08:48:00.632Z | — | pij-steady-otter | — | F122 delivered ends coder/f&lt;N&gt; via Fixes: line #186 | — |
