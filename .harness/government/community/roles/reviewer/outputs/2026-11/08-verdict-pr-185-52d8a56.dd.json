@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bac2-3615-7271-9162-63cc48fc6900",
+				"date": "2026-11-08",
+				"head": "52d8a567ddef2199fd2ce9213e8f4aa5ca4373f1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/185#issuecomment-6720558452",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:185",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #185 correctness review: BLOCK\n\nHead: `52d8a567ddef2199fd2ce9213e8f4aa5ca4373f1`\n\nWhole-PR review against main `ae8e7ee24dbce1ca5c57e9e333c8a5424fc9f11e`. No verdict was issued at the held first-round head. The two omissions below remain within the requested render-time protection of stored rows.\n\n## Findings\n\n**F001, medium: several-holders fallback commands still show raw stored seat IDs.**\n\n`crates/daemon/src/delivery/role_send.rs:405-436` renders the listing, but the shared-instance fallback's `next`, and the no-instance fallback's in-text send and assign commands, still use `several[0].1.id.as_str()` (`:415`, `:423`, `:431`). The route resolves stored holders through `live_seat`, which checks tombstoning, not canonical spelling (`:644-649`).\n\nA live legacy holder outside the seat grammar therefore disappears from the listing but reappears verbatim inside the generated command. `shell_word` (`crates/core/src/directory.rs:31-40`) protects POSIX argument boundaries; it deliberately preserves embedded newlines inside its quotes. Shell safety does not provide the promised closed model-text rendering.\n\nChoose a canonical live holder for the fallback command, and render every seat occurrence. If no holder can be shown, give safe explanatory text without an unusable seat command. Cover shared-instance and no-instance branches, with a hostile stored holder and a canonical positive control. Assert against the complete refusal, including `next`, and retain exact shell-word assertions.\n\nTapir confirmed the omission and absence of a covering receipt. R2/R3 exercise hostile instances with canonical holder IDs, so they cannot detect it. This finding requires a legacy row, not a newly minted malformed seat.\n\n**F002, medium: generated directory actions bypass the rendered holding-address helper.**\n\n`crates/daemon/src/community/picture.rs:424-477` independently constructs `format!(\"{role}/{instance}\")` from the queued instance, then inserts that raw address into the no-live-holder explanation and assign command. Its revive command also inserts the raw stored last-holder seat. The new guarded `address(row)` helper is not called on this path.\n\n`crates/daemon/src/community/directory.rs:482-497` passes stored queued request instances directly into this function. This is not only a hypothetical invalid new send: a broad send copies a legacy holding's instance (`delivery/role_send.rs:334-342`), and restart recovery requeues an interrupted delivering request without clearing its instance (`crates/store/src/role_requests.rs:942-945`). After the holder is no longer live, the generated directory action can therefore show the hostile stored key.\n\nApply the same closed rendering to generated action text and command arguments, while keeping raw keys for matching/deduplication. Add an action-level or HTTP directory-view regression using a hostile queued instance and last-holder seat, with ordinary-instance positive controls. R5 checks only `address(row)`, not this action constructor.\n\n## What passed review\n\n- The shared renderers reject controls, whitespace and forged framing; canonical seat parsing was extracted without changing its predicate.\n- Request frame, queue wake, check-in, limit and close bodies use the rendered request address and IDs. Close/withdrawal reasons are author-labelled and escaped; intentional request bodies remain unchanged.\n- Watchdog, quota, modal, routing-table holder and output-notice changes retain their ordinary information and decision logic.\n- The two hostile-instance fixtures honestly seed legacy rows through the store. Their complete-response payload checks and actual `/bin/sh` argument round trips remain meaningful. The watchdog fixture changes only IDs and expected text, preserving crossing/rearm assertions.\n- The #184 merge retains the delivered-settlement cutoff, bounded context reads, overflow disclosure, deduplication and timeout fallback. The memory grammar is exactly the previous predicate, now shared through `render::is_name/name`. No memory query, migration or settlement test changed.\n\n## Evidence and limits\n\n[CI run 42470623767](https://github.com/AI-Substrate/pij-fleet/actions/runs/42470623767), exact head, final attempt 2: **2249 Rust cases, zero failures/errors/skips**. JUnit timestamp `2026-11-08T10:41:15.572+00:00`, artifact `13614335629`, matches the successful Rust job. This includes all six core render cases, 98 directory HTTP cases, 16 memory-turn HTTP cases, and the refused-compact cutoff regression. Both Node checks and Rust lint passed. Attempt 1 failed in setup-just with HTTP 504, before product checks, and cancelled other jobs.\n\nAuthor receipts `f132-mutation-receipts.md`: M1-M8 and R1-R6 reported killed. These are author-run working-tree receipts, not reviewer-run exact-head mutants. M4's first replacement did not apply; its rerun reportedly killed the mutant. M6/M7 first fail pinned wording/label assertions, narrower than a behavioral end-to-end oracle. None covers F001/F002.\n\n`fenced` takes at most 500 input code points and appends each complete `escape_debug` expansion before the ellipsis and closing quote. It cannot cut an escape halfway; escaped quotes, backslashes and newlines cannot mechanically break the quoted line. The serialized output may exceed 500 characters. Exact 500-boundary quote/backslash cases are source-inspected, not exercised by the current tests.\n\nNo local builds, tests, dependency installation or live probes were run. This is not blanket semantic prompt-injection closure; the PR's explicit free-text/path follow-ups remain outside this verdict.\n\n**Cost:** no new production loop, timer, poll, read or launch. Existing send/output paths and watchdog rounds gain in-process rendering only, with unchanged cadence and per-seat scaling. The added test-only queue-arrival poll is bounded to 100 iterations of 50 ms.\n\n## Handback\n\nRepair F001/F002 and add complete-message/action-level regressions before a new exact-head review. The highest-leverage proof improvement is to test generated commands and explanations together with their labels, rather than only the individual rendering helper. Harness observation DL-011 records that gap. No product or canonical plan state was edited.\n"
+		}
+	]
+}
