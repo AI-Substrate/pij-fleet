@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "a5cea92a3414e596a2ed4d655d11690faa66b4cc",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/196#issuecomment-6728183258",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:196",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: BLOCK\n\nPR #196, exact head `a5cea92a3414e596a2ed4d655d11690faa66b4cc`.\n\nThe complete five-file diff and shell/plist serialization boundaries were source-reviewed. The bounce assignment is shell-safe, but hostile PIJ_IDLE_NUDGE content can escape its plist string and change launchd configuration.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | justfile | 682 | Unescaped PIJ_IDLE_NUDGE XML can inject a top-level launchd Program key | 9/10 |\n\n### S196-001: variable data becomes launch configuration\n\nThe unquoted heredoc interpolates the raw variable into `<string>${PIJ_IDLE_NUDGE-1}</string>`. There is no XML encoding or boolean normalization before writing the LaunchAgent.\n\nAn adversarial value can close the string and EnvironmentVariables dictionary, add a top-level Program key, and reopen a dictionary to leave balanced XML. For example, a value naming the harmless `/bin/echo` executable demonstrates the structural escape:\n\n```text\n0</string></dict><key>Program</key><string>/bin/echo</string><key>EnvironmentVariables</key><dict><key>PIJ_IDLE_NUDGE</key><string>0\n```\n\nThis value was not executed. The launchd manual documents that Program selects the executable; ProgramArguments supplies argv and selects an executable only when Program is absent. Therefore retaining the original ProgramArguments does not neutralize the injected key. `plutil -lint` validates syntax, not authorized configuration.\n\nPrerequisites are influence over PIJ_IDLE_NUDGE during the operator's rs-autostart invocation and, for arbitrary code execution, an accessible executable. Execution is in that GUI user's context. No remote entry point or privilege escalation was established.\n\nNormalize this boolean to a literal 0/1 before plist generation, or serialize it with a proper plist string encoder.\n\n### Other boundaries and proof\n\nThe bounce-rs environment assignment is double-quoted; embedded quotes/newlines and literal command-substitution text are data, not reevaluated shell syntax (`justfile:651`). No eval was found. The Rust daemon still defaults off and parses accepted values after launch; that downstream parser cannot protect an already-consumed launchd configuration.\n\nDefault/explicit-zero tests fake plutil and launchctl and do not establish hostile-value XML safety. No broader authentication/network control or C19/C21 disclosure was identified in the changes.\n\nIndependent executable-selection reference: https://keith.github.io/xcode-man-pages/launchd.plist.5.html (`Program`, `ProgramArguments`).\n\nGitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42531040882` and Delivers run `42531040878` both identify this SHA and success.\n\nNo local builds, tests, recipe/plist execution, daemon bounce, launchctl operation, credential reads or mutations were performed.\n"
+		}
+	]
+}
