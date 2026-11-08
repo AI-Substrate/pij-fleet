@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "59950a5ef6334faa57a57f35f178b284354287e1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/175#issuecomment-6717551201",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:175",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes**, delta verdict at `59950a5ef6334faa57a57f35f178b284354287e1`. **The MEDIUM rendering finding in `5304e87` is closed.**\n\nThis verdict formally covers the previously held/unpublished `a15ca91` rendering repair and the final scanner repair. No remaining build/tree prompt-injection vulnerability or new C19/C21 disclosure found.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | ⚪ LOW | crates/testkit/tests/extension_closure.rs | 18-35, 130-154 | Lexical coverage is not a complete runtime load graph; a listed-file literal followed by a computed suffix can evade full-path coverage | 9/10 |\n\nThis is a nonblocking sensor/proof qualification, not a reopening of the rendering vulnerability or a demonstrated production privilege escalation.\n\n## Rendering root closed\n\nBoth build and tree are parsed at render time from registry rows, including persisted reports. Identifier lengths and exhaustive lowercase-hex checks fully consume each component. Only canonical IDs, fixed punctuation and numeric error lengths reach the detail, labelled seat-reported. Unparseable trees/stamps are not compared; rejected build prefixes produce only `unparseable (N chars)` (`crates/daemon/src/pa_watchdog.rs:1341-1402`).\n\nNo original rejected prefix or suffix is reused. The final renderer blob is byte-identical to the source-reviewed `a15ca91` repair. Footer/ping qualifications remain: the footer uses its local identity, ping JSON-serializes the daemon commit, and public-repository object IDs are not credentials. This is reported telemetry, not verified source or caller authority.\n\n## Scanner classes and remaining limit\n\nThe newline filter is gone. Multiline interpolation now reaches the computed-path refusal; unresolved escaping literals, including the P6 directory-prefix concatenation, fail unless they are declared roots. Resolved outside files are traversed and checked against the identity's listed roots. The scanner uses filesystem/string operations, not shell evaluation.\n\nThe stated variable/join limitation is real, but not exhaustive. In an OMP source, a construction such as:\n\n```js\nimport(\"../../../crates/core/tests/fixtures/control-commands.json\" + \"/../other.mjs\")\n```\n\nis scanned as the already-listed fixture literal; the non-relative suffix is not scanned. At runtime the completed path names another file if it exists. Thus the new listed-file class check can pass without covering the full computed destination. This is source-based reasoning, not an executed probe. Retain a broader computed-path/lexical proof ceiling rather than claim every escaping runtime load is covered.\n\nF127's existing seat-ID/asserted-role rendering remains separate and is not reclassified as a new finding here.\n\n## CI proof and limits\n\nLocal and remote heads agree; worktree clean; PR CLEAN and ready; current checks succeeded. CI [42447684985](https://github.com/AI-Substrate/pij-fleet/actions/runs/42447684985) tested synthetic merge `c45c391`, incorporating this exact head.\n\nThe successful rerun's JUnit artifact [13604179945](https://github.com/AI-Substrate/pij-fleet/actions/runs/42447684985/artifacts/13604179945), created at 04:58:04 UTC, has 2,206 passing cases and no failures; the runner reports five skipped. An earlier same-named artifact belongs to the failed earlier attempt and is not the final proof.\n\nConfirmed passing cases: closed build/tree grammar, hostile persisted-report containment in the delivered PA digest, scanner spellings including multiline interpolation, five scratch outside-load forms with an inside-load positive control, and real extension closure/stamp coverage. These close the requested rendering root and P5/P6 test cases. Author-reported mutants and appended real-tree probes were not independently rerun. ddocs reported UNAVAILABLE.\n\nNo local cargo/builds/tests/scripts, installs, credentials, actual registration/digest/delivery, product edits or production/pane/process probes. No unrelated imported-main implementation re-review.\n"
+		}
+	]
+}
