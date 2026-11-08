@@ -6,6 +6,12 @@ use pij_core::ports::LaunchCommand;
 
 const PIJ_SESSION_ID: &str = "PIJ_SESSION_ID";
 const PIJ_SPAWN_ID: &str = "PIJ_SPAWN_ID";
+/// The spawn's single-use registration nonce (plan 223): the one secret a
+/// spawn environment carries, worthless once its first registration consumes
+/// it. Never in any argv (contract d): the daemon hands it to the launch
+/// wrapper in a 0600 file ([`write_nonce_file`]), and the wrapper sets it on
+/// the harness's environment alone ([`take_nonce_file`]).
+pub const PIJ_SPAWN_NONCE: &str = "PIJ_SPAWN_NONCE";
 const CLAUDE_ACCEPT_SETTINGS: &str = r#"{"crossSessionInbound":"accept"}"#;
 /// F110: a seat never opens its harness's modal question (pij SKILL.md
 /// invariants 9-10); it asks in its text. Copilot's built-in security-review
@@ -253,11 +259,15 @@ pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
 /// The harness still inherits tmux's PTY directly. The wrapper only records the
 /// eventual exit code and keeps the pane alive briefly so the daemon can capture
 /// the final visible lines; no shell joins or interprets the harness arguments.
+///
+/// `nonce_file` is the 0600 file holding the spawn's nonce (plan 223): only its
+/// path travels in argv; the wrapper reads, unlinks and exports it.
 pub fn observed_launch_command(
     plan: &SpawnPlan,
     wrapper_executable: String,
     status_path: &Path,
     log_path: &Path,
+    nonce_file: Option<&Path>,
 ) -> Result<LaunchCommand> {
     if wrapper_executable.trim().is_empty() {
         return Err(PijError::Adapter {
@@ -273,7 +283,7 @@ pub fn observed_launch_command(
         adapter: "spawn".to_string(),
         message: "the child log path is not valid UTF-8".to_string(),
     })?;
-    let mut args = Vec::with_capacity(plan.args.len() + 9);
+    let mut args = Vec::with_capacity(plan.args.len() + 11);
     args.extend([
         "__spawn-child".to_string(),
         "--status-file".to_string(),
@@ -282,14 +292,83 @@ pub fn observed_launch_command(
         log_path.to_string(),
         "--harness".to_string(),
         plan.harness.as_str().to_string(),
-        "--".to_string(),
-        plan.executable.clone(),
     ]);
+    if let Some(nonce_file) = nonce_file {
+        let nonce_file = nonce_file.to_str().ok_or_else(|| PijError::Adapter {
+            adapter: "spawn".to_string(),
+            message: "the spawn nonce file path is not valid UTF-8".to_string(),
+        })?;
+        args.extend(["--nonce-file".to_string(), nonce_file.to_string()]);
+    }
+    args.extend(["--".to_string(), plan.executable.clone()]);
     args.extend(plan.args.iter().cloned());
     Ok(LaunchCommand {
         executable: wrapper_executable,
         args,
     })
+}
+
+/// Hand a spawn's nonce to its launch wrapper: a new file readable only by
+/// this user (0600 from creation, never widened). A leftover file at the same
+/// path belongs to this spawn id, so it is replaced (the spawn is touched).
+///
+/// # Errors
+/// The file could not be created or written.
+pub fn write_nonce_file(path: &Path, nonce: &str) -> Result<()> {
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let fault = |error: std::io::Error| PijError::Adapter {
+        adapter: "spawn".to_string(),
+        message: format!("spawn nonce file {}: {error}", path.display()),
+    };
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(fault(error)),
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(fault)?;
+    file.write_all(nonce.as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(fault)
+}
+
+/// The launch wrapper's half: read the nonce file and unlink it at once, so it
+/// is consumed exactly here. `None` (with a line naming the path, never the
+/// value) when it cannot be read: the harness then launches without a nonce
+/// and registers with public facts.
+#[must_use]
+pub fn take_nonce_file(path: &Path) -> Option<String> {
+    let read = std::fs::read_to_string(path);
+    if let Err(error) = std::fs::remove_file(path)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        eprintln!(
+            "pij-rs spawn child: could not unlink the spawn nonce file {}: {error}",
+            path.display()
+        );
+    }
+    match read {
+        Ok(nonce) if !nonce.trim().is_empty() => Some(nonce.trim().to_string()),
+        Ok(_) => {
+            eprintln!(
+                "pij-rs spawn child: the spawn nonce file {} was empty; launching without a nonce",
+                path.display()
+            );
+            None
+        }
+        Err(error) => {
+            eprintln!(
+                "pij-rs spawn child: could not read the spawn nonce file {}: {error}; launching without a nonce",
+                path.display()
+            );
+            None
+        }
+    }
 }
 
 /// What the launch wrapper records once its harness child is running: its own
@@ -365,7 +444,8 @@ fn push_option(args: &mut Vec<String>, flag: &str, value: Option<&str>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        CLAUDE_ACCEPT_SETTINGS, PIJ_SESSION_ID, PIJ_SPAWN_ID, SpawnPlanInput, build_spawn_plan,
+        CLAUDE_ACCEPT_SETTINGS, PIJ_SESSION_ID, PIJ_SPAWN_ID, PIJ_SPAWN_NONCE, SpawnPlanInput,
+        build_spawn_plan, take_nonce_file, write_nonce_file,
     };
     use pij_core::model::{Harness, SeatId};
 
@@ -381,6 +461,63 @@ mod tests {
             accept_inbound: false,
             resume: None,
         }
+    }
+
+    /// Plan 223, contract d: the nonce is in no argv. The wrapper's argv
+    /// names only the 0600 file it travels in; no harness plan (Codex's tool
+    /// shell settings included) carries it.
+    #[test]
+    fn the_spawn_nonce_travels_by_file_never_in_argv() {
+        for harness in [
+            Harness::Claude,
+            Harness::Copilot,
+            Harness::Omp,
+            Harness::Pi,
+            Harness::Codex,
+        ] {
+            let plan = build_spawn_plan(input(harness)).expect("plan");
+            let command = super::observed_launch_command(
+                &plan,
+                "/opt/pij-rs".to_string(),
+                std::path::Path::new("/run/spawn.status"),
+                std::path::Path::new("/run/spawn.log"),
+                Some(std::path::Path::new("/run/spawn.nonce")),
+            )
+            .expect("observed launch");
+            let separator = command.args.iter().position(|arg| arg == "--").unwrap();
+            assert_eq!(
+                command.args[separator - 2..separator],
+                ["--nonce-file", "/run/spawn.nonce"],
+                "{harness}"
+            );
+            assert!(
+                command
+                    .args
+                    .iter()
+                    .all(|arg| !arg.contains(PIJ_SPAWN_NONCE)),
+                "{harness}: {:?}",
+                command.args
+            );
+        }
+    }
+
+    /// The handoff file is 0600 from creation, and the wrapper consumes it:
+    /// read once, unlinked at once; an unreadable one launches without.
+    #[test]
+    fn the_nonce_file_is_private_and_consumed_once() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = pij_testkit::fresh_dir("pij-nonce-handoff");
+        let path = dir.join("s-1.nonce");
+        std::fs::write(&path, "leftover").unwrap();
+        write_nonce_file(&path, "n0nce").expect("write");
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(take_nonce_file(&path).as_deref(), Some("n0nce"));
+        assert!(!path.exists(), "unlinked on read");
+        assert_eq!(take_nonce_file(&path), None, "consumed");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// Plan 156 AC3: revive relaunches the recorded conversation with each
@@ -551,6 +688,7 @@ mod tests {
             "/opt/pij-rs".to_string(),
             std::path::Path::new("/tmp/spawn.status"),
             std::path::Path::new("/tmp/spawn.log"),
+            None,
         )
         .expect("observed launch");
 

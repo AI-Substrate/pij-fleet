@@ -207,6 +207,317 @@ pub async fn registry_contract(registry: &dyn Registry) {
     );
 }
 
+/// Every promise the [`Registry`] port makes about seat capabilities (plan
+/// 223 AC2): one issuance transaction, single-use nonces, two-phase rotation,
+/// and revocation by every tombstone and every new process.
+///
+/// # Panics
+/// On the first broken promise, naming which one.
+pub async fn capability_contract(registry: &dyn Registry) {
+    use pij_core::capability::{
+        CapabilityIssue, CapabilityVia, IssueOutcome, IssueProof, IssueRefusal, SpawnNonce,
+    };
+    use pij_core::model::ProcIdentity;
+
+    let proc = |pid| {
+        Some(ProcIdentity {
+            pid,
+            proc_start: u64::from(pid) * 10,
+        })
+    };
+    let seat = |id: &str, pid| {
+        let mut seat = SeatDescriptor::new(id, Harness::Omp, "/tmp/capability");
+        seat.proc = proc(pid);
+        seat
+    };
+    let nonce = |spawn: &str, seat: &str, digest: u8, expires_at| SpawnNonce {
+        spawn_id: spawn.to_string(),
+        seat: seat.into(),
+        harness: Harness::Omp,
+        digest: [digest; 32],
+        issued_at: 100,
+        expires_at,
+    };
+    let by_nonce = |spawn: &str, digest: u8, token: u8| CapabilityIssue {
+        proof: IssueProof::Nonce {
+            spawn_id: spawn.to_string(),
+            digest: [digest; 32],
+        },
+        digest: [token; 32],
+        owner: None,
+        now_ms: 200,
+    };
+    let by_token = |presented: u8, token: u8| CapabilityIssue {
+        proof: IssueProof::Token {
+            digest: [presented; 32],
+        },
+        digest: [token; 32],
+        owner: None,
+        now_ms: 300,
+    };
+    let issued = |outcome: IssueOutcome| match outcome {
+        IssueOutcome::Issued { binding, .. } => binding,
+        IssueOutcome::Refused(refusal) => panic!("refused: {refusal:?}"),
+    };
+    let refused = |outcome: IssueOutcome| match outcome {
+        IssueOutcome::Refused(refusal) => refusal,
+        IssueOutcome::Issued { .. } => panic!("issued where a refusal was due"),
+    };
+    let a = seat("pij-cap-a", 11);
+
+    // 1. A nonce issues once, in the transaction that writes the seat.
+    registry
+        .insert_spawn_nonce(nonce("spawn-a", "pij-cap-a", 1, 1_000))
+        .await
+        .expect("nonce row");
+    let binding = issued(
+        registry
+            .put_issuing(a.clone(), false, by_nonce("spawn-a", 1, 2))
+            .await
+            .expect("issue"),
+    );
+    assert!(
+        binding.inserted,
+        "the seat row was written with its capability"
+    );
+    assert_eq!(registry.get(&a.id).await.expect("get"), Some(a.clone()));
+    let row = registry
+        .capability(&a.id)
+        .await
+        .expect("read")
+        .expect("row");
+    assert_eq!(
+        (row.digest, row.prev_digest, row.boundary, row.via),
+        ([2; 32], None, a.proc, CapabilityVia::Nonce),
+        "only the new token's digest, bound to the written process"
+    );
+
+    // 2. A consumed nonce is refused, and nothing is written.
+    let mut moved = a.clone();
+    moved.folder = "/tmp/elsewhere".to_string();
+    assert_eq!(
+        refused(
+            registry
+                .put_issuing(moved.clone(), false, by_nonce("spawn-a", 1, 3))
+                .await
+                .expect("refusal is an outcome")
+        ),
+        IssueRefusal::NonceUsed
+    );
+    assert_eq!(registry.get(&a.id).await.expect("get"), Some(a.clone()));
+    assert_eq!(
+        registry
+            .capability(&a.id)
+            .await
+            .expect("read")
+            .map(|row| row.digest),
+        Some([2; 32])
+    );
+
+    // 3. Another seat's nonce, a wrong nonce, an expired one and an unbound
+    //    registration are refused; nothing is written. The expired row goes.
+    let b = seat("pij-cap-b", 12);
+    registry
+        .insert_spawn_nonce(nonce("spawn-b", "pij-cap-other", 4, 1_000))
+        .await
+        .expect("nonce row");
+    registry
+        .insert_spawn_nonce(nonce("spawn-old", "pij-cap-b", 5, 150))
+        .await
+        .expect("nonce row");
+    for (issue, descriptor, expected) in [
+        (
+            by_nonce("spawn-b", 4, 6),
+            b.clone(),
+            IssueRefusal::NonceForAnotherSeat,
+        ),
+        (
+            by_nonce("spawn-b", 9, 6),
+            b.clone(),
+            IssueRefusal::NonceUnknown,
+        ),
+        (
+            by_nonce("spawn-old", 5, 6),
+            b.clone(),
+            IssueRefusal::NonceExpired,
+        ),
+        (
+            by_nonce("spawn-old", 5, 6),
+            b.clone(),
+            IssueRefusal::NonceUnknown,
+        ),
+        (
+            by_nonce("spawn-b", 4, 6),
+            SeatDescriptor::new("pij-cap-other", Harness::Omp, "/tmp/capability"),
+            IssueRefusal::Unbound,
+        ),
+    ] {
+        assert_eq!(
+            refused(
+                registry
+                    .put_issuing(descriptor.clone(), false, issue)
+                    .await
+                    .expect("refusal is an outcome")
+            ),
+            expected
+        );
+        assert_eq!(registry.get(&descriptor.id).await.expect("get"), None);
+    }
+
+    // 4. Rotation is two-phase: the old digest proves until the new one is
+    //    first presented; then only the new one does.
+    issued(
+        registry
+            .put_issuing(a.clone(), true, by_token(2, 7))
+            .await
+            .expect("rotate"),
+    );
+    let row = registry
+        .capability(&a.id)
+        .await
+        .expect("read")
+        .expect("row");
+    assert_eq!(
+        (row.digest, row.prev_digest, row.via),
+        ([7; 32], Some([2; 32]), CapabilityVia::Rotation)
+    );
+    for presented in [2, 7] {
+        assert_eq!(
+            registry
+                .check_issue(
+                    &a.id,
+                    a.proc,
+                    &IssueProof::Token {
+                        digest: [presented; 32]
+                    },
+                    300
+                )
+                .await
+                .expect("check"),
+            Ok(()),
+            "digest {presented} proves during the rotation"
+        );
+    }
+    assert!(
+        !registry
+            .confirm_rotation(&a.id, [2; 32])
+            .await
+            .expect("confirm")
+    );
+    assert!(
+        registry
+            .confirm_rotation(&a.id, [7; 32])
+            .await
+            .expect("confirm")
+    );
+    assert_eq!(
+        registry
+            .capability(&a.id)
+            .await
+            .expect("read")
+            .and_then(|row| row.prev_digest),
+        None
+    );
+    assert_eq!(
+        refused(
+            registry
+                .put_issuing(a.clone(), true, by_token(2, 8))
+                .await
+                .expect("refusal is an outcome")
+        ),
+        IssueRefusal::TokenInvalid
+    );
+
+    // 5. Revocation: a new process, an observed-dead tombstone, a plain
+    //    tombstone and a tombstoning put (supersede) each delete it.
+    let reissue = |spawn: &'static str, digest: u8| {
+        let a = a.clone();
+        async move {
+            registry
+                .insert_spawn_nonce(nonce(spawn, "pij-cap-a", digest, 1_000))
+                .await
+                .expect("nonce row");
+            issued(
+                registry
+                    .put_issuing(a, true, by_nonce(spawn, digest, digest))
+                    .await
+                    .expect("reissue"),
+            );
+        }
+    };
+    let mut relaunched = a.clone();
+    relaunched.proc = proc(13);
+    registry.put(relaunched).await.expect("put");
+    assert_eq!(
+        registry.capability(&a.id).await.expect("read"),
+        None,
+        "new process"
+    );
+    reissue("spawn-c", 20).await;
+    let live = registry.get(&a.id).await.expect("get").expect("row");
+    registry
+        .tombstone_if_unchanged(live, "observed-dead".to_string())
+        .await
+        .expect("tombstone");
+    assert_eq!(
+        registry.capability(&a.id).await.expect("read"),
+        None,
+        "observed dead"
+    );
+    reissue("spawn-d", 21).await;
+    registry
+        .tombstone(&a.id, "closed")
+        .await
+        .expect("tombstone");
+    assert_eq!(
+        registry.capability(&a.id).await.expect("read"),
+        None,
+        "tombstone"
+    );
+    reissue("spawn-e", 22).await;
+    let mut superseded = registry.get(&a.id).await.expect("get").expect("row");
+    superseded.tombstoned_at = Some(1);
+    superseded.tombstone_reason = Some("superseded".to_string());
+    registry
+        .put_reporting_keeping_parent(superseded)
+        .await
+        .expect("put");
+    assert_eq!(
+        registry.capability(&a.id).await.expect("read"),
+        None,
+        "supersede"
+    );
+    reissue("spawn-f", 23).await;
+    registry.put(a.clone()).await.expect("same incarnation");
+    assert!(
+        registry.capability(&a.id).await.expect("read").is_some(),
+        "an unchanged incarnation keeps its capability"
+    );
+
+    // 6. One read lists every live row, and expired nonces drop at start.
+    let rows = registry.capabilities().await.expect("rows");
+    assert_eq!(
+        rows.iter().map(|row| row.seat.as_str()).collect::<Vec<_>>(),
+        ["pij-cap-a"]
+    );
+    let mut dropped = registry.drop_expired_nonces(5_000).await.expect("drop");
+    dropped.sort();
+    assert_eq!(
+        dropped,
+        [
+            "spawn-a", "spawn-b", "spawn-c", "spawn-d", "spawn-e", "spawn-f"
+        ],
+        "every expired row, consumed or not, by spawn id"
+    );
+    assert!(
+        registry
+            .drop_expired_nonces(5_000)
+            .await
+            .expect("drop")
+            .is_empty()
+    );
+}
+
 /// Every promise the [`Spine`] port makes, in one place.
 ///
 /// # Panics

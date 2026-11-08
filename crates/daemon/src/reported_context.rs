@@ -13,14 +13,13 @@
 //!
 //! **Only the seat itself may report** (review S153-001). A size moves the
 //! cold-wake guard and the prime's large-seat FYI, and the pane and session a
-//! report names are in every roster, so they prove nothing. Registration
-//! issues a random per-incarnation grant ([`ReportedContext::grant`]),
-//! returned only in that registration's own response; a report must present
-//! it ([`ReportedContext::authorized`]). A new process incarnation gets a new
-//! grant and the old one stops working. Registration itself does not prove
-//! the caller is the seat's host (F88, PRD 003), so a caller with a live
-//! seat's roster identifiers can re-register and get its grant; every reissue
-//! of a standing grant is therefore audited as `context.grant.reissued`.
+//! report names are in every roster, so they prove nothing. A report must
+//! present the seat's capability (plan 223, which folded the old context
+//! grant into it): issued only by the secured issuer to the registration that
+//! proved itself with its spawn's nonce or the current capability, never from
+//! public facts (F88 row 2, closed), and checked against the digest of the
+//! seat's current incarnation ([`crate::capability`]). A new process
+//! incarnation, or a tombstone, revokes it.
 //!
 //! **Generations** (review F002). Every activity post bumps the seat's
 //! generation ([`ReportedContext::touch`]), so the PA watchdog re-reads an idle
@@ -33,6 +32,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use pij_core::error::{PijError, Result};
 use pij_core::model::{ProcIdentity, SeatId, SystemState};
+
+use crate::capability::Capabilities;
 use pij_core::ports::{Registry, SessionStatusPort};
 use pij_core::session_status::{Fact, SessionStatusReply, SessionTarget};
 
@@ -44,17 +45,9 @@ struct Report {
     window: Option<u64>,
 }
 
-/// One seat's report grant: the token and the incarnation it was issued to.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Grant {
-    token: String,
-    proc: Option<ProcIdentity>,
-}
-
 #[derive(Debug, Default)]
 struct State {
     reports: HashMap<SeatId, Report>,
-    grants: HashMap<SeatId, Grant>,
     generations: HashMap<SeatId, u64>,
 }
 
@@ -75,8 +68,9 @@ pub struct ContextReport {
 pub struct ReportedContext {
     state: Mutex<State>,
     /// One critical section for a native registration (which may replace a
-    /// seat's process and rotate its grant) and for applying a size report
-    /// (review S153-002). Both are rare, short and per turn boundary at most.
+    /// seat's process, revoking its capability) and for applying a size
+    /// report (review S153-002). Both are rare, short and per turn boundary
+    /// at most.
     gate: Arc<tokio::sync::Mutex<()>>,
 }
 
@@ -85,49 +79,8 @@ impl ReportedContext {
         self.state.lock().expect("reported context state")
     }
 
-    /// The report grant for `seat`'s incarnation `proc`: the standing one when
-    /// the incarnation is unchanged (a re-registration), else a new random
-    /// token that replaces it. The flag is `true` when the standing grant was
-    /// handed out again: registration does not prove the caller is the seat's
-    /// host (F88), so the caller audits every reissue.
-    ///
-    /// # Errors
-    /// The system random source failed.
-    pub fn grant(&self, seat: &SeatId, proc: Option<ProcIdentity>) -> Result<(String, bool)> {
-        let mut state = self.lock();
-        if let Some(grant) = state.grants.get(seat).filter(|grant| grant.proc == proc) {
-            return Ok((grant.token.clone(), true));
-        }
-        let mut secret = [0_u8; 32];
-        getrandom::fill(&mut secret).map_err(|error| PijError::Adapter {
-            adapter: "daemon/reported-context".into(),
-            message: format!("report grant: {error}"),
-        })?;
-        let token = secret
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
-        state.grants.insert(
-            seat.clone(),
-            Grant {
-                token: token.clone(),
-                proc,
-            },
-        );
-        Ok((token, false))
-    }
-
-    /// Does `presented` match `seat`'s grant for its current incarnation
-    /// `proc`? No grant, another incarnation's grant, or a different token is
-    /// `false`.
-    pub fn authorized(&self, seat: &SeatId, proc: Option<ProcIdentity>, presented: &str) -> bool {
-        self.lock().grants.get(seat).is_some_and(|grant| {
-            grant.proc == proc && crate::http::auth::constant_time_eq(&grant.token, presented)
-        })
-    }
-
-    /// Run `work` (a native registration: its registry write and its grant
-    /// rotation) inside the critical section, as an owned task. Once admitted
+    /// Run `work` (a native registration: its registry write and its
+    /// capability resync) inside the critical section, as an owned task. Once admitted
     /// it holds the section until `work` has finished, even if the caller
     /// stops waiting (review F004): a registry write that outlives a cancelled
     /// request can never let a size report in before it commits.
@@ -153,15 +106,18 @@ impl ReportedContext {
     /// Apply an authorized report: `seat`'s activity and size, only if, at
     /// this moment and inside the critical section, the seat is live, still
     /// the incarnation `proc` the request was checked against, and `token` is
-    /// still that incarnation's grant. `None` means the request's incarnation
-    /// was replaced (or its grant rotated) since it was checked: nothing is
-    /// changed. `Some(changed)` is whether the stored state changed.
+    /// still that incarnation's capability. `None` means the request's
+    /// incarnation was replaced (or its capability revoked) since it was
+    /// checked: nothing is changed. `Some(changed)` is whether the stored
+    /// state changed.
     ///
     /// # Errors
     /// Registry failures.
+    #[allow(clippy::too_many_arguments)]
     pub async fn apply(
         &self,
         registry: &dyn Registry,
+        capabilities: &Capabilities,
         seat: &SeatId,
         proc: Option<ProcIdentity>,
         token: &str,
@@ -169,9 +125,17 @@ impl ReportedContext {
         report: ContextReport,
     ) -> Result<Option<bool>> {
         let _gate = self.gate.lock().await;
-        let current = registry.get(seat).await?;
-        let same = current.is_some_and(|row| row.tombstoned_at.is_none() && row.proc == proc);
-        if !same || !self.authorized(seat, proc, token) {
+        let Some(current) = registry
+            .get(seat)
+            .await?
+            .filter(|row| row.tombstoned_at.is_none() && row.proc == proc)
+        else {
+            return Ok(None);
+        };
+        if !crate::capability::present(registry, capabilities, &current, token)
+            .await
+            .valid()
+        {
             return Ok(None);
         }
         let changed = registry.set_activity(seat, observed, None).await?.is_some();
@@ -180,7 +144,7 @@ impl ReportedContext {
     }
 
     /// Record `seat`'s latest size, for the session it reported from. The
-    /// caller has checked [`Self::authorized`].
+    /// caller has checked the seat's capability.
     pub fn record(&self, seat: &SeatId, session: Option<String>, tokens: u64, window: Option<u64>) {
         let mut state = self.lock();
         state.reports.insert(
@@ -320,15 +284,24 @@ mod tests {
         seat.proc = proc;
         let registry: Arc<dyn Registry> =
             Arc::new(pij_testkit::fakes::FakeRegistry::new().with_seat(seat.clone()));
+        let capabilities = Arc::new(Capabilities::default());
+        let token =
+            crate::capability::test_support::issue(registry.as_ref(), &capabilities, seat.clone())
+                .await;
         let reports = Arc::new(ReportedContext::default());
-        let (token, _) = reports.grant(&seat.id, proc).unwrap();
         let registration = Arc::clone(&reports.gate).lock_owned().await;
         let report = tokio::spawn({
-            let (reports, registry, id) = (Arc::clone(&reports), Arc::clone(&registry), seat.id);
+            let (reports, registry, capabilities, id) = (
+                Arc::clone(&reports),
+                Arc::clone(&registry),
+                Arc::clone(&capabilities),
+                seat.id,
+            );
             async move {
                 reports
                     .apply(
                         registry.as_ref(),
+                        &capabilities,
                         &id,
                         proc,
                         &token,
@@ -352,40 +325,69 @@ mod tests {
         assert!(report.await.unwrap().is_some());
     }
 
-    /// Review S153-001: a grant is per incarnation; only its own token passes.
-    #[test]
-    fn a_grant_is_per_incarnation_and_only_its_token_passes() {
-        let reports = ReportedContext::default();
-        let seat: SeatId = "pij-c".into();
+    /// Review S153-001, now through the capability (plan 223): a report
+    /// applies only with its own live incarnation's capability.
+    #[tokio::test]
+    async fn a_report_needs_its_own_incarnations_capability() {
         let first = Some(ProcIdentity {
             pid: 10,
             proc_start: 1,
         });
-        let (token, reissued) = reports.grant(&seat, first).unwrap();
-        assert!(!reissued);
-        assert_eq!(
-            reports.grant(&seat, first).unwrap(),
-            (token.clone(), true),
-            "a re-registration gets it again, flagged"
-        );
-        assert!(reports.authorized(&seat, first, &token));
-        assert!(!reports.authorized(&seat, first, "forged"));
-        assert!(!reports.authorized(&"pij-other".into(), first, &token));
+        let mut seat = pij_core::model::SeatDescriptor::new("pij-c", Harness::Copilot, "/abs");
+        seat.proc = first;
+        let registry: Arc<dyn Registry> =
+            Arc::new(pij_testkit::fakes::FakeRegistry::new().with_seat(seat.clone()));
+        let capabilities = Capabilities::default();
+        let reports = ReportedContext::default();
+        let token =
+            crate::capability::test_support::issue(registry.as_ref(), &capabilities, seat.clone())
+                .await;
+        let report = |proc, token: String| {
+            let (registry, capabilities, reports, id) = (
+                Arc::clone(&registry),
+                &capabilities,
+                &reports,
+                seat.id.clone(),
+            );
+            async move {
+                reports
+                    .apply(
+                        registry.as_ref(),
+                        capabilities,
+                        &id,
+                        proc,
+                        &token,
+                        SystemState::Working,
+                        ContextReport {
+                            session: None,
+                            tokens: 5,
+                            window: None,
+                        },
+                    )
+                    .await
+                    .unwrap()
+            }
+        };
+        assert!(report(first, token.clone()).await.is_some());
+        assert_eq!(report(first, "0".repeat(64)).await, None, "forged");
         let next = Some(ProcIdentity {
             pid: 11,
             proc_start: 2,
         });
-        assert!(
-            !reports.authorized(&seat, next, &token),
+        let mut relaunched = seat.clone();
+        relaunched.proc = next;
+        registry.put(relaunched.clone()).await.unwrap();
+        assert_eq!(
+            report(next, token.clone()).await,
+            None,
             "the seat was relaunched"
         );
-        let (renewed, reissued) = reports.grant(&seat, next).unwrap();
-        assert!(!reissued);
+        assert_eq!(registry.capability(&seat.id).await.unwrap(), None);
+        let renewed =
+            crate::capability::test_support::issue(registry.as_ref(), &capabilities, relaunched)
+                .await;
         assert_ne!(renewed, token);
-        assert!(
-            !reports.authorized(&seat, first, &token),
-            "the old grant is gone"
-        );
-        assert!(reports.authorized(&seat, next, &renewed));
+        assert_eq!(report(next, token).await, None, "the old one is gone");
+        assert!(report(next, renewed).await.is_some());
     }
 }

@@ -945,6 +945,7 @@ pub(crate) async fn adopt(
                 claim,
                 harness_session,
                 None,
+                None,
             )
             .await
             .map(|(descriptor, _)| descriptor),
@@ -998,8 +999,9 @@ pub(crate) async fn adopt(
                     // one and must hear the same grace; answering 0 here would
                     // make adopt the one path that steps on a typing human.
                     typing_grace_ms: Some(super::resolve_typing_grace_ms()),
-                    // Adopt is not a native extension registration.
+                    // Adopt presents no nonce or capability (plan 223).
                     context_token: None,
+                    capability: None,
                 },
             );
             answer.meta = Some(format!(
@@ -1041,6 +1043,8 @@ fn adopt_registration_error(error: RegistrationError) -> Response {
             answer.details = Some(json!({ "retryable": true, "hold": "native-holder" }));
             envelope(StatusCode::CONFLICT, &answer)
         }
+        // Adopt never presents a capability proof, so never meets this.
+        error @ RegistrationError::Capability(_) => refused(ADOPT, error),
         RegistrationError::Runtime(error) => internal(ADOPT, error),
     }
 }

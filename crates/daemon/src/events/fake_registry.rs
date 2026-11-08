@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use pij_core::capability::{
+    CapabilityIssue, CapabilityRow, Digest, IssueOutcome, IssueProof, IssueRefusal, SpawnNonce,
+};
 use pij_core::error::{PijError, Result};
-use pij_core::model::{SeatDescriptor, SeatId, Seq};
+use pij_core::model::{ProcIdentity, SeatDescriptor, SeatId, Seq};
 use pij_core::ports::{PutBinding, Registry, SeatFilter};
 use pij_store::registry::{activity_event, descriptor_event, tombstone_event};
 use pij_store::spine::RegistryPublisher;
@@ -103,6 +106,56 @@ impl PublishedFakeRegistry {
     }
 }
 
+impl PublishedFakeRegistry {
+    /// Under the bus lock: check, then publish the `seat.put`, then apply the
+    /// issuance to the fake, so a refusal publishes nothing.
+    async fn put_issuing_published(
+        &self,
+        descriptor: SeatDescriptor,
+        keep_parent: bool,
+        issue: CapabilityIssue,
+    ) -> Result<(Seq, PutBinding)> {
+        let registry = self.registry.clone();
+        let spine = self.bus.spine.clone();
+        let (seq, binding) = self.bus.publish_registry(Box::pin(async move {
+            let mut descriptor = descriptor;
+            descriptor.machine = None;
+            if keep_parent && let Some(parent) = registry.row_parent(&descriptor.id) {
+                descriptor.parent = parent;
+            }
+            if let Err(refusal) = registry
+                .check_issue(&descriptor.id, descriptor.proc, &issue.proof, issue.now_ms)
+                .await?
+            {
+                // Applies the refusal's own effect (an expired nonce is dropped).
+                registry.put_issuing(descriptor, keep_parent, issue).await?;
+                return Err(refusal.into_error());
+            }
+            let mut event = descriptor_event(&descriptor)?;
+            let seq = spine.append(event.clone()).await?;
+            let binding = match registry.put_issuing(descriptor, keep_parent, issue).await {
+                Ok(IssueOutcome::Issued { binding, .. }) => binding,
+                outcome => {
+                    return Err(PijError::Adapter {
+                        adapter: "daemon/events".to_string(),
+                        message: format!(
+                            "fake registry event {} committed but the issuance did not apply: {outcome:?}",
+                            seq.0
+                        ),
+                    });
+                }
+            };
+            event.seq = Some(seq);
+            Ok((event, Some(binding)))
+        })).await?;
+        let binding = binding.ok_or_else(|| PijError::Adapter {
+            adapter: "daemon/events".to_string(),
+            message: "fake registry publication lost the committed put binding".to_string(),
+        })?;
+        Ok((seq, binding))
+    }
+}
+
 #[async_trait]
 impl Registry for PublishedFakeRegistry {
     async fn get(&self, seat: &SeatId) -> Result<Option<SeatDescriptor>> {
@@ -180,5 +233,53 @@ impl Registry for PublishedFakeRegistry {
             Err(PijError::SeatIsGone { .. }) => Ok(None),
             Err(error) => Err(error),
         }
+    }
+
+    async fn insert_spawn_nonce(&self, nonce: SpawnNonce) -> Result<()> {
+        self.registry.insert_spawn_nonce(nonce).await
+    }
+
+    async fn drop_expired_nonces(&self, now_ms: u64) -> Result<Vec<String>> {
+        self.registry.drop_expired_nonces(now_ms).await
+    }
+
+    async fn check_issue(
+        &self,
+        seat: &SeatId,
+        proc: Option<ProcIdentity>,
+        proof: &IssueProof,
+        now_ms: u64,
+    ) -> Result<std::result::Result<(), IssueRefusal>> {
+        self.registry.check_issue(seat, proc, proof, now_ms).await
+    }
+
+    async fn put_issuing(
+        &self,
+        descriptor: SeatDescriptor,
+        keep_parent: bool,
+        issue: CapabilityIssue,
+    ) -> Result<IssueOutcome> {
+        match self
+            .put_issuing_published(descriptor, keep_parent, issue)
+            .await
+        {
+            Ok((seq, binding)) => Ok(IssueOutcome::Issued { seq, binding }),
+            Err(error) => match IssueRefusal::from_error(&error) {
+                Some(refusal) => Ok(IssueOutcome::Refused(refusal)),
+                None => Err(error),
+            },
+        }
+    }
+
+    async fn confirm_rotation(&self, seat: &SeatId, digest: Digest) -> Result<bool> {
+        self.registry.confirm_rotation(seat, digest).await
+    }
+
+    async fn capability(&self, seat: &SeatId) -> Result<Option<CapabilityRow>> {
+        self.registry.capability(seat).await
+    }
+
+    async fn capabilities(&self) -> Result<Vec<CapabilityRow>> {
+        self.registry.capabilities().await
     }
 }

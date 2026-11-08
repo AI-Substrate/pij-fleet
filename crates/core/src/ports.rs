@@ -28,6 +28,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
+use crate::capability::{
+    CapabilityIssue, CapabilityRow, Digest, IssueOutcome, IssueProof, IssueRefusal, SpawnNonce,
+};
 use crate::error::Result;
 use crate::fyi::HeldFyi;
 use crate::model::{
@@ -121,6 +124,56 @@ pub trait Registry: Send + Sync {
         state: crate::model::SystemState,
         reason: Option<&str>,
     ) -> Result<Option<Seq>>;
+
+    // Seat capabilities (plan 223 AC2). Every write above also revokes: a
+    // tombstone, or a seat row whose process differs from the capability's
+    // boundary, deletes the seat's capability in the same transaction
+    // ([`crate::capability::revoked_by`]).
+
+    /// Record a spawn's nonce digest before its launch. An expired row for the
+    /// same spawn id is dropped first (the spawn is touched).
+    async fn insert_spawn_nonce(&self, nonce: SpawnNonce) -> Result<()>;
+
+    /// Drop every nonce whose registration window closed before `now_ms`,
+    /// answering their spawn ids so the caller can drop any handoff left for
+    /// them. Run at daemon start and when an expired nonce is presented;
+    /// there is no sweep.
+    async fn drop_expired_nonces(&self, now_ms: u64) -> Result<Vec<String>>;
+
+    /// Read-only: would `proof` be accepted for `seat`, bound to `proc`, now?
+    /// A precheck before a registration's earlier writes; the issuing
+    /// transaction checks again.
+    async fn check_issue(
+        &self,
+        seat: &SeatId,
+        proc: Option<ProcIdentity>,
+        proof: &IssueProof,
+        now_ms: u64,
+    ) -> Result<std::result::Result<(), IssueRefusal>>;
+
+    /// ONE transaction: check `issue.proof` (consuming a nonce), write the
+    /// descriptor exactly as [`Self::put_reporting`] (or, with `keep_parent`,
+    /// [`Self::put_reporting_keeping_parent`]) does, and insert or replace the
+    /// seat's capability. A refusal commits nothing of the registration; an
+    /// expired nonce's own row is dropped as its spawn is touched.
+    async fn put_issuing(
+        &self,
+        descriptor: SeatDescriptor,
+        keep_parent: bool,
+        issue: CapabilityIssue,
+    ) -> Result<IssueOutcome>;
+
+    /// Two-phase rotation's second phase: `digest` was presented and is the
+    /// seat's current one, so its previous digest stops being valid. `true`
+    /// when a previous digest was cleared.
+    async fn confirm_rotation(&self, seat: &SeatId, digest: Digest) -> Result<bool>;
+
+    /// The seat's live capability row, if any.
+    async fn capability(&self, seat: &SeatId) -> Result<Option<CapabilityRow>>;
+
+    /// Every live capability row: one read, to rebuild the daemon's digest map
+    /// after a restart.
+    async fn capabilities(&self) -> Result<Vec<CapabilityRow>>;
 }
 
 /// What one [`TmuxPort::sweep_orphan_taps`] pass did, so a removal is attributable.

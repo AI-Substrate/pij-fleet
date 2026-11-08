@@ -102,6 +102,11 @@ enum Command {
         /// appended once tmux has named the pane.
         #[arg(long, value_parser = parse_harness)]
         harness: Option<Harness>,
+        /// The daemon's 0600 handoff of the spawn's registration nonce (plan
+        /// 223). Read and unlinked at once; the nonce reaches the harness only
+        /// through its environment, never an argv.
+        #[arg(long)]
+        nonce_file: Option<PathBuf>,
         /// Exact executable and argv after `--`.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<OsString>,
@@ -1029,9 +1034,13 @@ async fn run(cli: Cli) -> ExitCode {
         status_file,
         log_file,
         harness,
+        nonce_file,
         command,
     } = &cli.command
     {
+        let nonce = nonce_file
+            .as_deref()
+            .and_then(pij_harnesses::take_nonce_file);
         let mut command = command.clone();
         if let Some(harness) = harness {
             let pane = std::env::var("TMUX_PANE").ok();
@@ -1041,7 +1050,7 @@ async fn run(cli: Cli) -> ExitCode {
                     .map(OsString::from),
             );
         }
-        return run_spawn_child(status_file, log_file, &command);
+        return run_spawn_child(status_file, log_file, &command, nonce.as_deref());
     }
     if let Command::Send {
         command: Some(command),
@@ -3810,11 +3819,29 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
     }))
 }
 
-fn run_spawn_child(status_file: &Path, log_file: &Path, command: &[OsString]) -> ExitCode {
-    let Some((executable, args)) = command.split_first() else {
+/// The harness command: `command`'s argv as given, plus the spawn's nonce in
+/// its environment only (plan 223, contract d).
+fn spawn_child_command(command: &[OsString], nonce: Option<&str>) -> Option<ProcessCommand> {
+    let (executable, args) = command.split_first()?;
+    let mut child = ProcessCommand::new(executable);
+    child.args(args);
+    if let Some(nonce) = nonce {
+        child.env(pij_harnesses::PIJ_SPAWN_NONCE, nonce);
+    }
+    Some(child)
+}
+
+fn run_spawn_child(
+    status_file: &Path,
+    log_file: &Path,
+    command: &[OsString],
+    nonce: Option<&str>,
+) -> ExitCode {
+    let Some(mut harness) = spawn_child_command(command, nonce) else {
         eprintln!("pij-rs spawn child: no executable followed `--`");
         return ExitCode::from(2);
     };
+    let executable = &command[0];
     if let Some(parent) = status_file.parent()
         && let Err(error) = std::fs::create_dir_all(parent)
     {
@@ -3823,11 +3850,7 @@ fn run_spawn_child(status_file: &Path, log_file: &Path, command: &[OsString]) ->
             parent.display()
         );
     }
-    let mut child = match ProcessCommand::new(executable)
-        .args(args)
-        .stderr(Stdio::piped())
-        .spawn()
-    {
+    let mut child = match harness.stderr(Stdio::piped()).spawn() {
         Ok(child) => child,
         Err(error) => {
             let message = format!("could not launch {executable:?}: {error}");
@@ -4052,6 +4075,28 @@ impl Command {
 
 #[cfg(test)]
 mod tests {
+    /// Plan 223, contract d: the nonce is set on the harness's environment and
+    /// appears in none of its argv.
+    #[test]
+    fn the_spawn_child_exports_the_nonce_only_in_the_environment() {
+        let argv: Vec<std::ffi::OsString> = ["env", "PIJ_SESSION_ID=pij-a", "omp"]
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        let child = super::spawn_child_command(&argv, Some("n0nce")).expect("command");
+        assert_eq!(
+            child
+                .get_envs()
+                .find(|(name, _)| *name == pij_harnesses::PIJ_SPAWN_NONCE)
+                .and_then(|(_, value)| value),
+            Some(std::ffi::OsStr::new("n0nce"))
+        );
+        assert!(child.get_args().all(|arg| arg.to_str() != Some("n0nce")));
+        let bare = super::spawn_child_command(&argv, None).expect("command");
+        assert_eq!(bare.get_envs().count(), 0);
+        assert!(super::spawn_child_command(&[], None).is_none());
+    }
+
     /// Review of #126, F001: the drift hint names the viewed project.
     #[test]
     fn the_drift_hint_names_the_viewed_project() {

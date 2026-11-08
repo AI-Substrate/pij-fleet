@@ -10,12 +10,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use sqlx::{Pool, Row, Sqlite};
 
+use pij_core::capability::{
+    CapabilityIssue, CapabilityRow, Digest, IssueOutcome, IssueProof, IssueRefusal, SpawnNonce,
+    check_proof, issued_row,
+};
 use pij_core::error::{PijError, Result};
 use pij_core::model::{
     Event, Harness, ProcIdentity, SeatDescriptor, SeatId, SemanticState, Seq, SystemState,
 };
 use pij_core::ports::{PutBinding, Registry, SeatFilter};
 
+use crate::capability;
 use crate::migrate::{begin_write, owned_write, require_current_schema};
 use crate::spine::{RegistryPublisher, append_in_transaction};
 
@@ -92,6 +97,8 @@ impl SqliteRegistry {
                     // in the same transaction; the numbers stay burned.
                     crate::claims::release_for_seat(&mut tx, seat.as_str(), event.at as i64)
                         .await?;
+                    // Plan 223: a retired incarnation's capability dies with it.
+                    capability::revoke(&mut tx, &seat).await?;
                     let seq = append_in_transaction(&mut tx, &event).await?;
                     // A retired seat's turn is over: `working` must not outlive it.
                     let affected = sqlx::query(
@@ -344,6 +351,7 @@ impl SqliteRegistry {
         &self,
         descriptor: SeatDescriptor,
         keep_parent: bool,
+        issue: Option<CapabilityIssue>,
     ) -> Result<(Seq, PutBinding)> {
         let pool = self.pool.clone();
         let (seq, binding) = self
@@ -369,6 +377,21 @@ impl SqliteRegistry {
                             row.try_get("parent").map_err(adapter_error)?;
                         descriptor.parent = parent.map(SeatId::from);
                     }
+                    if let Some(issue) = issue.as_ref()
+                        && let Err(refusal) = check_issue_in(&mut tx, &descriptor, issue).await?
+                    {
+                        // Nothing of the registration commits. An expired nonce's
+                        // own row is dropped as its spawn is touched.
+                        if let (IssueRefusal::NonceExpired, IssueProof::Nonce { spawn_id, .. }) =
+                            (refusal, &issue.proof)
+                        {
+                            capability::drop_expired_nonce(&mut tx, spawn_id, issue.now_ms).await?;
+                            tx.commit().await.map_err(adapter_error)?;
+                        } else {
+                            tx.rollback().await.map_err(adapter_error)?;
+                        }
+                        return Err(refusal.into_error());
+                    }
                     let mut event = descriptor_event(&descriptor)?;
                     let binding = PutBinding {
                         inserted: previous.is_none(),
@@ -379,6 +402,17 @@ impl SqliteRegistry {
                     let seq = append_in_transaction(&mut tx, &event).await?;
 
                     upsert_seat(&mut tx, &descriptor, seq).await?;
+
+                    if let Some(issue) = issue.as_ref() {
+                        if let IssueProof::Nonce { spawn_id, .. } = &issue.proof
+                            && !capability::consume_nonce(&mut tx, spawn_id, issue.now_ms).await?
+                        {
+                            tx.rollback().await.map_err(adapter_error)?;
+                            return Err(IssueRefusal::NonceUsed.into_error());
+                        }
+                        capability::put_capability(&mut tx, &issued_row(&descriptor, issue))
+                            .await?;
+                    }
 
                     tx.commit().await.map_err(adapter_error)?;
                     event.seq = Some(seq);
@@ -412,14 +446,14 @@ impl Registry for SqliteRegistry {
     }
 
     async fn put_reporting(&self, descriptor: SeatDescriptor) -> Result<(Seq, PutBinding)> {
-        self.put_committed(descriptor, false).await
+        self.put_committed(descriptor, false, None).await
     }
 
     async fn put_reporting_keeping_parent(
         &self,
         descriptor: SeatDescriptor,
     ) -> Result<(Seq, PutBinding)> {
-        self.put_committed(descriptor, true).await
+        self.put_committed(descriptor, true, None).await
     }
 
     async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>> {
@@ -513,6 +547,120 @@ impl Registry for SqliteRegistry {
             Err(error) => Err(error),
         }
     }
+
+    async fn insert_spawn_nonce(&self, nonce: SpawnNonce) -> Result<()> {
+        let pool = self.pool.clone();
+        owned_write(async move {
+            require_current_schema(&pool).await?;
+            let mut tx = begin_write(&pool).await?;
+            capability::drop_expired_nonce(&mut tx, &nonce.spawn_id, nonce.issued_at).await?;
+            capability::insert_nonce(&mut tx, &nonce).await?;
+            tx.commit().await.map_err(adapter_error)
+        })
+        .await
+    }
+
+    async fn drop_expired_nonces(&self, now_ms: u64) -> Result<Vec<String>> {
+        let pool = self.pool.clone();
+        owned_write(async move {
+            require_current_schema(&pool).await?;
+            let mut tx = begin_write(&pool).await?;
+            let dropped = capability::drop_expired_nonces(&mut tx, now_ms).await?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(dropped)
+        })
+        .await
+    }
+
+    async fn check_issue(
+        &self,
+        seat: &SeatId,
+        proc: Option<ProcIdentity>,
+        proof: &IssueProof,
+        now_ms: u64,
+    ) -> Result<std::result::Result<(), IssueRefusal>> {
+        require_current_schema(&self.pool).await?;
+        let mut connection = self.pool.acquire().await.map_err(adapter_error)?;
+        let nonce = match proof {
+            IssueProof::Nonce { spawn_id, .. } => {
+                capability::nonce(&mut connection, spawn_id).await?
+            }
+            IssueProof::Peer | IssueProof::Token { .. } => None,
+        };
+        let current = capability::capability(&mut connection, seat).await?;
+        Ok(check_proof(
+            proof,
+            seat,
+            proc,
+            nonce.as_ref(),
+            current.as_ref(),
+            now_ms,
+        ))
+    }
+
+    async fn put_issuing(
+        &self,
+        descriptor: SeatDescriptor,
+        keep_parent: bool,
+        issue: CapabilityIssue,
+    ) -> Result<IssueOutcome> {
+        match self
+            .put_committed(descriptor, keep_parent, Some(issue))
+            .await
+        {
+            Ok((seq, binding)) => Ok(IssueOutcome::Issued { seq, binding }),
+            Err(error) => match IssueRefusal::from_error(&error) {
+                Some(refusal) => Ok(IssueOutcome::Refused(refusal)),
+                None => Err(error),
+            },
+        }
+    }
+
+    async fn confirm_rotation(&self, seat: &SeatId, digest: Digest) -> Result<bool> {
+        let pool = self.pool.clone();
+        let seat = seat.clone();
+        owned_write(async move {
+            require_current_schema(&pool).await?;
+            let mut tx = begin_write(&pool).await?;
+            let cleared = capability::confirm_rotation(&mut tx, &seat, &digest).await?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(cleared)
+        })
+        .await
+    }
+
+    async fn capability(&self, seat: &SeatId) -> Result<Option<CapabilityRow>> {
+        require_current_schema(&self.pool).await?;
+        let mut connection = self.pool.acquire().await.map_err(adapter_error)?;
+        capability::capability(&mut connection, seat).await
+    }
+
+    async fn capabilities(&self) -> Result<Vec<CapabilityRow>> {
+        require_current_schema(&self.pool).await?;
+        let mut connection = self.pool.acquire().await.map_err(adapter_error)?;
+        capability::capabilities(&mut connection).await
+    }
+}
+
+/// Check an issuance's proof under the issuing transaction.
+async fn check_issue_in(
+    connection: &mut sqlx::SqliteConnection,
+    descriptor: &SeatDescriptor,
+    issue: &CapabilityIssue,
+) -> Result<std::result::Result<(), IssueRefusal>> {
+    let nonce = match &issue.proof {
+        IssueProof::Nonce { spawn_id, .. } => capability::nonce(connection, spawn_id).await?,
+        IssueProof::Peer | IssueProof::Token { .. } => None,
+    };
+    let current = capability::capability(connection, &descriptor.id).await?;
+    Ok(check_proof(
+        &issue.proof,
+        &descriptor.id,
+        descriptor.proc,
+        nonce.as_ref(),
+        current.as_ref(),
+        issue.now_ms,
+    ))
 }
 
 /// The sole seats-row upsert, shared by registry puts and atomic placements.
@@ -565,8 +713,9 @@ pub(crate) async fn upsert_seat(
     .bind(i64::from(descriptor.native_extension_delivery))
     .bind(descriptor.extension_build.as_deref())
     .bind(descriptor.extension_path.as_deref())
-    .execute(connection)
+    .execute(&mut *connection)
     .await
     .map_err(adapter_error)?;
-    Ok(())
+    // Plan 223: a tombstone or a new process ends the capability's incarnation.
+    capability::revoke_for_write(connection, descriptor).await
 }

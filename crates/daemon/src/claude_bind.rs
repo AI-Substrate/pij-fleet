@@ -123,6 +123,7 @@ impl ClaudeBinder {
                 claim,
                 None,
                 None,
+                None,
             )
             .await
         {

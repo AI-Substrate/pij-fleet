@@ -734,6 +734,46 @@ impl Registry for GatedRegistry {
     ) -> Result<Option<Seq>> {
         self.inner.set_activity(seat, state, reason).await
     }
+    async fn insert_spawn_nonce(&self, nonce: pij_core::capability::SpawnNonce) -> Result<()> {
+        self.inner.insert_spawn_nonce(nonce).await
+    }
+    async fn drop_expired_nonces(&self, now_ms: u64) -> Result<Vec<String>> {
+        self.inner.drop_expired_nonces(now_ms).await
+    }
+    async fn check_issue(
+        &self,
+        seat: &SeatId,
+        proc: Option<pij_core::model::ProcIdentity>,
+        proof: &pij_core::capability::IssueProof,
+        now_ms: u64,
+    ) -> Result<std::result::Result<(), pij_core::capability::IssueRefusal>> {
+        self.inner.check_issue(seat, proc, proof, now_ms).await
+    }
+    async fn put_issuing(
+        &self,
+        descriptor: SeatDescriptor,
+        keep_parent: bool,
+        issue: pij_core::capability::CapabilityIssue,
+    ) -> Result<pij_core::capability::IssueOutcome> {
+        self.gate(&descriptor.id).await;
+        self.inner.put_issuing(descriptor, keep_parent, issue).await
+    }
+    async fn confirm_rotation(
+        &self,
+        seat: &SeatId,
+        digest: pij_core::capability::Digest,
+    ) -> Result<bool> {
+        self.inner.confirm_rotation(seat, digest).await
+    }
+    async fn capability(
+        &self,
+        seat: &SeatId,
+    ) -> Result<Option<pij_core::capability::CapabilityRow>> {
+        self.inner.capability(seat).await
+    }
+    async fn capabilities(&self) -> Result<Vec<pij_core::capability::CapabilityRow>> {
+        self.inner.capabilities().await
+    }
 }
 
 async fn registration_racing_link(orphaned: bool) {

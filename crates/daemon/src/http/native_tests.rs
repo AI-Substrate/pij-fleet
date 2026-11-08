@@ -573,7 +573,6 @@ async fn native_known_historical_session_resumes_instead_of_holding_live_bootstr
     let store = FreshStore::new();
     let services = native_host_services(&store, &saved.folder, &["%151-known"]).await;
     let registry = services.registry.clone();
-    let reports = Arc::clone(&services.reported_context);
     registry.put(saved.clone()).await.unwrap();
     registry.put(bootstrap.clone()).await.unwrap();
     let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
@@ -590,12 +589,10 @@ async fn native_known_historical_session_resumes_instead_of_holding_live_bootstr
     .await;
     assert_eq!(resumed["data"]["id"], saved.id.as_str());
     assert_eq!(resumed["data"]["binding"], "rebound");
-    // Plan 217 (review S153-001): the report grant is for this incarnation.
-    let grant = resumed["data"]["context_token"]
-        .as_str()
-        .expect("a native registration answers its report grant");
-    assert!(reports.authorized(&saved.id, Some(new_process), grant));
-    assert!(!reports.authorized(&saved.id, saved.proc, grant));
+    // Plan 223 (F88 row 2 closed): public facts alone, native or not, are
+    // handed no capability and so no context grant.
+    assert_eq!(resumed["data"].get("context_token"), None, "{resumed}");
+    assert_eq!(resumed["data"].get("capability"), None, "{resumed}");
     let current = registry.get(&saved.id).await.unwrap().unwrap();
     assert_eq!(current.harness_session, saved.harness_session);
     assert_eq!(current.proc, Some(new_process));
@@ -4144,7 +4141,8 @@ async fn native_typing_http_unavailable_observation_preserves_reported_status_an
 }
 
 /// A native Copilot seat on a live host, served over HTTP, whose transcript
-/// knows no context size (as Copilot's never does), so reports show.
+/// knows no context size (as Copilot's never does), so reports show. Its spawn
+/// left a nonce, as `launch_seat_locked` does (plan 223).
 struct GrantRig {
     victim: SeatDescriptor,
     host: HostFixture,
@@ -4152,6 +4150,8 @@ struct GrantRig {
     spine: Arc<dyn pij_core::ports::Spine>,
     registry: Arc<dyn pij_core::ports::Registry>,
     reports: Arc<crate::reported_context::ReportedContext>,
+    capabilities: Arc<crate::capability::Capabilities>,
+    nonce: String,
     addr: std::net::SocketAddr,
     server: tokio::task::JoinHandle<()>,
     client: reqwest::Client,
@@ -4164,9 +4164,11 @@ impl GrantRig {
         victim.id = "pij-victim".into();
         victim.proc = Some(host.identity().await);
         victim.pane = Some("%151-victim".into());
+        victim.spawn_id = Some("spawn-victim".into());
         let store = FreshStore::new();
         let mut services = native_host_services(&store, &victim.folder, &["%151-victim"]).await;
         let reports = Arc::clone(&services.reported_context);
+        let capabilities = Arc::clone(&services.capabilities);
         services.session_status = Arc::new(crate::reported_context::WithReportedContext::new(
             Arc::new(pij_testkit::fakes::FakeSessionStatus::new().with_reply(
                 victim.harness_session.as_deref().unwrap(),
@@ -4178,6 +4180,14 @@ impl GrantRig {
         ));
         let (spine, registry) = (services.spine.clone(), services.registry.clone());
         registry.put(victim.clone()).await.unwrap();
+        let nonce = crate::capability::test_support::nonce_for(
+            registry.as_ref(),
+            &victim.id,
+            "spawn-victim",
+            Harness::Copilot,
+            u64::MAX,
+        )
+        .await;
         let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
         Self {
             victim,
@@ -4186,36 +4196,83 @@ impl GrantRig {
             spine,
             registry,
             reports,
+            capabilities,
+            nonce,
             addr,
             server,
             client: reqwest::Client::new(),
         }
     }
 
+    fn registration(
+        &self,
+        seat: &SeatDescriptor,
+        capability: Option<&str>,
+    ) -> reqwest::RequestBuilder {
+        let mut body = native_registration(seat);
+        body["spawn_id"] = json!(seat.spawn_id);
+        // The rig presents a capability only to rotate it (plan 223).
+        body["rotate"] = json!(capability.is_some());
+        let request = self
+            .client
+            .post(format!("http://{}/v1/register", self.addr));
+        match capability {
+            Some(token) => request.header(crate::capability::CAPABILITY_HEADER, token),
+            None => request,
+        }
+        .json(&body)
+    }
+
+    /// Public facts only: no nonce, no capability.
     async fn register(&self, seat: &SeatDescriptor) -> Value {
+        native_http_response(self.registration(seat, None), reqwest::StatusCode::OK).await
+    }
+
+    /// The spawn's nonce, presented.
+    async fn register_with_nonce(&self, seat: &SeatDescriptor) -> Value {
+        let mut body = native_registration(seat);
+        body["spawn_id"] = json!(seat.spawn_id);
+        body["spawn_nonce"] = json!(self.nonce);
         native_http_response(
             self.client
                 .post(format!("http://{}/v1/register", self.addr))
-                .json(&native_registration(seat)),
+                .json(&body),
             reqwest::StatusCode::OK,
         )
         .await
     }
 
-    async fn report(&self, state: &str, tokens: u64, grant: &str) -> Value {
+    /// The current capability, presented with `rotate: true`.
+    async fn rotate(&self, seat: &SeatDescriptor, capability: &str) -> Value {
         native_http_response(
-            self.client
-                .post(format!("http://{}/v1/activity", self.addr))
-                .json(&json!({
-                    "seat": self.victim.id,
-                    "native_session": self.victim.harness_session,
-                    "state": state,
-                    "context_tokens": tokens,
-                    "context_token": grant,
-                })),
+            self.registration(seat, Some(capability)),
             reqwest::StatusCode::OK,
         )
         .await
+    }
+
+    async fn report_status(&self, state: &str, tokens: u64, grant: &str) -> (u16, Value) {
+        let response = self
+            .client
+            .post(format!("http://{}/v1/activity", self.addr))
+            .bearer_auth("native-key")
+            .json(&json!({
+                "seat": self.victim.id,
+                "native_session": self.victim.harness_session,
+                "state": state,
+                "context_tokens": tokens,
+                "context_token": grant,
+            }))
+            .send()
+            .await
+            .unwrap();
+        (response.status().as_u16(), response.json().await.unwrap())
+    }
+
+    async fn report(&self, state: &str, tokens: u64, grant: &str) -> Value {
+        let (status, body) = self.report_status(state, tokens, grant).await;
+        assert_eq!(status, 200, "{body}");
+        body
     }
 
     async fn card(&self) -> Value {
@@ -4228,90 +4285,138 @@ impl GrantRig {
         .await
     }
 
-    async fn reissues(&self) -> Vec<pij_core::model::Event> {
+    async fn events(&self) -> Vec<pij_core::model::Event> {
         self.spine
             .tail(None, pij_core::model::Seq(0))
             .await
             .unwrap()
-            .into_iter()
-            .filter(|event| event.kind == super::GRANT_REISSUED_KIND)
-            .collect()
+    }
+
+    fn holds(&self, proc: Option<ProcIdentity>, grant: &str) -> bool {
+        let mut seat = self.victim.clone();
+        seat.proc = proc;
+        self.capabilities.check(&seat, grant).valid()
     }
 }
 
 fn grant_of(response: &Value) -> Option<String> {
-    response["data"]["context_token"]
+    let grant = response["data"]["context_token"]
         .as_str()
-        .map(str::to_string)
+        .map(str::to_string);
+    assert_eq!(
+        response["data"]["capability"].as_str(),
+        grant.as_deref(),
+        "the context grant is the capability: {response}"
+    );
+    grant
 }
 
-/// Plan 217, review S153-001, KNOWN LIMIT (F88, PRD 003): registration does
-/// not prove the caller is the seat's host, so a second caller presenting a
-/// live seat's roster identifiers re-registers and is handed its standing
-/// context grant, and with it can report that seat's size. This test pins the
-/// limit and its mitigation: the reissue is audited exactly once, with the
-/// caller's evidence and never the token; a first registration audits
-/// nothing; and the forged size is what everyone then sees.
+/// Plan 223 (F88 row 2, closed; inverts plan 217's known-limit test): a
+/// caller presenting only a live seat's roster identifiers re-registers, but
+/// is handed no grant and so cannot report the seat's size. The spawn's nonce
+/// issues the capability once; its second presentation is refused
+/// E-RS-SPAWN-NONCE-USED with nothing written and a duplicate-claim event,
+/// never the secret.
 #[tokio::test]
-async fn reissued_grant_is_audited_known_limit_f88() {
+async fn public_facts_get_no_grant_and_a_nonce_issues_once_f88_row_2() {
     let rig = GrantRig::new().await;
-    let own = grant_of(&rig.register(&rig.victim).await).unwrap();
-    assert!(
-        rig.reissues().await.is_empty(),
-        "a first registration audits nothing"
-    );
+    assert_eq!(grant_of(&rig.register(&rig.victim).await), None);
+    let own = grant_of(&rig.register_with_nonce(&rig.victim).await).unwrap();
+    let before = rig.registry.get(&rig.victim.id).await.unwrap();
+    let events = rig.events().await.len();
 
     // Another caller with the victim's roster identifiers.
-    let stolen = grant_of(&rig.register(&rig.victim).await).unwrap();
-    assert_eq!(stolen, own, "the known limit: the same grant");
-    let audited = rig.reissues().await;
-    assert_eq!(audited.len(), 1, "{audited:?}");
-    assert_eq!(audited[0].seat.as_ref(), Some(&rig.victim.id));
-    assert!(!audited[0].payload.contains(&own), "never the token");
-    let evidence: Value = serde_json::from_str(&audited[0].payload).unwrap();
-    assert_eq!(evidence["pane"], "%151-victim");
-    assert_eq!(evidence["pid"], rig.victim.proc.unwrap().pid);
-    assert!(
-        evidence["origin"]
-            .as_str()
-            .is_some_and(|origin| origin.starts_with("127.0.0.1:"))
-    );
+    let stolen = rig.register(&rig.victim).await;
+    assert_eq!(stolen["data"]["id"], rig.victim.id.as_str(), "registered");
+    assert_eq!(grant_of(&stolen), None, "public facts are handed nothing");
+    let (status, refused) = rig.report_status("idle", 650_000, "").await;
+    assert_eq!(status, 400, "{refused}");
+    assert_eq!(rig.card().await["data"]["contextUsed"], Value::Null);
 
-    // At registration's strength the stolen grant reports a size, and the
-    // forged size is the one every reader sees.
-    assert_eq!(rig.report("idle", 650_000, &stolen).await["ok"], true);
-    assert_eq!(rig.card().await["data"]["contextUsed"], 650_000);
+    // The same nonce again: refused, nothing written but the record of it.
+    let mut body = native_registration(&rig.victim);
+    body["spawn_id"] = json!(rig.victim.spawn_id);
+    body["spawn_nonce"] = json!(rig.nonce);
+    let replay = native_http_response(
+        rig.client
+            .post(format!("http://{}/v1/register", rig.addr))
+            .json(&body),
+        reqwest::StatusCode::CONFLICT,
+    )
+    .await;
+    assert_eq!(
+        replay["details"]["code"], "E-RS-SPAWN-NONCE-USED",
+        "{replay}"
+    );
+    assert_eq!(rig.registry.get(&rig.victim.id).await.unwrap(), before);
+    let reused: Vec<_> = rig
+        .events()
+        .await
+        .into_iter()
+        .filter(|event| event.kind == crate::registration::NONCE_REUSED_KIND)
+        .collect();
+    assert_eq!(reused.len(), 1, "{reused:?}");
+    for event in rig.events().await {
+        assert!(!event.payload.contains(&own), "never the capability");
+        assert!(!event.payload.contains(&rig.nonce), "never the nonce");
+    }
+    assert!(rig.events().await.len() > events);
+
+    // The seat's own capability reports.
+    assert_eq!(rig.report("idle", 640_000, &own).await["ok"], true);
+    assert_eq!(rig.card().await["data"]["contextUsed"], 640_000);
     rig.server.abort();
 }
 
-/// Review F003 / P153-F002: the reissue audit is mandatory. When its append
-/// fails, the registration stands but the standing grant is withheld, so no
-/// grant leaves without its event; once the spine accepts it again, the
-/// grant is returned with exactly one event.
+/// Plan 223 (replaces plan 217's reissue-audit failure test): issuance is
+/// one transaction. A rotation whose capability write fails commits nothing:
+/// not the seat row, not its event, and the old capability still works. Once
+/// the store accepts it, the rotation is two-phase: the old capability stays
+/// valid until the new one is first presented.
 #[tokio::test]
-async fn a_reissue_whose_audit_fails_withholds_the_grant() {
+async fn a_rotation_whose_write_fails_commits_nothing_then_rotates_two_phase() {
     let rig = GrantRig::new().await;
-    let own = grant_of(&rig.register(&rig.victim).await).unwrap();
+    let own = grant_of(&rig.register_with_nonce(&rig.victim).await).unwrap();
     let pool = pij_store::open(&rig.store.path()).await.unwrap();
     sqlx::query(
-        "CREATE TRIGGER refuse_grant_audit BEFORE INSERT ON spine_events \
-         WHEN NEW.kind = 'context.grant.reissued' \
-         BEGIN SELECT RAISE(ABORT, 'injected audit failure'); END",
+        "CREATE TRIGGER refuse_capability BEFORE INSERT ON seat_capabilities \
+         BEGIN SELECT RAISE(ABORT, 'injected capability failure'); END",
     )
     .execute(&pool)
     .await
     .unwrap();
-    let refused = rig.register(&rig.victim).await;
-    assert_eq!(refused["data"]["id"], rig.victim.id.as_str(), "registered");
-    assert_eq!(grant_of(&refused), None, "no grant without its audit");
-    assert!(rig.reissues().await.is_empty());
+    let events = rig.events().await.len();
+    native_http_response(
+        rig.registration(&rig.victim, Some(&own)),
+        reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+    )
+    .await;
+    assert_eq!(rig.events().await.len(), events, "no seat.put committed");
+    assert!(rig.holds(rig.victim.proc, &own), "the old one still works");
 
-    sqlx::query("DROP TRIGGER refuse_grant_audit")
+    sqlx::query("DROP TRIGGER refuse_capability")
         .execute(&pool)
         .await
         .unwrap();
-    assert_eq!(grant_of(&rig.register(&rig.victim).await), Some(own));
-    assert_eq!(rig.reissues().await.len(), 1);
+    let rotated = grant_of(&rig.rotate(&rig.victim, &own).await).unwrap();
+    assert_ne!(rotated, own);
+    assert_eq!(
+        rig.report("idle", 1_000, &own).await["ok"],
+        true,
+        "old: phase one"
+    );
+    assert_eq!(rig.report("idle", 2_000, &rotated).await["ok"], true);
+    let (status, refused) = rig.report_status("idle", 3_000, &own).await;
+    assert_eq!(status, 400, "the new one was presented: {refused}");
+    assert_eq!(
+        rig.registry
+            .capability(&rig.victim.id)
+            .await
+            .unwrap()
+            .and_then(|row| row.prev_digest),
+        None
+    );
+    assert_eq!(rig.card().await["data"]["contextUsed"], 2_000);
     rig.server.abort();
 }
 
@@ -4325,7 +4430,7 @@ async fn a_report_from_a_replaced_incarnation_changes_nothing() {
     use pij_core::model::SystemState;
     let mut rig = GrantRig::new().await;
     let old_proc = rig.victim.proc;
-    let old_grant = grant_of(&rig.register(&rig.victim).await).unwrap();
+    let old_grant = grant_of(&rig.register_with_nonce(&rig.victim).await).unwrap();
     let stale_report = |tokens| crate::reported_context::ContextReport {
         session: rig.victim.harness_session.clone(),
         tokens,
@@ -4333,11 +4438,12 @@ async fn a_report_from_a_replaced_incarnation_changes_nothing() {
     };
 
     // Positive control: checked, then applied with nothing in between.
-    assert!(rig.reports.authorized(&rig.victim.id, old_proc, &old_grant));
+    assert!(rig.holds(old_proc, &old_grant));
     let applied = rig
         .reports
         .apply(
             rig.registry.as_ref(),
+            &rig.capabilities,
             &rig.victim.id,
             old_proc,
             &old_grant,
@@ -4350,13 +4456,14 @@ async fn a_report_from_a_replaced_incarnation_changes_nothing() {
     assert_eq!(rig.card().await["data"]["contextUsed"], 100_000);
 
     // The old request passes its check, then pauses here.
-    assert!(rig.reports.authorized(&rig.victim.id, old_proc, &old_grant));
-    // The process is replaced: same seat, same session, a new grant.
+    assert!(rig.holds(old_proc, &old_grant));
+    // The process is replaced: same seat, same session, and its owner moves
+    // the capability by presenting it (a rotation).
     rig.host.kill_and_reap(old_proc.unwrap()).await;
     let replacement_host = HostFixture::spawn();
     let mut replacement = rig.victim.clone();
     replacement.proc = Some(replacement_host.identity().await);
-    let rebound = rig.register(&replacement).await;
+    let rebound = rig.rotate(&replacement, &old_grant).await;
     assert_eq!(rebound["data"]["binding"], "rebound");
     let new_grant = grant_of(&rebound).unwrap();
     assert_ne!(new_grant, old_grant);
@@ -4369,6 +4476,7 @@ async fn a_report_from_a_replaced_incarnation_changes_nothing() {
         .reports
         .apply(
             rig.registry.as_ref(),
+            &rig.capabilities,
             &rig.victim.id,
             old_proc,
             &old_grant,
@@ -4400,8 +4508,8 @@ async fn a_cancelled_registration_keeps_reports_out_until_its_write_commits() {
     for cancel in [true, false] {
         let mut rig = GrantRig::new().await;
         let old_proc = rig.victim.proc;
-        let old_grant = grant_of(&rig.register(&rig.victim).await).unwrap();
-        assert!(rig.reports.authorized(&rig.victim.id, old_proc, &old_grant));
+        let old_grant = grant_of(&rig.register_with_nonce(&rig.victim).await).unwrap();
+        assert!(rig.holds(old_proc, &old_grant));
         let generation = rig.reports.generation(&rig.victim.id);
         rig.host.kill_and_reap(old_proc.unwrap()).await;
         let replacement_host = HostFixture::spawn();
@@ -4416,21 +4524,20 @@ async fn a_cancelled_registration_keeps_reports_out_until_its_write_commits() {
             .unwrap();
         // The registration's owned work, as the handler composes it.
         let waiter = tokio::spawn({
-            let (reports, registry, replacement) = (
+            let (reports, registry, capabilities, replacement) = (
                 Arc::clone(&rig.reports),
                 Arc::clone(&rig.registry),
+                Arc::clone(&rig.capabilities),
                 replacement.clone(),
             );
             async move {
-                let work = {
-                    let reports = Arc::clone(&reports);
-                    async move {
-                        registry
-                            .put_reporting_keeping_parent(replacement.clone())
-                            .await
-                            .unwrap();
-                        reports.grant(&replacement.id, replacement.proc).unwrap()
-                    }
+                let work = async move {
+                    registry
+                        .put_reporting_keeping_parent(replacement.clone())
+                        .await
+                        .unwrap();
+                    let row = registry.capability(&replacement.id).await.unwrap();
+                    capabilities.sync(&replacement.id, row.as_ref());
                 };
                 reports.exclusively(work).await.unwrap()
             }
@@ -4440,9 +4547,10 @@ async fn a_cancelled_registration_keeps_reports_out_until_its_write_commits() {
             waiter.abort();
         }
         let old = tokio::spawn({
-            let (reports, registry, id, session) = (
+            let (reports, registry, capabilities, id, session) = (
                 Arc::clone(&rig.reports),
                 Arc::clone(&rig.registry),
+                Arc::clone(&rig.capabilities),
                 rig.victim.id.clone(),
                 rig.victim.harness_session.clone(),
             );
@@ -4450,6 +4558,7 @@ async fn a_cancelled_registration_keeps_reports_out_until_its_write_commits() {
                 reports
                     .apply(
                         registry.as_ref(),
+                        &capabilities,
                         &id,
                         old_proc,
                         &old_grant,

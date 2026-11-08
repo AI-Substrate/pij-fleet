@@ -7,6 +7,7 @@
 #![deny(missing_docs)]
 
 pub mod background;
+mod capability;
 pub mod claims;
 pub mod community;
 pub mod decisions;

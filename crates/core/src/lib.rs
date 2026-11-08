@@ -14,6 +14,7 @@ pub mod address;
 pub mod admission;
 pub mod anomalies;
 pub mod background;
+pub mod capability;
 pub mod claims;
 pub mod cold_wake;
 pub mod config;

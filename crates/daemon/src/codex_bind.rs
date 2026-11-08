@@ -315,6 +315,7 @@ impl CodexBinder {
                 claim,
                 Some(thread),
                 None,
+                None,
             )
             .await
         {

@@ -11,6 +11,7 @@ pub mod admission;
 pub mod auth;
 pub mod background;
 pub mod bg_routing;
+pub mod capability;
 mod claude_bind;
 pub mod codex_bind;
 pub mod community;
@@ -123,6 +124,9 @@ pub struct Services {
     /// Context sizes native extensions report at turn boundaries (plan 217):
     /// they fill `session_status`'s unknown context facts.
     pub reported_context: Arc<reported_context::ReportedContext>,
+    /// Each live incarnation's capability digest (plan 223), rebuilt from the
+    /// store at start and resynced by registration.
+    pub capabilities: Arc<capability::Capabilities>,
     /// Usage-limit rejections from harness transcripts (plan 172 R3): the PA
     /// watchdog's limit-reset wake. Blocking; called off the reactor.
     pub usage_limits: Arc<dyn pij_core::usage_limit::UsageLimitSource>,
@@ -502,6 +506,10 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
             session_roots(),
         )),
     };
+    // Plan 223: once per start, expired nonces go and live capabilities are
+    // read back (one read), so a seat holding a token carries on after a bounce.
+    let capabilities = Arc::new(capability::Capabilities::default());
+    capability::restore(registry.as_ref(), &capabilities, http::system_time_ms()?).await?;
     let reported_context = Arc::new(reported_context::ReportedContext::default());
     let session_status: Arc<dyn SessionStatusPort> = Arc::new(
         reported_context::WithReportedContext::new(transcripts, Arc::clone(&reported_context)),
@@ -610,6 +618,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         liveness,
         session_status,
         reported_context,
+        capabilities,
         usage_limits,
         delivery,
         roles,

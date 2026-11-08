@@ -19,7 +19,8 @@ use pij_core::ports::{Registry, SeatFilter, Spine};
 use pij_store::{SqliteRegistry, SqliteSpine};
 use pij_testkit::FreshStore;
 use pij_testkit::contract::{
-    registry_contract, spine_contract, spine_page_contract, spine_window_contract,
+    capability_contract, registry_contract, spine_contract, spine_page_contract,
+    spine_window_contract,
 };
 use sqlx::{Column, Row};
 
@@ -531,6 +532,13 @@ async fn the_sqlite_registry_honours_the_same_contract_the_fake_does() {
     let fresh = FreshStore::new();
     let pool = pij_store::open(&fresh.path()).await.expect("open");
     registry_contract(&SqliteRegistry::new(pool, support::publisher())).await;
+}
+
+#[tokio::test]
+async fn the_sqlite_registry_honours_the_same_capability_contract_the_fake_does() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    capability_contract(&SqliteRegistry::new(pool, support::publisher())).await;
 }
 
 #[tokio::test]

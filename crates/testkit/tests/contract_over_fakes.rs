@@ -28,8 +28,8 @@ use pij_core::ports::{
 };
 use pij_testkit::block_on;
 use pij_testkit::contract::{
-    queue_contract, registry_contract, sample_seat, spine_contract, spine_page_contract,
-    spine_window_contract,
+    capability_contract, queue_contract, registry_contract, sample_seat, spine_contract,
+    spine_page_contract, spine_window_contract,
 };
 use pij_testkit::fakes::{
     FakeHarness, FakeLiveness, FakeQueue, FakeRegistry, FakeSpine, FakeTmux, FakeTransport,
@@ -39,6 +39,11 @@ use pij_testkit::fakes::{
 fn fake_registry_honours_the_registry_contract() {
     let registry = FakeRegistry::new();
     block_on(registry_contract(&registry));
+}
+
+#[test]
+fn fake_registry_honours_the_capability_contract() {
+    block_on(capability_contract(&FakeRegistry::new()));
 }
 
 #[test]

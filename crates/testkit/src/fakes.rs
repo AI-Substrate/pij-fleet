@@ -23,6 +23,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use pij_core::capability::{
+    CapabilityIssue, CapabilityRow, Digest, IssueOutcome, IssueProof, IssueRefusal, NonceRecord,
+    SpawnNonce, check_proof, issued_row, revoked_by,
+};
 use pij_core::error::{PijError, Result};
 use pij_core::model::{
     BindHealth, DeliveryOrigin, DeliveryOutcome, Event, Harness, Job, JobId, ModelRow, Msg,
@@ -60,8 +64,55 @@ pub struct FakeRegistry {
 #[derive(Default)]
 struct RegistryState {
     seats: BTreeMap<String, SeatDescriptor>,
+    nonces: BTreeMap<String, NonceRecord>,
+    capabilities: BTreeMap<String, CapabilityRow>,
     seq: u64,
     recorder: Recorder,
+}
+
+impl RegistryState {
+    /// The one descriptor write; revokes as every registry write must.
+    fn put(
+        &mut self,
+        mut descriptor: SeatDescriptor,
+        keep_parent: bool,
+    ) -> (Seq, pij_core::ports::PutBinding) {
+        self.recorder.record(format!("put:{}", descriptor.id));
+        self.seq += 1;
+        let seq = Seq(self.seq);
+        if keep_parent && let Some(current) = self.seats.get(descriptor.id.as_str()) {
+            descriptor.parent = current.parent.clone();
+        }
+        if self
+            .capabilities
+            .get(descriptor.id.as_str())
+            .is_some_and(|row| revoked_by(row, &descriptor))
+        {
+            self.capabilities.remove(descriptor.id.as_str());
+        }
+        let parent = descriptor.parent.clone();
+        let previous = self.seats.insert(descriptor.id.0.clone(), descriptor);
+        (
+            seq,
+            pij_core::ports::PutBinding {
+                inserted: previous.is_none(),
+                previous_proc: previous.and_then(|seat| seat.proc),
+                parent,
+            },
+        )
+    }
+
+    fn proof_inputs(
+        &self,
+        seat: &SeatId,
+        proof: &IssueProof,
+    ) -> (Option<&NonceRecord>, Option<&CapabilityRow>) {
+        let nonce = match proof {
+            IssueProof::Nonce { spawn_id, .. } => self.nonces.get(spawn_id),
+            IssueProof::Peer | IssueProof::Token { .. } => None,
+        };
+        (nonce, self.capabilities.get(seat.as_str()))
+    }
 }
 
 impl FakeRegistry {
@@ -94,26 +145,11 @@ impl FakeRegistry {
 impl FakeRegistry {
     fn put_locked(
         &self,
-        mut descriptor: SeatDescriptor,
+        descriptor: SeatDescriptor,
         keep_parent: bool,
     ) -> Result<(Seq, pij_core::ports::PutBinding)> {
         let mut state = self.state.lock().expect("fake registry mutex");
-        state.recorder.record(format!("put:{}", descriptor.id));
-        state.seq += 1;
-        let seq = Seq(state.seq);
-        if keep_parent && let Some(current) = state.seats.get(descriptor.id.as_str()) {
-            descriptor.parent = current.parent.clone();
-        }
-        let parent = descriptor.parent.clone();
-        let previous = state.seats.insert(descriptor.id.0.clone(), descriptor);
-        Ok((
-            seq,
-            pij_core::ports::PutBinding {
-                inserted: previous.is_none(),
-                previous_proc: previous.and_then(|seat| seat.proc),
-                parent,
-            },
-        ))
+        Ok(state.put(descriptor, keep_parent))
     }
 
     /// The parent a seat's row holds now (`None` = no row), without recording a call.
@@ -193,6 +229,7 @@ impl Registry for FakeRegistry {
         descriptor.tombstoned_at = Some(seq);
         descriptor.tombstone_reason = Some(reason.to_string());
         end_turn(descriptor);
+        state.capabilities.remove(seat.as_str());
         Ok(Seq(seq))
     }
 
@@ -221,6 +258,7 @@ impl Registry for FakeRegistry {
         descriptor.tombstone_reason = Some(reason);
         descriptor.native_extension_delivery = false;
         end_turn(descriptor);
+        state.capabilities.remove(expected.id.as_str());
         Ok(Seq(seq))
     }
 
@@ -248,6 +286,124 @@ impl Registry for FakeRegistry {
             .expect("presence checked above")
             .state = state;
         Ok(Some(Seq(seq)))
+    }
+
+    async fn insert_spawn_nonce(&self, nonce: SpawnNonce) -> Result<()> {
+        let mut state = self.state.lock().expect("fake registry mutex");
+        state
+            .recorder
+            .record(format!("insert_spawn_nonce:{}", nonce.seat));
+        let now = nonce.issued_at;
+        if state
+            .nonces
+            .get(&nonce.spawn_id)
+            .is_some_and(|record| record.nonce.expires_at > now)
+        {
+            return Err(PijError::Adapter {
+                adapter: "fake-registry".to_string(),
+                message: format!("spawn {} already has a live nonce", nonce.spawn_id),
+            });
+        }
+        state.nonces.insert(
+            nonce.spawn_id.clone(),
+            NonceRecord {
+                nonce,
+                consumed_at: None,
+            },
+        );
+        Ok(())
+    }
+
+    async fn drop_expired_nonces(&self, now_ms: u64) -> Result<Vec<String>> {
+        let mut state = self.state.lock().expect("fake registry mutex");
+        let expired: Vec<String> = state
+            .nonces
+            .iter()
+            .filter(|(_, record)| record.nonce.expires_at <= now_ms)
+            .map(|(spawn, _)| spawn.clone())
+            .collect();
+        for spawn in &expired {
+            state.nonces.remove(spawn);
+        }
+        Ok(expired)
+    }
+
+    async fn check_issue(
+        &self,
+        seat: &SeatId,
+        proc: Option<ProcIdentity>,
+        proof: &IssueProof,
+        now_ms: u64,
+    ) -> Result<std::result::Result<(), IssueRefusal>> {
+        let state = self.state.lock().expect("fake registry mutex");
+        let (nonce, current) = state.proof_inputs(seat, proof);
+        Ok(check_proof(proof, seat, proc, nonce, current, now_ms))
+    }
+
+    async fn put_issuing(
+        &self,
+        descriptor: SeatDescriptor,
+        keep_parent: bool,
+        issue: CapabilityIssue,
+    ) -> Result<IssueOutcome> {
+        let mut state = self.state.lock().expect("fake registry mutex");
+        let (nonce, current) = state.proof_inputs(&descriptor.id, &issue.proof);
+        let checked = check_proof(
+            &issue.proof,
+            &descriptor.id,
+            descriptor.proc,
+            nonce,
+            current,
+            issue.now_ms,
+        );
+        if let Err(refusal) = checked {
+            if let (IssueRefusal::NonceExpired, IssueProof::Nonce { spawn_id, .. }) =
+                (refusal, &issue.proof)
+            {
+                state.nonces.remove(spawn_id);
+            }
+            return Ok(IssueOutcome::Refused(refusal));
+        }
+        if let IssueProof::Nonce { spawn_id, .. } = &issue.proof
+            && let Some(record) = state.nonces.get_mut(spawn_id)
+        {
+            record.consumed_at = Some(issue.now_ms);
+        }
+        let id = descriptor.id.clone();
+        let (seq, binding) = state.put(descriptor, keep_parent);
+        let Some(written) = state.seats.get(id.as_str()).cloned() else {
+            return Err(PijError::Adapter {
+                adapter: "fake-registry".to_string(),
+                message: "the issued seat vanished under the lock".to_string(),
+            });
+        };
+        state
+            .capabilities
+            .insert(written.id.0.clone(), issued_row(&written, &issue));
+        Ok(IssueOutcome::Issued { seq, binding })
+    }
+
+    async fn confirm_rotation(&self, seat: &SeatId, digest: Digest) -> Result<bool> {
+        let mut state = self.state.lock().expect("fake registry mutex");
+        let Some(row) = state
+            .capabilities
+            .get_mut(seat.as_str())
+            .filter(|row| row.digest == digest && row.prev_digest.is_some())
+        else {
+            return Ok(false);
+        };
+        row.prev_digest = None;
+        Ok(true)
+    }
+
+    async fn capability(&self, seat: &SeatId) -> Result<Option<CapabilityRow>> {
+        let state = self.state.lock().expect("fake registry mutex");
+        Ok(state.capabilities.get(seat.as_str()).cloned())
+    }
+
+    async fn capabilities(&self) -> Result<Vec<CapabilityRow>> {
+        let state = self.state.lock().expect("fake registry mutex");
+        Ok(state.capabilities.values().cloned().collect())
     }
 }
 

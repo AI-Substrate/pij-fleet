@@ -34,7 +34,8 @@ pub use composer::{ComposerRegion, composer_region};
 pub use interaction::{InjectionVerdict, InteractionGate, StagedSubmission};
 pub use models::ModelCatalog;
 pub use spawn::{
-    SpawnPlan, SpawnPlanInput, SpawnedChild, build_spawn_plan, observed_launch_command,
-    pane_env_args, validate_executable_override,
+    PIJ_SPAWN_NONCE, SpawnPlan, SpawnPlanInput, SpawnedChild, build_spawn_plan,
+    observed_launch_command, pane_env_args, take_nonce_file, validate_executable_override,
+    write_nonce_file,
 };
 pub use usage_limit::{ClaudeUsageLimits, TAIL_BYTES, local_clock_text};

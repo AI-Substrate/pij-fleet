@@ -44,12 +44,14 @@ const REVIVE_POSTMORTEM_EVENT_KIND: &str = "seat.revive-postmortem";
 const DEFAULT_SPAWN_WAIT_SECONDS: u64 = 30;
 const SPAWN_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
+use crate::capability::CapabilityClaim;
 use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::{Extension, Json, Query, State};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use pij_core::capability::{CapabilityIssue, IssueProof, IssueRefusal, SpawnNonce};
 use pij_core::delivery::{DEFAULT_TYPING_GRACE_MS, HeldEvent, ReleasedEvent};
 use pij_core::error::{PijError, Result};
 use pij_core::events::EventFilter;
@@ -571,7 +573,8 @@ fn router_with_optional_federation(
         pij_harnesses::claude_homes(),
         Arc::clone(&services.roles),
     )
-    .with_native_delivery(Arc::clone(&services.delivery));
+    .with_native_delivery(Arc::clone(&services.delivery))
+    .with_capabilities(Arc::clone(&services.capabilities));
     let state = AppState {
         services,
         auth: config.auth,
@@ -862,6 +865,16 @@ struct RegistrationRequest {
     /// counters and decides nothing.
     #[serde(default)]
     attempt: Option<String>,
+    /// The spawn's single-use registration nonce, from `PIJ_SPAWN_NONCE`
+    /// (plan 223, path a). Travels with `spawn_id`; consumed by the
+    /// registration that presents it first.
+    #[serde(default)]
+    spawn_nonce: Option<String>,
+    /// With the current capability in the header: issue a new one (two-phase
+    /// rotation, plan 223). Without it, a re-registration presenting its
+    /// capability keeps it, and an incarnation change must rotate.
+    #[serde(default)]
+    rotate: bool,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -957,73 +970,83 @@ struct RegistrationResponse {
     /// hold". Absent stays absent, and the extension's own fallback applies.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     typing_grace_ms: Option<u64>,
-    /// The per-incarnation grant a native extension presents with its context
-    /// reports on `/v1/activity` (plan 217, review S153-001). Only in this
-    /// response; never in a roster or on the spine.
+    /// The seat's capability (plan 223), under the name native extensions
+    /// already read for their context reports on `/v1/activity` (plan 217):
+    /// the context grant is folded into the capability. Same value as
+    /// `capability`; only in this response, never in a roster or on the spine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     context_token: Option<String>,
+    /// The seat's capability (plan 223), issued only to a registration that
+    /// presented its spawn's nonce or the current capability. A registration
+    /// with public facts alone registers without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    capability: Option<String>,
 }
 
-/// The spine kind of a re-issued context grant (plan 217, F88).
-pub const GRANT_REISSUED_KIND: &str = "context.grant.reissued";
+/// What a registration presents (plan 223).
+enum Presented {
+    /// Evidence for a new capability: the spawn's nonce (path a), an explicit
+    /// rotation (path c) or, with AC3, the socket peer's boundary (path b,
+    /// [`IssueProof::Peer`]).
+    Issue(IssueProof),
+    /// The current capability, kept by a same-incarnation re-registration.
+    Hold {
+        digest: pij_core::capability::Digest,
+        token: String,
+    },
+}
 
-/// Record that a registration is about to be handed a seat's standing
-/// context grant, with everything the caller claimed and the connection it
-/// came from. `true` only once the event is durable on the spine; on `false`
-/// the caller withholds the grant (the registration itself stands).
-#[allow(clippy::too_many_arguments)]
-async fn audit_grant_reissue(
-    state: &AppState,
-    seat: &SeatDescriptor,
-    claimed: &Registration,
-    session: Option<&str>,
-    attempt: Option<&str>,
-    binding: RegistrationBinding,
-    proc_source: Option<ProcSource>,
-    origin: Option<std::net::SocketAddr>,
-) -> bool {
-    let at = match system_time_ms() {
-        Ok(at) => at,
-        Err(error) => {
-            eprintln!(
-                "pij register: {GRANT_REISSUED_KIND} for {}: {error}; grant withheld",
-                seat.id
-            );
-            return false;
-        }
-    };
-    let payload = serde_json::json!({
-        "seat": seat.id,
-        "claimed_id": claimed.id,
-        "harness": claimed.harness,
-        "folder": claimed.folder,
-        "pane": claimed.pane,
-        "pid": claimed.pid,
-        "proc_start": claimed.proc_start,
-        "session": session,
-        "attempt": attempt,
-        "binding": binding,
-        "proc_source": proc_source,
-        "origin": origin.map(|peer| peer.to_string()),
-    });
-    let event = pij_core::model::Event {
-        seq: None,
-        v: pij_core::wire::EVENT_VERSION,
-        at,
-        kind: GRANT_REISSUED_KIND.to_string(),
-        seat: Some(seat.id.clone()),
-        payload: payload.to_string(),
-    };
-    match state.services.event_bus.publish(event).await {
-        Ok(_) => true,
-        Err(error) => {
-            eprintln!(
-                "pij register: {GRANT_REISSUED_KIND} for {}: {error}; grant withheld",
-                seat.id
-            );
-            false
-        }
+/// Read what a registration presents: the capability in
+/// [`crate::capability::CAPABILITY_HEADER`] (held, or rotated with `rotate`),
+/// else the spawn's nonce in `spawn_nonce` with its `spawn_id`. `None`:
+/// public facts only, so no capability.
+fn presented(
+    headers: &HeaderMap,
+    request: &RegistrationRequest,
+) -> std::result::Result<Option<Presented>, IssueRefusal> {
+    use crate::capability::{CAPABILITY_HEADER, digest_of};
+    if let Some(value) = headers.get(CAPABILITY_HEADER) {
+        let token = value.to_str().map_err(|_| IssueRefusal::TokenInvalid)?;
+        let digest = digest_of(token).ok_or(IssueRefusal::TokenInvalid)?;
+        return Ok(Some(if request.rotate {
+            Presented::Issue(IssueProof::Token { digest })
+        } else {
+            Presented::Hold {
+                digest,
+                token: token.to_string(),
+            }
+        }));
     }
+    let Some(nonce) = request.spawn_nonce.as_deref() else {
+        return Ok(None);
+    };
+    let spawn_id = request
+        .claim
+        .spawn_id
+        .clone()
+        .filter(|spawn| !spawn.is_empty())
+        .ok_or(IssueRefusal::NonceUnknown)?;
+    let digest = digest_of(nonce).ok_or(IssueRefusal::NonceUnknown)?;
+    Ok(Some(Presented::Issue(IssueProof::Nonce {
+        spawn_id,
+        digest,
+    })))
+}
+
+/// A refused capability proof: nothing was written.
+fn capability_refused(refusal: IssueRefusal) -> Response {
+    let mut answer: Envelope<()> = Envelope::refused(
+        "pij register",
+        ErrorKind::Refused,
+        format!("{}: {}", refusal.code(), refusal.reason()),
+    );
+    answer.details = Some(serde_json::json!({ "code": refusal.code() }));
+    let status = if refusal == IssueRefusal::NonceUsed {
+        StatusCode::CONFLICT
+    } else {
+        StatusCode::BAD_REQUEST
+    };
+    envelope(status, &answer)
 }
 
 /// Composition: the service returns `(descriptor, report)` from its committed
@@ -1031,7 +1054,7 @@ async fn audit_grant_reissue(
 /// otherwise `same`, and flatten the descriptor into this response only.
 async fn register(
     State(state): State<AppState>,
-    connection: Option<Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
+    headers: HeaderMap,
     Json(mut request): Json<RegistrationRequest>,
 ) -> Response {
     use crate::registration::attempts::{Outcome, Path};
@@ -1053,6 +1076,31 @@ async fn register(
         early(&request.claim, Outcome::Refused).await;
         return role::RoleError::Invalid(reason).into_response("pij register");
     }
+    // Plan 223: a capability is minted only for presented evidence, and only
+    // reaches the caller if the registration commits it.
+    let issue = match presented(&headers, &request) {
+        Ok(None) => None,
+        Ok(Some(Presented::Hold { digest, token })) => Some((CapabilityClaim::Hold(digest), token)),
+        Ok(Some(Presented::Issue(proof))) => match (crate::capability::mint(), system_time_ms()) {
+            (Ok(secret), Ok(now_ms)) => Some((
+                CapabilityClaim::Issue(CapabilityIssue {
+                    proof,
+                    digest: secret.digest(),
+                    owner: None,
+                    now_ms,
+                }),
+                secret.into_plaintext(),
+            )),
+            (Err(error), _) | (_, Err(error)) => {
+                early(&request.claim, Outcome::Error).await;
+                return internal("pij register", error);
+            }
+        },
+        Err(refusal) => {
+            early(&request.claim, Outcome::Refused).await;
+            return capability_refused(refusal);
+        }
+    };
     // Native claims carry their own verified host tuple. Do not replace it with
     // the pane's shell PID while adding the ordinary registration provenance.
     let mut proc_source = request
@@ -1110,39 +1158,22 @@ async fn register(
         }
     }
     let native = request.native_extension_delivery;
-    // What the caller claimed, kept for the grant-reissue audit (plan 217).
-    let claimed = request.claim.clone();
-    let claimed_session = request.harness_session.clone();
-    let attempt = request.attempt.clone();
+    let (issue, secret) = issue.unzip();
     // Review S153-002 / F004: a native registration may replace the seat's
-    // process and rotate its grant; it runs, with the rotation, as one owned
-    // task inside the context critical section, so no size report applies in
-    // between, even if this request is cancelled once the write is admitted.
+    // process (revoking its capability); it runs as one owned task inside the
+    // context critical section, so no size report applies in between, even if
+    // this request is cancelled once the write is admitted.
     let reports = Arc::clone(&state.services.reported_context);
     let work = {
-        let (registration, tmux, reports) = (
-            state.registration.clone(),
-            Arc::clone(&state.services.tmux),
-            Arc::clone(&reports),
-        );
+        let (registration, tmux) = (state.registration.clone(), Arc::clone(&state.services.tmux));
         let (claim, session) = (request.claim, request.harness_session);
         async move {
-            let registered = registration
-                .register_via(path, claim, session, native.then_some(tmux.as_ref()))
-                .await;
-            // A failed grant leaves the seat without size reports, never
-            // unregistered.
-            let grant = match &registered {
-                Ok((descriptor, _)) if native => reports
-                    .grant(&descriptor.id, descriptor.proc)
-                    .map_err(|error| eprintln!("pij register: {error}"))
-                    .ok(),
-                _ => None,
-            };
-            (registered, grant)
+            registration
+                .register_via(path, claim, session, native.then_some(tmux.as_ref()), issue)
+                .await
         }
     };
-    let (registered, grant) = if native {
+    let registered = if native {
         match reports.exclusively(work).await {
             Ok(done) => done,
             Err(error) => return internal("pij register", error),
@@ -1169,27 +1200,18 @@ async fn register(
             // field. 135 added binding/proc_source here and 136 added
             // typing_grace_ms in `wire`; two structs serializing the same
             // response is how two answers to one question start drifting.
-            // Registration does not prove the caller is this seat's host (F88,
-            // PRD 003): a standing grant handed out again is audited with the
-            // caller's evidence, and never the token, so a theft is visible.
-            // An audit that did not persist withholds the reissued grant: the
-            // registration stands, and the seat gets one on a later attempt.
-            let context_token = match grant {
-                Some((token, true)) => audit_grant_reissue(
-                    &state,
-                    &descriptor,
-                    &claimed,
-                    claimed_session.as_deref(),
-                    attempt.as_deref(),
-                    binding,
-                    proc_source,
-                    connection.map(|Extension(axum::extract::ConnectInfo(peer))| peer),
-                )
-                .await
-                .then_some(token),
-                Some((token, false)) => Some(token),
-                None => None,
-            };
+            // Plan 223 (F88 row 2 closed): the capability, and with it the
+            // context grant, exists only if this registration's proof
+            // committed it; public facts alone are never handed one.
+            // A held capability is answered back unchanged; the check is
+            // against the committed row and the resynced digests.
+            let capability = secret.filter(|token| {
+                state
+                    .services
+                    .capabilities
+                    .check(&descriptor, token)
+                    .valid()
+            });
             let mut answer = Envelope::ok(
                 "pij register",
                 RegistrationResponse {
@@ -1197,7 +1219,8 @@ async fn register(
                     binding: Some(binding),
                     proc_source,
                     typing_grace_ms: Some(state.typing_grace_ms),
-                    context_token,
+                    context_token: capability.clone(),
+                    capability,
                 },
             );
             answer.meta = meta;
@@ -1228,6 +1251,7 @@ async fn register(
                 Some(serde_json::json!({ "retryable": true, "hold": "native-holder" }));
             envelope(StatusCode::CONFLICT, &answer)
         }
+        Err(RegistrationError::Capability(refusal)) => capability_refused(refusal),
         Err(RegistrationError::Runtime(error)) => internal("pij register", error),
     }
 }
@@ -1468,6 +1492,13 @@ async fn launch_seat_locked(
         None => return refused(command_name, "revive requires an existing seat id"),
     };
 
+    // Plan 223 (path a): one single-use nonce per launch, its digest stored
+    // before the launch; the nonce itself travels in a 0600 file the launch
+    // wrapper consumes, and reaches the harness only in its environment.
+    let nonce = match crate::capability::mint() {
+        Ok(nonce) => nonce,
+        Err(error) => return internal(command_name, error),
+    };
     let plan = match build_spawn_plan(SpawnPlanInput {
         seat_id: seat_id.clone(),
         spawn_id: spawn_id.clone(),
@@ -1482,6 +1513,27 @@ async fn launch_seat_locked(
         Ok(plan) => plan,
         Err(error) => return refused(command_name, error),
     };
+    let issued_at = match system_time_ms() {
+        Ok(at) => at,
+        Err(error) => return internal(command_name, error),
+    };
+    if let Err(error) = state
+        .services
+        .registry
+        .insert_spawn_nonce(SpawnNonce {
+            spawn_id: spawn_id.clone(),
+            seat: seat_id.clone(),
+            harness: plan.harness,
+            digest: nonce.digest(),
+            issued_at,
+            expires_at: issued_at.saturating_add(
+                u64::try_from(crate::capability::NONCE_TTL.as_millis()).unwrap_or(u64::MAX),
+            ),
+        })
+        .await
+    {
+        return internal(command_name, error);
+    }
     if request.allow_retired && state.services.retired_harnesses.contains(&request.harness) {
         let at = match system_time_ms() {
             Ok(at) => at,
@@ -1515,12 +1567,20 @@ async fn launch_seat_locked(
     {
         return internal(command_name, error);
     }
+    let nonce_path = spawn_nonce_path(&spawn_id);
+    let written = pij_harnesses::write_nonce_file(&nonce_path, nonce.plaintext());
+    drop(nonce);
+    if let Err(error) = written {
+        crate::capability::discard_nonce_file(&spawn_id);
+        return internal(command_name, error);
+    }
     let wrapper_executable = match std::env::current_exe()
         .ok()
         .and_then(|path| path.into_os_string().into_string().ok())
     {
         Some(path) => path,
         None => {
+            crate::capability::discard_nonce_file(&spawn_id);
             return internal(
                 command_name,
                 PijError::Adapter {
@@ -1530,10 +1590,18 @@ async fn launch_seat_locked(
             );
         }
     };
-    let command = match observed_launch_command(&plan, wrapper_executable, &status_path, &log_path)
-    {
+    let command = match observed_launch_command(
+        &plan,
+        wrapper_executable,
+        &status_path,
+        &log_path,
+        Some(&nonce_path),
+    ) {
         Ok(command) => command,
-        Err(error) => return internal(command_name, error),
+        Err(error) => {
+            crate::capability::discard_nonce_file(&spawn_id);
+            return internal(command_name, error);
+        }
     };
     let name = request
         .name
@@ -1546,7 +1614,11 @@ async fn launch_seat_locked(
         .await
     {
         Ok(pane) => pane,
-        Err(error) => return internal(command_name, error),
+        Err(error) => {
+            // No wrapper will read it: the launch never started.
+            crate::capability::discard_nonce_file(&spawn_id);
+            return internal(command_name, error);
+        }
     };
     if displaced.is_some()
         && let Err(error) = publish_revive_postmortem(state, &seat_id).await
@@ -1750,6 +1822,12 @@ async fn launch_seat_locked(
         }
         tokio::time::sleep(SPAWN_POLL_INTERVAL).await;
     }
+}
+
+/// The 0600 file that hands a spawn's nonce to its launch wrapper (plan
+/// 223), beside the spawn's status file.
+pub(crate) fn spawn_nonce_path(spawn_id: &str) -> PathBuf {
+    spawn_evidence_paths(spawn_id).0.with_extension("nonce")
 }
 
 pub(crate) fn spawn_evidence_paths(spawn_id: &str) -> (PathBuf, PathBuf) {
@@ -4521,6 +4599,8 @@ pub(crate) fn envelope<T: serde::Serialize>(status: StatusCode, body: &Envelope<
     }
 }
 
+#[cfg(test)]
+mod capability_tests;
 #[cfg(test)]
 mod card_tests;
 #[cfg(test)]

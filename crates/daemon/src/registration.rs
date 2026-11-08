@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use pij_core::capability::{CapabilityIssue, IssueOutcome, IssueProof, IssueRefusal, check_held};
+
+use crate::capability::CapabilityClaim;
 use pij_core::error::PijError;
 use pij_core::model::{Event, Harness, ProcIdentity, SeatDescriptor, SeatId};
 use pij_core::names::memorable_pij_id_candidates;
@@ -32,6 +35,8 @@ pub(crate) enum RegistrationError {
     NativeSessionHold(SeatId),
     /// A same-process session with newer native history holds the seat (plan 168).
     NativeHolderCurrent(SeatId),
+    /// The presented capability proof was refused (plan 223); nothing was written.
+    Capability(IssueRefusal),
     Runtime(PijError),
 }
 
@@ -49,6 +54,9 @@ impl std::fmt::Display for RegistrationError {
                 f,
                 "native Copilot registration held: this process's seat belongs to `{holder}`, a live session with newer activity; standing by until this session is used or the holder's receiver lease lapses"
             ),
+            Self::Capability(refusal) => {
+                write!(f, "{}: {}", refusal.code(), refusal.reason())
+            }
             Self::Runtime(error) => error.fmt(f),
         }
     }
@@ -67,6 +75,9 @@ pub(crate) struct RegistrationService {
     native_receivers: Option<Arc<DeliveryService>>,
     /// Attempts by path, mode and outcome, with their ancestry reads (plan 211).
     attempts: Arc<attempts::Attempts>,
+    /// The daemon's capability digests, resynced from the store under the
+    /// registration lock after every commit (plan 223).
+    capabilities: Arc<crate::capability::Capabilities>,
 }
 
 struct NativeHandoff {
@@ -103,7 +114,17 @@ impl RegistrationService {
             registration_lock: Arc::new(tokio::sync::Mutex::new(())),
             native_receivers: None,
             attempts: Arc::default(),
+            capabilities: Arc::default(),
         }
+    }
+
+    /// Share the daemon's capability digests (plan 223).
+    pub(crate) fn with_capabilities(
+        mut self,
+        capabilities: Arc<crate::capability::Capabilities>,
+    ) -> Self {
+        self.capabilities = capabilities;
+        self
     }
 
     /// The registration counters `ping` reports (plan 211).
@@ -114,12 +135,18 @@ impl RegistrationService {
     /// Register `claim`, counting the attempt under `path` (plan 211): its
     /// mode, its outcome and the ancestry `ps` reads it paid. `native` is the
     /// tmux port for a native extension claim.
+    ///
+    /// `issue` is what the registration presents (plan 223): an issuance,
+    /// whose proof is checked and capability stored in the transaction that
+    /// writes the seat, or a held capability checked against this very
+    /// incarnation. A failed check refuses the registration, nothing written.
     pub(crate) async fn register_via(
         &self,
         path: attempts::Path,
         claim: Registration,
         harness_session: Option<String>,
         native: Option<&dyn TmuxPort>,
+        issue: Option<CapabilityClaim>,
     ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError> {
         let mode = if claim.pane.is_some() {
             attempts::Mode::Pane
@@ -130,19 +157,21 @@ impl RegistrationService {
         let reads = Arc::new(attempts::Reads::default());
         let result = match native {
             Some(tmux) => {
-                self.register_native_with_observer(
+                self.register_native_issuing(
                     claim,
                     harness_session,
                     tmux,
                     native_observer(Arc::clone(&reads)),
+                    issue.as_ref(),
                 )
                 .await
             }
             None => {
-                self.register_session_with_observer(
+                self.register_session_issuing(
                     claim,
                     harness_session,
                     native_observer(Arc::clone(&reads)),
+                    issue.as_ref(),
                 )
                 .await
             }
@@ -197,7 +226,9 @@ impl RegistrationService {
             ),
             Err(error) => (
                 match error {
-                    RegistrationError::Refused(_) => Outcome::Refused,
+                    RegistrationError::Refused(_) | RegistrationError::Capability(_) => {
+                        Outcome::Refused
+                    }
                     RegistrationError::Retired { .. } => Outcome::Retired,
                     RegistrationError::Retryable(_) => Outcome::Retryable,
                     RegistrationError::NativeSessionHold(_) => Outcome::SessionHold,
@@ -265,15 +296,16 @@ impl RegistrationService {
         claim: Registration,
         harness_session: Option<String>,
     ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError> {
-        self.register_via(attempts::Path::Explicit, claim, harness_session, None)
+        self.register_via(attempts::Path::Explicit, claim, harness_session, None, None)
             .await
     }
 
-    async fn register_session_with_observer<F, Fut>(
+    async fn register_session_issuing<F, Fut>(
         &self,
         claim: Registration,
         harness_session: Option<String>,
         observe: F,
+        issue: Option<&CapabilityClaim>,
     ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError>
     where
         F: FnMut(u32) -> Fut,
@@ -286,10 +318,10 @@ impl RegistrationService {
             )
         {
             return self
-                .register_paneless_with_observer(claim, harness_session, observe)
+                .register_paneless_issuing(claim, harness_session, observe, issue)
                 .await;
         }
-        self.register_inner(claim, harness_session, RegistrationMode::Ordinary)
+        self.register_inner(claim, harness_session, RegistrationMode::Ordinary, issue)
             .await
     }
 
@@ -306,18 +338,35 @@ impl RegistrationService {
         };
         let claimed = claim.id.clone();
         let result = self
-            .register_inner(claim, None, RegistrationMode::Reclaim)
+            .register_inner(claim, None, RegistrationMode::Reclaim, None)
             .await;
         self.count(attempts::Path::Adopt, mode, &claimed, &result, 0)
             .await;
         result.map(|(descriptor, _)| descriptor)
     }
 
+    // Tests' entry; production reaches the paneless path through `register_via`.
+    #[cfg(test)]
     async fn register_paneless_with_observer<F, Fut>(
+        &self,
+        claim: Registration,
+        harness_session: Option<String>,
+        observe: F,
+    ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError>
+    where
+        F: FnMut(u32) -> Fut,
+        Fut: Future<Output = std::result::Result<Option<NativeProcess>, RegistrationError>>,
+    {
+        self.register_paneless_issuing(claim, harness_session, observe, None)
+            .await
+    }
+
+    async fn register_paneless_issuing<F, Fut>(
         &self,
         mut claim: Registration,
         harness_session: Option<String>,
         mut observe: F,
+        issue: Option<&CapabilityClaim>,
     ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError>
     where
         F: FnMut(u32) -> Fut,
@@ -421,6 +470,7 @@ impl RegistrationService {
             claim,
             harness_session,
             RegistrationMode::Paneless(&ancestry),
+            issue,
         )
         .await
     }
@@ -434,16 +484,40 @@ impl RegistrationService {
         harness_session: Option<String>,
         tmux: &dyn TmuxPort,
     ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError> {
-        self.register_via(attempts::Path::Explicit, claim, harness_session, Some(tmux))
-            .await
+        self.register_via(
+            attempts::Path::Explicit,
+            claim,
+            harness_session,
+            Some(tmux),
+            None,
+        )
+        .await
     }
 
+    // Tests' entry; production reaches the native path through `register_via`.
+    #[cfg(test)]
     async fn register_native_with_observer<F, Fut>(
         &self,
         claim: Registration,
         harness_session: Option<String>,
         tmux: &dyn TmuxPort,
+        observe: F,
+    ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError>
+    where
+        F: FnMut(u32) -> Fut,
+        Fut: Future<Output = std::result::Result<Option<NativeProcess>, RegistrationError>>,
+    {
+        self.register_native_issuing(claim, harness_session, tmux, observe, None)
+            .await
+    }
+
+    async fn register_native_issuing<F, Fut>(
+        &self,
+        claim: Registration,
+        harness_session: Option<String>,
+        tmux: &dyn TmuxPort,
         mut observe: F,
+        issue: Option<&CapabilityClaim>,
     ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError>
     where
         F: FnMut(u32) -> Fut,
@@ -510,6 +584,7 @@ impl RegistrationService {
             claim,
             harness_session,
             RegistrationMode::NativeExtension(&dead_native),
+            issue,
         )
         .await
     }
@@ -680,6 +755,7 @@ impl RegistrationService {
         mut claim: Registration,
         harness_session: Option<String>,
         mode: RegistrationMode<'_>,
+        issue: Option<&CapabilityClaim>,
     ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError> {
         if claim
             .role
@@ -1080,7 +1156,39 @@ impl RegistrationService {
                     && same_native_owner(owner, &descriptor)
             });
 
-        if paneless.is_some() && existing == Some(&descriptor) {
+        // Plan 223: a refused proof refuses before the first write below (a
+        // retirement, a supersede, a config event); the issuing commit checks
+        // again, so a race is still refused with nothing of the seat written.
+        match issue {
+            Some(CapabilityClaim::Issue(issue)) => {
+                if let Err(refusal) = self
+                    .registry
+                    .check_issue(&descriptor.id, descriptor.proc, &issue.proof, issue.now_ms)
+                    .await
+                    .map_err(RegistrationError::Runtime)?
+                {
+                    return Err(self
+                        .capability_refused(&descriptor.id, issue, refusal)
+                        .await);
+                }
+            }
+            // A held capability is only checked: this incarnation keeps it.
+            Some(CapabilityClaim::Hold(digest)) => {
+                let current = self
+                    .registry
+                    .capability(&descriptor.id)
+                    .await
+                    .map_err(RegistrationError::Runtime)?;
+                check_held(current.as_ref(), &descriptor.id, descriptor.proc, digest)
+                    .map_err(RegistrationError::Capability)?;
+            }
+            None => {}
+        }
+
+        if !matches!(issue, Some(CapabilityClaim::Issue(_)))
+            && paneless.is_some()
+            && existing == Some(&descriptor)
+        {
             let role = self
                 .roles
                 .read_role(&descriptor.id)
@@ -1186,14 +1294,30 @@ impl RegistrationService {
                 .await
                 .map_err(RegistrationError::Runtime)?;
         }
-        let committed = if parent_claimed {
-            self.registry.put_reporting(descriptor.clone()).await
-        } else {
-            self.registry
-                .put_reporting_keeping_parent(descriptor.clone())
+        let committed = match issue {
+            Some(CapabilityClaim::Issue(issue)) => match self
+                .registry
+                .put_issuing(descriptor.clone(), !parent_claimed, issue.clone())
                 .await
+                .map_err(RegistrationError::Runtime)?
+            {
+                IssueOutcome::Issued { seq, binding } => Ok((seq, binding)),
+                IssueOutcome::Refused(refusal) => {
+                    return Err(self
+                        .capability_refused(&descriptor.id, issue, refusal)
+                        .await);
+                }
+            },
+            _ if parent_claimed => self.registry.put_reporting(descriptor.clone()).await,
+            _ => {
+                self.registry
+                    .put_reporting_keeping_parent(descriptor.clone())
+                    .await
+            }
         };
         let (_, binding) = committed.map_err(RegistrationError::Runtime)?;
+        // Still under the registration lock: the map follows the store.
+        self.sync_capability(&descriptor.id).await;
         if native && let Some(receivers) = &self.native_receivers {
             // Still under the shared native lock: the committed holder is never
             // visible without its lease and precedence (plan 168 review F2).
@@ -1290,6 +1414,76 @@ impl RegistrationService {
 /// seat is retired. Pure, so it runs once before any host observation (plan
 /// 211, AC3: a retired context that keeps retrying pays no `ps`) and again
 /// under the registration lock, where it decides.
+impl RegistrationService {
+    /// Make the daemon's digest map follow the store for `seat`. A failed read
+    /// forgets the seat: the map may be stricter than the store, never looser.
+    async fn sync_capability(&self, seat: &SeatId) {
+        match self.registry.capability(seat).await {
+            Ok(row) => self.capabilities.sync(seat, row.as_ref()),
+            Err(error) => {
+                eprintln!("pij register: {seat}: capability resync failed: {error}");
+                self.capabilities.sync(seat, None);
+            }
+        }
+    }
+
+    /// A refused issuance. An expired nonce's row, and any nonce handoff file
+    /// no launch consumed, is dropped as its spawn is touched; a consumed one
+    /// is a duplicate claim, recorded for a look (neither theft nor innocence
+    /// is proven), never with the secret.
+    async fn capability_refused(
+        &self,
+        seat: &SeatId,
+        issue: &CapabilityIssue,
+        refusal: IssueRefusal,
+    ) -> RegistrationError {
+        match refusal {
+            IssueRefusal::NonceExpired => {
+                match self.registry.drop_expired_nonces(issue.now_ms).await {
+                    Ok(dropped) => dropped
+                        .iter()
+                        .for_each(|spawn| crate::capability::discard_nonce_file(spawn)),
+                    Err(error) => {
+                        eprintln!("pij register: {seat}: dropping expired nonces failed: {error}");
+                    }
+                }
+                if let IssueProof::Nonce { spawn_id, .. } = &issue.proof {
+                    crate::capability::discard_nonce_file(spawn_id);
+                }
+            }
+            IssueRefusal::NonceUsed => {
+                let spawn_id = match &issue.proof {
+                    IssueProof::Nonce { spawn_id, .. } => Some(spawn_id.as_str()),
+                    IssueProof::Peer | IssueProof::Token { .. } => None,
+                };
+                let event = Event {
+                    seq: None,
+                    v: wire::EVENT_VERSION,
+                    at: issue.now_ms,
+                    kind: NONCE_REUSED_KIND.to_string(),
+                    seat: Some(seat.clone()),
+                    payload: serde_json::json!({
+                        "spawn_id": spawn_id,
+                        "code": refusal.code(),
+                    })
+                    .to_string(),
+                };
+                if let Err(error) = self.event_bus.publish(event).await {
+                    eprintln!("pij register: {seat}: {NONCE_REUSED_KIND}: {error}");
+                }
+            }
+            IssueRefusal::NonceUnknown
+            | IssueRefusal::NonceForAnotherSeat
+            | IssueRefusal::TokenInvalid
+            | IssueRefusal::Unbound => {}
+        }
+        RegistrationError::Capability(refusal)
+    }
+}
+
+/// The spine kind of a second presentation of a consumed spawn nonce (plan 223).
+pub(crate) const NONCE_REUSED_KIND: &str = "capability.nonce-reused";
+
 fn explicit_session_conflict(
     claim: &Registration,
     session: &str,
@@ -2370,6 +2564,7 @@ mod tests {
                         claim,
                         Some(SESSION.into()),
                         super::RegistrationMode::Ordinary,
+                        None,
                     )
                     .await
                     .expect("same-session observed registration succeeds");
@@ -4669,7 +4864,13 @@ mod tests {
         claim.proc_start = Some(126);
         for _ in 0..2 {
             service
-                .register_via(super::attempts::Path::Heartbeat, claim.clone(), None, None)
+                .register_via(
+                    super::attempts::Path::Heartbeat,
+                    claim.clone(),
+                    None,
+                    None,
+                    None,
+                )
                 .await
                 .expect("registered");
         }
@@ -4677,7 +4878,7 @@ mod tests {
         paneless.pane = None;
         assert!(
             service
-                .register_via(super::attempts::Path::Shim, paneless, None, None)
+                .register_via(super::attempts::Path::Shim, paneless, None, None, None)
                 .await
                 .is_err(),
             "a paneless claim without a session is refused"
@@ -5942,7 +6143,7 @@ mod tests {
             claim.pid = None;
             claim.proc_start = None;
             let ordinary = service
-                .register_inner(claim.clone(), None, super::RegistrationMode::Ordinary)
+                .register_inner(claim.clone(), None, super::RegistrationMode::Ordinary, None)
                 .await
                 .expect_err("ordinary empty id refused");
             let dispatched = service

@@ -8240,11 +8240,19 @@ async fn a_size_posted_at_a_turn_boundary_reaches_the_state_card() {
         )),
         Arc::clone(&services.reported_context),
     ));
-    let victim = cold_seat(pij_core::model::SystemState::Idle);
-    let (grant, _) = services
-        .reported_context
-        .grant(&victim.id, victim.proc)
-        .expect("grant");
+    let mut victim = cold_seat(pij_core::model::SystemState::Idle);
+    // Plan 223: the grant is the seat's capability, issued through its nonce
+    // to a registration that binds a process.
+    victim.proc = Some(ProcIdentity {
+        pid: 4_242,
+        proc_start: 1,
+    });
+    let grant = crate::capability::test_support::issue(
+        services.registry.as_ref(),
+        &services.capabilities,
+        victim,
+    )
+    .await;
     let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
     let card = || post_json(addr, "/v1/state", serde_json::json!({"id": "pij-cold"}));
     assert_eq!(

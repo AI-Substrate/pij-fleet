@@ -205,8 +205,9 @@ pub(crate) struct ActivityRequest {
     /// The model's context window, when the runtime knows it.
     #[serde(default)]
     context_window_tokens: Option<u64>,
-    /// The seat's report grant from its own registration (review S153-001):
-    /// required with `context_tokens`.
+    /// The seat's capability from its own registration (plan 223; the
+    /// context grant of review S153-001, folded in): required with
+    /// `context_tokens`. The field keeps its name for old clients.
     #[serde(default)]
     context_token: Option<String>,
 }
@@ -251,21 +252,22 @@ pub(crate) async fn activity(
     };
     // The pane and session above are in every roster, so they prove nothing
     // about who is asking. A size moves the cold-wake guard and the prime's
-    // large-seat FYI: only the seat's own registration grant may report one,
-    // and a refused report changes nothing, its activity included.
+    // large-seat FYI: only the seat's own capability may report one (plan
+    // 223), and a refused report changes nothing, its activity included.
     let reports = &state.services.reported_context;
     if request.context_tokens.is_some()
-        && !reports.authorized(
-            &seat.id,
-            seat.proc,
-            request.context_token.as_deref().unwrap_or_default(),
-        )
+        && !state
+            .services
+            .capabilities
+            .check(&seat, request.context_token.as_deref().unwrap_or_default())
+            .valid()
     {
         return refused(
             ACTIVITY,
             format!(
-                "a context report for {} needs its own registration's grant \
-                 (`context_token`); nothing was changed",
+                "a context report for {} needs its own capability, from a registration \
+                 that presented its spawn nonce or capability (`context_token`); nothing \
+                 was changed",
                 seat.id
             ),
         );
@@ -277,6 +279,7 @@ pub(crate) async fn activity(
         Some(tokens) => match reports
             .apply(
                 state.services.registry.as_ref(),
+                &state.services.capabilities,
                 &seat.id,
                 seat.proc,
                 request.context_token.as_deref().unwrap_or_default(),
@@ -294,7 +297,7 @@ pub(crate) async fn activity(
                 return refused(
                     ACTIVITY,
                     format!(
-                        "{}'s process or grant changed while this report was in flight; \
+                        "{}'s process or capability changed while this report was in flight; \
                          nothing was changed",
                         seat.id
                     ),
