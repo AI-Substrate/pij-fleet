@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "b56a990a5f373a31488530b17c96cfc134c88226",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/185#issuecomment-6721826765",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:185",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes**, delta only, at `b56a990a5f373a31488530b17c96cfc134c88226`.\n\nThe specified F001/F002 generated-action repairs are present. **Raw directory JSON is model-facing**, not operator-only: agents can receive it through CLI/tool calls. An unchanged default-CLI formatter also reconstructs raw holder fields as prose. No newly introduced authority escalation or C19/C21 disclosure was established; the exposure below is preexisting.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/cli/src/main.rs | 1831-1840, 3238-3258 | Default directory CLI re-emits raw live seat/instance fields as model-visible prose, beyond the safe generated-action renderers | 8/10 |\n\n## F001/F002 disposition\n\nSeveral-holder fallbacks and `no_such_instance` choose only canonical seats for executable suggestions. With no canonical seat they omit the seat-send action or use `<seat>` for assignment; listings render invalid values rather than raw contents (`crates/daemon/src/delivery/role_send.rs:389-504`).\n\nPicture actions render queued/stored instances in `says`, the action's instance field and assignment text. Revive requires a canonical last holder. Two-live-holder prose renders seats and releases only printable seat/instance rows; two-domain recommendations skip unshowable participants (`crates/daemon/src/community/picture.rs:435-485,542-613,936-974`). The common 32-byte name grammar and prior message-ID/model/output/address/modal repairs remain.\n\nThese are display/proposal guards, not newly granted authority or normalization of the underlying stored identity.\n\n## Raw JSON and the default CLI\n\nKeeping original `lineage`/`live` fields can support deliberate, safely quoted legacy-row operations. JSON serialization contains quotes/control characters structurally; it does not make their content trusted instructions or non-model-facing.\n\nThe actual pipeline is:\n\n1. The view stores original seat, instance, timestamp and machine values in `live`, and original rows in `lineage` (`crates/daemon/src/community/directory.rs:451-460,579-588`).\n2. `pij directory --json` emits that response unchanged (`crates/cli/src/main.rs:1816-1840,2945-2952`). A CLI/tool-using model can read it.\n3. Default `pij directory` calls `render_directory`, whose live-holder column directly interpolates the raw seat and instance strings. This turns an admitted internal-newline instance or malformed legacy value back into literal prose/newlines in tool-visible stdout.\n\nAn actor able to assign its own holding under an unchecked instance can therefore put forged textual framing in that CLI output. This does not change the tool-result role, forge a structured sender or demonstrate model obedience/direct execution. It is not a new r3 sink, so it is a nonblocking residual for this additions-only verdict.\n\nThe distinction in the PR body should be **safe generated actions versus retained raw data and the still-raw CLI holder formatter**, not “only structured JSON remains raw.” Render the default CLI holder fields at that final presentation boundary while retaining the original API data for operator use. Consumers must treat raw fields as data and never concatenate/evaluate them as commands or forward them as authenticated instructions.\n\nThe new hostile-directory test explicitly checks the action subtrees, not `render_directory` stdout (`crates/daemon/tests/directory_http.rs:2987-3011`). Its passing result does not certify the default CLI's live-column containment.\n\n## Evidence and retained limits\n\nLocal and remote heads agree; worktree clean; PR CLEAN and ready; five successful checks plus a superseded cancelled Delivers run. CI [42481314004](https://github.com/AI-Substrate/pij-fleet/actions/runs/42481314004) tested synthetic merge `4957b3a`, incorporating this exact head.\n\nJUnit artifact [13617358702](https://github.com/AI-Substrate/pij-fleet/actions/runs/42481314004/artifacts/13617358702) has 2,251 passing cases, no failures, five separately skipped. Both new hostile several-holder/refusal and generated-directory-action tests executed. T1-T5 kills are author receipts, not independently rerun mutations; ddocs was UNAVAILABLE.\n\nQuoted free text still needs untrusted-input handling; a fence is not semantic prompt-injection prevention or shell quoting. Other intentional/raw inventory surfaces and F133/F134/F135 scope qualifications are not globally certified by this delta. No unrelated #188/main re-review.\n\nNo local cargo/builds/tests/scripts, hostile/native-model probes, credentials, product edits or actual directory/delivery/pane/process operations.\n"
+		}
+	]
+}
