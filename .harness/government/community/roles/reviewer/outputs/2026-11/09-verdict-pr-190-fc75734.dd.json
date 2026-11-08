@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bb8a-4817-7ac1-8f5f-7269d64b1038",
+				"date": "2026-11-09",
+				"head": "fc757341ec21aa3001d9f3fa91221cf0d39c8022",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/190#issuecomment-6722680814",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:190",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "node harness/scripts/pr-freeze.ts 190",
+					"exit_code": 0,
+					"log": "FINAL fc757341ec21aa3001d9f3fa91221cf0d39c8022; clean detached review worktree; remote and GitHub agree; all five checks pass."
+				},
+				{
+					"command": "Independent read-only Python byte/digest comparison at fc757341",
+					"exit_code": 0,
+					"log": "Coder v1-v3 byte-identical to d7389056 base; all 30 PINNED SHA256 values match; coder v4 SHA256 314bd876f4fd7213c1f4cdaa0e01e28287db36dc8c5ca4a60623e5885a36f2fd. One-newline in-memory perturbation fails equality; no Rust mutant executed."
+				},
+				{
+					"command": "Inspect CI run 42489081563 and junit-linux artifact 13621086899",
+					"exit_code": 0,
+					"log": "Exact head fc757341; 2237 Rust cases pass; requested pin, embedding, catalog/add and six command-coverage tests present. Nextest reports five skipped cases; real-ddocs schema validation unavailable in CI under C20."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: #190\n\n**PASS** at `fc757341ec21aa3001d9f3fa91221cf0d39c8022`, against base `d7389056ab7f8e0eaf309d1db1229c760337ba5d`. No correctness findings or required fixes.\n\n| Check | Evidence |\n| --- | --- |\n| Historical versions remain immutable | Independent byte comparisons of coder v1, v2 and v3 against the base all matched. The complete four-file PR diff changes no existing template or historical digest. |\n| v4 is embedded, discoverable and correctly pinned | `crates/daemon/src/community/templates.rs:60-64` adds coder v4; `:146-168` retains highest-version selection. Its new pin at `:701-704` is `314bd876f4fd7213c1f4cdaa0e01e28287db36dc8c5ca4a60623e5885a36f2fd`, independently matched to the file bytes. All 30 pinned template digests matched. |\n| Packet wording matches #186 | `templates/roles/coder/v4/role.dd.json:27,57` requests `Delivers:` first and a separate `Fixes: F119, F117` line when fixing F-items. Uppercase F-numbers and comma separation match `crates/core/src/claims.rs:344-380`; omitting the line when there are no F-items remains valid. It does not instruct coders to write `Fixes: none` or prose inside the line. |\n| Change stays scoped | Comparing v3 and v4 shows only the version, one scope rule, one standing-packet sentence and one changelog row changed. Existing shell quoting, ownership boundaries and prohibitions remain intact. README points to v4. |\n| Guards and integration execute | Exact-head CI run `42489081563`, successful artifact `13621086899`, contains the eight template unit tests, including immutable pins and byte-for-byte embedding, the updated HTTP catalog/add test requiring `[1,2,3,4]`, and all six skill-command tests. The pin test requires catalog/pin cardinality equality and resolves each exact version before comparing its digest (`templates.rs:837-855`). A read-only one-newline perturbation independently failed v4's digest equality; this was not an executed Rust mutant. |\n\n**Validation:** `node harness/scripts/pr-freeze.ts 190` returned FINAL with clean detached worktree, matching remote/GitHub head and all five checks passed. CI has 2,237 passing Rust cases; nextest separately reports five skipped cases. Rust fmt/clippy, Node 22/24 checks and the delivers check passed.\n\n**Proof boundary:** CI's ddocs gate explicitly reports UNAVAILABLE under C20. `templates_http/mod.rs:552-560` returns early when real ddocs is absent, so its passing JUnit entry is not schema-validation proof. The PR body separately reports author-run local ddocs validation and gates; I did not rerun them or claim their output as reviewer execution. No local reviewer builds/tests, product edits, merge, push or review-HEAD movement occurred.\n\n**Cost:** One additional embedded template and catalog/pin entries. No loop, poll, timer, hook, sweep or process-launch path is added or changed.\n\n**Handback:** No coder changes required for this head. This verdict covers correctness only; other role verdicts remain independently owned.\n"
+		}
+	]
+}
