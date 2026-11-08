@@ -470,6 +470,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-back-tapir",
 					"why": "F123 tmux capture test flake"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T04:29:35.395Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f113",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "#175 still in review"
 				}
 			]
 		}
