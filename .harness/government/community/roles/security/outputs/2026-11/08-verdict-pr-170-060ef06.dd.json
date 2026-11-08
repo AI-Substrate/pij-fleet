@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "060ef066847a0ef1882976a04291ab149681dce1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/170#issuecomment-6715326133",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:170",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: BLOCK\n\nPR #170, exact head `060ef066847a0ef1882976a04291ab149681dce1`.\n\nReviewed `bfe2301..060ef06` and the directly dependent prune paths. S170-001 is partially repaired: the macOS branch rejects failed, stderr-bearing, malformed and empty output, but Linux can still silently omit live processes belonging to the pruning user.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | harness/scripts/pr-freeze.ts | 670-688 | Procfs inode owner misclassifies a same-user non-dumpable process and skips its occupancy veto | 9/10 |\n| 2 | 🟡 MEDIUM | harness/scripts/pr-freeze.ts | 675-691 | Missing process cwd is treated as termination although worker threads may remain alive | 9/10 |\n\n### S170-001: Linux still fails open inside its declared own-user scope\n\nThe new owner filter uses `statSync(/proc/<pid>).uid` and skips unequal owners before reading cwd (`pr-freeze.ts:670-688`). Procfs ownership is not reliable process-user identity: a non-dumpable process's procfs entries become root-owned even when its real/effective UIDs remain the pruning user's. This bypasses the expected own-user EACCES refusal.\n\nPrerequisites: a non-root Linux pruning user, a same-user non-dumpable process occupying an eligible clean review checkout, and no corresponding seat veto. The owner shortcut drops that process, leaving no occupancy veto before `git worktree remove` (`pr-freeze.ts:792`). This is not the stated exclusion of other users' processes.\n\nSeparately, the `gone()` helper classifies any cwd-read ENOENT as a terminated process (`pr-freeze.ts:675-679,691`). Linux documents that `/proc/<pid>/cwd` is unavailable after the main thread exits while other threads remain. An own-user process with surviving workers in an eligible clean checkout can therefore be skipped while still using it.\n\nBoth paths preserve syntactically valid review names and paths; non-forced Git removal and dirty checks do not establish absence of occupants in a clean checkout.\n\nEstablish process identity from strictly validated process credentials, not procfs inode ownership. Before skipping a missing cwd, confirm the process has disappeared; otherwise refuse or inspect surviving threads. Unresolved identity/cwd observations must not authorize deletion.\n\n### Independent platform evidence\n\nThe Linux manual confirms these kernel semantics:\n\n- https://man7.org/linux/man-pages/man5/proc_pid.5.html: procfs ownership becomes root:root when the process's dumpable attribute is not 1.\n- https://man7.org/linux/man-pages/man5/proc_pid_cwd.5.html: cwd contents are unavailable when a multithreaded process's main thread has terminated.\n\nThese references corroborate the source-derived failure paths; no local process or deletion experiment was performed.\n\n### Scope and proof limits\n\nThe disclosed other-user exclusion is material: this is not machine-wide occupancy protection on either platform. The PR body names it, although `justfile:213` still promises any process. The two findings above are inside the promised own-user scope rather than objections to that explicitly disclosed exclusion.\n\nMacOS now fails closed for command errors and malformed records. Canonical path, metadata validation and no-force improvements do not close the Linux observer bypasses. No new C19/C21 disclosure was identified.\n\nGitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42431389764` and latest successful Delivers run `42431389913` both identify this SHA and success. The earlier cancelled Delivers run is superseded.\n\nNo local builds, tests, probes, prune execution, credential reads, worktree removals or mutations were performed.\n"
+		}
+	]
+}
