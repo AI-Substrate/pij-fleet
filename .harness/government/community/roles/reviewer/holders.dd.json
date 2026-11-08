@@ -865,7 +865,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "181",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #181 merged (8a164b4bf93c)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T06:16:20.586Z",
 					"why": "F125 ready-SHA line #181"
 				}
 			]
