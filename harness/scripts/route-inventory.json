@@ -613,7 +613,7 @@
 			"class": "role-and-holder",
 			"grants_by": ["seat", "owner", "prime"],
 			"guard": ["R"],
-			"note": "Records a merged delivery as the actor; claim-release argv reaches owner or prime release."
+			"note": "Records a merged delivery as the actor and ends that PR's holdings (any-seat, like directory release, plan 215); claim-release argv reaches owner or prime release."
 		},
 		{
 			"method": "POST",

@@ -1,0 +1,104 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 215 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-00d7",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Daemon test: a merged PR touching docs/plans/215-* with open reviewer/<pr>, security/<pr> and coder/215 holdings releases all three in one commit and prints three lines; a second run releases nothing; coder/216 is untouched.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-00d7",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Daemon test: three good lines are one commit; one bad line among three writes nothing and names it; windows restore as for a single release.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-00d7",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "CLI test: lineage add prints the human line; --json prints the receipt unchanged.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-00d7",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Daemon test: an assign and a release each leave ROUTES.md equal to `routes` output in the same commit; a no-op assign leaves it byte-identical with no extra commit.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5: cost",
+          "phase": "ph-00d7",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping",
+          "note": "No new timer, poll or launch. Delivered's release and the ROUTES.md rewrite ride the writer commits these verbs already make (at most one extra commit per verb call, never one per holding). The routes render is in-process. State the commits per verb before and after."
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6: docs and states",
+          "phase": "ph-00d7",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/project/"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}

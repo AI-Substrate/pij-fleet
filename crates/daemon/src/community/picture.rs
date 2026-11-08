@@ -3,7 +3,7 @@
 //! store rows, the live seats and the documents, and these functions shape
 //! them. Nothing here reads, writes or launches.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use pij_core::directory::shell_word;
@@ -378,6 +378,31 @@ pub fn actions(
     queued: &[&str],
     memory_latest: Option<&str>,
 ) -> Vec<Value> {
+    actions_weighing(
+        project,
+        role,
+        holders,
+        rows,
+        live,
+        queued,
+        memory_latest,
+        &HashMap::new(),
+    )
+}
+
+/// [`actions`], with `open`: each holder's unanswered delivered requests for
+/// the role, which the two-live-holders action weighs (plan 215, F90).
+#[allow(clippy::too_many_arguments)]
+pub fn actions_weighing(
+    project: &str,
+    role: &str,
+    holders: &str,
+    rows: &[&Assignment],
+    live: &HashSet<String>,
+    queued: &[&str],
+    memory_latest: Option<&str>,
+    open: &HashMap<String, u64>,
+) -> Vec<Value> {
     let mut out = Vec::new();
     let mut holding: Vec<&Assignment> = rows
         .iter()
@@ -442,28 +467,7 @@ pub fn actions(
     }
 
     if holders == "one" && holding.len() > 1 {
-        let seats: Vec<&str> = holding.iter().map(|row| row.seat.as_str()).collect();
-        let newest = holding.len() - 1;
-        out.push(json!({
-            "role": role,
-            "condition": "two-live-holders",
-            "says": format!(
-                "{role} is a one-holder role with {} live holders ({}); release all but one (newest kept here)",
-                seats.len(),
-                seats.join(", ")
-            ),
-            "commands": holding[..newest].iter().map(|row| command(&[
-                "pij",
-                "directory",
-                "release",
-                &address(row),
-                &row.seat,
-                "--why",
-                &format!("a one-holder role had {} live holders", seats.len()),
-                "--project",
-                project,
-            ])).collect::<Vec<_>>(),
-        }));
+        out.push(two_live_holders(project, role, &holding, open));
     }
 
     let mut closes: Vec<&str> = rows
@@ -501,6 +505,74 @@ pub fn actions(
         }));
     }
     out
+}
+
+/// Two or more live holders on a one-holder role (req-12). A second holder
+/// can be on purpose, such as a temporary second verdict seat while requests
+/// queue (plan 215, F90), so `open` (each holder's unanswered delivered
+/// requests) decides: while two or more holders have open work, it names them
+/// and recommends nothing; otherwise it keeps the one holder with open work,
+/// or the newest, and prints a release for each other.
+fn two_live_holders(
+    project: &str,
+    role: &str,
+    holding: &[&Assignment],
+    open: &HashMap<String, u64>,
+) -> Value {
+    let count = |row: &&Assignment| open.get(&row.seat).copied().unwrap_or_default();
+    let named: Vec<String> = holding
+        .iter()
+        .map(|row| match count(row) {
+            0 if open.is_empty() => row.seat.clone(),
+            0 => format!("{}, no open requests", row.seat),
+            n => format!("{}, {n} open request(s)", row.seat),
+        })
+        .collect();
+    let lead = format!(
+        "{role} is a one-holder role with {} live holders ({})",
+        holding.len(),
+        named.join("; ")
+    );
+    let mut busy: Vec<&str> = holding
+        .iter()
+        .filter(|row| count(row) > 0)
+        .map(|row| row.seat.as_str())
+        .collect();
+    busy.sort_unstable();
+    busy.dedup();
+    if busy.len() > 1 {
+        return json!({
+            "role": role,
+            "condition": "two-live-holders",
+            "says": format!("{lead}; each has open work, so release one once its work ends"),
+            "commands": [],
+        });
+    }
+    // The newest holding of the busy seat, or the newest of all.
+    let (kept, reason) = match holding
+        .iter()
+        .rev()
+        .find(|row| busy.first() == Some(&row.seat.as_str()))
+    {
+        Some(row) => (*row, "the one with open work"),
+        None => (holding[holding.len() - 1], "the newest"),
+    };
+    json!({
+        "role": role,
+        "condition": "two-live-holders",
+        "says": format!("{lead}; release all but one ({} kept here: {reason})", kept.seat),
+        "commands": holding.iter().filter(|row| !std::ptr::eq(**row, kept)).map(|row| command(&[
+            "pij",
+            "directory",
+            "release",
+            &address(row),
+            &row.seat,
+            "--why",
+            &format!("a one-holder role had {} live holders", holding.len()),
+            "--project",
+            project,
+        ])).collect::<Vec<_>>(),
+    })
 }
 
 /// Each role a not-complete workstream step needs (`needs: ["role:<id>"]`),
@@ -1192,6 +1264,64 @@ mod tests {
                 None
             )
             .is_empty()
+        );
+    }
+
+    /// Plan 215 (F90): a deliberate second holder with open work is not
+    /// released. While two holders have open work nothing is recommended;
+    /// with one, that one is kept, even when it is the older.
+    #[test]
+    fn two_live_holders_weigh_open_work_before_recommending_a_release() {
+        let a = row("pij-a", "2026-11-01T00:00:00Z", None, None);
+        let b = row("pij-b", "2026-11-02T00:00:00Z", None, None);
+        let rows = [&b, &a];
+        let weigh = |open: &[(&str, u64)]| {
+            let open: HashMap<String, u64> = open
+                .iter()
+                .map(|(seat, count)| ((*seat).to_string(), *count))
+                .collect();
+            actions_weighing(
+                "fleet",
+                "reviewer",
+                "one",
+                &rows,
+                &live(&["pij-a", "pij-b"]),
+                &[],
+                None,
+                &open,
+            )
+            .remove(0)
+        };
+        let both = weigh(&[("pij-a", 3), ("pij-b", 1)]);
+        assert_eq!(both["condition"], "two-live-holders");
+        assert_eq!(both["commands"], json!([]), "{both}");
+        let says = both["says"].as_str().unwrap();
+        assert!(
+            says.contains("pij-a, 3 open request(s); pij-b, 1 open request(s)")
+                && says.contains("each has open work"),
+            "{says}"
+        );
+        let older = weigh(&[("pij-a", 2)]);
+        assert_eq!(
+            older["commands"],
+            json!([
+                "pij directory release reviewer pij-b --why 'a one-holder role had 2 live holders' --project fleet"
+            ]),
+            "the busy older seat is kept: {older}"
+        );
+        assert!(
+            older["says"]
+                .as_str()
+                .unwrap()
+                .contains("pij-a kept here: the one with open work")
+        );
+        let idle = weigh(&[]);
+        assert_eq!(
+            idle["commands"],
+            json!([
+                "pij directory release reviewer pij-a --why 'a one-holder role had 2 live holders' --project fleet"
+            ]),
+            "with no open work the newest is kept: {idle}"
         );
     }
 
