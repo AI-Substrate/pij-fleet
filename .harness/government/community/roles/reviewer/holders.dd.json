@@ -686,7 +686,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "167",
 					"machine": "ops.osk.lan",
+					"release_why": "#167 merged 246f958",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-08T00:05:33.831Z",
 					"why": "plan 222 compaction wake #167"
 				},
 				{
