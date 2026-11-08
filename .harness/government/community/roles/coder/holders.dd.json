@@ -606,6 +606,16 @@
 					"seat": "pij-swift-kestrel",
 					"to": "2026-11-08T10:57:21.037Z",
 					"why": "F137 daemon --bind :0 for the inbox integration test race"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T17:27:33.850Z",
+					"harness": "copilot",
+					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
+					"instance_key": "f144",
+					"machine": "ops.osk.lan",
+					"seat": "pij-exuberant-wildcat",
+					"why": "F144 urgent: plan 224 idle nudge wakes resting specialists (C30); fast follow-up"
 				}
 			]
 		}
