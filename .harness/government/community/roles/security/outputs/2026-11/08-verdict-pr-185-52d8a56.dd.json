@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "52d8a567ddef2199fd2ce9213e8f4aa5ca4373f1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/185#issuecomment-6720678518",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:185",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes**, delta only, at `52d8a567ddef2199fd2ce9213e8f4aa5ca4373f1`. **The remaining MEDIUM request-address finding in `b38f10e` is closed.**\n\nNo new scoped vulnerability or C19/C21 disclosure found. Prior request-ID, model and output-notice closures remain; this is not blanket containment of intentional free text or the separately tracked scope/background/admission gaps.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new delta finding; prior holding-instance framing closed | - |\n\n## Address and related repairs\n\n`RoleAddress::display` now renders a stored instance through the closed name grammar, including when a broad send copies that instance from a holding (`crates/daemon/src/delivery/role_send.rs:88-103`). The holder frame, queue wake and its generated assign target, check-in/limit notices, close notice and digest use that display path. Rejected content becomes only `invalid (N chars)`, not raw framing.\n\nThe display substitution does not mint another identity: selection/correlation retain the structured role, instance, seat and request ID. Rendering itself does not rewrite the stored key. Invalid placeholders are diagnostic labels, not identifiers to reconstruct for operations; executable recovery for unsupported-but-still-admitted names remains an F135 qualification.\n\nSeveral-holder lists render seats and instances; instance-based advice additionally requires a renderable, unique instance. Hidden/shared instances use the seat-send alternative rather than suggesting that instance (`role_send.rs:354-436`). Standard shell-word quoting remains for executable repair arguments.\n\nRouting-table HTTP and per-seat FYI paths share `live_holders`/`holder_label`, which render both seat and instance (`crates/daemon/src/http/routes.rs:54-96`; `crates/daemon/src/http/directory.rs:867-871`). Picture holding addresses render instances, and modal notices now render the stalled seat while retaining fixed classifier labels.\n\n## One grammar and retained qualifications\n\n`pij_core::render::is_name`/`name` is the single `[a-z0-9][a-z0-9-]{0,31}` definition. The memory-turn wrapper delegates to it rather than maintaining another predicate (`crates/core/src/render.rs:41-60`; `crates/daemon/src/http/memory_turn.rs:158-165`). The PR body's original 64-character/uppercase/underscore/dot name summary is stale; its later round-two description and the actual code use this 32-byte grammar.\n\nThe disputed request-address producer assumption no longer supplies the protection: rendering covers assignment-derived and legacy instances. Legacy modal-ID rendering is also repaired. Scope paths remain F133; background output/inline data remains F134; holding admission remains F135. The inline-data line-flattening qualification still applies.\n\n`fenced()` is unchanged: scalar-safe truncation, debug escaping and a generated closing quote preserve its structural single-line boundary. It is not a Markdown or semantic prompt-injection barrier, and author-labelled intentional request/body/workflow prose remains untrusted.\n\n## CI proof and limits\n\nLocal and GitHub heads agree; worktree clean; current checks succeeded. CI [42470623767](https://github.com/AI-Substrate/pij-fleet/actions/runs/42470623767) tested synthetic merge `d4da23d`, incorporating this exact head. Its successful JUnit artifact [13614335629](https://github.com/AI-Substrate/pij-fleet/actions/runs/42470623767/artifacts/13614335629) has 2,249 passing cases, no failures, five separately skipped.\n\nConfirmed executed: hostile stored instance through a broad HTTP send, routing holder column, picture holding address, modal seat and the legacy hostile-instance release case. The common name/source predicates, display callers and alternative advice were source-checked. The six reported mutants remain author receipts, not independently executed mutation proof. ddocs reported UNAVAILABLE.\n\nNo local cargo/builds/tests/scripts, mutations, credentials, product edits or actual daemon/delivery/pane/process probes. No unrelated imported-main implementation re-review.\n"
+		}
+	]
+}
