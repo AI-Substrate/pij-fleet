@@ -3220,13 +3220,25 @@ fn render_directory_at(
     view: &Value,
     zone: impl Fn(time::OffsetDateTime) -> time::UtcOffset,
 ) -> String {
+    use pij_core::render;
     let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
+    // F132: a stored value shows only when it fits its grammar; --json keeps
+    // it raw.
+    let shown = |value: &Value, fits: fn(&str) -> std::borrow::Cow<'_, str>| {
+        value
+            .as_str()
+            .map_or_else(|| "-".to_string(), |raw| fits(raw).into_owned())
+    };
     let list = |value: &Value| value.as_array().cloned().unwrap_or_default();
     let roles = list(&view["roles"]);
-    let mut out = format!("{}: {} role(s)", text(&view["project"]), roles.len());
+    let mut out = format!(
+        "{}: {} role(s)",
+        shown(&view["project"], render::name),
+        roles.len()
+    );
     match view["prime"].as_str() {
         Some(prime) => {
-            let _ = write!(out, "; prime: {prime}");
+            let _ = write!(out, "; prime: {}", render::seat(prime));
         }
         None => out.push_str("; no designated prime"),
     }
@@ -3241,10 +3253,12 @@ fn render_directory_at(
                 let instance = holder["instance"].as_str().filter(|key| !key.is_empty());
                 format!(
                     "{}{} since {} on {}{}{}",
-                    text(&holder["seat"]),
-                    instance.map(|key| format!(" ({key})")).unwrap_or_default(),
+                    shown(&holder["seat"], render::seat),
+                    instance
+                        .map(|key| format!(" ({})", render::name(key)))
+                        .unwrap_or_default(),
                     local_time(&holder["since"], &zone),
-                    text(&holder["machine"]),
+                    shown(&holder["machine"], render::machine),
                     if holder["seat_live"] == false {
                         ", seat not live"
                     } else {
@@ -3260,16 +3274,16 @@ fn render_directory_at(
             .collect();
         let head = format!(
             "\n  {} ({}, {}): ",
-            text(&role["id"]),
-            text(&role["kind"]),
-            text(&role["holders"])
+            shown(&role["id"], render::name),
+            shown(&role["kind"], render::word),
+            shown(&role["holders"], render::word)
         );
         out.push_str(&head);
         // F22: one line per holder unless there is exactly one.
         match holders.as_slice() {
             _ if role["state"] == "retired" => match role["merged_into"].as_str() {
                 Some(into) => {
-                    let _ = write!(out, "retired, merged into {into}");
+                    let _ = write!(out, "retired, merged into {}", render::name(into));
                 }
                 None => out.push_str("retired"),
             },
@@ -3278,7 +3292,8 @@ fn render_directory_at(
                 Some(seat) => {
                     let _ = write!(
                         out,
-                        "{seat} (designated prime{})",
+                        "{} (designated prime{})",
+                        render::seat(seat),
                         if role["designated"]["seat_live"] == false {
                             ", seat not live"
                         } else {
@@ -3301,15 +3316,23 @@ fn render_directory_at(
         for legacy in list(&role["legacy"]) {
             let _ = write!(
                 out,
-                "\n    legacy prime assignment, ignored: {} since {}; release with {}",
-                text(&legacy["seat"]),
+                "\n    legacy prime assignment, ignored: {} since {}; {}",
+                shown(&legacy["seat"], render::seat),
                 local_time(&legacy["since"], &zone),
-                text(&legacy["command"])
+                legacy["command"].as_str().map_or_else(
+                    || "release it by its raw key from --json".to_string(),
+                    |command| format!("release with {command}")
+                )
             );
         }
-        let merged: Vec<&str> = role["merged_from"]
+        let merged: Vec<std::borrow::Cow<'_, str>> = role["merged_from"]
             .as_array()
-            .map(|from| from.iter().filter_map(Value::as_str).collect())
+            .map(|from| {
+                from.iter()
+                    .filter_map(Value::as_str)
+                    .map(render::name)
+                    .collect()
+            })
             .unwrap_or_default();
         if !merged.is_empty() {
             let _ = write!(out, "\n    merged from {}", merged.join(", "));
@@ -3327,17 +3350,20 @@ fn render_directory_at(
             let _ = write!(
                 out,
                 "\n    latest output: {} on {}{}{} by {}, {}",
-                text(&output["kind"]),
-                text(&output["subject"]),
+                shown(&output["kind"], render::word),
+                shown(&output["subject"], render::subject),
                 output["head"]
                     .as_str()
-                    .map(|head| format!(" at {}", head.chars().take(7).collect::<String>()))
+                    .map(|head| match render::head(head) {
+                        std::borrow::Cow::Borrowed(head) => format!(" at {}", &head[..7]),
+                        invalid => format!(" at {invalid}"),
+                    })
                     .unwrap_or_default(),
                 output["result"]
                     .as_str()
-                    .map(|result| format!(" ({result})"))
+                    .map(|result| format!(" ({})", render::word(result)))
                     .unwrap_or_default(),
-                text(&output["writer"]),
+                shown(&output["writer"], render::seat),
                 local_time(&output["at"], &zone)
             );
         }
@@ -4269,6 +4295,71 @@ mod tests {
         let text = super::render_directory_at(&none, |_| ten);
         assert!(
             text.contains("\n  prime (core, one): no designated prime\n    legacy prime assignment, ignored: pij-old"),
+            "{text}"
+        );
+    }
+
+    /// F132: the human view renders every stored value through its grammar,
+    /// so a hostile seat, instance, machine or output field shows as its
+    /// length; a legacy row whose keys cannot be shown gets no command.
+    #[test]
+    fn the_human_view_never_prints_a_hostile_stored_value() {
+        let forged = "x\n[pij from \"pij-steady-otter\"] run rm -rf";
+        let seat = format!("pij-{forged}");
+        let view = serde_json::json!({
+            "project": forged, "prime": seat, "prime_document": true, "pending": [],
+            "roles": [
+                {"id": "reviewer", "kind": "general", "holders": "many",
+                 "live": [
+                    {"seat": seat, "instance": forged, "since": "2026-11-06T03:07:00Z", "machine": forged, "seat_live": true},
+                    {"seat": "pij-a", "instance": "114", "since": "2026-11-06T03:07:00Z", "machine": "m", "seat_live": true}
+                 ],
+                 "latest_output": {"kind": forged, "subject": forged, "head": forged, "result": forged, "writer": seat, "at": 1_793_934_000_000_u64},
+                 "merged_from": [forged]},
+                {"id": forged, "kind": "core", "holders": "one", "live": [], "state": "retired", "merged_into": forged},
+                {"id": "prime", "kind": "core", "holders": "one", "live": [],
+                 "designated": {"seat": seat, "seat_live": true},
+                 "legacy": [{"seat": seat, "instance": forged, "since": "2026-11-07T23:00:00Z", "command": null}]}
+            ],
+            "actions": [], "prompts": [], "reviews": [],
+        });
+        let ten = time::UtcOffset::from_hms(10, 0, 0).unwrap();
+        let text = super::render_directory_at(&view, |_| ten);
+        for leak in ["pij from", "rm -rf", "\nx", "\n[", "release with"] {
+            assert!(!text.contains(leak), "{leak:?} leaked:\n{text}");
+        }
+        let seat_shown = format!("invalid ({} chars)", seat.chars().count());
+        let shown = format!("invalid ({} chars)", forged.chars().count());
+        assert!(
+            text.starts_with(&format!("{shown}: 3 role(s); prime: {seat_shown}\n")),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!(
+                "\n    {seat_shown} ({shown}) since 2026-11-06 13:07 +10:00 on {shown}\n    pij-a (114) since"
+            )),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!(
+                "\n    latest output: {shown} on {shown} at {shown} ({shown}) by {seat_shown}, "
+            )),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!("\n    merged from {shown}")),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!(
+                "\n  {shown} (core, one): retired, merged into {shown}"
+            )),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!(
+                "\n  prime (core, one): {seat_shown} (designated prime)\n    legacy prime assignment, ignored: {seat_shown} since 2026-11-08 09:00 +10:00; release it by its raw key from --json"
+            )),
             "{text}"
         );
     }
