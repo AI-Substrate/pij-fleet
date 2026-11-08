@@ -1814,53 +1814,65 @@ fn matching_marker_adopts_restart_pipe_and_detach_clears_ownership() {
     );
 }
 
+/// F112: an adoption whose replacing `pipe-pane` fails must not strand our own
+/// pipe. The prior daemon's pipe survives the failed replace, so the matching
+/// marker stays, and the next attempt adopts again. (Before, the rollback
+/// cleared it and the pane was refused as "not owned" on every tick.)
 #[test]
-fn unmarked_legacy_pipe_with_live_writer_is_superseded() {
-    let Some(session) = TestSession::start_or_skip("tap-legacy") else {
+fn a_failed_replace_during_adoption_keeps_the_marker_and_the_next_attempt_adopts() {
+    let Some(session) = TestSession::start_or_skip("tap-adopt-fail") else {
         return;
     };
-    let pane = block_on(TmuxAdapter::for_server(&session.server, &session.tap_root).list_panes())
+    let first = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let pane = block_on(first.list_panes())
         .expect("list isolated panes")
         .into_iter()
         .next()
         .expect("isolated session pane");
-    let legacy_root = session.tap_root.with_extension("legacy");
-    let legacy_sink = tap_sink_path(&legacy_root, &pane.id);
-    fs::create_dir_all(&legacy_root).expect("create isolated legacy tap root");
-    fs::write(&legacy_sink, b"").expect("create legacy sink signature");
-    let legacy_command = format!("cat >> '{}'", legacy_sink.display());
-    session.run(["pipe-pane", "-O", "-o", "-t", &pane.id, &legacy_command]);
-    let marker = session.run([
-        "show-options",
-        "-p",
-        "-v",
-        "-q",
-        "-t",
-        &pane.id,
-        "@pij-tap-sink",
-    ]);
-    assert!(
-        marker.stdout.is_empty(),
-        "legacy daemon sets no ownership marker"
-    );
-
-    let tmux = TmuxAdapter::for_server_with_legacy_tap_root(
-        &session.server,
-        &session.tap_root,
-        &legacy_root,
-    );
     let sink = tap_sink_path(&session.tap_root, &pane.id);
-    block_on(tmux.attach_pane_tap(&pane.id, &sink)).expect("supersede legacy tap");
-    block_on(tmux.send_keys(&pane.id, "after-legacy")).expect("emit after supersede");
-    let bytes = drain_until_quiet(&tmux, &session.server, &pane.id, "after-legacy");
-    assert!(String::from_utf8_lossy(&bytes).contains("after-legacy"));
+    block_on(first.attach_pane_tap(&pane.id, &sink)).expect("initial attach");
+    let marker = || {
+        let shown = session.run([
+            "show-options",
+            "-p",
+            "-v",
+            "-q",
+            "-t",
+            &pane.id,
+            "@pij-tap-sink",
+        ]);
+        String::from_utf8_lossy(&shown.stdout).trim().to_string()
+    };
+    let pipe = || {
+        let shown = session.run(["display-message", "-p", "-t", &pane.id, "#{pane_pipe}"]);
+        String::from_utf8_lossy(&shown.stdout).trim().to_string()
+    };
 
-    block_on(tmux.detach_pane_tap(&pane.id)).expect("detach superseding tap");
-    fs::remove_dir_all(legacy_root).expect("remove isolated legacy tap root");
+    // A restarted daemon (no tap map) whose replacing pipe-pane fails.
+    let wrapper = session.tap_root.join("tmux-failing-pipe");
+    let script = format!(
+        "#!/bin/sh\n[ \"$1\" = -u ] && shift\ncase \"$1\" in pipe-pane) case \"$*\" in *-O*) exit 71 ;; esac ;; esac\nexec tmux -L {} \"$@\"\n",
+        shell_literal(&session.server)
+    );
+    write_executable(&wrapper, &script);
+    let failing = TmuxAdapter::with_binary(&wrapper, &session.tap_root);
+    block_on(failing.attach_pane_tap(&pane.id, &sink)).expect_err("the replace fails");
+    assert_eq!(pipe(), "1", "the prior daemon's pipe survives");
+    assert_eq!(marker(), sink.to_str().unwrap(), "and stays ours");
+
+    let restarted = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    block_on(restarted.attach_pane_tap(&pane.id, &sink)).expect("the next attempt adopts");
+    block_on(restarted.send_keys(&pane.id, "after-retry")).expect("emit after adoption");
+    let bytes = drain_until_quiet(&restarted, &session.server, &pane.id, "after-retry");
+    assert!(String::from_utf8_lossy(&bytes).contains("after-retry"));
+    block_on(restarted.detach_pane_tap(&pane.id)).expect("detach adopted tap");
 }
 
-fn assert_unmarked_foreign_pipe_refused(label: &str, stale_legacy_sink: bool) {
-    let Some(session) = TestSession::start_or_skip(label) else {
+/// An output pipe with no owner marker is refused, never replaced, and the
+/// refusal names the manual re-stamp for when the pipe is the daemon's own.
+#[test]
+fn unmarked_foreign_pipe_is_refused_and_the_refusal_names_the_repair() {
+    let Some(session) = TestSession::start_or_skip("tap-foreign-unmarked") else {
         return;
     };
     let pane = block_on(TmuxAdapter::for_server(&session.server, &session.tap_root).list_panes())
@@ -1868,27 +1880,23 @@ fn assert_unmarked_foreign_pipe_refused(label: &str, stale_legacy_sink: bool) {
         .into_iter()
         .next()
         .expect("isolated session pane");
-    let legacy_root = session.tap_root.with_extension("legacy");
-    fs::create_dir_all(&legacy_root).expect("create isolated legacy root");
-    if stale_legacy_sink {
-        fs::write(tap_sink_path(&legacy_root, &pane.id), b"")
-            .expect("create stale legacy sink without a writer");
-    }
     let foreign = std::env::temp_dir().join(format!("{}-unmarked-foreign.raw", session.name));
     fs::write(&foreign, b"FOREIGN").expect("create foreign sink");
     let foreign_command = format!("cat >> '{}'", foreign.display());
     session.run(["pipe-pane", "-O", "-t", &pane.id, &foreign_command]);
 
-    let tmux = TmuxAdapter::for_server_with_legacy_tap_root(
-        &session.server,
-        &session.tap_root,
-        &legacy_root,
-    );
+    let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
     let sink = tap_sink_path(&session.tap_root, &pane.id);
     let error = block_on(tmux.attach_pane_tap(&pane.id, &sink))
         .expect_err("an unmarked foreign writer must not be superseded");
+    let error = error.to_string();
+    assert!(error.contains("not owned by this sink"), "{error}");
     assert!(
-        error.to_string().contains("not owned by this sink"),
+        error.contains(&format!(
+            "tmux set-option -p -t {} @pij-tap-sink '{}'",
+            pane.id,
+            sink.display()
+        )),
         "{error}"
     );
     let pipe = session.run(["display-message", "-p", "-t", &pane.id, "#{pane_pipe}"]);
@@ -1900,17 +1908,6 @@ fn assert_unmarked_foreign_pipe_refused(label: &str, stale_legacy_sink: bool) {
 
     session.run(["pipe-pane", "-t", &pane.id]);
     fs::remove_file(foreign).expect("remove foreign sink");
-    fs::remove_dir_all(legacy_root).expect("remove isolated legacy root");
-}
-
-#[test]
-fn unmarked_foreign_pipe_without_legacy_sink_is_refused() {
-    assert_unmarked_foreign_pipe_refused("tap-foreign-no-legacy", false);
-}
-
-#[test]
-fn stale_legacy_sink_without_live_writer_does_not_authorize_takeover() {
-    assert_unmarked_foreign_pipe_refused("tap-foreign-stale-legacy", true);
 }
 
 #[test]

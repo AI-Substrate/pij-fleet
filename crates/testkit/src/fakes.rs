@@ -2633,6 +2633,24 @@ impl TmuxPort for FakeTmux {
         Ok(state.standing_capture.clone().unwrap_or_default())
     }
 
+    async fn list_panes_without_launch(&self) -> Result<Option<Vec<Pane>>> {
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        state
+            .recorder
+            .record("list_panes_without_launch".to_string());
+        if state.control_down {
+            return Ok(None);
+        }
+        if state.list_pane_failures > 0 {
+            state.list_pane_failures -= 1;
+            return Err(PijError::Adapter {
+                adapter: "fake-tmux".to_string(),
+                message: "scripted list-panes failure".to_string(),
+            });
+        }
+        Ok(Some(state.panes.clone()))
+    }
+
     async fn capture_without_launch(&self, pane: &str) -> Result<Option<String>> {
         let mut state = self.state.lock().expect("fake tmux mutex");
         state

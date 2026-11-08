@@ -703,3 +703,225 @@ async fn reap_dead_process_on_a_reincarnated_pane_is_a_candidate_but_an_older_pa
         );
     }
 }
+
+fn pane(id: &str) -> Pane {
+    Pane {
+        id: id.to_string(),
+        session: "private".to_string(),
+        window: "private".to_string(),
+        title: String::new(),
+        cursor_x: None,
+        cursor_y: None,
+    }
+}
+
+/// F114: a seat that never registered a process (no pid, no start) is
+/// decided by its recorded pane. Absent: a candidate. Present, unreadable
+/// without a launch (no live control client), failing, or no pane recorded
+/// at all: kept. The panes are read only over the control client, never by
+/// a forking `list_panes`.
+#[tokio::test]
+async fn a_never_bound_seat_is_reaped_only_when_its_recorded_pane_is_absent() {
+    let mut unbound = seat();
+    unbound.proc = None;
+    let recorded = unbound.pane.clone().expect("a recorded pane");
+    let mut paneless = unbound.clone();
+    paneless.pane = None;
+    let cases = [
+        (
+            unbound.clone(),
+            FakeTmux::new(),
+            Ok("never-bound-and-pane-absent"),
+        ),
+        (
+            unbound.clone(),
+            FakeTmux::new().with_pane(pane(&recorded)),
+            Err(None),
+        ),
+        (
+            unbound.clone(),
+            FakeTmux::new().without_control_client(),
+            Err(Some("pane-probe-needs-a-launch")),
+        ),
+        (
+            unbound.clone(),
+            FakeTmux::new().with_list_pane_failures(1),
+            Err(Some("pane-probe-failed")),
+        ),
+        (
+            paneless,
+            FakeTmux::new(),
+            Err(Some("process-identity-unavailable")),
+        ),
+    ];
+    for (seat, tmux, expected) in cases {
+        let (services, _store) = services().await;
+        services.registry.put(seat.clone()).await.unwrap();
+        let receipt = reap(
+            services.registry.as_ref(),
+            &FakeLiveness::new(),
+            &tmux,
+            true,
+        )
+        .await
+        .unwrap();
+        match expected {
+            Ok(reason) => {
+                assert_eq!(receipt.candidates.len(), 1, "{receipt:?}");
+                assert_eq!(receipt.candidates[0].reason, reason);
+                assert_eq!(receipt.candidates[0].process, "never-bound");
+            }
+            Err(unverifiable) => {
+                assert!(receipt.candidates.is_empty(), "{receipt:?}");
+                assert_eq!(
+                    receipt.unverifiable.first().map(|row| row.reason),
+                    unverifiable,
+                    "{receipt:?}"
+                );
+            }
+        }
+        assert!(
+            !tmux.calls().iter().any(|call| call == "list_panes"),
+            "never the forking list: {:?}",
+            tmux.calls()
+        );
+    }
+}
+
+/// F114: the death sweep tombstones a never-bound seat whose pane is gone
+/// (pij-free-flute and pij-irregular-apocalypse, idle since 26 Sep) and tells
+/// a living parent, naming that it never registered a process.
+#[tokio::test]
+async fn death_sweep_retires_a_never_bound_seat_whose_pane_is_gone() {
+    let (mut services, _store) = services().await;
+    let mut child = seat();
+    child.id = "child".into();
+    child.parent = Some("parent".into());
+    child.proc = None;
+    let mut parent = seat();
+    parent.id = "parent".into();
+    parent.parent = None;
+    parent.pane = None;
+    parent.proc = Some(ProcIdentity {
+        pid: 4321,
+        proc_start: 123,
+    });
+    services.liveness = Arc::new(FakeLiveness::new().with_proc(parent.proc.unwrap()));
+    services.tmux = Arc::new(FakeTmux::new());
+    services.registry.put(parent).await.unwrap();
+    services.registry.put(child.clone()).await.unwrap();
+
+    let receipt = crate::death_sweep::sweep(&services).await.unwrap();
+    assert_eq!(receipt.reaped.len(), 1, "{receipt:?}");
+    let retired = services.registry.get(&child.id).await.unwrap().unwrap();
+    assert_eq!(retired.tombstone_reason.as_deref(), Some("observed-dead"));
+    let (_, job) = services
+        .queue
+        .peek(&["delivery:parent".to_string()])
+        .await
+        .unwrap()
+        .expect("the parent is told");
+    let message: pij_core::model::Msg = serde_json::from_str(&job.payload).unwrap();
+    assert!(
+        message.body.starts_with(&format!(
+            "[pij] seat child died (observed-dead) — pane {} absent, it never registered a process at ",
+            child.pane.as_deref().unwrap()
+        )),
+        "{}",
+        message.body
+    );
+}
+
+/// A registry whose seat binds its process at the last moment: just before
+/// the reaper's conditional tombstone, after both pane reads.
+struct BindsBeforeCommit {
+    inner: Arc<dyn Registry>,
+    bound: SeatDescriptor,
+}
+#[async_trait]
+impl Registry for BindsBeforeCommit {
+    async fn get(&self, seat: &pij_core::model::SeatId) -> Result<Option<SeatDescriptor>> {
+        self.inner.get(seat).await
+    }
+    async fn put(&self, descriptor: SeatDescriptor) -> Result<pij_core::model::Seq> {
+        self.inner.put(descriptor).await
+    }
+    async fn put_reporting(
+        &self,
+        d: SeatDescriptor,
+    ) -> Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
+        self.inner.put_reporting(d).await
+    }
+    async fn put_reporting_keeping_parent(
+        &self,
+        d: SeatDescriptor,
+    ) -> Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
+        self.inner.put_reporting_keeping_parent(d).await
+    }
+    async fn list(&self, filter: pij_core::ports::SeatFilter) -> Result<Vec<SeatDescriptor>> {
+        self.inner.list(filter).await
+    }
+    async fn tombstone(
+        &self,
+        seat: &pij_core::model::SeatId,
+        reason: &str,
+    ) -> Result<pij_core::model::Seq> {
+        self.inner.tombstone(seat, reason).await
+    }
+    async fn tombstone_if_unchanged(
+        &self,
+        expected: SeatDescriptor,
+        reason: String,
+    ) -> Result<pij_core::model::Seq> {
+        self.inner.put(self.bound.clone()).await?;
+        self.inner.tombstone_if_unchanged(expected, reason).await
+    }
+    async fn set_activity(
+        &self,
+        seat: &pij_core::model::SeatId,
+        state: pij_core::model::SystemState,
+        reason: Option<&str>,
+    ) -> Result<Option<pij_core::model::Seq>> {
+        self.inner.set_activity(seat, state, reason).await
+    }
+}
+
+/// Review of #174 (bobcat): a never-bound seat whose harness registers its
+/// process after the reaper read its pane as absent, but before the
+/// tombstone, is not retired: the conditional tombstone sees the changed row
+/// and refuses, the bind stands, and no tombstone event is written.
+#[tokio::test]
+async fn a_bind_between_the_pane_read_and_the_tombstone_is_preserved() {
+    let (services, _store) = services().await;
+    let mut unbound = seat();
+    unbound.proc = None;
+    let before = services.registry.put(unbound.clone()).await.unwrap();
+    let mut bound = unbound.clone();
+    bound.proc = Some(ProcIdentity {
+        pid: 4321,
+        proc_start: 123,
+    });
+    let registry = BindsBeforeCommit {
+        inner: services.registry.clone(),
+        bound: bound.clone(),
+    };
+    let receipt = reap(&registry, &FakeLiveness::new(), &FakeTmux::new(), false)
+        .await
+        .unwrap();
+    assert_eq!(receipt.candidates.len(), 1, "the pane read found it absent");
+    assert!(receipt.reaped.is_empty(), "{receipt:?}");
+    assert_eq!(receipt.unverifiable[0].reason, "incarnation-changed");
+    let kept = services.registry.get(&bound.id).await.unwrap().unwrap();
+    assert_eq!(kept.proc, bound.proc);
+    assert!(kept.tombstoned_at.is_none());
+    assert!(
+        services
+            .spine
+            .tail(None, before)
+            .await
+            .unwrap()
+            .iter()
+            .all(|event| event.kind != "seat.tombstone"),
+        "no stale tombstone"
+    );
+}

@@ -1852,6 +1852,50 @@ async fn clearing_another_anomaly_does_not_resurrect_a_cleared_stale_card() {
     );
 }
 
+/// F112: a seat whose pane tap the observer refused is flagged in the digest
+/// as `tap-refused`, with the refusal (which names the repair) as its detail.
+#[tokio::test]
+async fn a_refused_pane_tap_is_flagged_in_the_digest() {
+    let (services, _store) = services().await;
+    let mut prime = seat("pij-prime", "/tap-refused", None);
+    prime.pane = Some("%7".into());
+    services.registry.put(prime.clone()).await.unwrap();
+    services
+        .registry
+        .put(seat("pij-pa", "/tap-refused", Some("pij-prime")))
+        .await
+        .unwrap();
+    services
+        .roles
+        .assert_role(&"pij-prime".into(), &"pij-pa".into(), Some("pa".into()))
+        .await
+        .unwrap();
+    services.tap_refusals.record(
+        "%7",
+        "pane \"%7\" already has an output pipe not owned by this sink".into(),
+        tokio::time::Instant::now(),
+        std::time::Duration::from_millis(600),
+    );
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+    set_state(&services, &prime, SystemState::Working).await;
+    watchdog.round(&services, INTERVAL, start).await.unwrap();
+    set_state(&services, &prime, SystemState::Idle).await;
+    watchdog
+        .round(&services, INTERVAL, start + 60_000)
+        .await
+        .unwrap();
+    let digests = drain(&services, "pij-pa").await;
+    assert_eq!(digests.len(), 1);
+    assert!(
+        digests[0]
+            .body
+            .contains("pij-prime  tap-refused: pane \"%7\" already has an output pipe not owned"),
+        "{}",
+        digests[0].body
+    );
+}
+
 /// Plan 178 AC1 (#68): a rejection whose reset, plus the margin, has passed is
 /// not a stop. A worker that hit a limit and was never restarted (it had
 /// finished) no longer silences its PA for the whole repository: the reset
@@ -2579,6 +2623,121 @@ async fn a_dormant_pa_is_woken_and_then_reported_once_each() {
         [
             "waiting", "sent", "capped", "capped", "armed", "waiting", "sent", "armed", "waiting"
         ]
+    );
+}
+
+/// F115: a dormant wake's digest shows a long-held message once, like the
+/// idle-edge and prime-active digests: the next dormant wake doesn't repeat
+/// it. (At 08:04 and 08:35 on 08 Nov two dormant digests repeated the same
+/// holds word for word; only the 09:42 idle-edge digest marked them shown.)
+#[tokio::test]
+async fn a_dormant_wake_shows_each_held_message_once() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let _fleet = active_fleet(&services, &repos).await;
+    let pa = seat("pij-pa", &repos.path("main"), Some("pij-prime"));
+    make_pa(&services, &pa).await;
+    services
+        .delivery
+        .accept(pij_core::model::Msg {
+            from: "pij-prime".into(),
+            to: "pij-idle".into(),
+            body: "waiting behind a turn".into(),
+            msg_id: "m-held".into(),
+            from_machine: None,
+            in_reply_to: None,
+            command: None,
+        })
+        .await
+        .unwrap();
+    let start = now_ms();
+    let at = |minutes: u64| start + minutes * MINUTE;
+    let watchdog = PaWatchdog::default();
+    let held = "Messages held behind a busy turn";
+    for minute in 0..=30 {
+        watchdog
+            .round(&services, INTERVAL, at(minute))
+            .await
+            .unwrap();
+    }
+    let first = drain(&services, "pij-pa").await;
+    assert_eq!(first.len(), 1);
+    assert!(
+        first[0].body.contains(held) && first[0].body.contains("msg m-held"),
+        "{}",
+        first[0].body
+    );
+
+    // A turn re-arms the dormant wake; the next one doesn't repeat the hold.
+    set_state(&services, &pa, SystemState::Working).await;
+    watchdog.round(&services, INTERVAL, at(31)).await.unwrap();
+    set_state(&services, &pa, SystemState::Idle).await;
+    for minute in 32..=61 {
+        watchdog
+            .round(&services, INTERVAL, at(minute))
+            .await
+            .unwrap();
+    }
+    let second = drain(&services, "pij-pa").await;
+    assert_eq!(second.len(), 1, "a second dormant wake");
+    assert!(!second[0].body.contains("msg m-held"), "{}", second[0].body);
+}
+
+/// F114: a tombstoned recipient's held messages leave every digest. Its
+/// queued jobs stay queued (a resumed address keeps them), but the digest's
+/// fleet is its live seats, so they are never reported again.
+#[tokio::test]
+async fn a_tombstoned_recipients_held_messages_leave_the_digest() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let _fleet = active_fleet(&services, &repos).await;
+    let pa = seat("pij-pa", &repos.path("main"), Some("pij-prime"));
+    make_pa(&services, &pa).await;
+    for (to, msg_id) in [("pij-idle", "m-live"), ("pij-gone", "m-gone")] {
+        if to == "pij-gone" {
+            let gone = seat("pij-gone", &repos.path("main"), Some("pij-prime"));
+            services.registry.put(gone).await.unwrap();
+        }
+        services
+            .delivery
+            .accept(pij_core::model::Msg {
+                from: "pij-prime".into(),
+                to: to.into(),
+                body: "waiting".into(),
+                msg_id: msg_id.into(),
+                from_machine: None,
+                in_reply_to: None,
+                command: None,
+            })
+            .await
+            .unwrap();
+    }
+    services
+        .registry
+        .tombstone(&"pij-gone".into(), "observed-dead")
+        .await
+        .unwrap();
+    let start = now_ms();
+    let watchdog = PaWatchdog::default();
+    for minute in 0..=30 {
+        watchdog
+            .round(&services, INTERVAL, start + minute * MINUTE)
+            .await
+            .unwrap();
+    }
+    let woken = drain(&services, "pij-pa").await;
+    assert_eq!(woken.len(), 1);
+    assert!(woken[0].body.contains("msg m-live"), "{}", woken[0].body);
+    assert!(!woken[0].body.contains("msg m-gone"), "{}", woken[0].body);
+    assert_eq!(
+        services
+            .queue
+            .live_payloads(&["delivery:pij-gone".to_string()])
+            .await
+            .unwrap()
+            .len(),
+        1,
+        "its queued job is kept for a resume"
     );
 }
 

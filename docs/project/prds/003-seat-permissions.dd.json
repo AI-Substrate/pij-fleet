@@ -92,7 +92,7 @@
 				{
 					"id": "req-02",
 					"title": "A seat can be locked down",
-					"statement": "A seat's send policy is one of: `open` (default), `parent-and-prime`, or an allow list of seat ids and `role:<id>` addresses. It is set at spawn (`pij spawn \u2026 --can-message <policy>`) or later (`pij permissions set <seat> <policy> --reason`).",
+					"statement": "A seat's send policy limits only whom it may message (outbound); nothing limits who may message it (q-02). The policy is one of: `open` (default), `parent-and-prime`, or an allow list of seat ids and `role:<id>` addresses. It is set at spawn (`pij spawn … --can-message <policy>`) or later (`pij permissions set <seat> <policy> --reason`).",
 					"actor": "prime",
 					"priority": "must",
 					"state": "planned",
@@ -102,21 +102,21 @@
 				{
 					"id": "req-03",
 					"title": "Parent and prime are always reachable",
-					"statement": "Whatever the policy says, a seat can always message its immediate parent and its community's prime. A policy cannot remove them, and an allow list that omits them still includes them.",
+					"statement": "Whatever the policy says, a seat can always message its immediate parent and its own community's prime; if that prime is unavailable (dead, tombstoned or absent), any prime on the machine is reachable instead (q-03). A policy cannot remove them, and an allow list that omits them still includes them. The human operator, the Telegram bridge and pij's own system messages (watchdog, bg results) are exempt from seat permissions: a locked seat may always message the operator and the bridge, and their messages are never refused by a policy (q-04). The exemption applies only to a proven identity (req-10), never as a bypass a seat can claim.",
 					"actor": "any seat",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "An allow list of one unrelated seat still delivers to the parent and the prime; setting a policy that tries to exclude them is accepted with the floor shown.",
+					"done_when": "An allow list of one unrelated seat still delivers to the parent and the prime; setting a policy that tries to exclude them is accepted with the floor shown; with the community prime dead, tombstoned or absent, a send to another prime on the machine is delivered; a send to the operator or the bridge is never refused by a policy, and a caller that only claims to be the operator, the bridge or a system sender gets no exemption.",
 					"source": "Jordan, 2026-11-04, prime chat"
 				},
 				{
 					"id": "req-04",
 					"title": "Enforced by the daemon, with an actionable refusal",
-					"statement": "The daemon checks the policy on every send path: direct sends, FYIs, `role:` sends and output notifications. A refused send names the policy, who set it, and who the seat may message, for example `E-RS-SEND-NOT-PERMITTED: pij-x may message only its parent pij-y and the prime pij-z (policy parent-and-prime, set by pij-y: reason)`.",
+					"statement": "The daemon checks the policy on every send path: direct sends, FYIs, `role:` sends and output notifications. A refused send names the policy, who set it, and who the seat may message, for example `E-RS-SEND-NOT-PERMITTED: pij-x may message only its parent pij-y and the prime pij-z (policy parent-and-prime, set by pij-y: reason; --force --reason sends anyway, audited)`. A sender may override any refusal with `--force` and a reason: the send is delivered and audited (one spine event naming sender, recipient, policy and reason), so a seat is never stuck (q-02).",
 					"actor": "any seat",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "One test per send path shows the refusal with the allowed recipients; nothing is queued for a refused send.",
+					"done_when": "One test per send path shows the refusal with the allowed recipients; nothing is queued for a refused send; a forced send is delivered and writes one audit event with its reason.",
 					"source": "Jordan, 2026-11-04, prime chat"
 				},
 				{
@@ -126,7 +126,7 @@
 					"actor": "requester",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "A sibling messaging a locked seat gets a receipt saying it cannot reply; the locked seat's message carries the same note; its attempt to reply directly is refused with the route to use.",
+					"done_when": "A sibling messaging a locked seat gets a receipt saying it cannot reply; the locked seat's message carries the same note; its attempt to reply directly is refused with the route to use, unless forced (req-04, audited).",
 					"source": "Jordan, 2026-11-04, prime chat"
 				},
 				{
@@ -176,9 +176,9 @@
 					"actor": "any seat",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "Every route the F88 inventory lists as trusting registered identifiers refuses a caller that holds the daemon key but not the target seat's incarnation capability, with a regression per route class (send-as, inbox claim, role and holder actions, outputs, activity, registration); the inventory is re-run at the shipping head and shows no route left on identifiers alone.",
+					"done_when": "Every route the F88 inventory lists as trusting registered identifiers refuses a caller that holds the daemon key but not the incarnation capability of the seat it claims to act as (the claimed caller's capability, not that of each operation's subject), with a regression per route class (send-as, inbox claim, role and holder actions, outputs, activity, registration); the inventory is re-run at the shipping head and shows no route left on identifiers alone.",
 					"source": "F88, security (pij-annual-squirrel), 2026-11-07: governance roles/security/outputs/2026-11/07-note-issue-f88.dd.json (all 63 method and route pairs at a0ec952; root HIGH 9/10). Prime's ruling the same day: the gap was accepted at registration's strength for plan 217 (#153), to be fixed once, for every endpoint, here.",
-					"note": "Plan 217 (#153) ships a per-incarnation context grant for /v1/activity, audited on reissue, and a Known limit section stating this residual; that grant is the first instance of the capability this requirement generalises."
+					"note": "Plan 217 (#153) ships a per-incarnation context grant for /v1/activity, audited on reissue, and a Known limit section stating this residual; that grant is the first instance of the capability this requirement generalises. \"The target seat's capability\" means the claimed caller's, never each operation's subject (review of #112)."
 				},
 				{
 					"id": "req-11",
@@ -188,7 +188,8 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "A seat that isn't the recorded prime is refused set and retire with nothing written; the recorded prime and an audited --force succeed; a self-designation attempt is refused; every set and retire writes one spine event with the actor and reason.",
-					"source": "F103, found by pij-swift-kestrel on #149 (07 Nov) and assessed by security (pij-bumpy-herring), 2026-11-08: governance roles/security/outputs/2026-11/08-note-issue-f103-697b6aa.dd.json (an untrusted authority source, separate from the F88 identity residual in req-10)."
+					"source": "F103, found by pij-swift-kestrel on #149 (07 Nov) and assessed by security (pij-bumpy-herring), 2026-11-08: governance roles/security/outputs/2026-11/08-note-issue-f103-697b6aa.dd.json (an untrusted authority source, separate from the F88 identity residual in req-10).",
+					"note": "Its tests keep the unforced refusals separate from the operator and the audited --force paths, so a passing override can't stand in for a missing refusal (review of #112). Independent of req-10: it decides authority over the designation, not caller proof."
 				}
 			]
 		},
@@ -206,19 +207,22 @@
 					"id": "q-02",
 					"question": "Should a seat also be able to restrict who may message it (inbound), or only who it may message (outbound)?",
 					"default": "Outbound only for now.",
-					"status": "open"
+					"status": "answered",
+					"answer": "No inbound limits: a seat's permissions limit only whom it may message (outbound). Any limit can be overridden with --force (audited), so a seat is never stuck (Jordan, 2026-11-08; req-02, req-04)."
 				},
 				{
 					"id": "q-03",
 					"question": "Which prime is always reachable: the seat's community prime, or any prime on the machine?",
 					"default": "The prime of the seat's own project; with no community, its root ancestor.",
-					"status": "open"
+					"status": "answered",
+					"answer": "The seat's own community prime is always reachable. If that prime isn't available (dead, tombstoned or absent), any prime on the machine is (Jordan, 2026-11-08; req-03)."
 				},
 				{
 					"id": "q-04",
 					"question": "Are the human operator, the Telegram bridge and pij's own system messages (watchdog, bg results) exempt?",
 					"default": "Yes: they are not seats, so they are always delivered and always reachable.",
-					"status": "open"
+					"status": "answered",
+					"answer": "Yes: the human operator, the Telegram bridge and pij's own system messages (watchdog, bg results) are exempt from seat permissions. The exemption applies only to a proven identity (req-10), never as a bypass a seat can claim (Jordan, 2026-11-08; req-03)."
 				}
 			]
 		},
@@ -249,9 +253,13 @@
 					"date": "2026-11-08",
 					"by": "pij-steady-otter (pm-001) for pij-far-jackal",
 					"change": "Merged to main with q-02 to q-04 still open and every requirement planned (the prime's ruling: those questions decide permission policy, while req-10 decides whether the daemon can know who is calling at all, which every policy needs first). Plan 221 plans req-10 against this; a req-10 choice that depends on an open answer goes to the prime."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "docs-system",
+					"change": "q-02 to q-04 answered by Jordan, relayed by the prime: outbound only, with --force (audited) overriding any limit (req-02, req-04, req-05); the own community prime, else any prime on the machine (req-03); the operator, the Telegram bridge and system messages exempt, for proven identities only (req-03). Notes from the review of #112 on req-10 (the capability is the claimed caller's) and req-11 (tests separate unforced refusals from the operator and forced paths). No open questions remain."
 				}
 			]
 		}
-	],
-	"references": []
+	]
 }

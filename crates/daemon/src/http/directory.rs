@@ -20,7 +20,7 @@ use super::governance::GovernanceRequest;
 use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::routes::Trigger;
 use super::{AppState, envelope};
-use crate::community::directory::{Retirement, RoleEdit};
+use crate::community::directory::{HoldingReceipt, ReleaseTarget, Retirement, RoleEdit, Unmatched};
 use crate::community::layout::{RolePaths, exists};
 use crate::community::role::{self, RoleFields};
 use crate::community::routes::{self, Overlap, Regenerated};
@@ -379,19 +379,13 @@ impl Arguments {
         if matches!(call.leaf.as_str(), "assign" | "release")
             && (call.describes_a_role()
                 || call.get("file").is_some()
-                || (call.get("batch").is_some()
-                    && (call.leaf == "release" || !call.positions.is_empty())))
+                || (call.get("batch").is_some() && !call.positions.is_empty()))
         {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 format!(
-                    "directory {}: takes <role>[/<instance>] <seat> --why <text> [--project <slug>]{}",
-                    call.leaf,
-                    if call.leaf == "assign" {
-                        ", or --batch <file> --why <text>"
-                    } else {
-                        ""
-                    }
+                    "directory {}: takes <role>[/<instance>] <seat> --why <text> [--project <slug>], or --batch <file> --why <text>",
+                    call.leaf
                 ),
             ));
         }
@@ -1196,6 +1190,11 @@ async fn hold(
     {
         return assign_batch(state, actor, caller, call, &file).await;
     }
+    if call.leaf == "release"
+        && let Some(file) = call.get("batch")
+    {
+        return release_batch(state, actor, caller, call, &file).await;
+    }
     let [target, seat] = call.positions.as_slice() else {
         return Err(Refusal::new(
             "E-RS-ARG",
@@ -1561,6 +1560,124 @@ async fn assign_batch(
         "holdings": receipts,
         "routes": routes,
     }))
+}
+
+/// `directory release --batch <file> --why <text>` (plan 215, F71): one
+/// `<role>[/<instance>] <seat>` per line, blank and `#` lines skipped; every
+/// holding ended in one writer commit, all or nothing, naming every bad line.
+/// Each live seat's window then follows its remaining holdings, as a single
+/// release (plan 212, F57).
+async fn release_batch(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+    file: &str,
+) -> Result<Value, Refusal> {
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
+    let path = caller_path(caller, file)?;
+    let text = std::fs::read_to_string(&path).map_err(|error| {
+        Refusal::new(
+            "E-RS-ARG",
+            format!("cannot read {}: {error}", path.display()),
+        )
+    })?;
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let mut targets = Vec::new();
+    let mut problems = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let number = index + 1;
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let [target, seat] = fields.as_slice() else {
+            problems.push(format!("line {number}: want `<role>[/<instance>] <seat>`"));
+            continue;
+        };
+        match role_and_instance(target) {
+            Ok((role, instance)) => targets.push(ReleaseTarget {
+                role: role.to_string(),
+                instance: instance.to_string(),
+                seat: (*seat).to_string(),
+                from: None,
+            }),
+            Err(refusal) => problems.push(format!("line {number}: {}", refusal.message)),
+        }
+    }
+    if !problems.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("the batch wrote nothing: {}", problems.join("; ")),
+        ));
+    }
+    if targets.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("{} names no holdings", path.display()),
+        ));
+    }
+    let released = state
+        .services
+        .directory
+        .release_many(&project, repo, targets, actor, &why, Unmatched::Refuse)
+        .await?;
+    let mut receipts = released.receipts;
+    windows_after_release(state, &mut receipts).await;
+    Ok(json!({
+        "project": project,
+        "commit": receipts[0].commit,
+        "holdings": receipts,
+    }))
+}
+
+/// After a batch of releases, each live seat's window follows its remaining
+/// holdings (plan 212, F57): one check per seat, against its earliest ended
+/// holding (the only one its window can be named for), recorded on that
+/// holding's receipt. At most one tmux launch per seat, at the assign's site.
+pub(crate) async fn windows_after_release(state: &AppState, receipts: &mut [HoldingReceipt]) {
+    let mut seats: Vec<String> = receipts
+        .iter()
+        .filter_map(|receipt| receipt.row["seat"].as_str().map(str::to_string))
+        .collect();
+    seats.sort();
+    seats.dedup();
+    let from = |receipt: &HoldingReceipt| {
+        receipt.row["from"]
+            .as_str()
+            .and_then(crate::community::holders::parse_time)
+    };
+    for seat in seats {
+        let Ok(Some(descriptor)) = state
+            .services
+            .registry
+            .get(&SeatId::from(seat.as_str()))
+            .await
+        else {
+            continue;
+        };
+        if descriptor.tombstoned_at.is_some() {
+            continue;
+        }
+        let Some(earliest) = receipts
+            .iter_mut()
+            .filter(|receipt| receipt.row["seat"] == seat.as_str())
+            .min_by_key(|receipt| from(receipt))
+        else {
+            continue;
+        };
+        earliest.window = Some(
+            state
+                .services
+                .directory
+                .window_after_release(&descriptor, &earliest.row)
+                .await,
+        );
+    }
 }
 
 /// `directory external add <seat> --from-project <slug> --why <note>`.

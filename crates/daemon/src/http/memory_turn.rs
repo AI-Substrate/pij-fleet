@@ -117,6 +117,18 @@ pub(crate) struct Holding {
     pub(crate) instance: String,
 }
 
+impl Holding {
+    /// `role/instance (project p)`, as every prompt names it.
+    pub(crate) fn label(&self) -> String {
+        let instance = if self.instance.is_empty() {
+            String::new()
+        } else {
+            format!("/{}", self.instance)
+        };
+        format!("{}{instance} (project {})", self.role, self.project)
+    }
+}
+
 /// What a compact or close receipt says about its memory turn.
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct Report {
@@ -349,13 +361,26 @@ async fn record(state: &AppState, seat: &SeatId, report: &Report) {
 /// The seat's open holdings: one indexed query. Empty for a non-holder, or
 /// when the store cannot say (the action then runs as it always did).
 pub(crate) async fn holdings(state: &AppState, seat: &SeatId) -> Vec<Holding> {
-    let mut holdings: Vec<Holding> = state
-        .services
+    try_holdings_of(&state.services, seat)
+        .await
+        .unwrap_or_default()
+}
+
+/// The seat's open holdings, or the store's error: for a caller whose
+/// decision must not take "could not read" for "holds nothing" (the
+/// compaction wake, plan 222).
+///
+/// # Errors
+/// Store failures.
+pub(crate) async fn try_holdings_of(
+    services: &crate::Services,
+    seat: &SeatId,
+) -> pij_core::error::Result<Vec<Holding>> {
+    let mut holdings: Vec<Holding> = services
         .directory
         .store()
         .open_assignments(seat.as_str())
-        .await
-        .unwrap_or_default()
+        .await?
         .into_iter()
         .map(|row| Holding {
             project: row.project,
@@ -367,7 +392,7 @@ pub(crate) async fn holdings(state: &AppState, seat: &SeatId) -> Vec<Holding> {
         (&a.project, &a.role, &a.instance).cmp(&(&b.project, &b.role, &b.instance))
     });
     holdings.dedup();
-    holdings
+    Ok(holdings)
 }
 
 /// The prompt a holder gets before `action`.
@@ -376,17 +401,7 @@ pub(crate) fn prompt(action: Action, holdings: &[Holding], bound: Duration) -> S
         Action::Compact => "compact",
         Action::Close => "close",
     };
-    let held: Vec<String> = holdings
-        .iter()
-        .map(|holding| {
-            let instance = if holding.instance.is_empty() {
-                String::new()
-            } else {
-                format!("/{}", holding.instance)
-            };
-            format!("{}{instance} (project {})", holding.role, holding.project)
-        })
-        .collect();
+    let held: Vec<String> = holdings.iter().map(Holding::label).collect();
     let mut text = format!(
         "pij memory turn: pij is about to {verb} this seat, and you hold {}.\n\n\
          Before that, write one note with what you learned that the next holder of the role should know \

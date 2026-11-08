@@ -247,6 +247,7 @@ async fn rig_inner(
         },
     ));
     services.tmux = tmux.clone();
+    services.gh = Arc::new(MergedGh);
     services.liveness = Arc::new(FakeLiveness::new().with_proc(CALLER_PROC));
     let drain = hook.is_none().then(|| Arc::new(RoleQueueDrain::new()));
     let hook = hook.unwrap_or_else(|| {
@@ -2568,6 +2569,14 @@ async fn a_role_send_reaches_its_one_holder_and_records_the_request() {
     .await;
     assert_eq!(seat_send["ok"], false);
     assert_eq!(refusal_code(&seat_send), "E-RS-ROLE-ONLY", "{seat_send}");
+    // F121: the refusal says what to do instead.
+    assert!(
+        seat_send["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.contains("Drop them to send to the seat")
+                && meta.contains("send to role:<id>, where you can set a reply")),
+        "{seat_send}"
+    );
     let instance = send_to(rig.addr, &repo.main, "role:pm-001/a", "req-inst", json!({})).await;
     assert_eq!(refusal_code(&instance), "E-RS-ROLE-ADDRESS", "{instance}");
     let unknown = send_to(
@@ -5320,7 +5329,89 @@ async fn a_role_addressed_reply_answers_and_a_forged_sender_never_does() {
 }
 
 /// Every live delivery job for `seat` from `from`, oldest first: (sender,
-/// msg id). Read from the queue table, not `peek_inbox`, which shows only the
+/// msg id). Read from the queue table, not `peek_inbox`, which shows only the/// F116 and F120: a normal send, and a role request with `--reply none`, to a
+/// seat that has held FYIs are normal deliveries that carry the FYIs: the
+/// FYIs are settled via that message, the message itself is queued as an
+/// ordinary delivery, never held, and no receipt says `fyi-ride-along`.
+/// `--reply` changes only how the requester hears back, so the request is
+/// stored non-FYI. (The receipt's wording on the drain-worker path is the
+/// delivery unit test `a_pane_bound_send_carrying_fyis_is_queued_as_their_carrier`.)
+#[tokio::test]
+async fn a_send_carrying_held_fyis_is_a_normal_delivery_never_an_fyi() {
+    let (rig, repo, _) = limit_rig("pij-carrier-receipt", false).await;
+    let hold = |msg_id: &'static str| {
+        let (addr, cwd) = (rig.addr, repo.main.clone());
+        async move {
+            let held = send_to(addr, &cwd, "pij-holder", msg_id, json!({"fyi": true})).await;
+            assert_eq!(held["ok"], true, "{held}");
+        }
+    };
+    let settled_via = |id: &'static str| {
+        let path = rig._fresh.path();
+        async move {
+            let pool = sqlx::SqlitePool::connect(&format!("sqlite://{path}"))
+                .await
+                .unwrap();
+            let row: (String, Option<String>) =
+                sqlx::query_as("SELECT state, settled_via FROM fyis WHERE id = ?1")
+                    .bind(id)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            pool.close().await;
+            row
+        }
+    };
+    let normal = |response: &Value| {
+        response["ok"] == true
+            && response["data"]["outcome"]["outcome"] != "held"
+            && response["data"]["outcome"]["reason"] != "fyi-ride-along"
+    };
+
+    hold("fyi-a").await;
+    let request = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pm-001",
+        "req-quiet",
+        json!({"reply": "none"}),
+    )
+    .await;
+    assert!(normal(&request), "{request}");
+    let stored = rig.store.role_request("req-quiet").await.unwrap().unwrap();
+    assert!(!stored.fyi, "--reply none never makes the request an FYI");
+    assert_eq!(
+        settled_via("fyi-a").await,
+        (
+            "delivered".to_string(),
+            Some("message:req-quiet".to_string())
+        ),
+        "the held FYI rides on the request"
+    );
+
+    hold("fyi-b").await;
+    let plain = send_to(rig.addr, &repo.main, "pij-holder", "plain-send", json!({})).await;
+    assert!(normal(&plain), "{plain}");
+    assert_eq!(
+        settled_via("fyi-b").await,
+        (
+            "delivered".to_string(),
+            Some("message:plain-send".to_string())
+        )
+    );
+
+    let queued: Vec<String> = queued_from(&rig, "pij-holder", SEAT)
+        .await
+        .into_iter()
+        .map(|(_, msg_id)| msg_id)
+        .collect();
+    assert!(
+        queued.contains(&"req-quiet".to_string()) && queued.contains(&"plain-send".to_string()),
+        "both are ordinary deliveries: {queued:?}"
+    );
+    rig.server.abort();
+}
+
 /// head job.
 async fn queued_from(rig: &Rig, seat: &str, from: &str) -> Vec<(String, String)> {
     let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
@@ -6494,5 +6585,610 @@ async fn steering_is_switched_per_seat_read_with_the_claim_and_noted_on_receipts
     assert_eq!(on["data"]["steer"], true, "{on}");
     let status = steer(&["steer", "status", "pij-native"]).await;
     assert_eq!(status["data"]["steer"], true, "{status}");
+    rig.server.abort();
+}
+
+// Plan 215: holdings end with their work.
+
+/// Answers every PR as merged, touching plan 215's folder; `Delivers: none`.
+/// Its merge time is what [`merge_now`] set for that PR number, else none.
+struct MergedGh;
+
+static MERGED_AT: std::sync::Mutex<Vec<(u64, String)>> = std::sync::Mutex::new(Vec::new());
+
+/// PR `number` merges now: later holdings are new work.
+fn merge_now(number: u64) {
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    MERGED_AT
+        .lock()
+        .unwrap()
+        .push((number, pij_daemon::community::holders::now()));
+    std::thread::sleep(std::time::Duration::from_millis(5));
+}
+
+impl pij_daemon::community::gh::PullRequests for MergedGh {
+    fn view(
+        &self,
+        _: &Path,
+        number: u64,
+    ) -> Result<pij_daemon::community::gh::PullRequest, Refusal> {
+        Ok(pij_daemon::community::gh::PullRequest {
+            number,
+            state: "MERGED".into(),
+            merge_commit: Some(format!("{number:0>40}")),
+            merged_at: MERGED_AT
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|(pr, _)| *pr == number)
+                .map(|(_, at)| at.clone()),
+            body: "Delivers: none\n".into(),
+            files: vec![
+                "docs/plans/215-holdings-followups/plan.dd.json".into(),
+                "crates/daemon/src/lib.rs".into(),
+            ],
+            url: None,
+        })
+    }
+}
+
+async fn batch(rig: &Rig, repo: &Repo, leaf: &str, text: &str) -> Value {
+    let file = repo.root.join(format!("{leaf}.txt"));
+    std::fs::write(&file, text).unwrap();
+    call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            leaf,
+            "--batch",
+            file.to_str().unwrap(),
+            "--why",
+            "batch",
+        ],
+        &repo.main,
+    )
+    .await
+}
+
+/// `<role>[/<instance>] <seat>` for each receipt, sorted.
+fn released(holdings: &Value) -> Vec<String> {
+    let mut names: Vec<String> = holdings
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|holding| {
+            let role = Path::new(holding["path"].as_str().unwrap())
+                .parent()
+                .and_then(Path::file_name)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let row = &holding["row"];
+            assert!(row["to"].is_string(), "{holding}");
+            format!(
+                "{role}/{} {}",
+                row["instance_key"].as_str().unwrap_or_default(),
+                row["seat"].as_str().unwrap()
+            )
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// Plan 215 AC1 (F70): `pij delivered` ends the PR's reviewer, security and
+/// performance holdings and the coder holding of each plan its files deliver,
+/// in one commit; a holding it cannot match is left alone and named; another
+/// PR's holdings stay; a re-run writes nothing.
+#[tokio::test]
+async fn delivered_ends_the_holdings_its_pr_finished_in_one_commit_once() {
+    let repo = repo("pij-delivered-holdings");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    for id in ["coder", "security"] {
+        let added = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                "add",
+                id,
+                "--holders",
+                "many",
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+    let assigned = batch(
+        &rig,
+        &repo,
+        "assign",
+        "reviewer/215 pij-holder\ncoder/215 pij-holder\nsecurity/215 pij-second\n\
+         coder/216 pij-second\nreviewer/216 pij-second\n",
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    // In the store but not in the holders document: left alone and named.
+    rig.store
+        .record_assignment_committed(
+            &pij_store::Assignment {
+                project: "fleet".into(),
+                role: "security".into(),
+                instance: "215".into(),
+                seat: "pij-dormant".into(),
+                harness: None,
+                session: None,
+                machine: None,
+                from: "2026-11-06T00:00:00Z".into(),
+                to: None,
+                assigned_by: SEAT.into(),
+                released_by: None,
+                why: "store only".into(),
+                release_why: None,
+                end_pending: false,
+            },
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+    merge_now(215);
+    let start = head(&repo);
+
+    let first = call(rig.addr, "/v1/delivered", &["delivered", "215"], &repo.main).await;
+    assert_eq!(first["ok"], true, "{first}");
+    let data = &first["data"];
+    assert_eq!(
+        released(&data["holdings"]),
+        [
+            "coder/215 pij-holder",
+            "reviewer/215 pij-holder",
+            "security/215 pij-second"
+        ]
+    );
+    assert_eq!(
+        git(
+            &repo.gov,
+            &["rev-list", "--count", &format!("{start}..HEAD")]
+        )
+        .trim(),
+        "1",
+        "one commit for three holdings"
+    );
+    assert_eq!(data["holdings"][0]["commit"], head(&repo));
+    assert!(
+        data["line"]
+            .as_str()
+            .unwrap()
+            .contains("3 holding(s) released"),
+        "{data}"
+    );
+    assert!(
+        data["notes"]
+            .to_string()
+            .contains("holding left open: pij-dormant's security/215 holding from 2026-11-06T00:00:00Z is not open"),
+        "{data}"
+    );
+    // pij-holder holds nothing else, so its window gets the seat's name back.
+    assert!(
+        data["holdings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|holding| holding["window"] == json!({"name": "pij-holder", "renamed": true})),
+        "{data}"
+    );
+    let mut open: Vec<String> = rig
+        .store
+        .assignments("fleet")
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|row| row.to.is_none())
+        .map(|row| format!("{}/{} {}", row.role, row.instance, row.seat))
+        .collect();
+    open.sort();
+    assert_eq!(
+        open,
+        [
+            "coder/216 pij-second",
+            "reviewer/216 pij-second",
+            "security/215 pij-dormant"
+        ]
+    );
+
+    let after = head(&repo);
+    let again = call(rig.addr, "/v1/delivered", &["delivered", "215"], &repo.main).await;
+    assert_eq!(again["ok"], true, "{again}");
+    assert_eq!(again["data"]["holdings"], json!([]), "{again}");
+    assert!(
+        again["data"]["notes"]
+            .to_string()
+            .contains("no holding released: pij-dormant's security/215 holding from 2026-11-06T00:00:00Z is not open"),
+        "{again}"
+    );
+    assert_eq!(head(&repo), after, "a re-run writes nothing");
+    rig.server.abort();
+}
+
+/// Plan 215 AC2 (F71): `release --batch` ends many holdings in one commit,
+/// all or nothing, naming every holding that is not open; each live seat's
+/// window follows what it still holds, as for a single release.
+#[tokio::test]
+async fn a_batch_release_is_one_commit_all_or_nothing() {
+    let repo = repo("pij-directory-release-batch");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let assigned = batch(
+        &rig,
+        &repo,
+        "assign",
+        "pm-001 pij-holder\nreviewer/114 pij-holder\nreviewer/1 pij-second\nreviewer/2 pij-second\n",
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    let start = head(&repo);
+
+    let bad = batch(
+        &rig,
+        &repo,
+        "release",
+        "pm-001 pij-holder\nreviewer/9 pij-second\nreviewer/1 pij-holder\n",
+    )
+    .await;
+    assert_eq!(bad["details"]["code"], "E-RS-DIRECTORY-NOT-HELD", "{bad}");
+    for named in [
+        "pij-second does not hold reviewer/9",
+        "pij-holder does not hold reviewer/1",
+    ] {
+        assert!(bad.to_string().contains(named), "{named}: {bad}");
+    }
+    let unparsed = batch(&rig, &repo, "release", "pm-001\n").await;
+    assert_eq!(unparsed["details"]["code"], "E-RS-ARG", "{unparsed}");
+    assert!(unparsed.to_string().contains("line 1"), "{unparsed}");
+    assert_eq!(head(&repo), start, "nothing written");
+
+    let landed = batch(
+        &rig,
+        &repo,
+        "release",
+        "# done\npm-001 pij-holder\n\nreviewer/1 pij-second\nreviewer/2 pij-second\n",
+    )
+    .await;
+    assert_eq!(landed["ok"], true, "{landed}");
+    let holdings = &landed["data"]["holdings"];
+    assert_eq!(
+        released(holdings),
+        [
+            "pm-001/ pij-holder",
+            "reviewer/1 pij-second",
+            "reviewer/2 pij-second"
+        ]
+    );
+    assert_eq!(landed["data"]["commit"], head(&repo));
+    assert_eq!(
+        git(
+            &repo.gov,
+            &["rev-list", "--count", &format!("{start}..HEAD")]
+        )
+        .trim(),
+        "1"
+    );
+    // F57: pij-holder's window was named for pm-001 and moves to reviewer/114.
+    assert_eq!(
+        holdings[0]["window"],
+        json!({"name": "fleet:reviewer-114", "renamed": true}),
+        "{landed}"
+    );
+    assert_eq!(holdings[1]["window"]["reason"], "the seat has no pane");
+    assert!(holdings[2].get("window").is_none(), "one check per seat");
+    assert!(
+        rig.store
+            .open_assignments("pij-second")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        rig.store
+            .open_assignments("pij-holder")
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    rig.server.abort();
+}
+
+/// Plan 215 AC4 (F72): an assign or release carries a stale ROUTES.md,
+/// regenerated, in its own commit, and leaves a current one alone; a change
+/// of holder changes no route, so the prime hears nothing.
+#[tokio::test]
+async fn an_assign_repairs_a_stale_routes_table_in_its_commit() {
+    let repo = repo("pij-routes-stale-assign");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    let current = routes_md(&repo);
+    std::fs::write(
+        repo.gov.join(pij_daemon::community::layout::ROUTES),
+        "edited by hand\n",
+    )
+    .unwrap();
+    git(&repo.gov, &["commit", "-qam", "hand edit"]);
+    let told = fyis(&rig, "pij-second").await.len();
+
+    let hold = |leaf: &'static str| {
+        let (addr, main) = (rig.addr, repo.main.clone());
+        async move {
+            call(
+                addr,
+                "/v1/directory",
+                &["directory", leaf, "delivery", "pij-holder", "--why", "own"],
+                &main,
+            )
+            .await
+        }
+    };
+    let assigned = hold("assign").await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    let names = names_at_head(&repo);
+    assert!(
+        names.contains("community/ROUTES.md") && names.contains("roles/delivery/holders.dd.json"),
+        "{names}"
+    );
+    assert_eq!(routes_md(&repo), current, "regenerated from the roles");
+    let released = hold("release").await;
+    assert_eq!(released["ok"], true, "{released}");
+    assert!(
+        !names_at_head(&repo).contains("ROUTES.md"),
+        "current: no rewrite"
+    );
+    assert_eq!(fyis(&rig, "pij-second").await.len(), told);
+    rig.server.abort();
+}
+
+/// A fleet with pm-001, reviewer, coder and security roles.
+async fn delivered_rig(name: &str) -> (Repo, Rig) {
+    let repo = repo(name);
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    for id in ["coder", "security"] {
+        let added = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                "add",
+                id,
+                "--holders",
+                "many",
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+    (repo, rig)
+}
+
+async fn open_holdings(rig: &Rig) -> Vec<String> {
+    let mut open: Vec<String> = rig
+        .store
+        .assignments("fleet")
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|row| row.to.is_none())
+        .map(|row| format!("{}/{} {}", row.role, row.instance, row.seat))
+        .collect();
+    open.sort();
+    open
+}
+
+/// Review of #168 (spoonbill): a re-run of `delivered` after the coder,
+/// reviewer and security keys were reassigned for new work ends nothing. The
+/// merge time binds the release to the work the PR ended.
+#[tokio::test]
+async fn a_rerun_after_reassigning_the_keys_leaves_the_new_holdings() {
+    let (repo, rig) = delivered_rig("pij-delivered-reassign").await;
+    let lines = "coder/215 pij-holder\nreviewer/217 pij-holder\nsecurity/217 pij-second\n";
+    assert_eq!(batch(&rig, &repo, "assign", lines).await["ok"], true);
+    merge_now(217);
+    let first = call(rig.addr, "/v1/delivered", &["delivered", "217"], &repo.main).await;
+    assert_eq!(
+        released(&first["data"]["holdings"]),
+        [
+            "coder/215 pij-holder",
+            "reviewer/217 pij-holder",
+            "security/217 pij-second"
+        ],
+        "{first}"
+    );
+    let reassigned = "coder/215 pij-second\nreviewer/217 pij-second\nsecurity/217 pij-holder\n";
+    assert_eq!(batch(&rig, &repo, "assign", reassigned).await["ok"], true);
+    let before = head(&repo);
+
+    let again = call(rig.addr, "/v1/delivered", &["delivered", "217"], &repo.main).await;
+    assert_eq!(again["ok"], true, "{again}");
+    assert_eq!(again["data"]["holdings"], json!([]), "{again}");
+    assert_eq!(head(&repo), before, "nothing written");
+    let notes = again["data"]["notes"].to_string();
+    for key in [
+        "coder/215 pij-second",
+        "reviewer/217 pij-second",
+        "security/217 pij-holder",
+    ] {
+        assert!(
+            notes.contains(&format!("holding left open: {key} began at")),
+            "{key}: {notes}"
+        );
+    }
+    assert_eq!(
+        open_holdings(&rig).await,
+        [
+            "coder/215 pij-second",
+            "reviewer/217 pij-second",
+            "security/217 pij-holder"
+        ]
+    );
+    rig.server.abort();
+}
+
+/// Review of #168 (pm-001): a first run the writer refused ended nothing, so
+/// a re-run still ends the holdings from before the merge.
+#[tokio::test]
+async fn a_rerun_after_a_refused_release_ends_the_holdings_from_before_the_merge() {
+    let (repo, rig) = delivered_rig("pij-delivered-retry").await;
+    let lines = "coder/215 pij-holder\nreviewer/218 pij-second\n";
+    assert_eq!(batch(&rig, &repo, "assign", lines).await["ok"], true);
+    merge_now(218);
+    // A foreign edit to a holders document: the writer refuses.
+    let holders = repo
+        .gov
+        .join(".harness/government/community/roles/coder/holders.dd.json");
+    let original = std::fs::read_to_string(&holders).unwrap();
+    std::fs::write(&holders, format!("{original}\n")).unwrap();
+    let start = head(&repo);
+    let refused = call(rig.addr, "/v1/delivered", &["delivered", "218"], &repo.main).await;
+    assert_eq!(refused["ok"], false, "{refused}");
+    assert!(
+        refused
+            .to_string()
+            .contains("delivery is recorded, but its holdings were not released")
+            && refused.to_string().contains("pij delivered 218"),
+        "{refused}"
+    );
+    assert_eq!(head(&repo), start);
+    assert_eq!(
+        open_holdings(&rig).await,
+        ["coder/215 pij-holder", "reviewer/218 pij-second"]
+    );
+
+    std::fs::write(&holders, original).unwrap();
+    let retried = call(rig.addr, "/v1/delivered", &["delivered", "218"], &repo.main).await;
+    assert_eq!(retried["ok"], true, "{retried}");
+    assert_eq!(
+        released(&retried["data"]["holdings"]),
+        ["coder/215 pij-holder", "reviewer/218 pij-second"]
+    );
+    assert!(open_holdings(&rig).await.is_empty());
+    rig.server.abort();
+}
+
+/// Review of #168 (pm-001): with no merge time from gh, nothing ends and a
+/// note says why.
+#[tokio::test]
+async fn without_a_merge_time_delivered_ends_nothing_and_says_so() {
+    let (repo, rig) = delivered_rig("pij-delivered-no-merge-time").await;
+    assert_eq!(
+        batch(&rig, &repo, "assign", "reviewer/219 pij-holder\n").await["ok"],
+        true
+    );
+    let start = head(&repo);
+    let data = call(rig.addr, "/v1/delivered", &["delivered", "219"], &repo.main).await;
+    assert_eq!(data["ok"], true, "{data}");
+    assert_eq!(data["data"]["holdings"], json!([]));
+    assert!(
+        data["data"]["notes"]
+            .to_string()
+            .contains("gh gave no merge time for PR #219"),
+        "{data}"
+    );
+    assert_eq!(head(&repo), start);
+    assert_eq!(open_holdings(&rig).await, ["reviewer/219 pij-holder"]);
+    rig.server.abort();
+}
+
+/// Review of #168 (spoonbill, squirrel): `delivered` chooses its holdings from
+/// the store before the writer lock. A release and a post-merge reassignment
+/// of the same seat and key landing in between must not end the new holding:
+/// each target is pinned to the holding it chose. The two phases are driven
+/// here in order, with the interleaving injected between them.
+#[tokio::test]
+async fn a_reassignment_between_the_choice_and_the_commit_survives() {
+    use pij_daemon::community::directory::Unmatched;
+    let (repo, rig) = delivered_rig("pij-delivered-pinned").await;
+    let lines = "coder/215 pij-holder\nreviewer/231 pij-second\n";
+    assert_eq!(batch(&rig, &repo, "assign", lines).await["ok"], true);
+    merge_now(231);
+    let merged = MERGED_AT
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(pr, _)| *pr == 231)
+        .map(|(_, at)| pij_daemon::community::holders::parse_time(at).unwrap())
+        .unwrap();
+    let directory = &rig.services.directory;
+    let (targets, later) = directory
+        .finished_by("fleet", 231, &[215].into(), merged)
+        .await
+        .unwrap();
+    assert_eq!(targets.len(), 2, "{targets:?}");
+    assert!(later.is_empty(), "{later:?}");
+
+    // The interleaving: coder/215 released, then reassigned to the same seat.
+    for leaf in ["release", "assign"] {
+        let done = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                leaf,
+                "coder/215",
+                "pij-holder",
+                "--why",
+                "next",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let new = rig.store.open_assignments("pij-holder").await.unwrap();
+    assert_eq!(new.len(), 1);
+
+    let released = directory
+        .release_many(
+            "fleet",
+            repo.main.clone(),
+            targets,
+            &SeatId::from(SEAT),
+            "PR #231 merged",
+            Unmatched::Skip,
+        )
+        .await
+        .unwrap();
+    assert_eq!(released.receipts.len(), 1, "only reviewer/231 ended");
+    assert_eq!(released.receipts[0].row["seat"], "pij-second");
+    assert_eq!(released.skipped.len(), 1, "{:?}", released.skipped);
+    assert!(
+        released.skipped[0].starts_with("pij-holder's coder/215 holding from ")
+            && released.skipped[0].ends_with(" is not open"),
+        "{:?}",
+        released.skipped
+    );
+    assert_eq!(
+        rig.store.open_assignments("pij-holder").await.unwrap(),
+        new,
+        "the new holding survives"
+    );
+    let coder = holders_at_head(&repo, "coder");
+    assert!(coder.last().unwrap()["to"].is_null(), "{coder:?}");
     rig.server.abort();
 }

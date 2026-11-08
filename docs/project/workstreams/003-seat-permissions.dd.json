@@ -25,8 +25,9 @@
 					"state": "in-progress",
 					"delivers": ["../prds/003-seat-permissions.dd.json#requirements/req-10"],
 					"needs": ["role:coder", "role:reviewer", "role:security", "role:performance"],
-					"done_when": "Every route the checked route inventory lists as seat-authority refuses a caller that holds the daemon key but not the target seat's incarnation capability, with a regression per route class; the inventory sensor passes at the shipping head. Plan 221 is phase 1 (the inventory sensor and the capability-bootstrap workshop); later phases are planned from the workshop.",
-					"plan": "docs/plans/221-seat-provenance"
+					"done_when": "Every route the checked route inventory lists as seat-authority refuses a caller that holds the daemon key but not the incarnation capability of the seat it claims to act as (the claimed caller's, not each operation's subject), with a regression per route class; the inventory sensor passes at the shipping head. Plan 221 is phase 1 (the inventory sensor and the capability-bootstrap workshop); later phases are planned from the workshop.",
+					"plan": "docs/plans/221-seat-provenance",
+					"note": "Plan 221 (phase 1, shipped) built the route inventory and its sensor and the capability workshop; plan 223 (phase 2: secured issuer, socket and the send-as gate) is under way."
 				},
 				{
 					"id": "s02",
@@ -34,7 +35,8 @@
 					"state": "planned",
 					"delivers": ["../prds/003-seat-permissions.dd.json#requirements/req-11"],
 					"needs": ["role:coder", "role:reviewer", "role:security"],
-					"done_when": "A seat that isn't the recorded prime is refused set and retire with nothing written; the recorded prime and an audited --force succeed; a self-designation attempt is refused; every set and retire writes one spine event with the actor and reason."
+					"done_when": "A seat that isn't the recorded prime is refused set and retire with nothing written; the recorded prime and an audited --force succeed; a self-designation attempt is refused; every set and retire writes one spine event with the actor and reason.",
+					"note": "Independent of s01 (req-10): it needs authority over the designation, not caller proof, so it may run in parallel. Its tests keep the unforced refusals separate from the operator and audited --force paths (review of #112)."
 				},
 				{
 					"id": "s03",
@@ -47,7 +49,7 @@
 					],
 					"depends_on": ["#steps/s01"],
 					"needs": ["role:coder", "role:reviewer", "role:security"],
-					"done_when": "A new seat can message any seat; a seat locked to a set can message only that set; its parent or the prime changes the policy, anyone else (and the seat itself) needs --force with a reason, audited. Waits on q-02 (inbound or outbound) before it starts."
+					"done_when": "A new seat can message any seat; a seat locked to a set can message only that set; its parent or the prime changes the policy, anyone else (and the seat itself) needs --force with a reason, audited. The policy is outbound only (q-02)."
 				},
 				{
 					"id": "s04",
@@ -62,7 +64,7 @@
 					],
 					"depends_on": ["#steps/s03"],
 					"needs": ["role:coder", "role:reviewer", "role:security", "role:performance"],
-					"done_when": "A locked-down seat always reaches its parent and the prime; a refused send names the policy and the way to get it changed; a sender learns when the recipient can't reply to it; replies and outputs follow the same rule; the cost backpressure row shows no new per-tick or per-seat launch. Waits on q-03 and q-04 before it starts."
+					"done_when": "A locked-down seat always reaches its parent and its community prime, else any prime on the machine (q-03), and the operator and the Telegram bridge, for proven identities only (q-04); a refused send names the policy and the way to get it changed, and --force sends it anyway, audited (q-02); a sender learns when the recipient can't reply to it; replies and outputs follow the same rule; the cost backpressure row shows no new per-tick or per-seat launch."
 				},
 				{
 					"id": "s05",
@@ -87,6 +89,11 @@
 					"date": "2026-11-08",
 					"by": "pij-following-marsupial",
 					"change": "s01 in progress under plan 221 (docs/plans/221-seat-provenance): phase 1 ships the route inventory and its sensor and the capability bootstrap workshop; the gated routes follow in phase 2."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "docs-system",
+					"change": "PRD 003 q-02 to q-04 answered, so s03 to s05 no longer wait on them and stay planned (not started). s01 stays in progress (plan 223, phase 2 of req-10). s02 is independent of s01. s01 done_when: the capability is the claimed caller's (review of #112)."
 				}
 			]
 		}

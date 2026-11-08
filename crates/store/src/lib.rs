@@ -10,6 +10,7 @@ pub mod background;
 mod capability;
 pub mod claims;
 pub mod community;
+mod compactions;
 pub mod decisions;
 pub mod dispatch;
 pub mod fleet;

@@ -764,7 +764,7 @@ pij-rs send --to <seat> --fyi 'text'   # native form
 | Warm flush (plan 159) | When the hold that brings a seat's pending FYIs to `FLUSH_AT` (5) finds the seat's prompt cache known **warm**, the daemon delivers them now as one queued message from `pij-bg`, whose whole body is the block beginning `5 FYIs were queued for you:`. Warm needs positive evidence: the last API call is known and within the seat's real cache lifetime, `min(cache TTL, 60 min)`. A `working` state is not evidence, and an unknown TTL, an unknown last call, or no answer within 3 s means hold. The FYIs are claimed in the carrier's own transaction, exactly once (`fyi.delivered` names `message:fyi-flush-<seat>-<ms>`). If a hook or ride-along claimed them first, nothing is queued. A turn boundary (`POST /v1/activity`) never flushes: a seat starting a turn gets the pile with that turn. A failed flush leaves the FYIs pending and never fails the hold. |
 | Digest (plan 159) | A block for more than `DIGEST_ABOVE` (5) FYIs, whether ride-along, hook claim or flush, is a digest. It has a header with the total and a count per sender, the newest `DIGEST_NEWEST` (3) in full, numbered by their place in the pile, and a last line naming the read command: `All N were delivered; read them in full with: pij-rs fyi-read --seat <seat> --claimed-at <ms>`. Every FYI is marked delivered. The golden fixture is [`fyi/digest.txt`](../../crates/testkit/fixtures/golden/fyi/digest.txt). |
 | POST `/v1/fyi/read` · `pij-rs fyi-read --seat <S> --claimed-at <ms>` | Read-only. Request `{seat, claimed_at_ms}`. `data` is `{seat, count, block}`, where `block` is every FYI that claim delivered, in full, oldest first, headed `N FYIs were delivered to you:` (empty when none match). The CLI prints the block. |
-| Ride-along | The next non-control, non-FYI message to the seat carries every pending FYI, appended to the same body as `<original body>\n\n<block>` and never sent as a separate message. The FYIs are claimed by the same transaction that creates the message's durable queue row (`fyi.delivered` names `message:<msg_id>`), so an FYI is never claimed without its carrier. A retry or duplicate of a message the queue or ledger already has claims nothing. A pane-bound direct send (socket or typed) that would carry FYIs is queued instead, with reason `fyi-ride-along`, and the drain worker delivers it moments later. A paneless socket seat's direct sends carry none, so its FYIs arrive through the typed-turn hook. A failed FYI claim never fails the send: the send goes out plain and the FYIs stay pending. No client work is needed. |
+| Ride-along | The next non-control, non-FYI message to the seat carries every pending FYI, appended to the same body as `<original body>\n\n<block>` and never sent as a separate message. The FYIs are claimed by the same transaction that creates the message's durable queue row (`fyi.delivered` names `message:<msg_id>`), so an FYI is never claimed without its carrier. A retry or duplicate of a message the queue or ledger already has claims nothing. A pane-bound direct send (socket or typed) that would carry FYIs is queued instead, and the drain worker delivers it, after any job already running on its serial key. Its receipt is `queued` with reason `queued as a normal message (it wakes the seat when delivered); carries N held FYIs`: the message is never an FYI, whatever a role request's `--reply`, and only `--fyi` holds. The reason used to be `fyi-ride-along`, which read as a downgrade (F116, F120). Observed history, not a promise: in the two days to 2026-11-08, all 381 such sends on the live fleet were delivered by injection within 5 s. A paneless socket seat's direct sends carry none, so its FYIs arrive through the typed-turn hook. A failed FYI claim never fails the send: the send goes out plain and the FYIs stay pending. No client work is needed. |
 | POST `/v1/fyi/claim` | Typed-turn hooks only. Request `{seat?, pane?, native_session?, via}`, where `via` is `hook:claude`, `hook:copilot`, `hook:omp` or `hook:pi`. At least one of `pane` or `native_session` is binding evidence; `seat` may be omitted when `pane` resolves a live seat, and a `seat` that mismatches the pane or session refuses. `data` is `{seat, count, block, ids}`; `count: 0` means `block: ""`. The claim is atomic: pending → delivered exactly once, with one `fyi.delivered` event carrying `via`. Racing claims, or a claim racing a ride-along, never deliver the same FYI twice. |
 | `pij-rs fyi-claim --pane <P> [--native-session <S>] --via hook:claude` | Prints the raw `block` to stdout, or nothing at count 0, and exits 0. Global `--json` prints the envelope instead. An unreachable daemon exits non-zero; the calling hook then prints nothing and exits 0, so it never blocks the human's prompt. |
 | `POST /v1/state` → `data.pendingFyis` | Pending count on the camelCase card (`pij state <seat> --json`). |
@@ -902,7 +902,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder's close answers `held` and lands after its [memory turn](#the-memory-turn) | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory edit <id> --why <text>` with `--set <field>=<value>`, role flags or `--file <json>`; `directory retire <role> --why <text> [--drop-queued]`; `directory merge <from> --into <to> --why <text> [--drop-queued]`; `directory templates [--show <name>[@vN]]`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory lineage add --batch <file> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory routes [--write --why <text>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [Routing table](#routing-table-plan-202) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory edit <id> --why <text>` with `--set <field>=<value>`, role flags or `--file <json>`; `directory retire <role> --why <text> [--drop-queued]`; `directory merge <from> --into <to> --why <text> [--drop-queued]`; `directory templates [--show <name>[@vN]]`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory release --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory lineage add --batch <file> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory routes [--write --why <text>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [Routing table](#routing-table-plan-202) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/output` | `output verdict\|deliverable\|note\|handover --role <id> --subject <address> [--head <sha>] [--result <r>] [--note-owed <text>]… [--evidence <json>]… [--link <url>] [--answers <msg_id>] [--body <text>\|--body-file <path>] [--project <slug>]`; `output --help`. See [Role outputs](#role-outputs-plan-200) | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/outputs` | `outputs --subject <address> [--head <sha>]`; `outputs --role <id> [--limit <n>]`; `outputs --help` | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/claim` | `claim <kind> --for <subject> [--project <slug>]`; `claim release <kind> <number> [--why <text>] [--project <slug>]`; `--help`. See [Number claims and delivery at merge](#number-claims-and-delivery-at-merge-plan-196) | — (`crates/daemon/tests/claims_http.rs`) |
@@ -1050,6 +1050,23 @@ gives it (store row, seat role, hook, window rule). The envelope carries
 
 `pij directory release <role>[/<instance>] <seat> --why <text>` closes the row
 (`to`, `released_by`, `release_why`); seat roles are left as they are.
+`pij directory release --batch <file> --why <text>` (plan 215, F71) reads the
+same `<role>[/<instance>] <seat>` lines and ends every holding in one writer
+commit (`community: release <n> holdings`), all or nothing for the directory
+write: the holders documents either all change in that commit or none do. A git
+or store-index failure partway through is the writer's inherited split (the
+commit landed, the store did not index it; `pij directory rebuild` restores
+it), not a global recovery. Its diagnostics are
+phase-local: a malformed line refuses `E-RS-ARG` naming every malformed line;
+only a file that parses is checked against the holders documents, where a
+holding that is not open, a line repeated, or a missing role refuses
+`E-RS-DIRECTORY-NOT-HELD` (or `E-RS-DIRECTORY-ROLE-MISSING`) naming every one.
+Either way nothing is written. Each live seat's window then follows its
+remaining holdings as for a single release, checked once per seat against its
+earliest ended holding. The envelope carries `commit` and `holdings`, one
+receipt per line in file order. Through the shim, assign, release and both
+batches print one line per holding (`released <role>[/<instance>] from <seat>
+(commit <sha>)`, plus the window); `--json` keeps the receipt.
 
 `pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time>
 --why <text>` (plan 208, F15) lets the prime record a closed seat's past
@@ -1068,8 +1085,14 @@ check and sets no seat role. The view shows it in the lineage.
 one `<role>[/<instance>] <seat> <from> <to>` per line (blank and `#` lines
 skipped) and records them all in one writer commit (`community: lineage <n>
 holdings`), all or nothing: a bad time, a missing role, or an overlap with a
-committed holding or an earlier line refuses the whole batch, naming every
-bad line, and writes nothing. The envelope carries `commit` and `holdings`.
+committed holding or an earlier line refuses the whole batch and writes
+nothing. Its diagnostics are phase-local (review of #144, N001): a line that
+does not parse (a bad or reversed time) refuses `E-RS-ARG` naming every such
+line, and only a file that parses is checked for missing roles and overlaps,
+which are then named together. The envelope carries `commit` and `holdings`.
+Through the shim, `lineage add` (single or `--batch`) prints one line per
+recorded holding, `recorded <role>[/<instance>] held by <seat> from <from> to
+<to> (commit <sha>)` (plan 215, F66); `--json` keeps the receipt.
 
 `pij close <seat>` ends every open holding of the seat with `release_why`
 `close`, and never fails because of the directory. The ends are stored as
@@ -1142,7 +1165,9 @@ ddocs 2, tmux 1; 9 when the rename is skipped); release, lineage add and a close
 that ends holdings cost one writer commit (about 9), and a release that renames
 the window one more tmux launch. `assign --batch` of N
 holdings is one writer commit (git 7, ddocs 2 per holders document touched)
-plus at most one rename per line. The view and help launch nothing. A rebuild
+plus at most one rename per line; `release --batch` is one writer commit plus
+at most one rename per seat. Each writer commit also reads the role documents
+in-process to check `ROUTES.md` (no launch). The view and help launch nothing. A rebuild
 costs three git launches plus one per holders document, on demand only.
 
 ### Role templates (plan 194)
@@ -1242,7 +1267,12 @@ gives each role `state` (`active` or `retired`), `merged_into` (or null) and
 the human view prints `retired, merged into <to>` and `merged from <from>`. A
 retired role no longer clears a core-role prompt (C22) and routes nothing: the
 same commit rewrites `ROUTES.md` without its rows (plan 202). `data` is
-`{project, id, state, merged_into, commit, paths, routes}`. Only retire and merge change a role's
+`{project, id, state, merged_into, commit, paths, routes}`. Through the shim a
+successful retire or merge prints one line (plan 215, F89): `retired <role>
+(commit <sha>)` or `merged <from> into <to> (commit <sha>)`, then `; withdrew <n>
+queued request(s) (<m> gone)` when it withdrew any, and `; routes regenerated
+(+<added> -<removed>), told <prime>` when `ROUTES.md` changed; `--json` keeps
+the receipt. Only retire and merge change a role's
 standing: `edit` refuses a retired role and refuses a change to `state` or
 `merged_into` (a `--file` that leaves them out keeps them). ddocs cannot tie
 `merged_into` to `state: retired` or check that it names a role, so the writer
@@ -1352,7 +1382,7 @@ project:
 | condition | when | commands |
 |---|---|---|
 | `no-live-holder` | requests wait and no holder's seat is live: one action per `instance` of the waiting requests (`""` for any holder, which waits only while the role has no live holder at all) | `pij-rs revive <last holder of that instance>` (when there was one), `pij directory assign <role>[/<instance>] '<seat>' --why '<why>'`, so the assign drains those requests |
-| `two-live-holders` | a one-holder role has two or more live holders | `pij directory release <role>[/<instance>] <seat>` for each but the newest |
+| `two-live-holders` | a one-holder role has two or more live holders | names each holder with its unanswered delivered requests; while two or more have open work, nothing (a deliberate second holder, plan 215, F90); else `pij directory release <role>[/<instance>] <seat>` for each but the one with open work, or the newest |
 | `memory-stale` | the role's last two closes (`picture::MEMORY_CLOSES`) both fall on a day after its newest memory note, or it has none | `pij directory memory add <role> --title … --hook … --body-file '<path to the note>'` |
 
 A missing core or security role stays in `prompts` (s03). A workstream step
@@ -1416,7 +1446,9 @@ its own line, then the next actions and the prompts.
 Cost: per call, one query each for the holdings, the project, the queued
 requests and each role's newest output (one window query), and one registry
 list; each role's document and memory folder, the repo's workstreams and the
-blueprints they point at are read in-process. It launches nothing, per role or
+blueprints they point at are read in-process. A one-holder role with two or
+more live holders adds one indexed query for its holders' unanswered requests
+(plan 215, F90); no other role does. It launches nothing, per role or
 per seat, and has no timer or poll.
 
 ### Role outputs (plan 200)
@@ -1487,7 +1519,11 @@ components agree up to where either ends or turns into a glob) give the warning
 Every role write through the writer (`directory add`, `edit`, `retire` and
 `merge`) rewrites
 `ROUTES.md` in the same commit when its bytes change, so a regeneration is never
-a commit of its own. The first one replaces a hand-written `ROUTES.md`; the old
+a commit of its own. Every other directory commit (assign, release, either
+batch, lineage add, a close's ends and the holdings `pij delivered` ends) checks
+it too, in-process, and carries a stale `ROUTES.md` (one edited by hand, or
+written before a change it missed) regenerated in the same commit (plan 215,
+F72); a current one is left alone, and no holder change ever changes it. The first one replaces a hand-written `ROUTES.md`; the old
 text stays in the branch history. `data.routes` on the add carries `path`,
 `regenerated`, `added` and `removed` (rows as `{role, kind, what}`), `overlaps`
 and `prime`; overlap warnings are also in `data.warnings`.
@@ -1664,7 +1700,7 @@ or a designated prime. A released number is never handed out again.
 
 `pij delivered <pr>` is the verb the merger runs once after a merge (ruling C23;
 no webhook, hook or poll). It reads the PR with one gh launch
-(`gh pr view <pr> --json number,state,mergeCommit,body,files,url`, with `--repo`
+(`gh pr view <pr> --json number,state,mergeCommit,mergedAt,body,files,url`, with `--repo`
 taken from the checkout's `origin` when it is on github.com) and takes the
 delivered addresses from the body's `Delivers:` lines: full ddocs addresses
 separated by commas or spaces, or `none`. It records (project, PR, address,
@@ -1689,7 +1725,37 @@ values are read in-process from the checkout. A document that cannot be read
 or parsed, a row it does not have, or a cell that is not text gets no edit:
 pij never prints a replacement for a cell it cannot see. `data.notes[]` says
 what was skipped and why.
-`pij delivered` changes no file, commits nothing and pushes nothing.
+
+It then ends the holdings the PR finished (plan 215, F70): each open
+`reviewer/<pr>`, `security/<pr>` and `performance/<pr>`, and `coder/<plan>` for
+each plan number in the PR's `docs/plans/NNN-*` files (the scan that releases
+claims). The plan paths a PR touches select which coder holdings end; they are
+not proof the plan's work is complete. Only a holding whose `from` is before
+the PR's `mergedAt` ends: the merge time binds the release to the work the PR
+ended, so a key reassigned after the merge (new work under the same
+`coder/<plan>` or `reviewer/<pr>`) is left open and named in `data.notes[]`,
+and a retry after a refused first run still ends what predates the merge.
+`mergedAt` is GitHub's clock and `from` is the daemon's, so skew matters only
+for a holding assigned within seconds of the merge. With no merge time from gh
+nothing ends, and a note says to release by hand. The holdings are chosen from
+the store before the writer lock, so each is pinned to its exact holding (its
+`from`): under the lock it ends only if that holding is still the open one, and
+a release and post-merge reassignment of the same seat and key landing in
+between leave the new holding open, named in the notes. They end in one directory
+writer commit, `release_why` `PR #<n> merged (<sha>)`, never one commit per
+holding and none when nothing is open, so a re-run ends nothing more. `data.holdings[]` has one release receipt each (the
+shim prints `released <role>/<instance> from <seat> (commit <sha>)` per line),
+the line counts them, and each live seat's window follows what it still holds.
+A holding the store lists but the holders document does not is left alone and
+named in `data.notes[]`. If the writer refuses, the delivery stays recorded
+and the refusal says to run `pij delivered <pr>` again, which ends what is
+still open. Cost: one store read, at most one writer commit (git 7, ddocs 2 per
+holders document) and at most one tmux rename per released live seat.
+Known limit: `delivered` and `release --batch` end holdings under the caller's
+inherited any-seat release authority (as a single `release` does), so any
+registered seat can run them. That is F88's root, owned by PRD 003 req-10
+(plan 223) under ruling C32; this plan adds no authority check.
+`pij delivered` changes no project file and pushes nothing.
 
 | Refusal | When |
 |---|---|
@@ -1846,7 +1912,7 @@ pij reap --dry-run --json
 pij reap --json
 ```
 
-Eligibility: confirmed process death **or** `proc_start` mismatch, **and**, for a pane-bound record, confirmed absence of that exact pane. A pane whose root process started **after** the seat's own process is a different pane reusing the id, as after a reboot, and counts as absent (`pane: "reincarnated"`). That narrows the brake without adding policy: an older or unobservable pane root still vetoes. Paneless records require the confirmed stale process alone. A live/recycled process is never signalled. Unknown process/pane evidence is reported as `unverifiable` and blocks retirement. Removing that check can only permit the same set or more reaps: it is a **brake**, not retention policy or an age threshold. Dry-run changes neither records nor spine. Execution re-observes and compares the binding before atomic tombstoning so a concurrent revive is not retired from an old snapshot.
+Eligibility: confirmed process death **or** `proc_start` mismatch, **and**, for a pane-bound record, confirmed absence of that exact pane. A pane whose root process started **after** the seat's own process is a different pane reusing the id, as after a reboot, and counts as absent (`pane: "reincarnated"`). That narrows the brake without adding policy: an older or unobservable pane root still vetoes. Paneless records require the confirmed stale process alone. A **never-bound** record (no process ever registered: no pid, no start; F114) is decided by its recorded pane alone, because spawn creates the window before it writes the row: its **absence** is the deciding input (`process: "never-bound"`, `pane: "absent"`, `reason: "never-bound-and-pane-absent"`). These brakes each keep it: the pane is present; the pane list can't be read without a launch (it is read only over the live tmux control client, never forked, `pane-probe-needs-a-launch`); the read fails (`pane-probe-failed`); or no pane is recorded at all (`process-identity-unavailable`). A live/recycled process is never signalled. Unknown process/pane evidence is reported as `unverifiable` and blocks retirement. Removing that check can only permit the same set or more reaps: it is a **brake**, not retention policy or an age threshold. Dry-run changes neither records nor spine. Execution re-observes and compares the binding before atomic tombstoning so a concurrent revive is not retired from an old snapshot.
 
 The process adapter uses `LC_ALL=C ps -o lstart=PIJ_LSTART -p <pid>`. Absence is specifically exit **1**, empty stderr, valid UTF-8 and **one header line whose trimmed value is `PIJ_LSTART`, with no subsequent line**. The canonical example is `PIJ_LSTART\n`. Exit 0 requires the header plus exactly one parseable process row. Empty stdout, wrong header, an extra blank/data row, any stderr (even whitespace), other exits, signals and parse errors are unknown—not dead. Existing regression names include `exit_one_with_header_only_and_empty_stderr_is_absent`, `successful_probe_without_process_row_is_unknown`, `failed_probe_requires_exact_header_only_output`, `any_stderr_vetoes_both_absent_and_live_protocols` and `other_exits_and_signals_with_header_only_are_unknown`; naming them is not a claim that this docs change ran them.
 
@@ -1854,7 +1920,7 @@ Sources: [`reaper.rs`](../../crates/daemon/src/reaper.rs), [`proc.rs`](../../cra
 
 ## Death sweep
 
-The daemon automatically applies the same conservative reap rule every **5 seconds** by default; set `PIJ_RS_DEATH_SWEEP_MS` on the daemon to change the interval in milliseconds. `pij-rs reap --dry-run --json` exposes the same candidates for an equivalent observation. A candidate needs a `Dead` or `Recycled` process incarnation and confirmed absence of its recorded pane (paneless records use the existing stale-process rule). Unknown evidence is not death.
+The daemon automatically applies the same conservative reap rule every **5 seconds** by default; set `PIJ_RS_DEATH_SWEEP_MS` on the daemon to change the interval in milliseconds. `pij-rs reap --dry-run --json` exposes the same candidates for an equivalent observation. A candidate needs a `Dead` or `Recycled` process incarnation and confirmed absence of its recorded pane (paneless records use the existing stale-process rule), or, for a never-bound record (no process ever registered), confirmed absence of its recorded pane read over the live control client (F114). Unknown evidence is not death. A healthy seat never takes the never-bound path: registration records its process, after which the two-witness rule applies. A never-bound seat whose pane **id** now belongs to a different pane (tmux reuses `%N` ids after its server restarts) is kept: with no process start to compare against the pane's root, any present pane is a veto. That errs toward keeping a dead seat, never retiring a live one. An operator retires it explicitly: its live parent runs `pij close <seat>`, and when its parent is gone, `pij link <seat> --parent <you> --role worker` first takes it, as `POST /v1/link` allows for a seat whose parent is absent or not live. A close only tombstones the row. It never touches the pane that now carries the id, or any process.
 
 Each unchanged candidate receives one atomic `seat.tombstone` with `reason: "observed-dead"` and observation fields `pid`, `proc_start`, `pane`, `pane_present: false`. Already-tombstoned rows are not retired again. The sweep never signals a process or tears down a pane.
 
@@ -1863,6 +1929,8 @@ After tombstoning, the daemon pushes an obituary to the child's **recorded paren
 ```text
 [pij] seat <id> died (<reason>) — pane <pane> absent, pid <pid> gone at <iso>. It was your child; revive with `pij-rs revive <id>` or leave it.
 ```
+
+A never-bound seat's obituary says `it never registered a process` in place of `pid <pid> gone`.
 
 A send receipt proves only its recorded delivery strength: queued is not parent observation. Parents need not poll for child deaths. A parent that is tombstoned or itself observed-dead in the same sweep receives no notice; the daemon counts these suppressions in one line, `death sweep: N notice(s) withheld — recipient dead too`, rather than flooding dead parents after a reboot.
 
@@ -1896,7 +1964,8 @@ The full behaviour, state diagram and known residual are in [pa-watchdog.md](pa-
   - seats `SeatDescriptor::nudgeable` that have been quiet for a whole interval;
   - seats that declared `waiting`, `hold`, `blocked` or `question`;
   - stale cards (`status-stale`). These come from the anomaly authority's own `StatusStaleDetector`, run over bounded reads. Each fleet seat gets one indexed `LIMIT 1` read for its latest card. Only for a card that is stale, the round then looks for its own clear or ack, matched by occurrence key, among the seat's `anomaly.clear` and `anomaly.ack` events since that card. That search uses a seat- and kind-indexed window of at most 4 pages of 256 rows. A clear for a different anomaly on the same seat never stands in for the card's own clear. Rows read per round follow the fleet and its stale cards, never the history. Other anomaly kinds stay with `pij anomalies`;
-- **Messages held behind a busy turn** (plan 214, AC2): every message to a seat in this fleet that waited more than 15 minutes (`HELD_FLAG_SECS` in `pij_store::held`) between being queued and reaching the session, with sender, recipient, msg id, held time and whether it is still queued. A delivery's held time is `jobs.acked_at - jobs.enqueued_at` on every rung (the ack is written after the body reaches the session: the Copilot extension's consume, an OMP/Pi steer, a PTY type, a socket ack), so no column was added. The ack that ends a long hold records it in `held_deliveries` (migration 0043); the digest also lists messages still queued past the threshold. Each is shown once: the digest marks what it listed once the PA's nudge is admitted. One read per digest, scoped to this fleet's recipients before its limit of 50 rows (so another fleet's holds never fill the page), through the unflagged partial index and `jobs_serial`; never per seat.
+  - refused pane taps (`tap-refused`, F112): a seat whose pane's tap the pane observer couldn't attach, such as a pane already piped with no `@pij-tap-sink` owner marker. The detail is the adapter's refusal, which names the manual repair (`tmux set-option -p -t <pane> @pij-tap-sink '<sink>'` when the pipe is the daemon's own `cat >> <sink>`). It is an in-memory read of the observer's record, no launch. The observer retries such a pane with a backoff that doubles from its interval up to 60 s (`ATTACH_BACKOFF_MAX`), logs it once per pane incarnation, and drops it when the pane attaches or leaves;
+- **Messages held behind a busy turn** (plan 214, AC2): every message to a seat in this fleet that waited more than 15 minutes (`HELD_FLAG_SECS` in `pij_store::held`) between being queued and reaching the session, with sender, recipient, msg id, held time and whether it is still queued. A delivery's held time is `jobs.acked_at - jobs.enqueued_at` on every rung (the ack is written after the body reaches the session: the Copilot extension's consume, an OMP/Pi steer, a PTY type, a socket ack), so no column was added. The ack that ends a long hold records it in `held_deliveries` (migration 0043); the digest also lists messages still queued past the threshold. Each is shown once: every digest that carries the list (the idle-edge nudge, the prime-active wake and the dormant-PA wake) marks what it listed once its message is admitted (F115: the dormant wake once didn't, and repeated the same holds every 30 minutes). One read per digest, scoped to this fleet's recipients before its limit of 50 rows (so another fleet's holds never fill the page), through the unflagged partial index and `jobs_serial`; never per seat.
 - every seat, largest context first, with role, turn state, declared state, context, idle time, cache warmth and the cold-wake price of waking it.
 
 The digest reports facts. Policy, such as caps and exemptions, lives in the PA brief (`skills/pij/references/prime/pa.md`).
@@ -1929,6 +1998,28 @@ A harness's own question or permission dialog stops a seat's turn while pij stil
 - **View.** While a claimed stall stands (the last read still showed it, and the seat has recorded no own event with a later sequence), `/v1/seats` and `/v1/state` carry `dialog: {dialog, key, clears, since_ms}` for the seat. `pij list` shows `blocked on a dialog (<key>)` in its STATE column instead of `working`, and `pij state` adds `blocked on a dialog: silent for <duration>, with <label> on screen (clears with <clears>)`. `state` itself stays `working`, the daemon's observation. Remote seats carry none. Each `/v1/seats` request and each `/v1/state` adds one standing-stalls read.
 - **Cost.** No new timer, poll or launch. Per round: one spine read (three indexed SELECTs) per working seat with a pane on Copilot or Claude; for each candidate, one control-client capture (none without a live client) and, only when some seat is a candidate, one read of the `modal_stalls` rows; a write only to claim a stretch, record a recipient, or open or close a row.
 - **Adding a harness.** Capture its dialog and a normal working screen, commit both as fixtures with MANIFEST rows, add a `MODAL_MARKERS` row naming where the marker sits, its fixed `label`, its short `key` and the `clears` text, and add match and no-match tests in `crates/harnesses/src/modal.rs`. A harness with no row is never read; OMP and Pi have none yet.
+
+## Compaction wakes (plan 222)
+
+A compaction can end a seat's turn with nothing queued, and nothing wakes it (F111: a coder held its role about 17 hours that way). When a seat that holds work is left idle by a compaction, pij sends it one resume message. This rides the PA watchdog's 60 s round, with no timer, poll or launch of its own.
+
+- **What counts as a compaction.** Every compact control pij admits: a direct `pij send <seat> --command compact`, `pij compact-self`, and the compact a memory turn held. All of them enter delivery through one place, and that place records a pending row in `compaction_wakes` (migration 0044) **before** it admits the compact, keyed by the seat and the control's message id. The write completes even if the caller is dropped, and if it fails the compact is refused (an internal error; retrying the same send is safe), so no compact is ever admitted untracked. A replay records nothing new. A compaction the harness runs on its own, or one typed into the pane by hand, is not seen.
+- **When the wake fires.** The round reads only the pending rows, newest first within a seat by **admission order** (the row's `seq`, an AUTOINCREMENT written before the compact is admitted; `admitted_at` is a wall clock that can step back or repeat, so it is used only for how long a compact has waited for delivery). An older row is superseded once a newer compact of the same seat is delivered, and waits while a newer one is still in flight. A read that fails leaves the row pending; it never settles one. The newest row wakes its seat when all of these hold:
+  - the compact control has been **delivered** for at least 5 minutes (`COMPACT_SETTLE_MS`; Copilot posts no event when a compaction ends, so this is the bound);
+  - the seat is live and `idle`;
+  - since the delivery, it has recorded **no own event except `seat.activity` idle** (Claude's `/compact` posts one as it ends) and **no message was pushed to it**;
+  - **nothing is queued** for it (no live job of its delivery or control kind);
+  - it **holds** an open role holding or an open claim.
+- **What it sends.** The row is marked `woken` **before** anything is sent, so a restart or an overlapping round never sends twice. The mark is refused, and the row left pending with nothing sent, if a newer compact of the same seat has been recorded since the round read its rows; the older row can still wake if that one is given up. `woken` means the one attempt was made, not that it was delivered: a failed or refused send is not retried. Its outcome is in the audit event's `delivery`. Then `pij-bg` sends the seat one normal message (`compaction-wake:<seat>:<compact msg_id>`): `resume: you hold <holdings and claims>; re-read your handover and continue, or tell your parent if you're blocked.` Its live parent gets an FYI (`compaction-wake-fyi:<seat>:<compact msg_id>`) naming the seat and what it holds. A cold seat is woken and audited with reason `pa-watchdog: compaction left a holder idle`. Each wake appends `watchdog.compaction-wake` on the seat with `compact`, `msg_id`, `held`, `delivery`, `cold_check` and `parent`.
+- **When it doesn't.** A row is settled without a message as:
+  - `resumed`: the seat started a turn, reported, or was sent a message after the compact;
+  - `holds-nothing`;
+  - `gone`: the seat is tombstoned;
+  - `undelivered`: the compact was never delivered within an hour (for example, its caller was dropped after the row was written);
+  - `superseded`: a newer compact of the same seat was delivered.
+
+  While the seat is inside the settle bound, not idle, or has something queued, the row waits. Once per compaction: a new compact is a new row.
+- **Cost.** No new timer, poll or launch. Per round, one read of the pending rows (a partial index, empty in steady state). Each pending row costs two indexed reads per round: its delivery outcome by message id, and the seat's events after it. A row past the settle bound with the seat idle adds one queue peek and two holdings reads (the open-holdings query and the `claims_open_by_seat` index). The row is written once when recorded and once when settled, and the wake sends one message plus one FYI. A row is **pending**, and costs reads, only from its compact until it settles: usually one settle bound, at most an hour for a compact that never lands (one read per round). Settled rows stay as history, one per compaction, outside the pending index.
 
 ## Opt-in watchdog
 

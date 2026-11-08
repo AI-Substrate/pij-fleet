@@ -38,7 +38,7 @@ the handover files you check, you are read-only.
 - **Set no timers of your own**: no `sleep` / background re-arm, `/loop`, cron, scheduled wakeups,
   `Monitor` loops or `pij inbox --wait`. An idle fleet is nudged once, so you need no "stop when quiet" rule.
 - The nudge already carries every seat's role, state, declared state, context, idle time, cache warmth and
-  ❄ cold-wake price, plus a **Needs a look** list (quiet, parked and stale-card seats; other anomaly kinds
+  ❄ cold-wake price, plus a **Needs a look** list (quiet, parked and stale-card seats, and `tap-refused` seats whose pane tap needs the repair it names; other anomaly kinds
   are in `pij anomalies --json`). Don't re-fetch it with `pij list` or footer scraping.
   Capture a pane (`tmux capture-pane -p -t <pane>`) only for what pij can't see — unsent prompt text and
   open dialogs — and only just before you would send to that seat.
@@ -56,9 +56,12 @@ the handover files you check, you are read-only.
      c. `pij send <seat> --command compact`. Copilot seats compact like Claude seats (plan 186).
         Paneless seats refuse it (`E-RS-CONTROL-PANELESS`), so don't try; report the size to the prime.
      d. Verify **on the next nudge**: its context dropped and then grew, or a turn started. A "~0k"
-        footer right after compaction is an artefact, not a reading. If it is idle with work in flight:
-        `pij send <seat> '<prime-id> PA: post-compaction check: re-read <handover> and resume <item>.'`
-        If it had nothing in flight, say so; don't call that "resumed".
+        footer right after compaction is an artefact, not a reading. A seat holding a role or a claim
+        that the compaction left idle is sent one `resume: you hold ...` message by pij itself, about
+        5 minutes after the compact lands (plan 222), and its parent an FYI; don't send your own.
+        Only if it is still idle with work in flight after that: `pij send <seat> '<prime-id> PA:
+        post-compaction check: re-read <handover> and resume <item>.'` If it had nothing in flight,
+        say so; don't call that "resumed".
 2. **Watchdog duty** — the Needs a look list.
    - `ready`/idle, quiet a whole interval: is it stalled or just done? Capture its pane. If it is
      stalled, send **one** specific ask. If it is done, tell the prime in your round line.

@@ -16,6 +16,103 @@ use tokio::time::{Instant, MissedTickBehavior};
 
 const CAPTURE_LINES: u32 = u32::MAX;
 
+/// The longest a pane whose tap attach keeps failing waits between attempts
+/// (F112). The wait doubles from the observer's interval up to this.
+pub const ATTACH_BACKOFF_MAX: Duration = Duration::from_secs(60);
+
+/// A pane whose tap could not be attached, and why: shown in the PA digest.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TapRefusal {
+    /// The pane, e.g. `%12`.
+    pub pane: String,
+    /// The adapter's refusal, which names any manual repair.
+    pub detail: String,
+}
+
+#[derive(Debug)]
+struct RefusalState {
+    detail: String,
+    failures: u32,
+    retry_at: Instant,
+}
+
+/// Panes whose tap attach failed, with a bounded retry backoff (F112). Shared
+/// by the pane observer, which writes it, and the PA digest, which reads it.
+/// Keyed by pane id, which tmux never reuses within a server's life: an entry
+/// goes when its pane attaches or leaves the observed set, so a new pane
+/// incarnation starts fresh.
+#[derive(Debug, Default)]
+pub struct TapRefusals {
+    panes: Mutex<BTreeMap<String, RefusalState>>,
+}
+
+impl TapRefusals {
+    /// No refused panes.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Every refused pane and why, by pane id.
+    #[must_use]
+    pub fn list(&self) -> Vec<TapRefusal> {
+        self.panes
+            .lock()
+            .expect("tap refusals mutex")
+            .iter()
+            .map(|(pane, state)| TapRefusal {
+                pane: pane.clone(),
+                detail: state.detail.clone(),
+            })
+            .collect()
+    }
+
+    /// Whether `pane` is still waiting out its backoff at `now`.
+    fn waiting(&self, pane: &str, now: Instant) -> bool {
+        self.panes
+            .lock()
+            .expect("tap refusals mutex")
+            .get(pane)
+            .is_some_and(|state| now < state.retry_at)
+    }
+
+    /// Record a failed attach and schedule the next attempt. True when this
+    /// pane incarnation had no refusal yet, or a different one: worth a log.
+    pub(crate) fn record(
+        &self,
+        pane: &str,
+        detail: String,
+        now: Instant,
+        interval: Duration,
+    ) -> bool {
+        let mut panes = self.panes.lock().expect("tap refusals mutex");
+        let state = panes.entry(pane.to_string()).or_insert(RefusalState {
+            detail: String::new(),
+            failures: 0,
+            retry_at: now,
+        });
+        let new = state.detail != detail;
+        state.failures = state.failures.saturating_add(1);
+        let wait = interval
+            .saturating_mul(1u32 << state.failures.min(16))
+            .min(ATTACH_BACKOFF_MAX);
+        state.retry_at = now + wait;
+        state.detail = detail;
+        new
+    }
+
+    fn clear(&self, pane: &str) {
+        self.panes.lock().expect("tap refusals mutex").remove(pane);
+    }
+
+    fn retain(&self, keep: impl Fn(&str) -> bool) {
+        self.panes
+            .lock()
+            .expect("tap refusals mutex")
+            .retain(|pane, _| keep(pane));
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ComposerKnowledge {
     Unknown,
@@ -60,7 +157,7 @@ pub struct PaneObserver {
     orphans_swept: AtomicBool,
     interval: Duration,
     panes: Mutex<BTreeMap<String, PaneState>>,
-    reported_attach_failures: Mutex<BTreeSet<(String, String)>>,
+    refusals: Arc<TapRefusals>,
 }
 
 impl PaneObserver {
@@ -88,9 +185,16 @@ impl PaneObserver {
             world_reconciled: AtomicBool::new(false),
             orphans_swept: AtomicBool::new(false),
             interval,
-            reported_attach_failures: Mutex::new(BTreeSet::new()),
             panes: Mutex::new(BTreeMap::new()),
+            refusals: Arc::new(TapRefusals::new()),
         })
+    }
+
+    /// Share the refused-pane record with the PA digest.
+    #[must_use]
+    pub fn with_tap_refusals(mut self, refusals: Arc<TapRefusals>) -> Self {
+        self.refusals = refusals;
+        self
     }
 
     /// Start the long-lived observation loop. The first observation waits one
@@ -233,11 +337,20 @@ impl PaneObserver {
             }
         }
 
+        self.refusals.retain(|pane| live.contains(pane));
         for pane in panes {
+            // A pane whose attach keeps failing is retried with a bounded
+            // backoff, not every tick (F112); it stays unknown meanwhile.
+            let now = Instant::now();
+            if self.refusals.waiting(&pane.id, now) {
+                self.gate.record_unknown(&pane.id);
+                continue;
+            }
             let tracked = self.is_tracked(&pane.id);
             let sink = self.sink_path(&pane.id);
             match self.tmux.attach_pane_tap(&pane.id, &sink).await {
                 Ok(()) if !tracked => {
+                    self.refusals.clear(&pane.id);
                     self.panes.lock().expect("pane observer mutex").insert(
                         pane.id.clone(),
                         PaneState {
@@ -245,17 +358,19 @@ impl PaneObserver {
                         },
                     );
                 }
-                Ok(()) => {}
+                Ok(()) => self.refusals.clear(&pane.id),
                 Err(error) => {
                     self.gate.record_unknown(&pane.id);
-                    let signature = (pane.id.clone(), error.to_string());
+                    // One line per pane incarnation and refusal, not per retry.
                     if self
-                        .reported_attach_failures
-                        .lock()
-                        .expect("pane observer refusal mutex")
-                        .insert(signature)
+                        .refusals
+                        .record(&pane.id, error.to_string(), now, self.interval)
                     {
-                        first_error.get_or_insert(error);
+                        if first_error.is_none() {
+                            first_error = Some(error);
+                        } else {
+                            eprintln!("pij-rs pane observer: {error}");
+                        }
                     }
                     continue;
                 }
@@ -608,6 +723,66 @@ mod tests {
             .filter(|call| *call == "sweep_orphan_taps")
             .count();
         assert_eq!(sweeps, 1, "one sweep per boot");
+    }
+
+    /// F112: a pane whose tap attach is refused is retried with a backoff that
+    /// doubles from the interval up to `ATTACH_BACKOFF_MAX`, not every tick. It
+    /// stays unknown meanwhile, is listed for the PA digest with the refusal,
+    /// and is dropped when it leaves the observed set.
+    #[tokio::test(start_paused = true)]
+    async fn a_refused_attach_backs_off_and_is_listed_for_the_pa() {
+        let interval = Duration::from_millis(10);
+        // A tap with another sink: the fake refuses our attach every time.
+        let tmux = Arc::new(
+            FakeTmux::new()
+                .with_pane(pane("%1", 7, 2))
+                .with_attached_tap("%1"),
+        );
+        let registry = registry(&["%1"]).await;
+        let gate = Arc::new(InteractionGate::new(Arc::clone(&tmux) as Arc<dyn TmuxPort>));
+        let refusals = Arc::new(TapRefusals::new());
+        let observer = PaneObserver::new(
+            Arc::clone(&registry) as Arc<dyn Registry>,
+            Arc::clone(&tmux) as Arc<dyn TmuxPort>,
+            Arc::clone(&gate),
+            PathBuf::from("/tmp/pij-observer-backoff"),
+            interval,
+        )
+        .expect("observer")
+        .with_tap_refusals(Arc::clone(&refusals));
+        let attaches = || {
+            tmux.calls()
+                .iter()
+                .filter(|call| call.starts_with("attach_pane_tap:%1:"))
+                .count()
+        };
+        // 100 ticks over one second: retries at +20, +40, +80, +160, +320 and
+        // +640 ms of backoff, so six attempts, not a hundred.
+        for _ in 0..100 {
+            let _ = observer.observe_once().await;
+            tokio::time::advance(interval).await;
+        }
+        assert_eq!(attaches(), 6, "{:?}", tmux.calls());
+        let listed = refusals.list();
+        assert_eq!(listed.len(), 1, "{listed:?}");
+        assert_eq!(listed[0].pane, "%1");
+        assert!(
+            listed[0].detail.contains("different tap sink"),
+            "{listed:?}"
+        );
+
+        // The wait is bounded: after the cap, one attempt a minute.
+        tokio::time::advance(ATTACH_BACKOFF_MAX).await;
+        let _ = observer.observe_once().await;
+        assert_eq!(attaches(), 7);
+
+        // A pane that leaves the observed set leaves the record with it.
+        registry
+            .tombstone(&SeatId::from("pij-observed-0"), "gone")
+            .await
+            .expect("tombstone");
+        let _ = observer.observe_once().await;
+        assert!(refusals.list().is_empty(), "{:?}", refusals.list());
     }
 
     /// PR #99 review S1: a pane that keeps failing keeps the world unreconciled,

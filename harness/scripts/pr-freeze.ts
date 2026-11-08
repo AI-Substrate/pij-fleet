@@ -1,4 +1,5 @@
 // `just pr-freeze <pr> [--worktree]`: is this PR head final for verdicts? (plan 220, F92)
+// `just pr-freeze --prune [--dry-run]`: remove review worktrees whose work is over (F107).
 //
 // Run by hand before each verdict request and before READY. Read-only towards
 // the PR: one `git ls-remote`, one `gh pr view`, one `git fetch` of the two
@@ -27,8 +28,8 @@
 // by anything else. Exit 2: bad usage or a tool failure. It always prints.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { accessSync, constants, existsSync, realpathSync, statSync } from "node:fs";
+import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** One finished command. */
@@ -36,6 +37,8 @@ export interface Ran {
 	readonly code: number;
 	readonly stdout: string;
 	readonly stderr: string;
+	/** Killed at the child timeout ([`CHILD_TIMEOUT_MS`]). */
+	readonly timedOut?: boolean;
 }
 
 /** Runs a program with arguments (never a shell) and optional stdin. */
@@ -108,6 +111,18 @@ const MERGE_STATES: Readonly<Record<string, string>> = {
 
 function short(sha: string | undefined): string {
 	return sha ? sha.slice(0, 7) : "?";
+}
+
+/** [`must`], and stderr must be empty too: for the reads that decide what
+ *  prune removes, a warning is not a clean answer (review of #170, F004). */
+function quiet(run: Runner, program: string, args: readonly string[]): string {
+	const result = run(program, args);
+	if (result.code !== 0 || result.stderr.trim() !== "") {
+		throw new Error(
+			`${program} ${args.join(" ")} ${result.code !== 0 ? `failed (${result.code})` : "warned"}: ${result.stderr.trim()}`,
+		);
+	}
+	return result.stdout;
 }
 
 function must(run: Runner, program: string, args: readonly string[], input?: string): string {
@@ -465,6 +480,312 @@ export function createWorktree(report: Report, run: Runner, env: Environment): s
 	return path;
 }
 
+// `--prune` (F107): remove the review worktrees `--worktree` made once their
+// work is over. One input DECIDES removal, the PR's state on GitHub:
+//   - the PR is MERGED or CLOSED, or
+//   - it is OPEN and its head has moved on from the worktree's (superseded).
+// Everything else is a BRAKE, which can only spare a worktree, never remove
+// one (remove any of them and prune removes the same set or more):
+//   - the worktree has uncommitted or untracked changes, or git can't say;
+//   - a live seat's folder (`pij-rs list`) or the cwd of any of this user's
+//     processes (macOS lsof) is in it;
+//   - it isn't one `--worktree` made: not named review-<pr>-<sha7>, not
+//     detached, or not at that sha;
+//   - gh can't read its PR.
+// If the seat list or the process cwds can't be read, nothing is removed.
+// macOS only: anywhere else it refuses, removing nothing (review of #170).
+// Removal is `git worktree remove` without --force, which refuses a dirty
+// worktree on its own too. On demand only: one gh read per PR, one git status
+// per candidate, one seat list and one cwd listing per run.
+
+/** A worktree `--worktree` may have made: `review-<pr>-<sha7>`. */
+export interface PruneCandidate {
+	readonly path: string;
+	readonly pr: number;
+	readonly sha7: string;
+	readonly head?: string;
+	readonly detached: boolean;
+}
+
+/** The PR as GitHub reports it. */
+export interface PrState {
+	readonly state: string;
+	readonly headRefOid: string;
+}
+
+/** What prune does with one worktree, and why. */
+export interface PruneVerdict {
+	readonly path: string;
+	readonly remove: boolean;
+	readonly why: string;
+}
+
+const FULL_SHA = /^[0-9a-f]{40}$/;
+
+/** The PR as gh printed it, validated (review of #170, F001): state MERGED,
+ *  CLOSED or OPEN, and an OPEN PR's head a full sha. Anything else is
+ *  undefined, which spares the PR's worktrees. */
+export function prState(stdout: string): PrState | undefined {
+	let parsed: { state?: unknown; headRefOid?: unknown };
+	try {
+		parsed = JSON.parse(stdout) as { state?: unknown; headRefOid?: unknown };
+	} catch {
+		return undefined;
+	}
+	const { state, headRefOid } = parsed ?? {};
+	if (state === "MERGED" || state === "CLOSED") {
+		return { state, headRefOid: typeof headRefOid === "string" ? headRefOid : "" };
+	}
+	if (state === "OPEN" && typeof headRefOid === "string" && FULL_SHA.test(headRefOid)) {
+		return { state, headRefOid };
+	}
+	return undefined;
+}
+
+/** Every worktree named `review-<pr>-<sha7>`. */
+export function pruneCandidates(porcelain: string): PruneCandidate[] {
+	const found: PruneCandidate[] = [];
+	for (const entry of worktrees(porcelain)) {
+		const match = /^review-(\d+)-([0-9a-f]{7})$/.exec(basename(entry.path));
+		if (!match?.[1] || !match[2]) continue;
+		found.push({ ...entry, pr: Number(match[1]), sha7: match[2] });
+	}
+	return found;
+}
+
+/** Whether `path` is `root` or inside it. */
+export function within(path: string, root: string): boolean {
+	const trimmed = root.replace(/\/+$/, "");
+	return path === trimmed || path.startsWith(`${trimmed}/`);
+}
+
+/** Decide one candidate: the PR's state decides; `dirty` and `busy` (each a
+ *  reason, when one applies) only ever spare it. */
+export function decide(
+	candidate: PruneCandidate,
+	pr: PrState | undefined,
+	dirty: string | undefined,
+	busy: string | undefined,
+): PruneVerdict {
+	const keep = (why: string): PruneVerdict => ({ path: candidate.path, remove: false, why });
+	if (!candidate.detached) return keep("on a branch, so not one --worktree made");
+	if (!candidate.head?.startsWith(candidate.sha7)) {
+		return keep(`at ${short(candidate.head)}, not the ${candidate.sha7} its name says`);
+	}
+	if (!pr) return keep(`PR #${candidate.pr}'s state can't be read`);
+	let over: string;
+	if (pr.state === "MERGED" || pr.state === "CLOSED") {
+		over = `PR #${candidate.pr} is ${pr.state.toLowerCase()}`;
+	} else if (pr.state !== "OPEN" || !FULL_SHA.test(pr.headRefOid)) {
+		return keep(
+			`gh reported PR #${candidate.pr} as ${JSON.stringify(pr)}, which says nothing usable`,
+		);
+	} else if (pr.headRefOid !== candidate.head) {
+		over = `PR #${candidate.pr}'s head moved on to ${short(pr.headRefOid)}`;
+	} else {
+		return keep(`PR #${candidate.pr} is open at this head`);
+	}
+	if (dirty) return keep(`${over}, but ${dirty}`);
+	if (busy) return keep(`${over}, but ${busy}`);
+	return { path: candidate.path, remove: true, why: over };
+}
+
+/** The folders of every live seat, from `pij-rs --json list`. */
+/** Every live seat's folder. A row without a string id and a non-empty
+ *  string folder makes the whole inventory unreadable (review of #170, F002):
+ *  a dropped row would be a seat prune can't see. */
+function seatFolders(run: Runner): { id: string; folder: string }[] {
+	const listed = JSON.parse(quiet(run, "pij-rs", ["--json", "list"])) as {
+		data?: { seats?: unknown };
+	};
+	const seats = listed.data?.seats;
+	if (!Array.isArray(seats)) throw new Error("pij-rs list returned no seats array");
+	return seats.map((seat: unknown, index) => {
+		const row = seat as { id?: unknown; folder?: unknown } | null;
+		if (
+			typeof row?.id !== "string" ||
+			row.id === "" ||
+			typeof row.folder !== "string" ||
+			row.folder === ""
+		) {
+			throw new Error(
+				`pij-rs list seat ${index} has no usable id and folder: ${JSON.stringify(seat)}`,
+			);
+		}
+		return { id: row.id, folder: row.folder };
+	});
+}
+
+/** Every cwd of this user's processes, from one macOS `lsof -d cwd -F pn`
+ *  (unprivileged lsof lists only this user's processes). Anything
+ *  unsuccessful, incomplete or malformed throws, so prune removes nothing
+ *  (review of #170, S170-001): a nonzero exit (a timeout included), anything
+ *  on stderr, or a record that doesn't parse. */
+export function processCwds(run: Runner): { pid: string; cwd: string }[] {
+	const listed = run("/usr/sbin/lsof", ["-d", "cwd", "-F", "pn"]);
+	if (listed.code !== 0 || listed.stderr.trim() !== "") {
+		throw new Error(
+			`lsof did not list every cwd (exit ${listed.code}${listed.timedOut ? ", timed out" : ""}): ${listed.stderr.trim() || "no message"}`,
+		);
+	}
+	const cwds: { pid: string; cwd: string }[] = [];
+	let pid: string | undefined;
+	// Each process record must carry its cwd: a pid with none is incomplete.
+	let named = true;
+	for (const line of listed.stdout.split("\n")) {
+		if (line === "") continue;
+		if (/^p\d+$/.test(line)) {
+			if (!named) throw new Error(`lsof listed pid ${pid} with no cwd`);
+			pid = line.slice(1);
+			named = false;
+		} else if (line.startsWith("f") && pid !== undefined) {
+			// The file descriptor field: cwd, as asked.
+		} else if (line.startsWith("n") && line.length > 1 && pid !== undefined && !named) {
+			cwds.push({ pid, cwd: line.slice(1) });
+			named = true;
+		} else {
+			throw new Error(`lsof printed a record that doesn't parse: ${JSON.stringify(line)}`);
+		}
+	}
+	if (!named) throw new Error(`lsof listed pid ${pid} with no cwd`);
+	if (cwds.length === 0) throw new Error("lsof listed no process cwds");
+	return cwds;
+}
+
+/** The real path, or undefined when it doesn't resolve. */
+function real(path: string): string | undefined {
+	try {
+		return realpathSync(path);
+	} catch {
+		return undefined;
+	}
+}
+
+/** `path` and its real path, when that differs: both sides of a comparison
+ *  get both forms (S170-001), so a symlinked spelling still matches. */
+function spellings(path: string): string[] {
+	const resolved = real(path);
+	return resolved && resolved !== path ? [path, resolved] : [path];
+}
+
+/** Prune's refusal anywhere but macOS: only lsof's listing is trusted to
+ *  prove no process of this user is in a worktree (review of #170). */
+export const MACOS_ONLY =
+	"prune is supported on macOS only: Linux /proc can't prove a worktree is unused";
+
+/** Decide every review worktree and, unless `dryRun`, remove those whose work
+ *  is over. macOS only. Everything is read before anything is removed; a seat
+ *  list, cwd listing or child that fails or times out throws, removing
+ *  nothing. */
+export function prune(
+	run: Runner,
+	dryRun: boolean,
+	cwds: () => { pid: string; cwd: string }[] = () => processCwds(run),
+	platform: string = process.platform,
+): PruneVerdict[] {
+	if (platform !== "darwin") throw new Error(MACOS_ONLY);
+	const candidates = pruneCandidates(quiet(run, "git", ["worktree", "list", "--porcelain"]));
+	if (candidates.length === 0) return [];
+	const refuse = (why: string): never => {
+		throw new Error(`refusing --prune: ${why}; nothing was removed`);
+	};
+	let seats: { id: string; folders: string[] }[] = [];
+	let processes: { pid: string; cwds: string[] }[] = [];
+	try {
+		seats = seatFolders(run).map((seat) => ({ id: seat.id, folders: spellings(seat.folder) }));
+		processes = cwds().map((proc) => ({ pid: proc.pid, cwds: spellings(proc.cwd) }));
+	} catch (error) {
+		refuse(
+			`can't tell which worktrees are in use (${error instanceof Error ? error.message : String(error)})`,
+		);
+	}
+	const timedOut = (ran: Ran, what: string) => {
+		if (ran.timedOut) refuse(`${what} timed out`);
+	};
+	const states = new Map<number, PrState | undefined>();
+	for (const pr of new Set(candidates.map((candidate) => candidate.pr))) {
+		const view = run("gh", ["pr", "view", String(pr), "--json", "state,headRefOid"]);
+		timedOut(view, `gh pr view ${pr}`);
+		// A warning beside the JSON spares the PR's worktrees (F004).
+		states.set(pr, view.code === 0 && view.stderr.trim() === "" ? prState(view.stdout) : undefined);
+	}
+	const decided: PruneVerdict[] = [];
+	for (const candidate of candidates) {
+		const status = run("git", [
+			"-C",
+			candidate.path,
+			"status",
+			"--porcelain",
+			"--untracked-files=all",
+		]);
+		timedOut(status, `git status in ${candidate.path}`);
+		// Any stderr spares it: exit 0 with nothing listed can still mean git
+		// couldn't read part of the tree (review of #170, F004).
+		const dirty =
+			status.code !== 0
+				? "git status can't read it"
+				: status.stderr.trim() !== ""
+					? `git status warned: ${status.stderr.trim().split("\n")[0]}`
+					: status.stdout.trim() !== ""
+						? "it has local changes"
+						: undefined;
+		const resolved = real(candidate.path);
+		const paths = resolved ? [candidate.path, resolved] : [];
+		const seat = seats.find((seat) =>
+			seat.folders.some((folder) => paths.some((path) => within(folder, path))),
+		);
+		const proc = processes.find((proc) =>
+			proc.cwds.some((cwd) => paths.some((path) => within(cwd, path))),
+		);
+		const busy = !resolved
+			? "its path doesn't resolve, so pij can't tell who is in it"
+			: seat
+				? `seat ${seat.id}'s folder is in it`
+				: proc
+					? `process ${proc.pid}'s cwd is in it`
+					: undefined;
+		decided.push(decide(candidate, states.get(candidate.pr), dirty, busy));
+	}
+	if (dryRun) return decided;
+	const verdicts: PruneVerdict[] = [];
+	let stopped: string | undefined;
+	for (const verdict of decided) {
+		if (!verdict.remove) {
+			verdicts.push(verdict);
+			continue;
+		}
+		if (stopped) {
+			verdicts.push({ ...verdict, remove: false, why: `${verdict.why}, but ${stopped}` });
+			continue;
+		}
+		const removed = run("git", ["worktree", "remove", verdict.path]);
+		if (removed.code !== 0) {
+			if (removed.timedOut) stopped = "an earlier removal timed out, so prune stopped";
+			verdicts.push({
+				...verdict,
+				remove: false,
+				why: `${verdict.why}, but git worktree remove ${removed.timedOut ? "timed out" : `refused: ${removed.stderr.trim()}`}`,
+			});
+			continue;
+		}
+		verdicts.push(verdict);
+	}
+	return verdicts;
+}
+
+export function renderPrune(verdicts: readonly PruneVerdict[], dryRun: boolean): string {
+	if (verdicts.length === 0) return "pr-freeze --prune: no review-<pr>-<sha7> worktrees";
+	const removed = verdicts.filter((verdict) => verdict.remove).length;
+	const lines = verdicts.map(
+		(verdict) =>
+			`  ${verdict.remove ? (dryRun ? "would remove" : "removed") : "kept"} ${verdict.path}: ${verdict.why}`,
+	);
+	lines.unshift(
+		`pr-freeze --prune${dryRun ? " --dry-run" : ""}: ${removed} of ${verdicts.length} ${dryRun ? "would be removed" : "removed"}`,
+	);
+	return lines.join("\n");
+}
+
 export function render(report: Report): string {
 	const lines = [`pr-freeze #${report.pr}`];
 	for (const condition of report.conditions) {
@@ -487,14 +808,74 @@ export function render(report: Report): string {
 	return lines.join("\n");
 }
 
+/** How long any one child (git, gh, pij-rs, lsof) may run. A timeout is a
+ *  failure: prune refuses and removes nothing (review of #170). */
+export const CHILD_TIMEOUT_MS = 60_000;
+
 const spawnRunner: Runner = (program, args, input) => {
-	const result = spawnSync(program, args, { encoding: "utf8", input, maxBuffer: 64 * 1024 * 1024 });
+	const result = spawnSync(program, args, {
+		encoding: "utf8",
+		input,
+		maxBuffer: 64 * 1024 * 1024,
+		timeout: CHILD_TIMEOUT_MS,
+	});
+	const timedOut = (result.error as { code?: string } | undefined)?.code === "ETIMEDOUT";
 	return {
 		code: result.status ?? (result.error ? 127 : 1),
 		stdout: result.stdout ?? "",
-		stderr: result.stderr ?? (result.error ? String(result.error) : ""),
+		stderr: timedOut
+			? `timed out after ${CHILD_TIMEOUT_MS / 1000}s`
+			: (result.stderr ?? (result.error ? String(result.error) : "")),
+		timedOut,
 	};
 };
+
+/** Whether `file` is an executable regular file. */
+function executable(file: string): boolean {
+	try {
+		accessSync(file, constants.X_OK);
+		return statSync(file).isFile();
+	} catch {
+		return false;
+	}
+}
+
+/** Each of `tools` as an absolute path, found once by walking PATH in-process
+ *  (no `which`, no launch). Relative PATH entries are skipped. Throws naming
+ *  every tool that isn't found (review of #170, P170-F001). */
+export function resolveTools(
+	tools: readonly string[],
+	path: string = process.env.PATH ?? "",
+	isExecutable: (file: string) => boolean = executable,
+): Map<string, string> {
+	const dirs = path.split(delimiter).filter((dir) => dir !== "" && isAbsolute(dir));
+	const found = new Map<string, string>();
+	const missing: string[] = [];
+	for (const tool of tools) {
+		const hit = dirs.map((dir) => join(dir, tool)).find(isExecutable);
+		if (hit) found.set(tool, hit);
+		else missing.push(tool);
+	}
+	if (missing.length > 0) {
+		throw new Error(
+			`${missing.join(", ")} not found on PATH; install ${missing.length > 1 ? "them" : "it"} or add ${missing.length > 1 ? "their" : "its"} directory to PATH, then rerun`,
+		);
+	}
+	return found;
+}
+
+/** `base`, launching each bare tool name by its resolved absolute path. A
+ *  bare name that wasn't resolved is refused, never launched by PATH. */
+export function resolvedRunner(tools: ReadonlyMap<string, string>, base: Runner): Runner {
+	return (program, args, input) => {
+		if (isAbsolute(program)) return base(program, args, input);
+		const path = tools.get(program);
+		if (!path) {
+			return { code: 127, stdout: "", stderr: `${program} was not resolved to an absolute path` };
+		}
+		return base(path, args, input);
+	};
+}
 
 /** The built pij-delivers-check: PIJ_DELIVERS_CHECK, the shared target, or this tree's target. */
 function findDeliversCheck(root: string): string | undefined {
@@ -513,21 +894,44 @@ function findDeliversCheck(root: string): string | undefined {
 	return undefined;
 }
 
+const USAGE =
+	"usage: just pr-freeze <pr number> [--worktree], or just pr-freeze --prune [--dry-run]";
+
 function main(argv: readonly string[]): number {
+	if (argv.includes("--prune")) {
+		const dryRun = argv.includes("--dry-run");
+		if (argv.some((arg) => arg !== "--prune" && arg !== "--dry-run")) {
+			console.error(USAGE);
+			return 2;
+		}
+		if (process.platform !== "darwin") {
+			console.error(`pr-freeze: ${MACOS_ONLY}`);
+			return 2;
+		}
+		try {
+			const run = resolvedRunner(resolveTools(["git", "gh", "pij-rs"]), spawnRunner);
+			console.log(renderPrune(prune(run, dryRun), dryRun));
+			return 0;
+		} catch (error) {
+			console.error(`pr-freeze: ${error instanceof Error ? error.message : String(error)}`);
+			return 2;
+		}
+	}
 	const worktree = argv.includes("--worktree");
 	const rest = argv.filter((arg) => arg !== "--worktree");
 	const pr = Number(rest[0]);
 	if (rest.length !== 1 || !Number.isInteger(pr) || pr <= 0) {
-		console.error("usage: just pr-freeze <pr number> [--worktree]");
+		console.error(USAGE);
 		return 2;
 	}
 	try {
-		const root = must(spawnRunner, "git", ["rev-parse", "--show-toplevel"]).trim();
+		const run = resolvedRunner(resolveTools(["git", "gh"]), spawnRunner);
+		const root = must(run, "git", ["rev-parse", "--show-toplevel"]).trim();
 		const env: Environment = { root, deliversCheck: findDeliversCheck(root) };
-		const report = check(pr, spawnRunner, env);
+		const report = check(pr, run, env);
 		console.log(render(report));
 		if (worktree) {
-			console.log(`review worktree: ${createWorktree(report, spawnRunner, env)}`);
+			console.log(`review worktree: ${createWorktree(report, run, env)}`);
 		}
 		return report.final ? 0 : 1;
 	} catch (error) {

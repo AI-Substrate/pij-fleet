@@ -67,7 +67,11 @@ its number in a merged PR's files, or by its seat or the prime.
 `pij delivered` is run once by whoever merges (ruling C23). It reads the PR with
 gh, takes the addresses from the body's `Delivers:` line, records them, posts on
 the PM's card (the live pm-<workstream> holder, else --pm) and PRINTS the
-`ddocs set` edits for the PM's next docs PR. It changes no file and pushes nothing.
+`ddocs set` edits for the PM's next docs PR. It changes no project file and pushes
+nothing. It ends the holdings the PR finished (reviewer, security and performance
+for the PR, coder for each plan its files touch), only those begun before the
+merge, in one directory commit, printing one line each; a re-run ends nothing
+more.
 
 The project is --project, else the one whose repository holds your directory.
 ";

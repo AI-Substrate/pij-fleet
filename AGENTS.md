@@ -183,7 +183,14 @@ citation disputes, all of which resolved as neither party being wrong.)
   your own sources with `CARGO_INCREMENTAL=0`, runs every cargo command under
   `nice -n 19` and (on macOS) `taskpolicy -b` so no build starves the machine,
   and always releases. A stale lock is reported with its clear command, never
-  cleared for you (plans 198, 208).
+  cleared for you (plans 198, 208). Parallelism is capped too, because `nice`
+  lowers priority but does not shorten the run queue (F126). The repository's
+  `.cargo/config.toml` sets `build.jobs = 4` and `RUST_TEST_THREADS = 4` for
+  every cargo run in the repo, whatever its environment: recipes, the governance
+  fixture's build, `pij daemon bounce`, `pij-gate` and CI. Override with
+  `CARGO_BUILD_JOBS`, or your own `RUST_TEST_THREADS` or `-- --test-threads N`.
+  shared-build maps `PIJ_CARGO_JOBS` (default 4) onto both and prints the cap
+  first: `cargo jobs: 4 (PIJ_CARGO_JOBS), test threads: 4 (RUST_TEST_THREADS)`.
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
 - **`just pr-freeze <pr>`**: is a PR head final for verdicts? Run by hand before each verdict
@@ -191,6 +198,11 @@ citation disputes, all of which resolved as neither party being wrong.)
   the base is main, it is CLEAN, every check's latest run passed, it is not draft, its migrations
   sit above main's highest, and its `Delivers:` line parses; otherwise each failing condition with
   its next step. `--worktree` creates the detached review worktree at that head (plan 220, F92).
+  `just pr-freeze --prune [--dry-run]` removes `review-<pr>-<sha7>` worktrees whose PR merged,
+  closed or moved to a new head (the one deciding input); local changes, a live seat's folder or the
+  cwd of any of this user's processes (macOS lsof) inside one only ever spare it, and an unreadable
+  seat or cwd list removes nothing (F107). `--prune` is macOS only; elsewhere it refuses. It runs on node's TypeScript stripping, with no node_modules, so it works from any review
+  worktree (F109).
 - **`just doctor`** — read-only audit: CLI shim shape, `pij-rs` on PATH, skill
   link, OMP policy and daemon health. The first diagnostic when anything drifts.
 - **npm supply chain** — `.npmrc` enforces a seven-day `min-release-age`

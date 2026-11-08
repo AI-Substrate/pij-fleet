@@ -28,7 +28,7 @@ pub const INSTALL_STEP: &str = "Install the GitHub CLI so `gh` is on the daemon'
 pub const AUTH_STEP: &str = "Run `gh auth login` as the daemon's user, then retry.";
 
 /// The fields one `gh pr view` asks for.
-pub const FIELDS: &str = "number,state,mergeCommit,body,files,url";
+pub const FIELDS: &str = "number,state,mergeCommit,mergedAt,body,files,url";
 
 /// One pull request, as `pij delivered` needs it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -39,6 +39,8 @@ pub struct PullRequest {
     pub state: String,
     /// The merge commit, once merged.
     pub merge_commit: Option<String>,
+    /// When it merged (RFC 3339, GitHub's clock), once merged.
+    pub merged_at: Option<String>,
     /// The PR body.
     pub body: String,
     /// Repository-relative paths the PR changed.
@@ -159,6 +161,8 @@ struct Wire {
     state: String,
     merge_commit: Option<Oid>,
     #[serde(default)]
+    merged_at: Option<String>,
+    #[serde(default)]
     body: String,
     #[serde(default)]
     files: Vec<WireFile>,
@@ -175,7 +179,7 @@ struct WireFile {
     path: String,
 }
 
-/// `gh pr view --json number,state,mergeCommit,body,files,url` output.
+/// `gh pr view --json number,state,mergeCommit,mergedAt,body,files,url` output.
 ///
 /// # Errors
 /// [`E_GH`] when it is not that shape.
@@ -186,6 +190,7 @@ pub fn parse(stdout: &[u8]) -> Result<PullRequest, Refusal> {
         number: wire.number,
         state: wire.state,
         merge_commit: wire.merge_commit.map(|oid| oid.oid),
+        merged_at: wire.merged_at.filter(|at| !at.is_empty()),
         body: wire.body,
         files: wire.files.into_iter().map(|file| file.path).collect(),
         url: wire.url,
@@ -285,11 +290,12 @@ mod tests {
         let ok = tool(
             &root.join("ok"),
             "gh",
-            "#!/bin/sh\necho '{\"number\":7,\"state\":\"MERGED\",\"mergeCommit\":{\"oid\":\"abc\"},\"body\":\"b\",\"files\":[{\"path\":\"a/b.rs\"}],\"url\":\"u\"}'\n",
+            "#!/bin/sh\necho '{\"number\":7,\"state\":\"MERGED\",\"mergeCommit\":{\"oid\":\"abc\"},\"mergedAt\":\"2026-11-07T12:00:00Z\",\"body\":\"b\",\"files\":[{\"path\":\"a/b.rs\"}],\"url\":\"u\"}'\n",
         );
         let pr = Gh::Found(ok).view(&root, 7).expect("a fake gh answers");
         assert!(pr.merged());
         assert_eq!(pr.merge_commit.as_deref(), Some("abc"));
+        assert_eq!(pr.merged_at.as_deref(), Some("2026-11-07T12:00:00Z"));
         assert_eq!(pr.files, ["a/b.rs"]);
         let auth = tool(
             &root.join("auth"),
@@ -317,6 +323,7 @@ mod tests {
             .unwrap();
         assert!(!pr.merged());
         assert_eq!(pr.merge_commit, None);
+        assert_eq!(pr.merged_at, None);
         assert_eq!(parse(b"nope").unwrap_err().code, E_GH);
     }
 
