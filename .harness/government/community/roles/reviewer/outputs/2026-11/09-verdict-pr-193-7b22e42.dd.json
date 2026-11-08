@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bd69-269d-7d33-ab9d-1d134b39d6ff",
+				"date": "2026-11-09",
+				"head": "7b22e4279661fd535126dc8758f4f2fd20c93e21",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/193#issuecomment-6728466154",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:193",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #193 round 4 correctness review: PASS-WITH-NOTES\n\nHead: `7b22e4279661fd535126dc8758f4f2fd20c93e21`.\nRequest: `01a1bd69-269d-7d33-ab9d-1d134b39d6ff`.\nRead-only delta from `625108dc1c1a5fbda93f71e6097a9ec5c4b9b9b8`, separating repair commit `a084c2f68384f88a2a46ec6b0c05e414ac35d1ac` from the main merge. Detached worktree clean and pinned. No local builds, tests or live probes.\n\n**F008/F009 are closed. No remaining blocking finding in this delta.** The earlier F001-F007 repairs remain intact.\n\n## Closures\n\n**F008:** `crates/core/src/render.rs:169-178` defines LF, CR, VT, FF, NEL, U+2028 and U+2029 once. `is_one_line` rejects those and other control characters. `line` combines that check with the 500-character bound and the broader `[pij ` frame marker.\n\nAdmission's printable path, report card/note line-break checks and delivered holding-time rendering use the shared helpers. The report boundary uses the line-break predicate rather than rejecting every control, preserving ordinary whitespace normalization. The focused renderer test independently exercises separators, ESC, frame-only inputs, over-bound text and the exact-bound/plain positives. T1-T5 and U2 are reported killed.\n\n**F009:** `crates/core/src/error.rs:76-79` renders `StoreSchemaStale.fix`. The hostile variant test now includes it, and T6 is reported killed. All twelve current error variants appear in the sample inventory; the exhaustive hostile match reconstructs each string/seat-bearing variant with hostile fields.\n\n**Always-fenced caller text:** Tombstone reasons and recorded artifact paths now use `render::caller_text`, not the conditional plain-line path. A present reason such as `done` is quoted even without a frame or separator; a missing reason retains fixed daemon vocabulary. The test covers plain caller text, each listed frame shape and separators; U1 is reported killed. Error fields and error/lifecycle semantics remain typed and unchanged.\n\n**F006/F007:** Shared error display still protects the unchanged answer/withdrawal error consumers, and the outer withdrawal requester remains independently rendered. The round-2 fixed notice vocabulary is unchanged. Earlier claim, parent-background, holding-note, stored-address, plan-folder and drained-error fixes remain present and their focused tests passed.\n\n## Notes\n\n**N001, future sample completeness:** The test's discriminant assertion proves sample uniqueness, not completeness (`error.rs:321-322`). The exhaustive hostile match forces a newly added variant to be handled, but adding that arm without adding an executable sample still passes. The PR explicitly discloses this gap. No current variant is omitted; this is not a blocker at this head. It should not be described as mechanically preventing every future omission.\n\n**N002, proof grade:** S2 remains adequate component proof for the context-free error formatter used by the answer race. S1's HTTP fixture closes the asker before answering and stops at `E-RS-NO-SEAT`; it does not execute closing between preparation and delivery. The surviving mutant is accurately recorded. No executed race or lifecycle proof is claimed by this rendering verdict.\n\nThe latest T1-T6/U1-U2 receipts are author-reported kills on `625108dc + round-4 working changes`, before the main merge. Sites and killing assertions remain at this head. They are not eight isolated final-head mutation runs; raw session history was not read.\n\n## Merge and CI proof\n\nThe inherited #195 idle-nudge files, store files, difficulty row and PA guidance equal main `9a33e1761ae0970ae52f6c353bda463ed15f9621`. The merge has no remerge conflict delta. This checks preservation, not a new review of #195.\n\nAll five latest check names succeeded at the reviewed head. CI run `42532909875`, attempt 1, and matching JUnit artifact record **2298 passing cases**, zero failures/errors; nextest separately reports **five skips**. The line-renderer and error-variant tests, withdrawal HTTP test, earlier rendering regression tests and decisions HTTP test are present and passed.\n\nNo new periodic loop, poll, timer, hook, sweep, status refresh or process launch in the F142 repair; rendering work is per invocation. The idle-nudge changes are inherited unchanged from main.\n\nEvidence: `pr193-7b22e42-delta.diff`, `pr193-7b22e42-repair.diff`, `pr193-7b22e42-junit.xml`, `pr193-7b22e42-ci.log`, and the author's round-4 mutation index. SUGG-001 captures the future sample-completeness gap.\n\n## Handback\n\nPASS-WITH-NOTES at this exact head. F001-F009 closed; retain the sample-completeness and unexecuted-race qualifications. No product, canonical plan or governance state was manually edited.\n"
+		}
+	]
+}
