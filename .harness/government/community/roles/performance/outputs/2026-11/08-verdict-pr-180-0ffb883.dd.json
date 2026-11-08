@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "0ffb88381f6ea11ed6d8816affe2b20b238d7621",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/180#issuecomment-6717821674",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:180",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `0ffb88381f6ea11ed6d8816affe2b20b238d7621`.\n\nWhole-PR read-only review against main `c2c8b1c90466e4d47f181be97205fa418b640f82`. No new executable launch site or independent polling/lease timer. The receiver fix deliberately sustains observation on a path that previously stopped immediately; its cost is not zero.\n\n**Receiver retry shape** (`.copilot/extensions/pij/store.mjs:1787-1813,1875-1931`):\n\n- At a discard boundary, queue state is checked first. A matching queued item, steer or in-flight steer returns false before processing/history checks; otherwise processing is checked, and a busy run returns false. The non-uncertain path retains its existing calls and resend guards.\n- Empty queue, idle run and uncertain unseen consumption now keep the current `waitForObservation` loop alive instead of throwing immediately. Its existing delays are **250, 500, 1,000, 2,000, 4,000, then 5,000 ms**, giving roughly **0.2 observation cycles/s per waiting bridge** after warmup, plus SDK latency. No interval is added and no backoff reset is added to this path. The awaited `deliver` owns one accepted claim; this does not fan out a new poll for every queued message or every fleet seat.\n- In a quiet empty/idle cycle, the existing outer history read is followed by queue, processing, another history read and a tail probe. The empty-read sensor can add another tail probe; a moved tail can add a backward history page. History pages are at most 128 events, but `hasMore` pages drain without a sleep, so the 5-second delay is not a hard SDK-call-rate or total-history-work cap. Queue scans likewise follow the SDK snapshot size. The existing one-outstanding-read-per-completion guard remains.\n- `waitOutUncertainDiscard` records its first empty/idle uncertain time and emits `discard-uncertain` once. It throws at the next such check at or beyond **600,000 ms**, never authorizing rearm/resend. Queued/processing cases continue their ordinary wait and do not start this uncertainty clock. This is a threshold, not an unconditional 10-minute wall-time deadline: RPC/page-drain time and the existing `Date.now` clock can extend it. Consumption settles the delivery through the existing acknowledgment path.\n\n**Heartbeat/timers:** the same existing heartbeat loop continues while uncertainty waits. With the default daemon lease of 60 seconds and renewal divisor three, successful renewal remains **one heartbeat every 20 seconds per active receiver**, not one per observation retry (`delivery/mod.rs:332-336,424-427`; `store.mjs:1275-1362`). Uncertainty adds neither registration nor renewal calls itself. Continuing those existing heartbeats, deadline notifications and observation RPCs is extra work versus the former stopped receiver. Observation still uses existing delay timers and existing 15-second per-RPC deadline timers; there is no new independent timer. A hard receive hold still aborts both receiving and heartbeat. The old generic lease-failure/re-registration backoff is unchanged.\n\n**P180-N001, digest scaling qualification:** `pa_watchdog.rs:1343-1370` first clones **every full SeatDescriptor** in the existing fleet rows, including non-native rows and string fields such as extension metadata, into a temporary vector. This adds allocation/copy cost proportional to the sum of descriptor field bytes, not merely a constant check per Copilot seat.\n\n`delivery/mod.rs:523-543` then acquires the in-memory lease-map mutex **once per constructed digest**, holds it across the row scan and collects lapsed IDs/ages. It performs one map lookup per untombstoned native Copilot candidate, and a second for each lapsed candidate. No registry/store/process read or launch is added. Work is linear in fleet rows plus identifier/session bytes; the lock can delay existing heartbeat writers while that scan runs. Anomaly strings add output bytes only for lapsed candidates.\n\nThis runs through `fleet()` only when existing idle-edge, prime-active or dormant-wake logic constructs a digest, not on every normal 60-second watchdog tick. Multiply by the fleets/digests actually constructed; there is no new per-seat periodic schedule. Receiver liveness here means incarnation-matched lease renewal and untombstoned registry membership, not a fresh host-process probe. The send path reuses the same predicate, but a digest is a snapshot, not an atomic promise about a later send.\n\n**Native refusal:** changing the event's transport to `extension-stream` calls the same underlying outcome publisher once. Parking/admission and outcome-write counts are unchanged; no second event/read or launch is added.\n\n**Exact-head execution proof:** [ci 42449058166](https://github.com/AI-Substrate/pij-fleet/actions/runs/42449058166) is successful at this SHA. Successful Rust job `128634147232` uploaded **artifact13604603836**: exact-ID JUnit has **2,202 executed cases passed**, zero failures/errors, with five skips separately reported by nextest. Verified the lapsed-receiver digest test, receiver-expiry/refusal-transport test and all six unchanged spawn guards. Node22 and Node24 job-specific logs both execute and pass all three F124 cases: queued incident waits/renews/acks once, empty-idle late consumption settles without reinjection, and persistent uncertainty holds without resend. Node22's native suite reports 333 passed; both Vitest runs report 2,259 passed, six skipped. Rust lint and delivers checks succeed.\n\nWorktree/GitHub heads agree; clean and CLEAN. No local Cargo, tests, mutation, load probe, restart or product edit. Source establishes the polling/allocation shape; CI validates behavior, not live fleet CPU/RSS, incident timing or large-fleet mutex latency. The requested cost review is complete; correctness/security gates remain independent.\n"
+		}
+	]
+}
