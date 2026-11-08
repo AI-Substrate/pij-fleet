@@ -585,7 +585,10 @@
 					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
 					"instance_key": "224",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #189 merged (3f023b8f67db)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-exuberant-wildcat",
+					"to": "2026-11-08T16:45:03.433Z",
 					"why": "plan 224 idle-holder nudge (F136)"
 				},
 				{

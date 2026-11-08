@@ -979,7 +979,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "189",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #189 merged (3f023b8f67db)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-08T16:45:03.433Z",
 					"why": "plan 224 idle-holder nudge #189"
 				},
 				{
