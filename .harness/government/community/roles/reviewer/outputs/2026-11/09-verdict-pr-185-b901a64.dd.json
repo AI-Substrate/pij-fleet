@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bbcf-8d7a-7f93-949c-0ab4ff180e8f",
+				"date": "2026-11-09",
+				"head": "b901a64fb863599bc787dfa490ba22b1f15c2bb1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/185#issuecomment-6723565704",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:185",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #185 round-5 delta: PASS-WITH-NOTES\n\nHead: `b901a64fb863599bc787dfa490ba22b1f15c2bb1`\n\nDelta against `96f9f41a676e2d41868245715c719f589b757fb8` and reviewer output `5a530228ed4d30d0fc9ab89f3e96e0cdd6b73571`. **F004 is closed. F001-F003 repairs remain intact.** This clears the changed render paths, not every preexisting plain-text receipt.\n\n## Verified repairs\n\nThe template-drift branch (`crates/cli/src/main.rs:3400-3436`) renders the template name, version and latest version. It emits a command only for a valid template name, role name and project slug; otherwise it prints fixed `--json` guidance. The command words contain no whitespace, controls, metacharacters or leading option hyphens.\n\n`render::project` accepts nonempty lowercase ASCII letter/digit runs joined by hyphens, at most 48 bytes. That matches project creation, including its collision suffixes, rather than imposing the 32-byte directory-name cap. The updated ordinary drift test uses the real created-project spelling `my-remote`.\n\nThe hostile full-output fixture now enables template drift. Independent bad-role/bad-template cases suppress commands while the canonical row still prints exactly one; an invalid project suppresses the otherwise valid command. The new `--suggest` HTTP case verifies the hostile prime note is rendered while the structured prime field remains raw.\n\nThe changed request-list, output-list, holding-name, lineage/holding-seat, drained-request identity, claims-seat, reshape-prime and suggestion-name renderers use their matching grammars. The request **listing's** close reason is escaped and labelled. These are display changes, not normalization of stored keys.\n\n## Notes: corrected dispositions and explicit deferrals\n\n**N001, F142:** actual close/withdraw receipts still bypass the listing formatter through `data.line` (`main.rs:2959`; `http/requests.rs:302,398`). Those lines retain raw request ID, actor and reason. Drained diagnostic strings also need caller-field auditing; the claims listing's subject/release reason and related line text are not cleared here. The new receipt test exercises rows, not the `data.line` branch.\n\n**N002, F135:** assignment/release window names and derived reasons still contain the stored instance (`community/directory.rs:1622-1635,1655-1663,2619-2625`) and are printed raw by `render_holdings`. Calling them daemon-made did not make their inputs safe. The new fixture has no window object.\n\nPM explicitly deferred both preexisting, unwidened paths to F142/F135 in message `275a84df35ba238e-0000000000000015`; the PR body table was corrected without changing the head. They are not repairs certified by this verdict.\n\n**N003:** plain state/session output is not limited to the caller's descriptor. `Command::State { id }` fetches a chosen target and appends its reported model through `render_session_status` (`main.rs:1996-2002,3756-3847`). I reported the table's contrary assertion to PM; this preexisting path is not cleared by the delta and belongs in the broader plain-text audit.\n\nRaw JSON identities remain untrusted recovery data. Reading a note or shipped template intentionally exposes its content; neither this verdict nor fencing provides blanket semantic prompt-injection protection. The previously noted exact 500-boundary quote/backslash fence cases remain source-inspected.\n\n## Evidence\n\n[CI run 42495395141](https://github.com/AI-Substrate/pij-fleet/actions/runs/42495395141), associated with this exact head, attempt 1: **2254 Rust cases passed; five skipped**. JUnit artifact `13623017449`, timestamp `2026-11-08T15:35:09.058+00:00`, contains no failures/errors. The hostile full formatter, ordinary drift, plain receipt, hostile-prime HTTP and legacy-view cases all executed. Rust lint and both Node checks passed. `git diff --check` passed.\n\nAuthor working-tree receipts `f132-mutation-receipts.md` report W1-W17 killed: the three command guards, template name/version, prime note, prompt/suggestion labels, project grammar, request/holding instances, listing close fence and the remaining changed seat/writer labels. These are author-run mutations, not reviewer executions; they do not cover the deferred line/window/state paths. Same-head security and performance verdicts are pass-with-notes.\n\n**Cost:** formatting on existing CLI/view calls only; no new production loop, timer, poll, read or launch. No local reviewer-owned build, test, dependency installation or live probe was run. No product or canonical plan state was edited. Harness observation DL-016 captures the missing command-receipt-shape tests for the deferred work.\n"
+		}
+	]
+}
