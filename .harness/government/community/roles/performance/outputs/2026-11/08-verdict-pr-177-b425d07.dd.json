@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "b425d072b2bdd3f4b87708cf13c2e70091b13927",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/177#issuecomment-6718034812",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:177",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `b425d072b2bdd3f4b87708cf13c2e70091b13927`.\n\nDelta-only review from passed `1d199da`, output `ed929e009f6835838fa0dc3dad461bd33ca1d7ff`: prime-isolation fix `f1d9e654`, plus the main merge carrying #176/#178. The merge does not change the fix's directory, picture or CLI code. F119's conditional metadata lookup and newly admitted downstream writer costs remain as previously qualified.\n\n**New view cost** (`community/directory.rs:409-488,521-579`): project designation and live-seat membership reuse existing inputs. No additional project/registry/host-liveness read, store write, executable, scheduled worker or timer. Prime `mine` is empty and its effective liveness is computed from the designation once for idle/call_on; legacy assignment timestamps no longer drive those checks.\n\n**P177-N002, allocation/output qualification:** collecting the role's assignment references now produces `all`, followed by `all.clone()` into either `mine` or `legacy`. This adds a temporary reference-vector allocation/copy for **every role**, proportional to that role's assignment count, not a deep descriptor clone. Existing full-history lineage cloning remains unchanged. Open/end-pending prime legacy rows now generate shell-quoted release-command strings and separate legacy JSON/CLI lines, with work/output bytes proportional to those rows and their field lengths. Other roles gain an empty `legacy` field.\n\nLegacy prime rows no longer enter `live_holders`; the existing conditional F90 unanswered-by-holder store query is therefore skipped for prime even if multiple live legacy rows previously triggered it. Other roles retain their query behavior. Existing assignment/history scans and generic queued-instance enumeration retain their previous scaling; no new scan of a store or transcript is introduced.\n\nThe renderer's designation/legacy output and `pij project set` repair are string generation only. They do not execute project changes, release a legacy row, revive a seat or wake an agent. This delta runs on an existing directory-view invocation, not every fleet tick.\n\n**Correctness is not cleared:** Bobcat's published **F002 BLOCK** at this head remains. `actions_weighing` still derives holder presence from the empty prime assignment slice without receiving designated-seat liveness, so queued prime requests can produce false no-live-designation advice. This is a source-confirmed correctness issue, not a new launch or polling cost; the cost pass must not be treated as merge clearance.\n\n**Exact-head CI:** [42451094504](https://github.com/AI-Substrate/pij-fleet/actions/runs/42451094504), successful Rust job `128640285772`, exact upload artifact **13605378771**: **2,206 executed cases passed**, zero failures/errors, five separately skipped. Verified the recent-live-legacy regression, designation/assignment-refusal and existing no-project-docs delivery cases, plus all six spawn guards. CLI rendering cases, Rust lint and Node22/24 checks succeed; replacement delivers run `42451094536` succeeds. The legacy regression does not cover F002's queued-request/liveness pair; author mutation claims were not rerun.\n\nClean worktree; local/GitHub exact heads agree, CLEAN/MERGEABLE. No local build, test, mutation, live view/role operation, probe or product edit. Existing #176 build-cap proof is carried, not locally reproduced; this is not a new fleet cost measurement.\n"
+		}
+	]
+}
