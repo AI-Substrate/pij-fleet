@@ -942,6 +942,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-08T09:24:59.338Z",
 					"why": "F122 delivered ends coder/f<N> via Fixes: line #186"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T10:42:22.205Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "188",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F137 bind :0 #188"
 				}
 			]
 		}
