@@ -681,3 +681,90 @@ async fn a_dropped_caller_never_leaves_a_compact_admitted_untracked() {
         "some case dropped the caller with the admission in flight"
     );
 }
+
+/// #184 review (bobcat): a refused compact is acked `done` on the queue for
+/// replay safety, so queue state never says a compact ran. The memory turn's
+/// cutoff (F130) takes only compacts plan 222 settled after seeing them
+/// delivered: a refused one settles `undelivered`, and the release before it
+/// is still in the seat's context. A delivered one then clears it.
+#[tokio::test]
+async fn a_refused_compact_never_advances_the_memory_turn_cutoff() {
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    services
+        .directory
+        .store()
+        .replace_assignments(
+            "pij-fleet",
+            &[pij_store::Assignment {
+                project: "pij-fleet".into(),
+                role: "reviewer".into(),
+                instance: "175".into(),
+                seat: SEAT.into(),
+                harness: Some("copilot".into()),
+                session: None,
+                machine: None,
+                from: "2020-01-01T00:00:00.000Z".into(),
+                to: Some("2020-01-01T01:00:00.000Z".into()),
+                assigned_by: PARENT.into(),
+                released_by: Some(PARENT.into()),
+                why: "review".into(),
+                release_why: Some("merged".into()),
+                end_pending: false,
+            }],
+        )
+        .await
+        .unwrap();
+    let context = || async {
+        services
+            .directory
+            .store()
+            .context_assignments(SEAT)
+            .await
+            .unwrap()
+            .rows
+            .into_iter()
+            .map(|row| format!("{}/{}", row.role, row.instance))
+            .collect::<Vec<_>>()
+    };
+    let watchdog = PaWatchdog::default();
+    let start = crate::http::system_time_ms().unwrap();
+    crate::compaction_wake::record(&services, &SeatId::from(SEAT), "m-refused", start)
+        .await
+        .unwrap();
+    append(
+        &services,
+        crate::delivery::OUTCOME_EVENT_KIND,
+        start + 1_000,
+        serde_json::json!({"msg_id": "m-refused", "outcome": {"outcome": "refused", "reason": "no"}, "transport": "pty"}),
+    )
+    .await;
+    let _ = watchdog
+        .round(&services, INTERVAL, start + COMPACT_DELIVERY_BOUND_MS)
+        .await
+        .unwrap();
+    assert_eq!(
+        settled(&services, "m-refused").await.as_deref(),
+        Some("undelivered")
+    );
+    assert_eq!(
+        context().await,
+        ["reviewer/175"],
+        "the refused compact cleared nothing"
+    );
+
+    let later = start + COMPACT_DELIVERY_BOUND_MS + MINUTE;
+    compact(&services, "m-delivered", later).await;
+    let _ = watchdog
+        .round(&services, INTERVAL, later + COMPACT_SETTLE_MS + MINUTE)
+        .await
+        .unwrap();
+    assert_eq!(
+        settled(&services, "m-delivered").await.as_deref(),
+        Some("holds-nothing")
+    );
+    assert!(
+        context().await.is_empty(),
+        "a delivered compact clears the context"
+    );
+}

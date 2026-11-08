@@ -106,7 +106,8 @@ Builtin subagents are not peers here: a coder or reviewer is a real pij seat.
 fence; forbidden paths; git and machine rules (§ C11, § C12); what *done* means (ACs with
 receipts, gates, PR); before reporting a head ready, `git ls-remote origin <branch>` must print
 the exact SHA it names, in any repo (in pij-fleet `just pr-freeze <pr>` also checks it); reply only
-with `pij send <you> --body-file <file>`.
+with `pij send <you> --body-file <file>`. For F-item fixes, the PR body carries `Fixes: F<n>[, F<n>]`
+next to its `Delivers:` line, so `pij delivered` ends the `coder/f<n>` holdings (F122).
 
 **Reviewer packet**: the plan path, the exact head SHA (the one `just pr-freeze <pr>` called
 FINAL; a verdict on any other head is void), `/builder 7 review --plan "<path>"`,

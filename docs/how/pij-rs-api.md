@@ -1627,10 +1627,24 @@ Plus every writer refusal above. Cost: one writer commit per note (git 7, ddocs
 
 #### The memory turn
 
-Before a `compact` control or `pij close` of a seat that holds a role, the
-daemon asks that seat to write what it learned. It reads the seat's open
-holdings (one indexed query; a seat with none is compacted or closed exactly
-as before), delivers one prompt from `pij-bg` naming each role and project and
+Before a `compact` control or `pij close` of a seat that holds a role, or
+held one in its current context, the daemon asks that seat to write what it
+learned. It reads the seat's holdings in this context (F130): every open one,
+and each released since the seat's last delivered compact. A role released on
+its PR's merge is still in the seat's context until a compact clears it. The
+cutoff is the admission time of the newest compact that plan 222's round
+settled after seeing it delivered (`woken`, `resumed` or `holds-nothing`),
+among the seat's 16 newest compactions (`compaction_wakes`, which records
+every compact `admit_control` admits, of either queue kind). Queue state never
+counts: a refused compact is acked `done` for replay safety, and settles
+`undelivered`. With no delivered compact on record, every release counts. Two
+indexed reads (migration 0045), both bounded: the seat's compaction rows by
+`(seat, seq)`, and its holdings by `(seat, to_at)`, open ones then releases
+newest first, 32 at most (`CONTEXT_HOLDINGS`). Past that, the prompt says there
+were more than 32 and asks for notes on the ones the seat remembers. A seat that
+held nothing in this context is compacted or
+closed exactly as before. The daemon delivers one prompt from `pij-bg` naming
+each role and project, a released one as `released HH:MM` (local time), and
 the `pij directory memory add` command, then holds the action until the prompt
 is delivered and the seat next publishes `idle`, or until the bound passes,
 after which it proceeds anyway. The bound is one constant, 5 minutes
@@ -1661,6 +1675,22 @@ ordinary activity changes during the turn do not block it. The native CLI's
 `send --command compact` and `compact-self` print the held receipt with its
 `held` and `memory_turn`.
 
+A project, role or instance appears in the prompt only when it fits
+`[a-z0-9][a-z0-9-]{0,31}`, the shape of every one in use; otherwise it shows as
+`invalid (N chars)`, and a role or project that can't be shown gets the generic
+`pij directory memory add <role> --project <project>` command (#184 review,
+S184-001). A role's instance is chosen by whoever assigns it, and the prompt is
+daemon-authored. A release time shows only its digits.
+
+When the store can't read the seat's holdings, or the lookup takes longer than
+2 s (`LOOKUP_BOUND`), the compact or close is neither refused nor run without
+asking: it takes a generic memory turn ("pij
+couldn't read your holdings; write a note for any role you held in this
+context, or end your turn"), and `data.memory_turn` and the event carry
+`holdings_unread: true`. That is a brake, not a policy: it can only add a turn,
+never block or skip the action, so a seat whose context is full is never
+stranded by a store error.
+
 A seat has at most one memory turn pending. A second compact or close for it
 while one is held is refused with `E-RS-MEMORY-TURN-PENDING` (HTTP 409); it is
 never a second turn or a second action.
@@ -1683,9 +1713,10 @@ is only published on a change from working, so the first idle after that
 boundary ends the turn that read the prompt, whether the prompt started that
 turn or arrived during it.
 
-Cost: one live subscription per pending memory turn (only for role holders
-being compacted or closed), one delivery, one spine event and one deadline; no
-poll and no launch. Anyone else pays one store query.
+Cost: one live subscription per pending memory turn (only for seats that
+held a role in this context, being compacted or closed), one delivery, one
+spine event and one deadline; no poll and no launch. Anyone else pays the two
+bounded, indexed holdings reads.
 
 ## Number claims and delivery at merge (plan 196)
 
@@ -1751,9 +1782,13 @@ pij never prints a replacement for a cell it cannot see. `data.notes[]` says
 what was skipped and why.
 
 It then ends the holdings the PR finished (plan 215, F70): each open
-`reviewer/<pr>`, `security/<pr>` and `performance/<pr>`, and `coder/<plan>` for
+`reviewer/<pr>`, `security/<pr>` and `performance/<pr>`, `coder/<plan>` for
 each plan number in the PR's `docs/plans/NNN-*` files (the scan that releases
-claims). The plan paths a PR touches select which coder holdings end; they are
+claims), and `coder/f<N>` for each F-item the body's `Fixes:` line names (F122).
+`Fixes: F119, F117` is parsed as strictly as `Delivers:`: each token is `F` and
+digits, separated by commas or whitespace. A body with no `Fixes:` line ends no
+F-item holding (pij never guesses from the title), and a malformed one refuses
+`E-RS-FIXES` before anything is recorded. The plan paths a PR touches select which coder holdings end; they are
 not proof the plan's work is complete. Only a holding whose `from` is before
 the PR's `mergedAt` ends: the merge time binds the release to the work the PR
 ended, so a key reassigned after the merge (new work under the same
@@ -1790,6 +1825,7 @@ registered seat can run them. That is F88's root, owned by PRD 003 req-10
 | `E-RS-CLAIM-SCAN` | the project's checkout, or a folder of that kind's numbers, exists but cannot be read; nothing is claimed |
 | `E-RS-NOT-FOUND` | `--pm` names no live seat, or `--project` no project |
 | `E-RS-PR-NOT-MERGED` | gh says the PR is open or closed unmerged |
+| `E-RS-FIXES` | the body's `Fixes:` line names nothing, or a token that is not `F<number>` (F122); nothing is recorded |
 | `E-RS-DELIVERS` | the body has no `Delivers:` line in a project whose checkout has `docs/project` (or pij can't tell whether it has one), or names something that is not a ddocs address (the refusal quotes the whole line and shows the form to write) |
 | `E-RS-GH-MISSING` | gh is not installed or `PIJ_GH` is not an absolute executable; the next step installs it and restarts the daemon |
 | `E-RS-GH-AUTH` | gh is not signed in for the daemon's user; the next step is `gh auth login` |

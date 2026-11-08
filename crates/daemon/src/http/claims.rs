@@ -30,6 +30,8 @@ use crate::community::gh::{E_GH, E_GH_AUTH, E_GH_MISSING, PullRequest};
 pub const E_NOT_MERGED: &str = "E-RS-PR-NOT-MERGED";
 /// The PR body has no usable `Delivers:` line.
 pub const E_DELIVERS: &str = "E-RS-DELIVERS";
+/// The PR body's `Fixes:` line doesn't parse (F122).
+pub const E_FIXES: &str = "E-RS-FIXES";
 /// No such claim.
 pub const E_CLAIM_UNKNOWN: &str = "E-RS-CLAIM-UNKNOWN";
 /// The claim was already released.
@@ -362,6 +364,10 @@ async fn delivered(
             None => (None, "none"),
         },
     };
+    // F122: the F-items the PR fixes, as strictly as Delivers:. A malformed
+    // line refuses before anything is recorded; no line ends no F-item holding.
+    let fixes = claims::fixes(&pull.body)
+        .map_err(|error| Refusal::new(E_FIXES, format!("PR #{number}: {error}")))?;
     let mut notes: Vec<String> = missing_line.into_iter().collect();
     if let (Some(flag), Some(told)) = (call.get("pm"), &pm)
         && pm_source == "holder"
@@ -403,6 +409,7 @@ async fn delivered(
         .filter(|(kind, _)| kind == "plan")
         .map(|(_, number)| number)
         .collect();
+    let fixes: BTreeSet<u64> = fixes.into_iter().collect();
     let ended = end_holdings(
         state,
         actor,
@@ -411,6 +418,7 @@ async fn delivered(
         &pull,
         &merge_commit,
         &plans,
+        &fixes,
         &mut notes,
     )
     .await?;
@@ -479,8 +487,9 @@ async fn delivered(
 }
 
 /// End the holdings PR `number` finished (plan 215, F70): `reviewer`,
-/// `security` and `performance` keyed by the PR, and `coder` keyed by each
-/// plan the PR's files deliver. The plan paths select which coder holdings
+/// `security` and `performance` keyed by the PR, `coder` keyed by each plan
+/// the PR's files deliver, and `coder/f<N>` for each F-item its `Fixes:` line
+/// names (F122; no line, no F-item holding ends). The plan paths select which coder holdings
 /// end; they are not proof the plan's work is complete. One writer commit for
 /// all of them, never one per holding, and none when nothing is open, so a
 /// re-run is a no-op. A holding the store lists but the holders document does
@@ -499,6 +508,7 @@ async fn end_holdings(
     pull: &PullRequest,
     merge_commit: &str,
     plans: &BTreeSet<u64>,
+    fixes: &BTreeSet<u64>,
     notes: &mut Vec<String>,
 ) -> Result<Vec<HoldingReceipt>, Refusal> {
     let number = pull.number;
@@ -525,7 +535,7 @@ async fn end_holdings(
     let (targets, later) = state
         .services
         .directory
-        .finished_by(project, number, plans, merged)
+        .finished_by(project, number, plans, fixes, merged)
         .await?;
     notes.extend(later);
     if targets.is_empty() {
@@ -789,7 +799,7 @@ fn store_refusal(error: pij_core::error::PijError) -> Refusal {
 
 fn refused(command: &str, refusal: &Refusal) -> Response {
     let status = match refusal.code {
-        "E-RS-ARG" | "E-RS-UNPORTED" | E_DELIVERS => StatusCode::BAD_REQUEST,
+        "E-RS-ARG" | "E-RS-UNPORTED" | E_DELIVERS | E_FIXES => StatusCode::BAD_REQUEST,
         "E-RS-OWNERSHIP" => StatusCode::FORBIDDEN,
         "E-RS-NOT-FOUND" | E_CLAIM_UNKNOWN => StatusCode::NOT_FOUND,
         "E-RS-STORE" | E_GH | E_GH_MISSING | E_GH_AUTH => StatusCode::INTERNAL_SERVER_ERROR,

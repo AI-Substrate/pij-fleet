@@ -2105,14 +2105,13 @@ fn resolve_client_addr(flag: Option<&str>, env: Option<OsString>) -> Result<Stri
 
 fn resolve_bind_addr(flag: Option<&str>, env: Option<OsString>) -> Result<String, String> {
     let (value, source) = configured_string(flag, env, "--bind", "PIJ_RS_BIND")?;
-    let address = value.parse::<SocketAddr>().map_err(|_| {
-        format!("{source} has malformed value {value:?}: expected IP:port with port 1..65535")
+    // Port 0 asks the OS for a free port (F137): the banner announces the
+    // bound address, so a test never reserves a port and races to reuse it.
+    value.parse::<SocketAddr>().map_err(|_| {
+        format!(
+            "{source} has malformed value {value:?}: expected IP:port (port 0 picks a free one)"
+        )
     })?;
-    if address.port() == 0 {
-        return Err(format!(
-            "{source} has malformed value {value:?}: expected IP:port with port 1..65535"
-        ));
-    }
     Ok(value)
 }
 
@@ -5244,6 +5243,10 @@ PEC notice";
         assert_eq!(
             resolve_bind_addr(None, None).expect("default bind"),
             "127.0.0.1:7461"
+        );
+        assert_eq!(
+            resolve_bind_addr(Some("127.0.0.1:0"), None).expect("an ephemeral bind"),
+            "127.0.0.1:0"
         );
 
         assert_eq!(
