@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "ffae78163f60762d894cf9808a623c5091ad018f",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/192#issuecomment-6725108876",
+				"result": "pass",
+				"role": "performance",
+				"subject": "pr:192",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS** at `ffae78163f60762d894cf9808a623c5091ad018f`.\n\nThe sole commit over main `97fd5883` wires `PIJ_IDLE_NUDGE` once at daemon startup into default-false `Config::idle_nudge`, then copies that Boolean into `Services`. Accepted values are trimmed and ASCII-case-insensitive `1`, `on`, `true`. The environment lookup, trim/lowercase scan and temporary String allocation are once per boot, not per seat or tick.\n\n**Off:** the first statement in `idle_nudge::round` returns an empty Vec before obtaining its store facade. Each existing 60-second watchdog tick pays only a Boolean check/empty return for this component: **no idle-nudge data/schema read, map/candidate allocation, mark, entropy read, message, FYI or cold wake**. At the last S=2,278/H=20/I=15 census, this skips the component's 17 data reads, 17 schema PRAGMAs and snapshot-reference map. The rest of the shared watchdog still runs; \"free\" is zero idle-nudge I/O/wake cost, not literally zero instructions or zero whole-daemon CPU.\n\n**On:** the existing body is unchanged after that check. Holder/query/index budgets, independent per-FYI randomness, mark-before-send and recipient scaling are preserved; only the constant switch check is added. Enabling it still restores the known resting-specialist/cold-wake behavior. This is the safety valve, not F144's part-2 eligibility fix.\n\nNo new loop, poll, timer, hook, executable site, schema migration or writer commit. It is a boot flag, not a hot toggle: deployed behavior changes only when the rebuilt daemon starts with the intended environment. No current-fleet disabling or measured CPU saving is claimed.\n\n**Exact-head CI:** [42507561673](https://github.com/AI-Substrate/pij-fleet/actions/runs/42507561673), attempt 1, successful Rust job `128813391644`, upload artifact **13628425612**. Artifact metadata pins the full head; JUnit contains **2,277 executed cases passed**, zero failures/errors/skips, with five separately skipped by nextest. Verified `the_nudge_is_off_by_default`, all eight explicitly enabled daemon cases and all six spawn guards. Rust lint, Node22/24 and delivers succeed. The ignored-switch mutant is author-reported, not rerun.\n\nFrozen detached worktree/GitHub heads agree, clean and CLEAN. No local build, test, mutation or live reading/probe. No `Fixes:` disposition is added; coder/f144 stays open for part 2. Correctness/security remain independent.\n"
+		}
+	]
+}
