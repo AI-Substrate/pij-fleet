@@ -896,6 +896,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-double-bobcat",
 					"why": "F130 memory turn covers released holdings #184"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T08:08:45.039Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "183",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "plan 223 A1 seat capabilities #183 (reviewed workshop 001 on #163)"
 				}
 			]
 		}
