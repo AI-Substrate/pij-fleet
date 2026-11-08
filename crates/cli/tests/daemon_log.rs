@@ -1,7 +1,6 @@
 #![cfg(unix)]
 
 use std::fs::{self, File};
-use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -32,13 +31,10 @@ fn daemon_log_timestamps_startup_multiline_errors_and_shutdown() {
     let log_path = state.join("daemon.log");
     let stdout = File::create(&log_path).expect("daemon log");
     let stderr = stdout.try_clone().expect("shared daemon log");
-    let listener = TcpListener::bind("127.0.0.1:0").expect("reserve private port");
-    let bind = listener.local_addr().expect("private address").to_string();
-    drop(listener);
     let child = Command::new(env!("CARGO_BIN_EXE_pij-rs"))
         .arg("--state-dir")
         .arg(&state)
-        .args(["daemon", "--offline", "--bind", &bind])
+        .args(["daemon", "--offline", "--bind", "127.0.0.1:0"])
         .env("HOME", &root)
         .env("CLAUDE_CONFIG_DIR", &home)
         .env_remove("PIJ_RETIRED_HARNESSES")
@@ -51,7 +47,15 @@ fn daemon_log_timestamps_startup_multiline_errors_and_shutdown() {
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         let log = fs::read_to_string(&log_path).expect("read running daemon log");
-        if log.contains("pij-rs daemon: listening on") {
+        // F137: port 0 binds a free port, and the banner names the real one.
+        if let Some((banner, _)) = log
+            .split("pij-rs daemon: listening on ")
+            .nth(1)
+            .and_then(|rest| rest.split_once('\n'))
+        {
+            let addr = banner.split_whitespace().next().expect("banner address");
+            let addr: std::net::SocketAddr = addr.parse().expect("banner names IP:port");
+            assert_ne!(addr.port(), 0, "banner must name the bound port: {log}");
             break;
         }
         assert!(
