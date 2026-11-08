@@ -629,6 +629,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-swift-kestrel",
 					"why": "F141 predictable daemon notice ids; delivery path owner"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T22:23:33.193Z",
+					"harness": "copilot",
+					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
+					"instance_key": "f147",
+					"machine": "ops.osk.lan",
+					"seat": "pij-exuberant-wildcat",
+					"why": "F147: bounce-rs/rs-autostart pass PIJ_IDLE_NUDGE"
 				}
 			]
 		}
