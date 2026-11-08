@@ -8,17 +8,27 @@ import {
 	check,
 	checkState,
 	createWorktree,
+	decide,
 	entry,
 	guard,
 	latestChecks,
 	migrationNumbers,
+	type PruneCandidate,
+	processCwds,
+	prune,
 	type Ran,
 	type Runner,
 	render,
+	renderPrune,
 } from "./pr-freeze.js";
 
 const SCRIPT = resolve(import.meta.dirname, "pr-freeze.ts");
-const TSX = resolve(import.meta.dirname, "..", "..", "node_modules", ".bin", "tsx");
+/** How the `pr-freeze` recipe runs it: node alone, no node_modules (F109). */
+const NODE = [
+	process.execPath,
+	"--experimental-strip-types",
+	"--disable-warning=ExperimentalWarning",
+];
 
 const PR = 7;
 const HEAD = "a7a0f4a470532ae54d0103528b2bf338abff3bfe";
@@ -418,11 +428,171 @@ describe("pr-freeze (plan 220, F92)", () => {
 			expect(entry(url, SCRIPT)).toEqual({ kind: "run" });
 			expect(entry(url, dir)).toEqual({ kind: "import" });
 			expect(entry(url, undefined)).toEqual({ kind: "import" });
-			const result = spawnSync(TSX, [link], { encoding: "utf8" });
+			const [node = process.execPath, ...flags] = NODE;
+			const result = spawnSync(node, [...flags, link], { encoding: "utf8" });
 			expect(result.status).toBe(2);
 			expect(result.stderr).toContain("usage: just pr-freeze <pr number>");
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("pr-freeze --prune (F107)", () => {
+	const SHA = HEAD;
+	const at = (path: string, head = SHA, detached = true) =>
+		`worktree ${path}\nHEAD ${head}\n${detached ? "detached" : "branch refs/heads/x"}\n`;
+	const candidate = (over: Partial<PruneCandidate> = {}): PruneCandidate => ({
+		path: `/work/review-7-${SHA.slice(0, 7)}`,
+		pr: 7,
+		sha7: SHA.slice(0, 7),
+		head: SHA,
+		detached: true,
+		...over,
+	});
+
+	it("only the PR's state decides; local changes and use only ever spare", () => {
+		const merged = { state: "MERGED", headRefOid: SHA };
+		const moved = { state: "OPEN", headRefOid: OTHER };
+		const current = { state: "OPEN", headRefOid: SHA };
+		expect(decide(candidate(), merged, undefined, undefined)).toMatchObject({
+			remove: true,
+			why: "PR #7 is merged",
+		});
+		expect(
+			decide(candidate(), { state: "CLOSED", headRefOid: SHA }, undefined, undefined).remove,
+		).toBe(true);
+		expect(decide(candidate(), moved, undefined, undefined)).toMatchObject({
+			remove: true,
+			why: "PR #7's head moved on to 08f7482",
+		});
+		expect(decide(candidate(), current, undefined, undefined)).toMatchObject({
+			remove: false,
+			why: "PR #7 is open at this head",
+		});
+		// Brakes: each spares a worktree the state would remove, and never
+		// turns a keep into a remove.
+		for (const [dirty, busy] of [
+			["it has local changes", undefined],
+			[undefined, "seat pij-x's folder is in it"],
+		] as const) {
+			expect(decide(candidate(), merged, dirty, busy).remove).toBe(false);
+			expect(decide(candidate(), current, dirty, busy).remove).toBe(false);
+		}
+		expect(decide(candidate(), undefined, undefined, undefined).remove).toBe(false);
+		expect(decide(candidate({ detached: false }), merged, undefined, undefined).remove).toBe(false);
+		expect(decide(candidate({ head: OTHER }), merged, undefined, undefined).remove).toBe(false);
+	});
+
+	interface Fleet {
+		worktrees: string;
+		prs: Record<number, { state: string; headRefOid: string } | null>;
+		dirty: string[];
+		seats: { id: string; folder: string }[] | null;
+	}
+
+	function fleet(world: Fleet): { run: Runner; calls: string[] } {
+		const calls: string[] = [];
+		const run: Runner = (program, args) => {
+			calls.push([program, ...args].join(" "));
+			if (program === "pij-rs") {
+				return world.seats
+					? ok(JSON.stringify({ ok: true, data: { seats: world.seats } }))
+					: { code: 1, stdout: "", stderr: "daemon down" };
+			}
+			if (program === "gh") {
+				const pr = world.prs[Number(args[2])];
+				return pr ? ok(JSON.stringify(pr)) : { code: 1, stdout: "", stderr: "no PR" };
+			}
+			if (args[0] === "-C") return ok(world.dirty.includes(args[1] ?? "") ? "?? notes.md\n" : "");
+			if (args[0] === "worktree" && args[1] === "list") return ok(world.worktrees);
+			if (args[0] === "worktree" && args[1] === "remove") return ok();
+			return { code: 1, stdout: "", stderr: `unexpected ${program} ${args.join(" ")}` };
+		};
+		return { run, calls };
+	}
+
+	const merged = `/work/review-7-${SHA.slice(0, 7)}`;
+	const current = `/work/review-8-${SHA.slice(0, 7)}`;
+	const dirty = `/work/review-9-${SHA.slice(0, 7)}`;
+	const seated = `/work/review-10-${SHA.slice(0, 7)}`;
+	const cwd = `/work/review-11-${SHA.slice(0, 7)}`;
+	const world = (): Fleet => ({
+		worktrees: [
+			`worktree ${ROOT}\nHEAD ${MAIN}\nbranch refs/heads/main\n`,
+			at(merged),
+			at(current),
+			at(dirty),
+			at(seated),
+			at(cwd),
+			at("/work/fleet-review-113"),
+		].join("\n"),
+		prs: {
+			7: { state: "MERGED", headRefOid: SHA },
+			8: { state: "OPEN", headRefOid: SHA },
+			9: { state: "CLOSED", headRefOid: SHA },
+			10: { state: "OPEN", headRefOid: OTHER },
+			11: { state: "MERGED", headRefOid: SHA },
+		},
+		dirty: [dirty],
+		seats: [{ id: "pij-reviewer", folder: `${seated}/crates` }],
+	});
+	const cwds = () => [{ pid: "4242", cwd }];
+
+	it("removes only worktrees whose work is over and that nothing is using", () => {
+		const { run, calls } = fleet(world());
+		const verdicts = prune(run, false, cwds);
+		expect(verdicts.map((verdict) => [verdict.path, verdict.remove])).toEqual([
+			[merged, true],
+			[current, false],
+			[dirty, false],
+			[seated, false],
+			[cwd, false],
+		]);
+		expect(calls.filter((call) => call.startsWith("git worktree remove"))).toEqual([
+			`git worktree remove ${merged}`,
+		]);
+		const text = renderPrune(verdicts, false);
+		expect(text).toContain("1 of 5 removed");
+		expect(text).toContain(`kept ${dirty}: PR #9 is closed, but it has local changes`);
+		expect(text).toContain(
+			`kept ${seated}: PR #10's head moved on to 08f7482, but seat pij-reviewer's folder is in it`,
+		);
+		expect(text).toContain(`kept ${cwd}: PR #11 is merged, but process 4242's cwd is in it`);
+		expect(text).not.toContain("fleet-review-113");
+	});
+
+	it("--dry-run removes nothing; an unreadable seat list or cwd listing removes nothing at all", () => {
+		const dry = fleet(world());
+		expect(renderPrune(prune(dry.run, true, cwds), true)).toContain(`would remove ${merged}`);
+		expect(dry.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+
+		const down = { ...world(), seats: null };
+		const blind = fleet(down);
+		expect(() => prune(blind.run, false, cwds)).toThrow(/refusing --prune.*nothing was removed/);
+		expect(blind.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+		const noCwds = fleet(world());
+		expect(() =>
+			prune(noCwds.run, false, () => {
+				throw new Error("lsof listed no process cwds");
+			}),
+		).toThrow(/refusing --prune/);
+		expect(noCwds.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+	});
+
+	it("reads cwds from lsof's -F pn output, and from /proc on Linux", () => {
+		const lsof: Runner = () => ({
+			code: 1,
+			stdout: "p12\nfcwd\nn/work/a\np13\nfcwd\nn/work/b\n",
+			stderr: "denied",
+		});
+		expect(processCwds(lsof, "darwin")).toEqual([
+			{ pid: "12", cwd: "/work/a" },
+			{ pid: "13", cwd: "/work/b" },
+		]);
+		expect(() => processCwds(() => ({ code: 1, stdout: "", stderr: "x" }), "darwin")).toThrow();
+		expect(processCwds(lsof, "linux", () => ["9\t/work/c"])).toEqual([
+			{ pid: "9", cwd: "/work/c" },
+		]);
 	});
 });

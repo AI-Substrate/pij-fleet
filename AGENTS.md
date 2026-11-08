@@ -191,6 +191,11 @@ citation disputes, all of which resolved as neither party being wrong.)
   the base is main, it is CLEAN, every check's latest run passed, it is not draft, its migrations
   sit above main's highest, and its `Delivers:` line parses; otherwise each failing condition with
   its next step. `--worktree` creates the detached review worktree at that head (plan 220, F92).
+  `just pr-freeze --prune [--dry-run]` removes `review-<pr>-<sha7>` worktrees whose PR merged,
+  closed or moved to a new head (the one deciding input); local changes, a live seat's folder or any
+  process's cwd inside one only ever spare it, and an unreadable seat or cwd list removes nothing
+  (F107). It runs on node's TypeScript stripping, with no node_modules, so it works from any review
+  worktree (F109).
 - **`just doctor`** — read-only audit: CLI shim shape, `pij-rs` on PATH, skill
   link, OMP policy and daemon health. The first diagnostic when anything drifts.
 - **npm supply chain** — `.npmrc` enforces a seven-day `min-release-age`

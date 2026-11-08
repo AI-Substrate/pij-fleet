@@ -208,10 +208,14 @@ spawn-rate *ARGS:
 # CLEAN, every check's latest run passed, not draft, migrations above main's
 # highest, and the Delivers line parses; else each failing condition and its
 # next step (exit 1). --worktree makes the detached review worktree at that
-# head. Read-only towards the PR; gh and git only.
+# head. Read-only towards the PR; gh and git only. `--prune [--dry-run]` (F107)
+# removes review-<pr>-<sha7> worktrees whose PR merged, closed or moved on;
+# local changes, a live seat's folder or any process's cwd inside one spares it.
+# Runs on node's own TypeScript stripping, so it needs no node_modules (F109):
+# it works from any review worktree.
 # Is a PR head final for verdicts? `just pr-freeze <pr> [--worktree]`
 pr-freeze *ARGS:
-    node_modules/.bin/tsx harness/scripts/pr-freeze.ts "$@"
+    node --experimental-strip-types --disable-warning=ExperimentalWarning harness/scripts/pr-freeze.ts "$@"
 
 # Reject user-specific absolute home paths in executable/configuration surfaces.
 local-path-check:
