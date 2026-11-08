@@ -95,3 +95,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 187 | 2026-11-08T11:09:10.197Z | 2026-11-08T16:06:36.491Z | pij-steady-otter | pij-far-jackal | F134/F133 #187 | PR #187 merged (a244cb479eed) |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 189 | 2026-11-08T11:34:56.987Z | — | pij-steady-otter | — | plan 224 idle-holder nudge #189 | — |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 190 | 2026-11-08T14:22:43.878Z | 2026-11-08T14:28:26.063Z | pij-steady-otter | pij-far-jackal | coder template v4 (Fixes: line); spoonbill free while #183 r2 and #187 rebase wait | PR #190 merged (9c3445c2b611) |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 191 | 2026-11-08T16:35:50.192Z | — | pij-steady-otter | — | F135 instance grammar + window names; spoonbill free until #183 r3 | — |

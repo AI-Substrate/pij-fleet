@@ -994,6 +994,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-08T14:28:26.063Z",
 					"why": "coder template v4 (Fixes: line); spoonbill free while #183 r2 and #187 rebase wait"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T16:35:50.192Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "191",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F135 instance grammar + window names; spoonbill free until #183 r3"
 				}
 			]
 		}
