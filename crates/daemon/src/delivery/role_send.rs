@@ -110,7 +110,9 @@ impl RoleOptions {
             (None, None) => Ok(()),
             _ => Err(Refusal::new(
                 E_ROLE_ONLY,
-                "--reply and --limit apply to a send to role:<id>; a send to a seat has neither",
+                "--reply and --limit apply to a send to role:<id>; a send to a seat has neither. \
+                 Drop them to send to the seat, or send to role:<id> so the request gets a reply \
+                 mode and a time limit",
             )),
         }
     }

@@ -145,6 +145,17 @@ pub struct NativeReceiverHeartbeat {
 }
 
 /// A registered external pull seat, never an extension, relay, or pane consumer.
+/// The receipt reason for a normal message queued for the drain worker because
+/// held FYIs ride along on it (plan 158). It leads with what the sender needs:
+/// the message itself is delivered normally and wakes the seat. It used to say
+/// `fyi-ride-along`, which read as the message being downgraded (F116, F120).
+pub(crate) fn carrying_fyis(count: usize) -> String {
+    let plural = if count == 1 { "" } else { "s" };
+    format!(
+        "delivers as a normal message within seconds (wakes the seat); carries {count} held FYI{plural}"
+    )
+}
+
 pub(crate) fn paneless_pull(seat: &SeatDescriptor) -> bool {
     matches!(
         seat.harness,
@@ -915,16 +926,17 @@ impl DeliveryService {
     /// Enqueue `msg` as a durable delivery; when `carry`, the recipient's pending
     /// FYIs are claimed by the transaction that creates the row and appended to
     /// its body. A failed carrying enqueue falls back to a plain one, so the FYI
-    /// claim can never fail the send; the FYIs then stay pending.
+    /// claim can never fail the send; the FYIs then stay pending. Returns how
+    /// many FYIs the row carries.
     async fn enqueue_carrier(
         &self,
         msg: &Msg,
         recipient: &SeatDescriptor,
         carry: bool,
-    ) -> Result<DeliveryEnqueue> {
+    ) -> Result<(DeliveryEnqueue, usize)> {
         let job = delivery_job(msg, Some(recipient))?;
         if !carry {
-            return self.queue.enqueue_delivery(job).await;
+            return Ok((self.queue.enqueue_delivery(job).await?, 0));
         }
         let at = (self.clock)()?;
         let offset = local_utc_offset();
@@ -942,7 +954,15 @@ impl DeliveryService {
                 let (enqueued, events) = queue
                     .enqueue_delivery_carrying_fyis(carrier, &via, at, attach, spine.as_ref())
                     .await?;
-                Ok((events, enqueued))
+                let carried = events
+                    .iter()
+                    .filter(|event| event.kind == "fyi.delivered")
+                    .filter_map(|event| {
+                        serde_json::from_str::<serde_json::Value>(&event.payload).ok()
+                    })
+                    .map(|payload| payload["ids"].as_array().map_or(0, Vec::len))
+                    .sum::<usize>();
+                Ok((events, (enqueued, carried)))
             })
             .await;
         match carried {
@@ -952,7 +972,7 @@ impl DeliveryService {
                     "pij-rs could not attach FYIs to {}; sending without them: {error}",
                     msg.msg_id
                 );
-                self.queue.enqueue_delivery(job).await
+                Ok((self.queue.enqueue_delivery(job).await?, 0))
             }
         }
     }
@@ -1121,7 +1141,7 @@ impl DeliveryService {
             // A duplicate is a duplicate. Where it entered from does not change
             // whether the recipient has already been given it.
             DeliveryRoute::Queue(reason) => {
-                match self.enqueue_carrier(&msg, &recipient, carry).await? {
+                match self.enqueue_carrier(&msg, &recipient, carry).await?.0 {
                     DeliveryEnqueue::Queued { not_before_ms, .. } => {
                         Self::queued_outcome(Some(reason.as_str()), not_before_ms)
                     }
@@ -1331,7 +1351,7 @@ impl DeliveryService {
                     | DeliveryRung::Pty
                     | DeliveryRung::ControlBodyPull => {
                         match self.enqueue_carrier(&msg, &recipient, carry).await? {
-                            DeliveryEnqueue::Queued { not_before_ms, .. } => {
+                            (DeliveryEnqueue::Queued { not_before_ms, .. }, carried) => {
                                 let reason = if paneless_pull(&recipient) {
                                     None
                                 } else if extension_stream {
@@ -1342,20 +1362,25 @@ impl DeliveryService {
                                             "native-extension-unavailable"
                                         } else {
                                             "extension-stream"
-                                        },
+                                        }
+                                        .to_string(),
                                     )
                                 } else {
                                     match rung {
-                                        DeliveryRung::Observe => Some("unreachable"),
-                                        DeliveryRung::ControlBodyPull => Some("terminal-control"),
-                                        DeliveryRung::Pty => Some("pty"),
-                                        DeliveryRung::Queue if carry => Some("fyi-ride-along"),
+                                        DeliveryRung::Observe => Some("unreachable".to_string()),
+                                        DeliveryRung::ControlBodyPull => {
+                                            Some("terminal-control".to_string())
+                                        }
+                                        DeliveryRung::Pty => Some("pty".to_string()),
+                                        DeliveryRung::Queue if carried > 0 => {
+                                            Some(carrying_fyis(carried))
+                                        }
                                         _ => None,
                                     }
                                 };
-                                Self::queued_outcome(reason, not_before_ms)
+                                Self::queued_outcome(reason.as_deref(), not_before_ms)
                             }
-                            DeliveryEnqueue::AlreadyDelivered(origin) => {
+                            (DeliveryEnqueue::AlreadyDelivered(origin), _) => {
                                 publish_to_recipient = false;
                                 DeliveryOutcome::Delivered { origin }
                             }
@@ -4847,8 +4872,9 @@ mod tests {
             .await
             .expect("a failed FYI claim must not fail the send");
         assert!(
-            matches!(receipt.outcome, DeliveryOutcome::Queued { .. }),
-            "{receipt:?}"
+            matches!(&receipt.outcome, DeliveryOutcome::Queued { reason, .. }
+                if !reason.as_deref().unwrap_or_default().contains("carries")),
+            "nothing rode along, and the receipt says so: {receipt:?}"
         );
         assert_eq!(
             queued_bodies(&fixture, "pij-fyi-claim-down").await,
@@ -4867,9 +4893,10 @@ mod tests {
     }
 
     /// Plan 158 review LOW-1: a pane-bound direct send that would carry FYIs is
-    /// queued as their durable carrier (receipt `queued`, reason
-    /// `fyi-ride-along`) with the block appended, and the next send, with
-    /// nothing held, goes direct again.
+    /// queued as their durable carrier with the block appended, and the next
+    /// send, with nothing held, goes direct again. The receipt says it is a
+    /// normal, waking delivery carrying the held FYIs, never that it became an
+    /// FYI (F116, F120: the old `fyi-ride-along` read as a downgrade).
     #[tokio::test]
     async fn a_pane_bound_send_carrying_fyis_is_queued_as_their_carrier() {
         let fixture = fixture(FakeTransport::reachable());
@@ -4893,7 +4920,12 @@ mod tests {
             .expect("send");
         match &carried.outcome {
             DeliveryOutcome::Queued { reason, .. } => {
-                assert_eq!(reason.as_deref(), Some("fyi-ride-along"));
+                assert_eq!(
+                    reason.as_deref(),
+                    Some(
+                        "delivers as a normal message within seconds (wakes the seat); carries 1 held FYI"
+                    )
+                );
             }
             other => panic!("expected a queued carrier, got {other:?}"),
         }
