@@ -495,6 +495,16 @@ impl DeliveryService {
 
     async fn native_receiver_live(&self, seat: &SeatDescriptor) -> bool {
         let receivers = self.native_receivers.lock().await;
+        self.receiver_live(&receivers, seat)
+    }
+
+    /// Whether `seat`'s receiver lease is live: its own incarnation renewed it
+    /// within the lease, or, with no lease yet, the daemon started within one.
+    fn receiver_live(
+        &self,
+        receivers: &HashMap<SeatId, NativeReceiverLease>,
+        seat: &SeatDescriptor,
+    ) -> bool {
         let renewed_at = match receivers.get(&seat.id) {
             Some(receiver) if receiver.identity.matches(seat) => receiver.renewed_at,
             Some(_) => return false,
@@ -503,6 +513,34 @@ impl DeliveryService {
             None => self.native_started_at,
         };
         renewed_at.elapsed() < Duration::from_secs(self.extension_claim_lease_secs)
+    }
+
+    /// The live native Copilot seats among `seats` whose receiver lease has
+    /// lapsed, so sends to them are refused (F124), each with how long since
+    /// its own incarnation last renewed (`None`: not since this daemon
+    /// started, or only another incarnation did). One in-memory read for the
+    /// PA digest: no launch, no store read.
+    pub(crate) async fn lapsed_native_receivers(
+        &self,
+        seats: &[SeatDescriptor],
+    ) -> Vec<(SeatId, Option<Duration>)> {
+        let receivers = self.native_receivers.lock().await;
+        seats
+            .iter()
+            .filter(|seat| {
+                seat.harness == Harness::Copilot
+                    && seat.native_extension_delivery
+                    && seat.tombstoned_at.is_none()
+                    && !self.receiver_live(&receivers, seat)
+            })
+            .map(|seat| {
+                let renewed = receivers
+                    .get(&seat.id)
+                    .filter(|receiver| receiver.identity.matches(seat))
+                    .map(|receiver| receiver.renewed_at.elapsed());
+                (seat.id.clone(), renewed)
+            })
+            .collect()
     }
 
     /// Name an expired receiver lease independently of host activity. Kept after
@@ -1112,7 +1150,9 @@ impl DeliveryService {
                 cold_check: None,
                 warning: None,
             };
-            self.publish_outcome(&to, &receipt).await?;
+            // The refused transport is the native extension's, never the daemon's
+            // own message transport (F124: a Copilot refusal named `claude-uds`).
+            publish_delivery_outcome(&self.event_bus, &to, &receipt, "extension-stream").await?;
             return Ok(receipt);
         } else {
             native_guard
@@ -5129,6 +5169,16 @@ mod tests {
                 assert_eq!(event["reason"], "native-extension-unavailable");
                 assert_eq!(event["outcome"], "undelivered:native-receiver-unavailable");
             }
+            let outcome: Value = events
+                .iter()
+                .filter(|event| event.kind == "delivery.outcome")
+                .map(|event| serde_json::from_str::<Value>(&event.payload).unwrap())
+                .find(|payload| payload["msg_id"] == refused.msg_id.as_str())
+                .expect("the refusal is published");
+            assert_eq!(
+                outcome["transport"], "extension-stream",
+                "a native refusal names the native transport (F124)"
+            );
         }
     }
 

@@ -66,6 +66,30 @@ pub use auth::BootKey;
 /// The build id reported in the event stream's Hello line.
 pub const BUILD: &str = concat!("pij-rs ", env!("CARGO_PKG_VERSION"));
 
+/// The git commit this daemon was built from (`git rev-parse --short=10 HEAD`),
+/// stamped by `just rs-install` and `just bounce-rs`; `None` for other builds.
+/// The PA digest compares seats' extension builds with it (F113).
+pub const BUILD_COMMIT: Option<&str> = option_env!("PIJ_BUILD_COMMIT");
+
+/// The git tree ids of the extension sources this daemon was built with, in the
+/// form the extensions report after ` tree:` in their `extension_build`
+/// (ten characters of each id, `+`-joined), stamped by `just rs-install` and
+/// `just bounce-rs`; `None` for other builds (F113). Content-addressed, so a
+/// merge that does not touch an extension leaves its stamp unchanged.
+pub const EXTENSION_TREE_COPILOT: Option<&str> = option_env!("PIJ_EXT_TREE_COPILOT");
+/// The OMP (and Pi) extension's: its directory and the one file it imports
+/// from outside it (`OUTSIDE_ROOTS` in `.omp/extensions/pij/adapters/extension-build.ts`).
+pub const EXTENSION_TREE_OMP: Option<&str> = option_env!("PIJ_EXT_TREE_OMP");
+
+/// The extension source trees a daemon was built with, by extension.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ExtensionTrees {
+    /// `.copilot/extensions/pij`.
+    pub copilot: Option<String>,
+    /// `.omp/extensions/pij` and its outside root.
+    pub omp: Option<String>,
+}
+
 /// File naming the exact process that won the daemon bind.
 pub const DAEMON_RUNTIME_FILE: &str = "daemon.runtime.json";
 
@@ -110,6 +134,11 @@ pub struct Services {
     pub interaction: Arc<InteractionGate>,
     /// Panes whose tap the pane observer could not attach (F112), for the PA digest.
     pub tap_refusals: Arc<pane_observer::TapRefusals>,
+    /// The commit this daemon was built from ([`BUILD_COMMIT`]), shown in `ping`.
+    pub build_commit: Option<String>,
+    /// The extension trees this daemon was built with, for the PA digest's
+    /// stale-extension check (F113).
+    pub extension_trees: ExtensionTrees,
     /// Per-harness adapters, one per `Harness` variant.
     ///
     /// A registry rather than a single `Arc<dyn HarnessPort>`: the wave-0 shape
@@ -625,6 +654,11 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         tmux,
         interaction,
         tap_refusals: Arc::new(pane_observer::TapRefusals::new()),
+        build_commit: BUILD_COMMIT.map(str::to_string),
+        extension_trees: ExtensionTrees {
+            copilot: EXTENSION_TREE_COPILOT.map(str::to_string),
+            omp: EXTENSION_TREE_OMP.map(str::to_string),
+        },
         harnesses,
         liveness,
         session_status,
