@@ -32,16 +32,22 @@
 use std::collections::{BTreeSet, HashMap};
 
 use pij_core::BG_ACTOR;
+use pij_core::cold_wake::ColdCheck;
 use pij_core::delivery::{control_kind, delivery_kind};
 use pij_core::idle_nudge::{
-    IDLE_NUDGE_AFTER_MS, IDLE_NUDGE_KIND, IDLE_NUDGE_REASON, nudge_body, prime_body,
+    IDLE_NUDGE_AFTER_MS, IDLE_NUDGE_KIND, IN_FLIGHT_CLAIM_KINDS, is_task_instance, nudge_body,
+    prime_body, prime_cold_body,
 };
 use pij_core::model::{SeatDescriptor, SeatId, SystemState};
 use serde_json::json;
 
 use crate::Services;
 use crate::http::memory_turn::try_holdings_of;
-use crate::pa_watchdog::{RoundOutcome, audit, bg_msg, outcome_text, wake_pa_receipt};
+use crate::pa_watchdog::{RoundOutcome, audit, bg_msg, outcome_text};
+
+/// The audited delivery of a nudge not sent because the seat was not known
+/// to be warm.
+const NOT_WOKEN: &str = "not sent: not warm";
 
 /// One idle holder due a nudge: what it holds, rendered, and the projects.
 struct Due<'a> {
@@ -63,21 +69,24 @@ pub(crate) async fn round(
         return Vec::new();
     }
     let store = services.watchdogs();
-    let holding: Vec<SeatId> = match store.holding_seats().await {
-        Ok(holding) => holding,
+    // Only real in-flight work qualifies (F144): a bare long-lived role
+    // holding is a resting specialist. Three reads per round, none per seat.
+    let in_flight = match store.in_flight().await {
+        Ok(in_flight) => in_flight,
         Err(cause) => {
-            eprintln!("pa watchdog: idle nudge: holding seats: {cause}");
+            eprintln!("pa watchdog: idle nudge: in-flight work: {cause}");
             return Vec::new();
         }
     };
-    if holding.is_empty() {
+    if in_flight.seats.is_empty() {
         return Vec::new();
     }
     // Driven from the holders (P189-F002): one map of the snapshot, then a
     // lookup per holder, never a scan of the holders per seat.
     let by_id: HashMap<&SeatId, &SeatDescriptor> =
         seats.iter().map(|seat| (&seat.id, seat)).collect();
-    let candidates: Vec<&SeatDescriptor> = holding
+    let candidates: Vec<&SeatDescriptor> = in_flight
+        .seats
         .iter()
         .filter_map(|id| by_id.get(id).copied())
         .filter(|seat| {
@@ -101,7 +110,11 @@ pub(crate) async fn round(
         if compacting.contains(&seat.id) {
             continue;
         }
-        let Some(due) = due(services, seat, now_ms).await else {
+        let requests = in_flight
+            .requests
+            .get(&seat.id)
+            .map_or(&[][..], Vec::as_slice);
+        let Some(due) = due(services, seat, requests, now_ms).await else {
             continue;
         };
         if let Some(outcome) = mark_then_nudge(services, seats, &due, now_ms).await {
@@ -144,7 +157,12 @@ async fn mark_then_nudge(
 }
 
 /// Steps 2 to 6 for one idle holder: `Some` when it is due a nudge.
-async fn due<'a>(services: &Services, seat: &'a SeatDescriptor, now_ms: u64) -> Option<Due<'a>> {
+async fn due<'a>(
+    services: &Services,
+    seat: &'a SeatDescriptor,
+    requests: &[pij_store::OpenRequest],
+    now_ms: u64,
+) -> Option<Due<'a>> {
     let store = services.watchdogs();
     let log = |what: &str, cause: &dyn std::fmt::Display| {
         eprintln!("pa watchdog: idle nudge: {what} of {}: {cause}", seat.id);
@@ -204,8 +222,20 @@ async fn due<'a>(services: &Services, seat: &'a SeatDescriptor, now_ms: u64) -> 
             return None;
         }
     };
+    // Re-qualified on the reads this step already makes: only in-flight work
+    // is named, and a seat whose task holdings and work claims ended since the
+    // round's read, with no unanswered request, is left alone (F144).
+    let holdings: Vec<_> = holdings
+        .into_iter()
+        .filter(|held| is_task_instance(&held.instance))
+        .collect();
+    let claims: Vec<_> = claims
+        .into_iter()
+        .filter(|claim| IN_FLIGHT_CLAIM_KINDS.contains(&claim.kind.as_str()))
+        .collect();
     let mut projects: BTreeSet<String> = holdings.iter().map(|held| held.project.clone()).collect();
     projects.extend(claims.iter().map(|claim| claim.project.clone()));
+    projects.extend(requests.iter().map(|request| request.project.clone()));
     let mut held: Vec<String> = holdings
         .iter()
         .map(crate::http::memory_turn::Holding::label)
@@ -216,6 +246,18 @@ async fn due<'a>(services: &Services, seat: &'a SeatDescriptor, now_ms: u64) -> 
             pij_core::render::word(&claim.kind),
             pij_core::claims::format(&claim.kind, claim.number),
             pij_core::render::name(&claim.project)
+        )
+    }));
+    held.extend(requests.iter().map(|request| {
+        let instance = if request.instance.is_empty() {
+            String::new()
+        } else {
+            format!("/{}", pij_core::render::name(&request.instance))
+        };
+        format!(
+            "an unanswered role:{}{instance} request (project {})",
+            pij_core::render::name(&request.role),
+            pij_core::render::name(&request.project)
         )
     }));
     if held.is_empty() {
@@ -281,16 +323,32 @@ async fn nudge(
 ) -> RoundOutcome {
     let seat = due.seat;
     let msg_id = format!("idle-nudge:{}:{}:{nudge_part}", seat.id, due.anchor);
-    let (outcome, cold_check) = wake_pa_receipt(
-        services,
-        seat,
-        nudge_body(due.idle_ms, &due.held),
-        msg_id.clone(),
-        IDLE_NUDGE_REASON,
-        now_ms,
-    )
-    .await;
-    let delivery = outcome_text(&outcome);
+    // Never a cold wake for a nudge (F144): the seat is sent it only when the
+    // cold-wake check says it is warm. Cold, unknown, or a failed check sends
+    // the seat nothing, and its prime is told instead. A brake: it can only
+    // spare a wake.
+    let check = crate::http::cold_wake::verdict(services, seat, now_ms).await;
+    let warm = matches!(check, Ok(ColdCheck::Clear | ColdCheck::Busy));
+    let cold_check = match &check {
+        Ok(verdict) => verdict.receipt_label(true),
+        Err(cause) => format!("unknown: {cause}"),
+    };
+    let delivery = if warm {
+        outcome_text(
+            &services
+                .delivery
+                .accept(bg_msg(
+                    &seat.id,
+                    nudge_body(due.idle_ms, &due.held),
+                    msg_id.clone(),
+                ))
+                .await
+                .map(|receipt| receipt.outcome)
+                .map_err(|cause| cause.to_string()),
+        )
+    } else {
+        NOT_WOKEN.to_string()
+    };
     let mut told = Vec::new();
     for prime in primes(services, seats, due).await {
         // Its own random part, never the nudge's: the nudge id is published on
@@ -301,7 +359,11 @@ async fn nudge(
                 .delivery
                 .hold_fyi(bg_msg(
                     &prime,
-                    prime_body(&seat.id, due.idle_ms, &due.held),
+                    if warm {
+                        prime_body(&seat.id, due.idle_ms, &due.held)
+                    } else {
+                        prime_cold_body(&seat.id, due.idle_ms, &due.held)
+                    },
                     format!("idle-nudge-fyi:{}:{}:{own}:{prime}", seat.id, due.anchor),
                 ))
                 .await

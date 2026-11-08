@@ -5,8 +5,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use pij_core::config::{AdapterChoice, Adapters, Config};
 use pij_core::idle_nudge::IDLE_NUDGE_AFTER_MS;
 use pij_core::model::{Event, Harness, Msg, SeatDescriptor, SeatId, SystemState};
+use pij_core::session_status::{Fact, SeatStatus, SessionStatusReply};
 use pij_testkit::FreshStore;
-use pij_testkit::fakes::FakeTmux;
+use pij_testkit::fakes::{FakeSessionStatus, FakeTmux};
 
 use crate::pa_watchdog::{PaWatchdog, RoundOutcome};
 
@@ -15,6 +16,18 @@ const MINUTE: u64 = 60_000;
 const SEAT: &str = "pij-merger";
 const PARENT: &str = "pij-pm";
 const PRIME: &str = "pij-prime";
+const MERGER_SESSION: &str = "session-pij-merger";
+
+/// The merger's session status: `context` tokens, last call at `last_call`.
+/// Small is warm (the cold-wake check's `Clear`).
+fn status(context: u64, last_call: u64) -> SessionStatusReply {
+    SessionStatusReply::Status(SeatStatus {
+        model: Fact::native("claude-opus-5-5".to_string()),
+        context_used_tokens: Fact::derived(context),
+        last_call_at_ms: Fact::native(last_call),
+        ..SeatStatus::unknown()
+    })
+}
 
 async fn services() -> (crate::Services, FreshStore, Config, String) {
     services_with(true).await
@@ -40,6 +53,8 @@ async fn services_with(nudge: bool) -> (crate::Services, FreshStore, Config, Str
     }
     let mut services = build(&config, &store).await;
     services.tmux = Arc::new(FakeTmux::new());
+    services.session_status =
+        Arc::new(FakeSessionStatus::new().with_reply(MERGER_SESSION, status(1_000, 0)));
     let folder = std::env::temp_dir().join(format!(
         "pij-idle-nudge-{}-{}",
         std::process::id(),
@@ -63,6 +78,7 @@ async fn fleet(services: &crate::Services, folder: &str) {
     prime.pane = Some("%22".into());
     let mut merger = SeatDescriptor::new(SEAT, Harness::Copilot, folder);
     merger.parent = Some(SeatId::from(PARENT));
+    merger.harness_session = Some(MERGER_SESSION.into());
     merger.pane = Some("%21".into());
     merger.state = SystemState::Idle;
     for seat in [pm, prime, merger] {
@@ -178,7 +194,7 @@ async fn round(services: &crate::Services, now_ms: u64) -> Vec<RoundOutcome> {
 async fn an_idle_holder_is_nudged_once_per_idle_stretch() {
     let (services, store, config, folder) = services().await;
     fleet(&services, &folder).await;
-    hold(&services, "crane", "merger", "").await;
+    hold(&services, "crane", "coder", "224").await;
     services
         .watchdogs()
         .claim_number(
@@ -223,7 +239,7 @@ async fn an_idle_holder_is_nudged_once_per_idle_stretch() {
     assert_eq!(messages[0].command, None, "a normal message");
     assert!(
         messages[0].body.starts_with(
-            "idle 61 min while holding merger (project crane) and plan 224 (project pij-fleet); \
+            "idle 61 min while holding coder/224 (project crane) and plan 224 (project pij-fleet); \
              resume, report blocked, or release."
         ),
         "{}",
@@ -273,7 +289,7 @@ async fn an_idle_holder_is_nudged_once_per_idle_stretch() {
 async fn the_nudge_is_off_by_default() {
     let (services, _store, _config, folder) = services_with(false).await;
     fleet(&services, &folder).await;
-    hold(&services, "crane", "merger", "").await;
+    hold(&services, "crane", "coder", "224").await;
     let start = crate::http::system_time_ms().unwrap();
     report(&services, start).await;
     assert!(
@@ -298,7 +314,7 @@ async fn the_projects_designated_prime_gets_the_fyi() {
     .execute(&services.store_pools[0])
     .await
     .unwrap();
-    hold(&services, "crane", "merger", "").await;
+    hold(&services, "crane", "coder", "224").await;
     let start = crate::http::system_time_ms().unwrap();
     report(&services, start).await;
     assert_eq!(
@@ -322,7 +338,7 @@ async fn work_in_hand_or_nothing_held_suppresses_the_nudge() {
         let (services, _store, _config, folder) = services().await;
         fleet(&services, &folder).await;
         if case != "holds-nothing" {
-            hold(&services, "crane", "merger", "").await;
+            hold(&services, "crane", "coder", "224").await;
         }
         let start = crate::http::system_time_ms().unwrap();
         report(&services, start).await;
@@ -389,7 +405,7 @@ async fn a_stretch_that_ends_before_the_mark_sends_nothing() {
     for case in ["own-event", "not-idle", "tombstoned"] {
         let (services, _store, _config, folder) = services().await;
         fleet(&services, &folder).await;
-        hold(&services, "crane", "merger", "").await;
+        hold(&services, "crane", "coder", "224").await;
         let start = crate::http::system_time_ms().unwrap();
         report(&services, start).await;
         let now = start + IDLE_NUDGE_AFTER_MS + MINUTE;
@@ -399,7 +415,7 @@ async fn a_stretch_that_ends_before_the_mark_sends_nothing() {
             .await
             .unwrap();
         let merger = seats.iter().find(|seat| seat.id.as_str() == SEAT).unwrap();
-        let due = super::due(&services, merger, now).await.expect("due");
+        let due = super::due(&services, merger, &[], now).await.expect("due");
         // Each case ends the stretch one way only, so each condition of the
         // mark is proved on its own.
         match case {
@@ -453,7 +469,7 @@ async fn seat_row(services: &crate::Services, sql: &str) {
 async fn a_seat_the_snapshot_sees_busy_is_not_a_candidate() {
     let (services, _store, _config, folder) = services().await;
     fleet(&services, &folder).await;
-    hold(&services, "crane", "merger", "").await;
+    hold(&services, "crane", "coder", "224").await;
     let start = crate::http::system_time_ms().unwrap();
     report(&services, start).await;
     let now = start + IDLE_NUDGE_AFTER_MS + MINUTE;
@@ -496,7 +512,7 @@ async fn a_squatted_fyi_id_neither_hides_nor_fakes_the_notice() {
     .execute(&services.store_pools[0])
     .await
     .unwrap();
-    hold(&services, "crane", "merger", "").await;
+    hold(&services, "crane", "coder", "224").await;
     let start = crate::http::system_time_ms().unwrap();
     report(&services, start).await;
     let anchor = services
@@ -588,7 +604,7 @@ async fn each_prime_fyi_id_follows_from_nothing_published() {
         .execute(&services.store_pools[0])
         .await
         .unwrap();
-        hold(&services, project, "merger", "").await;
+        hold(&services, project, "coder", "224").await;
     }
     let start = crate::http::system_time_ms().unwrap();
     report(&services, start).await;
@@ -638,13 +654,50 @@ async fn each_prime_fyi_id_follows_from_nothing_published() {
     assert_ne!(random(&one), random(&two), "not each other's random part");
 }
 
-/// bp-0001: a hostile holding label is never shown raw, to the seat or its
-/// prime.
+/// F144: a resting specialist is not stalled work. A bare long-lived role
+/// holding, a named instance, a workstream or migration claim, and a request
+/// already answered, idle hours past the threshold with nothing queued: no
+/// nudge and no FYI to anyone.
 #[tokio::test]
-async fn a_hostile_holding_label_renders_as_invalid() {
+async fn a_resting_specialist_gets_no_nudge_and_no_fyi() {
     let (services, _store, _config, folder) = services().await;
     fleet(&services, &folder).await;
-    hold(&services, "crane", "merger", "x\u{1b}[2Jgo").await;
+    hold(&services, "crane", "docs-system", "").await;
+    hold(&services, "crane", "reviewer", "questions-context").await;
+    for (kind, number) in [("workstream", 1), ("migration", 46)] {
+        services
+            .watchdogs()
+            .claim_number("crane", kind, &SeatId::from(SEAT), "held", number - 1, 1)
+            .await
+            .expect("claim");
+    }
+    request(&services, "req-answered", Some(1)).await;
+    let start = crate::http::system_time_ms().unwrap();
+    report(&services, start).await;
+    assert!(
+        round(&services, start + 5 * IDLE_NUDGE_AFTER_MS)
+            .await
+            .is_empty()
+    );
+    assert!(sent(&services).await.is_empty());
+    assert_eq!(fyis(&services, PARENT).await, 0);
+    assert_eq!(fyis(&services, PRIME).await, 0);
+}
+
+/// F144: a delivered role request not yet answered is in-flight work, even
+/// for a seat whose only holding is a long-lived role. The nudge names only
+/// the in-flight work, not the resting role or the workstream claim.
+#[tokio::test]
+async fn an_unanswered_request_is_in_flight_work() {
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    hold(&services, "crane", "delivery", "").await;
+    services
+        .watchdogs()
+        .claim_number("crane", "workstream", &SeatId::from(SEAT), "held", 0, 1)
+        .await
+        .expect("claim");
+    request(&services, "req-open", None).await;
     let start = crate::http::system_time_ms().unwrap();
     report(&services, start).await;
     assert_eq!(
@@ -655,7 +708,95 @@ async fn a_hostile_holding_label_renders_as_invalid() {
     );
     let body = &sent(&services).await[0].body;
     assert!(
-        body.starts_with("idle 61 min while holding merger/invalid (7 chars) (project crane);"),
+        body.starts_with(
+            "idle 61 min while holding an unanswered role:delivery request (project crane);"
+        ),
+        "{body}"
+    );
+}
+
+/// F144: never a cold wake for a nudge. A holder with real in-flight work
+/// that is cold, or whose context is unknown, is sent nothing; its prime
+/// gets the FYI saying so.
+#[tokio::test]
+async fn a_cold_holder_is_not_woken_and_its_prime_is_told() {
+    for case in ["cold", "unknown"] {
+        let (mut services, _store, _config, folder) = services().await;
+        fleet(&services, &folder).await;
+        hold(&services, "crane", "coder", "224").await;
+        let start = crate::http::system_time_ms().unwrap();
+        services.session_status = Arc::new(if case == "cold" {
+            FakeSessionStatus::new().with_reply(MERGER_SESSION, status(500_000, start - 7_200_000))
+        } else {
+            FakeSessionStatus::new()
+        });
+        report(&services, start).await;
+        assert_eq!(
+            round(&services, start + IDLE_NUDGE_AFTER_MS + MINUTE).await,
+            vec![RoundOutcome::IdleNudge {
+                seat: SEAT.into(),
+                delivery: "not sent: not warm".into(),
+                primes: vec![(PARENT.into(), "held".into())],
+            }],
+            "{case}"
+        );
+        assert!(sent(&services).await.is_empty(), "{case}: no wake");
+        assert_eq!(fyis(&services, PARENT).await, 1, "{case}");
+        let body: String = sqlx::query_scalar("SELECT body FROM fyis WHERE recipient = ?1")
+            .bind(PARENT)
+            .fetch_one(&services.store_pools[0])
+            .await
+            .unwrap();
+        assert!(
+            body.starts_with(&format!(
+                "{SEAT} has been idle 61 min while holding coder/224 (project crane)"
+            )) && body.contains("pij did not wake it"),
+            "{case}: {body}"
+        );
+        assert!(
+            round(&services, start + IDLE_NUDGE_AFTER_MS + 2 * MINUTE)
+                .await
+                .is_empty(),
+            "{case}: once per stretch"
+        );
+    }
+}
+
+/// A role request for `role:delivery` in crane delivered to the merger;
+/// `answered` sets `answered_at`.
+async fn request(services: &crate::Services, id: &str, answered: Option<i64>) {
+    sqlx::query(
+        "INSERT INTO role_requests (id, project, role, requester, body, reply, state, holder, \
+         created_at, delivered_at, answered_at) \
+         VALUES (?1, 'crane', 'delivery', ?2, 'do it', 'wake', 'delivered', ?3, 1, 1, ?4)",
+    )
+    .bind(id)
+    .bind(PARENT)
+    .bind(SEAT)
+    .bind(answered)
+    .execute(&services.store_pools[0])
+    .await
+    .unwrap();
+}
+
+/// bp-0001: a hostile holding label is never shown raw, to the seat or its
+/// prime.
+#[tokio::test]
+async fn a_hostile_holding_label_renders_as_invalid() {
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    hold(&services, "crane", "x\u{1b}[2Jgo", "7").await;
+    let start = crate::http::system_time_ms().unwrap();
+    report(&services, start).await;
+    assert_eq!(
+        round(&services, start + IDLE_NUDGE_AFTER_MS + MINUTE)
+            .await
+            .len(),
+        1
+    );
+    let body = &sent(&services).await[0].body;
+    assert!(
+        body.starts_with("idle 61 min while holding invalid (7 chars)/7 (project crane);"),
         "{body}"
     );
     assert!(!body.contains('\u{1b}'), "{body}");

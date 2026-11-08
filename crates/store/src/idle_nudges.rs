@@ -1,22 +1,57 @@
 //! Idle-holder nudges (plan 224, F136, migration 0046).
 //!
-//! The PA watchdog round reads which seats hold work, each such idle seat's
+//! The PA watchdog round reads which seats have in-flight work, each such idle seat's
 //! last own event, and marks a stretch nudged BEFORE it sends, so a restart
 //! never nudges twice for one stretch.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use pij_core::error::Result;
+use pij_core::idle_nudge::{IN_FLIGHT_CLAIM_KINDS, is_task_instance};
 use pij_core::model::SeatId;
 use sqlx::Row;
 
 use crate::migrate::{begin_write, owned_write, require_current_schema};
 use crate::orchestration::{SqliteOrchestration, adapter_error, sql_i64, sql_u64};
 
-/// Every seat with an open role holding or an open claim: two reads of
-/// partial indexes (`community_assignments_open_by_seat`, `claims_open_by_seat`).
-const HOLDING_SEATS_SQL: &str = "SELECT seat FROM community_assignments \
-     INDEXED BY community_assignments_open_by_seat WHERE to_at IS NULL \
-     UNION SELECT seat FROM claims INDEXED BY claims_open_by_seat WHERE released_at IS NULL \
-     ORDER BY seat";
+/// Open role holdings with an instance, for [`pij_core::idle_nudge::is_task_instance`]
+/// to qualify: the partial index of open rows (`community_assignments_open_by_seat`).
+const TASK_HOLDINGS_SQL: &str = "SELECT seat, instance FROM community_assignments \
+     INDEXED BY community_assignments_open_by_seat WHERE to_at IS NULL AND instance != ''";
+
+/// Seats with an open claim of an in-flight kind
+/// ([`pij_core::idle_nudge::IN_FLIGHT_CLAIM_KINDS`]): the partial index of open
+/// claims (`claims_open_by_seat`).
+const WORK_CLAIMS_SQL: &str = "SELECT DISTINCT seat FROM claims INDEXED BY claims_open_by_seat \
+     WHERE released_at IS NULL AND kind IN (?1, ?2)";
+
+/// Role requests delivered to a holder and not answered. A request that is
+/// answered and closed leaves `role_requests` (migration 0040), so the table
+/// holds only open requests: queued, being delivered, or delivered.
+const UNANSWERED_REQUESTS_SQL: &str = "SELECT holder, project, role, instance FROM role_requests \
+     WHERE state = 'delivered' AND answered_at IS NULL AND holder IS NOT NULL";
+
+/// A delivered role request a seat has not answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenRequest {
+    /// The request's project.
+    pub project: String,
+    /// The role it was sent to.
+    pub role: String,
+    /// The role's instance, empty for none.
+    pub instance: String,
+}
+
+/// The seats with real in-flight work (F144): a per-task instance holding, an
+/// open plan or fix claim, or a delivered role request not yet answered. A
+/// bare long-lived role holding is not in-flight work by itself.
+#[derive(Debug, Default)]
+pub struct InFlight {
+    /// Every seat with in-flight work.
+    pub seats: BTreeSet<SeatId>,
+    /// Each seat's unanswered delivered requests.
+    pub requests: BTreeMap<SeatId, Vec<OpenRequest>>,
+}
 
 /// An own event (`spine_own_events`' predicate, verbatim from migration 0046):
 /// a report, or `seat.activity` other than idle.
@@ -53,23 +88,55 @@ const OWNS_LIVE_JOB_SQL: &str = "SELECT EXISTS (SELECT 1 FROM background_jobs \
      WHERE owner = ?1 AND state IN ('queued', 'running'))";
 
 impl SqliteOrchestration {
-    /// Every seat that holds work: an open role holding or an open claim.
+    /// The seats with real in-flight work ([`InFlight`]): three reads per
+    /// round, none per seat.
     ///
     /// # Errors
     /// Store failures.
-    pub async fn holding_seats(&self) -> Result<Vec<SeatId>> {
+    pub async fn in_flight(&self) -> Result<InFlight> {
         require_current_schema(&self.pool).await?;
-        sqlx::query(HOLDING_SEATS_SQL)
+        let mut in_flight = InFlight::default();
+        for row in sqlx::query(TASK_HOLDINGS_SQL)
             .fetch_all(&self.pool)
             .await
             .map_err(adapter_error)?
-            .iter()
-            .map(|row| {
-                row.try_get::<String, _>("seat")
-                    .map(SeatId)
-                    .map_err(adapter_error)
-            })
-            .collect()
+        {
+            let instance: String = row.try_get("instance").map_err(adapter_error)?;
+            if is_task_instance(&instance) {
+                in_flight
+                    .seats
+                    .insert(SeatId(row.try_get("seat").map_err(adapter_error)?));
+            }
+        }
+        for row in sqlx::query(WORK_CLAIMS_SQL)
+            .bind(IN_FLIGHT_CLAIM_KINDS[0])
+            .bind(IN_FLIGHT_CLAIM_KINDS[1])
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?
+        {
+            in_flight
+                .seats
+                .insert(SeatId(row.try_get("seat").map_err(adapter_error)?));
+        }
+        for row in sqlx::query(UNANSWERED_REQUESTS_SQL)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?
+        {
+            let holder = SeatId(row.try_get("holder").map_err(adapter_error)?);
+            in_flight.seats.insert(holder.clone());
+            in_flight
+                .requests
+                .entry(holder)
+                .or_default()
+                .push(OpenRequest {
+                    project: row.try_get("project").map_err(adapter_error)?,
+                    role: row.try_get("role").map_err(adapter_error)?,
+                    instance: row.try_get("instance").map_err(adapter_error)?,
+                });
+        }
+        Ok(in_flight)
     }
 
     /// `seat`'s newest own event (a report, or `seat.activity` other than
@@ -188,9 +255,14 @@ mod tests {
                     .collect::<Vec<String>>()
             }
         };
-        let holding = plan(
-            format!("EXPLAIN QUERY PLAN {}", super::HOLDING_SEATS_SQL),
+        let holdings = plan(
+            format!("EXPLAIN QUERY PLAN {}", super::TASK_HOLDINGS_SQL),
             vec![],
+        )
+        .await;
+        let claims = plan(
+            format!("EXPLAIN QUERY PLAN {}", super::WORK_CLAIMS_SQL),
+            vec!["plan", "fix"],
         )
         .await;
         let last = plan(
@@ -209,8 +281,8 @@ mod tests {
         )
         .await;
         for (index, plan) in [
-            ("community_assignments_open_by_seat", &holding),
-            ("claims_open_by_seat", &holding),
+            ("community_assignments_open_by_seat", &holdings),
+            ("claims_open_by_seat", &claims),
             ("spine_own_events", &last),
             ("spine_own_events", &mark),
             ("background_jobs_live_by_owner", &jobs),

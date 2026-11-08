@@ -35,6 +35,7 @@ pub use community::{
 };
 pub use governance::GovernanceOutcome;
 pub use held::{HELD_FLAG_LIMIT, HELD_FLAG_SECS, HeldDelivery};
+pub use idle_nudges::{InFlight, OpenRequest};
 pub use migrate::{SCHEMA_VERSION, StorePool, open, require_current_schema, schema_version};
 pub use orchestration::{
     BatonLease, DispatchAck, LeaseClaim, SpawnRecordOutcome, SqliteOrchestration, StreamReservation,
