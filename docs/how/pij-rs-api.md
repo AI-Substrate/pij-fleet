@@ -1035,7 +1035,10 @@ daemon-authored message renders by (F135, `pij_core::render::is_name`):
 `[a-z0-9][a-z0-9-]{0,31}`. A `role:<id>/<instance>` address takes the same.
 Anything else refuses (`E-RS-ARG`, or `E-RS-ROLE-ADDRESS` for an address),
 showing the key escaped and bounded. `release` and `rebuild` still read a stored
-key as it is, so a holding recorded before the check can be ended.
+key as it is, so a holding recorded before the check can be ended. Such a stored key never reaches a window name raw: the
+window name (`<project>:<role>[-<instance>]`, in tmux and in `data.window.name`)
+shows each part only through its grammar, the kept-window reason no longer
+repeats the name, and the plain receipt renders the name whole.
 
 `pij directory assign --batch <file> --why <text>` (plan 208, F16) reads one
 `<role>[/<instance>] <seat>` per line (blank and `#` lines skipped) and records
