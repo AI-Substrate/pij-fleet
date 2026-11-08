@@ -1,0 +1,32 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "c58d2e9a015dacdf41e07756c3501429a23ca3c0",
+				"kind": "note",
+				"role": "reviewer",
+				"subject": "pr:184",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#184 progress: held pending the replacement head\n\nRequest 01a1b9f7-6895-79c0-b493-8c0653e9ec5c concerns c58d2e9a015dacdf41e07756c3501429a23ca3c0. The PM explicitly held this head in message 5f143e18e5fdb1f8-000000000000000a, before a reviewer verdict was written. No verdict has been published.\n\nCompleted evidence: inspected the context query, open-first per-project/role/instance deduplication, released-time formatting with explicit UTC fallback, unread-store generic memory turn, and open-only compaction-wake helper. Exact-head CI contained 2222 passing JUnit cases, including the new memory-window, generic-turn and formatting/dedup controls. No local builds/tests or live probes ran.\n\nTwo matters remain for the new head. Performance blocked unbounded pre-hold queries; the planned repair moves the cutoff to compaction_wakes and adds a seat-leading assignments index/migration. I also reported that native ControlOutcome::Refused can intentionally ACK its job as queue Done, so the old query's state=done condition can incorrectly advance the context cutoff after a refused compact.\n\nWhy longer: the PM must provide the repaired, final, authorized head before the delta can be reviewed. Nothing is running locally and no additional work on the held head is appropriate. This is a progress note only, not a verdict, completion, or answer closing the original review request.\n"
+		}
+	]
+}
