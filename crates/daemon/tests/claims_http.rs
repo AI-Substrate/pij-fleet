@@ -706,3 +706,43 @@ async fn review_pending_docs_edits_preserve_all_recorded_prs_for_a_requirement()
         "the PM's next docs PR must not erase the first pending receipt: {second}"
     );
 }
+
+/// F119: with no docs/project in the checkout, a merged PR with no
+/// `Delivers:` line is read as `none`, with a note; a malformed line still
+/// refuses. Where docs/project exists the line stays required (PR 132 in the
+/// test above).
+#[tokio::test]
+async fn without_project_docs_a_missing_delivers_line_reads_as_none() {
+    let rig = rig(
+        "pij-delivered-no-project-docs",
+        vec![
+            pr(150, "MERGED", "no line here", &FILES),
+            pr(151, "MERGED", "Delivers: req-20", &FILES),
+        ],
+    )
+    .await;
+    std::fs::remove_dir_all(rig.main.join("docs/project")).unwrap();
+    let read = rig
+        .call(OTHER, "/v1/delivered", &["delivered", "150"])
+        .await;
+    assert_eq!(read["ok"], true, "{read}");
+    assert_eq!(read["data"]["addresses"], json!([]));
+    assert!(
+        read["data"]["notes"][0]
+            .as_str()
+            .unwrap()
+            .contains("is read as `Delivers: none`"),
+        "{read}"
+    );
+    assert!(
+        read["data"]["line"]
+            .as_str()
+            .unwrap()
+            .contains("it delivers no row"),
+        "{read}"
+    );
+    let bad = rig
+        .call(OTHER, "/v1/delivered", &["delivered", "151"])
+        .await;
+    assert_eq!(bad["details"]["code"], "E-RS-DELIVERS", "{bad}");
+}

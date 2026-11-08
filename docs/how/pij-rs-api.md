@@ -1127,6 +1127,7 @@ that records one holding twice with `E-RS-DIRECTORY-ROW`, and replaces nothing.
 |---|---|
 | `E-RS-DIRECTORY-ROLE-MISSING` | the role has no `role.dd.json`; the next step is `pij directory add` |
 | `E-RS-DIRECTORY-HELD` | the seat already holds that role and instance |
+| `E-RS-DIRECTORY-PRIME-DESIGNATED` | `assign` (single or `--batch`) of the `prime` role: the prime is designated, never assigned (C24); the next step is `pij project set <project> --prime <seat>` (F117) |
 | `E-RS-DIRECTORY-NOT-HELD` | release of a role the seat does not hold |
 | `E-RS-NOT-FOUND` | the seat does not exist |
 | `E-RS-DIRECTORY-OVERLAP` | `lineage add` of a holding that overlaps another of that seat and instance |
@@ -1354,6 +1355,11 @@ points at (`needed_by`, a `needed` or `recurring` prompt) always shows.
 role also carries:
 
 - `live[].seat_live`: whether the holder's seat is registered and not tombstoned;
+- `designated`: for the `prime` role only, the project's designated prime
+  `{seat, seat_live}` (its `prime_id`), else `null`. The prime is designated,
+  never assigned (C24), so this is the prime role's holder: the human view
+  prints `<seat> (designated prime)`, and it counts as a live holder for the
+  idle review and `call_on` (F117);
 - `requests`: `{count, oldest_at}` of its queued requests (s05), or `null`;
 - `latest_output`: its newest output (s06) `{kind, subject, head, result, writer, at, path}`, or `null`;
 - `memory`: `{notes, latest}`, the number of memory notes (s07) and the newest
@@ -1691,7 +1697,11 @@ no webhook, hook or poll). It reads the PR with one gh launch
 (`gh pr view <pr> --json number,state,mergeCommit,mergedAt,body,files,url`, with `--repo`
 taken from the checkout's `origin` when it is on github.com) and takes the
 delivered addresses from the body's `Delivers:` lines: full ddocs addresses
-separated by commas or spaces, or `none`. It records (project, PR, address,
+separated by commas or spaces, or `none`. A project whose checkout has no
+`docs/project` folder has no rows to deliver, so there a body with no
+`Delivers:` line is read as `none`, with a note saying so, and the holdings
+still end (F119); a malformed line still refuses, and where `docs/project`
+exists the line is required. It records (project, PR, address,
 merge commit, recorded by, time, PM) once per address; a re-run records nothing
 new and appends no event. When it records anything it appends one `delivered`
 event whose seat is the PM. The PM is the live holder of the project's
@@ -1754,7 +1764,7 @@ registered seat can run them. That is F88's root, owned by PRD 003 req-10
 | `E-RS-CLAIM-SCAN` | the project's checkout, or a folder of that kind's numbers, exists but cannot be read; nothing is claimed |
 | `E-RS-NOT-FOUND` | `--pm` names no live seat, or `--project` no project |
 | `E-RS-PR-NOT-MERGED` | gh says the PR is open or closed unmerged |
-| `E-RS-DELIVERS` | the body has no `Delivers:` line, or names something that is not a ddocs address (the refusal quotes the whole line and shows the form to write) |
+| `E-RS-DELIVERS` | the body has no `Delivers:` line in a project whose checkout has `docs/project` (or pij can't tell whether it has one), or names something that is not a ddocs address (the refusal quotes the whole line and shows the form to write) |
 | `E-RS-GH-MISSING` | gh is not installed or `PIJ_GH` is not an absolute executable; the next step installs it and restarts the daemon |
 | `E-RS-GH-AUTH` | gh is not signed in for the daemon's user; the next step is `gh auth login` |
 | `E-RS-GH` | gh refused (no such PR) or printed something unreadable |

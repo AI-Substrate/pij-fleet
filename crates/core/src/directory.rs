@@ -178,7 +178,9 @@ assign appends a row to roles/<id>/holders.dd.json, sets the seat's role (pa,
 pm for pm-<n>, else worker; a prime keeps prime) and names its tmux window
 <project>:<role> when this is the seat's first open holding (a second role
 keeps the window's name). A second live holder of a one-holder role is allowed
-with a warning. --batch takes one `<role>[/<instance>] <seat>` per line (blank
+with a warning. The prime is never assigned: it is designated with
+`pij project set <project> --prime <seat>` (C24). --batch takes one
+`<role>[/<instance>] <seat>` per line (blank
 and # lines skipped) and writes them all in one commit, or none. release closes
 the row; release --batch takes the same lines and ends them all in one commit,
 or none. `pij delivered <pr>` ends the holdings a merged PR finished, and

@@ -6456,7 +6456,8 @@ async fn steering_is_switched_per_seat_read_with_the_claim_and_noted_on_receipts
 
 // Plan 215: holdings end with their work.
 
-/// Answers every PR as merged, touching plan 215's folder; `Delivers: none`.
+/// Answers every PR as merged, touching plan 215's folder; `Delivers: none`,
+/// except PR 240, which has no `Delivers:` line.
 /// Its merge time is what [`merge_now`] set for that PR number, else none.
 struct MergedGh;
 
@@ -6488,7 +6489,12 @@ impl pij_daemon::community::gh::PullRequests for MergedGh {
                 .iter()
                 .find(|(pr, _)| *pr == number)
                 .map(|(_, at)| at.clone()),
-            body: "Delivers: none\n".into(),
+            // PR 240 has no Delivers: line at all (F119).
+            body: if number == 240 {
+                "## What changed\n".into()
+            } else {
+                "Delivers: none\n".into()
+            },
             files: vec![
                 "docs/plans/215-holdings-followups/plan.dd.json".into(),
                 "crates/daemon/src/lib.rs".into(),
@@ -7056,5 +7062,108 @@ async fn a_reassignment_between_the_choice_and_the_commit_survives() {
     );
     let coder = holders_at_head(&repo, "coder");
     assert!(coder.last().unwrap()["to"].is_null(), "{coder:?}");
+    rig.server.abort();
+}
+
+/// F119: in a project with no docs/project, a merged PR with no `Delivers:`
+/// line reads as `none` (with a note), and its holdings still end.
+#[tokio::test]
+async fn delivered_without_a_delivers_line_ends_holdings_where_there_are_no_project_docs() {
+    let (repo, rig) = delivered_rig("pij-delivered-no-line").await;
+    assert!(!repo.main.join("docs/project").exists());
+    assert_eq!(
+        batch(&rig, &repo, "assign", "reviewer/240 pij-holder\n").await["ok"],
+        true
+    );
+    merge_now(240);
+    let data = call(rig.addr, "/v1/delivered", &["delivered", "240"], &repo.main).await;
+    assert_eq!(data["ok"], true, "{data}");
+    assert_eq!(
+        released(&data["data"]["holdings"]),
+        ["reviewer/240 pij-holder"]
+    );
+    assert_eq!(data["data"]["addresses"], json!([]));
+    assert!(
+        data["data"]["notes"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("PR #240 has no Delivers: line;")
+            && data["data"]["notes"][0]
+                .as_str()
+                .unwrap()
+                .ends_with("has no docs/project, so it is read as `Delivers: none`"),
+        "{data}"
+    );
+    rig.server.abort();
+}
+
+/// F117 (C24): the prime is designated, never assigned. The picture shows the
+/// project's designated prime as the prime role's holder, and `directory
+/// assign prime`, single or in a batch, refuses naming the verb that
+/// designates it.
+#[tokio::test]
+async fn the_prime_role_shows_the_designation_and_assign_refuses_it() {
+    let repo = repo("pij-directory-prime-designated");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles_and_prime(rig.addr, &repo, &["--prime", "pij-second"]).await;
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "prime",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+
+    let shown = view(rig.addr, &repo).await;
+    let roles = shown["data"]["roles"].as_array().unwrap();
+    let prime = roles.iter().find(|role| role["id"] == "prime").unwrap();
+    assert_eq!(
+        prime["designated"],
+        json!({"seat": "pij-second", "seat_live": true}),
+        "{prime}"
+    );
+    assert_eq!(prime["live"], json!([]), "no holders row is written");
+    let reviewer = roles.iter().find(|role| role["id"] == "reviewer").unwrap();
+    assert_eq!(reviewer["designated"], Value::Null);
+
+    let start = head(&repo);
+    let single = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "assign", "prime", "pij-holder", "--why", "w"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(
+        single["details"]["code"], "E-RS-DIRECTORY-PRIME-DESIGNATED",
+        "{single}"
+    );
+    assert_eq!(
+        single["details"]["next"],
+        "Designate it: pij project set fleet --prime pij-holder"
+    );
+    let batched = batch(
+        &rig,
+        &repo,
+        "assign",
+        "reviewer/1 pij-holder\nprime pij-holder\n",
+    )
+    .await;
+    assert_eq!(
+        batched["details"]["code"], "E-RS-DIRECTORY-PRIME-DESIGNATED",
+        "{batched}"
+    );
+    assert_eq!(head(&repo), start, "nothing written");
     rig.server.abort();
 }

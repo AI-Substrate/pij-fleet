@@ -3274,7 +3274,21 @@ fn render_directory_at(
                 }
                 None => out.push_str("retired"),
             },
-            [] => out.push_str("no holder"),
+            [] => match role["designated"]["seat"].as_str() {
+                // C24: the prime role's holder is the designation (F117).
+                Some(seat) => {
+                    let _ = write!(
+                        out,
+                        "{seat} (designated prime{})",
+                        if role["designated"]["seat_live"] == false {
+                            ", seat not live"
+                        } else {
+                            ""
+                        }
+                    );
+                }
+                None => out.push_str("no holder"),
+            },
             [only] => out.push_str(only),
             many => {
                 let _ = write!(out, "{} holders", many.len());
@@ -4197,6 +4211,32 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("old (general, one): retired"), "{text}");
+    }
+
+    /// F117 (C24): the prime role's holder is the project's designation, not
+    /// "no holder".
+    #[test]
+    fn the_prime_role_renders_its_designated_seat() {
+        let view = |live: bool| {
+            serde_json::json!({
+                "project": "fleet", "prime": "pij-crane", "prime_document": true, "pending": [],
+                "roles": [{"id": "prime", "kind": "core", "holders": "one", "live": [],
+                    "designated": {"seat": "pij-crane", "seat_live": live},
+                    "memory": {"notes": 0, "latest": null}}],
+                "actions": [], "prompts": [], "reviews": [],
+            })
+        };
+        let ten = time::UtcOffset::from_hms(10, 0, 0).unwrap();
+        let text = super::render_directory_at(&view(true), |_| ten);
+        assert!(
+            text.contains("\n  prime (core, one): pij-crane (designated prime)\n"),
+            "{text}"
+        );
+        assert!(!text.contains("no holder"), "{text}");
+        assert!(
+            super::render_directory_at(&view(false), |_| ten)
+                .contains("pij-crane (designated prime, seat not live)")
+        );
     }
 
     /// Plan 203: the prime, holders one per line for a many-holder role, local

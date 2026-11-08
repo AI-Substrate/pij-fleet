@@ -48,6 +48,8 @@ pub const E_NO_TEMPLATE_VERSION: &str = "E-RS-DIRECTORY-NO-TEMPLATE-VERSION";
 
 /// A past holding overlaps another holding of the same seat and instance.
 pub const E_OVERLAP: &str = "E-RS-DIRECTORY-OVERLAP";
+/// `directory assign prime`: the prime is designated, never assigned (C24).
+pub const E_PRIME_DESIGNATED: &str = "E-RS-DIRECTORY-PRIME-DESIGNATED";
 
 /// Called once after each assign lands (ruling C6); s05 drains the role queue
 /// through it, and the assign waits for it so its receipt can say what was
@@ -408,6 +410,13 @@ impl DirectoryService {
                 .and_then(|sections| sections.iter().find(|section| section["name"] == "meta"))
                 .map_or(Value::Null, |meta| meta["value"].clone());
             let mine: Vec<&Assignment> = rows.iter().filter(|row| &row.role == id).collect();
+            // C24: the prime is designated (`pij project set --prime`), never
+            // assigned, so the prime role's holder is the designation (F117).
+            let designated = (id == "prime").then_some(prime.as_deref()).flatten();
+            let live_holder = mine
+                .iter()
+                .any(|row| row.to.is_none() && live_seats.contains(&row.seat))
+                || designated.is_some_and(|seat| live_seats.contains(seat));
             let live: Vec<Value> = mine
                 .iter()
                 .filter(|row| row.to.is_none() || row.end_pending)
@@ -486,9 +495,7 @@ impl DirectoryService {
                         role: id,
                         created,
                         rows: &mine,
-                        live_holder: mine
-                            .iter()
-                            .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
+                        live_holder,
                         waiting: waiting["count"]
                             .as_u64()
                             .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
@@ -507,8 +514,7 @@ impl DirectoryService {
                 picture::call_on(
                     project,
                     id,
-                    mine.iter()
-                        .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
+                    live_holder,
                     memory["notes"]
                         .as_u64()
                         .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
@@ -536,6 +542,9 @@ impl DirectoryService {
                     .map(|(from, _)| from.clone())
                     .collect::<Vec<_>>(),
                 "live": live,
+                "designated": designated.map(|seat| serde_json::json!({
+                    "seat": seat, "seat_live": live_seats.contains(seat),
+                })),
                 "requests": waiting,
                 "latest_output": picture::latest_output(id, &outputs),
                 "memory": memory,
@@ -1358,6 +1367,17 @@ impl DirectoryService {
                 "an assign batch needs at least one line",
             ));
         };
+        if let Some(prime) = requests.iter().find(|request| request.role == "prime") {
+            return Err(Refusal::new(
+                E_PRIME_DESIGNATED,
+                "the prime is designated, never assigned (C24): directory assign does not apply to it",
+            )
+            .with_next(format!(
+                "Designate it: pij project set {} --prime {}",
+                shell_word(&prime.project),
+                shell_word(prime.seat.id.as_str())
+            )));
+        }
         let closed: Vec<String> = requests
             .iter()
             .filter(|request| request.seat.tombstoned_at.is_some())
