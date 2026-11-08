@@ -595,6 +595,9 @@ impl PaWatchdog {
                     now_ms,
                 )
                 .await;
+                // F115: the digest it carried shows its held messages once,
+                // as the idle-edge and prime-active digests do.
+                crate::pa_watchdog::flag_shown(services, &view, &delivery, now_ms).await;
                 let detail =
                     json!({"msg_id": msg_id, "delivery": delivery, "cold_check": cold_check});
                 Self::settle(services, claimed, kind, &subject, now_ms, detail).await;
