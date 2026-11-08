@@ -88,3 +88,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 182 | 2026-11-08T06:26:36.938Z | 2026-11-08T06:41:14.577Z | pij-steady-otter | pij-far-jackal | F127 seat id and role grammar #182 | PR #182 merged (badae3b1f074) |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 184 | 2026-11-08T07:02:41.155Z | — | pij-steady-otter | — | F130 memory turn covers released holdings #184 | — |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 183 | 2026-11-08T08:08:45.039Z | — | pij-steady-otter | — | plan 223 A1 seat capabilities #183 (reviewed workshop 001 on #163) | — |
+| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 183b | 2026-11-08T08:08:56.909Z | — | pij-steady-otter | — | second reviewer on #183 (scaling rule: security-critical CS-4) | — |

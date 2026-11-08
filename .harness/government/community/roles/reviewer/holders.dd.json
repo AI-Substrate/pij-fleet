@@ -906,6 +906,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "plan 223 A1 seat capabilities #183 (reviewed workshop 001 on #163)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T08:08:56.909Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "183b",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "second reviewer on #183 (scaling rule: security-critical CS-4)"
 				}
 			]
 		}
