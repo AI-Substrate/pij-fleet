@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "703cde7710d62080907527de0e426e3d2fbe5c26",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/189#issuecomment-6721082847",
+				"result": "block",
+				"role": "performance",
+				"subject": "pr:189",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Live before/after spawn, CPU and RSS readings at PR189 deployment after the cost fixes"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: BLOCK P189-F001 / P189-F002** at `703cde7710d62080907527de0e426e3d2fbe5c26`.\n\nWhole-PR review against `d7389056ab7f8e0eaf309d1db1229c760337ba5d`. No new executable site or independent timer; this adds work inside the existing 60-second watchdog round. The current implementation does not substantiate fixed-cost own-event seeks or strictly holder-scaled processing.\n\n**P189-F001: recurring unbounded activity-history traversal.** `store/idle_nudges.rs:24-28,55-80` performs three kind-specific newest-event queries. `spine_by_seat_kind(seat,kind,seq)` supports the report.now/report.state seeks, but the activity query rejects idle through a **residual JSON predicate**. The index does not distinguish own/non-idle activity.\n\nWith N trailing idle activity records, `LIMIT 1` can visit N rows/payloads before the qualifying event; with none qualifying, it can exhaust that seat's activity partition. The result limit is not a candidate-work limit. The same search repeats every eligible idle-holder round, including before the already-nudged mark is checked. There is no query execution/lookup deadline here, so it can delay the serialized round's later PA/presence work.\n\nThe EXPLAIN test checks index use for **report.now**, not the activity residual-filter case, and never establishes visited-row bounds. Bobcat independently reported the same source caveat; no live scan timing was measured.\n\n**Required:** give the non-idle own-activity selection a matching filtered/indexed access path or a maintained own-event anchor, preserving the last-own-event rule. Pin the activity-specific plan/bound with a long idle suffix and no-match case, not only an `INDEX` keyword assertion. Do not hide the true older own event with a lossy pre-filter limit.\n\n**P189-F002: candidate and busy checks are not holder-only in cost.** `daemon/idle_nudge.rs:50-108` reads distinct holding IDs into a **Vec**, then walks the entire supplied seat snapshot and calls `holding.contains` for every live idle seat. With S snapshot rows, I live idle rows and H holding IDs, new candidate processing is O(S + I x H) ID comparisons, not linear in idle holders. Nonholders do not receive individual SQL queries, but they still participate in this work.\n\nOnce any candidate exists, `.pending()` reads/decodes **all global background pending-work rows** before Rust filters queued/running owners. Its query is `state IN ('queued','running') OR notified=0`, using the existing `(started_at,job_id)` partial pending-work index, not an owner-key lookup. It avoids notified history, but includes unrelated owners and unnotified terminal jobs, with full job-field allocation. The new round then also reads all pending compactions; these global scans occur even when every candidate's own event is younger than an hour.\n\n**Required:** use indexed/hashed holder membership instead of repeated Vec scans and scope busy-owner data to eligible holders through an owner/active-state access path or an existing live-owner view. Account for unavoidable shared snapshot/pending work explicitly. Add many-nonholder/unrelated-job proof and verify the actual busy-owner query, not only holding/own-event index names.\n\n**Accurate remaining budget:** the initial UNION reads the two open-holding/open-claim partial indexes and deduplicates owners. Idle candidates not skipped by job/compaction state get three own-event queries; only those past the hour get the PK mark lookup. Unmarked candidates then pay queue peek, open-holding/claim reads and label/sort work before an owned INSERT transaction. Existing schema guards add their normal calls. Qualifying holding lists/field lengths are not capped by #184's context-list cap; this uses its open-holdings helper.\n\n**Message bound:** the persisted `(seat,anchor)` INSERT is committed before sending, and only its winning call proceeds, so restart/overlap does not duplicate that anchor's attempt. This is **one owner nudge attempt plus D FYIs**, where D is the number of distinct live project primes (or at most one fallback parent), not an absolute two-message maximum across multiple projects. Prime selection adds project reads and snapshot membership work; held labels are formatted again per notification.\n\nThe existing wake helper can audit/wake a cold holder. This creates real delivery/model work, plus FYI storage and an audit event; no new launch site does not mean every invoked existing delivery path launches nothing. The mark is an at-most-once attempt guard, not proof the recipient acted. Marks persist as history, one row per nudged anchor.\n\n**Exact-head CI:** [42476103396](https://github.com/AI-Substrate/pij-fleet/actions/runs/42476103396), successful Rust job `128717713029`, exact upload artifact **13615487641**: **2,243 executed cases passed**, zero failures/errors, five separately skipped. Verified idle-stretch/restart/rearm, prime routing, suppression and hostile-label cases, the store's current index test, and all six spawn guards. Rust lint, Node22/24 and delivers checks succeed. Those small-state cases do not prove F001/F002's cost bounds; author mutations were not rerun.\n\nClean worktree, matching local/GitHub frozen heads, CLEAN. No local build, test, SQL/query-plan probe, synthetic traffic, benchmark or product edit. Live before/after spawn, CPU and RSS readings remain owed if this is deployed after repair. The blockers concern recurring resource work, not the idle-holder nudge policy.\n"
+		}
+	]
+}
