@@ -38,7 +38,7 @@ the handover files you check, you are read-only.
 - **Set no timers of your own**: no `sleep` / background re-arm, `/loop`, cron, scheduled wakeups,
   `Monitor` loops or `pij inbox --wait`. An idle fleet is nudged once, so you need no "stop when quiet" rule.
 - The nudge already carries every seat's role, state, declared state, context, idle time, cache warmth and
-  ❄ cold-wake price, plus a **Needs a look** list (quiet, parked and stale-card seats, and `tap-refused` seats whose pane tap needs the repair it names; other anomaly kinds
+  ❄ cold-wake price, plus a **Needs a look** list (quiet, parked and stale-card seats, `tap-refused` seats whose pane tap needs the repair it names, and `receiver-lapsed` Copilot seats whose sends are refused until their extension is reloaded; other anomaly kinds
   are in `pij anomalies --json`). Don't re-fetch it with `pij list` or footer scraping.
   Capture a pane (`tmux capture-pane -p -t <pane>`) only for what pij can't see — unsent prompt text and
   open dialogs — and only just before you would send to that seat.

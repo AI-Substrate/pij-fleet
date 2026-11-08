@@ -637,6 +637,116 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 		});
 	}
 
+	test("F124: the 12:31 sequence (a contiguous gap, then turn_end with the steer still queued) waits, never holds, and acknowledges once", async (t) => {
+		// pij-steady-otter, 2026-11-08 02:31Z: msg 01a1b8fe was accepted mid-turn as a
+		// steer. The live callback missed assistant.message 03d3d123, so the probe
+		// rebaselined over a one-event contiguous gap after f4ffdec0. Then
+		// assistant.turn_end b29f8963, a discard boundary, arrived with the steer
+		// still queued, and the receiver held for good: no claims and no
+		// heartbeats, so the lease lapsed and every send was refused until a
+		// reload. The session consumed the steer 4.4 s later (user.message
+		// 148984f3).
+		const f = fixture(t, { consume: false });
+		const previous = {
+			type: "user.message",
+			id: "f4ffdec0",
+			data: { messageId: "earlier-steer", interactionId: "busy" },
+		};
+		f.state.history.push(previous);
+		let steered = true;
+		f.native.rpc.queue.pendingItems = async () => {
+			f.calls.push("queue.pendingItems");
+			return {
+				items: [],
+				steeringMessages: steered ? [f.sends[0].prompt] : [],
+				inFlightSteeringCount: 0,
+			};
+		};
+		f.state.processing = false;
+		const run = f.bridge.run();
+		await flush();
+		assert.equal(f.sends.length, 1, "accepted mid-turn as a steer");
+
+		const missed = { type: "assistant.message", id: "03d3d123", parentId: previous.id, data: {} };
+		f.rebase([previous, missed]);
+		await pump(f);
+		assert.deepEqual(f.reports.find((event) => event.kind === "receiver-rebaselined")?.gap, {
+			afterEventId: "f4ffdec0",
+			throughEventId: "03d3d123",
+			observed: 1,
+			contiguous: true,
+		});
+
+		f.event({ type: "assistant.turn_end", id: "b29f8963", parentId: missed.id, data: {} });
+		await pump(f);
+		assert.deepEqual(held(f), [], "a steer still in the native queue is waiting, not lost");
+		assert.ok(
+			f.calls.includes("queue.pendingItems"),
+			"the queue was read before anything was held",
+		);
+
+		const heartbeats = f.heartbeats.length;
+		await f.tick(f.heartbeatWaits);
+		assert.ok(f.heartbeats.length > heartbeats, "the lease keeps renewing while it waits");
+
+		steered = false;
+		f.state.history.push({ ...user, id: "148984f3" }, ...terminal);
+		await pump(f);
+		assert.deepEqual(held(f), []);
+		assert.deepEqual(
+			f.acks.map((ack) => ack.job_id),
+			[claim.job_id],
+			"acknowledged once, on consumption",
+		);
+		assert.equal(f.sends.length, 1, "never reinjected");
+		assert.equal(f.calls.includes("journal.rearm"), false);
+		f.bridge.stop();
+		await run;
+	});
+
+	for (const late of [true, false]) {
+		test(`F124: an empty queue and idle run after a contiguous gap ${late ? "wait for late consumption" : "hold only after HOLD_ESCALATION_MS"}, never resending`, async (t) => {
+			const f = fixture(t, { consume: false });
+			const previous = { type: "user.message", id: "anchor", data: { messageId: "earlier" } };
+			f.state.history.push(previous);
+			const run = f.bridge.run();
+			await flush();
+			const missed = { type: "assistant.message", id: "missed", parentId: previous.id, data: {} };
+			f.rebase([previous, missed]);
+			await pump(f);
+			f.event({ type: "assistant.turn_end", id: "boundary", parentId: missed.id, data: {} });
+			await pump(f);
+			assert.deepEqual(held(f), [], "consumption may have fallen in the gap: wait, don't hold");
+			assert.equal(
+				f.reports.filter((event) => event.kind === "discard-uncertain").length,
+				1,
+				"said once",
+			);
+			const heartbeats = f.heartbeats.length;
+			await f.tick(f.heartbeatWaits);
+			assert.ok(f.heartbeats.length > heartbeats, "the lease keeps renewing while it waits");
+			if (late) {
+				f.state.history.push(user, ...terminal);
+				await pump(f);
+				assert.deepEqual(held(f), []);
+				assert.deepEqual(
+					f.acks.map((ack) => ack.job_id),
+					[claim.job_id],
+				);
+				f.bridge.stop();
+			} else {
+				f.state.now += store.HOLD_ESCALATION_MS;
+				await pump(f);
+				assert.equal(held(f).length, 1, "a gap that outlives the window still fails closed");
+				assert.match(held(f)[0].safeDiagnostic, /cannot prove discarded consumption/);
+				assert.deepEqual(f.acks, []);
+			}
+			assert.equal(f.sends.length, 1, "never reinjected");
+			assert.equal(f.calls.includes("journal.rearm"), false);
+			await run;
+		});
+	}
+
 	test("AC2: empty queue and fresh idle cannot authorize resend through a stale cursor", async (t) => {
 		const f = fixture(t, { consume: false });
 		const run = f.bridge.run();

@@ -1000,6 +1000,7 @@ impl PaWatchdog {
             .collect::<Vec<_>>();
         let mut anomalies = stale_cards(services, &rows, now_ms).await;
         anomalies.extend(refused_taps(services, &rows));
+        anomalies.extend(lapsed_receivers(services, &rows).await);
         let queued = queued_requests(services, pa, now_ms).await;
         let held = held_messages(services, &rows, now_ms).await;
         FleetView {
@@ -1335,6 +1336,36 @@ async fn queued_requests(
 ///
 /// Reads follow the fleet and its stale cards, never history. The other
 /// kinds stay with `pij anomalies`.
+/// Live Copilot seats whose native receiver lease has lapsed (F124): every
+/// send to them is refused until the extension recovers, and before this only
+/// a refused sender noticed. The daemon's in-memory lease map, read once per
+/// digest: no launch, no store read.
+async fn lapsed_receivers(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly> {
+    let seats: Vec<SeatDescriptor> = rows.iter().map(|row| row.seat.clone()).collect();
+    services
+        .delivery
+        .lapsed_native_receivers(&seats)
+        .await
+        .into_iter()
+        .map(|(seat, renewed)| FleetAnomaly {
+            seat,
+            kind: "receiver-lapsed".to_string(),
+            detail: format!(
+                "native receiver lease lapsed ({}), so sends to it are refused \
+                 (native-extension-unavailable). Reload the seat's extension \
+                 (extensions_reload); a receive-held line in its extension log names the cause",
+                renewed.map_or_else(
+                    || "not renewed by this incarnation since the daemon started".to_string(),
+                    |age| format!(
+                        "last renewed {} ago",
+                        pij_core::cold_wake::human_duration(age.as_millis() as u64)
+                    ),
+                )
+            ),
+        })
+        .collect()
+}
+
 /// Seats whose pane tap the observer could not attach (F112): an in-memory
 /// read, no launch. Each one's detail is the refusal, naming the repair.
 fn refused_taps(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly> {
