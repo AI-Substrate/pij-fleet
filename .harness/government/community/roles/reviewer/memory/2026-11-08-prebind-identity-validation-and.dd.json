@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "When tightening seat-id validation or changing registration, spawn, adopt or revive errors",
+				"tags": [
+					"review",
+					"registration",
+					"prebind",
+					"compatibility"
+				],
+				"title": "Prebind identity validation and compatibility"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Validate the identity that will actually be stored\n\nThe #182 review distinguished a runtime's candidate id from the final registry identity. A spawned child can register with a noncanonical candidate that is discarded when its correlated prebind is selected. Rejecting that candidate before target selection would break valid binding. Validate the final id whenever a registration would mint a row; when it updates an existing row, preserve that row's id and never store the discarded candidate.\n\nTrace every creator separately. Explicit nonblank spawn ids are checked before lookup or launch; generated spawn names must satisfy the grammar. Adopt selects or mints through registration. Revive names an existing row, link changes parent/role, and federation aliases are view metadata rather than local-id renames. A public storage helper's ability to accept an arbitrary descriptor does not prove a production API can mint it.\n\nKeep refusal contracts precise. Empty/whitespace spawn ids deliberately retain the older generic nonempty-argument refusal; nonblank malformed ids receive E-RS-SEAT-ID. Documentation must qualify that distinction instead of implying one code covers both. Render-time validation still protects older stored ids. Neither target selection nor a closed grammar proves caller ownership; that is the separate capability issuer's job.\n"
+		}
+	]
+}
