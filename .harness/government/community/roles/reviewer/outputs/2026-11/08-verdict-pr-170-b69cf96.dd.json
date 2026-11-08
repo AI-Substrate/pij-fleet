@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b8bb-16c3-7023-bb98-0930cb7e4afc",
+				"date": "2026-11-08",
+				"head": "b69cf96b6a6b6e9938f40a35f66ba66113fb4f52",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/170#issuecomment-6715553961",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:170",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #170 round 4 correctness verdict\n\n**PASS-WITH-NOTES** at `b69cf96b6a6b6e9938f40a35f66ba66113fb4f52`.\n\n**F004 is closed; all four reviewer findings are closed.** Warning output is no longer treated as positive clean/readable evidence for destructive pruning.\n\n## Closure and scope\n\nThe status brake now spares a candidate on any stderr, including exit 0/empty stdout/unreadable-directory warning. A gh warning makes that PR's state unusable and spares its worktrees. Worktree-list or seat-list warnings reject the run before any removal.\n\nThe new quiet helper is scoped to the pruning reads. The existing must helper is unchanged, so this does not make ordinary freeze/fetch commands reject normal informational stderr.\n\nThe macOS-only gate, strict PR/seat decoding, complete lsof parsing, absolute-path resolution, 60-second child bounds and read-before-remove structure remain unchanged. No --force was added.\n\n## Independent approved fake-IO proof\n\nI reran the original F004 input at this exact head and killed all four stderr-guard mutants in session-only Node fixtures:\n\n- warning-free valid data positively authorizes one fake removal;\n- status and gh warnings spare with zero fake removals;\n- worktree and seat warnings refuse with zero fake removals;\n- removing each specific guard authorizes a fake removal and fails its safety expectation.\n\nThe seat-warning fixture carried a valid seats array, so a malformed-payload error could not mask a removed warning guard. All runners only recorded calls; no actual git/gh/pij/lsof invocation, process scan, live prune or physical removal occurred.\n\nExact-head CI **42433237523** passed. Node 22 executed all **33 pr-freeze tests**, with 2257 tests passed/six skipped overall. The new warning test and retained malformed-input, cwd, platform, timeout, runner and normal freeze controls pass.\n\nThe reviewed checkout is clean/detached, matches the remote full SHA, and GitHub reports CLEAN/ready with latest Delivers success. No repository edits, dependencies or vitest/local product runs were used for this review.\n\n## Retained limits\n\n- --prune is macOS-only and observes this user's process cwds, not every other user's process.\n- Review ownership remains structural name/detached/head evidence, not an independent creation receipt.\n- Usage is observed before removal, not held as an OS-level lease. A removal-stage timeout stops later attempts but is not rollback of an already-started operation.\n\nNo new blocking finding in the round-four delta. Security/performance acceptance remains independently owned.\n"
+		}
+	]
+}
