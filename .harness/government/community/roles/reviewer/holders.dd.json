@@ -839,7 +839,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "179",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #179 merged (179b1c15a391)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-08T05:53:26.830Z",
 					"why": "F123 tmux test flake #179"
 				},
 				{
