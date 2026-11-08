@@ -23,11 +23,11 @@ fn relative_specifiers(text: &str) -> Vec<String> {
             let mut rest = text;
             while let Some(at) = rest.find(&open) {
                 let after = &rest[at + 1..];
+                // Kept across a line break: a quote or a double quote cannot
+                // hold one, so such a span just fails to resolve, and a template
+                // literal with one is still checked for `${`.
                 if let Some(end) = after.find(quote) {
-                    let spec = &after[..end];
-                    if !spec.contains('\n') {
-                        found.push(spec.to_string());
-                    }
+                    found.push(after[..end].to_string());
                 }
                 rest = after;
             }
@@ -52,6 +52,15 @@ fn the_scanner_sees_imports_however_they_are_written() {
     assert_eq!(
         relative_specifiers("import(`./${name}.js`)"),
         ["./${name}.js"]
+    );
+    // Newlines inside the interpolation still evaluate to an outside path
+    // (#175 review), so the span is kept for the computed-path check.
+    let spec = "../../../crates/${\n\"core\"\n}/tests/fixtures/control-commands.json";
+    assert_eq!(
+        relative_specifiers(&format!(
+            "await import(`{spec}`, {{ with: {{ type: \"json\" }} }});"
+        )),
+        [spec]
     );
 }
 
@@ -88,7 +97,17 @@ fn resolve(from: &Path, spec: &str) -> Option<PathBuf> {
 }
 
 /// Every repository-relative file the entry point loads, transitively.
-fn closure(root: &Path, entry: &str) -> BTreeSet<String> {
+///
+/// Whatever stays inside `directory` is covered by its tree, so only paths
+/// that leave it matter. A relative literal whose path leaves `directory`
+/// must name a file the walk can follow (and [`outside`] then checks it is
+/// listed), or be one of `declared`: the identity's own list of outside
+/// roots, written relative to the directory. Anything else fails, so a path
+/// assembled from an escaping literal (`"../../../crates/" + "core" + ...`,
+/// #175 review) can't pass unseen. A path built with no escaping literal at
+/// all (a variable, `join(dir, "..")`) is beyond a lexical scan.
+fn closure(root: &Path, entry: &str, directory: &str, declared: &[&str]) -> BTreeSet<String> {
+    let inside = normalize(&root.join(directory));
     let mut seen = BTreeSet::new();
     let mut stack = vec![root.join(entry)];
     while let Some(file) = stack.pop() {
@@ -116,7 +135,15 @@ fn closure(root: &Path, entry: &str) -> BTreeSet<String> {
             );
             if let Some(target) = resolve(&file, &spec) {
                 stack.push(target);
+                continue;
             }
+            let target = normalize(&file.parent().expect("a file's directory").join(&spec));
+            assert!(
+                target.starts_with(&inside) || declared.contains(&spec.as_str()),
+                "{} names `{spec}`, outside {directory}, and it is no file the closure can \
+                 follow; name the file, or list its root in the extension's identity",
+                file.display()
+            );
         }
     }
     seen
@@ -137,7 +164,12 @@ fn each_extension_tree_covers_its_import_closure() {
         .canonicalize()
         .expect("the workspace root");
 
-    let copilot = closure(&root, ".copilot/extensions/pij/extension.mjs");
+    let copilot = closure(
+        &root,
+        ".copilot/extensions/pij/extension.mjs",
+        ".copilot/extensions/pij",
+        &[],
+    );
     assert!(
         copilot.len() >= 2,
         "the scan found {copilot:?}; fix the scanner"
@@ -149,13 +181,19 @@ fn each_extension_tree_covers_its_import_closure() {
          outside it needs a root in its identity (store.mjs) and the justfile stamp"
     );
 
-    let omp = closure(&root, ".omp/extensions/pij/index.ts");
+    let listed = "crates/core/tests/fixtures/control-commands.json";
+    let declared = format!("../../../{listed}");
+    let omp = closure(
+        &root,
+        ".omp/extensions/pij/index.ts",
+        ".omp/extensions/pij",
+        &[declared.as_str()],
+    );
     assert!(
         omp.len() >= 20,
         "the scan found only {} files; fix the scanner",
         omp.len()
     );
-    let listed = "crates/core/tests/fixtures/control-commands.json";
     assert_eq!(
         outside(&omp, ".omp/extensions/pij"),
         [listed],
@@ -169,7 +207,7 @@ fn each_extension_tree_covers_its_import_closure() {
         std::fs::read_to_string(root.join(".omp/extensions/pij/adapters/extension-build.ts"))
             .expect("read the OMP identity");
     assert!(
-        identity.contains(&format!("\"../../../{listed}\"")),
+        identity.contains(&format!("\"{declared}\"")),
         "OUTSIDE_ROOTS lists {listed}"
     );
     let justfile = std::fs::read_to_string(root.join("justfile")).expect("read the justfile");
@@ -181,4 +219,48 @@ fn each_extension_tree_covers_its_import_closure() {
         2,
         "just rs-install and just bounce-rs stamp the same trees"
     );
+}
+
+/// The ways #175's review hid an outside load from the walk, each in a
+/// scratch extension: a comment, a line break, newlines inside an
+/// interpolation, and a concatenation from an escaping literal.
+#[test]
+fn an_outside_load_fails_however_it_is_written() {
+    let json = "../crates/core/tests/fixtures/control-commands.json";
+    let scratch = std::env::temp_dir().join(format!("pij-closure-{}", std::process::id()));
+    let directory = scratch.join("ext");
+    std::fs::create_dir_all(&directory).expect("scratch extension");
+    let fixture = scratch.join("crates/core/tests/fixtures");
+    std::fs::create_dir_all(&fixture).expect("scratch fixture directory");
+    std::fs::write(fixture.join("control-commands.json"), "{}").expect("scratch fixture");
+    for (name, line) in [
+        ("plain", format!("import f from \"{json}\";")),
+        ("comment", format!("import f from /* c */ \"{json}\";")),
+        ("line break", format!("await import(\n  \"{json}\");")),
+        (
+            "interpolation",
+            "await import(`../crates/${\n\"core\"\n}/tests/fixtures/control-commands.json`);"
+                .to_string(),
+        ),
+        (
+            "concatenation",
+            "await import(\"../crates/\" + \"core\" + \"/tests/fixtures/control-commands.json\");"
+                .to_string(),
+        ),
+    ] {
+        std::fs::write(directory.join("entry.mjs"), &line).expect("scratch entry");
+        let walk = std::panic::catch_unwind(|| closure(&scratch, "ext/entry.mjs", "ext", &[]));
+        let caught = match walk {
+            Ok(files) => !outside(&files, "ext").is_empty(),
+            Err(_) => true,
+        };
+        assert!(caught, "{name}: `{line}` left the closure unseen");
+    }
+    std::fs::write(directory.join("entry.mjs"), "import x from \"./x.mjs\";").expect("entry");
+    std::fs::write(directory.join("x.mjs"), "").expect("inside file");
+    assert_eq!(
+        closure(&scratch, "ext/entry.mjs", "ext", &[]),
+        BTreeSet::from(["ext/entry.mjs".to_string(), "ext/x.mjs".to_string()])
+    );
+    let _ = std::fs::remove_dir_all(&scratch);
 }
