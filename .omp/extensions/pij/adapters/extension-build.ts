@@ -35,7 +35,14 @@ export function computeExtensionBuildIdentity(extensionDirectory: string): Exten
 		const revParse = (roots: readonly string[]): string[] =>
 			execFileSync(
 				"git",
-				["-C", extension_path, "rev-parse", "HEAD", "HEAD:./", ...roots.map((root) => `HEAD:./${root}`)],
+				[
+					"-C",
+					extension_path,
+					"rev-parse",
+					"HEAD",
+					"HEAD:./",
+					...roots.map((root) => `HEAD:./${root}`),
+				],
 				options,
 			)
 				.trim()

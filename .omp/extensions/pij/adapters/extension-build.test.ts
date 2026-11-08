@@ -116,13 +116,16 @@ describe("computeExtensionBuildIdentity", () => {
 		git(root, "add", "--", ".omp", "crates");
 		git(root, "commit", "--quiet", "-m", "initial");
 		const ids = () =>
-			[git(root, "rev-parse", "HEAD:.omp/extensions/pij"), git(root, "rev-parse", `HEAD:${outside}`)]
+			[
+				git(root, "rev-parse", "HEAD:.omp/extensions/pij"),
+				git(root, "rev-parse", `HEAD:${outside}`),
+			]
 				.map((id) => id.slice(0, 10))
 				.join("+");
 		const before = computeExtensionBuildIdentity(extension).extension_build;
 		expect(before).toBe(`${git(root, "rev-parse", "--short=10", "HEAD")} tree:${ids()}`);
 
-		writeSource(root, outside, "[\"compact\"]\n");
+		writeSource(root, outside, '["compact"]\n');
 		git(root, "commit", "--quiet", "-am", "outside only");
 		const after = computeExtensionBuildIdentity(extension).extension_build;
 		expect(after.split(" tree:")[1]).toBe(ids());
