@@ -1010,6 +1010,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-08T17:27:08.169Z",
 					"why": "F135 instance grammar + window names; spoonbill free until #183 r3"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T18:03:16.977Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "192",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F144 part 1 urgent switch"
 				}
 			]
 		}
