@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bb81-45d8-76e2-af28-44881344fbc2",
+				"date": "2026-11-09",
+				"head": "96f9f41a676e2d41868245715c719f589b757fb8",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/185#issuecomment-6722604012",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:185",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #185 round-4 delta: BLOCK\n\nHead: `96f9f41a676e2d41868245715c719f589b757fb8`\n\nDelta against `b56a990a5f373a31488530b17c96cfc134c88226` and reviewer output `2c11bed4ec4dc9201958676a67d1239b3777c61e`. **F003 is closed. F004 remains in the template-drift branch.** F001/F002 repairs are unchanged.\n\n## F003 closed\n\nThe plain directory formatter now renders the project, prime/designated seat, role and merged names, live seat/instance/machine, legacy seat and latest-output metadata. Head shortening happens only after the complete value passes the ASCII hex grammar, so invalid suffixes cannot hide behind a plausible seven-character prefix.\n\nThe legacy command producer independently checks the seat and instance. An invalid seat with an empty instance, or a valid seat with an invalid instance, gets `command: null`; the CLI points at raw JSON instead of printing an unusable command. The ordinary `pij-old` release command remains exact. Raw identity fields are preserved for recovery and explicitly documented as untrusted.\n\nThe new whole-rendered-output CLI test and the HTTP legacy-row cases cover the original F003 path. The CLI test calls the same formatter the ordinary command prints; it is not a new process-level/live CLI test.\n\n## F004, medium: template drift still interpolates raw identities\n\n`crates/cli/src/main.rs:3386-3394`, under `template[\"behind\"] == true`, still prints the raw template name/version and builds the template-diff command from raw `role[\"id\"]` and `view[\"project\"]`, using only `shell_word`. The fields rendered safely in the heading therefore reappear verbatim in this branch.\n\nThe new hostile full-output fixture never enables `behind`, so its clean output and U1-U8 results do not cover this path. Setting `behind: true` in a fixture with hostile template/project/role fields would expose them through the remaining raw interpolation.\n\nCurrent template drift is constrained by the shipped catalog and parsed version (`crates/daemon/src/community/templates.rs:271-279,330-331`), but that is not a substitute for the required render-time boundary. Role IDs are also read from governance files. PM explicitly rejected a producer-only exception in message `25af5ec9e3cc35ea-0000000000000032`.\n\n**Required repair:** render the template name/version, role ID and project. Build a template-diff command only when every identity part fits its grammar; otherwise omit the command and point to `--json`. The project renderer/printability check must match project creation's slug grammar and **48-character** limit (`crates/daemon/src/http/governance.rs:650-666`), not the directory-name renderer's 32-character cap. Enable the template-drift branch in the hostile full-output fixture, and retain a valid template/project command positive control, including a supported long project slug.\n\n## Evidence\n\n[CI run 42487751672](https://github.com/AI-Substrate/pij-fleet/actions/runs/42487751672), exact head, attempt 1: **2252 Rust cases, zero failures/errors/skips**. Artifact `13620009099`, JUnit timestamp `2026-11-08T14:03:55.661+00:00`, matches the successful Rust job. The new hostile plain formatter case, extended HTTP view case, ordinary CLI picture case and legacy-prime regression all executed. Rust lint and both Node checks passed.\n\nAuthor receipts `f132-mutation-receipts.md` report U1-U8 killed: both legacy command guard halves, CLI live seat/instance/machine, legacy seat, output writer and machine grammar. U1 initially survived a coupled-invalid fixture; the repaired fixture isolates the invalid seat with an empty instance, while a separate row isolates the invalid instance. The canonical legacy command is a positive control. These are author-run working-tree receipts, not reviewer-run mutants, and none exercises F004.\n\nThe delta is one commit touching five files. F001/F002, delivery, memory-turn, output-notice and watchdog behavior are unchanged. The machine renderer accepts bounded ASCII letters/digits and `._-`; hostile and ordinary machine text are checked by the new CLI case. `git diff --check` passed. No local reviewer-owned build, test, dependency install or live probe was run.\n\n**Cost:** in-process formatting and one predicate on each legacy row, only on existing view generation. No new production loop, timer, poll, read or launch.\n\nThe previously noted exact 500-boundary quote/backslash fencing cases remain source-inspected; this delta does not add that proof. Preserving raw JSON is still valid only with guarded text/command consumers.\n\n**Handback:** repair F004, test the enabled drift branch and both command-guard halves, then request the next final-head delta. No product or canonical plan state was edited.\n"
+		}
+	]
+}
