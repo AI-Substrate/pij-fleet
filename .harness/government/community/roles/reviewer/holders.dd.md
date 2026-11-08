@@ -98,3 +98,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 191 | 2026-11-08T16:35:50.192Z | 2026-11-08T17:27:08.169Z | pij-steady-otter | pij-far-jackal | F135 instance grammar + window names; spoonbill free until #183 r3 | PR #191 merged (97fd5883faf1) |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 192 | 2026-11-08T18:03:16.977Z | — | pij-steady-otter | — | F144 part 1 urgent switch | — |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 193 | 2026-11-08T18:17:02.721Z | — | pij-steady-otter | — | F142: bobcat traced the close/withdraw lines and pij state on #185 | — |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 194 | 2026-11-08T20:11:57.218Z | — | pij-steady-otter | — | F141 reserved daemon notice ids | — |

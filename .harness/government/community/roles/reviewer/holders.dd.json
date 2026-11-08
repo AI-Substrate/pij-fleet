@@ -1030,6 +1030,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-double-bobcat",
 					"why": "F142: bobcat traced the close/withdraw lines and pij state on #185"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T20:11:57.218Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "194",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F141 reserved daemon notice ids"
 				}
 			]
 		}
