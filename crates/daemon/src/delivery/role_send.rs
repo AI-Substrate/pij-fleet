@@ -41,6 +41,10 @@ pub const ROLE_PREFIX: &str = "role:";
 /// A role address that is malformed, remote, or names an instance of a
 /// one-holder role.
 pub const E_ROLE_ADDRESS: &str = "E-RS-ROLE-ADDRESS";
+
+/// How much of a refused role address a refusal shows, escaped (F135).
+pub const ADDRESS_SHOWN: usize = 64;
+
 /// Two or more live holders: the send cannot pick one.
 pub const E_ROLE_HOLDERS: &str = "E-RS-ROLE-HOLDERS";
 /// The directory and `seat_roles` disagree about the holder (ruling C1).
@@ -73,10 +77,17 @@ impl RoleAddress {
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
         };
-        if !word(role) || (rest.contains('/') && !word(instance)) {
+        // F135: an instance takes the holding grammar, so a request can only
+        // name an instance a holding could have.
+        let instance_fits = render::is_name(instance);
+        if !word(role) || (rest.contains('/') && !instance_fits) {
             return Some(Err(Refusal::new(
                 E_ROLE_ADDRESS,
-                format!("`{to}` is not role:<id> or role:<id>/<instance>"),
+                // F135: the refused address is shown escaped and bounded.
+                format!(
+                    "\"{}\" is not role:<id> or role:<id>/<instance>",
+                    to.escape_debug().take(ADDRESS_SHOWN).collect::<String>()
+                ),
             )));
         }
         Some(Ok(Self {

@@ -75,6 +75,21 @@ pub fn project(slug: &str) -> Cow<'_, str> {
     closed(slug, is_project(slug))
 }
 
+/// A tmux window name pij gives a seat: `<project>:<role>[-<instance>]` or a
+/// seat id, each part already rendered, so lowercase letters, digits, `:`,
+/// `-`, and the space and parentheses of `invalid (N chars)`; at most 160.
+pub fn window(name: &str) -> Cow<'_, str> {
+    closed(
+        name,
+        (1..=160).contains(&name.len())
+            && name.bytes().all(|byte| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || matches!(byte, b':' | b'-' | b' ' | b'(' | b')')
+            }),
+    )
+}
+
 /// A seat role: the closed vocabulary.
 pub fn role(role: &str) -> Cow<'_, str> {
     closed(role, SEAT_ROLES.contains(&role))

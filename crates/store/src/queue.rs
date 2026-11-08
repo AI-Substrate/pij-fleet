@@ -1236,6 +1236,26 @@ impl Queue for SqliteQueue {
                 let mut event = pij_core::fyi::held_event(&fyi);
                 event.seq = Some(crate::spine::append_in_transaction(&mut tx, &event).await?);
                 events.push(event);
+            } else {
+                // The same sender's retry to the same seat is the same FYI.
+                // An id already held for another sender or recipient is
+                // refused and audited, never reported held (S189-001).
+                let held = sqlx::query(
+                    "SELECT recipient, sender FROM fyis WHERE origin = ?1 AND id = ?2",
+                )
+                .bind(fyi.from_machine.as_deref().unwrap_or_default())
+                .bind(&fyi.id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+                let recipient: String = held.try_get("recipient").map_err(adapter_error)?;
+                let sender: String = held.try_get("sender").map_err(adapter_error)?;
+                if recipient != fyi.recipient.as_str() || sender != fyi.sender.as_str() {
+                    let mut event = pij_core::fyi::refused_event(&fyi, &recipient, &sender);
+                    event.seq =
+                        Some(crate::spine::append_in_transaction(&mut tx, &event).await?);
+                    events.push(event);
+                }
             }
             tx.commit().await.map_err(adapter_error)?;
             Ok(events)

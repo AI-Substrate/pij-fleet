@@ -1631,7 +1631,7 @@ impl DirectoryService {
             let kept = window_name(&first);
             return serde_json::json!({
                 "name": kept, "renamed": false,
-                "reason": format!("the window keeps the seat's first open holding, {kept}"),
+                "reason": "the window keeps the seat's first open holding",
             });
         }
         self.rename_to(seat, name).await
@@ -1655,12 +1655,13 @@ impl DirectoryService {
             let kept = window_name(first);
             return serde_json::json!({
                 "name": kept, "renamed": false,
-                "reason": format!("the window keeps the seat's first open holding, {kept}"),
+                "reason": "the window keeps the seat's first open holding",
             });
         }
-        let name = first
-            .as_ref()
-            .map_or_else(|| seat.id.to_string(), window_name);
+        let name = first.as_ref().map_or_else(
+            || pij_core::render::seat(seat.id.as_str()).into_owned(),
+            window_name,
+        );
         self.rename_to(seat, name).await
     }
 
@@ -2616,10 +2617,15 @@ fn system_ms() -> u64 {
 }
 
 /// `<project>:<role>`, or `<project>:<role>-<instance>` (req-26, C16).
+/// The window name for a holding. Each part shows only when it fits its
+/// grammar (F135): a holding recorded before the instance grammar keeps its
+/// key in the store, but never reaches tmux or a receipt raw.
 fn window_name(held: &Assignment) -> String {
+    use pij_core::render;
+    let (project, role) = (render::project(&held.project), render::name(&held.role));
     if held.instance.is_empty() {
-        format!("{}:{}", held.project, held.role)
+        format!("{project}:{role}")
     } else {
-        format!("{}:{}-{}", held.project, held.role, held.instance)
+        format!("{project}:{role}-{}", render::name(&held.instance))
     }
 }

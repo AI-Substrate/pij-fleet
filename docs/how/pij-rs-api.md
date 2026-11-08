@@ -757,6 +757,7 @@ pij-rs send --to <seat> --fyi 'text'   # native form
 | `pij-rs fyi-claim --pane <P> [--native-session <S>] --via hook:claude` | Prints the raw `block` to stdout, or nothing at count 0, and exits 0. Global `--json` prints the envelope instead. An unreachable daemon exits non-zero; the calling hook then prints nothing and exits 0, so it never blocks the human's prompt. |
 | `POST /v1/state` → `data.pendingFyis` | Pending count on the camelCase card (`pij state <seat> --json`). |
 | `/v1/whoami` → `data.pending_fyis` | The same count on whoami (`pij-rs --json whoami --pane "$TMUX_PANE"`). Status lines and footers read it here, with no extra call, and show `✉N` only while N > 0. |
+| An FYI id already taken (review of #189, S189-001) | An FYI's identity is `(origin machine, msg_id)` (migration 0027). The same sender's retry to the same seat is the same FYI: held once, and the retry also answers `held`. An id already held, from the same origin, for **another sender or recipient** is refused: nothing is held, the hold fails with `E-RS-FYI-ID-TAKEN` (a send failure, `ok:false`), and `fyi.refused` is appended on the intended recipient with `id`, `sender`, `held_recipient`, `held_sender` and `reason: "id-taken"`. It used to answer `held` and drop the FYI silently. |
 | `/v1/events` kinds `fyi.held`, `fyi.delivered` | `seat` is the recipient. Extensions refresh their count on any `fyi.*` event, or `seat.tombstone`, for their seat. |
 | `seat.tombstone` payload `pending_fyis_dropped` | A tombstone drops the seat's pending FYIs and records how many in this field, present only when at least one was dropped. |
 | Hook claim window | A hook claim that commits in the daemon and then times out in the client (the hooks give up after 3 s) delivers nothing: those FYIs are claimed at most once, never twice. This is the one remaining loss window. |
@@ -1028,6 +1029,18 @@ drain the role queue. A second live holder of a one-holder role succeeds with
 `data.warning` `W-ONE-HOLDER`. The envelope carries `commit`, `path`, the `row`
 as written, `seat_role` and `flushed` (pending close-ends this write carried to the branch;
 only those lose their pending mark).
+
+An instance key a holding is recorded with (`assign`, single or `--batch`, and
+`lineage add`, single or `--batch`) takes the one name grammar every
+daemon-authored message renders by (F135, `pij_core::render::is_name`):
+`[a-z0-9][a-z0-9-]{0,31}`. A `role:<id>/<instance>` address takes the same.
+Anything else refuses (`E-RS-ARG`, or `E-RS-ROLE-ADDRESS` for an address),
+showing the key escaped and bounded (32 characters), or the whole address
+escaped and bounded (64 characters) for an address refusal. `release` and `rebuild` still read a stored
+key as it is, so a holding recorded before the check can be ended. Such a stored key never reaches a window name raw: the
+window name (`<project>:<role>[-<instance>]`, in tmux and in `data.window.name`)
+shows each part only through its grammar, the kept-window reason no longer
+repeats the name, and the plain receipt renders the name whole.
 
 `pij directory assign --batch <file> --why <text>` (plan 208, F16) reads one
 `<role>[/<instance>] <seat>` per line (blank and `#` lines skipped) and records
@@ -2074,6 +2087,23 @@ A compaction can end a seat's turn with nothing queued, and nothing wakes it (F1
 
   While the seat is inside the settle bound, not idle, or has something queued, the row waits. Once per compaction: a new compact is a new row.
 - **Cost.** No new timer, poll or launch. Per round, one read of the pending rows (a partial index, empty in steady state). Each pending row costs two indexed reads per round: its delivery outcome by message id, and the seat's events after it. A row past the settle bound with the seat idle adds one queue peek and two holdings reads (the open-holdings query and the `claims_open_by_seat` index). The row is written once when recorded and once when settled, and the wake sends one message plus one FYI. A row is **pending**, and costs reads, only from its compact until it settles: usually one settle bound, at most an hour for a compact that never lands (one read per round). Settled rows stay as history, one per compaction, outside the pending index.
+
+## Idle holders (plan 224)
+
+A seat can sit idle while it holds work for reasons other than a compaction: a plain send it finished, a missed message, a turn that just stopped (F136: a merger held its role for hours after a plain send, with no role request and no time limit to escalate). Plan 222 only covers the compaction case, and s12's limits only cover role requests. So the PA watchdog's 60 s round also nudges a holder that has done nothing of its own for an hour. It adds no timer, poll or launch.
+
+- **Who is looked at.** Only seats that hold work: an open role holding or an open claim, read as one `UNION` over the `community_assignments_open_by_seat` and `claims_open_by_seat` partial indexes. A seat that holds nothing is never read.
+- **When it fires.** A holder is nudged when all of these hold:
+  - it is live, untombstoned and `idle`;
+  - its **last own event** is at least 60 minutes old (`IDLE_NUDGE_AFTER_MS`). Own events are `seat.activity` other than idle (a turn starting), `report.now` and `report.state`. Migration 0046 indexes exactly those rows (`spine_own_events`, a partial index on `(seat, seq, at)`), so the newest is one reverse seek however many idle records trail it. A message pushed to it is not its own, so the nudge never re-arms itself. A seat with no own event at all is left alone;
+  - it owns no queued or running **background job** (one seek on `background_jobs_live_by_owner`, also 0046);
+  - it has no **pending plan 222 compaction wake**: that wake owns the seat until it settles;
+  - **nothing is queued** for it (no live job of its delivery or control kind);
+  - it still holds something when its holdings and claims are read.
+- **Once per idle stretch.** The stretch is keyed by the spine `seq` of the seat's last own event (`idle_nudges`, migration 0046, `PRIMARY KEY (seat, anchor)`). The mark is written **before** anything is sent, and only the call that inserts it sends, so a restart or an overlapping round never sends twice. The insert checks the stretch again in the same statement: if the seat has posted an own event after the anchor, or is no longer live and `idle`, nothing is marked and nothing is sent (an own event racing the round). The next own event starts a new stretch, which can be nudged once more after another hour. Like plan 222's `woken`, the mark records the one attempt: a failed send is not retried, and its outcome is in the audit event.
+- **What it sends.** `pij-bg` sends the seat one normal message (`idle-nudge:<seat>:<anchor>:<occurrence>`, where `<occurrence>` is 16 random bytes in hex, so no caller can take the id first; the mark, not the id, makes it once per stretch): `idle <N> min while holding <holdings and claims>; resume, report blocked, or release.` The prime of each project the seat holds work in (the project's designated prime, if it is live and isn't the seat itself), else the seat's live parent, gets an FYI (`idle-nudge-fyi:<seat>:<anchor>:<own random part>:<prime>`; never derived from the nudge id, which `/v1/events` publishes before the FYI is held) naming the seat, the idle time and what it holds. A cold seat is woken and audited with reason `pa-watchdog: a holder sat idle`. Each nudge appends `watchdog.idle-nudge` on the seat with `anchor`, `idle_ms`, `msg_id`, `held`, `delivery`, `cold_check` and `primes`. Every seat id, role, instance, kind and project in these texts goes through `pij_core::render` (#185: `seat`, `name`, `word`); anything outside its grammar shows as `invalid (N chars)`.
+- **How it relates to the others.** Plan 222 wakes a seat 5 minutes after a compaction leaves it idle; this one waits an hour and stands aside while a compaction wake is pending. s12's time limits escalate a role **request** that isn't answered; this one is about the **holder**, with or without a request. One threshold for every role: a seat at work posts own events, so only a stalled one crosses it.
+- **Cost.** No new timer, poll or launch. Per round, one holding-seats read, then a lookup of each holder in the round's registry snapshot (no per-seat scan of the holders). Only when some holder is idle: one read of pending compactions (a partial index, empty in steady state). Per idle holder: one own-event seek and one mark read. Per idle holder past the hour and not yet nudged: one owner seek for background jobs, one queue peek, the holdings and claims reads, and one mark write that re-checks the stretch with one range seek on the same own-event index; then one message plus one FYI per prime. In steady state (holders at work) it is the holding-seats read and one seek per idle holder. Building the two 0046 indexes is a one-time cost at migration.
 
 ## Opt-in watchdog
 
