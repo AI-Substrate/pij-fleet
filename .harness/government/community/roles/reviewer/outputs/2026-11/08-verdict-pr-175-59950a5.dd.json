@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b986-3f51-71f0-b354-de0e2e9a4b4c",
+				"date": "2026-11-08",
+				"head": "59950a5ef6334faa57a57f35f178b284354287e1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/175#issuecomment-6717646781",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:175",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N001: scope closure claims to checked literal roots/current imports; opaque computed targets need independent review, not an unconditional never-pass-blind claim."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Latest successful Rust job 128632771310, CI run 42447684985",
+					"exit_code": 0,
+					"log": "2206 executed tests passed, 5 skipped; successful rerun artifact 13604179945 has zero failures/errors and the closure/grammar/digest cases passed; https://github.com/AI-Substrate/pij-fleet/actions/runs/42447684985/artifacts/13604179945"
+				},
+				{
+					"command": "node harness/scripts/pr-freeze.ts 175",
+					"exit_code": 0,
+					"log": "FINAL at 59950a5ef6334faa57a57f35f178b284354287e1 when checked; matching heads, CLEAN, successful latest checks"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #175 round-4 correctness verdict\n\n**PASS-WITH-NOTES** at `59950a5ef6334faa57a57f35f178b284354287e1`. The observed P5/P6 closure failures are repaired. I accept the lexical limit for this current-source observability check, with the proof-boundary clarification below.\n\n## Previous F001 cases: closed\n\n`crates/testkit/tests/extension_closure.rs:18-36,129-146`\n\nRelative spans are no longer discarded merely because they contain a newline, so P5 reaches the computed-path refusal. A literal that cannot be followed as a file is now normalized and checked against the extension directory and declared outside roots. P6's escaping directory prefix therefore refuses instead of disappearing.\n\nResolved files are followed and checked against the expected outside-file list; the OMP identity's declared-root literal remains allowed without being mistaken for a module-relative import. Current producers, tree stamps and rendering are unchanged from the reviewed round-3 implementation.\n\nThe new scratch regression covers plain, comment-separated, keyword-linebreak, multiline-interpolation and escaping-concatenation loads, plus a positive inside-directory import (`extension_closure.rs:227-265`). The author reports all real-tree probes now fail as expected, disabling the escape check kills the concatenation case, and restoring the newline filter kills the interpolation coverage. No local reviewer mutation run was done.\n\n## Limit judgment and N001\n\n**The lexical limitation is acceptable for the current, reviewed literal import graph**, whose only OMP outside dependency is explicitly included in both identity producers and daemon stamps. This is a consistency sensor, not a general JavaScript resolver or a security proof against arbitrary source authors.\n\n**N001:** qualify the unconditional “never pass blind,” “can't be blinded” and “no escaping path hides” wording in the source/PR description. Green establishes the checked literal roots, not the final target of every computed expression. Future opaque or computed loads require independent dependency review/root declaration; the limitation should be described as computed-target coverage generally, not only one spelling without an escaping literal. No such unsupported current production load was identified, so this is nonblocking.\n\nLikewise, fingerprints cover committed directory contents and listed objects, not live working-tree bytes, package dependencies, runtime compatibility or which side is newer. “Docs-only does not flag” applies when the changed files are outside the hashed roots. The diagnostic remains seat-reported; it is not authenticated code attestation.\n\n## Whole-PR checks retained\n\nThe docs/skills-outside-root and daemon-only commit false positives remain fixed by tree comparison. Missing/invalid stamps and missing-tree metadata remain unassessed rather than falsely fresh. Closed-grammar build/tree parsing and canonical rendering still reject hostile framing, instructions and control characters; F127's other digest fields remain separately tracked. Copilot captures identity before its reconnect loop, and OMP at module load, so a later registration does not silently recalculate a running extension's identity.\n\nNo runtime code changed in round 4 beyond importing main's cargo-cap changes; no new timer, poll, daemon launch or extra digest read is introduced by this delta.\n\n## Verification\n\nCI run `42447684985` passed on its latest Rust rerun: **2,206 executed tests passed; 5 skipped**. The successful job uploaded artifact **13604179945**, whose JUnit has zero failures/errors and confirms the three closure tests plus grammar/digest tests passed. Name-only download initially selected the earlier failed artifact; it was not used as latest-suite proof. The earlier failure was an inherited compaction-wake timing assertion, not a failure of these target cases.\n\n`pr-freeze` reported FINAL with matching heads, CLEAN and successful latest checks. `git diff --check origin/main...HEAD` passed. The target production producer/rendering files are unchanged from a15ca91.\n\nNo local builds/tests, installs, credentials, live-fleet probes, merge or push. The detached worktree remains unchanged at the requested full SHA.\n"
+		}
+	]
+}
