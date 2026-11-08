@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b9ca-ba2b-79e1-b514-cf8f368bd5b5",
+				"date": "2026-11-08",
+				"head": "c4b22b22236d100427414e2c810420068c3d37c3",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/181#issuecomment-6718120716",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:181",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git ls-remote origin docs/f125-ready-sha",
+					"exit_code": 0,
+					"log": "c4b22b22236d100427414e2c810420068c3d37c3 refs/heads/docs/f125-ready-sha"
+				},
+				{
+					"command": "node harness/scripts/pr-freeze.ts 181",
+					"exit_code": 0,
+					"log": "FINAL: #181 at c4b22b22236d100427414e2c810420068c3d37c3; detached worktree clean, remote and GitHub head agree, all latest checks passed."
+				},
+				{
+					"command": "CI just pij-skill-check, run 42453573577 job 128647728601",
+					"exit_code": 0,
+					"log": "Exact-head CI passed; pair.md budget 135/350; sibling-blindness and completion-order structure passed. https://github.com/AI-Substrate/pij-fleet/actions/runs/42453573577/job/128647728601"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: PASS\n\nPR #181 at `c4b22b22236d100427414e2c810420068c3d37c3`, answering `01a1b9ca-ba2b-79e1-b514-cf8f368bd5b5`.\n\nNo correctness findings.\n\nThe instruction is accurate: `git ls-remote origin <branch>` reads the advertised remote ref and prints its object ID, rather than trusting a local commit or a coder's claim. Running the documented form for this PR's branch printed the exact reviewed SHA and `refs/heads/docs/f125-ready-sha`.\n\nPlacement is correct. `skills/pij/references/routes/pair.md:103-109` puts the requirement in the coder packet, immediately after the done criteria and before its ready reply. Procedure step 2 requires writing that packet before dispatch (`pair.md:125-126`); the receiving PM still checks finality before sending an exact-head reviewer packet (`pair.md:127-130`). The existing finality check independently confirmed the remote/GitHub head agreement.\n\nEvidence: the detached worktree was clean at the requested SHA; `node harness/scripts/pr-freeze.ts 181` exited 0 and reported FINAL. Exact-head CI run `42453573577` passed. Its check (22) job `128647728601` executed `just pij-skill-check`, including the pair route's 135/350-line budget and packet-adjacent structural checks. These are structural checks, not proof that an agent will obey the new wording. No local builds/tests or product edits were performed.\n\nCost: one foreground remote-ref query per coder ready report; no background loop, poll, timer, hook, per-tick/per-seat work or daemon launch site is introduced.\n"
+		}
+	]
+}
