@@ -792,6 +792,16 @@
 					"seat": "pij-double-bobcat",
 					"to": "2026-11-08T02:50:39.484Z",
 					"why": "F114/F115 #174"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T03:29:19.435Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "176",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "F126 cargo job cap #176"
 				}
 			]
 		}
