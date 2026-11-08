@@ -2356,7 +2356,7 @@ fn instance_suffix(instance: &str) -> String {
 /// A stored holding time in text: as it is when it parses as one, else its
 /// length (F142).
 fn shown_time(time: &str) -> std::borrow::Cow<'_, str> {
-    if holders::parse_time(time).is_some() && !time.chars().any(char::is_control) {
+    if holders::parse_time(time).is_some() && pij_core::render::is_one_line(time) {
         std::borrow::Cow::Borrowed(time)
     } else {
         std::borrow::Cow::Owned(pij_core::model::invalid_text(time))
