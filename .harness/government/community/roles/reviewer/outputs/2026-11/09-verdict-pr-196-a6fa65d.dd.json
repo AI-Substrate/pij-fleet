@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bd90-54fd-7ee3-a579-913b33b8446e",
+				"date": "2026-11-09",
+				"head": "a6fa65d9231da85d30817eb23cdccb182a70e3f1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/196#issuecomment-6728916338",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:196",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Read a6fa65d normalization and parsed-plist/preservation tests; inspect m147r2.py/out",
+					"exit_code": 0,
+					"log": "F001 closed: literal 1/0 only, refusal precedes writes/build/stop. Four author mutants exit101; code/test source unchanged through commit and merge per author and scoped diff. Baseline not separately retained. No reviewer mutation or launch-recipe run."
+				},
+				{
+					"command": "Read CI 42536650301 artifact 13638749568 and CI commit 7847cda; just pr-freeze 196",
+					"exit_code": 0,
+					"log": "2302 Rust passes, five nextest skips; all six build_stamps cases executed. Latest five checks pass and FINAL/CLEAN. CI tree equals head e6097723a12bc58a7a49391cbf057284f718123b."
+				},
+				{
+					"command": "Standalone nice-only POSIX-shell normalization probe with ON plus trailing LF",
+					"exit_code": 0,
+					"log": "Input bytes 4f 4e 0a normalize to 1. N001 exact-input prose overclaims trailing-LF refusal; N002 cost prose omits one-shot tr/pipeline overhead. No live recipe or daemon operation."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Delta correctness verdict: PASS-WITH-NOTES\n\nPR #196 at `a6fa65d9231da85d30817eb23cdccb182a70e3f1`, answering `01a1bd90-54fd-7ee3-a579-913b33b8446e`. **F001 from output 00adad1 is closed.** No new correctness blocker. C33 is applied: this verdict does not require isolation from another process in the same trusted user account.\n\n**The repair:** both recipes normalize before the first build, daemon lookup/stop or destination write (`justfile:634-641,675-682`). The accepted branches assign only literal `1` or `0`; the refusal branch reports the supported values and exits 2. The daemon assignment and plist now consume only that normalized variable (`:658,696`), not the caller's raw string. An empty value, malformed XML text and ordinary unrecognized tokens cannot overwrite an installed plist. Unset still defaults on; explicit off forms become zero. Rejecting formerly tolerated nonboolean/empty values is the intentional round-2 operating contract, not a change to the bare daemon's default-off configuration.\n\n**Proof:** the actual recipe bodies still run with isolated scratch HOME/PATH and fake external commands. The new test parses each generated plist with real Python `plistlib`, independently of the fake `plutil`, and asserts the normalized environment plus absence of a top-level Program key (`crates/testkit/tests/build_stamps.rs:259-304`). Seven representative spellings exercise on/off and case folding. For each of the payload, `a&b`, `<x>`, `yes` and empty, the test checks refusal, absence of a new plist and byte-preservation of a seeded installed file (`:308-329`). The bounce test checks OFF becomes zero and a refused input produces no cargo or daemon environment record (`:334-348`). Source ordering also puts refusal before the old daemon is stopped; that ordering is not separately pinned by a fake kill marker.\n\nInspected `m147r2.py` and `m147r2.out`: four individually applied mutants exit 101 at the intended assertions, with five other cases passing each time. They bypass each refusal arm, write the raw plist value, or pass the raw bounce value. The raw-plist mutant is killed by the accepted-spelling normalization assertion, not an executed XML-injection scenario. The runner asserts unique replacements and restores the backup in `finally`; final status lists only the intended justfile/test edits. The author confirms these two files were committed byte-identically as `2f85e9b`; the API paragraph was edited afterward, and no test reads it. The clean main merge carries #193's separate documentation region without changing either reviewed code/test file. Baseline and post-merge six-case/clippy results were reported but not separately retained. These are attributed author mutations, not reviewer-run mutants.\n\nExact-head CI `42536650301`, successful artifact `13638749568`: **2,302 Rust cases passed**, zero failures/errors; nextest separately reports five skips. All six `pij-testkit::build_stamps` cases executed, including both new normalization tests. Rust lint, Node 22/24 and the latest delivers check passed. Earlier cancelled delivers runs are not credited as proof. CI checkout `7847cda5d1ef962bbd41dcce3b1dd6413ba0231c` has tree `e6097723a12bc58a7a49391cbf057284f718123b`, identical to the reviewed head. This proves fake-recipe execution and XML parsing, not macOS launchd deployment.\n\n**N001, narrow input-grammar/documentation limit:** command substitution strips trailing linefeeds before the case match (`justfile:636,677`). A standalone read-only POSIX-shell probe preserved input bytes `4f 4e 0a` (ON plus LF) and produced normalized `1`. Thus the API's \"accept exactly ... any other value is refused\" wording (`docs/how/pij-rs-api.md:2095`) is slightly stronger than the implementation. Output remains literal 1/0 and F001 stays closed. Either document trailing-LF acceptance or match the original value with case-insensitive shell patterns if exact refusal is intended.\n\n**N002, cost wording:** round 2 adds one `tr` invocation plus shell pipeline overhead per explicit bounce/autostart invocation. There is no new daemon timer, poll, per-seat path or steady-state launch rate; the Python parser runs only in tests. The PR's inherited \"None ... no ... launch changes\" cost line should describe this small one-shot cost rather than claiming none. Performance judgment remains independently owned.\n\n`just pr-freeze 196` returned FINAL/CLEAN, with matching remote heads and a clean detached worktree; HEAD remained fixed. No product edits, local cargo/TS tests, actual bounce/autostart execution, credential reads, live-fleet probes, merge or push. The parsed-plist and preservation regressions encode the original review's proof gap.\n"
+		}
+	]
+}
