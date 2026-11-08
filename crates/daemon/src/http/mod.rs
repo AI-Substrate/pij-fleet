@@ -783,6 +783,9 @@ async fn require_bearer(
 struct Health<'a> {
     status: &'static str,
     build: &'static str,
+    /// The commit this daemon was built from, when the build stamped one (F113).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    commit: Option<&'a str>,
     offline: bool,
     machine: String,
     retired_harnesses: &'a [Harness],
@@ -813,6 +816,7 @@ async fn health(State(state): State<AppState>) -> Response {
     let data = Health {
         status: if healthy { "healthy" } else { "unhealthy" },
         build: BUILD,
+        commit: state.services.build_commit.as_deref(),
         offline: state.services.offline,
         machine: state.machine_alias,
         retired_harnesses: &state.services.retired_harnesses,

@@ -266,16 +266,27 @@ const git = async (args) =>
 /**
  * The loaded extension's identity, reported at registration like OMP's
  * (`.omp/extensions/pij/adapters/extension-build.ts`): the git short SHA, `+dirty`
- * when this directory has changes, else a framed hash of its runtime modules.
+ * when this directory has changes, and ` tree:` with this directory's git tree
+ * id; else a framed hash of its runtime modules.
  */
 export async function extensionBuildIdentity(directory) {
 	const extension_path = await realpath(directory);
 	try {
-		const sha = (await git(["-C", extension_path, "rev-parse", "--short=10", "HEAD"])).trim();
+		// The commit and this directory's git tree id in one call. The tree is
+		// what the daemon compares (F113); the extension imports nothing from
+		// outside this directory (crates/testkit/tests/extension_closure.rs).
+		const [head = "", tree = ""] = (
+			await git(["-C", extension_path, "rev-parse", "HEAD", "HEAD:./"])
+		)
+			.trim()
+			.split("\n");
 		const dirty = (
 			await git(["-C", extension_path, "status", "--porcelain", "--", extension_path])
 		).trim();
-		return { extension_build: `${sha}${dirty ? "+dirty" : ""}`, extension_path };
+		return {
+			extension_build: `${head.slice(0, 10)}${dirty ? "+dirty" : ""} tree:${tree.slice(0, 10)}`,
+			extension_path,
+		};
 	} catch {
 		// Standalone installs (or unavailable git metadata) identify their source bytes instead.
 	}
@@ -1864,12 +1875,16 @@ export class NativeBridge {
 			throw new NativeError(`${label} received malformed processing snapshot; receiving held`);
 		return state.processing;
 	}
+	/**
+	 * Whether a message not yet consumed when its run ended was dropped, so it
+	 * may be sent again. A message still queued or a run still processing is
+	 * waiting, not dropped, whatever a history gap left uncertain (F124: the
+	 * gap check used to come first and held a steer that was consumed 4.4 s
+	 * later). Only the resend needs that certainty: see
+	 * {@link NativeBridge#waitOutUncertainDiscard}.
+	 */
 	async canRetryDiscarded(completion, message) {
 		const signal = this.receiverController.signal;
-		if (completion.discardUncertain)
-			throw new NativeError(
-				"Native receiver progress gap cannot prove discarded consumption; receiving held without reinjection",
-			);
 		const label = "Native discard recovery";
 		try {
 			const pending = await this.readQueueSnapshot(label);
@@ -1892,9 +1907,7 @@ export class NativeBridge {
 			// cursor is silently stale. Check the independent authority before rearm.
 			if (!completion.consumption) await this.probeReceiver(completion);
 			if (!completion.consumption && completion.discardUncertain)
-				throw new NativeError(
-					"Native receiver progress gap cannot prove discarded consumption; receiving held without reinjection",
-				);
+				return this.waitOutUncertainDiscard(completion);
 			return !completion.consumption;
 		} catch (error) {
 			if (signal.aborted || error instanceof NativeError) throw error;
@@ -1902,6 +1915,31 @@ export class NativeBridge {
 				"Native discard recovery queue, processing or history snapshot failed; receiving held without reinjection",
 			);
 		}
+	}
+	/**
+	 * Queue empty, run idle, consumption unseen, and a history gap means it may
+	 * have been consumed unseen: never resend. Keep waiting, re-reading history
+	 * on the usual backoff with the lease still renewing, so late evidence of
+	 * consumption settles it. Hold only once the gap has outlived
+	 * HOLD_ESCALATION_MS, as a receiver gap does.
+	 */
+	waitOutUncertainDiscard(completion) {
+		completion.uncertainSince ??= this.now();
+		const elapsedMs = this.now() - completion.uncertainSince;
+		if (elapsedMs >= HOLD_ESCALATION_MS)
+			throw new NativeError(
+				"Native receiver progress gap cannot prove discarded consumption; receiving held without reinjection",
+			);
+		if (!completion.uncertainReported) {
+			completion.uncertainReported = true;
+			this.emit("discard-uncertain", {
+				msgId: completion.msgId,
+				jobId: completion.jobId ?? null,
+				nativeMessageId: completion.nativeId,
+				holdAfterMs: HOLD_ESCALATION_MS,
+			});
+		}
+		return false;
 	}
 	async newCompletion(message, replay = false, jobId) {
 		const tail = await this.nativeRpc("eventLog.tail", () => this.native.rpc.eventLog.tail());

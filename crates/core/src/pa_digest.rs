@@ -206,7 +206,7 @@ impl FleetView {
             let _ = write!(text, "\n  {seat}  {why}");
         }
         // Said out loud so a short list is never read as "no anomalies".
-        text.push_str("\n  (anomalies here are stale cards and refused pane taps only; `pij anomalies` has every kind)");
+        text.push_str("\n  (anomalies here are stale cards, refused pane taps, stale extensions and lapsed native receivers only; `pij anomalies` has every kind)");
         let (stuck, queued): (Vec<&QueuedRequest>, Vec<&QueuedRequest>) = self
             .queued
             .iter()
