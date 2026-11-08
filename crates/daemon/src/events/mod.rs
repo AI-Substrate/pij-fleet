@@ -302,6 +302,24 @@ impl RegistryPublisher for EventBus {
     fn publish_registry<'a>(&'a self, commit: RegistryCommit) -> RegistryPublication<'a> {
         Box::pin(self.publish_committed(commit))
     }
+
+    fn publish_registry_batch<'a>(
+        &'a self,
+        commit: pij_store::spine::RegistryBatchCommit,
+    ) -> RegistryPublication<'a> {
+        Box::pin(self.publish_committed_batch(async move {
+            let (events, binding) = commit.await?;
+            let seq =
+                events
+                    .last()
+                    .and_then(|event| event.seq)
+                    .ok_or_else(|| PijError::Adapter {
+                        adapter: "daemon/events".into(),
+                        message: "a registry batch committed without its event sequence".into(),
+                    })?;
+            Ok((events, (seq, binding)))
+        }))
+    }
 }
 
 #[async_trait]

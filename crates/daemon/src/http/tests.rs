@@ -1370,6 +1370,7 @@ async fn typing_release_wakes_an_already_waiting_inbox_reader() {
             Arc::clone(&services.event_bus),
             Vec::new(),
             Arc::clone(&services.roles),
+            services.seat_authority(),
         )
         .with_native_delivery(Arc::clone(&services.delivery)),
         services,
@@ -1990,6 +1991,7 @@ async fn typing_hold_projections_follow_terminal_outcomes_and_sequence() {
                 Arc::clone(&services.event_bus),
                 Vec::new(),
                 Arc::clone(&services.roles),
+                services.seat_authority(),
             )
             .with_native_delivery(Arc::clone(&services.delivery)),
             services,
@@ -4404,7 +4406,13 @@ async fn spawn_stamps_only_the_argv_that_reached_the_observed_launch() {
         assert_eq!(descriptor.effort.as_deref(), Some("high"));
     }
 
-    let calls = tmux.calls();
+    // Plan 223 review D5: each launch reads its pane's process once, to record
+    // it on the spawn's nonce.
+    let (reads, calls): (Vec<String>, Vec<String>) = tmux
+        .calls()
+        .into_iter()
+        .partition(|call| call.starts_with("pane_process:"));
+    assert_eq!(reads.len(), 2, "{reads:?}");
     assert_eq!(calls[0], "list_panes");
     assert!(calls[1].contains("new_window:fleet:pij-closed:"));
     assert!(calls[1].contains("__spawn-child"));
@@ -4431,7 +4439,7 @@ async fn spawn_stamps_only_the_argv_that_reached_the_observed_launch() {
     assert!(collision_body.contains("already exists and is not tombstoned"));
     assert!(collision_body.contains("choose another --id or tombstone it before respawning"));
     assert!(!collision_body.contains("reviv"));
-    assert_eq!(tmux.calls().len(), 3, "collision launches no extra process");
+    assert_eq!(tmux.calls().len(), 5, "collision launches no extra process");
 
     let unresolved = client
         .post(format!("http://{addr}/v1/spawn"))

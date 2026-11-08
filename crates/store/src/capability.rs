@@ -136,6 +136,11 @@ pub(crate) async fn nonce(
             digest: digest(row.try_get("digest").map_err(adapter_error)?, "digest")?,
             issued_at: row.try_get::<i64, _>("issued_at").map_err(adapter_error)? as u64,
             expires_at: row.try_get::<i64, _>("expires_at").map_err(adapter_error)? as u64,
+            pane: identity(
+                row.try_get("pane_pid").map_err(adapter_error)?,
+                row.try_get("pane_start").map_err(adapter_error)?,
+                "pane",
+            )?,
         },
         consumed_at: row
             .try_get::<Option<i64>, _>("consumed_at")
@@ -165,8 +170,8 @@ pub(crate) async fn insert_nonce(
     nonce: &SpawnNonce,
 ) -> Result<()> {
     sqlx::query(
-        "INSERT INTO seat_nonces (spawn_id, seat, harness, digest, issued_at, expires_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO seat_nonces (spawn_id, seat, harness, digest, issued_at, expires_at, \
+         pane_pid, pane_start) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
     )
     .bind(&nonce.spawn_id)
     .bind(nonce.seat.as_str())
@@ -174,10 +179,31 @@ pub(crate) async fn insert_nonce(
     .bind(nonce.digest.as_slice())
     .bind(sql_ms(nonce.issued_at))
     .bind(sql_ms(nonce.expires_at))
+    .bind(nonce.pane.map(|pane| i64::from(pane.pid)))
+    .bind(start_text(nonce.pane))
     .execute(connection)
     .await
     .map_err(adapter_error)?;
     Ok(())
+}
+
+/// Record the spawn's pane process on its nonce; `false` without one.
+pub(crate) async fn record_pane(
+    connection: &mut SqliteConnection,
+    spawn_id: &str,
+    pane: ProcIdentity,
+) -> Result<bool> {
+    Ok(
+        sqlx::query("UPDATE seat_nonces SET pane_pid = ?2, pane_start = ?3 WHERE spawn_id = ?1")
+            .bind(spawn_id)
+            .bind(i64::from(pane.pid))
+            .bind(pane.proc_start.to_string())
+            .execute(connection)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected()
+            == 1,
+    )
 }
 
 /// Drop every nonce whose window closed before `now_ms`; their spawn ids.

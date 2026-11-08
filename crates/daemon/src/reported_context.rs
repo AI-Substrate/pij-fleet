@@ -133,7 +133,7 @@ impl ReportedContext {
             return Ok(None);
         };
         if !crate::capability::present(registry, capabilities, &current, token)
-            .await
+            .await?
             .valid()
         {
             return Ok(None);

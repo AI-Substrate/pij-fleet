@@ -13,7 +13,7 @@ Phase A ships as two count-only PRs: A1 (the daemon, this file) and A2 (the clie
 
 ## AC2: the issuer
 
-- **Migration 0046** (`seat_nonces`, `seat_capabilities`, SCHEMA_VERSION 46; 0045 is held by #184).
+- **Migration 0047** (`seat_nonces`, `seat_capabilities`, SCHEMA_VERSION 47; 0045 is held by #184 and 0046 by #189).
 - **The nonce:**
   - Spawn and revive mint a 32-byte nonce, store its SHA-256 with spawn, seat, harness and a 15-minute expiry (`NONCE_TTL`), and write it to a 0600 `create_new` file beside the spawn's status file.
   - `pij-rs __spawn-child --nonce-file` reads and unlinks the file and sets `PIJ_SPAWN_NONCE` on the harness only, so it is never in argv (Codex's shell environment doesn't get it either).
@@ -62,6 +62,30 @@ Phase A ships as two count-only PRs: A1 (the daemon, this file) and A2 (the clie
 - A token request is one SHA-256, a constant-time compare and a map lookup.
 - Registration adds one primary-key read; daemon start adds one delete and one select.
 - **Still owed:** the live before-and-after readings at the A1 plus A2 deploy (`pij-rs --json ping | jq .data.spawns`, `just spawn-rate --seconds 20`, daemon CPU at rest).
+
+## Review round 2 (#183)
+
+Every fix has a regression, and each regression was run against a mutant that reintroduces its defect. The mutant was applied, the test failed at the asserted defect, and the code was restored.
+
+| Finding | Fix | Regression | Mutant (killed) |
+|---|---|---|---|
+| S183-001 / D3 | A registration without proof (neither the seat's capability nor its spawn's nonce) may not move a live owner's capability. That covers rebinding its process or session, bootstrapping a new owner over the socket, and retiring a seat a live owner holds (a supersede, a spawn's predecessor). It is refused `E-RS-SEAT-OWNER-LIVE`, retryable (409), with nothing written. Owner and boundary are the capability row's own fields. The escape is `pij close <seat>` | `a_proofless_move_of_a_live_owners_seat_commits_nothing`; reload: `a_socket_peer_bootstraps_a_capability_and_owns_it`; escape: `a_hung_owner_is_escaped_by_closing_the_seat` | guard result ignored: all three fail |
+| S183-002 / D1 | One retirement path: the new capability's first presentation by any carrier (a header at the door, a held registration, or `context_token`) commits the store-conditional confirm before the request goes on. A failed write fails the request | `every_presentation_of_the_new_capability_retires_the_old_one` (held registration and header operation; the old token is then refused for reporting and for rotation); `a_failed_retirement_fails_the_presentation` | header path skips the retirement: fails at "held registration: reporting"; confirm error ignored: fails |
+| D2 | The in-memory retirement only applies if the confirmed digest is still current (generation) | `a_paused_confirm_never_retires_the_next_generations_previous` | generation filter removed: fails |
+| S183-003 | Locality is checked at every capability ingress: the header, `/v1/activity`'s `context_token`, and a registration's `spawn_nonce`. Each is refused 403 before anything is read or written | `the_remote_listener_refuses_every_capability_carrier_before_any_mutation` | activity body check disabled: fails |
+| D4 | A root (pid 1, launchd, tmux) is refused before any boundary or target match | `a_root_is_never_a_boundary_a_target_or_a_peer` | root check moved after the match: fails |
+| D5 | The spawn's pane process is recorded on the nonce row after launch. The claimed process must be it or descend from it | `a_nonce_binds_only_a_process_inside_its_spawns_pane` (the nonce is not consumed) | pane check skipped: issued to the unrelated process |
+| D6 | `reconcile_descriptors` revokes the alias's capability (and the survivor's, if its process changed) in its transaction | `reconcile_revokes_the_alias_capability_with_its_tombstone` (store) | revoke removed: fails |
+| D7 | Predecessors retire inside the issuing transaction (`put_issuing(.., retiring)`). Every event in it is published in order (`publish_registry_batch`) | store contract section 6 (SQLite and fake); `a_failed_issuing_write_leaves_the_predecessor_and_its_capability` (HTTP) | separate retire writes in SQLite, the fake and the daemon: each fails |
+| D8 / P183-F002 | One `SeatAuthority` (capabilities, boundaries, reader) is injected into every `RegistrationService` (the routes, Claude binder, Codex binder). Defaults exist only under `#[cfg(test)]`. The cap is checked and reserved in one step and held until the write commits (`Admission`). 4,096 is an admission limit | `an_admission_holds_its_slot_until_dropped`, `a_binder_shares_the_cap_and_the_capability_map`, `two_services_racing_for_the_last_slot_admit_exactly_one` | check without reservation: both racers admitted; binder's private authority: admitted past the cap |
+| D9 | `directory memory` and `directory routes` count inside the leaf once read or write is decided; reads are uncounted | `memory_and_routes_count_their_writes_and_never_their_reads` | leaf-level class restored: the memory read counts |
+| P183-F001 | `hosted_by` and `hosts_other` decide nobody, one or many from at most two entries, copying nothing | `hosted_lookups_copy_nothing_out_of_the_index` (256 sessions of 64 KiB) | copy the hosted map: fails |
+
+**Clients and the retryable refusal (pm-001's reload condition):**
+- **Native Copilot:** `.copilot/extensions/pij/store.mjs:601-608` maps a 409 `pij register` refusal with `details.retryable: true` to a retryable `NativeError`. `extension.mjs:224-256` then retries the whole registration with exponential backoff (`INITIAL_RETRY_MS` doubling to `MAX_RETRY_MS`) until it succeeds. Today's Copilot client registers over TCP and never holds a capability, so it meets this refusal only once A2 is deployed.
+- **OMP:** it does not retry. `rust-runtime.ts:309` (`registerIdentity`) rethrows any refusal except a retired seat, and `index.ts:466-471` marks the boot failed. OMP's owner is its own process, so a reload in the same process is never this case. A2 should add a retry if OMP ever re-registers from a new process while the old one lives.
+
+**Cost:** a launch adds one tmux pane read and one in-process start read (the pane record). A registration adds at most one extra capability-row read per retiring seat and one walk for a socket bootstrap. Nothing runs per tick.
 
 ## Gates
 

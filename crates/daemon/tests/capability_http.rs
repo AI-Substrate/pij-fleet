@@ -124,6 +124,13 @@ async fn read(daemon: &Daemon, path: &str) -> String {
 #[tokio::test]
 async fn a_live_seats_capability_still_works_after_a_daemon_restart() {
     let fixture = Fixture::new();
+    // This test process stands in for the seat's harness process.
+    let pid = std::process::id();
+    let proc_start = pij_harnesses::proc::ProcLiveness::new()
+        .proc_start(pid)
+        .await
+        .unwrap()
+        .unwrap();
     // The spawn's half, as `launch_seat_locked` does it: the digest only.
     let nonce = mint().unwrap();
     let services = build_services(&fixture.config, &fixture.state.join("pane-signals"))
@@ -138,18 +145,13 @@ async fn a_live_seats_capability_still_works_after_a_daemon_restart() {
             digest: nonce.digest(),
             issued_at: 1,
             expires_at: u64::MAX,
+            // The spawn's pane runs this process (review D5).
+            pane: Some(pij_core::model::ProcIdentity { pid, proc_start }),
         })
         .await
         .unwrap();
     drop(services);
 
-    // This test process stands in for the seat's harness process.
-    let pid = std::process::id();
-    let proc_start = pij_harnesses::proc::ProcLiveness::new()
-        .proc_start(pid)
-        .await
-        .unwrap()
-        .unwrap();
     let daemon = fixture.boot().await;
     {
         use std::os::unix::fs::PermissionsExt as _;

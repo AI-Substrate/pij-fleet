@@ -1083,6 +1083,15 @@ fn adopt_registration_error(error: RegistrationError) -> Response {
             answer.details = Some(json!({ "retryable": true }));
             envelope(StatusCode::CONFLICT, &answer)
         }
+        error @ RegistrationError::OwnerLive { .. } => {
+            let mut answer: Envelope<()> =
+                Envelope::refused(ADOPT, ErrorKind::Refused, error.to_string());
+            answer.details = Some(json!({
+                "retryable": true,
+                "code": pij_core::capability::OWNER_LIVE_CODE,
+            }));
+            envelope(StatusCode::CONFLICT, &answer)
+        }
         error @ RegistrationError::NativeSessionHold(_) => {
             let mut answer: Envelope<()> =
                 Envelope::refused(ADOPT, ErrorKind::Refused, error.to_string());

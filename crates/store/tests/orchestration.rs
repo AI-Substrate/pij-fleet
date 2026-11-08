@@ -832,3 +832,94 @@ async fn a_modal_stall_is_claimed_once_per_stretch_and_stands_until_an_own_event
             .is_empty()
     );
 }
+
+/// Plan 223 review D6: reconciliation tombstones the alias by a direct
+/// UPDATE, and revokes its capability in the same transaction, as every
+/// other tombstone does. The survivor, on its unchanged process, keeps its.
+#[tokio::test]
+async fn reconcile_revokes_the_alias_capability_with_its_tombstone() {
+    use pij_core::capability::{CapabilityIssue, IssueOutcome, IssueProof, SpawnNonce};
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let registry = SqliteRegistry::new(pool.clone(), support::publisher());
+    let store = SqliteOrchestration::new(pool);
+    let mut alias = SeatDescriptor::new("alias", Harness::Copilot, "/abs/tree");
+    alias.proc = Some(ProcIdentity {
+        pid: 13700,
+        proc_start: 20260905120000,
+    });
+    alias.harness_session = Some("00000000-0000-4000-8000-000000000137".to_string());
+    alias.native_extension_delivery = true;
+    alias.pane = Some("%137".to_string());
+    let mut survivor = alias.clone();
+    survivor.id = SeatId::from("survivor");
+    for (seat, spawn, digest) in [
+        (&alias, "spawn-alias", 1_u8),
+        (&survivor, "spawn-survivor", 3),
+    ] {
+        registry
+            .insert_spawn_nonce(SpawnNonce {
+                spawn_id: spawn.to_string(),
+                seat: seat.id.clone(),
+                harness: Harness::Copilot,
+                digest: [digest; 32],
+                issued_at: 1,
+                expires_at: u64::MAX,
+                pane: None,
+            })
+            .await
+            .expect("nonce");
+        let outcome = registry
+            .put_issuing(
+                seat.clone(),
+                false,
+                CapabilityIssue {
+                    proof: IssueProof::Nonce {
+                        spawn_id: spawn.to_string(),
+                        digest: [digest; 32],
+                    },
+                    digest: [digest + 1; 32],
+                    owner: None,
+                    now_ms: 2,
+                },
+                Vec::new(),
+            )
+            .await
+            .expect("issue");
+        assert!(
+            matches!(outcome, IssueOutcome::Issued { .. }),
+            "{outcome:?}"
+        );
+    }
+    let decision = store
+        .reconcile_descriptors(
+            VerifiedDescriptor {
+                descriptor: alias.clone(),
+                verified_at: Some(10),
+            },
+            VerifiedDescriptor {
+                descriptor: survivor.clone(),
+                verified_at: Some(20),
+            },
+        )
+        .await
+        .expect("reconcile");
+    let ReconcileDecision::Merge(plan) = decision else {
+        panic!("not a merge: {decision:?}");
+    };
+    assert!(
+        registry
+            .get(&plan.alias.id)
+            .await
+            .unwrap()
+            .is_some_and(|seat| seat.tombstoned_at.is_some())
+    );
+    assert_eq!(registry.capability(&plan.alias.id).await.unwrap(), None);
+    assert!(
+        registry
+            .capability(&plan.survivor.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}

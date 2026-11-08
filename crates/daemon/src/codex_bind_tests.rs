@@ -16,6 +16,7 @@ use pij_testkit::fakes::{FakeLiveness, FakeRegistry, FakeSpine};
 
 use super::{CodexBindFacts, CodexBinder};
 use crate::events::EventBus;
+use crate::registration::SeatAuthority;
 
 /// Recorded 2026-10-28, canary pane %122: wrapper 1533, Codex TUI 1567,
 /// thread 01a17f40-….
@@ -123,7 +124,14 @@ async fn binder(registry: Arc<FakeRegistry>, facts: Arc<Facts>) -> CodexBinder {
             proc_start: START,
         }),
     );
-    CodexBinder::with_facts(registry, liveness, bus, roles, facts)
+    CodexBinder::with_facts(
+        registry,
+        liveness,
+        bus,
+        roles,
+        facts,
+        SeatAuthority::default(),
+    )
 }
 
 async fn row(registry: &FakeRegistry) -> SeatDescriptor {
@@ -263,6 +271,7 @@ async fn the_daemon_bind_loop_runs_the_codex_binder() {
         Arc::new(FakeLiveness::new()),
         bus,
         roles,
+        SeatAuthority::default(),
     ));
     let interval =
         crate::lifecycle::TickInterval::new(std::time::Duration::from_millis(10)).unwrap();

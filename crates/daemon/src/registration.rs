@@ -6,10 +6,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use pij_core::capability::{CapabilityIssue, IssueOutcome, IssueProof, IssueRefusal, check_held};
+use pij_core::capability::{
+    CapabilityIssue, CapabilityRow, IssueOutcome, IssueProof, IssueRefusal, check_held,
+};
 
 use crate::capability::CapabilityClaim;
-use crate::http::provenance::{Boundaries, KernelReader, ProcReader, ambiguous, walk};
+use crate::http::provenance::{Boundaries, ProcReader, ambiguous, walk};
 use pij_core::error::PijError;
 use pij_core::model::{Event, Harness, ProcIdentity, SeatDescriptor, SeatId};
 use pij_core::names::memorable_pij_id_candidates;
@@ -36,6 +38,15 @@ pub(crate) enum RegistrationError {
         reason: String,
     },
     Retryable(String),
+    /// A proofless registration would move a live owner's capability (its
+    /// process, session or owner): refused, retryable, nothing written (plan
+    /// 223 review S183-001). A BRAKE: removing it lets the same registration
+    /// do more (revoke the owner's capability and bootstrap a new one), never
+    /// something different.
+    OwnerLive {
+        seat: SeatId,
+        pid: u32,
+    },
     NativeSessionHold(SeatId),
     /// A same-process session with newer native history holds the seat (plan 168).
     NativeHolderCurrent(SeatId),
@@ -56,6 +67,12 @@ impl std::fmt::Display for RegistrationError {
             | Self::InvalidSeatId(reason)
             | Self::Retryable(reason)
             | Self::Retired { reason, .. } => f.write_str(reason),
+            Self::OwnerLive { seat, pid } => write!(
+                f,
+                "{}: live owner pid {pid} still holds this session; retry once it exits, \
+                 or if it hangs, have the seat's parent run `pij close {seat}`",
+                pij_core::capability::OWNER_LIVE_CODE
+            ),
             Self::NativeSessionHold(owner) => write!(
                 f,
                 "native Copilot registration held: pane owned by seat `{owner}`; awaiting resumed session"
@@ -80,6 +97,28 @@ impl std::fmt::Display for RegistrationError {
                 crate::http::provenance::INDEX_CAP
             ),
             Self::Runtime(error) => error.fmt(f),
+        }
+    }
+}
+
+/// The daemon's ONE seat-authority state (plan 223): the capability digests,
+/// the boundary index and the process reader the walks read. Every
+/// registration service (the HTTP routes and each binder) is built with it,
+/// so none holds a private map or index (review D8).
+#[derive(Clone)]
+pub(crate) struct SeatAuthority {
+    pub(crate) capabilities: Arc<crate::capability::Capabilities>,
+    pub(crate) boundaries: Arc<Boundaries>,
+    pub(crate) reader: Arc<dyn ProcReader>,
+}
+
+#[cfg(test)]
+impl Default for SeatAuthority {
+    fn default() -> Self {
+        Self {
+            capabilities: Arc::default(),
+            boundaries: Arc::default(),
+            reader: Arc::new(crate::http::provenance::KernelReader),
         }
     }
 }
@@ -131,6 +170,7 @@ impl RegistrationService {
         event_bus: Arc<EventBus>,
         claude_homes: Vec<PathBuf>,
         roles: Arc<RoleService>,
+        authority: SeatAuthority,
     ) -> Self {
         Self {
             registry,
@@ -141,30 +181,10 @@ impl RegistrationService {
             registration_lock: Arc::new(tokio::sync::Mutex::new(())),
             native_receivers: None,
             attempts: Arc::default(),
-            capabilities: Arc::default(),
-            boundaries: Arc::default(),
-            reader: Arc::new(KernelReader),
+            capabilities: authority.capabilities,
+            boundaries: authority.boundaries,
+            reader: authority.reader,
         }
-    }
-
-    /// Share the daemon's boundary index and process reader (plan 223 AC3).
-    pub(crate) fn with_provenance(
-        mut self,
-        boundaries: Arc<Boundaries>,
-        reader: Arc<dyn ProcReader>,
-    ) -> Self {
-        self.boundaries = boundaries;
-        self.reader = reader;
-        self
-    }
-
-    /// Share the daemon's capability digests (plan 223).
-    pub(crate) fn with_capabilities(
-        mut self,
-        capabilities: Arc<crate::capability::Capabilities>,
-    ) -> Self {
-        self.capabilities = capabilities;
-        self
     }
 
     /// The registration counters `ping` reports (plan 211).
@@ -272,7 +292,9 @@ impl RegistrationService {
                     | RegistrationError::Provenance(_)
                     | RegistrationError::IndexFull => Outcome::Refused,
                     RegistrationError::Retired { .. } => Outcome::Retired,
-                    RegistrationError::Retryable(_) => Outcome::Retryable,
+                    RegistrationError::Retryable(_) | RegistrationError::OwnerLive { .. } => {
+                        Outcome::Retryable
+                    }
                     RegistrationError::NativeSessionHold(_) => Outcome::SessionHold,
                     RegistrationError::NativeHolderCurrent(_) => Outcome::HolderCurrent,
                     RegistrationError::Runtime(_) => Outcome::Error,
@@ -1206,16 +1228,29 @@ impl RegistrationService {
                     && same_native_owner(owner, &descriptor)
             });
 
+        // Plan 223 review S183-001: a capability's owner moves only with
+        // proof, before anything below is written.
+        self.guard_live_owners(
+            &descriptor,
+            issue,
+            predecessor.iter().chain(spawn_predecessor),
+        )
+        .await?;
         // Plan 223: a refused proof refuses before the first write below (a
         // retirement, a supersede, a config event); the issuing commit checks
         // again, so a race is still refused with nothing of the seat written.
         // Plan 223 AC3: a new harness boundary at the cap is refused by name;
-        // nothing is evicted.
-        if let Some(boundary) = descriptor.proc
-            && !self.boundaries.lock().admits(boundary)
-        {
-            return Err(RegistrationError::IndexFull);
-        }
+        // nothing is evicted. The admission holds its slot until the write
+        // below has committed or failed, so services racing for the last slot
+        // cannot both pass (review D8).
+        let _admission = match descriptor.proc {
+            Some(boundary) => Some(
+                self.boundaries
+                    .admit(boundary)
+                    .ok_or(RegistrationError::IndexFull)?,
+            ),
+            None => None,
+        };
         // Path b's checks decide here whether it issues at all.
         let bootstrap = match issue {
             Some(CapabilityClaim::Bootstrap { issue, withheld }) => {
@@ -1234,9 +1269,10 @@ impl RegistrationService {
             Some(CapabilityClaim::Issue(issue)) => {
                 // A nonce must come from the spawned harness: the socket
                 // peer's nearest boundary is the claimed process (AC3, AC5).
-                if let IssueProof::Nonce { .. } = &issue.proof {
+                if let IssueProof::Nonce { spawn_id, .. } = &issue.proof {
                     self.peer_reaches(&descriptor, issue)
                         .map_err(RegistrationError::Provenance)?;
+                    self.inside_spawn_pane(&descriptor, spawn_id).await?;
                 }
                 if let Err(refusal) = self
                     .registry
@@ -1318,6 +1354,8 @@ impl RegistrationService {
         // Retirement authority is either an observed dead resource owner or
         // explicit verified spawn intent for this same native conversation.
         // The filters are brakes: removing them can only broaden retirement.
+        let mut retirements = Vec::new();
+        let mut superseded_by_spawn = None;
         for observed in dead_native
             .iter()
             .chain(spawn_predecessor)
@@ -1334,30 +1372,13 @@ impl RegistrationService {
                 descriptor.id
             ));
             retired.native_extension_delivery = false;
-            self.registry
-                .put_reporting_keeping_parent(retired)
-                .await
-                .map_err(RegistrationError::Runtime)?;
             if spawn_predecessor.is_some_and(|previous| previous.id == observed.id) {
-                self.event_bus
-                    .publish(Event {
-                        seq: None,
-                        v: wire::EVENT_VERSION,
-                        at: system_time_ms()?,
-                        kind: "seat.native-superseded".into(),
-                        seat: Some(observed.id.clone()),
-                        payload: serde_json::json!({
-                            "successor": descriptor.id,
-                            "spawn_id": descriptor.spawn_id,
-                            "reason": "native-spawn-prebind",
-                        })
-                        .to_string(),
-                    })
-                    .await
-                    .map_err(RegistrationError::Runtime)?;
+                superseded_by_spawn = Some(retirements.len());
             }
+            retirements.push(retired);
         }
-
+        let superseded_by_spawn = superseded_by_spawn.map(|index| retirements[index].id.clone());
+        let mut previous_retired = None;
         if let Some(mut previous) = predecessor
             && previous.tombstoned_at.is_none()
         {
@@ -1367,34 +1388,68 @@ impl RegistrationService {
                 claim.id
             ));
             previous.native_extension_delivery = false;
-            self.registry
-                .put_reporting_keeping_parent(previous)
-                .await
-                .map_err(RegistrationError::Runtime)?;
+            previous_retired = Some(previous);
         }
         let issuing = match issue {
             Some(CapabilityClaim::Issue(issue)) => Some(issue),
             _ => bootstrap,
         };
         let committed = match issuing {
-            Some(issue) => match self
-                .registry
-                .put_issuing(descriptor.clone(), !parent_claimed, issue.clone())
-                .await
-                .map_err(RegistrationError::Runtime)?
-            {
-                IssueOutcome::Issued { seq, binding } => Ok((seq, binding)),
-                IssueOutcome::Refused(refusal) => {
-                    return Err(self
-                        .capability_refused(&descriptor.id, issue, refusal)
-                        .await);
-                }
-            },
-            _ if parent_claimed => self.registry.put_reporting(descriptor.clone()).await,
-            _ => {
-                self.registry
-                    .put_reporting_keeping_parent(descriptor.clone())
+            // Review D7: an issuance retires its predecessors in its own
+            // transaction, so a refused or failed one leaves them untouched.
+            Some(issue) => {
+                retirements.extend(previous_retired);
+                match self
+                    .registry
+                    .put_issuing(
+                        descriptor.clone(),
+                        !parent_claimed,
+                        issue.clone(),
+                        retirements,
+                    )
                     .await
+                    .map_err(RegistrationError::Runtime)?
+                {
+                    IssueOutcome::Issued { seq, binding } => {
+                        if let Some(observed) = &superseded_by_spawn {
+                            self.publish_native_superseded(observed, &descriptor)
+                                .await?;
+                        }
+                        Ok((seq, binding))
+                    }
+                    IssueOutcome::Refused(refusal) => {
+                        return Err(self
+                            .capability_refused(&descriptor.id, issue, refusal)
+                            .await);
+                    }
+                }
+            }
+            None => {
+                for retired in retirements {
+                    let superseded = superseded_by_spawn.as_ref() == Some(&retired.id);
+                    let observed = retired.id.clone();
+                    self.registry
+                        .put_reporting_keeping_parent(retired)
+                        .await
+                        .map_err(RegistrationError::Runtime)?;
+                    if superseded {
+                        self.publish_native_superseded(&observed, &descriptor)
+                            .await?;
+                    }
+                }
+                if let Some(previous) = previous_retired {
+                    self.registry
+                        .put_reporting_keeping_parent(previous)
+                        .await
+                        .map_err(RegistrationError::Runtime)?;
+                }
+                if parent_claimed {
+                    self.registry.put_reporting(descriptor.clone()).await
+                } else {
+                    self.registry
+                        .put_reporting_keeping_parent(descriptor.clone())
+                        .await
+                }
             }
         };
         let (_, binding) = committed.map_err(RegistrationError::Runtime)?;
@@ -1523,6 +1578,43 @@ impl RegistrationService {
         Ok(())
     }
 
+    /// Review D5: a nonce registration's claimed process must be the spawn's
+    /// RECORDED pane process or descend from it (a fresh in-process walk), so
+    /// a stolen nonce cannot bind an unrelated process. An unknown nonce is
+    /// left to the issuing check, which names it.
+    async fn inside_spawn_pane(
+        &self,
+        descriptor: &SeatDescriptor,
+        spawn_id: &str,
+    ) -> std::result::Result<(), RegistrationError> {
+        let Some(record) = self
+            .registry
+            .spawn_nonce(spawn_id)
+            .await
+            .map_err(RegistrationError::Runtime)?
+        else {
+            return Ok(());
+        };
+        let Some(pane) = record.nonce.pane else {
+            return Err(RegistrationError::Provenance(
+                "the spawn's pane process was never recorded, so no process can prove it \
+                 runs inside it; the nonce was not consumed"
+                    .to_string(),
+            ));
+        };
+        let claimed = descriptor.proc.ok_or_else(|| {
+            RegistrationError::Provenance("the registration binds no process".to_string())
+        })?;
+        match walk(self.reader.as_ref(), claimed, Some(pane), |_| false) {
+            Ok(reached) if reached == pane => Ok(()),
+            Ok(_) | Err(_) => Err(RegistrationError::Provenance(format!(
+                "the claimed process {} is not inside the spawn's pane (pane process {}); \
+                 the nonce was not consumed",
+                claimed.pid, pane.pid
+            ))),
+        }
+    }
+
     /// Why path b may not issue, if it may not: the peer must reach the
     /// claimed harness, that harness must host no other live session, and no
     /// live owner may hold the seat's capability (ownership moves only by the
@@ -1541,13 +1633,7 @@ impl RegistrationService {
         let Some(boundary) = descriptor.proc else {
             return Ok(Some("the registration binds no process".to_string()));
         };
-        if self
-            .boundaries
-            .lock()
-            .hosted(boundary)
-            .iter()
-            .any(|(seat, _)| *seat != descriptor.id)
-        {
+        if self.boundaries.lock().hosts_other(boundary, &descriptor.id) {
             return Ok(Some(ambiguous(descriptor.harness)));
         }
         let current = self
@@ -1568,6 +1654,114 @@ impl RegistrationService {
             }
         }
         Ok(None)
+    }
+
+    /// A spawn's prebind replaced the predecessor's native binding.
+    async fn publish_native_superseded(
+        &self,
+        observed: &SeatId,
+        descriptor: &SeatDescriptor,
+    ) -> std::result::Result<(), RegistrationError> {
+        self.event_bus
+            .publish(Event {
+                seq: None,
+                v: wire::EVENT_VERSION,
+                at: system_time_ms()?,
+                kind: "seat.native-superseded".into(),
+                seat: Some(observed.clone()),
+                payload: serde_json::json!({
+                    "successor": descriptor.id,
+                    "spawn_id": descriptor.spawn_id,
+                    "reason": "native-spawn-prebind",
+                })
+                .to_string(),
+            })
+            .await
+            .map_err(RegistrationError::Runtime)?;
+        Ok(())
+    }
+
+    /// The live holder of `row`'s capability: its owner's pid (else its
+    /// boundary's) while both are observed alive, read in-process. `None`
+    /// once either is observed dead.
+    fn live_holder(&self, row: &CapabilityRow) -> Option<u32> {
+        let alive =
+            |identity: ProcIdentity| self.reader.start(identity.pid) == Some(identity.proc_start);
+        (row.owner.is_none_or(alive) && row.boundary.is_none_or(alive))
+            .then(|| row.owner.or(row.boundary).map(|identity| identity.pid))
+            .flatten()
+    }
+
+    /// Plan 223 review S183-001: no proofless registration moves a live
+    /// owner's capability. A registration that would rebind the seat to
+    /// another process or session, bootstrap a new owner over the socket, or
+    /// retire a seat (a supersede, a spawn's predecessor) whose capability a
+    /// live owner holds is refused [`RegistrationError::OwnerLive`]
+    /// (retryable): it commits nothing, so the owner keeps its capability.
+    /// Proof is the seat's capability or its spawn's nonce (both checked
+    /// before any write), or the socket peer being the owner itself. Once the
+    /// owner or its harness is observed dead, the move proceeds (and path b
+    /// may issue). The owner and boundary are the capability row's own
+    /// fields, never re-derived from the roster.
+    async fn guard_live_owners<'a>(
+        &self,
+        descriptor: &SeatDescriptor,
+        issue: Option<&CapabilityClaim>,
+        retiring: impl Iterator<Item = &'a SeatDescriptor>,
+    ) -> std::result::Result<(), RegistrationError> {
+        let (proven, peer) = match issue {
+            Some(CapabilityClaim::Issue(issue)) => (true, issue.owner),
+            Some(CapabilityClaim::Hold(_)) => (true, None),
+            // A peer outside the claimed harness is no bootstrap at all: it
+            // is judged as a proofless registration (path b withholds).
+            Some(CapabilityClaim::Bootstrap { issue, .. }) => (
+                false,
+                issue
+                    .owner
+                    .filter(|_| self.peer_reaches(descriptor, issue).is_ok()),
+            ),
+            None => (false, None),
+        };
+        let current = self
+            .registry
+            .capability(&descriptor.id)
+            .await
+            .map_err(RegistrationError::Runtime)?;
+        if let Some(row) = current.filter(|_| !proven) {
+            let rebinds = descriptor.proc != row.boundary
+                || row
+                    .session
+                    .as_ref()
+                    .is_some_and(|session| descriptor.harness_session.as_ref() != Some(session));
+            let new_owner = peer.is_some() && peer != row.owner;
+            if (rebinds || new_owner)
+                && let Some(pid) = self.live_holder(&row)
+            {
+                return Err(RegistrationError::OwnerLive {
+                    seat: descriptor.id.clone(),
+                    pid,
+                });
+            }
+        }
+        for seat in retiring.filter(|seat| seat.id != descriptor.id) {
+            let Some(row) = self
+                .registry
+                .capability(&seat.id)
+                .await
+                .map_err(RegistrationError::Runtime)?
+            else {
+                continue;
+            };
+            if (peer.is_none() || peer != row.owner)
+                && let Some(pid) = self.live_holder(&row)
+            {
+                return Err(RegistrationError::OwnerLive {
+                    seat: seat.id.clone(),
+                    pid,
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Make the daemon's digest map follow the store for `seat`. A failed read
@@ -2618,8 +2812,15 @@ mod tests {
             .expect("delivery service"),
         );
         (
-            RegistrationService::new(registry.clone(), liveness, bus, Vec::new(), roles)
-                .with_native_delivery(delivery),
+            RegistrationService::new(
+                registry.clone(),
+                liveness,
+                bus,
+                Vec::new(),
+                roles,
+                crate::registration::SeatAuthority::default(),
+            )
+            .with_native_delivery(delivery),
             registry,
         )
     }
@@ -5012,7 +5213,14 @@ mod tests {
             pij_store::SqliteOrchestration::new(pool),
             event_bus.clone(),
         ));
-        let service = RegistrationService::new(registry, liveness, event_bus, Vec::new(), roles);
+        let service = RegistrationService::new(
+            registry,
+            liveness,
+            event_bus,
+            Vec::new(),
+            roles,
+            crate::registration::SeatAuthority::default(),
+        );
         let mut claim = native_claim("pij-counted");
         claim.harness = Harness::Omp.as_str().to_string();
         claim.folder = root.display().to_string();
@@ -5076,8 +5284,14 @@ mod tests {
             pij_store::SqliteOrchestration::new(pool),
             event_bus.clone(),
         ));
-        let service =
-            RegistrationService::new(registry, liveness, event_bus, vec![home.clone()], roles);
+        let service = RegistrationService::new(
+            registry,
+            liveness,
+            event_bus,
+            vec![home.clone()],
+            roles,
+            crate::registration::SeatAuthority::default(),
+        );
         let claim = Registration {
             supersedes: None,
             id: "pij-claude-config".to_string(),
@@ -5153,8 +5367,14 @@ mod tests {
             pij_store::SqliteOrchestration::new(pool),
             event_bus.clone(),
         ));
-        let service =
-            RegistrationService::new(registry.clone(), liveness, event_bus, Vec::new(), roles);
+        let service = RegistrationService::new(
+            registry.clone(),
+            liveness,
+            event_bus,
+            Vec::new(),
+            roles,
+            crate::registration::SeatAuthority::default(),
+        );
         let claim = |id: &str| Registration {
             supersedes: None,
             id: id.to_string(),

@@ -345,6 +345,7 @@ impl Registry for FakeRegistry {
         descriptor: SeatDescriptor,
         keep_parent: bool,
         issue: CapabilityIssue,
+        retiring: Vec<SeatDescriptor>,
     ) -> Result<IssueOutcome> {
         let mut state = self.state.lock().expect("fake registry mutex");
         let (nonce, current) = state.proof_inputs(&descriptor.id, &issue.proof);
@@ -369,6 +370,10 @@ impl Registry for FakeRegistry {
         {
             record.consumed_at = Some(issue.now_ms);
         }
+        // One critical section: the predecessors retire only with the issuance.
+        for retired in retiring {
+            state.put(retired, true);
+        }
         let id = descriptor.id.clone();
         let (seq, binding) = state.put(descriptor, keep_parent);
         let Some(written) = state.seats.get(id.as_str()).cloned() else {
@@ -381,6 +386,20 @@ impl Registry for FakeRegistry {
             .capabilities
             .insert(written.id.0.clone(), issued_row(&written, &issue));
         Ok(IssueOutcome::Issued { seq, binding })
+    }
+
+    async fn record_spawn_pane(&self, spawn_id: &str, pane: ProcIdentity) -> Result<bool> {
+        let mut state = self.state.lock().expect("fake registry mutex");
+        Ok(state
+            .nonces
+            .get_mut(spawn_id)
+            .map(|record| record.nonce.pane = Some(pane))
+            .is_some())
+    }
+
+    async fn spawn_nonce(&self, spawn_id: &str) -> Result<Option<NonceRecord>> {
+        let state = self.state.lock().expect("fake registry mutex");
+        Ok(state.nonces.get(spawn_id).cloned())
     }
 
     async fn confirm_rotation(&self, seat: &SeatId, digest: Digest) -> Result<bool> {

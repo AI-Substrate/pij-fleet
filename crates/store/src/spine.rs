@@ -99,6 +99,12 @@ pub type RegistryCommit =
 pub type RegistryPublication<'a> =
     Pin<Box<dyn Future<Output = Result<(Seq, Option<PutBinding>)>> + Send + 'a>>;
 
+/// An owned, lazy registry transaction committing several events in order
+/// (predecessors retired with the write that replaces them, plan 223 review
+/// D7). The last event is the write's own; its sequence is the publication's.
+pub type RegistryBatchCommit =
+    Pin<Box<dyn Future<Output = Result<(Vec<Event>, Option<PutBinding>)>> + Send + 'static>>;
+
 /// Store-internal seam for atomic registry commits and ordered live publication.
 ///
 /// The daemon's EventBus implements this alongside the existing Spine port.
@@ -107,6 +113,23 @@ pub type RegistryPublication<'a> =
 pub trait RegistryPublisher: Send + Sync {
     /// Hold the shared publication lock while committing and broadcasting.
     fn publish_registry<'a>(&'a self, commit: RegistryCommit) -> RegistryPublication<'a>;
+
+    /// As [`Self::publish_registry`], for a transaction that commits several
+    /// events. The default broadcasts only the last; the daemon's bus
+    /// overrides it to broadcast every one, in order.
+    fn publish_registry_batch<'a>(
+        &'a self,
+        commit: RegistryBatchCommit,
+    ) -> RegistryPublication<'a> {
+        self.publish_registry(Box::pin(async move {
+            let (events, binding) = commit.await?;
+            let last = events.into_iter().last().ok_or_else(|| PijError::Adapter {
+                adapter: "store/spine".to_string(),
+                message: "a registry batch committed no event".to_string(),
+            })?;
+            Ok((last, binding))
+        }))
+    }
 }
 
 /// The sole SQL insertion site, shared by ordinary and atomic registry writes.

@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use pij_core::capability::IssueProof;
+use pij_core::capability::{IssueProof, OWNER_LIVE_CODE};
 use pij_core::model::{Harness, ProcIdentity, SeatDescriptor, SeatId, Seq};
 use pij_core::ports::{Registry, Spine};
 use pij_testkit::fakes::{FakeLiveness, FakeQueue, FakeRegistry, FakeSpine, FakeTmux};
@@ -30,6 +30,7 @@ const NEXT: ProcIdentity = ProcIdentity {
 
 struct Rig {
     registry: Arc<dyn Registry>,
+    hooked: Arc<crate::capability::test_support::Hooked>,
     spine: Arc<FakeSpine>,
     tmux: Arc<FakeTmux>,
     reader: Arc<FakeReader>,
@@ -54,7 +55,15 @@ impl Rig {
 
     async fn with_boundaries(boundaries: provenance::Boundaries) -> Self {
         let spine = Arc::new(FakeSpine::new());
-        let tmux = Arc::new(FakeTmux::new());
+        // The first spawn's pane runs the harness itself (review D5: its
+        // process is recorded on the spawn's nonce).
+        let tmux = Arc::new(FakeTmux::new().with_pane_process(
+            "%100",
+            pij_core::model::PaneProcess {
+                pid: PROC.pid,
+                cwd: "/abs/tree".to_string(),
+            },
+        ));
         let mut services = test_services(
             Arc::new(FakeRegistry::new()),
             Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
@@ -66,6 +75,10 @@ impl Rig {
         let reader = Arc::new(reader());
         services.proc_reader = Arc::clone(&reader) as Arc<dyn provenance::ProcReader>;
         services.boundaries = Arc::new(boundaries);
+        let hooked = Arc::new(crate::capability::test_support::Hooked::new(Arc::clone(
+            &services.registry,
+        )));
+        services.registry = Arc::clone(&hooked) as Arc<dyn Registry>;
         let counts = Arc::clone(&services.capability_counts);
         let registry = Arc::clone(&services.registry);
         let (addr, server) = spawn(socket_peers(router_with_config(
@@ -75,6 +88,7 @@ impl Rig {
         .await;
         Self {
             registry,
+            hooked,
             spine,
             tmux,
             reader,
@@ -168,6 +182,7 @@ impl Rig {
             SPAWN,
             Harness::Omp,
             expires_at,
+            Some(PROC),
         )
         .await
     }
@@ -573,6 +588,7 @@ async fn dropping_an_expired_nonce_row_removes_its_leftover_file() {
             spawn,
             Harness::Omp,
             expires_at,
+            Some(PROC),
         )
         .await;
     }
@@ -662,17 +678,21 @@ async fn a_socket_peer_bootstraps_a_capability_and_owns_it() {
         )
     );
 
+    // Review S183-001 (pm-001's reload condition): a new host bootstrapping
+    // while the owner lives is refused, NAMED and RETRYABLE, and writes
+    // nothing; it is not registered without a capability any more.
     let (status, body) = rig
         .post_from("/v1/register", Rig::claim(SEAT), None, Some(other))
         .await;
-    assert_eq!(status, 200, "registers, as before: {body}");
-    assert_eq!(token_of(&body), None);
-    assert!(
-        body["data"]["capability_withheld"]
-            .as_str()
-            .unwrap()
-            .contains("a live owner holds"),
-        "{body}"
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(refusal_code(&body), OWNER_LIVE_CODE);
+    assert_eq!(body["details"]["retryable"], true);
+    assert_eq!(
+        body["meta"],
+        format!(
+            "{OWNER_LIVE_CODE}: live owner pid 9000 still holds this session; retry once it \
+             exits, or if it hangs, have the seat's parent run `pij close {SEAT}`"
+        )
     );
     assert_eq!(rig.report(&token).await.0, 200, "the owner's token stands");
 
@@ -852,4 +872,278 @@ async fn the_remote_listener_refuses_a_capability_header() {
     assert_eq!(refusal_code(&body), "E-RS-SEAT-PROVENANCE", "{body}");
     assert_eq!(health(None).await.unwrap().status().as_u16(), 200);
     server.abort();
+}
+
+/// Review S183-003: the locality check guards EVERY capability ingress. A
+/// live capability in `/v1/activity`'s body, or a nonce in a registration's,
+/// is refused on the non-loopback listener before anything is read or
+/// written.
+#[tokio::test]
+async fn the_remote_listener_refuses_every_capability_carrier_before_any_mutation() {
+    let services = test_services(
+        Arc::new(FakeRegistry::new()),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    let mut seat = SeatDescriptor::new(SEAT, Harness::Omp, "/abs/tree");
+    seat.proc = Some(PROC);
+    seat.harness_session = Some(SESSION.to_string());
+    let token = crate::capability::test_support::issue(
+        services.registry.as_ref(),
+        &services.capabilities,
+        seat.clone(),
+    )
+    .await;
+    let nonce = nonce_for(
+        services.registry.as_ref(),
+        &SEAT.into(),
+        "s-remote",
+        Harness::Omp,
+        u64::MAX,
+        Some(PROC),
+    )
+    .await;
+    let registry = Arc::clone(&services.registry);
+    let remote: std::net::SocketAddr = "100.64.0.7:41000".parse().unwrap();
+    let router = router_with_config(services, config("key", &[]))
+        .layer(axum::Extension(axum::extract::ConnectInfo(remote)));
+    let (addr, server) = spawn(router).await;
+    let client = reqwest::Client::new();
+    let post = |path: &str, body: Value| {
+        client
+            .post(format!("http://{addr}{path}"))
+            .bearer_auth("key")
+            .json(&body)
+            .send()
+    };
+    let before = registry.get(&SEAT.into()).await.unwrap();
+    let refused = post(
+        "/v1/activity",
+        json!({
+            "seat": SEAT, "native_session": SESSION, "state": "working",
+            "context_tokens": 1_000, "context_token": token,
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(refused.status().as_u16(), 403);
+    let body: Value = refused.json().await.unwrap();
+    assert_eq!(refusal_code(&body), "E-RS-SEAT-PROVENANCE", "{body}");
+    assert_eq!(
+        registry.get(&SEAT.into()).await.unwrap(),
+        before,
+        "nothing changed"
+    );
+
+    let mut claim = Rig::claim(SEAT);
+    claim["spawn_id"] = json!("s-remote");
+    claim["spawn_nonce"] = json!(nonce);
+    let refused = post("/v1/register", claim).await.unwrap();
+    assert_eq!(refused.status().as_u16(), 403);
+    let body: Value = refused.json().await.unwrap();
+    assert_eq!(refusal_code(&body), "E-RS-SEAT-PROVENANCE", "{body}");
+    let record = registry.spawn_nonce("s-remote").await.unwrap().unwrap();
+    assert_eq!(record.consumed_at, None, "the nonce was not consumed");
+    assert_eq!(registry.get(&SEAT.into()).await.unwrap(), before);
+    server.abort();
+}
+
+/// Review S183-001, the exact two-request sequence: a proofless
+/// registration moving the victim's live seat onto the attacker's process
+/// is refused and commits nothing; the attacker's socket bootstrap then gets
+/// no capability; the victim's capability still works.
+#[tokio::test]
+async fn a_proofless_move_of_a_live_owners_seat_commits_nothing() {
+    let rig = Rig::new().await;
+    let nonce = rig.nonce(SEAT, u64::MAX).await;
+    let victim = token_of(&rig.register_with_nonce(SEAT, &nonce).await.1).expect("issued");
+    let before = rig.registry.get(&SEAT.into()).await.unwrap();
+    let mut moved = Rig::claim(SEAT);
+    moved["pid"] = json!(NEXT.pid);
+    moved["proc_start"] = json!(NEXT.proc_start);
+    let (status, body) = rig.post("/v1/register", moved.clone(), None).await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(refusal_code(&body), OWNER_LIVE_CODE);
+    assert_eq!(rig.registry.get(&SEAT.into()).await.unwrap(), before);
+
+    let (status, body) = rig.post_from("/v1/register", moved, None, Some(NEXT)).await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(token_of(&body), None);
+    assert_eq!(rig.registry.get(&SEAT.into()).await.unwrap(), before);
+    assert_eq!(
+        rig.report(&victim).await.0,
+        200,
+        "the victim's token stands"
+    );
+    rig.server.abort();
+}
+
+/// Review S183-001's escape (the prime's ruling): an old host that never
+/// exits cannot lock its seat out. `pij close <seat>` by the seat's parent
+/// (or itself) tombstones it, revoking the capability; the new host's retry
+/// then registers and bootstraps.
+#[tokio::test]
+async fn a_hung_owner_is_escaped_by_closing_the_seat() {
+    let rig = Rig::new().await;
+    let (owner, other) = (
+        ProcIdentity {
+            pid: 9_000,
+            proc_start: 80,
+        },
+        ProcIdentity {
+            pid: 9_001,
+            proc_start: 81,
+        },
+    );
+    rig.reader
+        .set(owner.pid, PROC.pid, "node", owner.proc_start);
+    rig.reader
+        .set(other.pid, PROC.pid, "node", other.proc_start);
+    let (status, body) = rig
+        .post_from("/v1/register", Rig::claim(SEAT), None, Some(owner))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let old = token_of(&body).expect("the old host's capability");
+    let (status, _) = rig
+        .post_from("/v1/register", Rig::claim(SEAT), None, Some(other))
+        .await;
+    assert_eq!(status, 409, "the hung owner still lives");
+
+    let (status, body) = rig
+        .post(
+            "/v1/close",
+            json!({"seat": SEAT, "caller": {"PIJ_SESSION_ID": SEAT}}),
+            None,
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let (status, body) = rig
+        .post_from("/v1/register", Rig::claim(SEAT), None, Some(other))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let new = token_of(&body).expect("bootstrapped after the escape");
+    assert_ne!(new, old);
+    assert_eq!(rig.report(&old).await.0, 400, "the hung owner's is revoked");
+    assert_eq!(rig.report(&new).await.0, 200);
+    rig.server.abort();
+}
+
+/// Review D5: a valid nonce presented by a process outside the spawn's
+/// recorded pane is refused and NOT consumed; the spawned harness can still
+/// use it.
+#[tokio::test]
+async fn a_nonce_binds_only_a_process_inside_its_spawns_pane() {
+    let rig = Rig::new().await;
+    let nonce = rig.nonce(SEAT, u64::MAX).await;
+    let mut stolen = Rig::claim(SEAT);
+    stolen["pid"] = json!(NEXT.pid);
+    stolen["proc_start"] = json!(NEXT.proc_start);
+    stolen["spawn_nonce"] = json!(nonce);
+    let (status, body) = rig
+        .post_from("/v1/register", stolen, None, Some(NEXT))
+        .await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(refusal_code(&body), "E-RS-SEAT-PROVENANCE");
+    let record = rig.registry.spawn_nonce(SPAWN).await.unwrap().unwrap();
+    assert_eq!(record.consumed_at, None);
+    assert_eq!(rig.registry.get(&SEAT.into()).await.unwrap(), None);
+    let (status, body) = rig.register_with_nonce(SEAT, &nonce).await;
+    assert_eq!(status, 200, "{body}");
+    assert!(token_of(&body).is_some());
+    rig.server.abort();
+}
+
+/// Review D1 and S183-002: the new capability's first presentation retires
+/// the previous one through EVERY carrier: a held registration and a header
+/// operation, as well as a context report. The old one is then refused for
+/// context reporting AND for further rotation.
+#[tokio::test]
+async fn every_presentation_of_the_new_capability_retires_the_old_one() {
+    for carrier in ["held registration", "header operation"] {
+        let rig = Rig::new().await;
+        let nonce = rig.nonce(SEAT, u64::MAX).await;
+        let old = token_of(&rig.register_with_nonce(SEAT, &nonce).await.1).unwrap();
+        let mut rotate = Rig::claim(SEAT);
+        rotate["rotate"] = json!(true);
+        let (status, body) = rig.post("/v1/register", rotate.clone(), Some(&old)).await;
+        assert_eq!(status, 200, "{carrier}: {body}");
+        let new = token_of(&body).unwrap();
+        let (status, body) = match carrier {
+            "held registration" => rig.post("/v1/register", Rig::claim(SEAT), Some(&new)).await,
+            _ => {
+                rig.post(
+                    "/v1/activity",
+                    json!({"seat": SEAT, "native_session": SESSION, "state": "idle"}),
+                    Some(&new),
+                )
+                .await
+            }
+        };
+        assert_eq!(status, 200, "{carrier}: {body}");
+        assert_eq!(rig.report(&old).await.0, 400, "{carrier}: reporting");
+        let (status, body) = rig.post("/v1/register", rotate, Some(&old)).await;
+        assert_eq!(status, 400, "{carrier}: rotating: {body}");
+        assert_eq!(refusal_code(&body), "E-RS-SEAT-CAPABILITY");
+        assert_eq!(rig.report(&new).await.0, 200, "{carrier}");
+        rig.server.abort();
+    }
+}
+
+/// Review D7: a supersede's predecessor retires INSIDE the issuing
+/// transaction. When the issuing write fails, the predecessor's row and
+/// capability are unchanged, the successor's nonce is unconsumed and nothing
+/// of the successor is written.
+#[tokio::test]
+async fn a_failed_issuing_write_leaves_the_predecessor_and_its_capability() {
+    let rig = Rig::new().await;
+    let nonce = rig.nonce(SEAT, u64::MAX).await;
+    assert!(token_of(&rig.register_with_nonce(SEAT, &nonce).await.1).is_some());
+    let before = rig.registry.get(&SEAT.into()).await.unwrap();
+    let before_capability = rig.registry.capability(&SEAT.into()).await.unwrap();
+    let successor = "pij-successor";
+    let spawn = "s-successor";
+    let nonce = nonce_for(
+        rig.registry.as_ref(),
+        &successor.into(),
+        spawn,
+        Harness::Omp,
+        u64::MAX,
+        Some(PROC),
+    )
+    .await;
+    let mut claim = Rig::claim(successor);
+    claim["spawn_id"] = json!(spawn);
+    claim["spawn_nonce"] = json!(nonce);
+    claim["harness_session"] = json!("cap-session-successor");
+    claim["supersedes"] = json!(SEAT);
+    rig.hooked
+        .fail_issuing
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let (status, body) = rig.register(claim.clone()).await;
+    assert!(status >= 500, "the issuing write failed: {status} {body}");
+    assert_eq!(rig.registry.get(&SEAT.into()).await.unwrap(), before);
+    assert_eq!(
+        rig.registry.capability(&SEAT.into()).await.unwrap(),
+        before_capability
+    );
+    let record = rig.registry.spawn_nonce(spawn).await.unwrap().unwrap();
+    assert_eq!(record.consumed_at, None, "the nonce was not consumed");
+    assert_eq!(rig.registry.get(&successor.into()).await.unwrap(), None);
+    // Control: the same registration, the write working, retires the
+    // predecessor with the issuance.
+    rig.hooked
+        .fail_issuing
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    let (status, body) = rig.register(claim).await;
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        rig.registry
+            .get(&SEAT.into())
+            .await
+            .unwrap()
+            .is_some_and(|seat| seat.tombstoned_at.is_some())
+    );
+    assert_eq!(rig.registry.capability(&SEAT.into()).await.unwrap(), None);
+    rig.server.abort();
 }

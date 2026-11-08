@@ -4186,6 +4186,7 @@ impl GrantRig {
             "spawn-victim",
             Harness::Copilot,
             u64::MAX,
+            victim.proc,
         )
         .await;
         let (addr, server) = spawn(super::provenance::test_support::socket_peers(

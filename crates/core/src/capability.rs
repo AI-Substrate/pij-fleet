@@ -24,6 +24,9 @@ pub const NONCE_USED_CODE: &str = "E-RS-SPAWN-NONCE-USED";
 pub const NONCE_INVALID_CODE: &str = "E-RS-SPAWN-NONCE-INVALID";
 /// The refusal for a presented capability that is not the seat's current one.
 pub const CAPABILITY_CODE: &str = "E-RS-SEAT-CAPABILITY";
+/// The RETRYABLE refusal for a proofless registration that would move a live
+/// owner's capability (its process, session or owner).
+pub const OWNER_LIVE_CODE: &str = "E-RS-SEAT-OWNER-LIVE";
 
 /// One spawn's registration nonce, as stored: its digest, never the nonce.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,6 +43,10 @@ pub struct SpawnNonce {
     pub issued_at: u64,
     /// Epoch milliseconds at which the spawn's registration window closes.
     pub expires_at: u64,
+    /// The spawn's pane process, recorded once the launch has a pane: a
+    /// registration presenting this nonce must come from inside it (review
+    /// D5). `None` until recorded, and then no nonce registration is accepted.
+    pub pane: Option<ProcIdentity>,
 }
 
 /// A stored nonce and whether a registration consumed it.
@@ -387,6 +394,7 @@ mod tests {
                 digest: [7; SECRET_LEN],
                 issued_at: 1,
                 expires_at,
+                pane: None,
             },
             consumed_at: consumed.then_some(5),
         }

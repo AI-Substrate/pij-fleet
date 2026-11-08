@@ -8,7 +8,9 @@
 -- registration consumes it in the same transaction that writes the seat and its
 -- capability; a consumed row stays until it expires so a second presentation is
 -- refused E-RS-SPAWN-NONCE-USED. Expired rows are dropped when their spawn is
--- next touched and once at daemon start. There is no sweep.
+-- next touched and once at daemon start. There is no sweep. `pane_pid` and
+-- `pane_start` are the spawn's pane process, recorded once the launch has a pane:
+-- a nonce registration must come from inside that pane (review D5).
 CREATE TABLE seat_nonces (
     spawn_id    TEXT PRIMARY KEY,
     seat        TEXT NOT NULL,
@@ -16,7 +18,9 @@ CREATE TABLE seat_nonces (
     digest      BLOB NOT NULL,
     issued_at   INTEGER NOT NULL,
     expires_at  INTEGER NOT NULL,
-    consumed_at INTEGER
+    consumed_at INTEGER,
+    pane_pid    INTEGER,
+    pane_start  TEXT
 ) STRICT;
 
 -- `seat_capabilities`: one row per live incarnation. The boundary is the seat's
@@ -38,4 +42,4 @@ CREATE TABLE seat_capabilities (
     via            TEXT NOT NULL CHECK (via IN ('nonce', 'peer', 'rotation'))
 ) STRICT;
 
-PRAGMA user_version = 45;
+PRAGMA user_version = 47;

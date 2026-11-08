@@ -235,6 +235,13 @@ impl SqliteOrchestration {
         .await
         .map_err(adapter_error)?
         .rows_affected();
+        if survivor_updated == 1 && alias_updated == 1 {
+            // Plan 223 review D6: these direct writes revoke as every seat
+            // write does, in the same transaction: the alias is tombstoned, and
+            // the survivor's capability ends if its process changed.
+            crate::capability::revoke(&mut tx, &plan.alias.id).await?;
+            crate::capability::revoke_for_write(&mut tx, &plan.survivor).await?;
+        }
         if survivor_updated != 1 || alias_updated != 1 {
             tx.rollback().await.map_err(adapter_error)?;
             return Err(PijError::Adapter {

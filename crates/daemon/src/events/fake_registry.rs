@@ -114,10 +114,11 @@ impl PublishedFakeRegistry {
         descriptor: SeatDescriptor,
         keep_parent: bool,
         issue: CapabilityIssue,
+        retiring: Vec<SeatDescriptor>,
     ) -> Result<(Seq, PutBinding)> {
         let registry = self.registry.clone();
         let spine = self.bus.spine.clone();
-        let (seq, binding) = self.bus.publish_registry(Box::pin(async move {
+        let (seq, binding) = self.bus.publish_registry_batch(Box::pin(async move {
             let mut descriptor = descriptor;
             descriptor.machine = None;
             if keep_parent && let Some(parent) = registry.row_parent(&descriptor.id) {
@@ -128,12 +129,28 @@ impl PublishedFakeRegistry {
                 .await?
             {
                 // Applies the refusal's own effect (an expired nonce is dropped).
-                registry.put_issuing(descriptor, keep_parent, issue).await?;
+                registry
+                    .put_issuing(descriptor, keep_parent, issue, Vec::new())
+                    .await?;
                 return Err(refusal.into_error());
+            }
+            let mut events = Vec::with_capacity(retiring.len() + 1);
+            for retired in &retiring {
+                let mut retired = retired.clone();
+                retired.machine = None;
+                if let Some(parent) = registry.row_parent(&retired.id) {
+                    retired.parent = parent;
+                }
+                let mut retired_event = descriptor_event(&retired)?;
+                retired_event.seq = Some(spine.append(retired_event.clone()).await?);
+                events.push(retired_event);
             }
             let mut event = descriptor_event(&descriptor)?;
             let seq = spine.append(event.clone()).await?;
-            let binding = match registry.put_issuing(descriptor, keep_parent, issue).await {
+            let binding = match registry
+                .put_issuing(descriptor, keep_parent, issue, retiring)
+                .await
+            {
                 Ok(IssueOutcome::Issued { binding, .. }) => binding,
                 outcome => {
                     return Err(PijError::Adapter {
@@ -146,7 +163,8 @@ impl PublishedFakeRegistry {
                 }
             };
             event.seq = Some(seq);
-            Ok((event, Some(binding)))
+            events.push(event);
+            Ok((events, Some(binding)))
         })).await?;
         let binding = binding.ok_or_else(|| PijError::Adapter {
             adapter: "daemon/events".to_string(),
@@ -258,9 +276,10 @@ impl Registry for PublishedFakeRegistry {
         descriptor: SeatDescriptor,
         keep_parent: bool,
         issue: CapabilityIssue,
+        retiring: Vec<SeatDescriptor>,
     ) -> Result<IssueOutcome> {
         match self
-            .put_issuing_published(descriptor, keep_parent, issue)
+            .put_issuing_published(descriptor, keep_parent, issue, retiring)
             .await
         {
             Ok((seq, binding)) => Ok(IssueOutcome::Issued { seq, binding }),
@@ -269,6 +288,17 @@ impl Registry for PublishedFakeRegistry {
                 None => Err(error),
             },
         }
+    }
+
+    async fn record_spawn_pane(&self, spawn_id: &str, pane: ProcIdentity) -> Result<bool> {
+        self.registry.record_spawn_pane(spawn_id, pane).await
+    }
+
+    async fn spawn_nonce(
+        &self,
+        spawn_id: &str,
+    ) -> Result<Option<pij_core::capability::NonceRecord>> {
+        self.registry.spawn_nonce(spawn_id).await
     }
 
     async fn confirm_rotation(&self, seat: &SeatId, digest: Digest) -> Result<bool> {

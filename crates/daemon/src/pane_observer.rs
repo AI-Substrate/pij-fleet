@@ -672,8 +672,24 @@ mod tests {
             descriptor: SeatDescriptor,
             keep_parent: bool,
             issue: pij_core::capability::CapabilityIssue,
+            retiring: Vec<SeatDescriptor>,
         ) -> Result<pij_core::capability::IssueOutcome> {
-            self.inner.put_issuing(descriptor, keep_parent, issue).await
+            self.inner
+                .put_issuing(descriptor, keep_parent, issue, retiring)
+                .await
+        }
+        async fn record_spawn_pane(
+            &self,
+            spawn_id: &str,
+            pane: pij_core::model::ProcIdentity,
+        ) -> Result<bool> {
+            self.inner.record_spawn_pane(spawn_id, pane).await
+        }
+        async fn spawn_nonce(
+            &self,
+            spawn_id: &str,
+        ) -> Result<Option<pij_core::capability::NonceRecord>> {
+            self.inner.spawn_nonce(spawn_id).await
         }
         async fn confirm_rotation(
             &self,

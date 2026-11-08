@@ -233,6 +233,11 @@ pub(crate) async fn activity(
     Json(request): Json<ActivityRequest>,
 ) -> Response {
     super::provenance::count(&state.services, super::provenance::OperationClass::Activity);
+    // Review S183-003: a capability never travels over the network, in a body
+    // carrier either; refused before anything is read or written.
+    if request.context_token.is_some() && super::provenance::remote() {
+        return super::capability_over_network(ACTIVITY);
+    }
     let observed = match request.state.as_str() {
         "working" => SystemState::Working,
         "idle" => SystemState::Idle,

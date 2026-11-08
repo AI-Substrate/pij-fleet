@@ -763,9 +763,25 @@ impl Registry for GatedRegistry {
         descriptor: SeatDescriptor,
         keep_parent: bool,
         issue: pij_core::capability::CapabilityIssue,
+        retiring: Vec<SeatDescriptor>,
     ) -> Result<pij_core::capability::IssueOutcome> {
         self.gate(&descriptor.id).await;
-        self.inner.put_issuing(descriptor, keep_parent, issue).await
+        self.inner
+            .put_issuing(descriptor, keep_parent, issue, retiring)
+            .await
+    }
+    async fn record_spawn_pane(
+        &self,
+        spawn_id: &str,
+        pane: pij_core::model::ProcIdentity,
+    ) -> Result<bool> {
+        self.inner.record_spawn_pane(spawn_id, pane).await
+    }
+    async fn spawn_nonce(
+        &self,
+        spawn_id: &str,
+    ) -> Result<Option<pij_core::capability::NonceRecord>> {
+        self.inner.spawn_nonce(spawn_id).await
     }
     async fn confirm_rotation(
         &self,
@@ -820,6 +836,7 @@ async fn registration_racing_link(orphaned: bool) {
         fixture.bus.clone(),
         Vec::new(),
         fixture.service.clone(),
+        crate::registration::SeatAuthority::default(),
     );
     let claim = crate::http::Registration {
         supersedes: None,

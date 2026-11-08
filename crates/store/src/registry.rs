@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use sqlx::{Pool, Row, Sqlite};
 
 use pij_core::capability::{
-    CapabilityIssue, CapabilityRow, Digest, IssueOutcome, IssueProof, IssueRefusal, SpawnNonce,
-    check_proof, issued_row,
+    CapabilityIssue, CapabilityRow, Digest, IssueOutcome, IssueProof, IssueRefusal, NonceRecord,
+    SpawnNonce, check_proof, issued_row,
 };
 use pij_core::error::{PijError, Result};
 use pij_core::model::{
@@ -352,11 +352,12 @@ impl SqliteRegistry {
         descriptor: SeatDescriptor,
         keep_parent: bool,
         issue: Option<CapabilityIssue>,
+        retiring: Vec<SeatDescriptor>,
     ) -> Result<(Seq, PutBinding)> {
         let pool = self.pool.clone();
         let (seq, binding) = self
             .publisher
-            .publish_registry(Box::pin(async move {
+            .publish_registry_batch(Box::pin(async move {
                 owned_write(async move {
                     require_current_schema(&pool).await?;
 
@@ -392,6 +393,27 @@ impl SqliteRegistry {
                         }
                         return Err(refusal.into_error());
                     }
+                    // Review D7: the predecessors retire in this transaction,
+                    // so a refused or failed issuance leaves them (and their
+                    // capabilities) exactly as they were.
+                    let mut events = Vec::with_capacity(retiring.len() + 1);
+                    for mut retired in retiring {
+                        retired.machine = None;
+                        let parent: Option<Option<String>> =
+                            sqlx::query_scalar("SELECT parent FROM seats WHERE id = ?1")
+                                .bind(retired.id.as_str())
+                                .fetch_optional(&mut *tx)
+                                .await
+                                .map_err(adapter_error)?;
+                        if let Some(parent) = parent {
+                            retired.parent = parent.map(SeatId::from);
+                        }
+                        let mut retired_event = descriptor_event(&retired)?;
+                        let retired_seq = append_in_transaction(&mut tx, &retired_event).await?;
+                        upsert_seat(&mut tx, &retired, retired_seq).await?;
+                        retired_event.seq = Some(retired_seq);
+                        events.push(retired_event);
+                    }
                     let mut event = descriptor_event(&descriptor)?;
                     let binding = PutBinding {
                         inserted: previous.is_none(),
@@ -416,7 +438,8 @@ impl SqliteRegistry {
 
                     tx.commit().await.map_err(adapter_error)?;
                     event.seq = Some(seq);
-                    Ok((event, Some(binding)))
+                    events.push(event);
+                    Ok((events, Some(binding)))
                 })
                 .await
             }))
@@ -446,14 +469,15 @@ impl Registry for SqliteRegistry {
     }
 
     async fn put_reporting(&self, descriptor: SeatDescriptor) -> Result<(Seq, PutBinding)> {
-        self.put_committed(descriptor, false, None).await
+        self.put_committed(descriptor, false, None, Vec::new())
+            .await
     }
 
     async fn put_reporting_keeping_parent(
         &self,
         descriptor: SeatDescriptor,
     ) -> Result<(Seq, PutBinding)> {
-        self.put_committed(descriptor, true, None).await
+        self.put_committed(descriptor, true, None, Vec::new()).await
     }
 
     async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>> {
@@ -603,9 +627,10 @@ impl Registry for SqliteRegistry {
         descriptor: SeatDescriptor,
         keep_parent: bool,
         issue: CapabilityIssue,
+        retiring: Vec<SeatDescriptor>,
     ) -> Result<IssueOutcome> {
         match self
-            .put_committed(descriptor, keep_parent, Some(issue))
+            .put_committed(descriptor, keep_parent, Some(issue), retiring)
             .await
         {
             Ok((seq, binding)) => Ok(IssueOutcome::Issued { seq, binding }),
@@ -614,6 +639,25 @@ impl Registry for SqliteRegistry {
                 None => Err(error),
             },
         }
+    }
+
+    async fn record_spawn_pane(&self, spawn_id: &str, pane: ProcIdentity) -> Result<bool> {
+        let pool = self.pool.clone();
+        let spawn_id = spawn_id.to_string();
+        owned_write(async move {
+            require_current_schema(&pool).await?;
+            let mut tx = begin_write(&pool).await?;
+            let recorded = capability::record_pane(&mut tx, &spawn_id, pane).await?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(recorded)
+        })
+        .await
+    }
+
+    async fn spawn_nonce(&self, spawn_id: &str) -> Result<Option<NonceRecord>> {
+        require_current_schema(&self.pool).await?;
+        let mut connection = self.pool.acquire().await.map_err(adapter_error)?;
+        capability::nonce(&mut connection, spawn_id).await
     }
 
     async fn confirm_rotation(&self, seat: &SeatId, digest: Digest) -> Result<bool> {

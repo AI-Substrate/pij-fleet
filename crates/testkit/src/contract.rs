@@ -237,6 +237,7 @@ pub async fn capability_contract(registry: &dyn Registry) {
         digest: [digest; 32],
         issued_at: 100,
         expires_at,
+        pane: None,
     };
     let by_nonce = |spawn: &str, digest: u8, token: u8| CapabilityIssue {
         proof: IssueProof::Nonce {
@@ -272,7 +273,7 @@ pub async fn capability_contract(registry: &dyn Registry) {
         .expect("nonce row");
     let binding = issued(
         registry
-            .put_issuing(a.clone(), false, by_nonce("spawn-a", 1, 2))
+            .put_issuing(a.clone(), false, by_nonce("spawn-a", 1, 2), Vec::new())
             .await
             .expect("issue"),
     );
@@ -298,7 +299,7 @@ pub async fn capability_contract(registry: &dyn Registry) {
     assert_eq!(
         refused(
             registry
-                .put_issuing(moved.clone(), false, by_nonce("spawn-a", 1, 3))
+                .put_issuing(moved.clone(), false, by_nonce("spawn-a", 1, 3), Vec::new())
                 .await
                 .expect("refusal is an outcome")
         ),
@@ -355,7 +356,7 @@ pub async fn capability_contract(registry: &dyn Registry) {
         assert_eq!(
             refused(
                 registry
-                    .put_issuing(descriptor.clone(), false, issue)
+                    .put_issuing(descriptor.clone(), false, issue, Vec::new())
                     .await
                     .expect("refusal is an outcome")
             ),
@@ -368,7 +369,7 @@ pub async fn capability_contract(registry: &dyn Registry) {
     //    first presented; then only the new one does.
     issued(
         registry
-            .put_issuing(a.clone(), true, by_token(2, 7))
+            .put_issuing(a.clone(), true, by_token(2, 7), Vec::new())
             .await
             .expect("rotate"),
     );
@@ -421,7 +422,7 @@ pub async fn capability_contract(registry: &dyn Registry) {
     assert_eq!(
         refused(
             registry
-                .put_issuing(a.clone(), true, by_token(2, 8))
+                .put_issuing(a.clone(), true, by_token(2, 8), Vec::new())
                 .await
                 .expect("refusal is an outcome")
         ),
@@ -439,7 +440,7 @@ pub async fn capability_contract(registry: &dyn Registry) {
                 .expect("nonce row");
             issued(
                 registry
-                    .put_issuing(a, true, by_nonce(spawn, digest, digest))
+                    .put_issuing(a, true, by_nonce(spawn, digest, digest), Vec::new())
                     .await
                     .expect("reissue"),
             );
@@ -515,6 +516,87 @@ pub async fn capability_contract(registry: &dyn Registry) {
             .await
             .expect("drop")
             .is_empty()
+    );
+
+    // 6. Review D7: a predecessor retires in the issuing transaction. A refused
+    //    issuance leaves it and its capability unchanged (and writes nothing of
+    //    the successor); an accepted one tombstones it and revokes its
+    //    capability with the successor's write.
+    let old = seat("pij-cap-old", 31);
+    registry
+        .insert_spawn_nonce(nonce("spawn-old-seat", "pij-cap-old", 40, 1_000))
+        .await
+        .expect("nonce row");
+    issued(
+        registry
+            .put_issuing(
+                old.clone(),
+                false,
+                by_nonce("spawn-old-seat", 40, 41),
+                Vec::new(),
+            )
+            .await
+            .expect("issue"),
+    );
+    let successor = seat("pij-cap-new", 31);
+    registry
+        .insert_spawn_nonce(nonce("spawn-new-seat", "pij-cap-new", 42, 1_000))
+        .await
+        .expect("nonce row");
+    let mut retired = old.clone();
+    retired.tombstoned_at = Some(500);
+    retired.tombstone_reason = Some("superseded".to_string());
+    assert_eq!(
+        refused(
+            registry
+                .put_issuing(
+                    successor.clone(),
+                    false,
+                    by_nonce("spawn-new-seat", 99, 43),
+                    vec![retired.clone()],
+                )
+                .await
+                .expect("refusal is an outcome")
+        ),
+        IssueRefusal::NonceUnknown
+    );
+    assert_eq!(registry.get(&old.id).await.expect("get"), Some(old.clone()));
+    assert_eq!(
+        registry
+            .capability(&old.id)
+            .await
+            .expect("read")
+            .map(|row| row.digest),
+        Some([41; 32]),
+        "the predecessor keeps its capability"
+    );
+    assert_eq!(registry.get(&successor.id).await.expect("get"), None);
+    issued(
+        registry
+            .put_issuing(
+                successor.clone(),
+                false,
+                by_nonce("spawn-new-seat", 42, 43),
+                vec![retired],
+            )
+            .await
+            .expect("issue"),
+    );
+    assert!(
+        registry
+            .get(&old.id)
+            .await
+            .expect("get")
+            .is_some_and(|seat| seat.tombstoned_at.is_some())
+    );
+    assert_eq!(registry.capability(&old.id).await.expect("read"), None);
+    assert_eq!(
+        registry
+            .capability(&successor.id)
+            .await
+            .expect("read")
+            .map(|row| row.digest),
+        Some([43; 32])
     );
 }
 

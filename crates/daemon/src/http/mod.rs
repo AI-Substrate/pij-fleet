@@ -573,13 +573,9 @@ fn router_with_optional_federation(
         Arc::clone(&services.event_bus),
         pij_harnesses::claude_homes(),
         Arc::clone(&services.roles),
+        services.seat_authority(),
     )
-    .with_native_delivery(Arc::clone(&services.delivery))
-    .with_capabilities(Arc::clone(&services.capabilities))
-    .with_provenance(
-        Arc::clone(&services.boundaries),
-        Arc::clone(&services.proc_reader),
-    );
+    .with_native_delivery(Arc::clone(&services.delivery));
     // Plan 223: the digest map and the boundary index follow every committed
     // registry fact, in order, so a tombstone or a new process is seen at once.
     {
@@ -768,6 +764,23 @@ fn router_with_optional_federation(
     router.with_state(state)
 }
 
+/// Plan 223 contract d, at every capability ingress (review S183-003): the
+/// non-loopback listener refuses a capability or nonce in a header or a body,
+/// before anything is read or written.
+pub(crate) fn capability_over_network(command: &str) -> Response {
+    let mut answer: Envelope<()> = Envelope::refused(
+        command,
+        ErrorKind::Refused,
+        format!(
+            "{}: a seat capability or spawn nonce is accepted only on the local socket or \
+             loopback, never over the network; nothing was changed",
+            provenance::PROVENANCE_CODE
+        ),
+    );
+    answer.details = Some(serde_json::json!({ "code": provenance::PROVENANCE_CODE }));
+    envelope(StatusCode::FORBIDDEN, &answer)
+}
+
 async fn require_bearer(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -781,17 +794,7 @@ async fn require_bearer(
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
         .is_some_and(|axum::extract::ConnectInfo(peer)| !peer.ip().is_loopback());
     if remote && headers.contains_key(crate::capability::CAPABILITY_HEADER) {
-        let mut answer: Envelope<()> = Envelope::refused(
-            "auth",
-            ErrorKind::Refused,
-            format!(
-                "{}: a seat capability is accepted only on the local socket or loopback, \
-                 never over the network",
-                provenance::PROVENANCE_CODE
-            ),
-        );
-        answer.details = Some(serde_json::json!({ "code": provenance::PROVENANCE_CODE }));
-        return envelope(StatusCode::FORBIDDEN, &answer);
+        return capability_over_network("auth");
     }
     let presented = headers
         .get(axum::http::header::AUTHORIZATION)
@@ -804,17 +807,45 @@ async fn require_bearer(
             return refusal;
         }
         request.extensions_mut().insert(identity);
-        // Plan 223: the request's proof evidence, read lazily by the
-        // operations that count it.
+        // Plan 223: the request's proof evidence. A header capability is
+        // resolved here, once: its first presentation after a rotation retires
+        // the previous one, committed before the request proceeds, and a
+        // failed retirement fails the request (review D1, S183-002).
+        let token = match headers.get(crate::capability::CAPABILITY_HEADER) {
+            None => provenance::TokenEvidence::Absent,
+            Some(value) => match value.to_str() {
+                Err(_) => provenance::TokenEvidence::NotLive,
+                Ok(token) => match crate::capability::present_header(
+                    state.services.registry.as_ref(),
+                    &state.services.capabilities,
+                    token,
+                )
+                .await
+                {
+                    Ok(Some(seat)) => provenance::TokenEvidence::Live(seat),
+                    Ok(None) => provenance::TokenEvidence::NotLive,
+                    Err(error) => {
+                        return internal(
+                            "auth",
+                            PijError::Adapter {
+                                adapter: "daemon/capability".to_string(),
+                                message: format!(
+                                    "could not retire the previous capability, so the \
+                                     presented one was not accepted: {error}"
+                                ),
+                            },
+                        );
+                    }
+                },
+            },
+        };
         let evidence = provenance::RequestEvidence::new(
-            headers
-                .get(crate::capability::CAPABILITY_HEADER)
-                .and_then(|value| value.to_str().ok())
-                .map(str::to_string),
+            token,
             request
                 .extensions()
                 .get::<provenance::SocketPeer>()
                 .cloned(),
+            remote,
         );
         return provenance::scoped(evidence, next.run(request)).await;
     }
@@ -1187,6 +1218,11 @@ async fn register(
     // Plan 223: a capability is minted only for presented evidence, and only
     // reaches the caller if the registration commits it.
     provenance::count(&state.services, provenance::OperationClass::Registration);
+    // Review S183-003: a nonce never travels over the network either.
+    if request.spawn_nonce.is_some() && provenance::remote() {
+        early(&request.claim, Outcome::Refused).await;
+        return capability_over_network("pij register");
+    }
     let socket = socket.map(|Extension(peer)| peer);
     let withheld = Arc::new(std::sync::OnceLock::new());
     let mut nonce_first = false;
@@ -1376,6 +1412,17 @@ async fn register(
             answer.details = Some(serde_json::json!({ "retryable": true }));
             envelope(StatusCode::CONFLICT, &answer)
         }
+        // Review S183-001: named and retryable, so a reloading extension host
+        // backs off until the old one exits; nothing was written.
+        Err(error @ RegistrationError::OwnerLive { .. }) => {
+            let mut answer: Envelope<()> =
+                Envelope::refused("pij register", ErrorKind::Refused, error.to_string());
+            answer.details = Some(serde_json::json!({
+                "retryable": true,
+                "code": pij_core::capability::OWNER_LIVE_CODE,
+            }));
+            envelope(StatusCode::CONFLICT, &answer)
+        }
         Err(error @ RegistrationError::NativeSessionHold(_)) => {
             let mut answer: Envelope<()> =
                 Envelope::refused("pij register", ErrorKind::Refused, error.to_string());
@@ -1402,6 +1449,42 @@ async fn register(
             envelope(StatusCode::SERVICE_UNAVAILABLE, &answer)
         }
         Err(RegistrationError::Runtime(error)) => internal("pij register", error),
+    }
+}
+
+/// Record a launch's pane process on its spawn nonce (review D5).
+async fn record_spawn_pane(state: &AppState, spawn_id: &str, pane: &str) {
+    let observed = match state.services.tmux.pane_process(pane).await {
+        Ok(Some(observed)) => observed,
+        Ok(None) => {
+            eprintln!("pij spawn {spawn_id}: pane {pane} has no process to record");
+            return;
+        }
+        Err(error) => {
+            eprintln!("pij spawn {spawn_id}: pane {pane}'s process unreadable: {error}");
+            return;
+        }
+    };
+    let Some(proc_start) =
+        provenance::ProcReader::start(state.services.proc_reader.as_ref(), observed.pid)
+    else {
+        eprintln!(
+            "pij spawn {spawn_id}: pane process {}'s start unreadable",
+            observed.pid
+        );
+        return;
+    };
+    let pane_process = ProcIdentity {
+        pid: observed.pid,
+        proc_start,
+    };
+    if let Err(error) = state
+        .services
+        .registry
+        .record_spawn_pane(spawn_id, pane_process)
+        .await
+    {
+        eprintln!("pij spawn {spawn_id}: recording the pane process failed: {error}");
     }
 }
 
@@ -1691,6 +1774,8 @@ async fn launch_seat_locked(
             expires_at: issued_at.saturating_add(
                 u64::try_from(crate::capability::NONCE_TTL.as_millis()).unwrap_or(u64::MAX),
             ),
+            // Recorded once the launch has a pane, below.
+            pane: None,
         })
         .await
     {
@@ -1782,6 +1867,10 @@ async fn launch_seat_locked(
             return internal(command_name, error);
         }
     };
+    // Review D5: the nonce binds only a process inside this pane. One tmux read
+    // and one in-process start read per launch; a failure leaves the nonce
+    // unusable (its registration falls back to peer credentials), never wrong.
+    record_spawn_pane(state, &spawn_id, &pane.id).await;
     if displaced.is_some()
         && let Err(error) = publish_revive_postmortem(state, &seat_id).await
     {
@@ -5038,6 +5127,7 @@ pub(crate) fn test_state(services: Services) -> AppState {
             Arc::clone(&services.event_bus),
             Vec::new(),
             Arc::clone(&services.roles),
+            services.seat_authority(),
         )
         .with_native_delivery(Arc::clone(&services.delivery)),
         services,

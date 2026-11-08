@@ -29,7 +29,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::capability::{
-    CapabilityIssue, CapabilityRow, Digest, IssueOutcome, IssueProof, IssueRefusal, SpawnNonce,
+    CapabilityIssue, CapabilityRow, Digest, IssueOutcome, IssueProof, IssueRefusal, NonceRecord,
+    SpawnNonce,
 };
 use crate::error::Result;
 use crate::fyi::HeldFyi;
@@ -151,17 +152,30 @@ pub trait Registry: Send + Sync {
         now_ms: u64,
     ) -> Result<std::result::Result<(), IssueRefusal>>;
 
-    /// ONE transaction: check `issue.proof` (consuming a nonce), write the
-    /// descriptor exactly as [`Self::put_reporting`] (or, with `keep_parent`,
+    /// ONE transaction: check `issue.proof` (consuming a nonce), write each
+    /// of `retiring` (the registration's predecessors, already tombstoned by
+    /// the caller) keeping its parent, write the descriptor exactly as
+    /// [`Self::put_reporting`] (or, with `keep_parent`,
     /// [`Self::put_reporting_keeping_parent`]) does, and insert or replace the
-    /// seat's capability. A refusal commits nothing of the registration; an
-    /// expired nonce's own row is dropped as its spawn is touched.
+    /// seat's capability. A refusal or failure commits nothing of the
+    /// registration: the predecessors and their capabilities are unchanged
+    /// and the nonce is unconsumed (review D7); an expired nonce's own row is
+    /// dropped as its spawn is touched. Each write's event is published, in
+    /// order, the descriptor's last.
     async fn put_issuing(
         &self,
         descriptor: SeatDescriptor,
         keep_parent: bool,
         issue: CapabilityIssue,
+        retiring: Vec<SeatDescriptor>,
     ) -> Result<IssueOutcome>;
+
+    /// Record the spawn's pane process on its nonce (review D5). `false` when
+    /// no such nonce is stored.
+    async fn record_spawn_pane(&self, spawn_id: &str, pane: ProcIdentity) -> Result<bool>;
+
+    /// A spawn's stored nonce, if any.
+    async fn spawn_nonce(&self, spawn_id: &str) -> Result<Option<NonceRecord>>;
 
     /// Two-phase rotation's second phase: `digest` was presented and is the
     /// seat's current one, so its previous digest stops being valid. `true`

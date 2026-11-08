@@ -11,7 +11,7 @@ use serde::Deserialize;
 use crate::events::EventBus;
 use crate::http::Registration;
 use crate::http::role::RoleService;
-use crate::registration::RegistrationService;
+use crate::registration::{RegistrationService, SeatAuthority};
 
 const ADAPTER: &str = "daemon/claude-bind";
 
@@ -29,6 +29,7 @@ impl ClaudeBinder {
         liveness: Arc<dyn LivenessPort>,
         event_bus: Arc<EventBus>,
         roles: Arc<RoleService>,
+        authority: SeatAuthority,
     ) -> Self {
         let home = env::var_os("HOME").map(PathBuf::from);
         Self::from_home(
@@ -39,9 +40,11 @@ impl ClaudeBinder {
             pij_harnesses::claude_homes(),
             pij_harnesses::proc::local_utc_offset_minutes,
             roles,
+            authority,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn from_home(
         home: Option<PathBuf>,
         registry: Arc<dyn Registry>,
@@ -50,6 +53,7 @@ impl ClaudeBinder {
         claude_homes: Vec<PathBuf>,
         utc_offset_minutes: fn() -> Result<i32>,
         roles: Arc<RoleService>,
+        authority: SeatAuthority,
     ) -> Self {
         let registration = RegistrationService::new(
             Arc::clone(&registry),
@@ -57,6 +61,7 @@ impl ClaudeBinder {
             Arc::clone(&event_bus),
             claude_homes,
             roles,
+            authority,
         );
         Self {
             home,
@@ -212,6 +217,7 @@ mod tests {
 
     use super::ClaudeBinder;
     use crate::events::EventBus;
+    use crate::registration::SeatAuthority;
 
     fn zero_utc_offset() -> pij_core::error::Result<i32> {
         Ok(0)
@@ -312,6 +318,7 @@ mod tests {
             Vec::new(),
             zero_utc_offset,
             roles,
+            SeatAuthority::default(),
         );
 
         assert_eq!(binder.bind_once().await.unwrap(), 1);
@@ -349,6 +356,7 @@ mod tests {
             Vec::new(),
             zero_utc_offset,
             roles,
+            SeatAuthority::default(),
         );
 
         assert_eq!(binder.bind_once().await.unwrap(), 0);
@@ -391,6 +399,7 @@ mod tests {
             Vec::new(),
             zero_utc_offset,
             roles,
+            SeatAuthority::default(),
         );
 
         assert_eq!(binder.bind_once().await.unwrap(), 0);
@@ -403,5 +412,186 @@ mod tests {
                 .proc
                 .is_none()
         );
+    }
+
+    fn new_boundary() -> pij_core::model::ProcIdentity {
+        pij_core::model::ProcIdentity {
+            pid: 4242,
+            proc_start: 20260831101500,
+        }
+    }
+
+    /// The daemon's ONE seat authority at a lowered cap, held by `filler`,
+    /// following committed facts as the HTTP router installs it.
+    fn shared_authority(bus: &Arc<EventBus>, cap: usize) -> SeatAuthority {
+        let authority = SeatAuthority {
+            capabilities: Arc::default(),
+            boundaries: Arc::new(crate::http::provenance::Boundaries::with_cap(cap)),
+            reader: Arc::new(crate::http::provenance::KernelReader),
+        };
+        let mut filler = SeatDescriptor::new("pij-filler", Harness::Omp, "/abs");
+        filler.proc = Some(pij_core::model::ProcIdentity {
+            pid: 1111,
+            proc_start: 1,
+        });
+        authority.boundaries.lock().place(&filler);
+        let boundaries = Arc::clone(&authority.boundaries);
+        bus.observe(Arc::new(move |event| boundaries.lock().follow(event)));
+        authority
+    }
+
+    /// Plan 223 review D8: a binder registers through the daemon's ONE seat
+    /// authority. At the cap its new boundary is refused (nothing evicted),
+    /// and a bind keeps the SHARED capability map in step with the store.
+    #[tokio::test]
+    async fn a_binder_shares_the_cap_and_the_capability_map() {
+        for cap in [1, 2] {
+            let home = TestHome::new();
+            home.write_session(
+                "native-d8",
+                "/abs/worktree",
+                "%42",
+                4242,
+                "Mon Aug 31 10:15:00 2026",
+            );
+            let bus = event_bus();
+            let registry: Arc<dyn Registry> = Arc::new(crate::events::PublishedFakeRegistry::new(
+                Arc::new(FakeRegistry::new()),
+                bus.clone(),
+            ));
+            let authority = shared_authority(&bus, cap);
+            // A stale entry the store does not hold: the bind's resync drops it
+            // from the shared map.
+            let stale = crate::capability::mint().unwrap();
+            authority.capabilities.sync(
+                &"pij-claude".into(),
+                Some(&pij_core::capability::CapabilityRow {
+                    seat: "pij-claude".into(),
+                    owner: None,
+                    boundary: Some(new_boundary()),
+                    session: None,
+                    digest: stale.digest(),
+                    prev_digest: None,
+                    issued_at: 1,
+                    via: pij_core::capability::CapabilityVia::Nonce,
+                }),
+            );
+            registry.put(pending("%42")).await.unwrap();
+            let roles = role_service(registry.clone(), bus.clone()).await;
+            let binder = ClaudeBinder::from_home(
+                Some(home.0.clone()),
+                registry.clone(),
+                Arc::new(FakeLiveness::new().with_proc(new_boundary())),
+                bus,
+                Vec::new(),
+                zero_utc_offset,
+                roles,
+                authority.clone(),
+            );
+            let bound = binder.bind_once().await.unwrap();
+            let seat = registry.get(&"pij-claude".into()).await.unwrap().unwrap();
+            if cap == 1 {
+                assert_eq!(bound, 0, "refused at the cap");
+                assert_eq!(seat.proc, None);
+                assert_eq!(authority.boundaries.lock().len(), 1, "nothing evicted");
+            } else {
+                assert_eq!(bound, 1);
+                assert_eq!(seat.proc, Some(new_boundary()));
+                assert!(authority.boundaries.lock().contains(new_boundary()));
+                assert_eq!(
+                    authority.capabilities.holder(stale.plaintext()),
+                    None,
+                    "the bind resynced the shared map"
+                );
+            }
+        }
+    }
+
+    /// Plan 223 review D8: the cap is serialized through the COMMIT across
+    /// services. The routes' registration service and a binder race for the
+    /// last slot (their writes meet at a barrier, so both would commit if
+    /// both had passed the check): exactly one is admitted.
+    #[tokio::test]
+    async fn two_services_racing_for_the_last_slot_admit_exactly_one() {
+        let home = TestHome::new();
+        home.write_session(
+            "native-d8",
+            "/abs/worktree",
+            "%42",
+            4242,
+            "Mon Aug 31 10:15:00 2026",
+        );
+        let bus = event_bus();
+        let published: Arc<dyn Registry> = Arc::new(crate::events::PublishedFakeRegistry::new(
+            Arc::new(FakeRegistry::new()),
+            bus.clone(),
+        ));
+        let registry: Arc<dyn Registry> =
+            Arc::new(crate::capability::test_support::Hooked::new(published).with_barrier(2));
+        let authority = shared_authority(&bus, 2);
+        registry.put(pending("%42")).await.unwrap();
+        let route = pij_core::model::ProcIdentity {
+            pid: 5555,
+            proc_start: 20260831101600,
+        };
+        let liveness: Arc<dyn pij_core::ports::LivenessPort> = Arc::new(
+            FakeLiveness::new()
+                .with_proc(new_boundary())
+                .with_proc(route),
+        );
+        let roles = role_service(registry.clone(), bus.clone()).await;
+        let binder = ClaudeBinder::from_home(
+            Some(home.0.clone()),
+            registry.clone(),
+            Arc::clone(&liveness),
+            bus.clone(),
+            Vec::new(),
+            zero_utc_offset,
+            Arc::clone(&roles),
+            authority.clone(),
+        );
+        let routes = crate::registration::RegistrationService::new(
+            registry.clone(),
+            liveness,
+            bus,
+            Vec::new(),
+            roles,
+            authority.clone(),
+        );
+        let claim = super::Registration {
+            supersedes: None,
+            id: "pij-route".to_string(),
+            harness: Harness::Omp.as_str().to_string(),
+            folder: "/abs/route".to_string(),
+            extension_build: None,
+            extension_path: None,
+            pane: None,
+            pid: Some(route.pid),
+            proc_start: Some(route.proc_start),
+            spawn_id: None,
+            model: None,
+            actual_model: None,
+            actual_model_observed: false,
+            provider: None,
+            effort: None,
+            parent: None,
+            role: None,
+            relay: false,
+            native_precedence: None,
+        };
+        let (bound, registered) = tokio::join!(
+            binder.bind_once(),
+            routes.register_via(
+                crate::registration::attempts::Path::Explicit,
+                claim,
+                None,
+                None,
+                None,
+            )
+        );
+        let bound = bound.unwrap() == 1;
+        let registered = registered.is_ok();
+        assert!(bound ^ registered, "bound={bound} registered={registered}");
+        assert_eq!(authority.boundaries.lock().len(), 2, "exactly the cap");
     }
 }

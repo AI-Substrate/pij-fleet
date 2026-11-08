@@ -189,6 +189,8 @@ impl ProcReader for KernelReader {
 /// [`MAX_HOPS`] parents, every hop read now. The peer must still be the
 /// process that connected (same start). Unreadable hops, a reused ancestor
 /// pid, pid 1, launchd or a tmux server, and running out of hops all refuse.
+/// A root refuses BEFORE it is matched: a root is never a boundary or a
+/// target, even one the index or a claim names (review D4).
 ///
 /// # Errors
 /// Why the walk was refused (a sentence for [`PROVENANCE_CODE`]).
@@ -214,20 +216,20 @@ pub fn walk(
                 "ancestor pid {current} was reused after its child started"
             ));
         }
+        let (parent, name) = reader
+            .parent_and_name(current)
+            .ok_or_else(|| format!("process {current}'s parent is unreadable"))?;
+        if is_root(current, &name) {
+            return Err(format!(
+                "reached {name} (pid {current}) without a registered harness"
+            ));
+        }
         let here = ProcIdentity {
             pid: current,
             proc_start: start,
         };
         if target == Some(here) || is_boundary(here) {
             return Ok(here);
-        }
-        let (parent, name) = reader
-            .parent_and_name(current)
-            .ok_or_else(|| format!("process {current}'s parent is unreadable"))?;
-        if current == 1 || SYSTEM_ROOTS.contains(&name.as_str()) || name.starts_with("tmux") {
-            return Err(format!(
-                "reached {name} (pid {current}) without a registered harness"
-            ));
         }
         if parent == 0 {
             return Err(format!("process {current} has no parent"));
@@ -241,13 +243,36 @@ pub fn walk(
     ))
 }
 
+/// Pid 1, launchd or init, or a tmux server: above every seat, never one.
+fn is_root(pid: u32, name: &str) -> bool {
+    pid == 1 || SYSTEM_ROOTS.contains(&name) || name.starts_with("tmux")
+}
+
 /// One live session a boundary hosts.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Hosted {
     /// The harness.
     pub harness: Harness,
     /// The harness session, when known.
     pub session: Option<String>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Copies of [`Hosted`] made on this thread: a lookup must not copy the
+    /// roster out under the shared lock (review P183-F001).
+    pub(crate) static HOSTED_COPIES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for Hosted {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        HOSTED_COPIES.with(|copies| copies.set(copies.get() + 1));
+        Self {
+            harness: self.harness,
+            session: self.session.clone(),
+        }
+    }
 }
 
 /// A boundary's map key.
@@ -260,13 +285,22 @@ fn key(boundary: ProcIdentity) -> (u32, u64) {
 pub struct BoundaryIndex {
     by_boundary: HashMap<(u32, u64), BTreeMap<SeatId, Hosted>>,
     by_seat: HashMap<SeatId, ProcIdentity>,
+    /// Admissions in flight, by boundary: each holds a slot from its cap
+    /// check until its registration's write has committed or failed.
+    pending: HashMap<(u32, u64), usize>,
     cap: usize,
 }
 
-impl Default for BoundaryIndex {
-    fn default() -> Self {
-        Self::with_cap(INDEX_CAP)
-    }
+/// What a boundary hosts, decided without copying the roster out (review
+/// P183-F001): it stops at the second seat.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HostedBy {
+    /// No live seat.
+    Nobody,
+    /// Exactly this live seat.
+    One(SeatId),
+    /// Two or more; the first one's harness names the refusal.
+    Many(Harness),
 }
 
 impl BoundaryIndex {
@@ -275,12 +309,14 @@ impl BoundaryIndex {
         Self {
             by_boundary: HashMap::new(),
             by_seat: HashMap::new(),
+            pending: HashMap::new(),
             cap,
         }
     }
 
-    /// Rebuild from the roster (one read at daemon start). A store above the
-    /// cap is held whole: nothing is evicted.
+    /// Rebuild from the roster (one read at daemon start). The cap is an
+    /// ADMISSION limit, not a size: a persisted roster above it is held whole,
+    /// nothing is evicted, and only new boundaries are refused.
     pub fn rebuild(&mut self, seats: &[SeatDescriptor]) {
         self.by_boundary.clear();
         self.by_seat.clear();
@@ -344,23 +380,62 @@ impl BoundaryIndex {
         self.by_boundary.contains_key(&key(boundary))
     }
 
-    /// The live seats `boundary` hosts.
-    pub fn hosted(&self, boundary: ProcIdentity) -> Vec<(SeatId, Hosted)> {
-        self.by_boundary
-            .get(&key(boundary))
-            .map(|hosted| {
-                hosted
-                    .iter()
-                    .map(|(seat, hosted)| (seat.clone(), hosted.clone()))
-                    .collect()
-            })
-            .unwrap_or_default()
+    /// Who `boundary` hosts: nobody, exactly one seat (cloned), or many. At
+    /// most two entries are visited and one id is cloned.
+    pub fn hosted_by(&self, boundary: ProcIdentity) -> HostedBy {
+        let Some(hosted) = self.by_boundary.get(&key(boundary)) else {
+            return HostedBy::Nobody;
+        };
+        let mut seats = hosted.iter();
+        match (seats.next(), seats.next()) {
+            (None, _) => HostedBy::Nobody,
+            (Some((seat, _)), None) => HostedBy::One(seat.clone()),
+            (Some((_, first)), Some(_)) => HostedBy::Many(first.harness),
+        }
     }
 
-    /// May a registration bind `boundary`? An existing one always; a new one
-    /// only below the cap.
+    /// Does `boundary` host a live seat other than `seat`? At most two
+    /// entries are visited; nothing is cloned.
+    pub fn hosts_other(&self, boundary: ProcIdentity, seat: &SeatId) -> bool {
+        self.by_boundary
+            .get(&key(boundary))
+            .is_some_and(|hosted| hosted.keys().take(2).any(|held| held != seat))
+    }
+
+    /// May a registration bind `boundary`? An existing (or in-flight) one
+    /// always; a new one only while held and in-flight boundaries are below
+    /// the cap.
     pub fn admits(&self, boundary: ProcIdentity) -> bool {
-        self.contains(boundary) || self.by_boundary.len() < self.cap
+        let key = key(boundary);
+        self.by_boundary.contains_key(&key)
+            || self.pending.contains_key(&key)
+            || self.by_boundary.len() + self.pending_new() < self.cap
+    }
+
+    /// In-flight admissions of boundaries not yet held.
+    fn pending_new(&self) -> usize {
+        self.pending
+            .keys()
+            .filter(|key| !self.by_boundary.contains_key(*key))
+            .count()
+    }
+
+    /// Check and take a slot in one step.
+    fn reserve(&mut self, boundary: ProcIdentity) -> bool {
+        if !self.admits(boundary) {
+            return false;
+        }
+        *self.pending.entry(key(boundary)).or_default() += 1;
+        true
+    }
+
+    fn release(&mut self, key: (u32, u64)) {
+        if let Some(count) = self.pending.get_mut(&key) {
+            *count -= 1;
+            if *count == 0 {
+                self.pending.remove(&key);
+            }
+        }
     }
 
     /// Registered boundaries held.
@@ -374,10 +449,34 @@ impl BoundaryIndex {
     }
 }
 
-/// The daemon's boundary index, shared by registration and every walk.
-#[derive(Debug, Default)]
+/// The daemon's boundary index, shared by every registration service (the
+/// HTTP routes and each binder) and every walk.
+#[derive(Debug)]
 pub struct Boundaries {
     index: Mutex<BoundaryIndex>,
+}
+
+#[cfg(test)]
+impl Default for Boundaries {
+    fn default() -> Self {
+        Self::with_cap(INDEX_CAP)
+    }
+}
+
+/// A boundary's admission, held from the cap check until the registration's
+/// write has committed (the event bus has placed the boundary by then) or
+/// failed; dropping it releases the slot. Two services racing for the last
+/// slot cannot both pass (review D8).
+#[derive(Debug)]
+pub struct Admission {
+    boundaries: Arc<Boundaries>,
+    key: (u32, u64),
+}
+
+impl Drop for Admission {
+    fn drop(&mut self) {
+        self.boundaries.lock().release(self.key);
+    }
 }
 
 impl Boundaries {
@@ -386,6 +485,15 @@ impl Boundaries {
         Self {
             index: Mutex::new(BoundaryIndex::with_cap(cap)),
         }
+    }
+
+    /// Admit `boundary` (check and reserve in one step under the index's
+    /// lock), or `None` at the cap.
+    pub fn admit(self: &Arc<Self>, boundary: ProcIdentity) -> Option<Admission> {
+        self.lock().reserve(boundary).then(|| Admission {
+            boundaries: Arc::clone(self),
+            key: key(boundary),
+        })
     }
 
     /// The index, for one short read or update.
@@ -465,14 +573,14 @@ pub fn peer_proof(
         Ok(boundary) => boundary,
         Err(why) => return CallerProof::Neither(format!("{PROVENANCE_CODE}: {why}")),
     };
-    let hosted = boundaries.lock().hosted(boundary);
-    match hosted.as_slice() {
-        [(seat, _)] => CallerProof::Peer(seat.clone()),
-        [] => CallerProof::Neither(format!(
+    let hosted = boundaries.lock().hosted_by(boundary);
+    match hosted {
+        HostedBy::One(seat) => CallerProof::Peer(seat),
+        HostedBy::Nobody => CallerProof::Neither(format!(
             "{PROVENANCE_CODE}: boundary {} hosts no live seat",
             boundary.pid
         )),
-        [(_, first), ..] => CallerProof::Neither(ambiguous(first.harness)),
+        HostedBy::Many(harness) => CallerProof::Neither(ambiguous(harness)),
     }
 }
 
@@ -552,20 +660,36 @@ impl CapabilityCounts {
     }
 }
 
-/// What one request brought, read lazily: its proof is computed on the first
-/// counted operation and reused, and each class counts once per request.
+/// A request's `x-pij-seat-capability` header, resolved once at the door
+/// (where a rotation's first presentation retires the previous capability).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum TokenEvidence {
+    /// No header.
+    Absent,
+    /// A live seat's capability.
+    Live(SeatId),
+    /// A header that is no live capability.
+    NotLive,
+}
+
+/// What one request brought: its header capability (resolved at the door),
+/// its socket peer, and whether it came over the non-loopback listener. Its
+/// proof is computed on the first counted operation and reused, and each
+/// class counts once per request.
 pub(crate) struct RequestEvidence {
-    token: Option<String>,
+    token: TokenEvidence,
     peer: Option<SocketPeer>,
+    remote: bool,
     proof: OnceLock<CallerProof>,
     counted: AtomicU8,
 }
 
 impl RequestEvidence {
-    pub(crate) fn new(token: Option<String>, peer: Option<SocketPeer>) -> Self {
+    pub(crate) fn new(token: TokenEvidence, peer: Option<SocketPeer>, remote: bool) -> Self {
         Self {
             token,
             peer,
+            remote,
             proof: OnceLock::new(),
             counted: AtomicU8::new(0),
         }
@@ -598,19 +722,22 @@ pub(crate) fn current() -> Option<Arc<RequestEvidence>> {
     REQUEST.try_with(Arc::clone).ok()
 }
 
+/// Did the request being handled arrive over the non-loopback listener?
+/// Every capability carrier (the header, a body's `context_token`, a
+/// registration's nonce) is refused there (review S183-003).
+pub(crate) fn remote() -> bool {
+    current().is_some_and(|evidence| evidence.remote)
+}
+
 fn prove(services: &Services, evidence: &RequestEvidence) -> CallerProof {
-    if let Some(seat) = evidence
-        .token
-        .as_deref()
-        .and_then(|token| services.capabilities.holder(token))
-    {
-        return CallerProof::Token(seat);
+    if let TokenEvidence::Live(seat) = &evidence.token {
+        return CallerProof::Token(seat.clone());
     }
     let found = match evidence.peer() {
         Some(peer) => peer_proof(services.proc_reader.as_ref(), &services.boundaries, peer),
         None => CallerProof::Neither("not a socket peer and no live capability".to_string()),
     };
-    match (found, evidence.token.is_some()) {
+    match (found, evidence.token == TokenEvidence::NotLive) {
         (CallerProof::Neither(why), true) => {
             CallerProof::Neither(format!("the presented capability is not live; {why}"))
         }
@@ -780,6 +907,106 @@ mod tests {
             matches!(&refused, CallerProof::Neither(why) if why.starts_with(PROVENANCE_CODE) && why.contains("launchd")),
             "{refused:?}"
         );
+    }
+
+    /// Review D4: a root is refused BEFORE any match, so pid 1, launchd or a
+    /// tmux server is never a boundary (even an indexed one), a target, or a
+    /// peer.
+    #[test]
+    fn a_root_is_never_a_boundary_a_target_or_a_peer() {
+        // launchd(1) -> zsh(20) -> pij(21): no tmux in between.
+        let flat = FakeReader::default()
+            .with(1, 0, "launchd", 1)
+            .with(20, 1, "zsh", 3)
+            .with(21, 20, "pij", 4);
+        let refused = |proof: CallerProof| matches!(&proof, CallerProof::Neither(why) if why.starts_with(PROVENANCE_CODE));
+        let launchd = index(&[seat("pij-root", 1, 1, "s1")]);
+        let tmux = index(&[seat("pij-tmux", 5, 2, "s1")]);
+        assert!(refused(peer_proof(
+            &flat,
+            &launchd,
+            &SocketPeer::Proven(id(21, 4))
+        )));
+        assert!(refused(peer_proof(
+            &chain(),
+            &tmux,
+            &SocketPeer::Proven(id(13, 7))
+        )));
+        assert!(walk(&flat, id(21, 4), Some(id(1, 1)), |_| false).is_err());
+        assert!(walk(&chain(), id(13, 7), Some(id(5, 2)), |_| false).is_err());
+        assert!(refused(peer_proof(
+            &flat,
+            &launchd,
+            &SocketPeer::Proven(id(1, 1))
+        )));
+        assert!(walk(&chain(), id(5, 2), Some(id(5, 2)), |_| false).is_err());
+        // Control: an ordinary boundary below the roots is still reached.
+        assert_eq!(
+            walk(&chain(), id(13, 7), Some(id(10, 4)), |_| false),
+            Ok(id(10, 4))
+        );
+    }
+
+    /// Review P183-F001: telling nobody, one and many apart copies nothing
+    /// out of the shared index, however many sessions a boundary hosts and
+    /// however large their fields.
+    #[test]
+    fn hosted_lookups_copy_nothing_out_of_the_index() {
+        let big = "s".repeat(64 * 1024);
+        let seats: Vec<SeatDescriptor> = (0..256)
+            .map(|n| seat(&format!("pij-many-{n}"), 10, 4, &format!("{n}{big}")))
+            .collect();
+        let boundaries = index(&seats);
+        let copies = || HOSTED_COPIES.with(std::cell::Cell::get);
+        let before = copies();
+        assert_eq!(
+            boundaries.lock().hosted_by(id(10, 4)),
+            HostedBy::Many(Harness::Copilot)
+        );
+        assert!(
+            boundaries
+                .lock()
+                .hosts_other(id(10, 4), &"pij-many-0".into())
+        );
+        assert_eq!(
+            peer_proof(&chain(), &boundaries, &SocketPeer::Proven(id(13, 7))),
+            CallerProof::Neither(ambiguous(Harness::Copilot))
+        );
+        assert_eq!(copies(), before, "a lookup copied hosted sessions");
+        let one = index(&[seat("pij-one", 10, 4, "s1")]);
+        assert_eq!(
+            one.lock().hosted_by(id(10, 4)),
+            HostedBy::One("pij-one".into())
+        );
+        assert!(!one.lock().hosts_other(id(10, 4), &"pij-one".into()));
+        assert_eq!(one.lock().hosted_by(id(11, 5)), HostedBy::Nobody);
+    }
+
+    /// Review D8: the cap is checked and the slot taken in one step, held
+    /// until the admission is dropped (after its write), so two admissions
+    /// racing for the last slot cannot both pass.
+    #[test]
+    fn an_admission_holds_its_slot_until_dropped() {
+        let boundaries = Arc::new(Boundaries::with_cap(2));
+        boundaries.lock().place(&seat("pij-held", 10, 4, "s1"));
+        let first = boundaries.admit(id(20, 4)).expect("the last slot");
+        assert!(boundaries.admit(id(30, 4)).is_none(), "the slot is taken");
+        assert!(
+            boundaries.admit(id(20, 4)).is_some(),
+            "the same boundary again"
+        );
+        assert!(boundaries.admit(id(10, 4)).is_some(), "a held boundary");
+        drop(first);
+        assert!(boundaries.admit(id(30, 4)).is_some(), "released on failure");
+        let committed = boundaries.admit(id(20, 4)).expect("the last slot");
+        boundaries.lock().place(&seat("pij-new", 20, 4, "s2"));
+        drop(committed);
+        assert!(boundaries.admit(id(30, 4)).is_none(), "placed: at the cap");
+        // An ADMISSION limit: a persisted roster above it is held whole.
+        let over = Boundaries::with_cap(1);
+        over.lock()
+            .rebuild(&[seat("pij-a", 10, 4, "s1"), seat("pij-b", 20, 4, "s2")]);
+        assert_eq!(over.lock().len(), 2);
     }
 
     #[test]

@@ -489,12 +489,14 @@ impl Arguments {
 
 /// The operation a directory leaf is (plan 223 AC7): holding and lineage are
 /// holder and prime actions, reads are machine-public, and every other write
-/// forges only authorship.
+/// forges only authorship. `memory` and `routes` are reads or writes by their
+/// arguments, so they count inside their leaf once that is decided (review
+/// D9), never here.
 fn directory_class(leaf: &str) -> Option<super::provenance::OperationClass> {
     use super::provenance::OperationClass;
     match leaf {
-        "view" | "templates" | "template-diff" => None,
-        "assign" | "release" | "lineage" | "memory" => Some(OperationClass::RoleAndHolder),
+        "view" | "templates" | "template-diff" | "memory" | "routes" => None,
+        "assign" | "release" | "lineage" => Some(OperationClass::RoleAndHolder),
         _ => Some(OperationClass::Attribution),
     }
 }
@@ -848,6 +850,12 @@ async fn routes_leaf(
     }
     if !write && why.is_some() {
         return Err(Refusal::new("E-RS-ARG", "--why goes with --write"));
+    }
+    if write {
+        super::provenance::count(
+            &state.services,
+            super::provenance::OperationClass::Attribution,
+        );
     }
     let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
     let root = root::find(&repo)?;
@@ -1741,6 +1749,11 @@ async fn memory(
         data["project"] = json!(project);
         return Ok(data);
     };
+    // A memory write is a holder action; the reads above are machine-public.
+    super::provenance::count(
+        &state.services,
+        super::provenance::OperationClass::RoleAndHolder,
+    );
     let role_id = (*role_id).to_string();
     let body = match (call.get("body"), call.get("body-file")) {
         (Some(body), None) => body,

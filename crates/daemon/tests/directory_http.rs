@@ -3329,8 +3329,24 @@ impl pij_core::ports::Registry for ReviewBarrierRegistry {
         descriptor: SeatDescriptor,
         keep_parent: bool,
         issue: pij_core::capability::CapabilityIssue,
+        retiring: Vec<SeatDescriptor>,
     ) -> pij_core::error::Result<pij_core::capability::IssueOutcome> {
-        self.inner.put_issuing(descriptor, keep_parent, issue).await
+        self.inner
+            .put_issuing(descriptor, keep_parent, issue, retiring)
+            .await
+    }
+    async fn record_spawn_pane(
+        &self,
+        spawn_id: &str,
+        pane: pij_core::model::ProcIdentity,
+    ) -> pij_core::error::Result<bool> {
+        self.inner.record_spawn_pane(spawn_id, pane).await
+    }
+    async fn spawn_nonce(
+        &self,
+        spawn_id: &str,
+    ) -> pij_core::error::Result<Option<pij_core::capability::NonceRecord>> {
+        self.inner.spawn_nonce(spawn_id).await
     }
     async fn confirm_rotation(
         &self,
@@ -7550,5 +7566,74 @@ async fn the_prime_recovery_action_follows_the_designations_liveness() {
             .starts_with("the project has no live designated prime and 1 request(s)"),
         "{actions:?}"
     );
+    rig.server.abort();
+}
+
+/// Plan 223 review D9: `directory memory` and `directory routes` count by
+/// what they DO. Reads are machine-public and count nothing; a memory add
+/// counts as a holder action and `routes --write` as attribution.
+#[tokio::test]
+async fn memory_and_routes_count_their_writes_and_never_their_reads() {
+    let repo = repo("pij-directory-d9");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    async fn classes(addr: SocketAddr) -> Value {
+        let health: Value = reqwest::Client::new()
+            .get(format!("http://{addr}/health"))
+            .bearer_auth(KEY)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        health["data"]["capabilities"]["classes"].clone()
+    }
+    let total = |tally: &Value, class: &str| {
+        ["token", "peer", "neither"]
+            .iter()
+            .map(|outcome| tally[class][outcome].as_u64().unwrap_or(0))
+            .sum::<u64>()
+    };
+    let cases: [(Vec<&str>, Option<&str>); 5] = [
+        (
+            vec![
+                "directory",
+                "memory",
+                "add",
+                "reviewer",
+                "--title",
+                "d9 note",
+                "--tags",
+                "x",
+                "--hook",
+                "h",
+                "--body",
+                "b\n",
+            ],
+            Some("role-and-holder"),
+        ),
+        (vec!["directory", "memory", "reviewer"], None),
+        (
+            vec!["directory", "memory", "reviewer", "--note", "d9-note"],
+            None,
+        ),
+        (vec!["directory", "routes"], None),
+        (
+            vec!["directory", "routes", "--write", "--why", "d9"],
+            Some("attribution"),
+        ),
+    ];
+    for (argv, counted) in cases {
+        let before = classes(rig.addr).await;
+        let reply = call(rig.addr, "/v1/directory", &argv, &repo.main).await;
+        assert_eq!(reply["ok"], true, "{argv:?}: {reply}");
+        let after = classes(rig.addr).await;
+        for class in after.as_object().unwrap().keys() {
+            let delta = total(&after, class) - total(&before, class);
+            let expected = u64::from(counted == Some(class.as_str()));
+            assert_eq!(delta, expected, "{argv:?}: {class}");
+        }
+    }
     rig.server.abort();
 }

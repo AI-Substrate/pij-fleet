@@ -234,6 +234,16 @@ pub struct Services {
 }
 
 impl Services {
+    /// The ONE seat-authority state every registration service shares
+    /// (plan 223, review D8).
+    pub(crate) fn seat_authority(&self) -> registration::SeatAuthority {
+        registration::SeatAuthority {
+            capabilities: Arc::clone(&self.capabilities),
+            boundaries: Arc::clone(&self.boundaries),
+            reader: Arc::clone(&self.proc_reader),
+        }
+    }
+
     /// Opt-in watchdog rows, on the spine pool that holds the other
     /// orchestration records (roles, batons, streams).
     pub fn watchdogs(&self) -> pij_store::SqliteOrchestration {
@@ -544,7 +554,9 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
     // read back (one read), so a seat holding a token carries on after a bounce.
     let capabilities = Arc::new(capability::Capabilities::default());
     capability::restore(registry.as_ref(), &capabilities, http::system_time_ms()?).await?;
-    let boundaries = Arc::new(http::provenance::Boundaries::default());
+    let boundaries = Arc::new(http::provenance::Boundaries::with_cap(
+        http::provenance::INDEX_CAP,
+    ));
     let roster = registry
         .list(pij_core::ports::SeatFilter::default())
         .await?;
@@ -1045,6 +1057,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         Arc::clone(&services.liveness),
         Arc::clone(&services.event_bus),
         Arc::clone(&services.roles),
+        services.seat_authority(),
     ));
     let codex_binder = Arc::new(codex_bind::CodexBinder::new(
         Arc::clone(&services.registry),
@@ -1052,6 +1065,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         Arc::clone(&services.event_bus),
         Arc::clone(&services.roles),
         Arc::clone(&services.tmux),
+        services.seat_authority(),
     ));
 
     let drain = Arc::new(

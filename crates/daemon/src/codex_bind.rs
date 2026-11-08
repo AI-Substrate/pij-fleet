@@ -21,7 +21,7 @@ use pij_harnesses::codex::{ProcessFiles, held_thread};
 use crate::events::EventBus;
 use crate::http::Registration;
 use crate::http::role::RoleService;
-use crate::registration::RegistrationService;
+use crate::registration::{RegistrationService, SeatAuthority};
 
 const ADAPTER: &str = "daemon/codex-bind";
 
@@ -182,13 +182,14 @@ impl CodexBinder {
         event_bus: Arc<EventBus>,
         roles: Arc<RoleService>,
         tmux: Arc<dyn TmuxPort>,
+        authority: SeatAuthority,
     ) -> Self {
         let facts = Arc::new(MachineCodexBindFacts {
             codex_home: pij_harnesses::codex::codex_home(),
             tmux,
             liveness: Arc::clone(&liveness),
         });
-        Self::with_facts(registry, liveness, event_bus, roles, facts)
+        Self::with_facts(registry, liveness, event_bus, roles, facts, authority)
     }
 
     fn with_facts(
@@ -197,6 +198,7 @@ impl CodexBinder {
         event_bus: Arc<EventBus>,
         roles: Arc<RoleService>,
         facts: Arc<dyn CodexBindFacts>,
+        authority: SeatAuthority,
     ) -> Self {
         let registration = RegistrationService::new(
             Arc::clone(&registry),
@@ -204,6 +206,7 @@ impl CodexBinder {
             event_bus,
             pij_harnesses::claude_homes(),
             roles,
+            authority,
         );
         Self {
             registry,
