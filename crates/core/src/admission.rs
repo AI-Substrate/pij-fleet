@@ -165,9 +165,7 @@ pub fn admit(candidate: &Candidate) -> Admission {
 /// Whether a path is free of control characters and line or paragraph
 /// separators (F133): the one check a path gets before pij may name it.
 pub fn printable_path(path: &str) -> bool {
-    !path
-        .chars()
-        .any(|ch| ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}'))
+    crate::render::is_one_line(path)
 }
 
 /// The shared case table both consumers must answer identically.

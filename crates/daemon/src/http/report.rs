@@ -319,7 +319,7 @@ fn parse_semantic_state(word: &str) -> Result<SemanticState, Refusal> {
 /// The length rule is NOT re-implemented here: it is [`CARD_LIMIT`], cited, and
 /// core checks it again on the way through. One constant, one owner.
 fn normalize_card_field(label: &str, input: &str) -> Result<String, Refusal> {
-    if input.contains(['\r', '\n', '\u{2028}', '\u{2029}']) {
+    if input.contains(pij_core::render::is_line_break) {
         return Err(format!("report {label} must be one line"));
     }
     let normalized = collapse_whitespace(input);
@@ -340,7 +340,7 @@ fn normalize_card_field(label: &str, input: &str) -> Result<String, Refusal> {
 /// note at all, so unlike the card rules there is nothing downstream to catch a
 /// miss here.
 fn normalize_note(input: &str) -> Result<String, Refusal> {
-    if input.contains(['\r', '\n', '\u{2028}', '\u{2029}']) {
+    if input.contains(pij_core::render::is_line_break) {
         return Err("report note must be one line".to_string());
     }
     let normalized = collapse_whitespace(input);
