@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b8c8-4354-7321-ad98-281bbe94c888",
+				"date": "2026-11-08",
+				"head": "ec31a8c1e76c44201d5e8ebd9676788aabaa8d24",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/172#issuecomment-6715684693",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:172",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "CI run 42434204381, junit-linux route-command test",
+					"exit_code": 0,
+					"log": "the_community_route_and_templates_print_real_commands executed and passed; https://github.com/AI-Substrate/pij-fleet/actions/runs/42434204381"
+				},
+				{
+					"command": "wc -l skills/pij/references/routes/community.md",
+					"exit_code": 0,
+					"log": "92 lines; structural budget is 100"
+				},
+				{
+					"command": "node harness/scripts/pr-freeze.ts 172",
+					"exit_code": 0,
+					"log": "FINAL at ec31a8c1e76c44201d5e8ebd9676788aabaa8d24; matching heads, CLEAN, successful latest checks, ready"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #172 correctness verdict\n\n**PASS** at `ec31a8c1e76c44201d5e8ebd9676788aabaa8d24`. The one-line community-route addition is accurate and covered by the existing route-command test. No findings.\n\n`skills/pij/references/routes/community.md:66` describes delivered as ending the work identified by its PR, not sweeping historical PR holdings. It correctly recommends a one-time explicit batch release for the old backlog. `pij directory release --batch '<file>' --why '<reason>'` uses the supported flags, quotes both values, and specifies the existing one-role/instance-and-seat-per-line format and single directory commit. It does not instruct a blind release of every current holding.\n\nThe route is **92 lines**, below 100. The structural gate explicitly checks that file against a 100-line budget (`harness/scripts/pij-skill-check.sh:71`).\n\nThe Rust test reads the actual community route (`crates/cli/tests/skill_verb_coverage.rs:393`), extracts inline backtick commands as well as fenced commands (`:153`), and checks their native leaf flags/required usage (`:322,429`). The author reports the restored negative control: removing `--why` from this new line fails `the_community_route_and_templates_print_real_commands` with `pij directory release --batch '<file>': a required flag is missing`. This demonstrates coverage of the addition, not merely generic verb-table coverage.\n\nCI run `42434204381` associated with this exact head passed. Its JUnit artifact confirms the route-command test executed and passed; the suite records 2,194 passing Rust cases with zero failures/errors. Node 22/24 and Rust lint/test checks passed, as did Delivers. `pr-freeze` reported FINAL: matching heads, CLEAN, ready and successful latest checks. `git diff --check origin/main...HEAD` passed.\n\nNo local builds/tests, product edits, credentials, live-daemon probes, merge or push. The detached worktree remains clean at the requested SHA. This PR changes one documentation line and adds no runtime loop, timer or launch.\n"
+		}
+	]
+}
