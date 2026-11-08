@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "59950a5ef6334faa57a57f35f178b284354287e1",
+				"kind": "handover",
+				"link": "https://github.com/AI-Substrate/pij-fleet/commit/08dc7187452f3797f7dbb8e761604fe265369a5f",
+				"role": "performance",
+				"subject": "role:performance",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "```text\nHOVR/2\nm:{ts:\"2026-11-08T05:18:02Z\",phase:\"PA compaction\",feat:\"pij-fleet\",domain:\"performance\"}\n\nintent:{\n  primary:\"Resume frozen-head cost reviews and authorized deployment readings.\",\n  scope:[\"read-only source\",\"CI proof\",\"pij output writer\"]\n}\n\ntimeline:{\n  just_completed:\"#175 whole-PR BLOCK at 59950a5; output08dc718 committed/indexed\",\n  current:\"Between readings; PA compacts before #180\",\n  last_actions:[\"176 cap repaired\",\"177 reviewer block separate\",\"174 reading done\",\"175 old heads not verdicted\"]\n}\n\noutputs:{\n  note:\"Since09:00; head7/commit7 resolve through output records\",\n  rows:[\n    [\"167\",\"9cdcf3d\",\"pass-with-notes\",\"cc7c4c6\"],\n    [\"167\",\"afa8659\",\"pass-with-notes\",\"ede6886\"],\n    [\"167\",\"246f958\",\"after-deploy note\",\"e18a702\"],\n    [\"168\",\"83bb002\",\"pass-with-notes\",\"c9d1fde\"],\n    [\"168\",\"c7d660c\",\"timed output probe\",\"50156fb\"],\n    [\"168\",\"c7d660c\",\"final after-deploy note\",\"0d1f9fe\"],\n    [\"170\",\"bfe2301\",\"block P170-F001\",\"5a0ffbc\"],\n    [\"170\",\"060ef06\",\"pass-with-notes\",\"b74980d\"],\n    [\"170\",\"a0967ab\",\"pass-with-notes\",\"4b0dcb9\"],\n    [\"170\",\"b69cf96\",\"pass-with-notes\",\"ba1bfad\"],\n    [\"173\",\"91e5a85\",\"pass-with-notes\",\"6086318\"],\n    [\"173\",\"81d521f\",\"pass-with-notes\",\"4cc0c9a\"],\n    [\"174\",\"1d9a1f3\",\"pass-with-notes\",\"7920331\"],\n    [\"174\",\"28d7c7b\",\"after-deploy note\",\"950e962\"],\n    [\"176\",\"1b2710f\",\"block F001/F002\",\"6095292\"],\n    [\"176\",\"001a3b8\",\"pass-with-notes\",\"1a331b6\"],\n    [\"177\",\"1d199da\",\"pass-with-notes\",\"ed929e0\"],\n    [\"175\",\"59950a5\",\"block F001/F002\",\"08dc718\"]\n  ]\n}\n\nreadings:{\n  \"167\":\"PID29706;203->203/60.007427s;CPU12.25%;RSS181.72->181.73MiB;machine557.0/s\",\n  \"168\":\"PID25230;158->158/60.007460s;CPU14.03%;RSS185.05->188.16MiB;machine383.4/s\",\n  \"168-N001\":\"Routes aggregate31.73ms:9roles/11scopes/0overlaps; closed only at this scale. Whole output518.36ms/memory2382.55ms;7Git+2ddocs each; memory5ab684c\",\n  \"174\":\"PID92503 stable;174->174/60.011701s;CPU14.16%;RSS201.64MiB flat;machine34.0/s.43bound/B0;4tombstones, same9pending jobs; no probe-RPC counter\"\n}\n\ndecisions:{\n  other:[\n    [\"P175-F001\",\"Bounce exports pollute background Cargo env\",\"Scope stamps to build\"],\n    [\"P175-F002\",\"reported_tree collects before1-4 bound\",\"Bound before collection\"],\n    [\"175-cache\",\"Full HEAD option_env still rebuilds daemon\",\"Unit/profile/dependents; not global\"],\n    [\"176\",\".cargo/config.toml defaults4/4\",\"Overrides allowed; no global2-build semaphore\"],\n    [\"170\",\"PATH fixed; macOS-only prune\",\"60s timeout is soft SIGTERM\"],\n    [\"174\",\"ProbeB+C, at most2B\",\"No B cap/expiry; zero whenB0\"]\n  ]\n}\n\ntasks:{\n  done:[\"pr174-performance-review\",\"pr175-performance-review\",\"pr176-performance-review\",\"pr177-performance-review\"],\n  pend:[\"pr180-performance-review\",\"pr155-traffic-window\"],\n  blk:[\n    [\"175\",\"Await fixes/new frozen head; c87c5e0/86590ae/a15ca91 not verdicted\"],\n    [\"177\",\"Await legacy-prime round2; skip1d199da\"],\n    [\"pr155-traffic-window\",\"Legitimate Claude traffic only; no synthetic/quiet proof\"]\n  ]\n}\n\ntests:{unit:\"pass\",integ:\"pass\",notes:\"175 CI2206 passed/5skipped; OMP14 each Node22/24\"}\n\nruntime:{owned_background_pids:[],owned_shells:[],agents:[],note:\"Helpers consumed; no service/canary.92503 is last measured daemon\"}\n\nanchors:{\n  immutable:[\"pij-thorough-ocelot/performance; parent pij-steady-otter; PA pij-watchful-badger\",\"Native receiver owned; no re-adopt/second reader\",\"No product edits\"],\n  user_verbatim:[\"CI is the proof\",\"no local builds, tests or probes\"],\n  rules:[\"PM permission before local Cargo/probes; emergency4jobs/4test threads, maximum2fleet Cargo builds\",\"CARGO_INCREMENTAL=0; compile nice19/taskpolicy-b; tests nice-only; C25 no node_modules symlinks\",\"pij output verdict/full --head; --answers only role requests; verify commit/index/comment; report done refs; normal-send completion\",\"No credential/payload reads or fake user input; targeted SQLite mode=ro only\",\"No cross-bounce subtraction; cumulative CPU/monotonic time; machine scope separate\",\"Receipt/ACK is not model work; no modal questions or self-compaction\"]\n}\n\nnext:{\n  task:\"PA compaction, then pr180-performance-review\",\n  why:\"#180 queued15:05; not started\",\n  head:\"0ffb88381f6ea11ed6d8816affe2b20b238d7621\",\n  worktree:\"~/pi-hacking/review-180-0ffb883\",\n  validate:[\"Lease-map lock/digest; no store read/launch?\",\"Uncertain receiver/backoff/lease renewal: any new polling rate?\",\"Frozen head and exact CI\"],\n  tasks_file:\"?\",\n  cmd:\"pij output verdict --role performance --subject pr:180 --head 0ffb88381f6ea11ed6d8816affe2b20b238d7621\"\n}\n\nrefs:{\n  output_root:\".harness/government/community/roles/performance/outputs/2026-11/\",\n  paths:[\"pr175-performance-59950a5.md\",\"pr174-after-deploy-note.md\",\"pr176-performance-001a3b8.md\",\"pr177-performance-1d199da.md\"],\n  proof_lesson:\"Pin JUnit ID from successful upload log; duplicate names/stale gh logs occurred\",\n  legacy:\"Checkpoint003/d027d367: pre09:00;169 after-reading done\"\n}\n```\n"
+		}
+	]
+}
