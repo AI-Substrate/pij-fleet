@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b9a3-bbca-7e33-a051-7fdf00b60baf",
+				"date": "2026-11-08",
+				"head": "d989fa951e5cfe21eaf77a4b620dde1c0821ea2d",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/175#issuecomment-6717819921",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:175",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N001 retained: qualify lexical closure coverage; green is not general computed-import or security proof."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "CI run 42450838653, junit-linux",
+					"exit_code": 0,
+					"log": "2208 passing Rust cases, zero failures/errors; both real-recipe fake-environment tests and grammar/digest tests passed; https://github.com/AI-Substrate/pij-fleet/actions/runs/42450838653"
+				},
+				{
+					"command": "node harness/scripts/pr-freeze.ts 175",
+					"exit_code": 0,
+					"log": "FINAL at d989fa951e5cfe21eaf77a4b620dde1c0821ea2d; matching heads, CLEAN, successful latest checks, ready"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #175 round-5 delta correctness verdict\n\n**PASS-WITH-NOTES** at `d989fa951e5cfe21eaf77a4b620dde1c0821ea2d`. The two new fixes are correct; the earlier nonblocking lexical-proof qualification remains.\n\nThe compiler stamps are now assignments on the external cargo command only in both recipes, not exports affecting the subsequently launched daemon. `build_stamps.rs` reads the real justfile recipe bodies, runs them under `/bin/sh` with a cleared environment and fake external services, and checks separate cargo/daemon environment captures. The compiler must see all three correctly shortened stamps, while the fake daemon sees none. The author reports restoring the export kills that regression. This proves the newly computed stamps do not leak from the recipe; it does not promise to scrub arbitrary stamps a caller independently supplied.\n\nParsing rejects oversized values before delimiter searches/splits: tree **163 bytes**, prefix **69 bytes**, whole build **238 bytes**. `reported_tree` uses `splitn(5)`, so even the component vector is capped. Invalid prefix reporting uses byte length instead of scanning characters, and the two daemon stamps are parsed once per digest. The tests retain the widest accepted tree/prefix forms, reject a one-byte-over tree and MiB-sized inputs, and ensure an oversized stored build cannot reach the digest.\n\nCI run `42450838653` associated with this head passed. Its JUnit records **2,208 passing Rust cases, zero failures/errors**, including both real-recipe fake-environment tests, the closed-grammar test and the digest test. `pr-freeze` reported FINAL with matching heads, CLEAN, successful latest checks and no added migration. `git diff --check origin/main...HEAD` passed.\n\n**N001, retained:** the closure checker is a consistency sensor for the reviewed literal import graph, not a general JavaScript dependency/security proof. Keep opaque/computed-target limitations explicit and qualify unconditional “never pass blind” claims. This delta leaves that scanner and the earlier qualification unchanged.\n\nNo local builds/tests, product edits, credentials, live-fleet probes, merge or push. The detached worktree remains at the requested SHA. Live cost/performance signoff remains the performance role's verdict.\n"
+		}
+	]
+}
