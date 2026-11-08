@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "be6902a8e5d85cc6f664b077a17bdf75e34e3341",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/187#issuecomment-6723740978",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:187",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes**, base-only delta at `be6902a8e5d85cc6f664b077a17bdf75e34e3341`, against the previously reviewed `31c5113a4454a7cba01bddf410d3df6b694f0480`.\n\nThe two #187 feature patches are unchanged. The new #185 base preserves the background fencing, legacy-plan rebuild and scope/folder protections. The actual clean merge with main is the exact tree executed by successful CI. No new scoped security finding was established.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new base-only vulnerabilities found | - |\n\n## Patch and base identity\n\n`git range-diff b56a990..31c5113 b901a64..be6902a` reports both feature commits as identical patches:\n\n- `71bf4e6c = 296e085a`: F133/F134 scope and job-text fencing.\n- `31c5113a = be6902a8`: legacy background hand-off reconstruction.\n\nThe base move `b56a990a5f373a31488530b17c96cfc134c88226` to `b901a64fb863599bc787dfa490ba22b1f15c2bb1` is the already reviewed #185 rounds four and five: CLI presentation, additive machine/project renderers, the directory prime note/legacy-command guard, tests and API text. It does not change the existing fence helper or #187's background, scope or folder-admission implementation.\n\nThe #185 raw window-receipt residual is assigned to F135, and claims/free-text/line qualifications remain F142. Those base qualifications are retained, not silently cleared by this background PR.\n\n## Exact merge result\n\n#185 was squash-merged as main `3ad4132268d6a9e0a35a515af75307315bae4de2`; its original branch head need not be an ancestor of that squash. The noisy GitHub comparison is not evidence that #187's own feature patches changed.\n\nRead-only Git merge verification returned no conflict:\n\n`git merge-tree --write-tree 3ad4132268d6a9e0a35a515af75307315bae4de2 be6902a8e5d85cc6f664b077a17bdf75e34e3341`\n\nResult tree: `5460ee62eb3c0167ca1b7fa7dd07b2eaa02a48bd`.\n\nThat is **not literally the standalone review-head tree**, which is `b285309be4db8e6b236c6207af16445be4fe7262`. Relative to the reviewed head, the merge imports only four existing main coder-v4/template-registration files: `crates/daemon/src/community/templates.rs`, `crates/daemon/tests/templates_http/mod.rs`, `templates/roles/README.md` and `templates/roles/coder/v4/role.dd.json`. This is existing main content, not a new #187 background change.\n\nGitHub CI merge commit `fcb8de7df3f18fd717457218e1473d07fac992b1` has those exact main/head parents and the exact same `5460ee62...` tree. Thus the composition with the squash, including main's template content, is the one that CI executed, with no unreviewed conflict-resolution edits.\n\n## Retained limits\n\nThe prior `31c5113` verdict's internal-version/mixed-old-writer limitation remains: fresh `decide` discards the winning stored record's legacy flag. Standard legacy replay is covered; arbitrary mixed-version writers are not certified.\n\nRetained cold facts still rely on the internal producer and prefix/delimiter/newline checks rather than a complete numeric grammar. A structural fence is not shell quoting, authenticated provenance or semantic prompt-injection elimination. This base-only review does not establish arbitrary database-tampering resistance, delivery guarantees or deployment clearance.\n\n## CI proof\n\nLocal/remote/GitHub heads agree; shared worktree clean. GitHub initially showed UNSTABLE while a Delivers rerun was in progress; it subsequently became CLEAN. The code checks succeeded, the Delivers rerun succeeded, and two older Delivers runs were cancelled.\n\nCI [42497139958](https://github.com/AI-Substrate/pij-fleet/actions/runs/42497139958) tested the exact merge tree above. JUnit artifact [13624197007](https://github.com/AI-Substrate/pij-fleet/actions/runs/42497139958/artifacts/13624197007) contains 2,261 passing cases, no failures; the runner separately reports five skipped.\n\nAll four legacy Wake/Cold/downgrade/rebuild-failure tests executed successfully on this merge. Both Node checks and Rust lint/test are green. Earlier author mutation receipts are not new independent mutation execution.\n\nNo local builds/tests, hostile/live-system probes, credential reads, checkout, actual branch merge or product edits. `merge-tree` verified Git composition only.\n"
+		}
+	]
+}
