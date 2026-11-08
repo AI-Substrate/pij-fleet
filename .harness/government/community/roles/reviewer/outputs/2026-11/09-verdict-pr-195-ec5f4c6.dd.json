@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bd32-27cb-7423-96de-ce6a8660159f",
+				"date": "2026-11-09",
+				"head": "ec5f4c65b9b01ac2dda2316e3227e55c25a38a98",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/195#issuecomment-6727939540",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:195",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Trace NudgeWork construction, conditional holding/claim/request checks, cap and audit label at ec5f4c6",
+					"exit_code": 0,
+					"log": "F001 stale-only eligibility gap and N001/N002 close: one named work witness must remain in the same mark transaction; request includes holder/delivered/unanswered checks; shared documented cap9; cold label non-forced. N003: other cached labels/projects may be stale when one witness survives."
+				},
+				{
+					"command": "Inspect m144r2.py/out and verify seven source sites",
+					"exit_code": 0,
+					"log": "Seven individually applied mutants exit101 at targeted assertions. Each branch merely-listed mutant affects its own nonempty-array case. Backups restored in finally; all originals match head once. Author reports baseline/wider suites and unchanged commit; baseline not separately retained; no reviewer execution."
+				},
+				{
+					"command": "Inspect CI 42528102748 artifact 13636068685; pr-freeze; compare CI 43f97da2 tree",
+					"exit_code": 0,
+					"log": "2283 Rust cases pass; work-removal, cold audit, cap, indexed reads, live task/request and default-off cases execute. Five separately skipped, all five checks pass, FINAL/CLEAN. Head/CI merge tree f011bf40f0a7e75ce0e67d2ac7ecf3f2d8c42cc7."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Delta correctness verdict: PASS-WITH-NOTES\n\nPR #195 at `ec5f4c65b9b01ac2dda2316e3227e55c25a38a98`, answering `01a1bd32-27cb-7423-96de-ce6a8660159f`. **F001's stale-only eligibility gap and notes N001/N002 from 1f5ad8d are closed.** No new correctness blocker.\n\n**Conditional work proof:** `due` now supplies NudgeWork keys from its qualified holdings, claims and request IDs (`crates/daemon/src/idle_nudge.rs:268-289`). The mark requires at least one of those named items still to exist in the same INSERT...SELECT transaction (`crates/store/src/idle_nudges.rs:94-125,253-288`): the same seat/project/role/instance with no holding end; the same seat/project/kind/number with no claim release; or the request primary-key identity still delivered to this holder and unanswered. JSON arrays are bound parameters, not interpolated SQL. A bare remaining specialist holding cannot satisfy a former task's key.\n\nThe new regression independently ends the sole qualifying holding, claim or request after due() while keeping a bare delivery holding, and asserts no mark, nudge or parent FYI (`idle_nudge_tests.rs:782-843`). Existing own-event/busy/tombstone vetoes and mark idempotence remain.\n\n**Cap/audit:** `TASK_NUMBER_MAX_DIGITS=9` is named and documented, shared by numeric/optional-letter and F-item forms, with 9/10-digit boundary coverage. The cold branch now records `receipt_label(false)` and its regression pins `\"cold\"`, not `\"forced\"`. Cold, Unknown and failed checks still bypass the seat-send branch; the default-off switch remains unchanged.\n\n**Evidence:** inspected m144r2.py and its filtered result receipts. Seven individually applied mutants have exit 101 and targeted failures: dropping work proof; treating each holding/claim/request branch as satisfied merely by a listed key; restoring the forced audit label; allowing ten digits; and removing the F-item cap. Each branch-only mutant applies to the regression case whose other two arrays are empty. The runner restores backups in finally. All seven original sites match this head. The author reports the restored baseline/wider suites and unchanged working-tree commit; the baseline transcript was not separately retained. These are author executions, not reviewer-run mutants.\n\nExact-head CI `42528102748`, artifact `13636068685`: **2,283 Rust cases passed**, zero failures/errors; nextest separately reports five skipped cases. The new work-removal test, cold audit, classifier, indexed-read, unanswered-request, ordinary task and default-off tests executed. Rust lint, Node 22/24 and delivers passed. The tested mark plan retains its indexed access and no-temp-B-tree check.\n\n**N003, diagnostic snapshot limit:** the mark proves *at least one* listed item remains, not that every cached label/project remains current. If one item ends while another survives, the emitted text and prime list can still include the ended item's snapshot. Thus the PR body's “labels can't go stale” overstates this repair. Qualification is correctly protected against a stale-only nudge; qualify that wording, or prune ended labels/projects if full refresh is desired.\n\n`pr-freeze` returned FINAL/CLEAN with matching heads and a clean detached worktree. Head/clean merge tree is `f011bf40f0a7e75ce0e67d2ac7ecf3f2d8c42cc7`; CI merge `43f97da264b72e396f913e1a7365132d52e51114` matches it. No new timer, poll or launch; the mark now adds bound-key existence checks and JSON serialization, rather than a new round-level read schedule. No local reviewer builds/tests, product edits, credential reads, live-fleet probes, merge, push or review-HEAD movement. Other role verdicts remain independently owned.\n"
+		}
+	]
+}
