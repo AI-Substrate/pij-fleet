@@ -65,11 +65,14 @@ the handover files you check, you are read-only.
 2. **Watchdog duty** — the Needs a look list.
    - `ready`/idle, quiet a whole interval: is it stalled or just done? Capture its pane. If it is
      stalled, send **one** specific ask. If it is done, tell the prime in your round line.
-   - A seat holding a role or a claim that does nothing of its own for an hour, with nothing queued
+   - A seat with in-flight work (a task holding like `coder/224`, a plan or fix claim, or an unanswered
+     role request) that does nothing of its own for an hour, with nothing queued
      and no background job, is sent one `idle N min while holding ...; resume, report blocked, or
      release.` by pij itself (when the daemon runs with `PIJ_IDLE_NUDGE=1`; off by default, F144),
      and its prime an FYI (plan 224), once per idle stretch. Don't send
-     your own on top; if it stays idle after the nudge, that is the stall to report.
+     your own on top; if it stays idle after the nudge, that is the stall to report. A cold seat is
+     never woken for it: its prime gets the FYI instead (F144). A resting specialist (a bare
+     long-lived role) is never nudged.
    - A `pij-bg` message that a seat **has shown a dialog** (plan 219): capture its pane first
      (`tmux capture-pane -p -t <pane>`) and check the dialog is still there, then clear it with the
      key the message names (Copilot: `tmux send-keys -t <pane> C-d`, which declines; Claude: `Escape`).
