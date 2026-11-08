@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "f0e5561f2ee6c4d36eaa0f105791dac5cc19dd86",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/187#issuecomment-6720816780",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:187",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `f0e5561f2ee6c4d36eaa0f105791dac5cc19dd86`.\n\nScoped review of own commit `99f6d7b489e755146a79aae6820ab30f6dee1b1c` on already cost-reviewed #185 base `52d8a56` (output `a65e0fd5`). The final merge also carries #188's CLI/test bind-zero change, not only documentation; its main parent is tree-identical to already cost-reviewed `e8bab4e` (output `1ca76cfa`). No earlier #187 verdict or future rebase is covered.\n\n**Fence limits:** current callers cap title120, completion tail1200, inline event text4000, inline data400 and digest scope500 **input Unicode characters**, using the shared lazy prefix fence. Each fence consumes at most its cap plus one lookahead. Escape/UTF-8 expansion means these are not equal byte/output-token limits; the full message and intentional batch-file JSON are not bounded by one fence.\n\n**P187-N001, preparation and batch scope:** completion formatting now trims/collects all nonempty lines, joins them, counts characters and chooses a suffix before fencing. The production log read still caps this input at 64 KiB, so this is additional bounded line-vector/copy work, not only a 1200-character pass. Event text still normalizes its whole string using split/collect/join before fencing; the existing data-length test scans the whole data string.\n\n`inline_events` is computed before `force_file`/`inline_max` selection, including file-only/cold batches, and the combined 4000-character check follows construction. Thus the added fencing can run across the existing pending-event batch, not only the default five or maximum100 inline events; the normal pending cap is10,000. Field caps do not make the whole batch's preparation constant-time. Escaping can also make an otherwise-inline body exceed the existing combined limit and take the existing batch-file write path more often. No new file/write site or executable is added, but I/O and formatting frequency need not be identical.\n\n**Folder admission:** `printable_path` scans Unicode characters until a control/U+2028/U+2029 is found, or the whole path ends. It has no length cap and no filesystem/process probe. Cost follows path length per registration attempt and shared spawn/revive launch validation, plus any existing admission/bind consumer that invokes the common decision. It is not a bounded identifier-byte check. No healthy-heartbeat path or new admission polling schedule is added.\n\n**Cadence:** fences run when existing completion/batch/final turns, cold-owner labels or fleet digests are built. Background sources retain their existing batching interval and count policy; the PA retains its existing digest triggers. No new timer, store query, child launch or writer commit is introduced by the own commit. Human/model text can gain quoting/escape bytes; neither zero model-token overhead nor zero overall per-existing-round work is claimed.\n\n**Exact-head CI:** [42474109868](https://github.com/AI-Substrate/pij-fleet/actions/runs/42474109868), successful Rust job `128711467306`, upload artifact **13614960961**: **2,252 executed cases passed**, zero failures/errors, five separately skipped. Verified every-bg-turn fencing, scope-headline fencing, folder-control registration/spawn refusal, all four admission-agreement cases and all six spawn guards. Rust lint, Node22/24 and delivers checks succeed. Author mutations/field inventory were not reproduced locally.\n\nLocal/GitHub frozen heads agree, worktree clean, CLEAN. No local build, test, mutation, live bg/admission request, benchmark or product edit. #185's separate correctness gate and the promised base-only rebase remain independent of this cost verdict.\n"
+		}
+	]
+}
