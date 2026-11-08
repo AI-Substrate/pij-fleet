@@ -1072,8 +1072,8 @@ async fn reshape(
         .map(|row| {
             format!(
                 "{} ({})",
-                row["requester"].as_str().unwrap_or("?"),
-                row["told"].as_str().unwrap_or("?")
+                pij_core::render::seat(row["requester"].as_str().unwrap_or("?")),
+                pij_core::render::line(row["told"].as_str().unwrap_or("?"))
             )
         })
         .collect();
