@@ -1088,6 +1088,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-double-bobcat",
 					"why": "F139 stuck bg final turn"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T23:49:42.347Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "198",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "PRD 003 req-10 dropped (C33), docs only"
 				}
 			]
 		}
