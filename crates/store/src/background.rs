@@ -10,6 +10,15 @@ use sqlx::Row;
 use crate::migrate::{begin_write, owned_write};
 use crate::{StorePool, require_current_schema};
 
+/// How long a terminal job's final turn waits for its gone owner (tombstoned,
+/// or no seat at all) to come back (F139). A revive after a reboot lands within
+/// hours. Past this, the turn settles: the owner's prime, or the human, is told
+/// once with the job's log path, and the job is marked notified.
+///
+/// A policy, not a brake: it reads the owner's tombstone time and decides the
+/// outcome (settle instead of wait).
+pub const OWNER_GONE_GRACE_MS: u64 = 24 * 60 * 60 * 1000;
+
 /// What one emit did to a source's pending events.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EmitOutcome {

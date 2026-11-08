@@ -17,7 +17,7 @@ use pij_core::cold_wake::ColdCheck;
 use pij_core::error::{PijError, Result};
 use pij_core::model::{DeliveryOutcome, Event, Msg, ProcIdentity, SeatDescriptor, SeatId};
 use pij_core::ports::{LivenessPort, Registry};
-use pij_store::background::{EmitOutcome, EventBatch, SqliteBackground};
+use pij_store::background::{EmitOutcome, EventBatch, OWNER_GONE_GRACE_MS, SqliteBackground};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 
@@ -43,6 +43,12 @@ pub const EMIT_DATA_MAX: usize = 256 * 1024;
 pub const PENDING_CAP: u64 = 10_000;
 /// Default `--min-interval` between two wakes from one source.
 pub const DEFAULT_MIN_INTERVAL_MS: u64 = 60_000;
+/// How often a terminal job waiting for its gone owner looks again (F139).
+///
+/// A brake, not a policy: between looks the tick skips the job without a read
+/// (it was about three reads per 100 ms tick, for as long as the owner stayed
+/// gone). Removing it only adds work; the outcome is the same.
+pub const OWNER_RECHECK_MS: u64 = 60_000;
 /// Default `--inline-max`: events listed in the turn itself.
 pub const DEFAULT_INLINE_MAX: u64 = 5;
 /// Upper bounds for the two batching knobs.
@@ -243,6 +249,34 @@ fn unrebuilt(job: &BackgroundJob) -> (String, Subject) {
     )
 }
 
+/// Who hears about a job whose owner stayed gone past the grace (F139), and
+/// what: decided once and recorded under the notice's msg_id.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct OrphanNotice {
+    text: String,
+    to: Escalation,
+}
+
+fn encode_orphan(notice: &OrphanNotice) -> Result<String> {
+    serde_json::to_string(notice).map_err(|error| fault(format!("orphan notice: {error}")))
+}
+
+fn decode_orphan(notice: &str) -> Result<OrphanNotice> {
+    serde_json::from_str(notice).map_err(|error| fault(format!("recorded orphan notice: {error}")))
+}
+
+/// Where a terminal job's owner stands for its final turn (F139).
+enum OwnerFor {
+    Here,
+    /// Gone (tombstoned, or no seat) for less than [`OWNER_GONE_GRACE_MS`].
+    Waiting,
+    /// Gone at least that long, since `since` (ms).
+    Gone {
+        owner: Option<Box<SeatDescriptor>>,
+        since: u64,
+    },
+}
+
 /// Where a cold owner's notice goes.
 enum PrimeRoute {
     Warm(SeatId),
@@ -299,6 +333,9 @@ pub struct BackgroundService {
     children: Mutex<HashMap<String, Child>>,
     /// Serializes batch cutting with the final flush so no event leaves twice.
     events: Mutex<()>,
+    /// Terminal jobs waiting for a gone owner, and when each may next look
+    /// (F139): until then the tick skips them without a read.
+    owner_rechecks: std::sync::Mutex<HashMap<String, u64>>,
     #[cfg(test)]
     failpoints: std::sync::Mutex<std::collections::HashSet<&'static str>>,
 }
@@ -343,6 +380,7 @@ impl BackgroundService {
             routing,
             children: Mutex::new(HashMap::new()),
             events: Mutex::new(()),
+            owner_rechecks: std::sync::Mutex::new(HashMap::new()),
             #[cfg(test)]
             failpoints: std::sync::Mutex::new(std::collections::HashSet::new()),
         }
@@ -763,6 +801,9 @@ impl BackgroundService {
                 }
             };
             for job in pending {
+                if self.owner_recheck_pending(&job.job_id, now) {
+                    continue;
+                }
                 // Completion first: a runner that already exited on its own (a
                 // late tick, a daemon restart) keeps its own result. The deadline
                 // applies only to a runner that is still alive now.
@@ -1419,6 +1460,23 @@ impl BackgroundService {
                 })
                 .await?;
         }
+        // The final turn waits for a gone owner to come back, then settles (F139).
+        match self.owner_for(job).await? {
+            OwnerFor::Here => self.forget_owner_recheck(&job.job_id),
+            OwnerFor::Waiting => {
+                self.owner_recheck_after(&job.job_id, now_ms()?);
+                return Err(refusal(format!(
+                    "owner {} of job {} is gone; its final turn waits up to {}h for a revive",
+                    job.owner,
+                    job.job_id,
+                    OWNER_GONE_GRACE_MS / 3_600_000
+                )));
+            }
+            OwnerFor::Gone { owner, since } => {
+                self.forget_owner_recheck(&job.job_id);
+                return self.settle_orphan(job, owner.as_deref(), since).await;
+            }
+        }
         if job.kind == BackgroundKind::Events {
             return self.finish_source(job, body, &msg_id).await;
         }
@@ -1437,14 +1495,146 @@ impl BackgroundService {
         Ok(())
     }
 
+    /// Whether a job waiting for its gone owner is inside its recheck interval:
+    /// the tick then skips it without a read. A poisoned lock turns the brake
+    /// off (more work, the same outcome).
+    fn owner_recheck_pending(&self, job_id: &str, now: u64) -> bool {
+        self.owner_rechecks
+            .lock()
+            .is_ok_and(|waits| waits.get(job_id).is_some_and(|next| now < *next))
+    }
+
+    fn owner_recheck_after(&self, job_id: &str, now: u64) {
+        if let Ok(mut waits) = self.owner_rechecks.lock() {
+            waits.insert(job_id.to_string(), now.saturating_add(OWNER_RECHECK_MS));
+        }
+    }
+
+    fn forget_owner_recheck(&self, job_id: &str) {
+        if let Ok(mut waits) = self.owner_rechecks.lock() {
+            waits.remove(job_id);
+        }
+    }
+
+    /// Where a terminal job's owner stands for its final turn: here, gone within
+    /// the revive grace, or gone past it (tombstoned that long, or no seat at
+    /// all since the job ended).
+    async fn owner_for(&self, job: &BackgroundJob) -> Result<OwnerFor> {
+        let owner = self.registry.get(&job.owner).await?;
+        let since = match &owner {
+            Some(seat) => match seat.tombstoned_at {
+                None => return Ok(OwnerFor::Here),
+                Some(at) => at,
+            },
+            None => job.finished_at.unwrap_or(job.started_at),
+        };
+        Ok(if now_ms()?.saturating_sub(since) < OWNER_GONE_GRACE_MS {
+            OwnerFor::Waiting
+        } else {
+            OwnerFor::Gone {
+                owner: owner.map(Box::new),
+                since,
+            }
+        })
+    }
+
+    /// Settle a terminal job whose owner stayed gone past the grace: its final
+    /// turn can't reach the owner, so the owner's prime (or the human) is told
+    /// once, with the log path, and the job is marked notified. A later revive
+    /// finds it notified and gets nothing. Who is told is decided once and
+    /// recorded, as a hand-off plan is, so a retry never re-routes it.
+    async fn settle_orphan(
+        &self,
+        job: &BackgroundJob,
+        owner: Option<&SeatDescriptor>,
+        since: u64,
+    ) -> Result<()> {
+        let msg_id = format!("pij-bg:{}:orphaned", job.job_id);
+        let notice = match self.store.handoff(&job.job_id, &msg_id).await? {
+            Some(recorded) => decode_orphan(&recorded)?,
+            None => {
+                let text = format!(
+                    "[pij bg] {} (job {}) ended ({}), but its owner {} has been gone for {} ({}), so its final turn was never delivered. Full log: {}",
+                    title(job),
+                    job.job_id,
+                    end_word(job),
+                    job.owner,
+                    human_duration(now_ms()?.saturating_sub(since)),
+                    if owner.is_some() {
+                        "tombstoned"
+                    } else {
+                        "no such seat"
+                    },
+                    job.out_path
+                );
+                let to = match owner {
+                    Some(seat) => self.escalation(seat).await?,
+                    None => Escalation::Telegram {
+                        why: format!(
+                            "Its owner {} is not a seat on this machine, so this came to you.",
+                            job.owner
+                        ),
+                    },
+                };
+                let recorded = self
+                    .store
+                    .record_handoff(
+                        &job.job_id,
+                        &msg_id,
+                        &encode_orphan(&OrphanNotice { text, to })?,
+                    )
+                    .await?;
+                decode_orphan(&recorded)?
+            }
+        };
+        let why = match notice.to {
+            Escalation::Telegram { why } => why,
+            Escalation::Prime { seat: prime } => {
+                let why = match self
+                    .delivery
+                    .accept(bg_msg(
+                        &prime,
+                        notice.text.clone(),
+                        format!("{msg_id}:prime"),
+                    ))
+                    .await
+                {
+                    Ok(receipt) => match receipt.outcome {
+                        DeliveryOutcome::Refused { reason } => format!(
+                            "Its prime {prime} refused the notice ({reason}), so this came to you."
+                        ),
+                        _ => return self.store.mark_notified(&job.job_id).await,
+                    },
+                    Err(error) => format!(
+                        "Its prime {prime} could not take the notice ({error}), so this came to you."
+                    ),
+                };
+                let fallback = OrphanNotice {
+                    text: notice.text.clone(),
+                    to: Escalation::Telegram { why: why.clone() },
+                };
+                self.store
+                    .replace_handoff(&job.job_id, &msg_id, &encode_orphan(&fallback)?)
+                    .await?;
+                why
+            }
+        };
+        self.routing
+            .telegram(
+                &job.owner,
+                format!("{}\n{why}", notice.text),
+                format!("{msg_id}:telegram"),
+            )
+            .await?;
+        self.store.mark_notified(&job.job_id).await
+    }
+
     /// A source's final turn: its end plus the events since its last batch,
     /// delivered by the same rules as its batches (ruling R2): held with
     /// `--fyi`, held and escalated for a cold owner, held when refused.
     async fn finish_source(&self, job: &BackgroundJob, body: String, msg_id: &str) -> Result<()> {
-        // A tombstoned owner can be resumed or revived, so the final turn waits
-        // for it. Waiting costs two indexed sqlite reads per tick and no launch:
-        // the completion event above is published once (plan 185, D2), and the
-        // background loop logs a repeating refusal once.
+        // `notify` has already waited out (or settled) a gone owner (F139); an
+        // owner tombstoned since then waits for the next look.
         let owner = self
             .registry
             .get(&job.owner)
@@ -2674,7 +2864,7 @@ mod tests {
         killed_source_with_two_events(&fixture, false).await;
         let owner = SeatId::from("owner");
         let alive = fixture.registry.get(&owner).await.unwrap().unwrap();
-        fixture.registry.tombstone(&owner, "test").await.unwrap();
+        owner_gone_for(&fixture, 60_000).await;
         for _ in 0..3 {
             let _ = fixture.service.tick().await;
         }
@@ -2683,6 +2873,7 @@ mod tests {
             "nothing is delivered while it waits"
         );
         fixture.registry.put(alive).await.unwrap();
+        minute_passes(&fixture);
         for _ in 0..3 {
             fixture.service.tick().await.unwrap();
         }
@@ -2714,7 +2905,7 @@ mod tests {
         }
         let owner = SeatId::from("owner");
         let alive = fixture.registry.get(&owner).await.unwrap().unwrap();
-        fixture.registry.tombstone(&owner, "test").await.unwrap();
+        owner_gone_for(&fixture, 60_000).await;
 
         let log = RepeatedFailureLog::default();
         let mut lines = Vec::new();
@@ -2724,15 +2915,16 @@ mod tests {
         assert_eq!(
             lines,
             vec![
-                "background/refused: owner owner of source bg-a is gone; its final turn waits"
+                "background/refused: owner owner of job bg-a is gone; its final turn waits up to 24h for a revive"
                     .to_string(),
-                "background/refused: owner owner of source bg-b is gone; its final turn waits"
+                "background/refused: owner owner of job bg-b is gone; its final turn waits up to 24h for a revive"
                     .to_string(),
             ],
             "each stranded source once, however many ticks"
         );
 
         fixture.registry.put(alive).await.unwrap();
+        minute_passes(&fixture);
         for _ in 0..3 {
             assert_eq!(
                 fixture.service.tick_log_lines(&log).await,
@@ -3901,6 +4093,213 @@ mod tests {
             );
             assert_eq!(stored["to"]["seat"], "prime", "{stored}");
         }
+    }
+
+    /// The owner tombstoned `ago` ms before now (F139). The fake's own
+    /// `tombstone` stamps a sequence number, not a time.
+    async fn owner_gone_for(fixture: &Fixture, ago: u64) {
+        let mut owner = fixture
+            .registry
+            .get(&SeatId::from("owner"))
+            .await
+            .unwrap()
+            .unwrap();
+        owner.tombstoned_at = Some(now_ms().unwrap() - ago);
+        owner.tombstone_reason = Some("observed-dead".to_string());
+        fixture.registry.put(owner).await.unwrap();
+    }
+
+    /// The owner re-check brake's minute passes for every waiting job.
+    fn minute_passes(fixture: &Fixture) {
+        fixture.service.owner_rechecks.lock().unwrap().clear();
+    }
+
+    fn owner_lookups(fixture: &Fixture) -> usize {
+        fixture
+            .registry
+            .calls()
+            .iter()
+            .filter(|call| *call == "get:owner")
+            .count()
+    }
+
+    fn with_prime(fixture: &Fixture) {
+        *fixture.routing.prime.lock().unwrap() = Some(SeatId::from("prime"));
+    }
+
+    /// F139: an events source whose owner has been gone past the grace settles
+    /// its final turn once, through the owner's warm prime, with the log path,
+    /// and is marked notified; further ticks send nothing.
+    #[tokio::test]
+    async fn a_gone_owner_past_the_grace_settles_the_final_turn_once_through_its_prime() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        fixture.add_seat("prime").await;
+        with_prime(&fixture);
+        let job = fixture.source("bg-src", "tok", false, 0, 5).await;
+        owner_gone_for(&fixture, OWNER_GONE_GRACE_MS + 60_000).await;
+        for _ in 0..3 {
+            fixture.service.tick().await.unwrap();
+        }
+        let notices = fixture.to("prime");
+        assert_eq!(notices.len(), 1, "once: {notices:?}");
+        assert_eq!(notices[0].msg_id, "pij-bg:bg-src:orphaned:prime");
+        let body = &notices[0].body;
+        assert!(
+            body.starts_with(
+                "[pij bg] \"db-watch\" (job bg-src) ended (LOST), but its owner owner has been gone for "
+            ) && body.ends_with(&format!(
+                "(tombstoned), so its final turn was never delivered. Full log: {}",
+                job.out_path
+            )),
+            "{body}"
+        );
+        assert!(fixture.to("owner").is_empty());
+        assert!(fixture.routing.telegrams.lock().unwrap().is_empty());
+        assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
+    }
+
+    /// F139: within the grace the final turn waits for a revive, and the job is
+    /// looked at again at most once a minute (the brake): the ticks between
+    /// skip it without reading the owner.
+    #[tokio::test]
+    async fn a_gone_owner_within_the_grace_waits_and_is_rechecked_once_a_minute() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        fixture.add_seat("prime").await;
+        with_prime(&fixture);
+        fixture.source("bg-src", "tok", false, 0, 5).await;
+        owner_gone_for(&fixture, 60 * 60 * 1000).await;
+        let refused = fixture.service.tick().await.expect_err("the turn waits");
+        assert!(
+            refused
+                .to_string()
+                .contains("its final turn waits up to 24h for a revive"),
+            "{refused}"
+        );
+        let looked = owner_lookups(&fixture);
+        for _ in 0..5 {
+            fixture.service.tick().await.unwrap();
+        }
+        assert_eq!(owner_lookups(&fixture), looked, "no look inside the minute");
+        assert!(fixture.to("prime").is_empty());
+        assert!(!fixture.service.lookup("bg-src").await.unwrap().notified);
+        // The minute passes.
+        fixture
+            .service
+            .owner_rechecks
+            .lock()
+            .unwrap()
+            .insert("bg-src".to_string(), 0);
+        assert!(fixture.service.tick().await.is_err(), "still waiting");
+        assert_eq!(owner_lookups(&fixture), looked + 1, "one look per minute");
+        assert!(fixture.to("prime").is_empty());
+    }
+
+    /// F139: once settled, a revived owner gets nothing: the job is notified.
+    #[tokio::test]
+    async fn a_revive_after_settling_does_not_redeliver() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        fixture.add_seat("prime").await;
+        with_prime(&fixture);
+        fixture.source("bg-src", "tok", false, 0, 5).await;
+        owner_gone_for(&fixture, OWNER_GONE_GRACE_MS + 60_000).await;
+        fixture.service.tick().await.unwrap();
+        assert_eq!(fixture.to("prime").len(), 1);
+        let mut owner = fixture
+            .registry
+            .get(&SeatId::from("owner"))
+            .await
+            .unwrap()
+            .unwrap();
+        owner.tombstoned_at = None;
+        owner.tombstone_reason = None;
+        fixture.registry.put(owner).await.unwrap();
+        for _ in 0..3 {
+            fixture.service.tick().await.unwrap();
+        }
+        assert!(fixture.to("owner").is_empty(), "nothing redelivered");
+        assert_eq!(fixture.held_fyis().await, 0);
+        assert_eq!(fixture.to("prime").len(), 1);
+    }
+
+    /// F139: a command job's completion to a gone owner used to fail
+    /// `SeatIsGone` on every tick. Within the grace it waits like a source's;
+    /// past it, it settles through the prime.
+    #[tokio::test]
+    async fn a_command_job_for_a_gone_owner_waits_then_settles() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        fixture.add_seat("prime").await;
+        with_prime(&fixture);
+        fixture.running().await;
+        owner_gone_for(&fixture, 60 * 60 * 1000).await;
+        let refused = fixture.service.tick().await.expect_err("the turn waits");
+        assert!(
+            !matches!(refused, PijError::SeatIsGone { .. })
+                && refused.to_string().contains("its final turn waits"),
+            "{refused:?}"
+        );
+        assert!(fixture.to("prime").is_empty());
+        owner_gone_for(&fixture, OWNER_GONE_GRACE_MS + 60_000).await;
+        fixture
+            .service
+            .owner_rechecks
+            .lock()
+            .unwrap()
+            .insert("bg-recovery".to_string(), 0);
+        fixture.service.tick().await.unwrap();
+        let notices = fixture.to("prime");
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert!(
+            notices[0].body.starts_with(
+                "[pij bg] \"build\" (job bg-recovery) ended (LOST), but its owner owner"
+            ),
+            "{}",
+            notices[0].body
+        );
+        assert!(
+            fixture
+                .service
+                .lookup("bg-recovery")
+                .await
+                .unwrap()
+                .notified
+        );
+    }
+
+    /// F139: an owner that is no seat at all is gone since the job ended; past
+    /// the grace the human hears, since there is no prime to look up.
+    #[tokio::test]
+    async fn a_job_whose_owner_is_no_seat_settles_to_telegram() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let mut job = fixture.running().await;
+        job.job_id = "bg-ghost".to_string();
+        job.owner = SeatId::from("pij-ghost");
+        fixture.service.store.insert(&job).await.unwrap();
+        let ended = now_ms().unwrap() - OWNER_GONE_GRACE_MS - 60_000;
+        assert!(
+            fixture
+                .service
+                .store
+                .finish("bg-ghost", BackgroundState::Lost, None, ended)
+                .await
+                .unwrap()
+        );
+        let _ = fixture.service.tick().await;
+        let telegrams = fixture.routing.telegrams.lock().unwrap().clone();
+        let ghost: Vec<_> = telegrams
+            .iter()
+            .filter(|(from, _, _)| from == &SeatId::from("pij-ghost"))
+            .collect();
+        assert_eq!(ghost.len(), 1, "{telegrams:?}");
+        assert_eq!(ghost[0].2, "pij-bg:bg-ghost:orphaned:telegram");
+        assert!(
+            ghost[0].1.contains("(no such seat)")
+                && ghost[0].1.ends_with(
+                    "Its owner pij-ghost is not a seat on this machine, so this came to you."
+                ),
+            "{}",
+            ghost[0].1
+        );
+        assert!(fixture.service.lookup("bg-ghost").await.unwrap().notified);
     }
 
     #[tokio::test]
