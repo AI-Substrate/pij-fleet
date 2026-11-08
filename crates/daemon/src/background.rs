@@ -2121,7 +2121,7 @@ fn with_tail(mut body: String, output: &str) -> String {
 
 /// A job's title as a `pij-bg` message shows it: its owner chose it, so it is
 /// fenced (F134). Create refuses line breaks and NUL, and caps it at 120.
-fn title(job: &BackgroundJob) -> String {
+pub(crate) fn title(job: &BackgroundJob) -> String {
     pij_core::render::fenced(&job.title, TITLE_MAX)
 }
 

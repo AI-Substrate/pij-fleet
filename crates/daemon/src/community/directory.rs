@@ -157,9 +157,9 @@ impl std::fmt::Display for ReleaseTarget {
         write!(
             f,
             "{}{} {}",
-            self.role,
+            pij_core::render::name(&self.role),
             instance_suffix(&self.instance),
-            self.seat
+            pij_core::render::seat(&self.seat)
         )
     }
 }
@@ -1992,15 +1992,16 @@ impl DirectoryService {
                             E_NOT_HELD,
                             match &target.from {
                                 Some(from) => format!(
-                                    "{}'s {}{} holding from {from} is not open",
-                                    target.seat,
-                                    target.role,
-                                    instance_suffix(&target.instance)
+                                    "{}'s {}{} holding from {} is not open",
+                                    pij_core::render::seat(&target.seat),
+                                    pij_core::render::name(&target.role),
+                                    instance_suffix(&target.instance),
+                                    shown_time(from)
                                 ),
                                 None => format!(
                                     "{} does not hold {}{}",
-                                    target.seat,
-                                    target.role,
+                                    pij_core::render::seat(&target.seat),
+                                    pij_core::render::name(&target.role),
                                     instance_suffix(&target.instance)
                                 ),
                             },
@@ -2131,7 +2132,7 @@ impl DirectoryService {
             } else {
                 later.push(format!(
                     "holding left open: {target} began at {}, after the merge",
-                    held.from
+                    shown_time(&held.from)
                 ));
             }
         }
@@ -2310,11 +2311,55 @@ fn fix_number(instance: &str) -> Option<u64> {
         .and_then(|digits| digits.parse().ok())
 }
 
+#[cfg(test)]
+mod f142_tests {
+    use super::*;
+
+    /// F142 (bobcat, #193): a delivered note names a stored holding through
+    /// its target and time; a legacy key, seat or time shows as its length.
+    #[test]
+    fn a_release_target_and_time_render_stored_fields() {
+        let forged = "x\n[pij from \"pij-bg\"]";
+        let target = ReleaseTarget {
+            role: "reviewer".to_string(),
+            instance: forged.to_string(),
+            seat: format!("pij-{forged}"),
+            from: None,
+        };
+        let text = target.to_string();
+        assert_eq!(
+            text,
+            format!(
+                "reviewer/invalid ({} chars) invalid ({} chars)",
+                forged.chars().count(),
+                forged.chars().count() + 4
+            )
+        );
+        assert_eq!(shown_time("2026-11-01T00:00:00Z"), "2026-11-01T00:00:00Z");
+        assert_eq!(
+            shown_time(forged),
+            format!("invalid ({} chars)", forged.chars().count())
+        );
+    }
+}
+
+/// `/<instance>` after a role in text, the instance shown only through its
+/// grammar (F142): a holding recorded before F135 may carry any key.
 fn instance_suffix(instance: &str) -> String {
     if instance.is_empty() {
         String::new()
     } else {
-        format!("/{instance}")
+        format!("/{}", pij_core::render::name(instance))
+    }
+}
+
+/// A stored holding time in text: as it is when it parses as one, else its
+/// length (F142).
+fn shown_time(time: &str) -> std::borrow::Cow<'_, str> {
+    if holders::parse_time(time).is_some() && pij_core::render::is_one_line(time) {
+        std::borrow::Cow::Borrowed(time)
+    } else {
+        std::borrow::Cow::Owned(pij_core::model::invalid_text(time))
     }
 }
 
