@@ -1050,7 +1050,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "194",
 					"machine": "ops.osk.lan",
+					"release_why": "C33: #194 closed unmerged",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T23:42:13.851Z",
 					"why": "F141 reserved daemon notice ids"
 				},
 				{
