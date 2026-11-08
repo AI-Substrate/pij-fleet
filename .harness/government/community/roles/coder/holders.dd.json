@@ -571,6 +571,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-swift-kestrel",
 					"why": "F133 PA scope path rendering, F134 background tail fencing"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T09:26:08.043Z",
+					"harness": "copilot",
+					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
+					"instance_key": "224",
+					"machine": "ops.osk.lan",
+					"seat": "pij-exuberant-wildcat",
+					"why": "plan 224 idle-holder nudge (F136)"
 				}
 			]
 		}
