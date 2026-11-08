@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bd51-c9a5-75e0-adac-cbcc6262386f",
+				"date": "2026-11-09",
+				"head": "a5cea92a3414e596a2ed4d655d11690faa66b4cc",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/196#issuecomment-6728264881",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:196",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Read a5cea92 launch recipes, config, fake recipe tests and m147.py/out",
+					"exit_code": 0,
+					"log": "Default/0 propagation correct; F001 raw XML value corrupts persisted plist before lint. Three author mutants fail intended tests; source unchanged at commit per author, baseline not separately retained. No reviewer recipe execution."
+				},
+				{
+					"command": "Inspect CI 42531040882 artifact 13636969596 and commit 2971e9a; pr-freeze 196",
+					"exit_code": 0,
+					"log": "2285 Rust cases pass, five nextest skips; all four build_stamps cases execute. All checks pass, FINAL/CLEAN, CI tree equals head 5a1719b7d265adec24fe900ccb3bb7750f2a62c9. Linux fakes do not prove macOS launchd deployment."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: BLOCK\n\nPR #196 at `a5cea92a3414e596a2ed4d655d11690faa66b4cc`, answering `01a1bd51-c9a5-75e0-adac-cbcc6262386f`. One source-based correctness finding. No product edits or reviewer execution of the launch recipes.\n\n**F001: the new environment value can corrupt the installed LaunchAgent.** `justfile:682` inserts `${PIJ_IDLE_NUDGE-1}` directly into an XML string. The daemon treats every unrecognized value as disabled (`crates/cli/src/main.rs:2705-2710`), but an unrecognized value containing a literal `&` or `<` instead makes this launcher produce malformed XML. `rs-autostart` overwrites the destination plist before checking it (`justfile:670-690`), so `plutil -lint` failing does not preserve the previous valid login configuration. This is a newly introduced serialization path, not an objection to the intended fleet default.\n\nFix: normalize the value to canonical `1` or `0` before writing the plist, preserving the daemon's trimmed, case-insensitive `1`/`on`/`true` semantics, unset-default-on and explicit `0` behavior. Add a regression for nonboolean/XML-special input and parse the complete generated plist rather than checking only a substring. This agrees with the independently reported S196-001; the repair tree was not reviewed.\n\n**What is correct at this head:** `bounce-rs` passes the quoted variable to the daemon (`justfile:651`); the POSIX `-` default applies only when unset, so `0` and an explicitly empty value are preserved. The plist records the same unset/default and `0` choices. `Config::default()` still sets `idle_nudge: false` (`crates/core/src/config.rs:220`); only the launch environment opts in. Recipe comments, the API and the PA brief explain the changed operating default.\n\n**Proof and its ceiling:** the tests execute the actual recipe bodies with isolated HOME/PATH and fake external commands, not copied launch statements. Their new per-call scratch suffix prevents the two bounce tests sharing a directory. Exact-head CI ran all four `pij-testkit::build_stamps` cases, including default-on/explicit-zero bounce and plist cases. However, fake `plutil` unconditionally succeeds (`crates/testkit/tests/build_stamps.rs:105`), and the plist assertion only searches for the expected 1/0 substring (`:216-230`); these cases cannot detect F001.\n\nInspected author receipts `m147.py` and `m147.out`: three individually applied mutants exit 101 at the targeted assertions, with three other tests passing each time. They drop the bounce entry, drop the plist entry, or change the bounce default to zero. The runner asserts each replacement matches once and restores its backup in `finally`; final status lists the five intended files and no backup. The author confirms the source was the uncommitted tree based on `9a33e17`, committed unchanged as this head after parse/fmt checks. The preceding clippy/four-case baseline was reported but not separately retained. These are attributed author runs, not reviewer-run mutants, and do not cover normalization.\n\nCI run `42531040882`, successful upload artifact `13636969596`: **2,285 Rust cases passed**, zero failures/errors; nextest separately reports five skips. Rust lint, Node 22/24 checks and delivers succeeded. CI checkout `2971e9abe4b95178f8fac743b6ddcf7e1ec7fbfa` has tree `5a1719b7d265adec24fe900ccb3bb7750f2a62c9`, identical to the reviewed head. Linux fake-command proof is not a macOS launchd deployment receipt.\n\n`pr-freeze` returned FINAL/CLEAN with the requested remote head and clean detached tree. No new loop, poll, timer or process launch site; existing explicit bounce/login launches gain environment entries. The switch activates the already-reviewed idle-nudge work in the existing 60-second watchdog round, not a new schedule. Performance and security verdicts remain separately owned.\n\nNo local reviewer builds, TS tests, daemon bounce, autostart installation, credential reads, live-fleet probes, product merge/push or review-HEAD movement. The encodable proof improvement is the parsed-plist malformed-input regression requested in F001.\n"
+		}
+	]
+}
