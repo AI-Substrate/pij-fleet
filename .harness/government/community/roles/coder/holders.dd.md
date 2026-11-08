@@ -52,3 +52,4 @@
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f116 | 2026-11-08T01:04:56.309Z | — | pij-steady-otter | — | F116/F120 sends silently downgraded to fyi-ride-along; F113 steering holds | — |
 | — | pij-exuberant-wildcat | copilot | cc88fc7c-b066-44d1-a82d-fa6560786ddf | ops.osk.lan | f119 | 2026-11-08T01:31:35.512Z | — | pij-steady-otter | — | F119 delivered without docs/project; F117 prime designation in directory | — |
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f113 | 2026-11-08T01:51:28.224Z | — | pij-steady-otter | — | stale-extension anomaly in the PA digest (F113 follow-up) | — |
+| — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | f126 | 2026-11-08T03:03:48.268Z | — | pij-steady-otter | — | F126: cargo job cap in just shared-build (machine load 95) | — |
