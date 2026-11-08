@@ -1959,11 +1959,11 @@
         }
       ],
       "invariants": [
-        "Decision: known proc dead OR proc_start mismatch, AND recorded pane confirmed absent. Paneless records require only confirmed dead/mismatched proc.",
+        "Decision: known proc dead OR proc_start mismatch, AND recorded pane confirmed absent. Paneless records require only confirmed dead/mismatched proc. A never-bound record (no process ever registered) is decided by its recorded pane alone: confirmed absence, read over the live tmux control client, is the policy (F114); pane present, a pane list unreadable without a launch, a read failure, or no recorded pane each keep it (brakes).",
         "Unknown process or pane evidence is a brake: removing this check reaps the same set or more. Unknown rows are reported unverifiable and never tombstoned.",
         "Never signal a recycled/live process. This is stale-record reconciliation, not process termination or retention policy; no age-based deletion.",
         "Dry-run is entirely read-only including spine; actual run on same observations reports same candidates and before/after counts plus reaped rows/sequences.",
-        "Re-observe/validate descriptor identity before tombstoning so a concurrently revived incarnation cannot be removed using stale evidence."
+        "Re-observe/validate descriptor identity before tombstoning so a concurrently revived incarnation, or a never-bound seat that binds its process after its pane was read, cannot be removed using stale evidence."
       ]
     },
     {

@@ -183,7 +183,14 @@ citation disputes, all of which resolved as neither party being wrong.)
   your own sources with `CARGO_INCREMENTAL=0`, runs every cargo command under
   `nice -n 19` and (on macOS) `taskpolicy -b` so no build starves the machine,
   and always releases. A stale lock is reported with its clear command, never
-  cleared for you (plans 198, 208).
+  cleared for you (plans 198, 208). Parallelism is capped too, because `nice`
+  lowers priority but does not shorten the run queue (F126). The repository's
+  `.cargo/config.toml` sets `build.jobs = 4` and `RUST_TEST_THREADS = 4` for
+  every cargo run in the repo, whatever its environment: recipes, the governance
+  fixture's build, `pij daemon bounce`, `pij-gate` and CI. Override with
+  `CARGO_BUILD_JOBS`, or your own `RUST_TEST_THREADS` or `-- --test-threads N`.
+  shared-build maps `PIJ_CARGO_JOBS` (default 4) onto both and prints the cap
+  first: `cargo jobs: 4 (PIJ_CARGO_JOBS), test threads: 4 (RUST_TEST_THREADS)`.
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
 - **`just pr-freeze <pr>`**: is a PR head final for verdicts? Run by hand before each verdict
