@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bc54-3438-7ad3-af66-f9cffd433a5a",
+				"date": "2026-11-09",
+				"head": "ffae78163f60762d894cf9808a623c5091ad018f",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/192#issuecomment-6725117803",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:192",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Trace Config default, run_daemon environment parsing, Services copy and idle_nudge::round first-line guard at ffae781",
+					"exit_code": 0,
+					"log": "Default false; boot reads PIJ_IDLE_NUDGE once, accepts trimmed case-insensitive 1/on/true. Off returns before store/holder/candidate/compaction reads or sends. Enabled implementation unchanged; existing PA watchdog work remains."
+				},
+				{
+					"command": "Inspect retained f144-switch-baseline.out and f144-switch-mutant.out",
+					"exit_code": 0,
+					"log": "Author baseline nine passes; ignore-switch mutant eight passes, one failure in the_nudge_is_off_by_default at line 279. Author restores backup; working source committed unchanged as ffae781. No reviewer mutant execution; env parsing source-only."
+				},
+				{
+					"command": "Inspect CI 42507561673 artifact 13628425612, commit 4766081d and pr-freeze 192",
+					"exit_code": 0,
+					"log": "2277 Rust cases pass, all nine daemon idle-nudge cases execute; five separately skipped. Five checks pass, FINAL/CLEAN. Head and CI merge tree both 517d829511761f15c393bdf6609a187904bfcc88. No strict Fixes line, preserving F144 part-2 holding."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: PASS\n\nPR #192 at `ffae78163f60762d894cf9808a623c5091ad018f`, answering `01a1bc54-3438-7ad3-af66-f9cffd433a5a`. No correctness findings.\n\n**Off means no new idle-nudge work.** `idle_nudge::round` checks `Services::idle_nudge` before obtaining the watchdog store, reading holders, building candidate maps, reading compactions or entering delivery (`crates/daemon/src/idle_nudge.rs:62-66`). Returning an empty Vec admits no message, FYI or nudge mark. The surrounding PA watchdog continues its existing unrelated work; this switch does not disable that watchdog.\n\n**Boot wiring and opt-in are correct.** `Config::default` sets the flag false (`crates/core/src/config.rs:218`). The daemon composition root reads only the named environment variable, once, and accepts trimmed, case-insensitive `1`, `on` and `true` (`crates/cli/src/main.rs:2705-2711`); `build_services` copies the boolean into Services (`crates/daemon/src/lib.rs:655`). The enabled round's implementation is otherwise unchanged. All eight existing daemon idle-nudge tests opt in through the shared fixture; the new test leaves Config at its default and verifies no nudge, recipient message or parent FYI for an overdue holder.\n\n**Evidence:** inspected the retained author baseline and mutant outputs: nine tests pass unmutated; ignoring the switch gives eight passes and only `the_nudge_is_off_by_default` fails at its first round-outcome assertion (`idle_nudge_tests.rs:279`). The author reports restoring the backup and committing that unchanged working tree as this head; no reviewer mutant was run. CLI environment spelling/normalization has source proof, not a dedicated integration test.\n\nExact-head CI run `42507561673`, artifact `13628425612`, contains **2,277 passing Rust cases**, including all nine daemon idle-nudge cases; nextest separately reports five skipped cases. Rust lint, Node 22/24 and delivers passed. `pr-freeze` returned FINAL/CLEAN with matching heads and a clean detached worktree. CI merge `4766081d6be791ec469af14a0a71cf60fd92ea9c` and this head share tree `517d829511761f15c393bdf6609a187904bfcc88`.\n\n**Scope/cost:** the existing 60-second PA-round call remains; when off, the idle-nudge portion is a boolean check and empty return, with no feature-specific reads or sends. When on, #189 behavior remains intentionally unchanged. The flag takes effect at daemon start and does not withdraw messages already queued before deployment. No new loop, poll, timer or launch; no measured savings claim. The PR's intentional absence of a strict `Fixes:` line preserves coder/f144 for part 2. No local reviewer builds/tests, product edits, live-fleet probes, credential reads, merge, push or review-HEAD movement.\n"
+		}
+	]
+}
