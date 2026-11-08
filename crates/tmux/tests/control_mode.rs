@@ -587,6 +587,30 @@ fn windows(server: &Server) -> Vec<String> {
         .collect()
 }
 
+/// One checked `list-windows` read: every window, or why the read failed. A
+/// failed read never looks like an empty server.
+fn read_windows(server: &Server) -> Result<Vec<String>, String> {
+    let output = server.outside(&["list-windows", "-a", "-F", "#{session_name}:#{window_name}"]);
+    if !output.status.success() {
+        return Err(format!(
+            "list-windows failed ({}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect())
+}
+
+/// `_pij` went and the work stayed: a successful read that shows at least one
+/// `work:` window and nothing else. A failed read or an empty list proves
+/// nothing, so it is never a pass.
+fn only_work_windows(read: &Result<Vec<String>, String>) -> bool {
+    matches!(read, Ok(windows) if !windows.is_empty() && windows.iter().all(|w| w.starts_with("work:")))
+}
+
 /// R1 of the #73 recheck: an untargeted command from outside tmux can land a
 /// window in `_pij`. pij must still see it, and it must outlive the control
 /// client, including a later client that attaches to the same `_pij`.
@@ -698,17 +722,40 @@ fn pij_with_only_its_own_window_goes_with_the_client() {
     drop(adapter);
     // `_pij` goes asynchronously after the client detaches: poll for it.
     let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
-        let left = windows(&server);
-        if left.iter().all(|w| w.starts_with("work:")) {
-            break;
-        }
+    let mut last = read_windows(&server);
+    while !only_work_windows(&last) {
         assert!(
             Instant::now() < deadline,
-            "_pij outlived its client; windows left: {left:?}"
+            "_pij outlived its client, or no read showed the work window; last read: {last:?}"
         );
         std::thread::sleep(Duration::from_millis(20));
+        last = read_windows(&server);
     }
+}
+
+/// The poll above cannot pass vacuously: a failed read, a lost server and an
+/// empty list all fail it; only the work window alone passes.
+#[test]
+fn only_work_windows_needs_a_successful_read_with_a_work_window() {
+    let failed: Result<Vec<String>, String> = Err("list-windows failed".into());
+    assert!(!only_work_windows(&failed));
+    assert!(!only_work_windows(&Ok(Vec::new())));
+    assert!(!only_work_windows(&Ok(vec![
+        "work:main".into(),
+        "_pij:control".into()
+    ])));
+    assert!(!only_work_windows(&Ok(vec!["_pij:control".into()])));
+    assert!(only_work_windows(&Ok(vec!["work:main".into()])));
+
+    let server = Server::start();
+    assert!(only_work_windows(&read_windows(&server)));
+    let _ = server.outside(&["kill-server"]);
+    let lost = read_windows(&server);
+    assert!(
+        lost.is_err(),
+        "a lost server reads as a failure, not as empty: {lost:?}"
+    );
+    assert!(!only_work_windows(&lost));
 }
 
 /// No server running means none is started: `-N` on the control attach.
