@@ -541,10 +541,13 @@ async fn bg_timeout_kills_with_a_timeout_turn_and_list_shows_timing() {
     .await;
     let inbox = inbox.to_string();
     assert!(
-        inbox.contains("[pij bg] TIMEOUT — slow (killed after 1s)"),
+        inbox.contains(r#"[pij bg] TIMEOUT — \"slow\" (killed after 1s)"#),
         "{inbox}"
     );
-    assert!(inbox.contains("tail: STARTED"), "{inbox}");
+    assert!(
+        inbox.contains(r#"tail (the job's output): \"STARTED"#),
+        "{inbox}"
+    );
     let (status, refusal) = call(
         &daemon,
         OWNER,
@@ -657,7 +660,7 @@ async fn bg_event_source_token_fires_across_a_restart_and_dies_at_kill() {
         (200, json!(1)),
         "{fired}"
     );
-    inbox_until(&daemon, "1 new event from source").await;
+    inbox_until(&daemon, r#"1 new event from "source""#).await;
     daemon.shutdown().await.unwrap();
     let daemon = fixture.boot().await;
     let (status, fired) = emit(&daemon, &job, &token, "after restart").await;
@@ -681,7 +684,7 @@ async fn bg_event_source_token_fires_across_a_restart_and_dies_at_kill() {
         200
     );
     assert_eq!(wait_done(&daemon, &job).await["state"], "killed");
-    inbox_until(&daemon, "STOPPED — source").await;
+    inbox_until(&daemon, r#"STOPPED — "source""#).await;
     let (status, refusal) = emit(&daemon, &job, &token, "too late").await;
     assert_eq!(status, 401, "the token dies with the job: {refusal}");
     daemon.shutdown().await.unwrap();

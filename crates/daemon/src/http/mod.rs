@@ -1374,6 +1374,13 @@ async fn launch_seat_locked(
             "--cwd must be absolute so the descriptor cannot depend on daemon cwd",
         );
     }
+    if !pij_core::admission::printable_path(&request.cwd) {
+        return refused(
+            command_name,
+            "--cwd must not contain a control character or line break: pij names a seat's \
+             folder in daemon-authored messages (F133)",
+        );
+    }
     let wait_seconds = request.wait_seconds.unwrap_or(DEFAULT_SPAWN_WAIT_SECONDS);
     let no_wait = request.no_wait;
     let mut request = request;
