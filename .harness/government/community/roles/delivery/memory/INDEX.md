@@ -7,4 +7,5 @@
 <!-- pij:generated -->
 - [2026-11-06 Stacked PRs after a squash merge, shared-build waits and stale PM messages](2026-11-06-stacked-prs-after-a-squash-merge-shared-build-waits-and-stal.dd.md): Open when a stacked PR's base was squash-merged, a niced build is slow, or a PM ask may already be done (git, build, process, 129, 133)
 - [2026-11-08 C32 caller binding and atomic audits; C31 steering; tooling without node\_modules](2026-11-08-c32-caller-binding-and-atomic-audits-c31.dd.md): Open before any identity-dependent effect \(answer, close, withdraw, notice\), editing the native Copilot receiver's steering, or freezing a PR without node\_modules (c32, delivery, steering, audit, plan-212, plan-214)
+- [2026-11-08 Evidence first: store queries that settled F116, F120, F113 and F124](2026-11-08-evidence-first-store-queries-that.dd.md): Open when a delivery looks downgraded, held or refused: read the store and the extension log before touching code (delivery, diagnosis, copilot, receipts)
 <!-- /pij:generated -->
