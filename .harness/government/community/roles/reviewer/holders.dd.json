@@ -1076,7 +1076,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "196",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #196 merged (3b96382e2c8c)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T23:54:12.258Z",
 					"why": "F147 recipes pass PIJ_IDLE_NUDGE"
 				},
 				{
