@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "c4b22b22236d100427414e2c810420068c3d37c3",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/181#issuecomment-6718126419",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:181",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass** at `c4b22b22236d100427414e2c810420068c3d37c3`.\n\nThe added coder-packet guidance (`skills/pij/references/routes/pair.md:107-109`) requires a read-only remote SHA check before reporting readiness. It adds no launcher, mutation or authority, and discloses no C19/C21 material. The command is metavariable notation; concrete branch arguments remain subject to existing shell-quoting rules.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No scoped findings | - |\n\nLocal worktree clean; local HEAD, GitHub head and remote branch match. PR CLEAN and ready; all five checks succeeded: [CI 42453573577](https://github.com/AI-Substrate/pij-fleet/actions/runs/42453573577), [Delivers 42453573576](https://github.com/AI-Substrate/pij-fleet/actions/runs/42453573576).\n\nLight documentation review only. No local builds/tests, credentials, product edits or production/pane operations.\n"
+		}
+	]
+}
