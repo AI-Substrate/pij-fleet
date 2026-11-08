@@ -451,6 +451,16 @@
 					"seat": "pij-back-tapir",
 					"to": "2026-11-08T04:24:49.705Z",
 					"why": "F126: cargo job cap in just shared-build (machine load 95)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T04:24:50.048Z",
+					"harness": "copilot",
+					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
+					"instance_key": "f123",
+					"machine": "ops.osk.lan",
+					"seat": "pij-back-tapir",
+					"why": "F123 tmux capture test flake"
 				}
 			]
 		}
