@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "ff13b5ad6629cb63ceb3f5a8264c1442018b6cc7",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/177#issuecomment-6718692530",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:177",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #177, exact head `ff13b5ad6629cb63ceb3f5a8264c1442018b6cc7`.\n\nReviewed `b425d07..ff13b5a` and directly coupled ingress/render paths. F002 is source-repaired. **The legacy human line is still raw and is not rendered through #182's grammar.** No high-confidence new exploitable delta was identified; prior raw-display and project-path notes stand.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new exploitable vulnerability identified | - |\n\n### Recovery gate\n\nThe changed filter omits prime recovery recommendations only while the designation is live, without hiding waiting counts (`crates/daemon/src/community/directory.rs:488`). Live means an untombstoned registry entry, not fresh process proof (`crates/daemon/src/http/directory.rs:587`).\n\nThe regression pair checks live designation plus queued request gives no prime action; a tombstoned designation gives exactly the project-set action (`crates/daemon/tests/directory_http.rs:7417`). This changes advisory output, not assignments, designation, queue delivery or authorization. Legacy rows remain excluded from live/activity/call-on decisions (`directory.rs:413`).\n\n### Grammar is not applied to the legacy sink\n\nThe projection copies stored seat, instance and start-time strings (`directory.rs:431`). The CLI prints seat and repair command without `SeatId::rendered()` (`crates/cli/src/main.rs:3301`); invalid timestamps still fall back to the original string (`:3191`).\n\nHistorical/rebuilt rows are not retroactively grammar-checked (`crates/daemon/src/community/holders.rs:301`; `directory.rs:747`). Instances are not seat IDs: their ingress validator still rejects extra slash and surrounding whitespace, not all presentation controls (`crates/daemon/src/http/directory.rs:1433`).\n\n#182 checks newly minted seat IDs during registration/spawn (`crates/daemon/src/registration.rs:825`; `crates/daemon/src/http/mod.rs:1364`). Its separate PA-digest render-time guards cover historical values there (`crates/core/src/pa_digest.rs:137`), not this terminal legacy line.\n\nAll repair-command arguments are shell-word quoted (`crates/daemon/src/community/picture.rs:98`). That prevents shell breakout but does not neutralize terminal escapes or embedded newlines. No newly introduced automatic command execution or model-injection path was established in this delta. This verdict does not clear the separate held-head S184-001 memory-prompt finding.\n\n### Proof\n\nNo C19/C21 disclosure was identified in scoped additions. GitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42457966410` and Delivers run `42457966381` both identify this SHA and success.\n\nNo local tests, builds, runtime views/role operations, credential reads, probes or mutations were performed.\n"
+		}
+	]
+}
