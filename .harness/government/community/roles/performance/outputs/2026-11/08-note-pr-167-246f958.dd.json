@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "246f9587c2f62f20f8767409f495c393dda6bea0",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/commit/246f9587c2f62f20f8767409f495c393dda6bea0",
+				"role": "performance",
+				"subject": "pr:167",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Real compaction/wake latency, failure and retained-history growth remain unmeasured; requested after-deploy launch/CPU/RSS readings are complete."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**#167 after-deploy: +0 recorded daemon launches over 60.007427 seconds; interval CPU 12.25%, RSS +16 KiB.**\n\nGitHub records merged commit `246f9587c2f62f20f8767409f495c393dda6bea0`, also the canonical checkout HEAD. Both healthy v2 pings identify **PID 29706**; process start **2026-11-08 09:42:42 +10:00** is unchanged. Read-only `PRAGMA user_version` confirms **44**. The generic `pij-rs 0.1.0` build label does not independently attest the deployed source SHA.\n\n| Measurement | Result |\n|---|---|\n| Two pings | **10:06:26.392318 to 10:07:26.400053 +10:00**, 08 Nov |\n| Elapsed | **60.007427 seconds**, monotonic |\n| Recorded daemon launches | **203 to 203: +0, 0.000/s** |\n| Per-site reconciliation | All **12 populated sites flat**; each snapshot's site counts sum to 203 |\n| F112 census key | `ps.tmux-legacy-tap-writer` absent in both snapshots |\n| Registration counters | **17 attempts / 18 ps**, unchanged |\n| Interval daemon CPU | **7.35 CPU seconds / 60.007427 seconds = 12.25%** of one CPU |\n| Daemon RSS | **181.72 to 181.73 MiB**, **+16 KiB** |\n| Machine PID-counter estimate | **557.0 launches/s**, separate niced 20-second sample |\n| Machine sampled launches | **554.6/s**; **324.3/s other**, **230.3/s gone before identification** |\n\nThe machine sampler identified PID 29706 as the daemon and observed no recognized direct daemon-child contribution. Its leading command label was `directory_http-` at **217.3/s**, followed by `git` at **65.2/s**. These are truncated executable labels, not ownership attribution; do not assign this machine-wide burst to the daemon or a particular seat. The PID-counter estimate and sampled attribution have different limits, and missed short-lived processes remain possible.\n\nThe sampler made **223,170 in-process polls** and overlaps part of the daemon minute. Nice priority does not remove its CPU cost. This shared-machine window is not a matched workload comparison with the earlier #169 reading or #167's pre-merge reading; counters were not subtracted across bounces.\n\nThis completes the requested post-deployment launch/CPU/RSS readings. It is quiet-window evidence, **not a real compaction/wake latency, failure or retention benchmark**, and does not prove all delivery fallbacks launch-free. No synthetic traffic, fault injection, build, test, restart or extra canary was run. Both bounded helpers completed; no measurement process remains.\n\nRaw session receipts: `pr167-after-window.json` and `pr167-after-machine.json`.\n"
+		}
+	]
+}
