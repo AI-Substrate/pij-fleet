@@ -777,7 +777,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "175",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #175 merged (ca74f46b1711)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T05:40:59.568Z",
 					"why": "stale-extension anomaly #175 (F113 follow-up)"
 				},
 				{
