@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "f0e5561f2ee6c4d36eaa0f105791dac5cc19dd86",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/187#issuecomment-6720897118",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:187",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `f0e5561f2ee6c4d36eaa0f105791dac5cc19dd86`.\n\nScoped to feature commit `99f6d7b489e755146a79aae6820ab30f6dee1b1c` and its direct dependencies, on the reviewed #185 `52d8a56` base. F133/F134's specified structural rendering paths are repaired. No new scoped vulnerability or C19/C21 disclosure found.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new scoped finding | - |\n\n## F134: background payload boundaries\n\nCompletion tails, titles in all completion states, inline event text **and data**, final-event suffixes and cold-owner subject titles use the shared debug-escaped quoted renderer. Inline and final turns explicitly describe the values as source-written; tails are labelled as the job's output (`crates/daemon/src/background.rs:1131-1143,1397-1409,1632-1653,1717-1805`).\n\nTail selection occurs on complete characters, keeps the last 1,200 and reports truncation before applying the quoted renderer. Titles use the 120-character rendering cap; inline data retains its 400-character/file fallback and the combined inline body its 4,000-character fallback. Escaping completes each scalar and generates its own closing quote, so the cut cannot expose an unfinished quote or raw newline/control sequence.\n\nThe separate completion JSON and batch-file serialization are unchanged. File-backed payloads and subsequently read job/source data remain untrusted; they are not converted into daemon instructions or permission merely by being returned by a daemon.\n\n## F133: scope and folder checks\n\nThe digest fences the actual scope at render time, so old stored or derived paths are covered without trusting new admission (`crates/core/src/pa_digest.rs:157-168`).\n\nShared admission rejects control characters and U+2028/U+2029 through `printable_path`, with the constant `UnprintableFolder` reason and no rejected-path echo (`crates/core/src/admission.rs:145-171`). Registration uses that admission decision before committing the descriptor (`crates/daemon/src/registration.rs:950-960`); spawn uses the same predicate beside its absolute-path check. The refusal test verifies an existing worker's folder stays unchanged, no probe seat is minted and no event is published.\n\nPrintability is not canonicalization, ownership or a filesystem permission check. This patch protects the digest headline, not a universal promise that every operator-configured log/batch/recovery path elsewhere is model-framed.\n\n## Retained interpretation limits\n\n`fenced()` preserves a single-line quoted **structural** boundary. It is neither shell quoting nor semantic prompt-injection prevention. Instructions can still be read inside a source-labelled quotation; intentional request bodies, workflow prose and file-backed content require normal untrusted-input handling. No caller/owner/delivery authority is widened by these format changes.\n\nThe pre-reviewed #185 renderer qualifications remain. A future rebase onto another #185 head is not covered by this pinned verdict and needs the promised base-only delta.\n\n## CI evidence\n\nLocal and GitHub heads agree; worktree clean; PR CLEAN and ready; all five checks succeeded. CI [42474109868](https://github.com/AI-Substrate/pij-fleet/actions/runs/42474109868) tested synthetic merge `1682316`, incorporating this exact head.\n\nJUnit artifact [13614960961](https://github.com/AI-Substrate/pij-fleet/actions/runs/42474109868/artifacts/13614960961) has 2,252 passing cases with no failures, five separately skipped. Confirmed executed: `job_text_is_fenced_in_every_pij_bg_turn`, `the_scope_path_is_fenced_in_the_headline`, and `a_folder_with_a_control_character_is_refused_where_it_is_set`. They cover forged framing/controls, ordinary values and refusal without mutation. U+2029 is source-covered by the shared predicate; no dedicated new test for that separator was identified.\n\nAuthor-reported mutants were not independently rerun; ddocs reported UNAVAILABLE. No local cargo/builds/tests/scripts, hostile/native-model delivery probes, credentials, product edits or production/pane/process operations. No unrelated #185/main re-review.\n"
+		}
+	]
+}
