@@ -527,6 +527,8 @@ describe("pr-freeze --prune (F107)", () => {
 		dirty: string[];
 		seats: { id: string; folder: string }[] | null;
 		slow: string[];
+		/** Calls (by prefix) that exit 0 but warn on stderr. */
+		warn?: Record<string, string>;
 	}
 
 	function fleet(world: Fleet): { run: Runner; calls: string[] } {
@@ -536,6 +538,15 @@ describe("pr-freeze --prune (F107)", () => {
 			calls.push(call);
 			if (world.slow.some((slow) => call.startsWith(slow))) {
 				return { code: 127, stdout: "", stderr: "timed out after 60s", timedOut: true };
+			}
+			const warned = Object.entries(world.warn ?? {}).find(([prefix]) => call.startsWith(prefix));
+			if (warned) {
+				const listing = args[0] === "worktree" ? world.worktrees : program === "pij-rs" ? "{}" : "";
+				return {
+					code: 0,
+					stdout: program === "gh" ? JSON.stringify(world.prs[Number(args[2])]) : listing,
+					stderr: warned[1],
+				};
 			}
 			if (program === "pij-rs") {
 				return world.seats
@@ -707,6 +718,42 @@ describe("pr-freeze --prune (F107)", () => {
 				only({ 7: { state: "MERGED", headRefOid: SHA } }, [{ id: "pij-x", folder: "/elsewhere" }]),
 			);
 			expect(prune(sound.run, false, none, "darwin")[0]?.remove).toBe(true);
+		} finally {
+			done();
+		}
+	});
+
+	it("spares or refuses on any stderr from a read that decides removal (bobcat F004)", () => {
+		const { root, path, done } = dirs();
+		try {
+			const none = () => [];
+			const merged = (warn: Record<string, string>): Fleet => ({
+				...world(path, root),
+				worktrees: at(path(7)),
+				warn,
+			});
+			const unreadable = "warning: could not open directory 'untracked/': Permission denied";
+			// Bobcat's case: git status exits 0 with nothing listed, but warns.
+			const status = fleet(merged({ [`git -C ${path(7)} status`]: unreadable }));
+			const [spared] = prune(status.run, false, none, "darwin");
+			expect(spared?.remove).toBe(false);
+			expect(spared?.why).toContain(`git status warned: ${unreadable}`);
+			expect(status.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+			// gh answering with a warning beside the JSON spares the PR's worktrees.
+			const gh = fleet(merged({ "gh pr view 7": "warning: partial response" }));
+			expect(prune(gh.run, false, none, "darwin")[0]?.remove).toBe(false);
+			expect(gh.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+			// A warning on the worktree list or the seat list refuses the run.
+			for (const warn of [
+				{ "git worktree list": "warning: unable to read worktree metadata" },
+				{ "pij-rs --json list": "warning: registry partially read" },
+			]) {
+				const attempt = fleet(merged(warn));
+				expect(() => prune(attempt.run, false, none, "darwin")).toThrow(/warned/);
+				expect(attempt.calls.some((call) => call.startsWith("git worktree remove"))).toBe(false);
+			}
+			// The positive control: no warnings, removed.
+			expect(prune(fleet(merged({})).run, false, none, "darwin")[0]?.remove).toBe(true);
 		} finally {
 			done();
 		}

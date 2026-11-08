@@ -113,6 +113,18 @@ function short(sha: string | undefined): string {
 	return sha ? sha.slice(0, 7) : "?";
 }
 
+/** [`must`], and stderr must be empty too: for the reads that decide what
+ *  prune removes, a warning is not a clean answer (review of #170, F004). */
+function quiet(run: Runner, program: string, args: readonly string[]): string {
+	const result = run(program, args);
+	if (result.code !== 0 || result.stderr.trim() !== "") {
+		throw new Error(
+			`${program} ${args.join(" ")} ${result.code !== 0 ? `failed (${result.code})` : "warned"}: ${result.stderr.trim()}`,
+		);
+	}
+	return result.stdout;
+}
+
 function must(run: Runner, program: string, args: readonly string[], input?: string): string {
 	const result = run(program, args, input);
 	if (result.code !== 0) {
@@ -583,7 +595,7 @@ export function decide(
  *  string folder makes the whole inventory unreadable (review of #170, F002):
  *  a dropped row would be a seat prune can't see. */
 function seatFolders(run: Runner): { id: string; folder: string }[] {
-	const listed = JSON.parse(must(run, "pij-rs", ["--json", "list"])) as {
+	const listed = JSON.parse(quiet(run, "pij-rs", ["--json", "list"])) as {
 		data?: { seats?: unknown };
 	};
 	const seats = listed.data?.seats;
@@ -672,7 +684,7 @@ export function prune(
 	platform: string = process.platform,
 ): PruneVerdict[] {
 	if (platform !== "darwin") throw new Error(MACOS_ONLY);
-	const candidates = pruneCandidates(must(run, "git", ["worktree", "list", "--porcelain"]));
+	const candidates = pruneCandidates(quiet(run, "git", ["worktree", "list", "--porcelain"]));
 	if (candidates.length === 0) return [];
 	const refuse = (why: string): never => {
 		throw new Error(`refusing --prune: ${why}; nothing was removed`);
@@ -694,7 +706,8 @@ export function prune(
 	for (const pr of new Set(candidates.map((candidate) => candidate.pr))) {
 		const view = run("gh", ["pr", "view", String(pr), "--json", "state,headRefOid"]);
 		timedOut(view, `gh pr view ${pr}`);
-		states.set(pr, view.code === 0 ? prState(view.stdout) : undefined);
+		// A warning beside the JSON spares the PR's worktrees (F004).
+		states.set(pr, view.code === 0 && view.stderr.trim() === "" ? prState(view.stdout) : undefined);
 	}
 	const decided: PruneVerdict[] = [];
 	for (const candidate of candidates) {
@@ -706,12 +719,16 @@ export function prune(
 			"--untracked-files=all",
 		]);
 		timedOut(status, `git status in ${candidate.path}`);
+		// Any stderr spares it: exit 0 with nothing listed can still mean git
+		// couldn't read part of the tree (review of #170, F004).
 		const dirty =
 			status.code !== 0
 				? "git status can't read it"
-				: status.stdout.trim() !== ""
-					? "it has local changes"
-					: undefined;
+				: status.stderr.trim() !== ""
+					? `git status warned: ${status.stderr.trim().split("\n")[0]}`
+					: status.stdout.trim() !== ""
+						? "it has local changes"
+						: undefined;
 		const resolved = real(candidate.path);
 		const paths = resolved ? [candidate.path, resolved] : [];
 		const seat = seats.find((seat) =>
