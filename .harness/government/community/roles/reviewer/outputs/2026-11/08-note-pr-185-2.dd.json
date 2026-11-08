@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ba41-c6fb-7562-878c-73234a4a910f",
+				"date": "2026-11-08",
+				"kind": "note",
+				"requester": "pij-steady-otter",
+				"role": "reviewer",
+				"subject": "pr:185",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Request 01a1ba41-c6fb-7562-878c-73234a4a910f at head 011933d9f2ac588c8ed4f3ab726a7123e9cd0895 was explicitly held and has now been superseded by round-2 request 01a1bac2-3615-7271-9162-63cc48fc6900 at 52d8a567ddef2199fd2ce9213e8f4aa5ca4373f1. No verdict was issued at the old head. Whole-PR review at the replacement head is in progress."
+		}
+	]
+}
