@@ -703,3 +703,131 @@ async fn reap_dead_process_on_a_reincarnated_pane_is_a_candidate_but_an_older_pa
         );
     }
 }
+
+fn pane(id: &str) -> Pane {
+    Pane {
+        id: id.to_string(),
+        session: "private".to_string(),
+        window: "private".to_string(),
+        title: String::new(),
+        cursor_x: None,
+        cursor_y: None,
+    }
+}
+
+/// F114: a seat that never registered a process (no pid, no start) is
+/// decided by its recorded pane. Absent: a candidate. Present, unreadable
+/// without a launch (no live control client), failing, or no pane recorded
+/// at all: kept. The panes are read only over the control client, never by
+/// a forking `list_panes`.
+#[tokio::test]
+async fn a_never_bound_seat_is_reaped_only_when_its_recorded_pane_is_absent() {
+    let mut unbound = seat();
+    unbound.proc = None;
+    let recorded = unbound.pane.clone().expect("a recorded pane");
+    let mut paneless = unbound.clone();
+    paneless.pane = None;
+    let cases = [
+        (
+            unbound.clone(),
+            FakeTmux::new(),
+            Ok("never-bound-and-pane-absent"),
+        ),
+        (
+            unbound.clone(),
+            FakeTmux::new().with_pane(pane(&recorded)),
+            Err(None),
+        ),
+        (
+            unbound.clone(),
+            FakeTmux::new().without_control_client(),
+            Err(Some("pane-probe-needs-a-launch")),
+        ),
+        (
+            unbound.clone(),
+            FakeTmux::new().with_list_pane_failures(1),
+            Err(Some("pane-probe-failed")),
+        ),
+        (
+            paneless,
+            FakeTmux::new(),
+            Err(Some("process-identity-unavailable")),
+        ),
+    ];
+    for (seat, tmux, expected) in cases {
+        let (services, _store) = services().await;
+        services.registry.put(seat.clone()).await.unwrap();
+        let receipt = reap(
+            services.registry.as_ref(),
+            &FakeLiveness::new(),
+            &tmux,
+            true,
+        )
+        .await
+        .unwrap();
+        match expected {
+            Ok(reason) => {
+                assert_eq!(receipt.candidates.len(), 1, "{receipt:?}");
+                assert_eq!(receipt.candidates[0].reason, reason);
+                assert_eq!(receipt.candidates[0].process, "never-bound");
+            }
+            Err(unverifiable) => {
+                assert!(receipt.candidates.is_empty(), "{receipt:?}");
+                assert_eq!(
+                    receipt.unverifiable.first().map(|row| row.reason),
+                    unverifiable,
+                    "{receipt:?}"
+                );
+            }
+        }
+        assert!(
+            !tmux.calls().iter().any(|call| call == "list_panes"),
+            "never the forking list: {:?}",
+            tmux.calls()
+        );
+    }
+}
+
+/// F114: the death sweep tombstones a never-bound seat whose pane is gone
+/// (pij-free-flute and pij-irregular-apocalypse, idle since 26 Sep) and tells
+/// a living parent, naming that it never registered a process.
+#[tokio::test]
+async fn death_sweep_retires_a_never_bound_seat_whose_pane_is_gone() {
+    let (mut services, _store) = services().await;
+    let mut child = seat();
+    child.id = "child".into();
+    child.parent = Some("parent".into());
+    child.proc = None;
+    let mut parent = seat();
+    parent.id = "parent".into();
+    parent.parent = None;
+    parent.pane = None;
+    parent.proc = Some(ProcIdentity {
+        pid: 4321,
+        proc_start: 123,
+    });
+    services.liveness = Arc::new(FakeLiveness::new().with_proc(parent.proc.unwrap()));
+    services.tmux = Arc::new(FakeTmux::new());
+    services.registry.put(parent).await.unwrap();
+    services.registry.put(child.clone()).await.unwrap();
+
+    let receipt = crate::death_sweep::sweep(&services).await.unwrap();
+    assert_eq!(receipt.reaped.len(), 1, "{receipt:?}");
+    let retired = services.registry.get(&child.id).await.unwrap().unwrap();
+    assert_eq!(retired.tombstone_reason.as_deref(), Some("observed-dead"));
+    let (_, job) = services
+        .queue
+        .peek(&["delivery:parent".to_string()])
+        .await
+        .unwrap()
+        .expect("the parent is told");
+    let message: pij_core::model::Msg = serde_json::from_str(&job.payload).unwrap();
+    assert!(
+        message.body.starts_with(&format!(
+            "[pij] seat child died (observed-dead) — pane {} absent, it never registered a process at ",
+            child.pane.as_deref().unwrap()
+        )),
+        "{}",
+        message.body
+    );
+}

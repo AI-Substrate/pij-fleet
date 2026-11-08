@@ -766,3 +766,47 @@ fn a_stalled_control_client_is_killed_and_replaced() {
         "the stalled client was kept, not replaced"
     );
 }
+
+/// F114: the death sweep's pane list for a never-bound seat answers only over
+/// a control client that is already live. Cold or disabled, it answers `None`
+/// and launches nothing.
+#[test]
+fn list_panes_without_launch_never_starts_a_client_or_forks() {
+    let server = Server::start();
+    let pane = server.panes[0].clone();
+    block_on(async {
+        let disabled = server.adapter(false);
+        let cold = server.adapter(true);
+        let before = server.launches().len();
+        assert!(
+            disabled
+                .list_panes_without_launch()
+                .await
+                .expect("read")
+                .is_none()
+        );
+        assert!(
+            cold.list_panes_without_launch()
+                .await
+                .expect("read")
+                .is_none()
+        );
+        assert_eq!(
+            server.launches().len(),
+            before,
+            "cold or disabled: no launch"
+        );
+
+        cold.list_panes()
+            .await
+            .expect("warm: starts the control client");
+        let warm = server.launches().len();
+        let panes = cold
+            .list_panes_without_launch()
+            .await
+            .expect("read")
+            .expect("a live client answers");
+        assert!(panes.iter().any(|row| row.id == pane), "{panes:?}");
+        assert_eq!(server.launches().len(), warm, "a live client: no launch");
+    });
+}

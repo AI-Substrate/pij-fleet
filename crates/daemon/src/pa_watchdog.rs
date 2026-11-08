@@ -1191,7 +1191,7 @@ async fn held_messages(services: &Services, rows: &[FleetRow], now_ms: u64) -> V
 
 /// The digest carrying `view` was admitted: its held messages are never shown
 /// again. One write, only when it listed any.
-async fn flag_shown(services: &Services, view: &FleetView, delivery: &str, now_ms: u64) {
+pub(crate) async fn flag_shown(services: &Services, view: &FleetView, delivery: &str, now_ms: u64) {
     if view.held.is_empty() || !matches!(delivery, "delivered" | "queued" | "held") {
         return;
     }
