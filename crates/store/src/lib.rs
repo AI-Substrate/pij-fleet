@@ -15,6 +15,7 @@ pub mod dispatch;
 pub mod fleet;
 pub mod governance;
 pub mod held;
+mod idle_nudges;
 pub mod migrate;
 pub mod orchestration;
 pub mod outputs;

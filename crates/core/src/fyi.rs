@@ -214,6 +214,29 @@ fn fyi_event(kind: &str, recipient: &SeatId, at: u64, payload: serde_json::Value
     }
 }
 
+/// The audit kind for an FYI refused because its id is already held, from
+/// this origin, for another sender or recipient (review of #189, S189-001).
+pub const FYI_REFUSED_KIND: &str = "fyi.refused";
+
+/// The `fyi.refused` fact, on the intended recipient: the id, its would-be
+/// sender, and the sender and recipient that already hold it. Nothing is held
+/// and the hold is an error, never a silent success.
+pub fn refused_event(fyi: &HeldFyi, held_recipient: &str, held_sender: &str) -> Event {
+    fyi_event(FYI_REFUSED_KIND, &fyi.recipient, fyi.held_at_ms, {
+        let mut payload = serde_json::json!({
+            "id": fyi.id,
+            "sender": fyi.sender,
+            "held_recipient": held_recipient,
+            "held_sender": held_sender,
+            "reason": "id-taken",
+        });
+        if let Some(machine) = &fyi.from_machine {
+            payload["from_machine"] = machine.as_str().into();
+        }
+        payload
+    })
+}
+
 /// The `fyi.held` fact. The body stays in the store, not on the spine.
 pub fn held_event(fyi: &HeldFyi) -> Event {
     fyi_event("fyi.held", &fyi.recipient, fyi.held_at_ms, {

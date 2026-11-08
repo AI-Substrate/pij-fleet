@@ -28,6 +28,7 @@ pub mod events;
 pub mod fleet;
 pub mod framing;
 pub mod fyi;
+pub mod idle_nudge;
 pub mod liveness;
 pub mod modal_stall;
 pub mod model;

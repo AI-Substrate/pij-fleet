@@ -1515,16 +1515,22 @@ impl Queue for FakeQueue {
         fyi: &pij_core::fyi::HeldFyi,
         spine: &dyn Spine,
     ) -> Result<Vec<Event>> {
-        if self
+        let held = self
             .state
             .lock()
             .expect("fake queue mutex")
             .fyis
             .iter()
             // Identity is (origin machine, msg_id), as in the store.
-            .any(|(held, _)| held.id == fyi.id && held.from_machine == fyi.from_machine)
-        {
-            return Ok(Vec::new());
+            .find(|(held, _)| held.id == fyi.id && held.from_machine == fyi.from_machine)
+            .map(|(held, _)| (held.recipient.clone(), held.sender.clone()));
+        if let Some((recipient, sender)) = held {
+            if recipient == fyi.recipient && sender == fyi.sender {
+                return Ok(Vec::new());
+            }
+            let mut event = pij_core::fyi::refused_event(fyi, recipient.as_str(), sender.as_str());
+            event.seq = Some(spine.append(event.clone()).await?);
+            return Ok(vec![event]);
         }
         let mut event = pij_core::fyi::held_event(fyi);
         event.seq = Some(spine.append(event.clone()).await?);

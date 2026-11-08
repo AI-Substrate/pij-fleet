@@ -192,6 +192,17 @@ pub enum RoundOutcome {
         /// The parent told, and its FYI's outcome word.
         parent: Option<(SeatId, String)>,
     },
+    /// A seat holding work that sat idle for an hour was sent its one nudge
+    /// for the stretch, and its primes an FYI (plan 224). Also a
+    /// `watchdog.idle-nudge` event.
+    IdleNudge {
+        /// The nudged seat.
+        seat: SeatId,
+        /// The nudge's delivery outcome word, or `error: ...`.
+        delivery: String,
+        /// Each prime told, and its FYI's outcome word.
+        primes: Vec<(SeatId, String)>,
+    },
     /// A presence message (plan 217) was handed to delivery: the missing-PA
     /// or unresponsive-PA alert to the prime, the dormant wake to the PA, or
     /// the large-seat FYI to the prime.
@@ -477,6 +488,8 @@ impl PaWatchdog {
         outcomes.extend(crate::modal_stall::round(self, services, &seats, now_ms).await);
         // And holders a compaction left idle (plan 222).
         outcomes.extend(crate::compaction_wake::round(services, &seats, now_ms).await);
+        // And holders idle for an hour, whatever left them so (plan 224).
+        outcomes.extend(crate::idle_nudge::round(services, &seats, now_ms).await);
 
         let pas: Vec<&SeatDescriptor> = seats.iter().filter(|seat| is_watched_pa(seat)).collect();
         // The designated prime is a supervisor whatever its role says: its

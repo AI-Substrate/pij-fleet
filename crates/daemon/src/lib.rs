@@ -19,6 +19,7 @@ pub mod death_sweep;
 pub mod delivery;
 pub mod events;
 pub mod federation;
+mod idle_nudge;
 pub mod lifecycle;
 mod modal_stall;
 pub mod pa_watchdog;
