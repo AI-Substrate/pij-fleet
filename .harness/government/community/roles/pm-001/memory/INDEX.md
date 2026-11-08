@@ -10,4 +10,5 @@
 - [2026-11-06 Final heads and verdict routing](2026-11-06-final-heads-and-verdict-routing.dd.md): Read before sending any head to verdict seats (verdicts, heads)
 - [2026-11-06 Routing work through PEC verbs](2026-11-06-routing-work-through-pec-verbs.dd.md): Read before sending a request, assigning a verdict seat, or chasing a quiet coder (s05, s12, messaging, holdings)
 - [2026-11-08 2026-11-08 Verify before routing; identity findings under C32](2026-11-08-2026-11-08-verify-before-routing.dd.md): Read before routing a coder's reported head, judging a security block on caller identity, or handling a stalled seat (verdicts, heads, c32, seats)
+- [2026-11-08 Batch review rounds, stacked PRs, and the daemon-text injection class](2026-11-08-batch-review-rounds-stacked-prs-and-the.dd.md): Read when a PR is under review by several seats, when PRs stack on each other, or when a finding involves caller or model text in daemon messages (verdicts, rounds, stacking, security)
 <!-- /pij:generated -->
