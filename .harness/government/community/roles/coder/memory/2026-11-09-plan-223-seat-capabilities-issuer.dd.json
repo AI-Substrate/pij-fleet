@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"hook": "Open before touching capability issuance, the daemon socket, registration ownership, tombstone paths, or spawn status files (plan 223, F88)",
+				"tags": [
+					"plan-223",
+					"capability",
+					"f88",
+					"security",
+					"review"
+				],
+				"title": "Plan 223 seat capabilities: issuer invariants reviewers enforce"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Plan 223 (#183 A1 daemon, A2 clients stacked on it; deploy together, ONE bounce, never A1 alone). Round 2 surfaced 14 defects; the invariants they enforce:\n\n1. Every capability carrier is ONE path. The header, a held registration and /v1/activity's context_token all retire the previous digest on the new one's first presentation. Store first, fail closed, and the in-memory retire is conditional on the generation. A side path that skips retirement is a defect (D1, D2).\n2. A public-facts write must never unlock issuance. A proofless registration can't move a live owner's process, session or ownership (E-RS-SEAT-OWNER-LIVE, 409, retryable; a brake ruled by the prime). A capability revoked by an unproven tombstone (close etc.) marks the seat, and it is re-issued only by a nonce or its token (E-RS-SEAT-REISSUE-NONCE). Proven tombstones = observed-dead or token-proven, decided by reserved reason strings.\n3. \"Every tombstone revokes\" includes the obscure writers (reconcile_descriptors' direct UPDATE), and retires of predecessors belong INSIDE the issuing transaction.\n4. Shared state means shared: every RegistrationService (HTTP, ClaudeBinder, CodexBinder) takes the one SeatAuthority. Make the default #[cfg(test)]. The cap is reserved through the commit, not just checked.\n5. Walk checks: refuse roots (pid 1, launchd, tmux) BEFORE any boundary or target match. A nonce must bind to the spawn's RECORDED pane process, never a claimed proc. No ancestry cache (a reparented cached ancestor passes every hit check).\n6. Locality checks belong on EVERY capability ingress, not just the header.\n7. Counters must count operations by what they DO after read or write is decided; a read counted as authority poisons phase B's evidence.\n8. Under the shared lock: decide 0/1/many without materializing; stop at 2.\nProcess lessons:\n- Run `test -p pij-cli` whenever spawn/launch code changes; Linux CI found 4 failures my gate skipped.\n- A spawn status file was read half-written (500 instead of 502): write status atomically (stage, rename), and treat empty as not yet.\n- macOS sun_path caps at 104 bytes, so tests with long temp dirs never bind the socket and pass vacuously on macOS; Linux binds it. Use a short TMPDIR (/tmp/pij-*) to exercise socket paths locally.\n- Claude command hooks run as direct children of claude (verified with a `claude -p` SessionStart hook recording its parent chain).\n"
+		}
+	]
+}
