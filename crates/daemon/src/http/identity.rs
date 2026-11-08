@@ -603,8 +603,12 @@ pub(crate) async fn adopt(
         return refused(
             ADOPT,
             format!(
-                "adopt does not accept a caller-supplied id (`{asserted}`): rs mints the seat name. \
-                 Use `register` for the explicit case."
+                "adopt does not accept a caller-supplied id (`{}`): rs mints the seat name. \
+                 Use `register` for the explicit case.",
+                asserted
+                    .escape_debug()
+                    .take(pij_core::model::SEAT_ID_MAX_BYTES)
+                    .collect::<String>()
             ),
         );
     }
@@ -1023,6 +1027,7 @@ pub(crate) async fn adopt(
 fn adopt_registration_error(error: RegistrationError) -> Response {
     match error {
         RegistrationError::Refused(reason) => refused(ADOPT, reason),
+        RegistrationError::InvalidSeatId(reason) => super::seat_id_refused(ADOPT, reason),
         RegistrationError::Retired { seat, reason } => retired_seat_refused(ADOPT, &seat, reason),
         RegistrationError::Retryable(reason) => {
             let mut answer: Envelope<()> = Envelope::refused(ADOPT, ErrorKind::Refused, reason);
