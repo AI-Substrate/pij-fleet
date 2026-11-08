@@ -151,6 +151,28 @@ pub struct AssignmentCommit {
     pub seat_role: Option<String>,
 }
 
+/// How many of a seat's newest compactions the memory turn's cutoff
+/// considers (F130): the newest delivered one among them sets it.
+pub const CONTEXT_COMPACTIONS: i64 = 16;
+/// The most holdings a memory turn lists (F130); past it, the prompt says so.
+pub const CONTEXT_HOLDINGS: usize = 32;
+
+/// The memory turn's cutoff: when the seat's newest delivered compact, among
+/// its [`CONTEXT_COMPACTIONS`] newest, was admitted, as a holders stamp.
+pub const CONTEXT_CUTOFF_SQL: &str = "SELECT strftime('%Y-%m-%dT%H:%M:%fZ', admitted_at / 1000.0, 'unixepoch') \
+     FROM (SELECT seq, admitted_at, settled FROM compaction_wakes \
+           WHERE seat = ?1 ORDER BY seq DESC LIMIT ?2) \
+     WHERE settled IN ('woken', 'resumed', 'holds-nothing') ORDER BY seq DESC LIMIT 1";
+
+/// A seat's holdings in its current context ([`SqliteOrchestration::context_assignments`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContextAssignments {
+    /// Open holdings, then releases since the cutoff, newest first.
+    pub rows: Vec<Assignment>,
+    /// More holdings than [`CONTEXT_HOLDINGS`] were in the context.
+    pub more: bool,
+}
+
 const ASSIGNMENT_COLUMNS: &str = "project, role, instance, seat, harness, session, machine, from_at, to_at, \
      assigned_by, released_by, why, release_why, end_pending";
 
@@ -285,6 +307,55 @@ impl SqliteOrchestration {
         .await
         .map_err(adapter_error)?;
         rows.iter().map(assignment).collect()
+    }
+
+    /// `seat`'s holdings in its current context (F130): every open one, and
+    /// each released since the seat's last delivered compact, newest first;
+    /// at most [`CONTEXT_HOLDINGS`], with `more` set when there were others.
+    /// What a seat learned in a holding stays in its context after the
+    /// release, until a compact clears it.
+    ///
+    /// Both reads are indexed and bounded (#184 review, P184-F001, migration
+    /// 0045):
+    /// 1. the cutoff: the admission time of the newest compact settled as
+    ///    delivered (`woken`, `resumed`, `holds-nothing`; plan 222 records
+    ///    every compact `admit_control` admits, of either queue kind) among
+    ///    the seat's [`CONTEXT_COMPACTIONS`] newest. With none, every release
+    ///    counts, which only ever adds to the prompt;
+    /// 2. the holdings: open ones, then releases after the cutoff, newest
+    ///    first, [`CONTEXT_HOLDINGS`] + 1 rows at most.
+    ///
+    /// # Errors
+    /// Store failures.
+    pub async fn context_assignments(&self, seat: &str) -> Result<ContextAssignments> {
+        require_current_schema(&self.pool).await?;
+        let cutoff: Option<String> = sqlx::query_scalar(CONTEXT_CUTOFF_SQL)
+            .bind(seat)
+            .bind(CONTEXT_COMPACTIONS)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        let limit = i64::try_from(CONTEXT_HOLDINGS + 1).unwrap_or(i64::MAX);
+        let mut rows = sqlx::query(&format!(
+            "SELECT {ASSIGNMENT_COLUMNS} FROM community_assignments \
+             WHERE seat = ?1 AND to_at IS NULL \
+             UNION ALL \
+             SELECT * FROM (SELECT {ASSIGNMENT_COLUMNS} FROM community_assignments \
+                 WHERE seat = ?1 AND to_at > ?2 ORDER BY to_at DESC LIMIT ?3) \
+             LIMIT ?3"
+        ))
+        .bind(seat)
+        .bind(cutoff.unwrap_or_default())
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .iter()
+        .map(assignment)
+        .collect::<Result<Vec<_>>>()?;
+        let more = rows.len() > CONTEXT_HOLDINGS;
+        rows.truncate(CONTEXT_HOLDINGS);
+        Ok(ContextAssignments { rows, more })
     }
 
     /// Every holding in `project`, open and closed, in a stable order.

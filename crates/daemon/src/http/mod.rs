@@ -2527,21 +2527,21 @@ pub(crate) async fn send_control(
         msg_id: request.msg_id,
         in_reply_to: request.in_reply_to,
     };
-    // Plan 201: a role holder writes its memory before it is compacted.
-    if msg.command.as_deref() == Some("compact") {
-        let holdings = memory_turn::holdings(state, &target.id).await;
-        if !holdings.is_empty() {
-            return match memory_turn::hold(
-                state,
-                name,
-                target.clone(),
-                holdings,
-                memory_turn::Then::Compact(msg),
-            ) {
-                Ok(held) => envelope(StatusCode::OK, &Envelope::ok(name, held)),
-                Err(refusal) => *refusal,
-            };
-        }
+    // Plan 201: a role holder writes its memory before it is compacted, and
+    // so does a seat that released one in this context (F130).
+    if msg.command.as_deref() == Some("compact")
+        && let Some(turn) = memory_turn::turn_for(state, &target.id).await
+    {
+        return match memory_turn::hold(
+            state,
+            name,
+            target.clone(),
+            turn,
+            memory_turn::Then::Compact(msg),
+        ) {
+            Ok(held) => envelope(StatusCode::OK, &Envelope::ok(name, held)),
+            Err(refusal) => *refusal,
+        };
     }
     match admit_control(state, msg).await {
         Ok(receipt) => envelope(StatusCode::OK, &Envelope::ok(name, receipt)),
