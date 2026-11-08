@@ -870,6 +870,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-08T06:16:20.586Z",
 					"why": "F125 ready-SHA line #181"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T06:26:36.938Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "182",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F127 seat id and role grammar #182"
 				}
 			]
 		}
