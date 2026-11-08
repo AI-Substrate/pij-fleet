@@ -10,36 +10,49 @@
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
-/// Where a relative import names its target: `from "x"`, `import("x")`,
-/// `import "x"` and `require("x")`, either quote.
-const LEADS: [&str; 8] = [
-    "from \"",
-    "from '",
-    "import(\"",
-    "import('",
-    "import \"",
-    "import '",
-    "require(\"",
-    "require('",
-];
-
+/// Every quoted string that starts `./` or `../`, wherever it stands. Not
+/// keyword leads: a comment or a line break between `from` or `import(` and
+/// the quote hid an import from them (#175 review). Reading every relative
+/// literal, imports or not, can only add files to the closure, so the check
+/// can fail spuriously but never pass blind.
 fn relative_specifiers(text: &str) -> Vec<String> {
     let mut found = Vec::new();
-    for lead in LEADS {
-        let quote = lead.chars().last().expect("a quote");
-        let mut rest = text;
-        while let Some(at) = rest.find(lead) {
-            let after = &rest[at + lead.len()..];
-            if let Some(end) = after.find(quote) {
-                let spec = &after[..end];
-                if spec.starts_with('.') {
-                    found.push(spec.to_string());
+    for quote in ['"', '\'', '`'] {
+        for lead in ["./", "../"] {
+            let open = format!("{quote}{lead}");
+            let mut rest = text;
+            while let Some(at) = rest.find(&open) {
+                let after = &rest[at + 1..];
+                if let Some(end) = after.find(quote) {
+                    let spec = &after[..end];
+                    if !spec.contains('\n') {
+                        found.push(spec.to_string());
+                    }
                 }
+                rest = after;
             }
-            rest = after;
         }
     }
     found
+}
+
+#[test]
+fn the_scanner_sees_imports_however_they_are_written() {
+    let json = "../../../crates/core/tests/fixtures/control-commands.json";
+    for source in [
+        format!("import fixture from \"{json}\" with {{ type: \"json\" }};"),
+        format!("import fixture from /* closure probe */ \"{json}\";"),
+        format!("const fixture = await import(\n  \"{json}\", {{ with: {{ type: \"json\" }} }});"),
+        format!("export {{ a }} from\n'{json}';"),
+        format!("const x = require( `{json}` );"),
+    ] {
+        assert_eq!(relative_specifiers(&source), [json], "{source}");
+    }
+    assert!(relative_specifiers("import x from \"pkg\"; const y = \"a./b\";").is_empty());
+    assert_eq!(
+        relative_specifiers("import(`./${name}.js`)"),
+        ["./${name}.js"]
+    );
 }
 
 /// `path` with `.` and `..` folded away, without touching the filesystem.
@@ -95,6 +108,12 @@ fn closure(root: &Path, entry: &str) -> BTreeSet<String> {
         }
         let text = std::fs::read_to_string(&file).expect("read a source file");
         for spec in relative_specifiers(&text) {
+            assert!(
+                !spec.contains("${"),
+                "{} loads a computed relative path `{spec}` the closure cannot follow; \
+                 name the file, or list its root in the extension's identity",
+                file.display()
+            );
             if let Some(target) = resolve(&file, &spec) {
                 stack.push(target);
             }

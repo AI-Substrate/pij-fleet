@@ -1319,23 +1319,6 @@ async fn queued_requests(
     }
 }
 
-/// Stale cards in the fleet, read in bounded time.
-///
-/// `AnomalyService::list` folds the whole spine on every call, which a
-/// per-tick loop cannot afford (review of #38). The digest needs one anomaly
-/// kind, so this runs the anomaly authority's own [`StatusStaleDetector`]
-/// (its threshold and parked-state suppression) over bounded reads:
-///
-/// 1. per fleet seat, its latest card: one indexed `LIMIT 1` read;
-/// 2. per *stale* card only, its own disposition. Clears and acks for every
-///    anomaly kind share their event kinds, so "the seat's latest clear" can
-///    belong to another occurrence (review of 20bcfb3). Each candidate is
-///    therefore matched by occurrence key against the seat's clears and acks
-///    since that card, a seat- and kind-indexed window capped at
-///    [`DISPOSITION_PAGES`] pages.
-///
-/// Reads follow the fleet and its stale cards, never history. The other
-/// kinds stay with `pij anomalies`.
 /// Seats whose extension source differs from what this daemon was built with
 /// (F113): steering held 15-36 minutes on seats still running the extension
 /// from before C31, and nothing showed it. It compares content, not commits:
@@ -1347,6 +1330,14 @@ async fn queued_requests(
 /// extension. A seat without a tree (an older extension, or a `hash:` build)
 /// or a daemon without the stamp is not compared. Reads the seat rows the
 /// round already has: no launch.
+///
+/// `extension_build` is whatever the seat reported, and the digest is a
+/// daemon-authored message injected into the PA's prompt (#175 review), so
+/// both parts are parsed against the closed grammar the extensions emit
+/// ([`reported_tree`], [`reported_build`]) at render time, which covers
+/// persisted rows as well as new registrations. Only the parsed identifiers
+/// are ever rendered, labelled as seat-reported; a tree that does not parse
+/// is not compared.
 fn stale_extensions(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly> {
     let trees = &services.extension_trees;
     rows.iter()
@@ -1355,24 +1346,59 @@ fn stale_extensions(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly>
                 Harness::Copilot => trees.copilot.as_deref(),
                 Harness::Omp | Harness::Pi => trees.omp.as_deref(),
                 _ => None,
-            }?;
+            }
+            .and_then(reported_tree)?;
             let build = row.seat.extension_build.as_deref()?;
-            let (_, tree) = build.split_once(" tree:")?;
+            let (prefix, tree) = build.split_once(" tree:")?;
+            let tree = reported_tree(tree)?;
             if tree == stamp {
                 return None;
             }
+            let prefix = reported_build(prefix)
+                .unwrap_or_else(|| format!("unparseable ({} chars)", prefix.chars().count()));
             Some(FleetAnomaly {
                 seat: row.seat.id.clone(),
                 kind: "stale-extension".to_string(),
                 detail: format!(
-                    "extension source tree {tree} (build {build}), daemon built with {stamp}. \
-                     Reload the seat's extension (Copilot: extensions_reload; OMP: /reload), or \
-                     revive it if its launch flags changed; if the extension is the newer, the \
-                     daemon needs `just bounce-rs`"
+                    "seat-reported extension tree {tree} (seat-reported build {prefix}), daemon \
+                     built with {stamp}. Reload the seat's extension (Copilot: extensions_reload; \
+                     OMP: /reload), or revive it if its launch flags changed; if the extension is \
+                     the newer, the daemon needs `just bounce-rs`"
                 ),
             })
         })
         .collect()
+}
+
+/// A git object id as the extensions and the justfile shorten it: 7 to 40
+/// lowercase hex characters.
+fn object_id(text: &str) -> bool {
+    lower_hex(text, 7..=40)
+}
+
+fn lower_hex(text: &str, lengths: std::ops::RangeInclusive<usize>) -> bool {
+    lengths.contains(&text.len()) && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// The ` tree:` part of a reported build, when it is one to four object ids
+/// joined by `+` (Copilot reports its directory's tree; OMP its directory's
+/// and each outside root's). Returned only when it parses, so the result is
+/// made of nothing but those ids.
+fn reported_tree(text: &str) -> Option<String> {
+    let ids: Vec<&str> = text.split('+').collect();
+    ((1..=4).contains(&ids.len()) && ids.iter().all(|id| object_id(id))).then(|| ids.join("+"))
+}
+
+/// The part of a reported build before ` tree:`: a commit with an optional
+/// `+dirty`, or the `hash:` of a standalone install's sources (12 to 64 hex).
+fn reported_build(text: &str) -> Option<String> {
+    if let Some(hash) = text.strip_prefix("hash:") {
+        return lower_hex(hash, 12..=64).then(|| format!("hash:{hash}"));
+    }
+    let (commit, dirty) = text
+        .strip_suffix("+dirty")
+        .map_or((text, ""), |commit| (commit, "+dirty"));
+    object_id(commit).then(|| format!("{commit}{dirty}"))
 }
 
 /// Seats whose pane tap the observer could not attach (F112): an in-memory
@@ -1395,6 +1421,23 @@ fn refused_taps(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly> {
         .collect()
 }
 
+/// Stale cards in the fleet, read in bounded time.
+///
+/// `AnomalyService::list` folds the whole spine on every call, which a
+/// per-tick loop cannot afford (review of #38). The digest needs one anomaly
+/// kind, so this runs the anomaly authority's own [`StatusStaleDetector`]
+/// (its threshold and parked-state suppression) over bounded reads:
+///
+/// 1. per fleet seat, its latest card: one indexed `LIMIT 1` read;
+/// 2. per *stale* card only, its own disposition. Clears and acks for every
+///    anomaly kind share their event kinds, so "the seat's latest clear" can
+///    belong to another occurrence (review of 20bcfb3). Each candidate is
+///    therefore matched by occurrence key against the seat's clears and acks
+///    since that card, a seat- and kind-indexed window capped at
+///    [`DISPOSITION_PAGES`] pages.
+///
+/// Reads follow the fleet and its stale cards, never history. The other
+/// kinds stay with `pij anomalies`.
 async fn stale_cards(services: &Services, rows: &[FleetRow], now_ms: u64) -> Vec<FleetAnomaly> {
     let mut seats = Vec::new();
     let mut cards = Vec::new();
