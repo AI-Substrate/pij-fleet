@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "read when a pane's input line shows text nobody typed",
+				"tags": [
+					"pa",
+					"pane",
+					"copilot",
+					"input"
+				],
+				"title": "Stray text on a Copilot input line may be screen-only"
+			}
+		},
+		{
+			"name": "body",
+			"value": "08 Nov 13:42: herring's input line showed 'nfs server OrbStack:/OrbStack: is alive again', an OS console message written to the tty. The prime checked: it was drawn on screen only, not in the composer buffer (one typed char plus one backspace left the input empty), and it clears at the next redraw. A capture can't tell screen-only text from real unsent input. Still report it to the prime (the PA may not type into panes), but say it may be screen-only. The prime tests with one typed character and a backspace."
+		}
+	]
+}

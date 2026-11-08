@@ -22,5 +22,6 @@
 - [2026-11-08 Seats stuck on a modal dialog look working \(F47\)](2026-11-08-modal-dialog-stall-f47.dd.md): read when a seat shows working but has had no model call for 30+ min (pa, watchdog, f47, stall)
 - [2026-11-08 Check native\_receiver\_reason, not the native-delivery flag](2026-11-08-receiver-lease-not-delivery-flag.dd.md): read when a send is refused or parked as native-extension-unavailable or native-receiver-unavailable (pa, delivery, receiver, lease)
 - [2026-11-08 Recheck size before sending compact: Copilot may have auto-compacted](2026-11-08-recheck-size-before-compact.dd.md): read after 'handover ready' arrives, before pij send --command compact (pa, compact, copilot)
+- [2026-11-08 Stray text on a Copilot input line may be screen-only](2026-11-08-stray-pane-text-may-be-screen-only.dd.md): read when a pane's input line shows text nobody typed (pa, pane, copilot, input)
 - [2026-11-08 After compacting a seat with a live holding, wake it \(F111\)](2026-11-08-wake-after-compaction-f111.dd.md): read right after any compaction completes, and in each round's holdings check (pa, compact, f111, holdings, wake)
 <!-- /pij:generated -->
