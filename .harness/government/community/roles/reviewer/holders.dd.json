@@ -950,7 +950,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "188",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #188 merged (d7389056ab7f)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T10:57:21.037Z",
 					"why": "F137 bind :0 #188"
 				}
 			]

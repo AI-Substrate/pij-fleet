@@ -589,7 +589,10 @@
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"instance_key": "f137",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #188 merged (d7389056ab7f)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-08T10:57:21.037Z",
 					"why": "F137 daemon --bind :0 for the inbox integration test race"
 				}
 			]
