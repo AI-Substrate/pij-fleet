@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "a6fa65d9231da85d30817eb23cdccb182a70e3f1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/196#issuecomment-6728901638",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:196",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #196, exact head `a6fa65d9231da85d30817eb23cdccb182a70e3f1`.\n\nReviewed the normalization delta from `a5cea92` and startup-setting preservation through the main merge. **S196-001: C33: same-user, out of scope.** The retained normalization also removes the malformed-plist correctness path. No new in-scope vulnerability was identified.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new in-scope vulnerability identified | - |\n\nBoth recipes normalize before build, daemon stop or plist write (`justfile:634-642,675-683`). The case arms assign only literal 1 or 0, and other results exit 2 with fixed text, without echoing supplied content. Bounce environment assignment and the plist string use only that normalized variable (`:658,696`); XML cannot receive the original payload.\n\nCorrectness qualification: shell command substitution strips trailing newlines from the lowercased result. A value such as on followed by a newline can therefore match on rather than refuse. It still becomes literal 1 and creates no XML or shell injection; this is a minor distinction from the body's claim of exactly the listed raw spellings.\n\nThe test source runs recipe bodies with fake external commands, then parses successful plist output with real Python plistlib. It checks normalized 1/0, no Program key, rejection of malformed values, preservation of a seeded installed plist and no build/daemon launch on the bounce error path (`crates/testkit/tests/build_stamps.rs:249-349`). Those tests and mutation claims were not locally executed here.\n\nBare-daemon code default remains off; the fleet recipes default on. Other startup controls are unchanged. No new external-input boundary or C19/C21 disclosure was identified. This verdict follows current C33 at `.harness/government/community/RULINGS.md:37`, not the superseded same-user threat model.\n\nGitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42536650301` and latest successful Delivers run `42536669419` both identify this SHA and success. Earlier cancelled Delivers runs are superseded.\n\nNo local builds, tests, recipes, plist writes, bounce/launchctl operations, credential reads or mutations were performed. Source review was completed directly from immutable Git objects.\n"
+		}
+	]
+}
