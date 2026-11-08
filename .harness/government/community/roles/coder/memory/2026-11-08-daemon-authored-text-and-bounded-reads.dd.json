@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Open before putting any seat-, caller- or job-supplied string into a pij-bg message, digest or prompt, or adding a per-compact or per-digest store read",
+				"tags": [
+					"render",
+					"security",
+					"cost",
+					"review",
+					"mutation"
+				],
+				"title": "Daemon-authored text and bounded reads: what reviewers broke in #175, #184 and #187"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#175 took five rounds, and #184 two plus three folded-in findings, all from the same few classes. Check these before the reviewer does.\n\n1. Any field a seat, caller or job chose is hostile. Examples: extension_build, holding instances, folders, job tails, event text, titles.\n   - Render it closed: parse a grammar and show only the parsed value, else \"invalid (N chars)\", via pij_core::render::* and model::invalid_text.\n   - Or fence free text: render::fenced, labelled with its author.\n   - Never show it raw, not even a \"stamp\" you only parse for digits.\n   - Where there's no grammar (paths), fence it and refuse control chars at the point it is set (admission UnprintableFolder).\n   - Test forged \"[pij from ...]\" framing, newlines, ESC/BEL and U+2028 in every part, for open and stored rows alike.\n2. Bound the work before parsing. Do a length cap first, then split (splitn) or scan. Parse daemon stamps once per digest, not per row.\n3. A store read on the compact, close or digest path must be indexed and LIMITed.\n   - Put EXPLAIN QUERY PLAN in the PR body: build a scratch db with `for f in crates/store/migrations/*.sql; do sqlite3 db < $f; done`.\n   - A partial index (to_at IS NULL) can't serve closed rows.\n   - json_extract per jobs row is a scan.\n   - Put a timeout around the lookup, and make the fallback the brake (a generic turn), never a refusal.\n4. Queue state lies. A refused control is acked done, so use plan 222's compaction_wakes settlement for \"did it run\".\n5. Lexical scanners must fail safe. Read every relative literal, not keyword leads. Any path that leaves the directory must be a listed file, or the check fails. Comments, line breaks, concatenation and ${} interpolation each beat a lead-based scanner.\n6. Build env stamps go on the cargo command only, never `export`: a daemon launched later in the same recipe hands them to every bg job. Prove it with fakes on PATH (build_stamps.rs).\n7. Mutation-check every guard, and assert the edit applied, because rustfmt reflows lines and a string-match mutant silently no-ops. An \"ok\" from a non-applied mutant is not evidence; restore and cmp.\n"
+		}
+	]
+}
