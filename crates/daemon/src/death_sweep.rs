@@ -67,13 +67,14 @@ fn iso(at: u64) -> Result<String> {
 }
 
 fn body(seat: &SeatDescriptor, at: &str) -> String {
+    let process = seat.proc.map_or_else(
+        || "it never registered a process".to_string(),
+        |proc| format!("pid {} gone", proc.pid),
+    );
     format!(
-        "[pij] seat {} died (observed-dead) — pane {} absent, pid {} gone at {at}. It was your child; revive with `pij-rs revive {}` or leave it.",
+        "[pij] seat {} died (observed-dead) — pane {} absent, {process} at {at}. It was your child; revive with `pij-rs revive {}` or leave it.",
         seat.id,
         seat.pane.as_deref().unwrap_or("none"),
-        seat.proc
-            .expect("the canonical reaper requires a process identity")
-            .pid,
         seat.id,
     )
 }

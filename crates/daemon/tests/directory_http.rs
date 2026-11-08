@@ -2569,6 +2569,14 @@ async fn a_role_send_reaches_its_one_holder_and_records_the_request() {
     .await;
     assert_eq!(seat_send["ok"], false);
     assert_eq!(refusal_code(&seat_send), "E-RS-ROLE-ONLY", "{seat_send}");
+    // F121: the refusal says what to do instead.
+    assert!(
+        seat_send["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.contains("Drop them to send to the seat")
+                && meta.contains("send to role:<id>, where you can set a reply")),
+        "{seat_send}"
+    );
     let instance = send_to(rig.addr, &repo.main, "role:pm-001/a", "req-inst", json!({})).await;
     assert_eq!(refusal_code(&instance), "E-RS-ROLE-ADDRESS", "{instance}");
     let unknown = send_to(
@@ -5277,7 +5285,89 @@ async fn a_role_addressed_reply_answers_and_a_forged_sender_never_does() {
 }
 
 /// Every live delivery job for `seat` from `from`, oldest first: (sender,
-/// msg id). Read from the queue table, not `peek_inbox`, which shows only the
+/// msg id). Read from the queue table, not `peek_inbox`, which shows only the/// F116 and F120: a normal send, and a role request with `--reply none`, to a
+/// seat that has held FYIs are normal deliveries that carry the FYIs: the
+/// FYIs are settled via that message, the message itself is queued as an
+/// ordinary delivery, never held, and no receipt says `fyi-ride-along`.
+/// `--reply` changes only how the requester hears back, so the request is
+/// stored non-FYI. (The receipt's wording on the drain-worker path is the
+/// delivery unit test `a_pane_bound_send_carrying_fyis_is_queued_as_their_carrier`.)
+#[tokio::test]
+async fn a_send_carrying_held_fyis_is_a_normal_delivery_never_an_fyi() {
+    let (rig, repo, _) = limit_rig("pij-carrier-receipt", false).await;
+    let hold = |msg_id: &'static str| {
+        let (addr, cwd) = (rig.addr, repo.main.clone());
+        async move {
+            let held = send_to(addr, &cwd, "pij-holder", msg_id, json!({"fyi": true})).await;
+            assert_eq!(held["ok"], true, "{held}");
+        }
+    };
+    let settled_via = |id: &'static str| {
+        let path = rig._fresh.path();
+        async move {
+            let pool = sqlx::SqlitePool::connect(&format!("sqlite://{path}"))
+                .await
+                .unwrap();
+            let row: (String, Option<String>) =
+                sqlx::query_as("SELECT state, settled_via FROM fyis WHERE id = ?1")
+                    .bind(id)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            pool.close().await;
+            row
+        }
+    };
+    let normal = |response: &Value| {
+        response["ok"] == true
+            && response["data"]["outcome"]["outcome"] != "held"
+            && response["data"]["outcome"]["reason"] != "fyi-ride-along"
+    };
+
+    hold("fyi-a").await;
+    let request = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pm-001",
+        "req-quiet",
+        json!({"reply": "none"}),
+    )
+    .await;
+    assert!(normal(&request), "{request}");
+    let stored = rig.store.role_request("req-quiet").await.unwrap().unwrap();
+    assert!(!stored.fyi, "--reply none never makes the request an FYI");
+    assert_eq!(
+        settled_via("fyi-a").await,
+        (
+            "delivered".to_string(),
+            Some("message:req-quiet".to_string())
+        ),
+        "the held FYI rides on the request"
+    );
+
+    hold("fyi-b").await;
+    let plain = send_to(rig.addr, &repo.main, "pij-holder", "plain-send", json!({})).await;
+    assert!(normal(&plain), "{plain}");
+    assert_eq!(
+        settled_via("fyi-b").await,
+        (
+            "delivered".to_string(),
+            Some("message:plain-send".to_string())
+        )
+    );
+
+    let queued: Vec<String> = queued_from(&rig, "pij-holder", SEAT)
+        .await
+        .into_iter()
+        .map(|(_, msg_id)| msg_id)
+        .collect();
+    assert!(
+        queued.contains(&"req-quiet".to_string()) && queued.contains(&"plain-send".to_string()),
+        "both are ordinary deliveries: {queued:?}"
+    );
+    rig.server.abort();
+}
+
 /// head job.
 async fn queued_from(rig: &Rig, seat: &str, from: &str) -> Vec<(String, String)> {
     let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))

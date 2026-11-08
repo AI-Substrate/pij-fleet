@@ -1075,6 +1075,14 @@ impl TmuxPort for TmuxAdapter {
         Ok(rows[rows.len() - keep..].join("\n"))
     }
 
+    async fn list_panes_without_launch(&self) -> Result<Option<Vec<Pane>>> {
+        // The live control client or nothing: no start, no fork (F114).
+        match self.control.query_live(&self.list_args()) {
+            Some(reply) => parse_panes(&self.control_stdout("list-panes", reply)?).map(Some),
+            None => Ok(None),
+        }
+    }
+
     async fn capture_without_launch(&self, pane: &str) -> Result<Option<String>> {
         // The live control client or nothing: no start, no fork (plan 219).
         match self

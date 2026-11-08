@@ -159,8 +159,12 @@ async fn lifecycle_unknown_flags_and_forged_actor_are_not_silently_accepted() {
     server.abort();
 }
 
+/// F114: these seats never registered a process, and their recorded panes are
+/// not among tmux's panes, so the pane's absence decides: a dry run lists all
+/// three as never-bound candidates and changes nothing, and a run retires
+/// them. (Before F114 a missing process identity was unverifiable forever.)
 #[tokio::test]
-async fn reap_missing_process_identity_is_unverifiable_in_dry_run_and_run() {
+async fn reap_never_bound_seats_are_decided_by_their_recorded_pane() {
     let fixtures = contracts();
     let (addr, server, _store) = daemon(&fixtures).await;
     let fixture = case(&fixtures, "reap-dry-run");
@@ -172,19 +176,13 @@ async fn reap_missing_process_identity_is_unverifiable_in_dry_run_and_run() {
     }
     assert_eq!(dry["data"]["before"], 3);
     assert_eq!(dry["data"]["after"], 3);
-    assert_eq!(dry["data"]["candidates"], json!([]));
+    let candidates = dry["data"]["candidates"].as_array().expect("rows");
+    assert_eq!(candidates.len(), 3, "{dry}");
+    assert!(candidates.iter().all(|row| row["process"] == "never-bound"
+        && row["pane"] == "absent"
+        && row["reason"] == "never-bound-and-pane-absent"));
     assert_eq!(dry["data"]["reaped"], json!([]));
-    assert_eq!(
-        dry["data"]["unverifiable"].as_array().expect("rows").len(),
-        3
-    );
-    assert!(
-        dry["data"]["unverifiable"]
-            .as_array()
-            .expect("rows")
-            .iter()
-            .all(|row| row["reason"] == fixture["response"]["data"]["unverifiable"][0]["reason"])
-    );
+    assert_eq!(dry["data"]["unverifiable"], json!([]));
     let mut request = fixture["shim_request"].clone();
     request["argv"] = json!(["reap"]);
     let actual: Value = post(addr, "/v1/reap", &request)
@@ -192,9 +190,9 @@ async fn reap_missing_process_identity_is_unverifiable_in_dry_run_and_run() {
         .json()
         .await
         .expect("actual-run envelope");
-    for field in ["before", "after", "candidates", "reaped", "unverifiable"] {
-        assert_eq!(actual["data"][field], dry["data"][field]);
-    }
     assert_eq!(actual["data"]["dry_run"], false);
+    assert_eq!(actual["data"]["candidates"], dry["data"]["candidates"]);
+    assert_eq!(actual["data"]["reaped"].as_array().expect("rows").len(), 3);
+    assert_eq!(actual["data"]["after"], 0);
     server.abort();
 }

@@ -12,7 +12,7 @@ use serde::Serialize;
 pub struct ReapCandidate {
     /// Registry identity, not a process to signal.
     pub seat: SeatId,
-    /// `dead` or `recycled`.
+    /// `dead`, `recycled`, or `never-bound` (no process ever registered).
     pub process: &'static str,
     /// `absent`, `reincarnated` (the id exists again, hosting a later process
     /// tree than the seat's), or `paneless`.
@@ -68,7 +68,7 @@ async fn eligibility(
     tmux: &dyn TmuxPort,
 ) -> Eligibility {
     let Some(proc) = seat.proc else {
-        return Eligibility::Unknown("process-identity-unavailable");
+        return never_bound(seat, tmux).await;
     };
     let process = match alive(proc, liveness).await {
         Ok(Liveness::Active) => return Eligibility::Retain,
@@ -105,6 +105,31 @@ async fn eligibility(
         pane,
         reason,
     })
+}
+
+/// A seat that never registered a process (F114): its harness was launched in
+/// its recorded pane, created before the row was written, so that pane is
+/// the one witness. Its ABSENCE decides; presence keeps the seat, and a pane
+/// list that can't be read without a launch (no live tmux control client),
+/// or fails, is a brake (unknown). A seat with no recorded pane stays
+/// unknown: there is nothing to observe. This runs every death-sweep tick for
+/// each such seat, so it reads panes only over the live control client and
+/// never forks.
+async fn never_bound(seat: &SeatDescriptor, tmux: &dyn TmuxPort) -> Eligibility {
+    let Some(recorded) = &seat.pane else {
+        return Eligibility::Unknown("process-identity-unavailable");
+    };
+    match tmux.list_panes_without_launch().await {
+        Ok(Some(panes)) if panes.iter().any(|pane| &pane.id == recorded) => Eligibility::Retain,
+        Ok(Some(_)) => Eligibility::Candidate(ReapCandidate {
+            seat: seat.id.clone(),
+            process: "never-bound",
+            pane: "absent",
+            reason: "never-bound-and-pane-absent",
+        }),
+        Ok(None) => Eligibility::Unknown("pane-probe-needs-a-launch"),
+        Err(_) => Eligibility::Unknown("pane-probe-failed"),
+    }
 }
 
 /// Is the pane now carrying `recorded` a LATER pane than the one the seat lived in?
