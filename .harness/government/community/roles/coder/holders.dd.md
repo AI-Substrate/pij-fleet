@@ -70,3 +70,4 @@
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f139 | 2026-11-08T23:43:02.455Z | — | pij-steady-otter | — | F139 stuck bg final turn for a gone owner (#197) | — |
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | f148 | 2026-11-08T23:43:48.874Z | — | pij-steady-otter | — | F148 spawn exit-status race (from closed #183) | — |
 | — | pij-exuberant-wildcat | copilot | cc88fc7c-b066-44d1-a82d-fa6560786ddf | ops.osk.lan | f149 | 2026-11-08T23:52:09.048Z | — | pij-steady-otter | — | F149 priority: pij close held by memory-turn never completes | — |
+| — | pij-exuberant-wildcat | copilot | cc88fc7c-b066-44d1-a82d-fa6560786ddf | ops.osk.lan | f150 | 2026-11-08T23:52:09.560Z | — | pij-steady-otter | — | F150: reply-none requests counted as unanswered | — |
