@@ -185,6 +185,11 @@ pub struct Config {
     /// ruling 5). Bearer keys then cross that network in clear, so it is an
     /// explicit `--insecure-bind`, never a default.
     pub insecure_bind: bool,
+    /// Whether the PA watchdog round nudges idle holders (plan 224). Off by
+    /// default: as merged it treated a resting long-lived role holder as
+    /// stalled work and cold-woke specialists overnight (F144). The daemon
+    /// composition root reads `PIJ_IDLE_NUDGE` (`1`, `on` or `true`).
+    pub idle_nudge: bool,
 }
 
 impl Default for Config {
@@ -210,6 +215,7 @@ impl Default for Config {
             machine_alias: None,
             peers: Vec::new(),
             insecure_bind: false,
+            idle_nudge: false,
         }
     }
 }

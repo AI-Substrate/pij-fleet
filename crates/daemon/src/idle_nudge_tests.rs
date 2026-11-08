@@ -17,9 +17,15 @@ const PARENT: &str = "pij-pm";
 const PRIME: &str = "pij-prime";
 
 async fn services() -> (crate::Services, FreshStore, Config, String) {
+    services_with(true).await
+}
+
+/// `nudge`: switch the nudge on (`PIJ_IDLE_NUDGE`); otherwise the config is
+/// left at its default.
+async fn services_with(nudge: bool) -> (crate::Services, FreshStore, Config, String) {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let store = FreshStore::new();
-    let config = Config {
+    let mut config = Config {
         adapters: Adapters {
             registry: AdapterChoice::Real,
             spine: AdapterChoice::Real,
@@ -29,6 +35,9 @@ async fn services() -> (crate::Services, FreshStore, Config, String) {
         store_path: store.path(),
         ..Config::default()
     };
+    if nudge {
+        config.idle_nudge = true;
+    }
     let mut services = build(&config, &store).await;
     services.tmux = Arc::new(FakeTmux::new());
     let folder = std::env::temp_dir().join(format!(
@@ -255,6 +264,25 @@ async fn an_idle_holder_is_nudged_once_per_idle_stretch() {
         "the next idle stretch is nudged once more"
     );
     assert_eq!(sent(&services).await.len(), 1);
+}
+
+/// F144: the nudge is off unless `PIJ_IDLE_NUDGE` turns it on. With the
+/// default config, a holder idle well past the hour gets no nudge and its
+/// parent no FYI.
+#[tokio::test]
+async fn the_nudge_is_off_by_default() {
+    let (services, _store, _config, folder) = services_with(false).await;
+    fleet(&services, &folder).await;
+    hold(&services, "crane", "merger", "").await;
+    let start = crate::http::system_time_ms().unwrap();
+    report(&services, start).await;
+    assert!(
+        round(&services, start + 3 * IDLE_NUDGE_AFTER_MS)
+            .await
+            .is_empty()
+    );
+    assert!(sent(&services).await.is_empty());
+    assert_eq!(fyis(&services, PARENT).await, 0);
 }
 
 /// bp-0001: the project's designated prime is told, not the parent.
