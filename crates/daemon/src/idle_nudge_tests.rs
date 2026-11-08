@@ -538,6 +538,78 @@ async fn a_squatted_fyi_id_neither_hides_nor_fakes_the_notice() {
     );
 }
 
+/// Squirrel, #189 r2: the nudge id is published on `/v1/events` before any
+/// FYI is held, and each `fyi.held` before the next prime's hold, so a
+/// subscriber knows them in turn. Every prime FYI id has its own random
+/// part: none follows from the nudge id or from another prime's FYI id.
+#[tokio::test]
+async fn each_prime_fyi_id_follows_from_nothing_published() {
+    const PRIME_TWO: &str = "pij-prime-two";
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    let mut second = SeatDescriptor::new(PRIME_TWO, Harness::Claude, &folder);
+    second.pane = Some("%23".into());
+    services.registry.put(second).await.unwrap();
+    for (project, prime) in [("crane", PRIME), ("dock", PRIME_TWO)] {
+        sqlx::query(
+            "INSERT INTO projects (slug, created_by, created_at, prime_id) VALUES (?1, ?2, 1, ?3)",
+        )
+        .bind(project)
+        .bind(PARENT)
+        .bind(prime)
+        .execute(&services.store_pools[0])
+        .await
+        .unwrap();
+        hold(&services, project, "merger", "").await;
+    }
+    let start = crate::http::system_time_ms().unwrap();
+    report(&services, start).await;
+    let anchor = services
+        .watchdogs()
+        .last_own_event(&SeatId::from(SEAT))
+        .await
+        .unwrap()
+        .unwrap()
+        .0;
+    assert_eq!(
+        round(&services, start + IDLE_NUDGE_AFTER_MS + MINUTE).await,
+        vec![RoundOutcome::IdleNudge {
+            seat: SEAT.into(),
+            delivery: "queued".into(),
+            primes: vec![
+                (PRIME.into(), "held".into()),
+                (PRIME_TWO.into(), "held".into())
+            ],
+        }]
+    );
+    let nudge = sent(&services).await;
+    assert_eq!(nudge.len(), 1);
+    let fyi_id = |prime: &'static str| {
+        let pool = services.store_pools[0].clone();
+        async move {
+            sqlx::query_scalar::<_, String>("SELECT id FROM fyis WHERE recipient = ?1")
+                .bind(prime)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        }
+    };
+    let (one, two) = (fyi_id(PRIME).await, fyi_id(PRIME_TWO).await);
+    let random = |id: &str| id.split(':').nth(3).unwrap().to_string();
+    let prefix = format!("idle-nudge-fyi:{SEAT}:{anchor}:");
+    for (id, prime) in [(&one, PRIME), (&two, PRIME_TWO)] {
+        assert!(
+            id.starts_with(&prefix) && id.ends_with(&format!(":{prime}")),
+            "{id}"
+        );
+        assert_eq!(random(id).len(), 32, "{id}");
+    }
+    let nudge_random = nudge[0].msg_id.rsplit(':').next().unwrap().to_string();
+    assert_ne!(random(&one), nudge_random, "not the nudge's random part");
+    assert_ne!(random(&two), nudge_random, "not the nudge's random part");
+    assert_ne!(random(&one), random(&two), "not each other's random part");
+}
+
 /// bp-0001: a hostile holding label is never shown raw, to the seat or its
 /// prime.
 #[tokio::test]

@@ -117,8 +117,8 @@ async fn mark_then_nudge(
 ) -> Option<RoundOutcome> {
     let seat = &due.seat.id;
     // Minted before the mark, so a failure marks nothing.
-    let occurrence = match occurrence() {
-        Ok(occurrence) => occurrence,
+    let nudge_part = match occurrence() {
+        Ok(part) => part,
         Err(cause) => {
             eprintln!("pa watchdog: idle nudge: id for {seat}: {cause}");
             return None;
@@ -129,7 +129,7 @@ async fn mark_then_nudge(
         .mark_idle_nudged(seat, due.anchor, now_ms)
         .await
     {
-        Ok(true) => Some(nudge(services, seats, due, &occurrence, now_ms).await),
+        Ok(true) => Some(nudge(services, seats, due, &nudge_part, now_ms).await),
         Ok(false) => None,
         Err(cause) => {
             eprintln!("pa watchdog: idle nudge: mark {seat}: {cause}");
@@ -258,9 +258,9 @@ async fn primes(services: &Services, seats: &[SeatDescriptor], due: &Due<'_>) ->
     told
 }
 
-/// A per-occurrence id part nobody outside the daemon can predict, so no
-/// caller can take the nudge's or an FYI's id first (S189-001). Idempotency
-/// comes from the mark, not from the id.
+/// A random id part nobody outside the daemon can predict, so no caller can
+/// take the nudge's or an FYI's id first (S189-001). Each id gets its own.
+/// Idempotency comes from the mark, not from the id.
 fn occurrence() -> Result<String, getrandom::Error> {
     let mut bytes = [0_u8; 16];
     getrandom::fill(&mut bytes)?;
@@ -271,11 +271,11 @@ async fn nudge(
     services: &Services,
     seats: &[SeatDescriptor],
     due: &Due<'_>,
-    occurrence: &str,
+    nudge_part: &str,
     now_ms: u64,
 ) -> RoundOutcome {
     let seat = due.seat;
-    let msg_id = format!("idle-nudge:{}:{}:{occurrence}", seat.id, due.anchor);
+    let msg_id = format!("idle-nudge:{}:{}:{nudge_part}", seat.id, due.anchor);
     let (outcome, cold_check) = wake_pa_receipt(
         services,
         seat,
@@ -288,22 +288,23 @@ async fn nudge(
     let delivery = outcome_text(&outcome);
     let mut told = Vec::new();
     for prime in primes(services, seats, due).await {
-        let fyi = services
-            .delivery
-            .hold_fyi(bg_msg(
-                &prime,
-                prime_body(&seat.id, due.idle_ms, &due.held),
-                format!(
-                    "idle-nudge-fyi:{}:{}:{occurrence}:{prime}",
-                    seat.id, due.anchor
-                ),
-            ))
-            .await;
-        let word = outcome_text(
-            &fyi.map(|receipt| receipt.outcome)
+        // Its own random part, never the nudge's: the nudge id is published on
+        // /v1/events before this hold, so an id derived from it could be
+        // taken first (review of #189, squirrel).
+        let fyi = match occurrence() {
+            Ok(own) => services
+                .delivery
+                .hold_fyi(bg_msg(
+                    &prime,
+                    prime_body(&seat.id, due.idle_ms, &due.held),
+                    format!("idle-nudge-fyi:{}:{}:{own}:{prime}", seat.id, due.anchor),
+                ))
+                .await
+                .map(|receipt| receipt.outcome)
                 .map_err(|cause| cause.to_string()),
-        );
-        told.push((prime, word));
+            Err(cause) => Err(cause.to_string()),
+        };
+        told.push((prime, outcome_text(&fyi)));
     }
     audit(
         services,
