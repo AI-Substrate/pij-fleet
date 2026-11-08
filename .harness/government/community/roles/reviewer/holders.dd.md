@@ -74,3 +74,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 168 | 2026-11-07T21:44:44.601Z | 2026-11-08T00:20:05.572Z | pij-steady-otter | pij-far-jackal | plan 215 #168 | PR #168 merged (c7d660c5dc8c) |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 169 | 2026-11-07T22:38:12.253Z | 2026-11-07T22:49:16.680Z | pij-steady-otter | pij-steady-otter | F112 fix #169 | #169 merged a2cc5e7 |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 170 | 2026-11-08T00:31:11.229Z | — | pij-steady-otter | — | F107/F109 pr-freeze #170 | — |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 171 | 2026-11-08T01:04:42.707Z | — | pij-steady-otter | — | PRD 003 answers docs #171 | — |

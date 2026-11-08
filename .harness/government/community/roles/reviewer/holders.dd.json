@@ -727,6 +727,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-double-bobcat",
 					"why": "F107/F109 pr-freeze #170"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-08T01:04:42.707Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "171",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "PRD 003 answers docs #171"
 				}
 			]
 		}
