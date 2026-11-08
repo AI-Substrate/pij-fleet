@@ -59,8 +59,12 @@ rs-install:
     #!/bin/sh
     set -eu
     npm run link -- --check-only
-    # The PA digest compares seats' extension builds with this (F113).
-    PIJ_BUILD_COMMIT="$(git rev-parse --short=10 HEAD)" cargo build --release --locked -p pij-cli
+    # F113: the commit, and the extension source trees the PA digest compares
+    # seats' extensions with (ten characters of each id; the OMP extension also
+    # loads crates/core/tests/fixtures/control-commands.json). One git launch.
+    set -- $(git rev-parse HEAD HEAD:.copilot/extensions/pij HEAD:.omp/extensions/pij HEAD:crates/core/tests/fixtures/control-commands.json)
+    export PIJ_BUILD_COMMIT="$(printf %.10s "$1")" PIJ_EXT_TREE_COPILOT="$(printf %.10s "$2")" PIJ_EXT_TREE_OMP="$(printf %.10s "$3")+$(printf %.10s "$4")"
+    cargo build --release --locked -p pij-cli
     bin="$(npm prefix -g)/bin"
     mkdir -p "$bin"
     ln -sfn "$(pwd)/target/release/pij-rs" "$bin/pij-rs"
@@ -625,7 +629,12 @@ _pij-bin-shape-check global_npm_root pij_bin:
 bounce-rs:
     #!/usr/bin/env sh
     set -eu
-    PIJ_BUILD_COMMIT="$(git rev-parse --short=10 HEAD)" cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
+    # F113: the commit, and the extension source trees the PA digest compares
+    # seats' extensions with (ten characters of each id; the OMP extension also
+    # loads crates/core/tests/fixtures/control-commands.json). One git launch.
+    set -- $(git rev-parse HEAD HEAD:.copilot/extensions/pij HEAD:.omp/extensions/pij HEAD:crates/core/tests/fixtures/control-commands.json)
+    export PIJ_BUILD_COMMIT="$(printf %.10s "$1")" PIJ_EXT_TREE_COPILOT="$(printf %.10s "$2")" PIJ_EXT_TREE_OMP="$(printf %.10s "$3")+$(printf %.10s "$4")"
+    cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
     bin="$(npm prefix -g)/bin/pij-rs"
     old=$(lsof -nP -iTCP:7461 -sTCP:LISTEN -t || true)
     [ -n "$old" ] && kill "$old" && sleep 0.5

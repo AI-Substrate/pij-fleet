@@ -1852,14 +1852,19 @@ async fn clearing_another_anomaly_does_not_resurrect_a_cleared_stale_card() {
     );
 }
 
-/// F113: a seat whose extension was built from a different commit than the
-/// daemon is flagged `stale-extension`, naming both builds and the fix. A
-/// `+dirty` suffix, a longer short sha of the same commit and a `hash:` build
-/// are not flagged, and a daemon with no stamped commit flags nothing.
+/// F113: a seat whose extension source tree differs from the one the daemon
+/// was built with is flagged `stale-extension`, naming both and the fix. Only
+/// content counts: a newer commit with the same tree (a docs-only merge) and a
+/// `+dirty` build of the same tree are not flagged; an OMP seat whose outside
+/// root changed is. A seat with no tree (an older extension, or a `hash:`
+/// build), a Claude seat, and a daemon with no stamp are not compared.
 #[tokio::test]
 async fn a_seat_on_another_extension_build_is_flagged_in_the_digest() {
     let (mut services, _store) = services().await;
-    services.build_commit = Some("cb0ce436f3".into());
+    services.extension_trees = crate::ExtensionTrees {
+        copilot: Some("aaaaaaaaaa".into()),
+        omp: Some("bbbbbbbbbb+cccccccccc".into()),
+    };
     let prime = seat("pij-prime", "/stale-extension", None);
     services.registry.put(prime.clone()).await.unwrap();
     services
@@ -1872,14 +1877,30 @@ async fn a_seat_on_another_extension_build_is_flagged_in_the_digest() {
         .assert_role(&"pij-prime".into(), &"pij-pa".into(), Some("pa".into()))
         .await
         .unwrap();
-    for (id, build) in [
-        ("pij-stale", "0c4078197c"),
-        ("pij-dirty", "cb0ce436f3+dirty"),
-        ("pij-longer", "cb0ce436f3e"),
-        ("pij-hashed", "hash:0123456789ab"),
+    for (id, harness, build) in [
+        ("pij-stale", Harness::Copilot, "0c4078197c tree:1111111111"),
+        ("pij-docs", Harness::Copilot, "ffffffffff tree:aaaaaaaaaa"),
+        (
+            "pij-dirty",
+            Harness::Copilot,
+            "0c4078197c+dirty tree:aaaaaaaaaa",
+        ),
+        (
+            "pij-omp-outside",
+            Harness::Omp,
+            "1234567890 tree:bbbbbbbbbb+dddddddddd",
+        ),
+        (
+            "pij-omp-same",
+            Harness::Omp,
+            "1234567890 tree:bbbbbbbbbb+cccccccccc",
+        ),
+        ("pij-older", Harness::Copilot, "0c4078197c"),
+        ("pij-hashed", Harness::Copilot, "hash:0123456789ab"),
+        ("pij-claude", Harness::Claude, "0c4078197c tree:1111111111"),
     ] {
         let mut worker = seat(id, "/stale-extension", Some("pij-prime"));
-        worker.harness = Harness::Copilot;
+        worker.harness = harness;
         worker.extension_build = Some(build.into());
         services.registry.put(worker).await.unwrap();
     }
@@ -1905,13 +1926,19 @@ async fn a_seat_on_another_extension_build_is_flagged_in_the_digest() {
     let body = digest(&services, start).await;
     assert!(
         body.contains(
-            "pij-stale  stale-extension: extension build 0c4078197c, daemon build cb0ce436f3. Reload"
+            "pij-stale  stale-extension: extension source tree 1111111111 (build 0c4078197c tree:1111111111), daemon built with aaaaaaaaaa. Reload"
         ),
         "{body}"
     );
-    assert_eq!(body.matches("stale-extension:").count(), 1, "{body}");
+    assert!(
+        body.contains(
+            "pij-omp-outside  stale-extension: extension source tree bbbbbbbbbb+dddddddddd"
+        ),
+        "{body}"
+    );
+    assert_eq!(body.matches("stale-extension:").count(), 2, "{body}");
 
-    services.build_commit = None;
+    services.extension_trees = crate::ExtensionTrees::default();
     let body = digest(&services, start + 120_000).await;
     assert!(!body.contains("stale-extension:"), "{body}");
 }

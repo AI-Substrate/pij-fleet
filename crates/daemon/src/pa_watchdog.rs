@@ -1336,37 +1336,39 @@ async fn queued_requests(
 ///
 /// Reads follow the fleet and its stale cards, never history. The other
 /// kinds stay with `pij anomalies`.
-/// Seats whose extension was built from a different commit than this daemon
+/// Seats whose extension source differs from what this daemon was built with
 /// (F113): steering held 15-36 minutes on seats still running the extension
-/// from before C31, and nothing showed it. Only seats that report a git build
-/// are compared: the Copilot native and OMP extensions, which load from the
-/// same checkout the daemon is built from. Claude and Codex seats report none,
-/// and a `hash:` build (no git) has no commit to compare. `+dirty` is ignored.
-/// A different commit is all it checks, with no ancestry walk; one short sha
-/// may be longer than the other, so a prefix match counts as the same. Reads
-/// the seat rows the round already has: no launch.
+/// from before C31, and nothing showed it. It compares content, not commits:
+/// the git tree id each extension reports after ` tree:` in `extension_build`
+/// against the daemon's stamp for that extension, so a merge that does not
+/// touch an extension (docs only, or a daemon-only change and bounce) flags
+/// nothing. Copilot seats compare with the Copilot extension's stamp, OMP and
+/// Pi seats with the OMP extension's; Claude and Codex seats report no
+/// extension. A seat without a tree (an older extension, or a `hash:` build)
+/// or a daemon without the stamp is not compared. Reads the seat rows the
+/// round already has: no launch.
 fn stale_extensions(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly> {
-    let Some(daemon) = services.build_commit.as_deref() else {
-        return Vec::new();
-    };
+    let trees = &services.extension_trees;
     rows.iter()
         .filter_map(|row| {
+            let stamp = match row.seat.harness {
+                Harness::Copilot => trees.copilot.as_deref(),
+                Harness::Omp | Harness::Pi => trees.omp.as_deref(),
+                _ => None,
+            }?;
             let build = row.seat.extension_build.as_deref()?;
-            let commit = build.strip_suffix("+dirty").unwrap_or(build);
-            if commit.is_empty()
-                || commit.starts_with("hash:")
-                || commit.starts_with(daemon)
-                || daemon.starts_with(commit)
-            {
+            let (_, tree) = build.split_once(" tree:")?;
+            if tree == stamp {
                 return None;
             }
             Some(FleetAnomaly {
                 seat: row.seat.id.clone(),
                 kind: "stale-extension".to_string(),
                 detail: format!(
-                    "extension build {build}, daemon build {daemon}. Reload the seat's extension \
-                     (Copilot: extensions_reload; OMP: /reload), or revive it if its launch flags \
-                     changed; if the extension is the newer, the daemon needs `just bounce-rs`"
+                    "extension source tree {tree} (build {build}), daemon built with {stamp}. \
+                     Reload the seat's extension (Copilot: extensions_reload; OMP: /reload), or \
+                     revive it if its launch flags changed; if the extension is the newer, the \
+                     daemon needs `just bounce-rs`"
                 ),
             })
         })
