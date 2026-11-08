@@ -55,3 +55,4 @@
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | f126 | 2026-11-08T03:03:48.268Z | 2026-11-08T04:24:49.705Z | pij-steady-otter | pij-steady-otter | F126: cargo job cap in just shared-build (machine load 95) | #176 merged 1517f2e9 |
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | f123 | 2026-11-08T04:24:50.048Z | — | pij-steady-otter | — | F123 tmux capture test flake | — |
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f113 | 2026-11-08T04:29:35.395Z | — | pij-steady-otter | — | #175 still in review | — |
+| — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f124 | 2026-11-08T04:29:35.728Z | — | pij-steady-otter | — | F124 Copilot receiver false fail-safe drops the lease | — |
