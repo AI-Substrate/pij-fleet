@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "1d199da44afd12bb88ef2c978fcbc5e6e2e49d0a",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/177#issuecomment-6717149832",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:177",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `1d199da44afd12bb88ef2c978fcbc5e6e2e49d0a`.\n\n**F119:** the new `symlink_metadata(docs/project)` is **one in-process filesystem lookup only when Delivers parsing returns Missing**, not on every delivered run. Valid or malformed lines bypass it. NotFound permits the new no-docs case; other lookup failures explicitly refuse. No directory/body scan, helper process or timer is added by this check.\n\n**P177-N001, newly admitted work is not process-free:** formerly refused missing-line/no-docs requests now continue through the existing delivered/holding-release pipeline. The gh read already occurred before the old refusal, but a newly successful release can now pay the existing store operations, **one writer commit with seven normal community Git calls plus two ddocs calls per changed DD document**, and existing per-seat window/notification work. No new executable site or extra launch is added relative to an already-admitted delivered request. This is the intended feature's existing downstream price, not only the cost of its stat.\n\n**F117:** the view already reads the project's prime_id and the registry once. `designated`/`live_holder` reuse that project record and supplied HashSet; no additional project, registry, process-start or host-liveness read. Here `seat_live` means membership in the registered/non-tombstoned roster, **not a fresh process-liveness probe**. The per-role holding-history predicate is now computed once and reused for idle review/call_on, with small designation lookups and JSON/string bytes; it is also computed for retired roles. There is no new SQL or launch per role.\n\nThe view is reached through the existing HTTP directory-view call; idle-review and call_on are in-memory picture/command generation, not a new scheduled worker or execution of those commands. No added per-tick work, loop or recurring timer. `assign_many`'s prime guard scans the input batch and refuses before its pending-read/writer work, reducing rather than adding launches on that refused path.\n\n**CI:** [42444430321](https://github.com/AI-Substrate/pij-fleet/actions/runs/42444430321) succeeds at this exact SHA. The successful Rust job identifies **artifact13603221217**; its JUnit records **2,204 executed cases, zero failures/errors**, and the job separately reports five skipped tests. Verified no-docs missing-line admission/holding release, malformed-line refusal, designation/assignment refusal, CLI rendering and all six unchanged spawn guards. Rust lint and Node22/24 checks pass; Delivers `42444430260` succeeds.\n\nWorktree and GitHub heads agree; clean and CLEAN/MERGEABLE. No local Cargo, build, test, live delivered/view call or deployment probe. **The separate reviewer block at this head is not cleared by this cost verdict.**\n"
+		}
+	]
+}
