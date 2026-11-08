@@ -878,7 +878,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "182",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #182 merged (badae3b1f074)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-08T06:41:14.577Z",
 					"why": "F127 seat id and role grammar #182"
 				}
 			]
