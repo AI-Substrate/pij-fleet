@@ -861,3 +861,100 @@ async fn background_handoff_is_recorded_once_and_only_an_observed_fallback_repla
         Some("held")
     );
 }
+
+/// F139 (#197 round 3): settling an orphan by Telegram writes its settlement
+/// record, its queued Telegram and the job's mark in ONE transaction. A failed
+/// queue write leaves all three as they were, so the next look tries again; a
+/// committed one is never queued twice (the queue's own dedupe ends when the
+/// send completes).
+#[tokio::test]
+async fn a_telegram_settlement_writes_its_record_row_and_mark_together_or_not_at_all() {
+    let (_fresh, pool, background) = setup().await;
+    background
+        .insert(&queued("bg-orphan"))
+        .await
+        .expect("insert");
+    assert!(
+        background
+            .finish("bg-orphan", BackgroundState::Lost, None, 2_000)
+            .await
+            .expect("finish")
+    );
+    let record = "pij-bg:bg-orphan:orphaned";
+    background
+        .record_handoff("bg-orphan", record, r#"{"before":true}"#)
+        .await
+        .expect("record");
+    let telegram = pij_core::model::Job {
+        kind: "sidecar:telegram:send".to_string(),
+        serial_key: "default".to_string(),
+        payload: "{}".to_string(),
+        dedupe_key: format!("{record}:telegram"),
+        dedupe_origin: None,
+        attempt: 0,
+    };
+    let rows = || async {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM jobs WHERE dedupe_key = ?")
+            .bind(format!("{record}:telegram"))
+            .fetch_one(&pool)
+            .await
+            .expect("count")
+    };
+
+    // The queue write fails: nothing changes.
+    sqlx::query("ALTER TABLE jobs RENAME TO jobs_away")
+        .execute(&pool)
+        .await
+        .expect("hide the queue");
+    assert!(
+        background
+            .settle_by_telegram("bg-orphan", record, r#"{"after":true}"#, &telegram)
+            .await
+            .is_err()
+    );
+    sqlx::query("ALTER TABLE jobs_away RENAME TO jobs")
+        .execute(&pool)
+        .await
+        .expect("restore the queue");
+    assert_eq!(
+        background
+            .handoff("bg-orphan", record)
+            .await
+            .expect("read")
+            .as_deref(),
+        Some(r#"{"before":true}"#),
+        "the record is untouched"
+    );
+    assert!(
+        !background
+            .get("bg-orphan")
+            .await
+            .expect("get")
+            .expect("job")
+            .notified
+    );
+    assert_eq!(rows().await, 0);
+
+    // The next look: all three, once.
+    background
+        .settle_by_telegram("bg-orphan", record, r#"{"after":true}"#, &telegram)
+        .await
+        .expect("settle");
+    assert_eq!(
+        background
+            .handoff("bg-orphan", record)
+            .await
+            .expect("read")
+            .as_deref(),
+        Some(r#"{"after":true}"#)
+    );
+    assert!(
+        background
+            .get("bg-orphan")
+            .await
+            .expect("get")
+            .expect("job")
+            .notified
+    );
+    assert_eq!(rows().await, 1);
+}

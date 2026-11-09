@@ -643,6 +643,8 @@ struct QueueState {
     fyis: Vec<(pij_core::fyi::HeldFyi, &'static str)>,
     /// When each delivered FYI was claimed, by id (plan 159's `fyi-read`).
     fyi_claimed_at: HashMap<String, u64>,
+    /// `Some(n)`: `admitted` answers `n` more times, then fails until healed.
+    admitted_ok_left: Option<u32>,
 }
 
 impl FakeQueue {
@@ -677,6 +679,23 @@ impl FakeQueue {
             .iter()
             .map(|(_, job)| job.payload.clone())
             .collect()
+    }
+
+    /// After `ok` more answers, every `admitted` read fails until
+    /// [`Self::heal_admitted`]: an unknown, not a no.
+    pub fn fail_admitted_after(&self, ok: u32) {
+        self.state
+            .lock()
+            .expect("fake queue mutex")
+            .admitted_ok_left = Some(ok);
+    }
+
+    /// `admitted` answers again.
+    pub fn heal_admitted(&self) {
+        self.state
+            .lock()
+            .expect("fake queue mutex")
+            .admitted_ok_left = None;
     }
 
     /// Everything acked, in order.
@@ -1228,7 +1247,17 @@ impl Queue for FakeQueue {
         msg_id: &str,
         sender_machine: Option<&str>,
     ) -> Result<bool> {
-        let state = self.state.lock().expect("fake queue mutex");
+        let mut state = self.state.lock().expect("fake queue mutex");
+        match &mut state.admitted_ok_left {
+            Some(0) => {
+                return Err(PijError::Adapter {
+                    adapter: "testkit/fake-queue".to_string(),
+                    message: "scripted admitted failure".to_string(),
+                });
+            }
+            Some(left) => *left -= 1,
+            None => {}
+        }
         let kinds = [
             format!("delivery:{}", recipient.as_str()),
             format!("delivery-control:{}", recipient.as_str()),

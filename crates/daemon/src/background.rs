@@ -17,6 +17,7 @@ use pij_core::cold_wake::ColdCheck;
 use pij_core::error::{PijError, Result};
 use pij_core::model::{DeliveryOutcome, Event, Msg, ProcIdentity, SeatDescriptor, SeatId};
 use pij_core::ports::{LivenessPort, Registry};
+use pij_sidecars::telegram::{TelegramSend, send_job};
 use pij_store::background::{EmitOutcome, EventBatch, OWNER_GONE_GRACE_MS, SqliteBackground};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
@@ -255,10 +256,9 @@ fn unrebuilt(job: &BackgroundJob) -> (String, Subject) {
 struct OrphanNotice {
     text: String,
     to: Escalation,
-    /// The Telegram was handed to the queue. Recorded before the enqueue, and
-    /// it (not the queue, whose dedupe ends when the send completes) stops a
-    /// retry from sending it again. A crash between the two writes loses that
-    /// one Telegram rather than sending it twice.
+    /// The Telegram was queued: written in the same transaction as its queue
+    /// row and the job's mark (`settle_by_telegram`), so it is never queued
+    /// again (the queue's own dedupe ends when the send completes).
     #[serde(default)]
     committed: bool,
 }
@@ -1430,13 +1430,6 @@ impl BackgroundService {
         } else {
             None
         };
-        let path = PathBuf::from(&job.out_path);
-        let output = if job.state == BackgroundState::Done || job.timed_out {
-            blocking(move || read_tail(&path, 20).map(|lines| lines.join("\n"))).await?
-        } else {
-            String::new()
-        };
-        let body = completion_turn(job, &output);
         let msg_id = format!("pij-bg:{}:finished", job.job_id);
         let kind = match job.state {
             BackgroundState::Done => "bg.finished",
@@ -1505,6 +1498,16 @@ impl BackgroundService {
                 return self.settle_braked(job, owner.as_deref(), since).await;
             }
         }
+        // Only a final turn for a present owner reads the job's log, after the
+        // settlement and the owner are known; a failed read is reported and
+        // waits for the next look, never every tick.
+        let body = match self.final_body(job).await {
+            Ok(body) => body,
+            Err(error) => {
+                self.owner_recheck_after(&job.job_id, now_ms()?);
+                return Err(error);
+            }
+        };
         if job.kind == BackgroundKind::Events {
             return self.finish_source(job, body, &msg_id).await;
         }
@@ -1521,6 +1524,18 @@ impl BackgroundService {
             .await?;
         self.store.mark_notified(&job.job_id).await?;
         Ok(())
+    }
+
+    /// A completion turn: how the job ended, and its log's tail when it ran to
+    /// the end or timed out.
+    async fn final_body(&self, job: &BackgroundJob) -> Result<String> {
+        let path = PathBuf::from(&job.out_path);
+        let output = if job.state == BackgroundState::Done || job.timed_out {
+            blocking(move || read_tail(&path, 20).map(|lines| lines.join("\n"))).await?
+        } else {
+            String::new()
+        };
+        Ok(completion_turn(job, &output))
     }
 
     /// The jobs whose next look is still ahead: the tick's `pending` query
@@ -1674,7 +1689,7 @@ impl BackgroundService {
                     Some(why) => Some(why),
                     None => match self
                         .delivery
-                        .accept(bg_msg(&prime, notice.text.clone(), prime_id))
+                        .accept(bg_msg(&prime, notice.text.clone(), prime_id.clone()))
                         .await
                     {
                         Ok(receipt) => match receipt.outcome {
@@ -1685,11 +1700,19 @@ impl BackgroundService {
                             )),
                             _ => None,
                         },
-                        Err(error) => Some(format!(
-                            "Its prime {} could not take the notice ({}), so this came to you.",
-                            prime.rendered(),
-                            pij_core::render::caller_text(&error.to_string())
-                        )),
+                        // An error can follow an admission (a failed audit
+                        // publish), so the ledger decides. If even that read
+                        // fails, the outcome is unknown: keep the prime route
+                        // and look again (braked), never Telegram as well.
+                        Err(error) => match self.delivery.admitted(&prime, &prime_id).await {
+                            Ok(true) => None,
+                            Ok(false) => Some(format!(
+                                "Its prime {} could not take the notice ({}), so this came to you.",
+                                prime.rendered(),
+                                pij_core::render::caller_text(&error.to_string())
+                            )),
+                            Err(_) => return Err(error),
+                        },
                     },
                 };
                 if let Some(why) = refused {
@@ -1700,31 +1723,23 @@ impl BackgroundService {
                 }
             }
         }
-        // The Telegram leg: committed in the record before the enqueue.
+        // The Telegram leg: the settlement, the queued Telegram and the job's
+        // mark are one transaction, so a replay sees all three or none.
         if let Escalation::Telegram { why } = notice.to.clone()
             && !notice.committed
         {
             notice.committed = true;
-            self.store
-                .replace_handoff(&job.job_id, &msg_id, &encode_orphan(&notice)?)
-                .await?;
-            let sent = self
-                .routing
-                .telegram(
-                    &job.owner,
-                    format!("{}\n{why}", notice.text),
-                    format!("{msg_id}:telegram"),
-                )
+            let telegram = send_job(&TelegramSend {
+                from: job.owner.clone(),
+                body: format!("{}\n{why}", notice.text),
+                msg_id: format!("{msg_id}:telegram"),
+                chat_id: None,
+            })?;
+            self.failpoint("orphan-before-telegram")?;
+            return self
+                .store
+                .settle_by_telegram(&job.job_id, &msg_id, &encode_orphan(&notice)?, &telegram)
                 .await;
-            if let Err(error) = sent {
-                // Never enqueued: undo the commit so the next look sends it.
-                notice.committed = false;
-                let _ = self
-                    .store
-                    .replace_handoff(&job.job_id, &msg_id, &encode_orphan(&notice)?)
-                    .await;
-                return Err(error);
-            }
         }
         self.failpoint("orphan-before-mark")?;
         self.store.mark_notified(&job.job_id).await
@@ -2250,6 +2265,10 @@ mod tests {
         delivery: Arc<DeliveryService>,
         routing: Arc<FakeRouting>,
         dir: PathBuf,
+        /// The background store's pool, which also holds the Telegram queue
+        /// an orphan settles into.
+        pool: pij_store::StorePool,
+        queue: Arc<FakeQueue>,
     }
 
     /// Scripted cold-routing facts: which seats are cold (and idle how long),
@@ -2320,18 +2339,20 @@ mod tests {
             let event_bus = Arc::new(EventBus::new(spine.clone(), 16).unwrap());
             let transport = Arc::new(transport);
             let routing = Arc::new(FakeRouting::default());
+            let queue = Arc::new(FakeQueue::new(32).unwrap());
             let delivery = Arc::new(
                 DeliveryService::new(
                     registry.clone(),
-                    Arc::new(FakeQueue::new(32).unwrap()),
+                    queue.clone(),
                     transport.clone(),
                     Arc::new(InteractionGate::new(Arc::new(FakeTmux::new()))),
                     event_bus.clone(),
                 )
                 .unwrap(),
             );
+            let pool = pij_store::open("").await.unwrap();
             let service = BackgroundService::new(
-                SqliteBackground::new(pij_store::open("").await.unwrap()),
+                SqliteBackground::new(pool.clone()),
                 BackgroundPorts {
                     registry: registry.clone(),
                     liveness: Arc::new(liveness),
@@ -2350,6 +2371,8 @@ mod tests {
                 delivery,
                 routing,
                 dir,
+                pool,
+                queue,
             }
         }
 
@@ -4210,6 +4233,32 @@ mod tests {
         fixture.registry.put(owner).await.unwrap();
     }
 
+    /// The Telegrams an orphan settlement queued (the real queue rows).
+    async fn orphan_telegrams(fixture: &Fixture) -> Vec<TelegramSend> {
+        use pij_core::ports::Queue as _;
+        pij_store::SqliteQueue::new(fixture.pool.clone(), 60, 64)
+            .unwrap()
+            .live_payloads(&[pij_sidecars::telegram::TELEGRAM_SEND_KIND.to_string()])
+            .await
+            .unwrap()
+            .iter()
+            .map(|payload| serde_json::from_str(payload).unwrap())
+            .collect()
+    }
+
+    /// The Telegram sidecar sends and completes every queued orphan Telegram.
+    async fn telegrams_complete(fixture: &Fixture) {
+        use pij_core::ports::Queue as _;
+        let queue = pij_store::SqliteQueue::new(fixture.pool.clone(), 60, 64).unwrap();
+        let kinds = [pij_sidecars::telegram::TELEGRAM_SEND_KIND.to_string()];
+        while let Some((job, _)) = queue.claim(&kinds, "telegram").await.unwrap() {
+            queue
+                .ack(job, pij_core::model::Outcome::Done)
+                .await
+                .unwrap();
+        }
+    }
+
     /// The owner re-check brake's minute passes for every waiting job.
     fn minute_passes(fixture: &Fixture) {
         fixture.service.owner_rechecks.lock().unwrap().clear();
@@ -4385,20 +4434,20 @@ mod tests {
                 .unwrap()
         );
         let _ = fixture.service.tick().await;
-        let telegrams = fixture.routing.telegrams.lock().unwrap().clone();
+        let telegrams = orphan_telegrams(&fixture).await;
         let ghost: Vec<_> = telegrams
             .iter()
-            .filter(|(from, _, _)| from == &SeatId::from("pij-ghost"))
+            .filter(|telegram| telegram.from == SeatId::from("pij-ghost"))
             .collect();
         assert_eq!(ghost.len(), 1, "{telegrams:?}");
-        assert_eq!(ghost[0].2, "pij-bg:bg-ghost:orphaned:telegram");
+        assert_eq!(ghost[0].msg_id, "pij-bg:bg-ghost:orphaned:telegram");
         assert!(
-            ghost[0].1.contains("(no such seat)")
-                && ghost[0].1.ends_with(
+            ghost[0].body.contains("(no such seat)")
+                && ghost[0].body.ends_with(
                     "Its owner pij-ghost is not a seat on this machine, so this came to you."
                 ),
             "{}",
-            ghost[0].1
+            ghost[0].body
         );
         assert!(fixture.service.lookup("bg-ghost").await.unwrap().notified);
     }
@@ -4442,7 +4491,7 @@ mod tests {
         assert!(fixture.to("owner").is_empty(), "no second delivery");
         assert_eq!(fixture.held_fyis().await, 0);
         assert_eq!(fixture.to("prime").len(), 1, "not repeated");
-        assert!(fixture.routing.telegrams.lock().unwrap().is_empty());
+        assert!(orphan_telegrams(&fixture).await.is_empty());
         assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
     }
 
@@ -4463,17 +4512,16 @@ mod tests {
         for _ in 0..2 {
             fixture.service.tick().await.unwrap();
         }
-        assert!(fixture.routing.telegrams.lock().unwrap().is_empty());
+        assert!(
+            orphan_telegrams(&fixture).await.is_empty(),
+            "no Telegram as well"
+        );
         assert_eq!(fixture.to("prime").len(), 1);
         assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
     }
 
-    /// Review of #197 (bobcat): the queue's dedupe ends when a send completes,
-    /// so the record (committed before the enqueue) is what stops a retry from
-    /// sending the Telegram again after a completed send and a failed mark.
-    #[tokio::test]
-    async fn after_a_completed_telegram_and_a_failed_mark_nothing_is_resent() {
-        let fixture = Fixture::new(FakeLiveness::new()).await;
+    /// A job owned by no seat, ended past the grace: it settles by Telegram.
+    async fn ghost_past_grace(fixture: &Fixture) {
         let mut job = fixture.running().await;
         job.job_id = "bg-ghost".to_string();
         job.owner = SeatId::from("pij-ghost");
@@ -4497,19 +4545,241 @@ mod tests {
             .mark_notified("bg-recovery")
             .await
             .unwrap();
-        arm(&fixture, "orphan-before-mark");
-        assert!(fixture.service.tick().await.is_err(), "sent, not marked");
-        assert_eq!(fixture.routing.telegrams.lock().unwrap().len(), 1);
+    }
+
+    /// Review of #197 round 3 (bobcat): the settlement record, the queued
+    /// Telegram and the mark are one transaction. A failure before it leaves
+    /// none of them, and the next look (braked) settles it.
+    #[tokio::test]
+    async fn a_failed_telegram_settlement_leaves_nothing_and_settles_on_the_next_look() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        ghost_past_grace(&fixture).await;
+        arm(&fixture, "orphan-before-telegram");
+        assert!(fixture.service.tick().await.is_err());
+        assert!(orphan_telegrams(&fixture).await.is_empty(), "no row");
+        assert!(
+            !fixture.service.lookup("bg-ghost").await.unwrap().notified,
+            "no mark"
+        );
+        let stored: serde_json::Value = serde_json::from_str(
+            &fixture
+                .service
+                .store
+                .handoff("bg-ghost", "pij-bg:bg-ghost:orphaned")
+                .await
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(stored["committed"], false, "no settlement: {stored}");
+        fixture.service.tick().await.unwrap();
+        assert!(orphan_telegrams(&fixture).await.is_empty(), "braked");
+        minute_passes(&fixture);
+        fixture.service.tick().await.unwrap();
+        assert_eq!(orphan_telegrams(&fixture).await.len(), 1);
+        assert!(fixture.service.lookup("bg-ghost").await.unwrap().notified);
+    }
+
+    /// Review of #197 round 3 (bobcat): once the transaction commits, the
+    /// Telegram is sent exactly once, even after the send completes (when the
+    /// queue's own dedupe ends) and the daemon looks again.
+    #[tokio::test]
+    async fn a_committed_telegram_settlement_is_sent_exactly_once() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        ghost_past_grace(&fixture).await;
+        fixture.service.tick().await.unwrap();
+        assert_eq!(orphan_telegrams(&fixture).await.len(), 1);
+        assert!(fixture.service.lookup("bg-ghost").await.unwrap().notified);
+        telegrams_complete(&fixture).await;
+        assert!(orphan_telegrams(&fixture).await.is_empty(), "sent and done");
         minute_passes(&fixture);
         for _ in 0..2 {
             fixture.service.tick().await.unwrap();
         }
-        assert_eq!(
-            fixture.routing.telegrams.lock().unwrap().len(),
-            1,
-            "never re-sent"
+        assert!(
+            orphan_telegrams(&fixture).await.is_empty(),
+            "never queued again"
         );
-        assert!(fixture.service.lookup("bg-ghost").await.unwrap().notified);
+    }
+
+    /// Review of #197 round 3 (bobcat F004, ocelot P197-F003): a Done or
+    /// timed-out job's log tail is read only for a present owner. An orphan
+    /// with a missing log still settles; a present owner's missing log is
+    /// reported once and braked, never retried every tick.
+    #[tokio::test]
+    async fn a_missing_log_neither_blocks_an_orphan_nor_storms_a_present_owner() {
+        for timed_out in [false, true] {
+            let fixture = Fixture::new(FakeLiveness::new()).await;
+            fixture.add_seat("prime").await;
+            with_prime(&fixture);
+            let now = now_ms().unwrap();
+            let job = fixture.running_with_deadline(Some(now - 1_000)).await;
+            std::fs::remove_file(&job.out_path).unwrap();
+            if timed_out {
+                assert!(
+                    fixture
+                        .service
+                        .store
+                        .request_timeout("bg-recovery", now)
+                        .await
+                        .unwrap()
+                );
+                fixture
+                    .service
+                    .store
+                    .finish("bg-recovery", BackgroundState::Killed, Some(143), now)
+                    .await
+                    .unwrap();
+            } else {
+                fixture
+                    .service
+                    .store
+                    .finish("bg-recovery", BackgroundState::Done, Some(0), now)
+                    .await
+                    .unwrap();
+            }
+            // A present owner: the failed read is reported, then braked.
+            assert!(
+                fixture.service.tick().await.is_err(),
+                "timed_out={timed_out}"
+            );
+            let looked = owner_lookups(&fixture);
+            for _ in 0..5 {
+                fixture.service.tick().await.unwrap();
+            }
+            assert_eq!(owner_lookups(&fixture), looked, "no 100 ms storm");
+            // The owner goes: the orphan settles without its log.
+            owner_gone_for(&fixture, OWNER_GONE_GRACE_MS + 60_000).await;
+            minute_passes(&fixture);
+            fixture.service.tick().await.unwrap();
+            assert_eq!(fixture.to("prime").len(), 1, "timed_out={timed_out}");
+            assert!(
+                fixture
+                    .service
+                    .lookup("bg-recovery")
+                    .await
+                    .unwrap()
+                    .notified
+            );
+        }
+    }
+
+    /// Review of #197 round 3 (ocelot P197-F003): an admitted settlement
+    /// completes with no second notice even when the log has gone missing.
+    #[tokio::test]
+    async fn an_admitted_settlement_completes_with_its_log_missing() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        fixture.add_seat("prime").await;
+        with_prime(&fixture);
+        let job = fixture.running().await;
+        let now = now_ms().unwrap();
+        fixture
+            .service
+            .store
+            .finish("bg-recovery", BackgroundState::Done, Some(0), now)
+            .await
+            .unwrap();
+        owner_gone_for(&fixture, OWNER_GONE_GRACE_MS + 60_000).await;
+        arm(&fixture, "orphan-before-mark");
+        assert!(fixture.service.tick().await.is_err());
+        assert_eq!(fixture.to("prime").len(), 1);
+        std::fs::remove_file(&job.out_path).unwrap();
+        minute_passes(&fixture);
+        fixture.service.tick().await.unwrap();
+        assert_eq!(fixture.to("prime").len(), 1, "no second notice");
+        assert!(orphan_telegrams(&fixture).await.is_empty());
+        assert!(
+            fixture
+                .service
+                .lookup("bg-recovery")
+                .await
+                .unwrap()
+                .notified
+        );
+    }
+
+    /// Review of #197 round 3 (squirrel, bobcat F005): `accept` can admit the
+    /// notice and then fail its audit publish. The ledger decides, so the
+    /// prime having it settles as prime, with no Telegram as well.
+    #[tokio::test]
+    async fn an_audit_failure_after_admission_settles_as_prime() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        fixture.add_seat("prime").await;
+        with_prime(&fixture);
+        fixture.source("bg-src", "tok", false, 0, 5).await;
+        owner_gone_for(&fixture, OWNER_GONE_GRACE_MS + 60_000).await;
+        arm(&fixture, "orphan-before-admission");
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "recorded, not admitted"
+        );
+        fixture.spine.script_append_error("audit store down");
+        minute_passes(&fixture);
+        let _ = fixture.service.tick().await;
+        assert!(
+            fixture
+                .delivery
+                .admitted(&SeatId::from("prime"), "pij-bg:bg-src:orphaned:prime")
+                .await
+                .unwrap(),
+            "the prime has it"
+        );
+        assert!(
+            orphan_telegrams(&fixture).await.is_empty(),
+            "no Telegram as well"
+        );
+        assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
+    }
+
+    /// Review of #197 round 3 (bobcat F005): when the admission re-check after
+    /// a failed `accept` fails too, the outcome is unknown, so the prime route
+    /// is kept and looked at again under the brake; never Telegram as well.
+    #[tokio::test]
+    async fn an_unknown_admission_keeps_the_prime_route_and_retries() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        fixture.add_seat("prime").await;
+        with_prime(&fixture);
+        fixture.source("bg-src", "tok", false, 0, 5).await;
+        owner_gone_for(&fixture, OWNER_GONE_GRACE_MS + 60_000).await;
+        arm(&fixture, "orphan-before-admission");
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "recorded, not admitted"
+        );
+        fixture.spine.script_append_error("audit store down");
+        fixture.queue.fail_admitted_after(1);
+        minute_passes(&fixture);
+        assert!(fixture.service.tick().await.is_err(), "unknown");
+        fixture.queue.heal_admitted();
+        assert!(
+            orphan_telegrams(&fixture).await.is_empty(),
+            "no Telegram on an unknown"
+        );
+        assert!(!fixture.service.lookup("bg-src").await.unwrap().notified);
+        let stored = decode_orphan(
+            &fixture
+                .service
+                .store
+                .handoff("bg-src", "pij-bg:bg-src:orphaned")
+                .await
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            matches!(stored.to, Escalation::Prime { .. }),
+            "kept: {stored:?}"
+        );
+        fixture.service.tick().await.unwrap();
+        assert!(
+            !fixture.service.lookup("bg-src").await.unwrap().notified,
+            "braked"
+        );
+        minute_passes(&fixture);
+        fixture.service.tick().await.unwrap();
+        assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
+        assert_eq!(fixture.to("prime").len(), 1, "once");
+        assert!(orphan_telegrams(&fixture).await.is_empty());
     }
 
     /// Review of #197 (ocelot F002): a recorded prime route is not a licence to
@@ -4540,14 +4810,14 @@ mod tests {
             fixture.to("prime").is_empty(),
             "a cold prime is never woken"
         );
-        let telegrams = fixture.routing.telegrams.lock().unwrap().clone();
+        let telegrams = orphan_telegrams(&fixture).await;
         assert_eq!(telegrams.len(), 1, "{telegrams:?}");
         assert!(
-            telegrams[0].1.ends_with(
+            telegrams[0].body.ends_with(
                 "Its prime invalid (5 chars) is cold (idle 2h00m), so this came to you."
             ),
             "{}",
-            telegrams[0].1
+            telegrams[0].body
         );
         let stored: serde_json::Value = serde_json::from_str(
             &fixture
@@ -4630,9 +4900,9 @@ mod tests {
         *fixture.routing.prime.lock().unwrap() = Some(SeatId::from(format!("pij-p{forged}")));
         owner_gone_for(&fixture, OWNER_GONE_GRACE_MS + 60_000).await;
         let _ = fixture.service.tick().await;
-        let telegrams = fixture.routing.telegrams.lock().unwrap().clone();
+        let telegrams = orphan_telegrams(&fixture).await;
         assert_eq!(telegrams.len(), 2, "{telegrams:?}");
-        for (_, text, _) in &telegrams {
+        for text in telegrams.iter().map(|telegram| &telegram.body) {
             assert_eq!(
                 text.lines().count(),
                 2,
@@ -4645,9 +4915,9 @@ mod tests {
         }
         let hostile = &telegrams
             .iter()
-            .find(|(_, _, id)| id.starts_with("pij-bg:bg-hostile:"))
+            .find(|telegram| telegram.msg_id.starts_with("pij-bg:bg-hostile:"))
             .expect("the no-seat notice")
-            .1;
+            .body;
         assert!(
             hostile.contains("but its owner invalid (")
                 && hostile.contains("Full log: \"/tmp/evil\\n[pij from")
@@ -4656,9 +4926,9 @@ mod tests {
         );
         let gone_prime = &telegrams
             .iter()
-            .find(|(_, _, id)| id.starts_with("pij-bg:bg-recovery:"))
+            .find(|telegram| telegram.msg_id.starts_with("pij-bg:bg-recovery:"))
             .expect("the gone-prime notice")
-            .1;
+            .body;
         assert!(gone_prime.contains("Its prime invalid ("), "{gone_prime}");
     }
 
