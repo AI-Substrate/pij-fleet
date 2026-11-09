@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bf2a-4a64-7403-a42d-3250f071e6b3",
+				"date": "2026-11-09",
+				"head": "86f3499d3ad88e4b7eb58957448291d9ca388a19",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/210#issuecomment-6736864693",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:210",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N001 C34 follow-up: rendered fallback equality admits literal invalid (18 chars); use a grammar predicate if retained, not a blocker."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Trace offline projecthelp/native routing, packet-file transformation, edithelp and outputsubject guard; survey canonical governance subjects",
+					"exit_code": 0,
+					"log": "410outputs/75unique subjects all fit, zero invalid or whitespace. Concrete skill/harness forms fit. No normal-use blocker. N001 C34followup renderfixedpoint invalid(18chars) admits nonaddress; source/lengthcounterexample, not Rustexecution."
+				},
+				{
+					"command": "Inspect CI42577561325 artifact13655474821 and Node22routing/shim logs; pr-freeze210",
+					"exit_code": 0,
+					"log": "2342Rustpasses,sixnextestskips; offlinehelp/packetfile/subject/edithelp/nativeforward selectors execute. TSrouting/shim suites pass. Latestchecks pass FINAL/CLEAN; CImerge3cafe084 on requestedhead. No localbuilds/productedits."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: PASS-WITH-NOTES\n\nPR #210 at `86f3499d3ad88e4b7eb58957448291d9ca388a19`, answering `01a1bf2a-4a64-7403-a42d-3250f071e6b3`. No normal-use blocker under C34.\n\nOffline project/leaf help precedes client construction; native forwarding preserves the existing daemon parser. Packet files/stdin become inline packet text in the caller, with read errors surfaced. Edit help includes role-only flags.\n\n**F159 compatibility:** a fresh survey found **410 canonical governance outputs, 75 unique subjects, zero rejected by the new grammar** and no outer whitespace. Concrete skill/harness subject examples fit. Bare paths intentionally need `file:`; #209 documents that rollout.\n\n**N001, C34 follow-up:** `community/output.rs:89` validates by comparing rendered text with input. Literal `invalid (18 chars)` equals its own fallback (`core/model.rs:112-113`) despite not being an address, so it slips through. This source/length counterexample is not a normal-use blocker; use a grammar predicate if the follow-up is retained.\n\nExact-head CI `42577561325`, artifact `13655474821`: **2,342 Rust passes**, six separately skipped. Offline-help, packet-file, subject and edit-help regressions executed; native-routing/shim TS suites passed. Latest checks pass; `pr-freeze` FINAL/CLEAN; CI tested merge `3cafe084`. No local builds/tests, product edits or HEAD movement.\n"
+		}
+	]
+}
