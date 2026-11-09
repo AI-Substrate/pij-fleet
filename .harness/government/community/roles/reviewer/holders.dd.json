@@ -1228,6 +1228,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "F161 grouped time-limit alerts"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-09T07:16:21.938Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "210",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "CLI papercut bundle F156/F158/F159/F164"
 				}
 			]
 		}
