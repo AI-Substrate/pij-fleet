@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "75be9c2fdd4534883ae4ed49c1392fef5c010804",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/204#issuecomment-6732658966",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:204",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `75be9c2fdd4534883ae4ed49c1392fef5c010804`, under **C34**.\n\n**No added read per round.** Qualification still uses three global data queries plus one schema guard; its request query adds `delivered_at` and excludes `reply = none`. The mark and directory count add predicates to their existing statements. No new per-seat query, timer, loop, launch, migration or writer commit. Default-off still returns before all component I/O; time-limit check-ins are unchanged.\n\nRequest grouping runs only in the existing due-holder preparation: R requests enter a borrowed-key BTreeMap keyed by role/instance/project, with counts and oldest timestamps. Cost is O(R log G) key comparisons and O(G) groups/labels, not one label per request. Rendering borrows accepted grammar fields; invalid-field counting still follows raw bytes. Grouping does not cap the earlier request read or NudgeWork request-ID arrays.\n\nThe final join visits only the prefix fitting its 1,500-byte accounting threshold, then appends `...and N more`; each normal production label is bounded by closed names/numeric formatting. CI verifies all three notice bodies stay below 2,048 bytes and 40 same-address requests become one item. **C34 follow-up:** all groups/labels are prepared before this output cap, so total preparation remains data-sized. The helper always admits its first item and the suffix/separators are outside a strict 1,500-byte final-string limit; this is a listing budget, not a universal arbitrary-string cap. Current generated labels remain small.\n\n**CI:** [42564236452](https://github.com/AI-Substrate/pij-fleet/actions/runs/42564236452), attempt 1, Rust job `128987134124`, upload artifact **13649914418**, pinned to this head: **2,317 executed passed**, no failures/errors; five separately skipped. Verified reply-none qualification/mark/directory cases, grouped/capped notices, indexed directory count, default-off and six spawn guards. Rust lint, Node22/24 and delivers succeed.\n\nFrozen worktree/GitHub heads agree, clean/CLEAN. No local tests, mutations or live probe. F161 time-limit grouping stays a named follow-up; no normal-use cost blocker found.\n"
+		}
+	]
+}
