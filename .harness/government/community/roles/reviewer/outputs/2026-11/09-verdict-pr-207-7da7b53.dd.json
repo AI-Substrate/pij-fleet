@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bf26-f006-7682-a1d1-daef64510959",
+				"date": "2026-11-09",
+				"head": "7da7b5320602a686d4021d4661aca861d76c4c1b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/207#issuecomment-6734447688",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:207",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Trace cache_known, bounded known_cache and cheap_refusal; read extended refusal regression at7da7b53",
+					"exit_code": 0,
+					"log": "F001 closed: only knowncold proceeds; warm/unknown/error/timeout refusals precede writes. is_warm semantics preserved. Existing fixedSonnet and compact sequencing unchanged. No new C34 blocker."
+				},
+				{
+					"command": "Inspect successful CI42576508720 job129027321093 upload13654869689; pr-freeze207; CIcommit9598f928",
+					"exit_code": 0,
+					"log": "2342 Rust passes, six nextest skips; three cheapcases execute including unreadable/no-lastcall no-write regression. Other same-named artifact not credited. Latestchecks pass FINAL/CLEAN. CI/head treed25db733f287427abafc8a9fbaf18ccb54135a11; no local builds/edits."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Final-round correctness verdict: PASS\n\nPR #207 at `7da7b5320602a686d4021d4661aca861d76c4c1b`, answering `01a1bf26-f006-7682-a1d1-daef64510959`. **F001 is closed.** C34 final round; no remaining normal-use blocker.\n\n`cache_known` distinguishes warm, cold and explicit missing-fact reasons; the bounded daemon reader preserves timeout as unknown. `--cheap` proceeds only on `Ok(false)`, refusing warm and every unknown/error outcome before any write (`crates/daemon/src/http/revive.rs:30-48,292-301`). Existing `is_warm` behavior is preserved through the shared helper. Sonnet-only launch, registration wait and ordinary compact sequencing remain unchanged.\n\nExact-head CI `42576508720`, successful job `129027321093` upload **13654869689**: **2,342 Rust passes**, six separately skipped. All three cheap-compaction cases executed; the extended refusal test checks unreadable/no-last-call reasons and unchanged seat/spine. The other same-named artifact is not used as proof. Latest checks pass; `pr-freeze` FINAL/CLEAN; CI/head tree `d25db733f287427abafc8a9fbaf18ccb54135a11`. No local builds/tests, product edits or HEAD movement.\n"
+		}
+	]
+}
