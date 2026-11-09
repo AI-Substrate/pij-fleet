@@ -1,0 +1,29 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"hook": "Open before writing any daemon notice/nudge that wakes or tells seats, changing a just recipe that launches the daemon, or touching pij close / registration continuity",
+				"tags": [
+					"plan-224",
+					"f144",
+					"f147",
+					"f149",
+					"mutation",
+					"cost",
+					"registration"
+				],
+				"title": "wildcat: idle nudge done right (F136/F144), recipe env proofs, owner-close and status-line heal (F149)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Idle nudge (#189, #195), what reviewers forced:\n- **Qualify only real in-flight work.** Count a task instance holding (`coder/224`, `reviewer/183b`, `coder/f144`; `is_task_instance`, cap `TASK_NUMBER_MAX_DIGITS`), an open plan or fix claim, or a delivered request with `answered_at` NULL. A bare long-lived role is a resting specialist (C30). F150 is pending: exclude `--reply none`.\n- **Never cold-wake for a nudge.** Wake only on Clear or Busy. Unknown counts as not warm, and the prime gets an FYI instead. Audit with `receipt_label(false)`.\n- **Re-check everything in the one conditional INSERT...SELECT mark.** That means the own-event anchor, the seat still idle, and the exact keys of the named work (bound as JSON, read with `json_each`). A veto sends nothing.\n- **Unguessable ids.** Every notice id gets its own 16 random bytes, the nudge's and each FYI's separately. `/v1/events` publishes ids before the next hold, so a derived id can be reserved by someone else first.\n- **No residual filters.** Use a partial expression index (`spine_own_events`) rather than a JSON filter that scans the idle tail. Name the index with `INDEXED BY` so drift fails loudly.\n\nMutation-check hygiene:\n- A mutant that makes SQL unusable under `INDEXED BY` errors every call. That's an INVALID kill: check that the intended test failed, for the intended reason.\n- Where two layers guard the same thing, each layer needs its own isolating test. Example: the snapshot vs the stored row, handed in as a fabricated snapshot.\n- Save baselines to a file. Reviewers ask for the source commit, baseline and restore every round.\n\nRecipes (#196):\n- `crates/testkit/tests/build_stamps.rs` `run_with`/`try_run_seeded` runs a recipe body with fake git, cargo, lsof and launchctl, and reads the daemon env or the written plist.\n- Normalize env values to 1/0 before writing a plist, and refuse anything else before building or killing.\n- Parse the plist for real with python3 plistlib, not the fake plutil.\n\nF149, why \"closed\" seats come back:\n- `pij close` only tombstones.\n- The Claude status line's heal loop (`harness/scripts/claude-statusline-pij.sh`, one detached adopt per 15 s on a whoami miss) re-registers the same session, and continuity used to lift the owner-close.\n- Fix in flight: owner-close is terminal; the refusal puts `E-RS-SEAT-RETIRED` first in the message; the status line writes a `.closed` marker and stops healing.\n- Read the store first (`sqlite3 \"file:$HOME/.pij-rs/pij.sqlite?mode=ro\"`; spine events per seat around the tombstone): the root cause there was not the one in the packet.\n\nBuilds: if the shared target lock starves you (F145), ask pm-001 for an own target dir, and delete it after merge.\n"
+		}
+	]
+}
