@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Read when told to wind up, cap review rounds, retire seats, or grade a same-user security finding",
+				"tags": [
+					"c33",
+					"c34",
+					"wind-up",
+					"seats",
+					"freeze"
+				],
+				"title": "Winding up under C33/C34 and retiring seats"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- C34: at most two review rounds; after round 2 only a normal-use correctness bug blocks (wrong result, data loss, stalled seat, cost breach). Say \"final round\" in the packet so seats grade that way; new round-2 findings become named follow-ups in Known limits.\n- C33: same-user-only security findings are out of scope; rendering, caller derivation, contradiction refusals and external input stay in. Tell the security seats explicitly when a ruling changes grading (FYI to cold seats costs nothing).\n- Wind-up: triage the F ledger (drop hardening, defer the rest), keep one reviewer, one security, one coder; retire the rest as each finishes: memory note first, release holdings, pij close, tmux kill-pane, then confirm pid and pane are gone (close alone never stops the process).\n- pr-freeze: write its output to a file and check its own exit code; a piped `| tail && pij send` sent a READY on a failed freeze once. A transient \"delivers running\" fails it; rerun once.\n- Assign coder/f<N> whenever a coder takes an F, or the Fixes: line has nothing to end; close finished requests with pij requests close --quiet, and answer requests with in_reply_to (native) or --in-reply-to.\n- A reviewer that writes \"queued next turn\" on its card and ends its turn stalls; send one review at a time.\n"
+		}
+	]
+}
