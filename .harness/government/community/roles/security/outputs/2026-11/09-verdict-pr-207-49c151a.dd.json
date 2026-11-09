@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "49c151a5d3bcb1e6725e61a257cf0895b9752c58",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/207#issuecomment-6733963170",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:207",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `49c151a5d3bcb1e6725e61a257cf0895b9752c58` (plan 225), under C33/C34.\n\nThe explicit cheap option selects a fixed Sonnet model through the existing relaunch path, then the CLI submits the ordinary compact control. Existing revive safety/authorization branches are unchanged. No scoped security vulnerability or demonstrated normal-use blocker was established.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No scoped vulnerabilities found | - |\n\n## Launch and authority\n\n`CHEAP_MODEL` is the fixed `claude-sonnet-5-5` constant. A cheap request cannot supply a competing `--model` or `--fresh`; clap and daemon validation refuse the combinations. Non-Claude and known-warm seats refuse before lifecycle writes.\n\nThe selected constant is placed in `SpawnRequest.model`, with the recorded conversation as `resume`. No caller text is assembled into a `/model` command. The existing registration wait compares the requested model with the bound registered model before reporting success (`http/mod.rs:1641-1678`); this is registration evidence, not independent proof of billing or live-model behavior.\n\nActive-process/pane safety checks, conversation-in-use checks and parent/prime authorization for assumed-dead overrides retain their existing branches (`http/revive.rs:297-446`). The option does not kill a live seat or add an authority bypass. This review does not overstate those existing branches as new per-seat security under C33.\n\nAfter successful revive, the CLI resolves its acting seat and sends the same `compact` control as an ordinary compact: empty body, not FYI, not forced, with normal caller context. Therefore ordinary compact authorization and memory-turn gates remain; there is no separate privileged compaction route.\n\nThe new option is explicit. No watcher, threshold or automatic caller is added. It reuses the existing launch site and bounded registration wait.\n\n## Notes\n\nThe live cold seat must first be stopped using existing owner-authorized lifecycle handling. If the compact half fails, the successful Sonnet revive is not rolled back: the CLI prints its receipt and the compact failure, leaving the seat on Sonnet and uncompacted. The documented plain compact retry is accurate. Returning to Opus is another explicit revive with `--model`.\n\nThe scoped docs use placeholders and product-layout paths; no private-content or credential disclosure was established. Cost claims belong to the performance verdict, not this security result.\n\n## Exact proof\n\nLocal/remote/GitHub heads agree; detached shared worktree clean. The plan/implementation commits are `70893730` and `3f354f4823181ede64543370168bd63d86127b69`, carried by the final main merge. Reverse #205 hunks in the branch/base comparison are not treated as intentional reply-feature changes.\n\nCI [42573687553](https://github.com/AI-Substrate/pij-fleet/actions/runs/42573687553) succeeded on merge `cea38247a11bcb0ac4a9231230ffdadc84d5ecc2`, with this head and main `f7744c5c3f677732af8b3c0a4dad657544811ce0` as parents; tree `bba3f72e7e0c1144deba712735f29ece411e2e88`.\n\nJUnit artifact [13654387342](https://github.com/AI-Substrate/pij-fleet/actions/runs/42573687553/artifacts/13654387342) confirms 2,342 passing cases, no failures; six separately skipped. Executed: cold-Claude Sonnet resume/registration and return-model case, warm/non-Claude/conflicting-option refusals, and CLI compact-control shape. Current checks succeed.\n\nThose fixture tests are not a live cheap-model compaction or deployment canary. Mutants were not run, as allowed by C34. The helper did not complete an assessment; source support here comes from direct scoped inspection and CI.\n\nNo local builds/tests, credential reads, pane/model/live-system probes or product edits.\n"
+		}
+	]
+}
