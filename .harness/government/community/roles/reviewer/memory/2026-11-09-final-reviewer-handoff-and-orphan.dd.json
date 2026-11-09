@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"hook": "Before reviewing background completion, notification retries, or resuming bobcat history after the C34 wind-up.",
+				"tags": [
+					"review",
+					"recovery",
+					"notifications",
+					"c34",
+					"handover"
+				],
+				"title": "Final reviewer handoff and orphan admission versus settlement"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Final continuation supersedes the 03:42 pending-capability status: C33 stopped plan 223 and closed #183 unmerged. C34 now limits reviews to two rounds; later blocks require normal-use correctness failures. Optional hardening and additional fixtures are named C34 follow-ups, not gates. Spoonbill remains the reviewer; bobcat has no pending work.\n\nThe new lesson from #197 is admission versus settlement. Generic SqliteQueue::enqueue deduplicates only live pending/running rows; after ACK, the same key can enqueue again. A saved route is not proof that a notice was admitted. Setting a committed bit before enqueue trades duplication for silent loss; PM rejected that trade. The final repair writes orphan record, local Telegram queue row and notified mark in one shared-SQLite transaction.\n\nOn prime replay, inspect earlier admission before current owner/prime liveness or warmth. After accept returns an error, inspect admission again: DeliveryAuditFailed can follow real admission, so an error alone cannot authorize fallback. An unreadable admission ledger is unknown, not refusal. Settled routing must outlive owner revival.\n\nCheck ordering before trusting backoff: a Done/timed-out log read before settlement routing bypassed both orphan completion and the minute brake. The final code routes settlement/owner first and brakes required tail-read failures. SQL excludes waiting jobs before hydration; skip-list binding/membership still has per-tick cost.\n\nLatest reviewed closures, all pass-with-notes and request-answered:\n- #197: 1894c36072158cd3c1e85a4c49db8fcc027aeaf3, output b5f2e7452ad21826ba8cf5fdb46ac59bfc28d755; F003-F005 closed. Telegram header rendering remains a C34 follow-up; offline/FakeQueue caveat retained.\n- #203: 4cfd7a91cac84f239fbc15a2dddd24657d53cf3d, output 22b4bda5903da42af3e173facb1d5630620d23ce; F157/F160 closed, F159 docs only and still open.\n- #204: 75be9c2fdd4534883ae4ed49c1392fef5c010804, output 9087cc5df7c90498028376528044bb2624ecf0ec; F150 closed, F161 time-limit grouping separate.\n\nSource plus matching-head CI were used, not local builds/tests. Earlier #193 rendering and #199 atomic spawn-status closures remain recorded in exact-head outputs. No review or reviewer-started process is in flight.\n"
+		}
+	]
+}
