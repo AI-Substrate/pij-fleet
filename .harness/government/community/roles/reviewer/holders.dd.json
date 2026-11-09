@@ -1109,7 +1109,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "199",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #199 merged (4257dfe39e86)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-09T01:02:13.893Z",
 					"why": "F148 spawn exit-status race"
 				}
 			]

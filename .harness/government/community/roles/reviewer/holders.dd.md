@@ -103,4 +103,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 196 | 2026-11-08T22:40:15.882Z | 2026-11-08T23:54:12.258Z | pij-steady-otter | pij-far-jackal | F147 recipes pass PIJ_IDLE_NUDGE | PR #196 merged (3b96382e2c8c) |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 197 | 2026-11-08T23:44:10.202Z | — | pij-steady-otter | — | F139 stuck bg final turn | — |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 198 | 2026-11-08T23:49:42.347Z | — | pij-steady-otter | — | PRD 003 req-10 dropped (C33), docs only | — |
-| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 199 | 2026-11-09T00:54:31.315Z | — | pij-steady-otter | — | F148 spawn exit-status race | — |
+| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 199 | 2026-11-09T00:54:31.315Z | 2026-11-09T01:02:13.893Z | pij-steady-otter | pij-far-jackal | F148 spawn exit-status race | PR #199 merged (4257dfe39e86) |

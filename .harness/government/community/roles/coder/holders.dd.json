@@ -666,7 +666,10 @@
 					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
 					"instance_key": "f148",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #199 merged (4257dfe39e86)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-back-tapir",
+					"to": "2026-11-09T01:02:13.893Z",
 					"why": "F148 spawn exit-status race (from closed #183)"
 				},
 				{
