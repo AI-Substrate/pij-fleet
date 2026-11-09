@@ -4,11 +4,20 @@ use pij_core::background::{
     BackgroundEvent, BackgroundJob, BackgroundKind, BackgroundState, EventStats,
 };
 use pij_core::error::{PijError, Result};
-use pij_core::model::{ProcIdentity, SeatId};
+use pij_core::model::{Job, ProcIdentity, SeatId};
 use sqlx::Row;
 
 use crate::migrate::{begin_write, owned_write};
 use crate::{StorePool, require_current_schema};
+
+/// How long a terminal job's final turn waits for its gone owner (tombstoned,
+/// or no seat at all) to come back (F139). A revive after a reboot lands within
+/// hours. Past this, the turn settles: the owner's prime, or the human, is told
+/// once with the job's log path, and the job is marked notified.
+///
+/// A policy, not a brake: it reads the owner's tombstone time and decides the
+/// outcome (settle instead of wait).
+pub const OWNER_GONE_GRACE_MS: u64 = 24 * 60 * 60 * 1000;
 
 /// What one emit did to a source's pending events.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,18 +169,37 @@ impl SqliteBackground {
     /// Returns a schema error on skew or an adapter error for invalid stored
     /// facts or SQLite failure.
     pub async fn pending(&self) -> Result<Vec<BackgroundJob>> {
+        self.pending_skipping(&[]).await
+    }
+
+    /// [`Self::pending`] without the jobs in `skip`, left out by the query, so
+    /// a job waiting for its next look (F139) is never loaded or decoded.
+    ///
+    /// # Errors
+    /// As [`Self::pending`].
+    pub async fn pending_skipping(&self, skip: &[String]) -> Result<Vec<BackgroundJob>> {
         require_current_schema(&self.pool).await?;
-        sqlx::query(
+        let skipped = if skip.is_empty() {
+            String::new()
+        } else {
+            format!(" AND job_id NOT IN ({})", vec!["?"; skip.len()].join(", "))
+        };
+        let sql = format!(
             "SELECT * FROM background_jobs \
-             WHERE state IN ('queued', 'running') OR notified = 0 \
-             ORDER BY started_at, job_id",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(adapter_error)?
-        .iter()
-        .map(decode_job)
-        .collect()
+             WHERE (state IN ('queued', 'running') OR notified = 0){skipped} \
+             ORDER BY started_at, job_id"
+        );
+        let mut query = sqlx::query(&sql);
+        for job in skip {
+            query = query.bind(job);
+        }
+        query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?
+            .iter()
+            .map(decode_job)
+            .collect()
     }
 
     /// Record the spawned identity only while the job is still queued.
@@ -722,6 +750,72 @@ impl SqliteBackground {
                 .map(|value| sql_u64(value, "last_fire_at"))
                 .transpose()?,
         })
+    }
+
+    /// Settle a terminal job by Telegram (F139): record its settlement `plan`
+    /// under `msg_id`, queue the Telegram, and mark the job notified, in ONE
+    /// transaction. A replay sees all three or none: a failed write leaves
+    /// nothing and the next look tries again, and a committed send is never
+    /// queued twice (the queue's own dedupe ends when the send completes).
+    ///
+    /// # Errors
+    /// A schema error on skew, a refusal when the job has no recorded
+    /// settlement, or an adapter error on SQLite failure; nothing is written.
+    pub async fn settle_by_telegram(
+        &self,
+        job_id: &str,
+        msg_id: &str,
+        plan: &str,
+        telegram: &Job,
+    ) -> Result<()> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let (job_id, msg_id, plan, telegram) = (
+            job_id.to_string(),
+            msg_id.to_string(),
+            plan.to_string(),
+            telegram.clone(),
+        );
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let recorded = sqlx::query(
+                "UPDATE bg_handoffs SET plan = ? WHERE job_id = ? AND msg_id = ?",
+            )
+            .bind(&plan)
+            .bind(&job_id)
+            .bind(&msg_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            if recorded.rows_affected() != 1 {
+                return Err(PijError::Adapter {
+                    adapter: "store/background".to_string(),
+                    message: format!("no recorded settlement {msg_id} for job {job_id}"),
+                });
+            }
+            sqlx::query(
+                "INSERT INTO jobs (kind, serial_key, payload, dedupe_key, dedupe_origin, enqueued_at) \
+                 VALUES (?, ?, ?, ?, ?, unixepoch()) ON CONFLICT DO NOTHING",
+            )
+            .bind(&telegram.kind)
+            .bind(&telegram.serial_key)
+            .bind(&telegram.payload)
+            .bind(&telegram.dedupe_key)
+            .bind(telegram.dedupe_origin.as_deref().unwrap_or_default())
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            sqlx::query(
+                "UPDATE background_jobs SET notified = 1 \
+                 WHERE job_id = ? AND state IN ('done', 'killed', 'lost') AND notified = 0",
+            )
+            .bind(&job_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            tx.commit().await.map_err(adapter_error)
+        })
+        .await
     }
 
     /// Acknowledge terminal notification delivery; live or missing rows are no-ops.
