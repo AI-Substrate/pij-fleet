@@ -724,6 +724,16 @@
 					"seat": "pij-swift-kestrel",
 					"to": "2026-11-09T03:47:44.380Z",
 					"why": "F155 delivered requests stay bound to an old holder (after F154)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-09T03:54:14.901Z",
+					"harness": "copilot",
+					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
+					"instance_key": "225",
+					"machine": "ops.osk.lan",
+					"seat": "pij-back-tapir",
+					"why": "plan 225 cheap-model compaction (after F152 PR)"
 				}
 			]
 		}
