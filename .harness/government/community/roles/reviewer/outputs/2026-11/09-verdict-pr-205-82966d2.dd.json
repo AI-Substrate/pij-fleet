@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1beb8-762c-7252-a982-82dd3b965606",
+				"date": "2026-11-09",
+				"head": "82966d26a7353ad98798e9152c4400ef71cf5218",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/205#issuecomment-6733501075",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:205",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Trace tool explicit reply fields, caller binding and common holder-only answer stamp at82966d2",
+					"exit_code": 0,
+					"log": "Both tools forward id; native pane/paneless matching session binds sender. Delivered request holder must equal from before stamp. Audit and answer atomic. Wrong session/non-native/contradictory identity still refused. C33 residual documented; no finding."
+				},
+				{
+					"command": "Inspect CI42565107463 artifact13650878804 and Node22 native/OMP test logs; pr-freeze205",
+					"exit_code": 0,
+					"log": "2314 Rust passes, six nextest skips. Holder/nonholder and paneless-session cases execute; changed NativeBridge tests and OMP115-case suite pass. Latest five checks pass FINAL/CLEAN. CI/head tree2102526bdf55a151e5931ab9d93ff1260f9f7b47."
+				},
+				{
+					"command": "Inspect f154-native-reply-receipt.txt SHA2566f174646 and source diff6ef01a01..82966d26",
+					"exit_code": 0,
+					"log": "Author local opt-in NativeBridge pane/paneless reply contract passes; runtime/server/contract test source byte-identical. Combined opt-in run has separate cold-resume failure F163, author reports pre-existing; not a green full run and not real Copilot model acceptance. C34 follow-up, not gate."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: PASS\n\nPR #205 at `82966d26a7353ad98798e9152c4400ef71cf5218`, answering `01a1beb8-762c-7252-a982-82dd3b965606`. No correctness finding under C34.\n\nBoth tools forward `in_reply_to`; Copilot supplies its registered caller context, while OMP's explicit id overrides automatic threading without consuming an unrelated thread. The daemon binds the sender by pane or a matching registered native session for a paneless native-extension seat (`crates/daemon/src/http/mod.rs:2282-2324`). **Binding alone cannot answer another holder's request:** the common stamp path requires a delivered request whose recorded holder equals `from` (`crates/daemon/src/delivery/role_send.rs:1212-1215`). Answer and audit commit together. Wrong/native-missing sessions and contradictory senders retain refusals. C33's same-user residual is correctly documented.\n\nExact-head CI `42565107463`, artifact `13650878804`: **2,314 Rust passes**, six separately skipped. Holder/nonholder and paneless-session server regressions executed; native caller/blank-id tests and the 115-case OMP runtime suite passed. Latest five checks pass; `pr-freeze` FINAL/CLEAN; CI/head tree `2102526bdf55a151e5931ab9d93ff1260f9f7b47`.\n\nRetained author receipt `f154-native-reply-receipt.txt` (SHA256 `6f174646afce7c80137819bfdff3153afdc39ca1b70e29bead75506ae1c77836`) shows the opt-in NativeBridge reply test passing for pane-bound and paneless seats against real HTTP/SQLite. Relevant runtime/server/test source is byte-identical from its recorded source commit to this head. This is cross-language contract proof, not real Copilot model acceptance. The combined opt-in run also fails the separate cold-resume case; author-reported baseline issue **F163 remains a C34 follow-up**, not credited as a green full run or blocked here.\n\nNo local reviewer builds/tests, product edits, lifecycle operations or HEAD movement.\n"
+		}
+	]
+}
