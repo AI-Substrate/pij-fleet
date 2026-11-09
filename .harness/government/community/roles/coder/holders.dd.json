@@ -701,6 +701,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-back-tapir",
 					"why": "F152 directory edit list flags (after F148)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-09T02:38:53.825Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f154",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "F154 reply does not mark role request answered (plan 214 AC6 path)"
 				}
 			]
 		}
