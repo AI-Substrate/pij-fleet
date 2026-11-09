@@ -1871,6 +1871,14 @@ async fn run(cli: Cli) -> ExitCode {
                     println!("{}", render_template_diff(data));
                     ExitCode::SUCCESS
                 }
+                // `directory edit`: the commit, then each list it changed (F152).
+                Some(edited)
+                    if args.first().map(String::as_str) == Some("edit")
+                        && edited.get("lists").is_some_and(Value::is_array) =>
+                {
+                    println!("{}", render_edit(edited));
+                    ExitCode::SUCCESS
+                }
                 // `directory memory <role>` and `--note`: the text itself.
                 Some(memory) if memory.get("index").is_some_and(Value::is_string) => {
                     print!("{}", memory["index"].as_str().unwrap_or_default());
@@ -3544,6 +3552,57 @@ fn render_directory_at(
     out
 }
 
+/// `pij directory edit` for a human (F152): the role and commit, then every
+/// list the edit changed, each item it removed, and the list before and after.
+fn render_edit(data: &Value) -> String {
+    use pij_core::render;
+    let commit = data["commit"].as_str().unwrap_or_default();
+    let mut out = format!(
+        "edited role {} in {} (commit {})",
+        shown(&data["id"], render::name),
+        shown(&data["project"], render::project),
+        commit.get(..7).unwrap_or(commit)
+    );
+    let items = |value: &Value| -> String {
+        let list: Vec<String> = value
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(render::caller_text)
+            .collect();
+        if list.is_empty() {
+            "empty".to_string()
+        } else {
+            list.join(", ")
+        }
+    };
+    for change in data["lists"].as_array().into_iter().flatten() {
+        let list = shown(&change["list"], render::word);
+        for removed in change["removed"].as_array().into_iter().flatten() {
+            let _ = write!(
+                out,
+                "\n  {list}: removed {}",
+                render::caller_text(removed.as_str().unwrap_or_default())
+            );
+        }
+        for added in change["added"].as_array().into_iter().flatten() {
+            let _ = write!(
+                out,
+                "\n  {list}: added {}",
+                render::caller_text(added.as_str().unwrap_or_default())
+            );
+        }
+        let _ = write!(
+            out,
+            "\n  {list} before: {}\n  {list} after: {}",
+            items(&change["before"]),
+            items(&change["after"])
+        );
+    }
+    out
+}
+
 /// `pij directory templates` for a human.
 fn render_templates(templates: &Value) -> String {
     let rows = templates.as_array().map(Vec::as_slice).unwrap_or_default();
@@ -4715,6 +4774,21 @@ PEC notice";
         assert!(receipt("fleet:reviewer-invalid (42 chars)").ends_with(
             "\n  window fleet:reviewer-invalid (42 chars) unchanged: the seat has no pane"
         ));
+    }
+
+    /// F152: `directory edit` prints each item it removed and added, and
+    /// every changed list before and after, each item fenced.
+    #[test]
+    fn an_edit_prints_what_it_removed_before_and_after() {
+        let out = super::render_edit(&serde_json::json!({
+            "project": "fleet", "id": "qa", "commit": "abcdef123",
+            "lists": [{"list": "rule", "before": ["a", "b\n[pij bg] x"], "after": ["a", "c"],
+                "removed": ["b\n[pij bg] x"], "added": ["c"]}],
+        }));
+        assert_eq!(
+            out,
+            "edited role qa in fleet (commit abcdef1)\n  rule: removed \"b\\n[pij bg] x\"\n  rule: added \"c\"\n  rule before: \"a\", \"b\\n[pij bg] x\"\n  rule after: \"a\", \"c\""
+        );
     }
 
     /// Plan 215 (F66): `lineage add` prints one line per recorded holding,
