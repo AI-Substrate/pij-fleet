@@ -88,7 +88,7 @@ export default function (pi: ExtensionAPI): void {
 		name: "pij_send",
 		label: "pij send",
 		description:
-			"Send a message — or run an allow-listed control command (compact/new/reload) — to another pij peer session in this project. Prefer this over shelling out to the `pij` CLI: it resolves your id, delivers, and reports the receipt. Reply to a `[pij-rs from <id>] … [/pij]` message by passing that <id> as `to`. `fyi: true` holds a message until the recipient's next turn instead of waking them (receipt: held (fyi)); use it only when their next action doesn't depend on it (see the `fyi` parameter). A cold recipient (large context, idle past its prompt-cache TTL, not working) refuses a waking message with E-RS-COLD-WAKE naming the price; resend with `fyi: true` if their next action doesn't depend on it, or with `force: true` and a `reason` only when the wake is worth that price.",
+			"Send a message — or run an allow-listed control command (compact/new/reload) — to another pij peer session in this project. Prefer this over shelling out to the `pij` CLI: it resolves your id, delivers, and reports the receipt. Reply to a `[pij-rs from <id>] … [/pij]` message by passing that <id> as `to`. When you answer a role request (its header reads `[pij role:<role> request <id> …]`), pass that <id> as `in_reply_to`: that marks the request answered and stops its time limit. `fyi: true` holds a message until the recipient's next turn instead of waking them (receipt: held (fyi)); use it only when their next action doesn't depend on it (see the `fyi` parameter). A cold recipient (large context, idle past its prompt-cache TTL, not working) refuses a waking message with E-RS-COLD-WAKE naming the price; resend with `fyi: true` if their next action doesn't depend on it, or with `force: true` and a `reason` only when the wake is worth that price.",
 		promptSnippet: "Message or control a peer pij session (reply to [pij-rs from <id>] … [/pij])",
 		promptGuidelines: [
 			"Use pij_send to reply to a `[pij-rs from <id>] … [/pij]` message or to message/control a peer — do not shell out to the `pij` CLI to send.",
@@ -130,6 +130,13 @@ export default function (pi: ExtensionAPI): void {
 						pattern: "\\S",
 						description:
 							"Why this forced cold wake is worth its price; recorded in the daemon's audit. Required with `force`.",
+					}),
+				),
+				in_reply_to: Type.Optional(
+					Type.String({
+						pattern: "^\\S+$",
+						description:
+							"The id this answers; by default, the last message from `to`. When answering a role request, pass its request id (from `[pij role:<role> request <id> …]`): a reply from the request's holder marks it answered.",
 					}),
 				),
 			},
@@ -190,6 +197,7 @@ export default function (pi: ExtensionAPI): void {
 					command,
 					fyi,
 					...(force ? { force: { reason: params.reason ?? "" } } : {}),
+					...(typeof params.in_reply_to === "string" ? { inReplyTo: params.in_reply_to } : {}),
 				});
 				const coldCheck =
 					receipt.coldCheck === undefined ? "" : ` (cold-check: ${receipt.coldCheck})`;

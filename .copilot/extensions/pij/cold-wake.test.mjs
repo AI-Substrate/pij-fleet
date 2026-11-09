@@ -2,6 +2,7 @@
 // force + reason reach the /v1/send wire, a reasonless force sends nothing,
 // and the daemon's refusal reaches the model verbatim (it names the price).
 // Plan 159 — a held FYI that looks like a question surfaces the daemon's warning.
+// F154 — a reply names what it answers and carries the seat's registered identity.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DaemonClient, NativeBridge } from "./store.mjs";
@@ -10,7 +11,7 @@ const COLD_META =
 	'E-RS-COLD-WAKE: pij-peer is cold (idle 1h52m, 720k context). Waking it rewrites ~720k tokens ≈ $5.76 at list price. Use --fyi to hold it, or --force --reason "<why>".';
 
 /** A registered bridge over a real DaemonClient whose /v1/send answers `answer`. */
-function bridgeOver(answer) {
+function bridgeOver(answer, registration = { id: "pij-copilot", harness_session: "native-1" }) {
 	const sends = [];
 	const client = new DaemonClient({
 		addr: "127.0.0.1:1",
@@ -24,7 +25,7 @@ function bridgeOver(answer) {
 		},
 	});
 	const bridge = new NativeBridge({
-		registration: { id: "pij-copilot", harness_session: "native-1" },
+		registration,
 		native: {},
 		client,
 		journal: {},
@@ -96,3 +97,53 @@ test("a held fyi's question warning is surfaced on the tool result", async () =>
 	assert.equal(result.ok, true);
 	assert.equal(result.warning, warning);
 });
+
+for (const [label, pane] of [
+	["a pane-bound", "%10"],
+	["a paneless", undefined],
+]) {
+	test(`${label} reply carries in_reply_to and the registered identity`, async () => {
+		const registration = {
+			id: "pij-copilot",
+			harness_session: "native-1",
+			folder: "/work/repo",
+			...(pane ? { pane } : {}),
+		};
+		const { bridge, sends } = bridgeOver(
+			(body) => accepted({ msg_id: body.msg_id, outcome: "queued", at: 1 }),
+			registration,
+		);
+		const result = await bridge.send({
+			to: "pij-requester",
+			message: "done",
+			in_reply_to: "01a1be2c-4316-7561-8dcb-683636af4b87",
+		});
+		assert.equal(result.ok, true);
+		assert.equal(sends[0].in_reply_to, "01a1be2c-4316-7561-8dcb-683636af4b87");
+		assert.deepEqual(sends[0].caller, {
+			PIJ_SESSION_ID: "pij-copilot",
+			HARNESS_SESSION_ID: "native-1",
+			...(pane ? { TMUX_PANE: pane } : {}),
+			cwd: "/work/repo",
+		});
+	});
+}
+
+test("a send without in_reply_to carries neither it nor a caller", async () => {
+	const { bridge, sends } = bridgeOver((body) =>
+		accepted({ msg_id: body.msg_id, outcome: "queued", at: 1 }),
+	);
+	assert.equal((await bridge.send({ to: "pij-peer", message: "hi" })).ok, true);
+	assert.equal("in_reply_to" in sends[0], false);
+	assert.equal("caller" in sends[0], false);
+});
+
+for (const bad of ["", "  ", "two ids"]) {
+	test(`in_reply_to ${JSON.stringify(bad)} is refused before any request`, async () => {
+		const { bridge, sends } = bridgeOver(() => assert.fail("nothing may be sent"));
+		const result = await bridge.send({ to: "pij-peer", message: "hi", in_reply_to: bad });
+		assert.equal(result.ok, false);
+		assert.match(result.error, /in_reply_to/);
+		assert.equal(sends.length, 0);
+	});
+}

@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use pij_core::config::{AdapterChoice, Adapters, Config};
 use pij_core::delivery::delivery_kind;
 use pij_core::model::{JobId, Pane, PaneProcess, ProcIdentity, SeatId, SemanticState};
-use pij_core::ports::LivenessPort;
+use pij_core::ports::{LivenessPort, Queue, Registry};
 use pij_daemon::delivery::DeliveryService;
 use pij_daemon::http::router;
 use pij_harnesses::proc::ProcLiveness;
@@ -204,13 +204,13 @@ impl Fixture {
         );
     }
 
-    async fn node(&mut self, module: &Path, input: &Value) -> Value {
+    async fn node(&mut self, runner: &str, module: &Path, input: &Value) -> Value {
         let stage = input["stage"].as_str().unwrap();
         let stdout_path = self.directory.join(format!("node-{stage}.stdout"));
         let stderr_path = self.directory.join(format!("node-{stage}.stderr"));
         let module_url = reqwest::Url::from_file_path(module).expect("absolute module path");
         let source = format!(
-            "import {{ chooseRegistration, resolveRegistration, DaemonClient, FileJournal, NativeBridge }} from {};\n{RUNNER}",
+            "import {{ chooseRegistration, resolveRegistration, DaemonClient, FileJournal, NativeBridge }} from {};\n{runner}",
             serde_json::to_string(module_url.as_str()).unwrap(),
         );
         let child = Command::new("node")
@@ -254,6 +254,95 @@ impl Fixture {
     }
 }
 
+/// The daemon under test: real HTTP, SQLite registry, queue and spine, with
+/// fake tmux panes for `panes`.
+struct Daemon {
+    addr: std::net::SocketAddr,
+    registry: Arc<dyn Registry>,
+    queue: Arc<dyn Queue>,
+    server: tokio::task::JoinHandle<()>,
+}
+
+impl Daemon {
+    async fn serve(fixture: &Fixture, store: &FreshStore, panes: &[&str]) -> Self {
+        let config = Config {
+            adapters: Adapters {
+                registry: AdapterChoice::Real,
+                queue: AdapterChoice::Real,
+                spine: AdapterChoice::Real,
+                liveness: AdapterChoice::Real,
+                ..Adapters::default()
+            },
+            store_path: store.path(),
+            ..Config::default()
+        };
+        let mut services = pij_daemon::build_services(&config, &fixture.directory.join("taps"))
+            .await
+            .unwrap();
+        let mut tmux = FakeTmux::new();
+        for pane in panes {
+            tmux = tmux
+                .with_pane(Pane {
+                    id: (*pane).into(),
+                    session: "s".into(),
+                    window: "w".into(),
+                    title: "cross-language native contract".into(),
+                    cursor_x: Some(0),
+                    cursor_y: Some(0),
+                })
+                .with_pane_process(
+                    pane,
+                    PaneProcess {
+                        pid: std::process::id(),
+                        cwd: fixture.directory.to_string_lossy().into_owned(),
+                    },
+                )
+                .with_attached_tap(pane);
+            tmux.arrange_clear_composer(pane);
+        }
+        let tmux = Arc::new(tmux);
+        services.tmux = tmux.clone();
+        services.interaction = Arc::new(pij_harnesses::InteractionGate::new(tmux));
+        services.delivery = Arc::new(
+            DeliveryService::new(
+                services.registry.clone(),
+                services.queue.clone(),
+                services.transport.clone(),
+                services.interaction.clone(),
+                services.event_bus.clone(),
+            )
+            .unwrap(),
+        );
+        let (registry, queue) = (services.registry.clone(), services.queue.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router(services, KEY.into()))
+                .await
+                .unwrap();
+        });
+        Self {
+            addr,
+            registry,
+            queue,
+            server,
+        }
+    }
+}
+
+/// The runtime under test: PIJ_NATIVE_RUNTIME_MODULE, else this checkout's.
+fn runtime_module() -> PathBuf {
+    let module = std::env::var_os("PIJ_NATIVE_RUNTIME_MODULE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.copilot/extensions/pij/store.mjs")
+        });
+    module.canonicalize().unwrap_or_else(|error| panic!(
+        "runtime module {} unavailable: {error}; set PIJ_NATIVE_RUNTIME_MODULE to actual store.mjs (default applies after composition)",
+        module.display()
+    ))
+}
+
 impl Drop for Fixture {
     fn drop(&mut self) {
         for child in &mut self.children {
@@ -267,84 +356,21 @@ impl Drop for Fixture {
 #[tokio::test]
 #[ignore = "requires Node and actual runtime store.mjs; set PIJ_NATIVE_RUNTIME_MODULE then run cargo test --locked -p pij-daemon --test native_runtime_cold_resume -- --ignored --nocapture --test-threads=1"]
 async fn actual_runtime_chooser_and_journal_resume_through_http_sqlite_without_reinjection() {
-    let module = std::env::var_os("PIJ_NATIVE_RUNTIME_MODULE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.copilot/extensions/pij/store.mjs")
-        });
-    let module = module.canonicalize().unwrap_or_else(|error| panic!(
-        "runtime module {} unavailable: {error}; set PIJ_NATIVE_RUNTIME_MODULE to actual store.mjs (default applies after composition)",
-        module.display()
-    ));
+    let module = runtime_module();
     let mut fixture = Fixture::new();
     let (old_index, old_process) = fixture.host().await;
     let (_, new_process) = fixture.host().await;
     assert_ne!(old_process.pid, new_process.pid);
     let store = FreshStore::new();
-    let config = Config {
-        adapters: Adapters {
-            registry: AdapterChoice::Real,
-            queue: AdapterChoice::Real,
-            spine: AdapterChoice::Real,
-            liveness: AdapterChoice::Real,
-            ..Adapters::default()
-        },
-        store_path: store.path(),
-        ..Config::default()
-    };
-    let mut services = pij_daemon::build_services(&config, &fixture.directory.join("taps"))
-        .await
-        .unwrap();
-    let mut tmux = FakeTmux::new();
-    for pane in ["%137-cross-old", "%137-cross-new"] {
-        tmux = tmux
-            .with_pane(Pane {
-                id: pane.into(),
-                session: "s".into(),
-                window: "w".into(),
-                title: "cross-language native contract".into(),
-                cursor_x: Some(0),
-                cursor_y: Some(0),
-            })
-            .with_pane_process(
-                pane,
-                PaneProcess {
-                    pid: std::process::id(),
-                    cwd: fixture.directory.to_string_lossy().into_owned(),
-                },
-            )
-            .with_attached_tap(pane);
-        tmux.arrange_clear_composer(pane);
-    }
-    let tmux = Arc::new(tmux);
-    services.tmux = tmux.clone();
-    services.interaction = Arc::new(pij_harnesses::InteractionGate::new(tmux));
-    services.delivery = Arc::new(
-        DeliveryService::new(
-            services.registry.clone(),
-            services.queue.clone(),
-            services.transport.clone(),
-            services.interaction.clone(),
-            services.event_bus.clone(),
-        )
-        .unwrap(),
-    );
-    let registry = services.registry.clone();
-    let queue = services.queue.clone();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(async move {
-        axum::serve(listener, router(services, KEY.into()))
-            .await
-            .unwrap();
-    });
+    let daemon = Daemon::serve(&fixture, &store, &["%137-cross-old", "%137-cross-new"]).await;
+    let (registry, queue, addr) = (daemon.registry.clone(), daemon.queue.clone(), daemon.addr);
     let mut input = json!({
         "stage": "initial", "addr": addr.to_string(), "key": KEY,
         "module": module, "stateDir": fixture.directory, "folder": fixture.directory,
         "session": SESSION, "body": BODY,
         "host": { "pid": old_process.pid, "proc_start": old_process.proc_start, "pane": "%137-cross-old" },
     });
-    let initial = fixture.node(&module, &input).await;
+    let initial = fixture.node(RUNNER, &module, &input).await;
     assert_eq!(initial["acknowledged"], false);
     let seat = SeatId::from(initial["registration"]["id"].as_str().unwrap());
     let job_id = JobId(initial["jobId"].as_u64().unwrap());
@@ -372,7 +398,7 @@ async fn actual_runtime_chooser_and_journal_resume_through_http_sqlite_without_r
     assert_eq!(pending.1.payload, running.payload);
     input["stage"] = json!("resume");
     input["host"] = json!({ "pid": new_process.pid, "proc_start": new_process.proc_start, "pane": "%137-cross-new" });
-    let resumed = fixture.node(&module, &input).await;
+    let resumed = fixture.node(RUNNER, &module, &input).await;
     assert_eq!(resumed["acknowledged"], true);
     assert_eq!(resumed["moduleDigest"], initial["moduleDigest"]);
     assert_eq!(resumed["journalDigest"], initial["journalDigest"]);
@@ -392,5 +418,107 @@ async fn actual_runtime_chooser_and_journal_resume_through_http_sqlite_without_r
     println!(
         "cross-language contract: real HTTP/SQLite + actual selected runtime chooser/client/bridge/journal; self-reported Hold retained; old={old_process:?}, new={new_process:?}; one simulated native acceptance, zero reinjection; not real CLI/model acceptance"
     );
-    server.abort();
+    daemon.server.abort();
+}
+
+// F154: the actual runtime registers a native seat, then answers a role request
+// through `NativeBridge.send` (the `pij_send` tool's path) with in_reply_to.
+const REPLY_RUNNER: &str = r#"
+const input = JSON.parse(process.argv[1]);
+const signal = AbortSignal.timeout(4000);
+const client = new DaemonClient({ addr: input.addr, readKey: async () => input.key });
+const roster = await client.request('/v1/seats?scope=local', undefined, signal);
+const registration = await resolveRegistration(client, chooseRegistration({
+    sessionId: input.session, host: input.host, folder: input.folder,
+    seats: roster.seats, env: {},
+}), signal);
+if (input.stage === 'register') {
+    console.log(JSON.stringify({ registration }));
+} else {
+    const native = {
+        rpc: { eventLog: {
+            async tail() { return { cursor: '0' }; },
+            async read() { return { cursor: '0', events: [], hasMore: false, cursorStatus: 'ok' }; },
+        } },
+        on() { return () => {}; },
+        async send() { throw new Error('the replying seat receives nothing here'); },
+    };
+    const journal = new FileJournal(input.stateDir, registration);
+    const bridge = new NativeBridge({ registration, native, client, journal, report: () => {} });
+    try {
+        await bridge.register();
+        const sent = await bridge.send({
+            to: input.requester, message: 'answered', in_reply_to: input.request,
+        });
+        console.log(JSON.stringify({ registration, sent }));
+    } finally {
+        bridge.stop();
+    }
+}
+"#;
+
+#[tokio::test]
+#[ignore = "requires Node and actual runtime store.mjs; set PIJ_NATIVE_RUNTIME_MODULE then run cargo test --locked -p pij-daemon --test native_runtime_cold_resume -- --ignored --nocapture --test-threads=1"]
+async fn actual_runtime_native_reply_answers_the_role_request_it_names() {
+    use pij_store::{ReplyMode, RequestState, RoleRequest, SqliteOrchestration};
+    let module = runtime_module();
+    let mut fixture = Fixture::new();
+    let store = FreshStore::new();
+    let daemon = Daemon::serve(&fixture, &store, &["%154-native", "%154-requester"]).await;
+    let orchestration = SqliteOrchestration::new(pij_store::open(&store.path()).await.unwrap());
+    let mut requester = pij_core::model::SeatDescriptor::new(
+        "pij-requester",
+        pij_core::model::Harness::Omp,
+        fixture.directory.to_string_lossy(),
+    );
+    requester.pane = Some("%154-requester".into());
+    daemon.registry.put(requester).await.unwrap();
+    // The pane-bound seat binds by pane (pm-001's path); the paneless one by
+    // its registered native session.
+    for (label, pane) in [("pane", Some("%154-native")), ("paneless", None)] {
+        let (_, host) = fixture.host().await;
+        let mut input = json!({
+            "stage": "register", "addr": daemon.addr.to_string(), "key": KEY,
+            "stateDir": fixture.directory.join(label), "folder": fixture.directory,
+            "session": format!("native-reply-{label}"), "requester": "pij-requester",
+            "host": { "pid": host.pid, "proc_start": host.proc_start, "pane": pane },
+        });
+        std::fs::create_dir_all(fixture.directory.join(label)).unwrap();
+        let registered = fixture.node(REPLY_RUNNER, &module, &input).await;
+        let seat = registered["registration"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let request = format!("req-native-{label}");
+        orchestration
+            .record_role_request(&RoleRequest {
+                id: request.clone(),
+                project: "fleet".into(),
+                role: "pm-001".into(),
+                instance: String::new(),
+                requester: "pij-requester".into(),
+                body: "please answer".into(),
+                in_reply_to: None,
+                fyi: false,
+                reply: ReplyMode::Wake,
+                limit_ms: Some(3_600_000),
+                state: RequestState::Delivered,
+                holder: Some(seat.clone()),
+                created_at: 1,
+                delivered_at: Some(1),
+                checkin_at: None,
+                escalated_at: None,
+                answered_at: None,
+            })
+            .await
+            .unwrap();
+        input["stage"] = json!("reply");
+        input["request"] = json!(request);
+        let replied = fixture.node(REPLY_RUNNER, &module, &input).await;
+        assert_eq!(replied["registration"]["id"], seat.as_str(), "{label}");
+        assert_eq!(replied["sent"]["ok"], true, "{label}: {replied}");
+        let answered = orchestration.role_request(&request).await.unwrap().unwrap();
+        assert!(answered.answered_at.is_some(), "{label}: {replied}");
+    }
+    daemon.server.abort();
 }
