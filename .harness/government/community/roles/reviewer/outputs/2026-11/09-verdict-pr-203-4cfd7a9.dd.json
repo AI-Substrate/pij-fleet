@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bea3-f377-77a1-aae9-4915e607f3ff",
+				"date": "2026-11-09",
+				"head": "4cfd7a91cac84f239fbc15a2dddd24657d53cf3d",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/203#issuecomment-6732530485",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:203",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #203 correctness review: PASS-WITH-NOTES\n\nHead: `4cfd7a91cac84f239fbc15a2dddd24657d53cf3d`.\nRequest: `01a1bea3-f377-77a1-aae9-4915e607f3ff`.\nRead-only review against `33172e606357fe3ae7cd7e844e2c65bc7fc67ed2`, under C33/C34. Worktree clean and pinned; no local builds or tests.\n\n**F157 and F160 are closed. No wrong or misleading change found.**\n\n- **F157:** topic-expert v2 consistently describes one role per topic (`<topic>-expert`), has `holders: one`, and omits `instance_key`. README points to v2. Existing route guidance explains that template placeholders must be replaced with flags or later edits; this does not claim automatic topic interpolation. `Catalog::role_from` stamps the chosen role id, and default lookup selects the latest version. V1 is byte-unchanged. SHIPPED/PINNED both have 31 rows; v2's measured SHA-256 matches `42e3461424bd77ed025be4ed8c39bdffa90b79212ea1da2cb9aa65a0e9dcf621`.\n- **F160:** both changed guidance surfaces correctly restrict `--reply` and `--limit` to `role:` sends. `RoleOptions::refuse_on_seat_send` returns `E-RS-ROLE-ONLY` for either option; the existing HTTP seat-send refusal and skill-command tests passed.\n- **F159 docs only:** the listed subject examples fit `render::subject`; the output writer currently accepts a nonempty one-line path containing `#`, but the notice renderer substitutes invalid text. The route accurately states that mismatch. F159 is intentionally absent from `Fixes:` and remains open for the path decision; this verdict does not close it.\n\nHead-bound CI run `42563446019`, attempt 1, and matching JUnit evidence show **2313 passing cases**, no failures/errors; nextest separately reports **five skips**. All eight template unit tests, seven template HTTP cases and six skill-verb coverage cases are present and passed. The author additionally reports local DD validation, formatting and path checks; no local execution is claimed by this reviewer.\n\nNo loop, poll, timer, hook or process-launch change. Evidence: `pr203-4cfd7a9.diff`, `pr203-4cfd7a9-junit.xml`, `pr203-4cfd7a9-ci.log`.\n\n**Handback:** PASS-WITH-NOTES at this exact head, with F159 remaining open as explicitly scoped.\n"
+		}
+	]
+}
