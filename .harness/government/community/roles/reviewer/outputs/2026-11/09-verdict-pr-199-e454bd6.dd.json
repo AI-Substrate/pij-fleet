@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bdcc-b3ef-7920-86d0-a6ca4bf2d3db",
+				"date": "2026-11-09",
+				"head": "e454bd6a501d01514b65527f146fe061d10f7188",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/199#issuecomment-6729729502",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:199",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #199 correctness review: PASS-WITH-NOTES\n\nHead: `e454bd6a501d01514b65527f146fe061d10f7188`.\nRequest: `01a1bdcc-b3ef-7920-86d0-a6ca4bf2d3db`.\nRead-only review against merge-base `3b96382e2c8c7110f5466139bf244c3ac2be7da9`; detached worktree clean and pinned. No local builds, tests or live probes.\n\n**The isolated F148 repair holds. No blocking finding.**\n\n## Requirement checks\n\n- **No capability work was imported.** The entire PR changes only the CLI status writer, daemon status reader and their tests: three files, 62 added/three removed lines. No capability/nonce/token code, ownership gates, migration or client capability changes. The main merge has no remerge conflict delta.\n- **Empty status is not an exit.** `crates/daemon/src/http/mod.rs:1796-1801` returns `None` for an empty/whitespace-only file. Parsing of nonempty trimmed values, legacy bare integers and the `exit_code=` prefix remains unchanged; malformed nonempty trimmed data still errors. The regression checks empty, valid and malformed cases.\n- **Missing exit evidence cannot reset the wait forever.** The deadline is created once (`mod.rs:1639`), defaulting to 30 seconds (`:44,1384`). A `None` status proceeds to pane-existence and deadline checks (`:1718-1769`), not a new deadline. If the wrapper dies before publishing status, pane disappearance returns 502 without an invented exit code; if the pane remains, the configured deadline returns 504. `--no-wait` remains immediate dispatch. The existing 50 ms poll is unchanged.\n- **The rename is on the same filesystem.** `write_exit_status` derives staging with `status_file.with_extension(\"status.partial\")`, preserving the parent directory, writes/closes it, then renames to the final path (`crates/cli/src/main.rs:4057-4061`). Generated final paths are `<spawn-id>.status` under the same evidence directory. The helper is used for both failed-launch 127 (`:4086`) and normal exit (`:4133`).\n- **The replacement test is meaningful.** Its old reader is opened before the write and remains on the empty old file; a new reader sees the complete `exit_code=3` file and no partial file remains. That distinguishes replacement from in-place writing without a timing race.\n\n## Proof qualifications\n\nThe lost-writer/empty-file/pane-still-present combination is source-traced, not a new executed crash fixture. The empty-reader unit test and existing missing-registration timeout HTTP test separately cover its components; no end-to-end killed-wrapper execution is claimed. SUGG-002 records the combined-fixture opportunity.\n\nThe PR reports V1 (empty check removed) and V2 (in-place write restored) killed. Their described failures target the intended guards, and the final-head tests retain the relevant assertions. This is author-reported mutation evidence, not local mutation execution by this reviewer.\n\nAtomic replacement provides whole-file visibility; this review does not claim additional power-loss/fsync durability.\n\n## CI and cost\n\nAll five check names succeeded at the exact head. CI run `42542206709`, attempt 1, and its matching JUnit artifact record **2304 passing cases**, zero failures/errors; nextest separately reports **five skips**. The empty-status test, replacement test, child-exit/log-tail HTTP test and Codex registration-timeout HTTP test are all present and passed.\n\nNo new loop, poll, timer, hook, sweep, status refresh or process launch. The wrapper adds one same-directory rename per exit; the existing spawn poll and launch sites are unchanged.\n\nEvidence: `pr199-e454bd6.diff`, `pr199-e454bd6-junit.xml`, `pr199-e454bd6-ci.log`.\n\n## Handback\n\nPASS-WITH-NOTES at this exact head. F148 is isolated and verified at the stated proof grade; retain the lost-writer execution and durability qualifications.\n"
+		}
+	]
+}
