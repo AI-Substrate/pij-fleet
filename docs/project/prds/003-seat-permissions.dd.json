@@ -8,7 +8,7 @@
 			"value": {
 				"title": "PRD 003: seat messaging permissions",
 				"status": "draft",
-				"updated": "2026-11-08",
+				"updated": "2026-11-09",
 				"owner": "pij-far-jackal",
 				"summary": "Seats can message any seat by default, but a seat can be locked down to a small set, such as its parent and the prime. Parent and prime are always reachable. A sender is told when the recipient can't reply to it."
 			}
@@ -102,7 +102,7 @@
 				{
 					"id": "req-03",
 					"title": "Parent and prime are always reachable",
-					"statement": "Whatever the policy says, a seat can always message its immediate parent and its own community's prime; if that prime is unavailable (dead, tombstoned or absent), any prime on the machine is reachable instead (q-03). A policy cannot remove them, and an allow list that omits them still includes them. The human operator, the Telegram bridge and pij's own system messages (watchdog, bg results) are exempt from seat permissions: a locked seat may always message the operator and the bridge, and their messages are never refused by a policy (q-04). The exemption applies only to a proven identity (req-10), never as a bypass a seat can claim.",
+					"statement": "Whatever the policy says, a seat can always message its immediate parent and its own community's prime; if that prime is unavailable (dead, tombstoned or absent), any prime on the machine is reachable instead (q-03). A policy cannot remove them, and an allow list that omits them still includes them. The human operator, the Telegram bridge and pij's own system messages (watchdog, bg results) are exempt from seat permissions: a locked seat may always message the operator and the bridge, and their messages are never refused by a policy (q-04). The exemption applies only to an identity the daemon derives itself, never as a bypass a seat can claim (C33 dropped req-10's per-seat proof; its correctness guards stay).",
 					"actor": "any seat",
 					"priority": "must",
 					"state": "planned",
@@ -175,10 +175,10 @@
 					"statement": "A request that acts as a seat proves it comes from that seat's own process, not only that the caller holds the daemon key. Today the machine bearer authenticates the machine, and registered identifiers (seat, session, pane, pid and start, all visible in the roster) stand in for the caller at seat-specific gates, so a local caller holding the key can act as another seat: send as it, claim its inbox, answer its requests, report its context size, or re-register it. Each seat incarnation gets a capability bootstrapped privately to it (never reissued from the identifiers a victim exposes), and every endpoint that grants authority by seat, parent, prime, holder, owner or recipient checks that capability before comparing identities. OS peer credentials on a Unix socket are bootstrap evidence, not the whole control. Registration observations stay as continuity and liveness checks; machine-public operations stay public by explicit policy.",
 					"actor": "any seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "dropped",
 					"done_when": "Every route the F88 inventory lists as trusting registered identifiers refuses a caller that holds the daemon key but not the incarnation capability of the seat it claims to act as (the claimed caller's capability, not that of each operation's subject), with a regression per route class (send-as, inbox claim, role and holder actions, outputs, activity, registration); the inventory is re-run at the shipping head and shows no route left on identifiers alone.",
 					"source": "F88, security (pij-annual-squirrel), 2026-11-07: governance roles/security/outputs/2026-11/07-note-issue-f88.dd.json (all 63 method and route pairs at a0ec952; root HIGH 9/10). Prime's ruling the same day: the gap was accepted at registration's strength for plan 217 (#153), to be fixed once, for every endpoint, here.",
-					"note": "Plan 217 (#153) ships a per-incarnation context grant for /v1/activity, audited on reissue, and a Known limit section stating this residual; that grant is the first instance of the capability this requirement generalises. \"The target seat's capability\" means the claimed caller's, never each operation's subject (review of #112)."
+					"note": "Dropped by ruling C33 (Jordan, 2026-11-09): the trust boundary is the user account, so pij builds no per-seat credentials; a same-user process is already trusted, and a seat posing as another is visible because its messages name one sender and are signed by another. C32's residuals are accepted permanently (C33 amended C32 in place; nothing waits on this row). C33 keeps: the correctness guards against accidental misattribution (derive the caller where the daemon already knows it, from the pane, native route or recorded parent, and refuse contradictory claims); the closed grammars and safe rendering of F127, F132, F135 and F142; and plan 221's route-inventory sensor. Workshop 001 (docs/plans/221-seat-provenance/workshops/001-capability-bootstrap.md) stays on file for a future shared or multi-user host. Earlier: plan 217 (#153) shipped a per-incarnation context grant for /v1/activity; \"the target seat's capability\" meant the claimed caller's (review of #112)."
 				},
 				{
 					"id": "req-11",
@@ -258,6 +258,11 @@
 					"date": "2026-11-08",
 					"by": "docs-system",
 					"change": "q-02 to q-04 answered by Jordan, relayed by the prime: outbound only, with --force (audited) overriding any limit (req-02, req-04, req-05); the own community prime, else any prime on the machine (req-03); the operator, the Telegram bridge and system messages exempt, for proven identities only (req-03). Notes from the review of #112 on req-10 (the capability is the claimed caller's) and req-11 (tests separate unforced refusals from the operator and forced paths). No open questions remain."
+				},
+				{
+					"date": "2026-11-09",
+					"by": "docs-system",
+					"change": "Ruling C33 (Jordan, 2026-11-09): req-10 dropped; the trust boundary is the user account. C32's residuals are accepted permanently. req-10's note records what C33 keeps (the misattribution guards, the closed grammars and safe rendering of F127, F132, F135 and F142, plan 221's route-inventory sensor) and that workshop 001 stays on file. req-03's operator, bridge and system exemption now rests on an identity the daemon derives, not on req-10's proof."
 				}
 			]
 		}
