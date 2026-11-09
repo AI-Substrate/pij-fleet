@@ -1,0 +1,215 @@
+{
+  "dd_schema": 1,
+  "description": "A pij project blueprint: how the PRD is built. Components say where they live and which requirement rows they realise; decisions record why; cost rows state the steady-state cost of every loop, poll, hook or launch (AGENTS.md).",
+  "enums": {
+    "doc_status": {
+      "values": [
+        "draft",
+        "review",
+        "accepted",
+        "retired"
+      ]
+    },
+    "lifecycle": {
+      "values": [
+        "planned",
+        "in-progress",
+        "shipped",
+        "dropped"
+      ],
+      "gate_terminal": [
+        "shipped",
+        "dropped"
+      ]
+    },
+    "component_kind": {
+      "values": [
+        "verb",
+        "endpoint",
+        "store",
+        "file",
+        "schema",
+        "skill",
+        "template",
+        "hook",
+        "module"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "title",
+          "status"
+        ],
+        "fields": {
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "enum",
+            "enum": "doc_status"
+          },
+          "updated": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "text"
+          }
+        }
+      }
+    },
+    "overview": {
+      "shape": {
+        "type": "text"
+      }
+    },
+    "components": {
+      "required": true,
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "kind",
+            "responsibility",
+            "state"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "enum",
+              "enum": "component_kind"
+            },
+            "where": {
+              "type": "string"
+            },
+            "responsibility": {
+              "type": "text"
+            },
+            "realises": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "target": "pij/prd/section/requirements",
+                "rel": "realises"
+              }
+            },
+            "state": {
+              "type": "state",
+              "enum": "lifecycle"
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "decisions": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "decision",
+            "why"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "decision": {
+              "type": "text"
+            },
+            "why": {
+              "type": "text"
+            },
+            "realises": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "target": "pij/prd/section/requirements",
+                "rel": "realises"
+              }
+            }
+          }
+        }
+      }
+    },
+    "costs": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "what",
+            "rate",
+            "scaling"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "what": {
+              "type": "text"
+            },
+            "rate": {
+              "type": "string"
+            },
+            "scaling": {
+              "type": "string"
+            },
+            "component": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "target": "pij/blueprint/section/components",
+                "rel": "costs"
+              }
+            }
+          }
+        }
+      }
+    },
+    "changelog": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "date",
+            "by",
+            "change"
+          ],
+          "fields": {
+            "date": {
+              "type": "string"
+            },
+            "by": {
+              "type": "string"
+            },
+            "change": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    }
+  }
+}

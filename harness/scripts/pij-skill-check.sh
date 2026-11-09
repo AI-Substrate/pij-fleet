@@ -70,6 +70,13 @@ for m in ready peer agent skill ops delegate node; do budget "$SKILL/references/
 # Plan 204: the community route stays token-lean.
 budget "$SKILL/references/routes/community.md" 110
 
+# F165: the pij/{prd,blueprint,workstream} schemas ship with the skill for repos
+# that have none; each copy must match .dd/schemas/pij byte for byte.
+for s in prd blueprint workstream; do
+  if cmp -s "$SKILL/schemas/pij/$s/schema.json" ".dd/schemas/pij/$s/schema.json"; then ok "schema copy: pij/$s matches .dd/schemas"
+  else err "schema copy: $SKILL/schemas/pij/$s/schema.json differs from .dd/schemas/pij/$s/schema.json (copy it again)"; fi
+done
+
 soft_budget() {
   [ -f "$1" ] || return 0
   n=$(wc -l < "$1" | tr -d ' ')

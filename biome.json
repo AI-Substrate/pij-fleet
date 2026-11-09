@@ -10,6 +10,7 @@
 			"!agents",
 			"!docs/plans",
 			"!.dd",
+			"!skills/pij/schemas",
 			"!scratch",
 			"!.harness",
 			"!**/prime-flow.json",
