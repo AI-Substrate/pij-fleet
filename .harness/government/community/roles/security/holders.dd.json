@@ -56,7 +56,10 @@
 					"harness": "copilot",
 					"harness_session": "94e4cef4-350b-4d67-b225-f117da43e070",
 					"machine": "ops.osk.lan",
+					"release_why": "C34 wind-up: one security seat (squirrel) stays",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-bumpy-herring",
+					"to": "2026-11-09T04:43:08.285Z",
 					"why": "fresh security seat after the 07 Nov reboot"
 				},
 				{
