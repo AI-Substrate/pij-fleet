@@ -6330,6 +6330,90 @@ async fn a_reply_without_a_bound_identity_is_refused_and_never_delivered_as_the_
     rig.server.abort();
 }
 
+/// F154: a Copilot seat outside tmux replies through its native `pij_send`,
+/// which sends its registered seat id and native session (ruling C33: bind
+/// where the daemon already knows the caller). That binds a paneless native
+/// seat's reply and answers the request; a wrong session, or a paneless seat
+/// that is not a native-extension seat, is still refused unbound.
+#[tokio::test]
+async fn a_paneless_native_holder_reply_binds_by_its_registered_session() {
+    const HOLDER: &str = "pij-native-holder";
+    let (rig, repo, _) = limit_rig_held_by("pij-reply-native", true, "pm-001", HOLDER).await;
+    let set_native = |native: bool| {
+        let registry = rig.services.registry.clone();
+        async move {
+            let mut seat = registry.get(&SeatId::from(HOLDER)).await.unwrap().unwrap();
+            seat.harness = Harness::Copilot;
+            seat.pane = None;
+            seat.harness_session = Some("native-holder-session".into());
+            seat.proc = Some(CALLER_PROC);
+            seat.native_extension_delivery = native;
+            registry.put(seat).await.unwrap();
+        }
+    };
+    let reply = |msg_id: &'static str, session: &'static str| {
+        let (addr, cwd) = (rig.addr, repo.main.clone());
+        async move {
+            send_to(
+                addr,
+                &cwd,
+                SEAT,
+                msg_id,
+                json!({
+                    "from": HOLDER,
+                    "caller": {"PIJ_SESSION_ID": HOLDER, "HARNESS_SESSION_ID": session, "cwd": cwd},
+                    "in_reply_to": "req-limit",
+                }),
+            )
+            .await
+        }
+    };
+    let answered = || {
+        let store = rig.store.clone();
+        async move {
+            store
+                .role_request("req-limit")
+                .await
+                .unwrap()
+                .unwrap()
+                .answered_at
+        }
+    };
+
+    set_native(false).await;
+    let plain = reply("reply-not-native", "native-holder-session").await;
+    assert!(refused_identity(&plain), "not a native seat: {plain}");
+    set_native(true).await;
+    let wrong = reply("reply-wrong-session", "another-session").await;
+    assert!(refused_identity(&wrong), "another session: {wrong}");
+    assert_eq!(answered().await, None);
+
+    let bound = reply("reply-native", "native-holder-session").await;
+    assert_eq!(bound["ok"], true, "{bound}");
+    assert!(answered().await.is_some(), "{bound}");
+    let events = call(
+        rig.addr,
+        "/v1/spine",
+        &["spine", "events", "--peer", HOLDER],
+        &repo.main,
+    )
+    .await;
+    let audits: Vec<Value> = events["data"]["events"]
+        .as_array()
+        .expect("events")
+        .iter()
+        .filter(|event| event["kind"] == "request.answered_by_reply")
+        .map(|event| serde_json::from_str(event["payload"].as_str().unwrap()).unwrap())
+        .collect();
+    assert_eq!(audits.len(), 1, "{audits:?}");
+    assert_eq!(
+        (audits[0]["route"].as_str(), audits[0]["bound"].as_str()),
+        (Some("send"), Some(pij_daemon::http::NATIVE_SESSION_BOUND)),
+        "{audits:?}"
+    );
+    rig.server.abort();
+}
+
 /// Review of #152, S152-001: the OMP/Pi `pij_send` tool sets `in_reply_to`
 /// from the last inbound message, so its reply to a requester is correlated.
 /// The exact body it sends (the fixture its TS test checks it against) binds
@@ -6375,7 +6459,9 @@ async fn the_omp_reply_shape_binds_by_pane_and_is_refused_without_caller() {
 
 /// Security review of #152, S152-001 (round 5). A paneless pull seat's
 /// native session, PID and start are roster metadata any local client can
-/// read. A DIFFERENT client supplies a live paneless pull holder's matching
+/// read. This holds for a seat with no native extension; a native-extension
+/// seat's registered session does bind (F154, ruling C33, and the test
+/// `a_paneless_native_holder_reply_binds_by_its_registered_session`). A DIFFERENT client supplies a live paneless pull holder's matching
 /// metadata and replies to its request as that seat: refused on the shim and
 /// on `/v1/send`, normal and FYI, to a seat and to a role, with nothing queued,
 /// held, answered or audited. The refusal says what to do instead, and the

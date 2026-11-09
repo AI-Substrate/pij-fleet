@@ -87,7 +87,7 @@ async function startExtension() {
 				{
 					name: "pij_send",
 					description:
-						"Send a message to a Pij peer from this native Copilot seat. A receipt proves queue/native acceptance, not completed model work. Call explicitly; replies are never automatically forwarded. `fyi: true` holds a message and rides along on the recipient's next turn instead of opening one. A normal send lands inside a turn the recipient is already in, so choose fyi unless their current work depends on it. Use `fyi: true` only when the recipient's next action doesn't depend on it. If they'd be stuck, wrong or waiting without it, it's a normal send. If they'd be fine not reading it until their next turn, it's `fyi: true`. If they'd be fine never reading it, don't send it. Always normal sends: work done or a phase complete, review verdicts, hand-offs, blockers, questions, decisions needed. FYI examples: \"merged #452, nothing needed from you\"; \"heads-up: main moved, rebase when you next touch it\"; progress notes nobody is waiting on. A cold recipient (large context, idle past its prompt-cache TTL, not working) refuses a waking message with E-RS-COLD-WAKE naming the price; resend with fyi if their next action doesn't depend on it, or with force and a reason only when the wake is worth that price (audited).",
+						"Send a message to a Pij peer from this native Copilot seat. A receipt proves queue/native acceptance, not completed model work. Call explicitly; replies are never automatically forwarded. `fyi: true` holds a message and rides along on the recipient's next turn instead of opening one. A normal send lands inside a turn the recipient is already in, so choose fyi unless their current work depends on it. Use `fyi: true` only when the recipient's next action doesn't depend on it. If they'd be stuck, wrong or waiting without it, it's a normal send. If they'd be fine not reading it until their next turn, it's `fyi: true`. If they'd be fine never reading it, don't send it. Always normal sends: work done or a phase complete, review verdicts, hand-offs, blockers, questions, decisions needed. FYI examples: \"merged #452, nothing needed from you\"; \"heads-up: main moved, rebase when you next touch it\"; progress notes nobody is waiting on. A cold recipient (large context, idle past its prompt-cache TTL, not working) refuses a waking message with E-RS-COLD-WAKE naming the price; resend with fyi if their next action doesn't depend on it, or with force and a reason only when the wake is worth that price (audited). When you answer a role request (its header reads `[pij role:<role> request <id> …]`), pass that <id> as in_reply_to: that is what marks the request answered and stops its time limit.",
 					parameters: {
 						type: "object",
 						properties: {
@@ -112,6 +112,12 @@ async function startExtension() {
 								pattern: "\\S",
 								description:
 									"Why this forced cold wake is worth its price; recorded in the daemon's audit. Required with force",
+							},
+							in_reply_to: {
+								type: "string",
+								pattern: "^\\S+$",
+								description:
+									"The id of the message this answers. When answering a role request, its request id (from `[pij role:<role> request <id> …]`): a reply from the request's holder marks it answered",
 							},
 						},
 						required: ["to", "message"],

@@ -100,6 +100,8 @@ export interface RustSendOptions {
 	readonly fyi?: boolean;
 	/** Wake a cold recipient anyway (plan 157 phase 2); the reason is audited. */
 	readonly force?: { readonly reason: string };
+	/** The id this answers, over the last message from the recipient (F154). */
+	readonly inReplyTo?: string;
 }
 
 interface VisibleRuntimePort extends PiRuntimePort {
@@ -501,7 +503,9 @@ export class RustRuntimeSession {
 		readonly coldCheck?: string;
 		readonly warning?: string;
 	}> {
-		const { command, fyi = false, force } = options;
+		const { command, fyi = false, force, inReplyTo: named } = options;
+		if (named !== undefined && (named.trim() === "" || /\s/.test(named)))
+			throw new Error("in_reply_to must be one id with no spaces");
 		const destination = parseDestination(to);
 		if (!destination.ok) throw new Error(`${destination.code}: ${destination.message}`);
 		if (fyi && command !== undefined) {
@@ -527,7 +531,8 @@ export class RustRuntimeSession {
 		const msgId = randomUUID();
 		// Keyed like `senderLabel`, so a reply to the shown sender threads onto its message.
 		const replyKey = renderDestination(destination.value);
-		const inReplyTo = this.lastInbound.get(replyKey);
+		const threaded = this.lastInbound.get(replyKey);
+		const inReplyTo = named ?? threaded;
 		// A control and a reply carry caller proof: the daemon binds a reply to
 		// a role request to its caller and refuses one with no context
 		// (ruling C32; review of #152, S152-001).
@@ -550,7 +555,7 @@ export class RustRuntimeSession {
 			...(force === undefined ? {} : { force: true, reason: force.reason }),
 			...(inReplyTo === undefined ? {} : { in_reply_to: inReplyTo }),
 		});
-		if (inReplyTo !== undefined) this.lastInbound.delete(replyKey);
+		if (threaded !== undefined && inReplyTo === threaded) this.lastInbound.delete(replyKey);
 		return {
 			msgId,
 			held: isHeldFyi(receipt),
