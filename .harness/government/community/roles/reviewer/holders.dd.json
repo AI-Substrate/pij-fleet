@@ -1140,6 +1140,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "community.md skill update (docs)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-09T04:31:34.699Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "202",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F152 directory edit add/remove list flags"
 				}
 			]
 		}
