@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1be22-13e7-7252-a56c-644c8aeec0f1",
+				"date": "2026-11-09",
+				"head": "633f43a23a8344cf5cdd0824fba7951a308d425d",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/200#issuecomment-6730901068",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:200",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Trace register/adopt snapshot, final SQLite put and direct/deferred close branches at 633f43a",
+					"exit_code": 0,
+					"log": "Source-based F001: stale live registration put can erase owner-close; common publication lock orders commits, not snapshot checks. F002: already system-tombstoned target returns old receipt without recording explicit owner intent. Neither scenario reproduced locally; cancellation-safe mutation-boundary guards and regressions required."
+				},
+				{
+					"command": "Trace native inbox/client, OMP reattach, federation roster and Claude marker paths; inspect m149.py/out/hash/stat",
+					"exit_code": 0,
+					"log": "Shared sequential refusal, native tombstone gate, typed client stop and marker clear paths checked. Federation remote roster is not a local writer. Seven author mutant runs show targeted failures and finally restoration; retained output filtered, baseline/source-transfer confirmation not yet supplied. N001: bounded marker commands contradict no-new-command prose."
+				},
+				{
+					"command": "Inspect CI 42550583851 artifact 13645435936 and merge commit ac39eb7; just pr-freeze 200",
+					"exit_code": 0,
+					"log": "2309 Rust passes, five nextest skips; all six F149 cases execute but not F001/F002 scenarios. Latest five checks pass, FINAL/CLEAN, no migration. CI tree equals head 6d939ae228c493ef8948e615b38841b524586f0b. Review tree unchanged; no local builds or lifecycle operations."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: BLOCK\n\nPR #200 at `633f43a23a8344cf5cdd0824fba7951a308d425d`, answering `01a1be22-13e7-7252-a56c-644c8aeec0f1`. Two source-based correctness findings remain. They concern ordinary lifecycle ordering and explicit owner intent, not defenses against a hostile same-user caller under C33. Neither scenario below was reproduced locally.\n\n## F001: an in-flight registration can overwrite a successful owner-close\n\n`register_inner` reads the roster under `registration_lock` and checks owner-close against that snapshot (`crates/daemon/src/registration.rs:733-744,846-857`). Its later descriptor put is unconditional (`:1218-1224`). `close_seat` does not share that registration critical section (`crates/daemon/src/http/lifecycle.rs:403-468`).\n\nThe final SQLite put rereads only pid, process start and parent, then upserts the supplied descriptor (`crates/store/src/registry.rs:350-381`). Its conflict update explicitly replaces both tombstone columns with the descriptor's values (`:537-538`). EventBus's publication lock serializes these commits, not the earlier registration read (`crates/daemon/src/events/mod.rs:131-152`).\n\nConsequently: let registration read a live row and pass the new check; pause it before its put; complete an owner-close; release the registration. The stale descriptor contains no tombstone, so its put clears the just-recorded owner-close and leaves the seat live without revive or reclaim. The new guard does not protect the state at the mutation boundary.\n\n**Fix:** make the registration commit conditionally recheck retirement/incarnation inside its owned transaction, or serialize close and registration through a guard that survives through the independently owned commit. Preserve the deliberate revive/reclaim overrides. A request-scoped lock alone must not release protection while an admitted store write survives cancellation. Add a deterministic pause-before-put, close, release regression asserting that the owner tombstone survives and registration cannot report successful resurrection.\n\n## F002: closing an already system-retired seat never records owner intent\n\n`close_seat` computes the normalized owner-close reason (`crates/daemon/src/http/lifecycle.rs:412`), but if the row is already tombstoned it only returns the old tombstone receipt (`:430-438`). The new reason is written only in the live-row branch (`:440-446`).\n\nFor example, a parent closes a seat already tombstoned as `observed-dead` or `reaped`. Close succeeds using that old reason; later same-session registration still takes the deliberately retained non-owner continuity lift. This also affects a held close completing after another path system-tombstones the seat. The explicit close has not made the address final.\n\n**Fix:** conditionally upgrade a non-owner tombstone to owner-close when an authorized explicit close lands. Keep repeats of an existing owner-close idempotent and preserve the normal continuity lift when no owner close occurred. Add a system-tombstone, parent-close, same-session-register regression, including the deferred-close path where appropriate.\n\n## Paths and behavior checked\n\nThe sequential new guard is shared by ordinary, native-extension and paneless registration; `/v1/adopt` enters the same service. Native target selection includes retired same-session rows, so the new guard is reached rather than implicitly minting a replacement for that target. The explicit reclaim exception retains parent/prime, matching-harness and old-process-death checks (`http/identity.rs:458-531`).\n\nA committed tombstone clears native delivery in the store, and inbox admission rejects tombstoned native recipients (`delivery/mod.rs:1635-1655`). Native Copilot recognizes the typed HTTP-400 retired code and stops both receive/heartbeat controllers; OMP's continuity re-registration is attached to the reattach callback, not a periodic registration loop. Federation's roster is an in-memory remote projection, not a local descriptor writer (`federation/fanin.rs:116-135,245-288`); it does not bypass the registration guard by persisting remote roster rows locally. None of these observations closes F001's stale local put.\n\nThe reason helper preserves bare owner-close, prefixes custom reasons and recognizes only the exact bare/prefixed forms. Other reasons and legacy free-text reasons intentionally retain continuity. Inspected client/fixture readers do not require custom close reasons to remain byte-identical; the changed format is documented. Direct and held replies add the process note, with pane text restricted to `%` plus digits.\n\nThe Claude marker suppresses later adopts for the same conversation and clears on a matching live `session` response or a changed conversation (`harness/scripts/claude-statusline-pij.sh:148-168`). The actual state projection supplies that `session` field. The new script regression exercises marker creation, suppression after rewinding the rate window, and clearing on a revived response.\n\n## Evidence and limits\n\nExact-head CI `42550583851`, successful artifact `13645435936`: **2,309 Rust cases passed**, zero failures/errors; nextest separately reports five skips. All six named F149 cases executed: helper, registration refusal, direct/held close, revive and Claude marker. They do not cover either finding above. Rust lint, Node 22/24 and delivers passed. CI checkout `ac39eb7993cc82506ed0f54373c5cbc7b3bb21f1` has tree `6d939ae228c493ef8948e615b38841b524586f0b`, identical to the reviewed head.\n\nInspected `m149.py`, `m149.out` and the retained source-diff hash/stat receipts. Seven author mutant runs show targeted assertion failures after unique replacements, with backup restoration in `finally`; these are not reviewer executions. The retained output is filtered and does not include a baseline transcript. Source-to-commit provenance and the source-diff/stat discrepancy in the held-close test were requested from the author; this verdict does not claim independently baseline-controlled, exact-head mutation kills. The two blocking findings rest on the source traces, not these mutation results.\n\n**N001, cost wording:** there is no new daemon timer, loop or launch site. The closed-marker steady-state path adds shell file checks/reads, while suppressing the existing adopt-per-15-second-window path. However, the PR's statement that the status line runs no new command is too broad: first refusal adds `tr`, `sed` and `mv` for the marker, and clearing adds `rm` (`claude-statusline-pij.sh:157,167,190-192`). Describe these bounded one-shot costs separately from the reduced repeated adopts. Live cost judgment remains independently owned.\n\n`just pr-freeze 200` returned FINAL/CLEAN with matching remote head, no migration and a clean detached tree. The implementation/test files are unchanged by the main merge from `62dc64bd` to this head. No local builds/tests, product edits, actual close/adopt/revive, credential reads, live-fleet probes, merge, push or review-HEAD movement.\n"
+		}
+	]
+}
