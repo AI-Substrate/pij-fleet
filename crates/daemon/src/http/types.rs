@@ -230,6 +230,14 @@ pub struct ReviveRequest {
     /// Launch a new, blank conversation instead of resuming the recorded one.
     #[serde(default)]
     pub fresh: bool,
+    /// Relaunch on this model instead of the recorded one (plan 225: how a
+    /// seat goes back to Opus after `cheap`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Plan 225: relaunch a cold Claude seat on Sonnet 5.5 and wait until it
+    /// registers, so the caller can compact it at Sonnet rates.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cheap: bool,
 }
 
 /// Request accepted by `POST /v1/send`.

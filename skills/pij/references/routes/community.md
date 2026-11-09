@@ -75,6 +75,7 @@ pij directory memory add '<role>' --title '<t>' --hook '<one line>' [--tags '<a,
 
 - Before a role holder is compacted or closed (including one that released a role since its last compact), pij gives it a memory turn and holds the compact or close until that turn ends. Check the note landed and that its INDEX line reads well.
 - The view's `memory-stale` action marks a role whose last 2 closes left no memory note, with the holder's `memory add` line. Nudge the holder; never write its memory for it.
+- A cold Claude holder over about 300k that must come back can be compacted on Sonnet 5.5, on the prime's call only (plan 225): once its process and pane are gone, `pij-rs revive <seat> --cheap` relaunches it on Sonnet and compacts it through the same memory turn. It stays on Sonnet; `pij-rs revive <seat> --model claude-opus-5-5` (after a close and kill) takes it back. Nothing runs it automatically.
 
 ## Every role holder
 

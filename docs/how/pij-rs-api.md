@@ -2149,6 +2149,13 @@ For `Recycled` (the pid belongs to another process incarnation) or `Unknown` (fo
 pij-rs revive <seat> --fresh --json   # explicit blank relaunch
 ```
 
+**Cheap-model compaction (plan 225).** `pij-rs revive <seat> --model <id>` relaunches on that model instead of the recorded one; it is how a seat goes back to Opus (`--model claude-opus-5-5`). `pij-rs revive <seat> --cheap` is for a cold Claude seat that must come back, at the prime's call: it relaunches the recorded conversation with `claude --resume <id> --model claude-sonnet-5-5` (`CHEAP_MODEL`, never Haiku, whose window can't hold these seats), waits until the seat registers on that model (the spawn wait and its model check), and then the CLI sends it the ordinary compact control as the caller, exactly `pij send <seat> --command compact`, so the memory turn and every other compact gate apply. The seat stays on Sonnet, and its recorded model (`boundModel` in `pij list`) says so. Nothing is ever typed into a pane but the compact; never `/model`, which rewrites the user's default model in Claude's settings. It refuses with `E-RS-REVIVE-CHEAP` (HTTP 409), before any write and in one line, a non-Claude seat and a seat whose prompt cache is known warm (a normal compact is cheaper there); `--cheap` with `--model` or `--fresh` refuses `E-RS-ARG`. Revive's other rules hold: the seat must be tombstoned or observed dead, so a live seat is closed and its pane killed first. No watchdog, sweep or threshold calls it. Cost: no loop, poll or timer; one relaunch and one compact per explicit use, through the existing launch site.
+
+```bash
+pij-rs revive <seat> --cheap --json                      # cold Claude seat: relaunch on Sonnet 5.5, then compact
+pij-rs revive <seat> --model claude-opus-5-5 --json      # back to Opus, a separate explicit step
+```
+
 Without an eligible override, `E-RS-REVIVE-LIVE` names the observation and exact override command; its remediation does not grant authorization. Shim `pij revive` still refuses `E-RS-UNPORTED`, and native `--print`/`--attach` remain unsupported.
 
 ## Double seat: `E-RS-CONVERSATION-LIVE` (plan 174)
