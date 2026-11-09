@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bf08-0853-7981-9615-537ce9f95046",
+				"date": "2026-11-09",
+				"head": "738bd91b084311381796ba37bcd17b82535d8fd9",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/209#issuecomment-6734525338",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:209",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Merge after #210 ships F159 subject refusal; existing documented rollout condition."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Compare packaged schemas, run Bashskill-check, validate three copied examples in isolated Gitrepo/HOME using globalddocs",
+					"exit_code": 0,
+					"log": "Three schema copies byteidentical, cmpdrift checks present, formatterexcluded. Isolated packagedschemas validate allthreeexamples depth3 zeroerrors/warnings; removingcopies yieldsE401 thenrestored. No product edits. #202 listflags accurate."
+				},
+				{
+					"command": "Inspect exact CI42573909313 paritycheck log and pr-freeze209",
+					"exit_code": 0,
+					"log": "Allthree paritychecks and skillcheck pass, route109/110; latestfivechecks pass FINAL/CLEAN. Subject examples fit closedgrammar; F159 runtime refusal must merge via#210 first, as documented. C34 no newblocker."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: PASS-WITH-NOTES\n\nPR #209 at `738bd91b084311381796ba37bcd17b82535d8fd9`, answering `01a1bf08-0853-7981-9615-537ce9f95046`. No correctness finding under C34.\n\nThe three packaged schemas are byte-identical to their `.dd/schemas/pij` sources. The new `cmp` checks reject missing or changed copies, and Biome excludes the copies from rewriting. README rule 3 and route item 7 provide the one-time copy step; #202's list-add/remove behavior is explained accurately.\n\n**Portability verified:** in an isolated scratch Git repo with only the packaged schemas and the three shipped examples, global ddocs validated PRD, blueprint and workstream at depth 3 with **0 errors / 0 warnings**. An isolated HOME prevented fallback schemas. Removing the copied schemas produced the expected **E401**, then they were restored. No product files changed.\n\nLocal Bash skill check and exact-head CI `42573909313` both pass all three parity checks; route **109/110 lines**. Latest five checks pass; `pr-freeze` FINAL/CLEAN; review HEAD unchanged.\n\n**Rollout condition:** merge after **#210's F159 subject refusal**, as the PR's Known limits and PM packet require. The subject examples fit the closed grammar, but the documented refusal is not yet on main. This is the stated merge ordering, not a new blocker or optional proof gate.\n"
+		}
+	]
+}
