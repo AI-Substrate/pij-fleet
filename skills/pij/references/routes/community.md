@@ -78,7 +78,7 @@ pij directory memory add '<role>' --title '<t>' --hook '<one line>' [--tags '<a,
 
 - Before a role holder is compacted or closed (including one that released a role since its last compact), pij gives it a memory turn and holds the compact or close until that turn ends. Check the note landed and that its INDEX line reads well.
 - **Context**: 600k is the limit; compact at it. Never revive a large seat (revive resumes its whole conversation): spawn a fresh one on its handover. Record a role's model in its default seat (`--model` on add, or `--set model=<m>`: Sonnet for builders, Opus for the prime and hard design); pij doesn't apply it, so pass it when you spawn a holder.
-- **Closing**: `pij close` only tombstones the seat; then `tmux kill-pane` its pane, since the process keeps running (until #200, F149).
+- **Closing**: `pij close` only tombstones the seat; then `tmux kill-pane` its pane, since the process keeps running.
 - The view's `memory-stale` action marks a role whose last 2 closes left no memory note, with the holder's `memory add` line. Nudge the holder; never write its memory for it.
 
 ## What the daemon tells you (prime and PA)
