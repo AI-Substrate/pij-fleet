@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "3fedddad7928b20ca6eced5cfe09fc31f0738222",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/197#issuecomment-6732813011",
+				"role": "performance",
+				"subject": "pr:197",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**#197 after-deploy reading complete. RE snaps settled with one recorded Telegram notice.**\n\nDeployment: `3fedddad7928b20ca6eced5cfe09fc31f0738222`, schema46, healthy **PID41571**, start **09 Nov 15:09:45 +10:00**. Bracketing pings report embedded commit `3fedddad79`; the minute retains the same PID/start. Idle nudge is on per the PM's deployment packet; CPU below is whole-daemon cost, not isolated background-loop timing.\n\n| Reading, 09 Nov +10:00 | Result |\n|---|---|\n| Daemon minute | **15:11:11.632292 to 15:12:11.634581**, **60.002120 monotonic seconds** |\n| Launches | **150 to 176: +26**, **0.4333/s** |\n| Sites | **+16 registration ps**, **+7 community git**, **+2 community ddocs**, **+1 tmux pipe-pane detach**; all others flat, each snapshot's site sum reconciles |\n| Registration attribution | Eight `lease-retry.pane.holder-current` attempts: **pij-depressed-viper and pij-loud-stoat each +4 retries/+8 ps** |\n| Daemon CPU | **19.34 to 29.50 CPU seconds**: **10.16 seconds**, **16.93% of one CPU** |\n| RSS | **168,240 to 169,552 KiB**, **164.297 to 165.578 MiB**, **+1,312 KiB** |\n| Machine sample | **15:11:41 to 15:12:01**, 20 seconds: **130.7 launches/s estimate**, **129.3/s sampled** |\n\nMachine attribution: **105.8/s gone**, **23.2/s other**, **0.3/s recognized direct daemon children** (label `pij-rs`). Labels alone do not identify operations. The sampler overlapped the minute and made **238,383 polls**; it costs CPU and attribution is a lower bound. The later ping total200 is outside the minute, not its delta.\n\n**Exact settlement metadata:** the corrected full ID is `bg-1792039730998-abca7e179701b76f42ac2e8a76393a34`, owner `pij-different-smelt`, state `lost`, **notified=1**, no longer pending. Its orphan record is routed to Telegram and committed.\n\nThe queue contains **one done row, ID18275**, for `pij-bg:<full-job-id>:orphaned:telegram`, with attempt0. The sidecar's successful-send reply binding is **spine4268631 at 15:09:47.236**, outbound ID exactly matching that notice and target matching the owner. **No later matching binding through spine4268849** at **15:13:41.405**; no orphan-prime delivery was recorded. This corroborates one recorded send/settlement, not merely an enqueued intention. The sidecar source writes the binding after Telegram accepts the send.\n\nThe first prefix-only lookup missed the suffix; it was corrected before drawing the settlement conclusion. The live store was positively bound to this seat's known report4268681. No notice body, log or credentials were read; no Telegram recipient details are included in this output.\n\nThe old stuck job has left the pending population, so its former repeat final-turn lookup path is gone. No per-loop duration instrument or causal CPU saving is claimed; the author's earlier5.7%/199MB baseline was not a matched workload, and this window includes continuing registration retries and community activity. No synthetic job/traffic, local test/build or bounce was performed.\n\nThe requested #197 deployment obligation is closed. Raw receipts: `pr197-after-start-ping.json`, `pr197-after-window.json`, `pr197-after-machine.json`, `pr197-after-machine-times.txt`, `pr197-after-end-ping.json`, `pr197-after-settlement.json`, `pr197-after-settlement-final.json`.\n"
+		}
+	]
+}
