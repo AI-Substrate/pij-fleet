@@ -493,7 +493,7 @@ describe("complete HTTP output", () => {
 		"\n\n",
 	])("preserves success envelope bytes with %j termination", async (ending) => {
 		reply = () => ({ status: 200, body: SUCCESS + ending });
-		expect(await launch(["--json", "project", "list"])).toEqual({
+		expect(await launch(["--json", "stream", "list"])).toEqual({
 			code: 0,
 			stdout: SUCCESS + (ending || "\n"),
 			stderr: "",
@@ -543,13 +543,13 @@ describe("complete HTTP output", () => {
 	it("drains a multi-megabyte envelope through a real pipe with a delayed reader", async () => {
 		const raw = JSON.stringify({
 			ok: true,
-			command: "project list",
+			command: "stream list",
 			v: 2,
 			data: { literal: "λ".repeat(1_500_000) },
 			meta: "complete final field",
 		});
 		reply = () => ({ status: 200, body: raw });
-		const result = await launch(["project", "list", "--json"], { delayedReader: true });
+		const result = await launch(["stream", "list", "--json"], { delayedReader: true });
 		expect(result).toEqual({ code: 0, stdout: `${raw}\n`, stderr: "" });
 	});
 

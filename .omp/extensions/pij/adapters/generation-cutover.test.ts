@@ -203,7 +203,7 @@ describe("rs cutover has no legacy escape", () => {
 	it.each([
 		"inbox",
 		"report",
-		"project",
+		"stream",
 	])("an unlisted %s leaf never falls through to legacy", async (verb) => {
 		const refusal = contracts.refusals.unported;
 		if (refusal === undefined) throw new Error("Missing canonical unported refusal fixture");
