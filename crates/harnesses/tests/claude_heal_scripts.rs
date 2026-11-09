@@ -492,3 +492,67 @@ fn status_line_heal_refused_as_a_double_shows_red_and_never_adopts_again() {
     assert!(!marker.exists(), "the double marker is cleared");
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// F149: the heal adopt of a seat its owner closed is refused with the
+/// retired code. The line then says the seat is closed and fires no further
+/// adopt for this conversation, even once the 15 s window has passed: a closed
+/// seat whose process still runs costs one refused adopt, not one per window.
+/// A revive (rs answers with this conversation again) clears the marker.
+#[test]
+fn status_line_heal_refused_as_closed_stops_adopting() {
+    let root = pij_testkit::fresh_dir("pij-closed-seat-heal");
+    install(
+        &root,
+        "pij-rs",
+        "#!/bin/sh\ndir=$(dirname \"$0\")\ncase \" $* \" in\n  *\" whoami \"*) printf '%s\\n' '{\"ok\":false,\"error\":\"refused\"}'; exit 1 ;;\n  *\" adopt \"*) printf '%s\\n' \"$*\" >>\"$dir/adopts\"; cat \"$dir/refusal\"; exit 1 ;;\nesac\n",
+    );
+    install(&root, "pij", "#!/bin/sh\nexit 1\n");
+    std::fs::write(
+        root.join("bin/refusal"),
+        "pij adopt: FAILED — E-RS-SEAT-RETIRED seat `pij-closed-seat` was closed by its owner; a closed seat never registers again under its id. Its process keeps running until its parent kills the pane; to bring the seat back, run `pij revive pij-closed-seat`\n",
+    )
+    .unwrap();
+    let payload = format!(
+        r#"{{"session_id":"S-149","workspace":{{"current_dir":"{}"}},"model":{{"display_name":"Opus"}}}}"#,
+        root.display()
+    );
+    let marker = root.join("state/heal/pane-9.closed");
+
+    let (first, code, _) = hook(&root, "claude-statusline-pij.sh", &payload);
+    assert_eq!(code, 0);
+    assert!(
+        first.contains("registering"),
+        "the first render heals: {first:?}"
+    );
+    eventually("the refused heal's closed marker", || marker.exists());
+    assert_eq!(adopts(&root).len(), 1);
+
+    // Rewind the heal window: a plain refusal would adopt again now.
+    std::fs::write(root.join("state/heal/pane-9.last"), "0\n").unwrap();
+    let (second, code, took) = hook(&root, "claude-statusline-pij.sh", &payload);
+    assert_eq!(code, 0);
+    assert!(took < scaled(Duration::from_secs(2)), "{took:?}");
+    assert!(
+        second.contains("⛓ closed: pij-closed-seat"),
+        "the line says the seat is closed: {second:?}"
+    );
+    assert!(!second.contains("registering"), "{second:?}");
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        std::fs::read_to_string(root.join("state/heal/pane-9.last")).unwrap(),
+        "0\n",
+        "no second heal adopt was fired"
+    );
+    assert_eq!(adopts(&root).len(), 1);
+
+    // Revived: rs answers with this conversation, so the marker goes.
+    install(
+        &root,
+        "pij-rs",
+        "#!/bin/sh\ncase \" $* \" in\n  *\" whoami \"*) printf '%s\\n' '{\"ok\":true,\"data\":{\"id\":\"pij-closed-seat\",\"session\":\"S-149\"}}' ;;\nesac\n",
+    );
+    let (third, _, _) = hook(&root, "claude-statusline-pij.sh", &payload);
+    assert!(third.contains("⛓ pij-closed-seat"), "{third:?}");
+    assert!(!marker.exists(), "the closed marker is cleared");
+    let _ = std::fs::remove_dir_all(root);
+}

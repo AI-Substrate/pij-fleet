@@ -180,6 +180,8 @@ That refusal carries the typed discriminator `details:{code:"E-RS-SEAT-RETIRED",
 
 A native Copilot claim that names an address recorded for a different native session is refused before the daemon observes the host (plan 211, issue #145): `E-RS-SEAT-RETIRED` when that address is retired, else the different-session refusal. The same check decides again under the registration lock, so this early read is a brake: removing it refuses the same claims later, after the ancestry `ps`. The native Copilot extension treats `E-RS-SEAT-RETIRED` on `/v1/register` as final: its receive and heartbeat loops stop and report `receive-held` once, instead of re-registering on a 5 s backoff.
 
+An owner's close is final for continuity (F149). `pij close` records its reason as `owner-close` (or `owner-close: <reason>` with `--reason`), and a seat retired with that reason is refused on `/v1/register` and `/v1/adopt` even when its own session, spawn or process claims it, with `E-RS-SEAT-RETIRED` and the message `E-RS-SEAT-RETIRED seat <id> was closed by its owner; ...` (the code first, so a client that only prints the message can still match it). The row stays tombstoned. Without this a closed seat whose process was still running lifted its own close about a second later: the Claude status line's heal loop re-adopted the same conversation. Only `pij revive <id>`, which writes a fresh live row before it relaunches, and an operator's verified `adopt --reclaim` bring the address back. Every other tombstone reason (`observed-dead`, `reaped`, a pre-F149 free-text close reason) keeps the continuity lift. The Claude status line keeps a `.closed` marker for the session after this refusal, shows `closed: <seat>` and stops adopting until the conversation changes; OMP re-registers only on a re-attach notice, so it is refused once rather than in a loop.
+
 ## Adopt continuity order (plan 156)
 
 `/v1/adopt <pane> --harness <h>` picks the seat in this order:
@@ -1657,7 +1659,7 @@ The caller is answered at once with `data.held: "memory-turn"` and
 close runs in the daemon. A held compact's answer is still a control receipt
 (`msg_id` the control's own, `outcome` `{"outcome":"held","reason":"memory-turn"}`,
 `at`), so every client decodes it as it decodes any send; a held close carries
-`data.seat`. So no client's request timeout can cut the hold
+`data.seat` and `data.process` (the close leaves the process running). So no client's request timeout can cut the hold
 short (the Copilot extension gives up after 65 s, Node's fetch after 300 s), and
 a seat compacting or closing itself, which is mid-turn, is handled the same
 way. A held close therefore has no `tombstoned_at` in its answer: the tombstone
@@ -1962,6 +1964,8 @@ Send/probe errors or Held/Refused transport outcomes cannot be presented as succ
 ## Retirement and conservative reaping
 
 `pij close <seat>` is a self-or-recorded-parent tombstone, **not process termination or pane teardown**. The active roster excludes tombstones; history retains the reason/sequence. A parent repeat-close returns existing evidence. Retired self identity still refuses, naming tombstone evidence; it is not an authentication exception. There is no `--force` bypass.
+
+A close doesn't stop the process. Its answer says so in `data.process` (on a held close too), naming the pane when the seat has one: `pij close retires the seat; its process keeps running. To stop it, its parent runs: tmux kill-pane -t %N`. A parent that wants the process gone kills the pane after the close. The closed seat can't register under its id again (see [owner-close continuity](#registration-and-tombstone-continuity)), so a process left running is a seat with no address, not a seat that comes back.
 
 ```bash
 pij reap --dry-run --json

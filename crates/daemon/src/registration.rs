@@ -840,6 +840,21 @@ impl RegistrationService {
             // and paneless claims, before their stronger ownership checks.
             return Err(retired_refusal(seat, &claim.harness));
         }
+        // F149: an owner's close is final for continuity. A live process whose
+        // seat was closed would otherwise lift its own close at its next hook.
+        // Only revive (which writes a fresh row first) and an operator's
+        // verified reclaim bring the address back.
+        if !reclaim
+            && let Some(seat) = existing.filter(|seat| {
+                seat.tombstoned_at.is_some()
+                    && seat
+                        .tombstone_reason
+                        .as_deref()
+                        .is_some_and(pij_core::model::is_owner_close)
+            })
+        {
+            return Err(closed_refusal(seat));
+        }
         // Explicit, verified spawn intent owns the new id and parent. Its saved
         // conversation may be retired, but neither address's mail is moved.
         let spawn_predecessor = handoff
@@ -1339,6 +1354,21 @@ fn retired_refusal(seat: &SeatDescriptor, claimed_harness: &str) -> Registration
     RegistrationError::Retired {
         seat: seat.id.clone(),
         reason,
+    }
+}
+
+/// The refusal for a seat its owner closed (F149): the same typed code as any
+/// retired seat, and the code first in the message too, so a client that only
+/// sees the printed text (the Claude status line) can stop retrying. The
+/// close's own reason is the caller's text and is not repeated here.
+fn closed_refusal(seat: &SeatDescriptor) -> RegistrationError {
+    let id = pij_core::render::seat(seat.id.as_str());
+    RegistrationError::Retired {
+        seat: seat.id.clone(),
+        reason: format!(
+            "E-RS-SEAT-RETIRED seat `{id}` was closed by its owner; a closed seat never registers again under its id. \
+             Its process keeps running until its parent kills the pane; to bring the seat back, run `pij revive {id}`"
+        ),
     }
 }
 
@@ -2536,6 +2566,52 @@ mod tests {
     #[tokio::test]
     async fn retired_session_resume_does_not_replace_recorded_role() {
         retired_session_resume_contract(Harness::Omp, Some("pm")).await;
+    }
+
+    /// F149: a seat its owner closed stays closed. Its own session registering
+    /// again (the Claude status line's heal adopt, an OMP reattach) is refused
+    /// with the typed retired code, the code first in the message, and the row
+    /// stays tombstoned. Any other retirement still resumes on continuity.
+    #[tokio::test]
+    async fn an_owner_close_is_final_for_registration_continuity() {
+        for (reason, resumes) in [
+            ("owner-close", false),
+            ("owner-close: PR merged", false),
+            ("observed-dead", true),
+        ] {
+            let mut old = native_seat("pij-closed-by-owner");
+            old.harness = Harness::Omp;
+            old.native_extension_delivery = false;
+            old.harness_session = Some("same-session".into());
+            old.tombstoned_at = Some(149);
+            old.tombstone_reason = Some(reason.into());
+            let (service, registry) = native_service(vec![old.clone()], native_liveness()).await;
+            let mut claim = native_claim(old.id.as_str());
+            claim.harness = "omp".into();
+            let result = service
+                .register_with_harness_session(claim, Some("same-session".into()))
+                .await;
+            let row = registry.get(&old.id).await.unwrap().unwrap();
+            if resumes {
+                assert_eq!(result.expect(reason).0.tombstoned_at, None, "{reason}");
+            } else {
+                match result {
+                    Err(RegistrationError::Retired { seat, reason: text }) => {
+                        assert_eq!(seat, old.id);
+                        assert!(
+                            text.starts_with("E-RS-SEAT-RETIRED seat `pij-closed-by-owner` was closed by its owner"),
+                            "{text}"
+                        );
+                        assert!(
+                            !text.contains("PR merged"),
+                            "the close's own text is not echoed"
+                        );
+                    }
+                    other => panic!("{reason}: {other:?}"),
+                }
+                assert_eq!(row.tombstoned_at, Some(149), "{reason}: still closed");
+            }
+        }
     }
 
     #[tokio::test]
