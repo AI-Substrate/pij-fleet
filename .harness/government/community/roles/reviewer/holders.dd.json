@@ -1099,7 +1099,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "198",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #198 merged (033b36f60a3a)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-09T01:02:34.645Z",
 					"why": "PRD 003 req-10 dropped (C33), docs only"
 				},
 				{
