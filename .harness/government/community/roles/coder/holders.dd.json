@@ -656,7 +656,10 @@
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"instance_key": "f139",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #197 merged (3fedddad7928)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-09T05:09:52.343Z",
 					"why": "F139 stuck bg final turn for a gone owner (#197)"
 				},
 				{
