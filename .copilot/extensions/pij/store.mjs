@@ -2190,6 +2190,12 @@ export class NativeBridge {
 		const destination = parseDestination(input.to);
 		if (destination.error !== undefined)
 			return { ok: false, error: `pij_send: ${destination.error}; no message sent` };
+		const inReplyTo = input.in_reply_to;
+		if (inReplyTo !== undefined && (!nonempty(inReplyTo) || /\s/.test(inReplyTo)))
+			return {
+				ok: false,
+				error: "pij_send: in_reply_to must be one id with no spaces; no message sent",
+			};
 		const msgId = randomUUID();
 		try {
 			const receipt = await this.client.request(
@@ -2201,6 +2207,12 @@ export class NativeBridge {
 					msg_id: msgId,
 					...(input.fyi === true ? { fyi: true } : {}),
 					...(force ? { force: true, reason: input.reason } : {}),
+					// F154: a reply carries this seat's registered identity, so the
+					// daemon binds it (by pane, or by native session when paneless)
+					// and a holder's reply answers the role request it names.
+					...(inReplyTo === undefined
+						? {}
+						: { in_reply_to: inReplyTo, caller: replyCaller(this.registration) }),
 				},
 				this.controller.signal,
 			);
@@ -2220,6 +2232,16 @@ export class NativeBridge {
 			return { ok: false, msg_id: msgId, error: error.message, grade: "send-outcome-unconfirmed" };
 		}
 	}
+}
+
+/** The caller context a reply sends: the registration the daemon already holds. */
+export function replyCaller(registration) {
+	return {
+		PIJ_SESSION_ID: registration.id,
+		HARNESS_SESSION_ID: registration.harness_session,
+		...(registration.pane ? { TMUX_PANE: registration.pane } : {}),
+		cwd: registration.folder,
+	};
 }
 
 /** Follow OS parent links; neither the extension child nor pane shell is the host. */
