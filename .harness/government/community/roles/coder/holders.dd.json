@@ -737,6 +737,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-back-tapir",
 					"why": "plan 225 cheap-model compaction (after F152 PR)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-09T04:08:23.985Z",
+					"harness": "copilot",
+					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
+					"instance_key": "f156",
+					"machine": "ops.osk.lan",
+					"seat": "pij-exuberant-wildcat",
+					"why": "CLI papercuts bundle F156, F158, F159 (after F150)"
 				}
 			]
 		}
