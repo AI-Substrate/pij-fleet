@@ -24,8 +24,9 @@ pub const CHEAP_MODEL: &str = "claude-sonnet-5-5";
 
 /// Why `--cheap` refuses this seat, if it does: one line each (plan 225).
 /// Claude only (Copilot bills per request, so a cheaper model saves nothing
-/// proven); cold only (a warm cache makes a normal compact cheaper).
-fn cheap_refusal(seat: &SeatDescriptor, warm: bool) -> Option<String> {
+/// proven); known cold only (a warm cache makes a normal compact cheaper, and
+/// an unknown state is not evidence of cold).
+fn cheap_refusal(seat: &SeatDescriptor, cache: Result<bool, &str>) -> Option<String> {
     if seat.harness != pij_core::model::Harness::Claude {
         return Some(format!(
             "E-RS-REVIVE-CHEAP seat `{}` is a {} seat: --cheap is for Claude seats only",
@@ -33,12 +34,17 @@ fn cheap_refusal(seat: &SeatDescriptor, warm: bool) -> Option<String> {
             seat.harness.as_str()
         ));
     }
-    warm.then(|| {
-        format!(
+    match cache {
+        Ok(false) => None,
+        Ok(true) => Some(format!(
             "E-RS-REVIVE-CHEAP seat `{}` still has a warm prompt cache: revive it without --cheap and compact it, which is cheaper while the cache lasts",
             seat.id
-        )
-    })
+        )),
+        Err(reason) => Some(format!(
+            "E-RS-REVIVE-CHEAP seat `{}`: cache state unknown: {reason}; --cheap needs a known cold cache",
+            seat.id
+        )),
+    }
 }
 
 #[derive(Serialize)]
@@ -283,8 +289,8 @@ pub(super) async fn revive_seat(
             Ok(now) => now,
             Err(error) => return internal(COMMAND, error),
         };
-        let warm = super::cold_wake::is_known_warm(&state, &prior, now).await;
-        if let Some(reason) = cheap_refusal(&prior, warm) {
+        let cache = super::cold_wake::known_cache(&state, &prior, now).await;
+        if let Some(reason) = cheap_refusal(&prior, cache) {
             let mut answer: Envelope<Value> =
                 Envelope::refused(COMMAND, ErrorKind::Refused, reason);
             answer.details = Some(json!({"code":"E-RS-REVIVE-CHEAP", "seat":prior.id}));

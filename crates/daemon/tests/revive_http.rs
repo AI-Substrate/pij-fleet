@@ -765,6 +765,38 @@ async fn cheap_revive_refuses_a_warm_or_non_claude_seat() {
     );
     unchanged(&f, &warm, since).await;
 
+    // Review (spoonbill, round 1): cold only means KNOWN cold. A cache state
+    // the facts can't establish refuses, naming the missing fact.
+    let unknown_call: Arc<dyn SessionStatusPort> = Arc::new(FakeSessionStatus::new().with_reply(
+        "plan225-no-last-call",
+        SessionStatusReply::Status(SeatStatus {
+            cache_ttl: Fact::native(CacheTtl::OneHour),
+            ..SeatStatus::unknown()
+        }),
+    ));
+    for (status, session, why) in [
+        (None, "plan225-unread", "harness sessions unreadable"),
+        (
+            Some(unknown_call),
+            "plan225-no-last-call",
+            "last call unknown",
+        ),
+    ] {
+        let g = fixture_with(Arc::new(FakeLiveness::new()), Vec::new(), status).await;
+        let seat = claude_target(session);
+        let since = g.services.registry.put(seat.clone()).await.unwrap();
+        let body = post(&g, &cheap).await;
+        assert_eq!(body["details"]["code"], "E-RS-REVIVE-CHEAP", "{body}");
+        assert!(
+            body["meta"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("cache state unknown: {why}")),
+            "{body}"
+        );
+        unchanged(&g, &seat, since).await;
+    }
+
     for (extra, said) in [("model", "takes no --model"), ("fresh", "--fresh has none")] {
         let mut body = cheap.clone();
         body[extra] = if extra == "model" {

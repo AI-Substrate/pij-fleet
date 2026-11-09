@@ -245,15 +245,32 @@ fn unknown(why: &str) -> ColdCheck {
 /// A `working` state is not evidence (it can be stale after an Esc or an API
 /// error), and an unknown last call or unknown TTL is not warm.
 pub fn is_warm(status: &SessionStatusBlock, now_ms: u64) -> bool {
-    let SessionStatusBlock::Known { status, .. } = status else {
-        return false;
+    cache_known(status, now_ms) == Ok(true)
+}
+
+/// The prompt cache's state at `now_ms` when the facts establish it: `Ok(true)`
+/// warm, `Ok(false)` cold. Otherwise `Err` names, from a closed vocabulary, the
+/// fact that is missing, for a caller that must act only on a known state
+/// (plan 225's `revive --cheap`).
+///
+/// # Errors
+/// The cache state is unknown: the named fact could not be established.
+pub fn cache_known(status: &SessionStatusBlock, now_ms: u64) -> Result<bool, &'static str> {
+    let status = match status {
+        SessionStatusBlock::Known { status, .. } => status,
+        SessionStatusBlock::Unbound => return Err("no session bound"),
+        SessionStatusBlock::Unsupported { .. } => return Err("harness sessions unreadable"),
+        SessionStatusBlock::NotFound { .. } => return Err("no transcript found"),
+        SessionStatusBlock::Failed { .. } => return Err("session read failed"),
     };
-    let (Some(&last_call), Some(&ttl)) = (status.last_call_at_ms.value(), status.cache_ttl.value())
-    else {
-        return false;
+    let Some(&last_call) = status.last_call_at_ms.value() else {
+        return Err("last call unknown");
+    };
+    let Some(&ttl) = status.cache_ttl.value() else {
+        return Err("cache TTL unknown");
     };
     let lifetime_ms = ttl.as_ms().min(COLD_IDLE_MS);
-    now_ms < last_call.saturating_add(lifetime_ms)
+    Ok(now_ms < last_call.saturating_add(lifetime_ms))
 }
 
 /// The refusal a sender sees: the seat's size and idle time, then every option

@@ -90,6 +90,31 @@ pub(crate) async fn is_known_warm(state: &AppState, seat: &SeatDescriptor, now_m
     pij_core::cold_wake::is_warm(&block, now_ms)
 }
 
+/// `seat`'s prompt cache at `now_ms` when known (`Ok(true)` warm, `Ok(false)`
+/// cold), else why not: plan 225's `revive --cheap` acts only on a known cold
+/// cache. The same bounded wait as a send; no answer in time is unknown.
+pub(crate) async fn known_cache(
+    state: &AppState,
+    seat: &SeatDescriptor,
+    now_ms: u64,
+) -> Result<bool, &'static str> {
+    let Ok(block) = tokio::time::timeout(
+        STATUS_WAIT,
+        session_status_block(
+            state.services.session_status.as_ref(),
+            &seat.id,
+            seat.harness,
+            seat.harness_session.clone(),
+            now_ms,
+        ),
+    )
+    .await
+    else {
+        return Err("no session facts within 3s");
+    };
+    pij_core::cold_wake::cache_known(&block, now_ms)
+}
+
 /// The complete cold-wake verdict for one live seat: the pure `check()` over
 /// its session facts, plus the stale-`working` correction. This is the one
 /// decision both an ordinary `pij send` and a daemon park notice obey
