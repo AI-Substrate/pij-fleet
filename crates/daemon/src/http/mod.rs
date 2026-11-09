@@ -2672,6 +2672,7 @@ struct InboxQuery {
 /// The hold a receiver gets for a claim during a turn when its seat's
 /// mid-turn steering is off (plan 214, C31).
 pub use crate::delivery::TURN_WAIT_HOLD;
+pub use revive::CHEAP_MODEL;
 
 /// Read one inbox message. The default path claims it for explicit client ack;
 /// `peek=true` is observation-only and never changes queue state.

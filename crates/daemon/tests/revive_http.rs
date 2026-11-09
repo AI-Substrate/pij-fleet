@@ -5,11 +5,12 @@ use async_trait::async_trait;
 use pij_core::config::{AdapterChoice, Adapters, Config};
 use pij_core::error::{PijError, Result};
 use pij_core::model::{Harness, ProcIdentity, SeatDescriptor, SeatId, Seq};
-use pij_core::ports::LivenessPort;
+use pij_core::ports::{LivenessPort, SessionStatusPort};
+use pij_core::session_status::{CacheTtl, Fact, SeatStatus, SessionStatusReply};
 use pij_daemon::Services;
 use pij_daemon::http::{HttpConfig, router_with_config};
 use pij_testkit::FreshStore;
-use pij_testkit::fakes::{FakeLiveness, FakeTmux};
+use pij_testkit::fakes::{FakeLiveness, FakeSessionStatus, FakeTmux};
 use serde_json::{Value, json};
 
 struct ProbeUnavailable;
@@ -44,6 +45,14 @@ async fn fixture_with_retired_harnesses(
     probe: Arc<dyn LivenessPort>,
     retired_harnesses: Vec<Harness>,
 ) -> Fixture {
+    fixture_with(probe, retired_harnesses, None).await
+}
+
+async fn fixture_with(
+    probe: Arc<dyn LivenessPort>,
+    retired_harnesses: Vec<Harness>,
+    session_status: Option<Arc<dyn SessionStatusPort>>,
+) -> Fixture {
     let store = FreshStore::new();
     let config = Config {
         adapters: Adapters {
@@ -64,6 +73,9 @@ async fn fixture_with_retired_harnesses(
     let tmux = Arc::new(FakeTmux::new());
     services.tmux = tmux.clone();
     services.liveness = probe;
+    if let Some(session_status) = session_status {
+        services.session_status = session_status;
+    }
     for (id, pane) in [("pij-parent", "%parent"), ("pij-outsider", "%outsider")] {
         let mut seat = SeatDescriptor::new(id, Harness::Copilot, "/tmp");
         seat.pane = Some(pane.to_string());
@@ -687,4 +699,200 @@ async fn revive_conversation_guard_keeps_its_original_rule() {
             .contains("E-RS-REVIVE-CONVERSATION-LIVE"),
         "{body}"
     );
+}
+
+fn now_ms() -> u64 {
+    u64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap()
+}
+
+/// A Claude seat's session facts: its last call `ago_ms` ago, on a 1h cache.
+fn last_call(session: &str, ago_ms: u64) -> Arc<dyn SessionStatusPort> {
+    Arc::new(FakeSessionStatus::new().with_reply(
+        session,
+        SessionStatusReply::Status(SeatStatus {
+            model: Fact::native("claude-opus-5-5".to_string()),
+            context_used_tokens: Fact::derived(420_000),
+            last_call_at_ms: Fact::native(now_ms() - ago_ms),
+            cache_ttl: Fact::native(CacheTtl::OneHour),
+            ..SeatStatus::unknown()
+        }),
+    ))
+}
+
+fn claude_target(session: &str) -> SeatDescriptor {
+    let mut seat = target();
+    seat.harness = Harness::Claude;
+    seat.harness_session = Some(session.to_string());
+    seat.model = Some("claude-opus-5-5".to_string());
+    seat
+}
+
+/// Plan 225 AC2: `--cheap` refuses, in one line and before any write, a
+/// non-Claude seat, a seat whose cache is still warm, `--model` and `--fresh`.
+#[tokio::test]
+async fn cheap_revive_refuses_a_warm_or_non_claude_seat() {
+    const SESSION: &str = "plan225-warm";
+    let f = fixture_with(
+        Arc::new(FakeLiveness::new()),
+        Vec::new(),
+        Some(last_call(SESSION, 60_000)),
+    )
+    .await;
+    let cheap = json!({"id":"pij-child","session":"fleet","cheap":true});
+
+    let copilot = target();
+    let since = f.services.registry.put(copilot.clone()).await.unwrap();
+    let body = post(&f, &cheap).await;
+    assert_eq!(body["details"]["code"], "E-RS-REVIVE-CHEAP", "{body}");
+    let meta = body["meta"].as_str().unwrap();
+    assert!(meta.contains("Claude seats only"), "{body}");
+    assert!(!meta.contains('\n'), "one line: {body}");
+    unchanged(&f, &copilot, since).await;
+
+    let warm = claude_target(SESSION);
+    let since = f.services.registry.put(warm.clone()).await.unwrap();
+    let body = post(&f, &cheap).await;
+    assert_eq!(body["details"]["code"], "E-RS-REVIVE-CHEAP", "{body}");
+    assert!(
+        body["meta"].as_str().unwrap().contains("warm prompt cache"),
+        "{body}"
+    );
+    unchanged(&f, &warm, since).await;
+
+    // Review (spoonbill, round 1): cold only means KNOWN cold. A cache state
+    // the facts can't establish refuses, naming the missing fact.
+    let unknown_call: Arc<dyn SessionStatusPort> = Arc::new(FakeSessionStatus::new().with_reply(
+        "plan225-no-last-call",
+        SessionStatusReply::Status(SeatStatus {
+            cache_ttl: Fact::native(CacheTtl::OneHour),
+            ..SeatStatus::unknown()
+        }),
+    ));
+    for (status, session, why) in [
+        (None, "plan225-unread", "harness sessions unreadable"),
+        (
+            Some(unknown_call),
+            "plan225-no-last-call",
+            "last call unknown",
+        ),
+    ] {
+        let g = fixture_with(Arc::new(FakeLiveness::new()), Vec::new(), status).await;
+        let seat = claude_target(session);
+        let since = g.services.registry.put(seat.clone()).await.unwrap();
+        let body = post(&g, &cheap).await;
+        assert_eq!(body["details"]["code"], "E-RS-REVIVE-CHEAP", "{body}");
+        assert!(
+            body["meta"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("cache state unknown: {why}")),
+            "{body}"
+        );
+        unchanged(&g, &seat, since).await;
+    }
+
+    for (extra, said) in [("model", "takes no --model"), ("fresh", "--fresh has none")] {
+        let mut body = cheap.clone();
+        body[extra] = if extra == "model" {
+            json!("claude-haiku-4-5")
+        } else {
+            json!(true)
+        };
+        let answer = post(&f, &body).await;
+        assert_eq!(answer["details"]["code"], "E-RS-ARG", "{answer}");
+        assert!(answer["meta"].as_str().unwrap().contains(said), "{answer}");
+    }
+    unchanged(&f, &warm, since).await;
+}
+
+/// Plan 225 AC1: a cold Claude seat relaunches with `--resume <session>
+/// --model claude-sonnet-5-5`, the call returns once it registers, and the
+/// seat's recorded model (boundModel) is Sonnet. Nothing typed into any pane
+/// is `/model`. A later `--model` revive takes it back to Opus.
+#[tokio::test]
+async fn cheap_revive_relaunches_a_cold_claude_seat_on_sonnet() {
+    const SESSION: &str = "plan225-cold";
+    let f = fixture_with(
+        Arc::new(FakeLiveness::new()),
+        Vec::new(),
+        Some(last_call(SESSION, 3 * 60 * 60 * 1_000)),
+    )
+    .await;
+    let prior = claude_target(SESSION);
+    f.services.registry.put(prior.clone()).await.unwrap();
+
+    // Stand in for the relaunched harness registering itself.
+    let registry = f.services.registry.clone();
+    let id = prior.id.clone();
+    let registered = tokio::spawn(async move {
+        loop {
+            if let Ok(Some(mut seat)) = registry.get(&id).await
+                && seat.pane.as_deref() != Some("%old")
+                && seat.proc.is_none()
+            {
+                let launched_model = seat.model.clone();
+                seat.proc = Some(ProcIdentity {
+                    pid: 5151,
+                    proc_start: 30,
+                });
+                registry.put(seat).await.unwrap();
+                return launched_model;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    });
+
+    let body = post(
+        &f,
+        &json!({"id":"pij-child","session":"fleet","cheap":true}),
+    )
+    .await;
+    assert_eq!(body["ok"], true, "{body}");
+    assert_eq!(
+        registered.await.unwrap().as_deref(),
+        Some(pij_daemon::http::CHEAP_MODEL)
+    );
+    assert_eq!(pij_daemon::http::CHEAP_MODEL, "claude-sonnet-5-5");
+    let revived = f.services.registry.get(&prior.id).await.unwrap().unwrap();
+    assert_eq!(revived.model.as_deref(), Some("claude-sonnet-5-5"));
+    assert!(revived.proc.is_some(), "returned after registration");
+    assert_eq!(revived.harness_session.as_deref(), Some(SESSION));
+    let calls = f.tmux.calls();
+    let launch = calls
+        .iter()
+        .find(|call| call.starts_with("new_window:"))
+        .expect("launched");
+    assert!(
+        launch.contains(&format!("\"--resume\", \"{SESSION}\""))
+            && launch.contains("\"--model\", \"claude-sonnet-5-5\""),
+        "{launch}"
+    );
+    assert!(
+        calls
+            .iter()
+            .filter(|call| call.starts_with("send_keys:") || call.contains("submit:"))
+            .all(|call| !call.contains("/model")),
+        "never /model in a pane: {calls:?}"
+    );
+
+    // Going back is a separate, explicit revive with the Opus model.
+    f.services
+        .registry
+        .tombstone(&prior.id, "closed")
+        .await
+        .unwrap();
+    let body = post(
+        &f,
+        &json!({"id":"pij-child","session":"fleet","model":"claude-opus-5-5"}),
+    )
+    .await;
+    assert_eq!(body["ok"], true, "{body}");
+    let back = f.services.registry.get(&prior.id).await.unwrap().unwrap();
+    assert_eq!(back.model.as_deref(), Some("claude-opus-5-5"));
 }

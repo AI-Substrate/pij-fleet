@@ -338,6 +338,16 @@ enum Command {
         /// Launch a new, blank conversation instead of resuming the recorded one.
         #[arg(long)]
         fresh: bool,
+        /// Relaunch on this model instead of the recorded one; how a seat goes
+        /// back to Opus after --cheap (`--model claude-opus-5-5`).
+        #[arg(long, conflicts_with = "cheap")]
+        model: Option<String>,
+        /// Compact a cold Claude seat on Sonnet 5.5 (plan 225; the prime's call):
+        /// relaunch it with `--resume --model claude-sonnet-5-5`, wait until it
+        /// registers, then send it the normal compact control. The seat stays on
+        /// Sonnet. A warm or non-Claude seat refuses.
+        #[arg(long, conflicts_with = "fresh")]
+        cheap: bool,
     },
     /// Durably enqueue one message as the acting seat.
     #[command(
@@ -1409,16 +1419,17 @@ async fn run(cli: Cli) -> ExitCode {
                 .await;
             emit(&spawn_cli_response(response), cli.json)
         }
-        Command::Revive { .. } => emit(
-            &client
-                .revive(
-                    prepared_revive
-                        .as_ref()
-                        .expect("revive request was prepared"),
-                )
-                .await,
-            cli.json,
-        ),
+        Command::Revive { cheap, .. } => {
+            let request = prepared_revive
+                .as_ref()
+                .expect("revive request was prepared");
+            let revived = client.revive(request).await;
+            if !(cheap && revived.ok) {
+                return emit(&revived, cli.json);
+            }
+            let _ = emit(&revived, cli.json);
+            cheap_compact(&client, &request.id, cli.json).await
+        }
         Command::Send {
             from,
             recipient,
@@ -4239,6 +4250,8 @@ fn prepare_revive_request(command: &Command) -> Result<Option<ReviveRequest>, Pi
         assume_dead,
         evidence,
         fresh,
+        model,
+        cheap,
     } = command
     else {
         return Ok(None);
@@ -4266,7 +4279,48 @@ fn prepare_revive_request(command: &Command) -> Result<Option<ReviveRequest>, Pi
         assume_dead: *assume_dead,
         evidence: evidence.clone(),
         fresh: *fresh,
+        model: model.clone(),
+        cheap: *cheap,
     }))
+}
+
+/// The compact half of `revive --cheap` (plan 225): the caller sends the
+/// revived seat the same compact control `pij send <seat> --command compact`
+/// sends, so every gate a compact has (the memory turn included) applies.
+/// Nothing is typed into the pane but `/compact`; never `/model`.
+async fn cheap_compact(client: &DaemonClient, seat: &SeatId, json: bool) -> ExitCode {
+    const NAME: &str = "pij revive --cheap";
+    let acting = match resolve_command_seat(client, NAME, None).await {
+        Ok(acting) => acting,
+        Err(error) => return emit(&setup_refusal::<Value>(NAME, error), json),
+    };
+    let request = cheap_compact_request(acting, seat.clone());
+    let mut response = client.send_control(&request, &caller_context()).await;
+    let raw = response.raw_json.take();
+    response.command = NAME.to_string();
+    match with_memory_turn(&response, raw.as_deref()) {
+        Some(shown) => emit(&shown, json),
+        None => emit(&response, json),
+    }
+}
+
+/// The compact control `revive --cheap` sends: exactly `--command compact`.
+fn cheap_compact_request(from: SeatId, seat: SeatId) -> SendRequest {
+    SendRequest {
+        from,
+        to: pij_core::model::Destination::local(seat),
+        body: String::new(),
+        command: Some("compact".to_string()),
+        msg_id: uuid::Uuid::now_v7().to_string(),
+        in_reply_to: None,
+        fyi: false,
+        force: false,
+        reason: None,
+        reply: None,
+        limit: None,
+        project: None,
+        caller: None,
+    }
 }
 
 fn is_linked_worktree(cwd: &Path) -> Result<bool, PijError> {
@@ -5355,6 +5409,27 @@ PEC notice";
                 "tail"
             ]
         );
+    }
+
+    /// Plan 225: `revive --cheap` compacts with exactly the compact control
+    /// (never a body, never `/model`), and takes no `--model` or `--fresh`.
+    #[test]
+    fn cheap_revive_sends_only_the_compact_control() {
+        let request =
+            super::cheap_compact_request(SeatId::from("pij-prime"), SeatId::from("pij-cold"));
+        assert_eq!(request.command.as_deref(), Some("compact"));
+        assert!(request.body.is_empty());
+        assert_eq!(
+            request.to,
+            pij_core::model::Destination::local(SeatId::from("pij-cold"))
+        );
+        assert!(!request.force && !request.fyi);
+        assert!(Cli::try_parse_from(["pij-rs", "revive", "s", "--cheap"]).is_ok());
+        for extra in [&["--model", "claude-haiku-4-5"][..], &["--fresh"][..]] {
+            let mut words = vec!["pij-rs", "revive", "s", "--cheap"];
+            words.extend_from_slice(extra);
+            assert!(Cli::try_parse_from(words).is_err(), "{extra:?}");
+        }
     }
 
     /// Review F002: a held compact's reply decodes as the typed control

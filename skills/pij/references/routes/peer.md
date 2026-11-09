@@ -40,6 +40,8 @@ pij-rs spawn --harness <omp|pi|claude|copilot|codex> --model <exact-model> [--ef
 pij attest <new-seat> --plan-id <plan-id> --json
 pij dispatch <new-seat> --packet <path> --wait --json
 pij-rs revive <seat> [--session <tmux-session>] [--name <window-name>] [--fresh] --json
+pij-rs revive <seat> --cheap --json                   # cold Claude seat, prime's call: relaunch on Sonnet 5.5, then compact (plan 225)
+pij-rs revive <seat> --model claude-opus-5-5 --json  # relaunch on another model, e.g. back to Opus
 pij-rs revive <seat> --assume-dead --evidence 'Describe why the recorded process binding is stale' --json
 ```
 

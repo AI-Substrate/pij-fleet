@@ -17,6 +17,36 @@ use super::{
 
 const COMMAND: &str = "pij revive";
 
+/// The one model `revive --cheap` relaunches on (plan 225): Sonnet 5.5, whose
+/// cache writes cost half of Opus's. Never Haiku: its 200k window can't hold
+/// the seats this is for.
+pub const CHEAP_MODEL: &str = "claude-sonnet-5-5";
+
+/// Why `--cheap` refuses this seat, if it does: one line each (plan 225).
+/// Claude only (Copilot bills per request, so a cheaper model saves nothing
+/// proven); known cold only (a warm cache makes a normal compact cheaper, and
+/// an unknown state is not evidence of cold).
+fn cheap_refusal(seat: &SeatDescriptor, cache: Result<bool, &str>) -> Option<String> {
+    if seat.harness != pij_core::model::Harness::Claude {
+        return Some(format!(
+            "E-RS-REVIVE-CHEAP seat `{}` is a {} seat: --cheap is for Claude seats only",
+            seat.id,
+            seat.harness.as_str()
+        ));
+    }
+    match cache {
+        Ok(false) => None,
+        Ok(true) => Some(format!(
+            "E-RS-REVIVE-CHEAP seat `{}` still has a warm prompt cache: revive it without --cheap and compact it, which is cheaper while the cache lasts",
+            seat.id
+        )),
+        Err(reason) => Some(format!(
+            "E-RS-REVIVE-CHEAP seat `{}`: cache state unknown: {reason}; --cheap needs a known cold cache",
+            seat.id
+        )),
+    }
+}
+
 #[derive(Serialize)]
 pub(super) struct Receipt {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -223,6 +253,16 @@ pub(super) async fn revive_seat(
     if !request.assume_dead && request.evidence.is_some() {
         return argument_failure("--evidence requires --assume-dead".to_string());
     }
+    if request.cheap && request.model.is_some() {
+        return argument_failure(format!(
+            "--cheap relaunches on {CHEAP_MODEL}; it takes no --model"
+        ));
+    }
+    if request.cheap && request.fresh {
+        return argument_failure(
+            "--cheap compacts the recorded conversation; --fresh has none".to_string(),
+        );
+    }
 
     // No pre-lock registry read: a second revive must observe the new incarnation,
     // not the same dead predecessor that the first request is about to replace.
@@ -244,6 +284,19 @@ pub(super) async fn revive_seat(
         }
         Err(error) => return internal(COMMAND, error),
     };
+    if request.cheap {
+        let now = match system_time_ms() {
+            Ok(now) => now,
+            Err(error) => return internal(COMMAND, error),
+        };
+        let cache = super::cold_wake::known_cache(&state, &prior, now).await;
+        if let Some(reason) = cheap_refusal(&prior, cache) {
+            let mut answer: Envelope<Value> =
+                Envelope::refused(COMMAND, ErrorKind::Refused, reason);
+            answer.details = Some(json!({"code":"E-RS-REVIVE-CHEAP", "seat":prior.id}));
+            return envelope(StatusCode::CONFLICT, &answer);
+        }
+    }
     // Plan 156 rule 3: revive resumes the recorded conversation. Decided after
     // the liveness refusals and before any write, so every refusal leaves the
     // seat exactly as it was.
@@ -413,7 +466,11 @@ pub(super) async fn revive_seat(
         harness: prior.harness,
         allow_retired: true,
         executable: None,
-        model: prior.model,
+        model: if request.cheap {
+            Some(CHEAP_MODEL.to_string())
+        } else {
+            request.model.or(prior.model)
+        },
         effort: prior.effort,
         cwd: prior.folder,
         session: request.session,
@@ -422,7 +479,9 @@ pub(super) async fn revive_seat(
         parent: prior.parent,
         accept_inbound: prior.cross_session_inbound_accept == Some(true),
         wait_seconds: None,
-        no_wait: true,
+        // `--cheap` waits for the seat to register on Sonnet (the launch's
+        // model check), so the caller's compact lands on a running seat.
+        no_wait: !request.cheap,
         resume,
         role: None,
         caller: None,
