@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "808d10d7fb9c2f6cd76ab07198791281b8974aca",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/208#issuecomment-6735761635",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:208",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `808d10d7fb9c2f6cd76ab07198791281b8974aca`, last round under **C34**. **P208-F001 is closed.**\n\nDelta from blocked `a552625`, output `20e9789bf3244376436097bf1340b8617f61ac58`.\n\nThe footer now joins at most **three** release commands and names the omitted count. This removes the normal distinct-address footer growth that defeated the message budget. CI exercises 60 distinct roles/instances/projects: the complete message stays at or below 2,048 bytes, has exactly three release commands and reports 57 omitted.\n\nNo added query, claim, stamp, send, timer, poll or launch site. Only footer selection/formatting changes; the request-line budget includes the resulting footer. **C34 follow-up:** all release commands are still constructed/deduplicated before selecting three, so the prior data-sized batch/preparation and grouping-cost notes remain. Single-request behavior and the documented retry/stamp Known limit are unchanged.\n\n**CI:** [42585879035](https://github.com/AI-Substrate/pij-fleet/actions/runs/42585879035), attempt 1, Rust job `129055465611`, upload artifact **13658708937**, pinned to this head: **2,345 executed passed**, no failures/errors; six separately skipped. Verified distinct/shared-address caps and admitted-stamp/quiet-next-round grouping; six spawn guards pass. Rust lint, Node22/24 and replacement delivers succeed.\n\nFrozen worktree/GitHub heads agree, clean/CLEAN. No local test, mutation or live probe; no remaining normal-use cost blocker.\n"
+		}
+	]
+}
