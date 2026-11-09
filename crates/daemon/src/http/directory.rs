@@ -22,7 +22,7 @@ use super::routes::Trigger;
 use super::{AppState, envelope};
 use crate::community::directory::{HoldingReceipt, ReleaseTarget, Retirement, RoleEdit, Unmatched};
 use crate::community::layout::{RolePaths, exists};
-use crate::community::role::{self, RoleFields};
+use crate::community::role::{self, ListOp, RoleFields, RoleList};
 use crate::community::routes::{self, Overlap, Regenerated};
 use crate::community::writer::{Existing, NewFile, Written};
 use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
@@ -61,7 +61,7 @@ const SINGLE: [&str; 30] = [
     "note",
     "slug",
 ];
-const REPEATED: [&str; 8] = [
+const REPEATED: [&str; 20] = [
     "set",
     "scope-path",
     "rule",
@@ -70,6 +70,18 @@ const REPEATED: [&str; 8] = [
     "input",
     "output-kind",
     "tags",
+    "add-scope-path",
+    "remove-scope-path",
+    "add-rule",
+    "remove-rule",
+    "add-out-of-scope",
+    "remove-out-of-scope",
+    "add-forbidden",
+    "remove-forbidden",
+    "add-input",
+    "remove-input",
+    "add-output-kind",
+    "remove-output-kind",
 ];
 /// Flags a `memory` call may carry (plan 201).
 const MEMORY: [&str; 9] = [
@@ -312,6 +324,15 @@ impl Arguments {
                 },
             ));
         }
+        if call.leaf != "edit" && call.edits_a_list() {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "directory {}: --add-<list> and --remove-<list> belong to `edit`",
+                    call.leaf
+                ),
+            ));
+        }
         if call.leaf != "edit" && call.repeated.contains_key("set") {
             return Err(Refusal::new(
                 "E-RS-ARG",
@@ -483,7 +504,29 @@ impl Arguments {
             output_kinds: self.all("output-kind"),
             packet: self.get("packet"),
             brief: self.get("brief"),
+            list_ops: RoleList::ALL
+                .iter()
+                .flat_map(|list| {
+                    let ops = |add: bool| {
+                        let flag =
+                            format!("{}-{}", if add { "add" } else { "remove" }, list.flag());
+                        self.all(&flag).into_iter().map(move |item| ListOp {
+                            list: *list,
+                            add,
+                            item,
+                        })
+                    };
+                    ops(false).chain(ops(true))
+                })
+                .collect(),
         }
+    }
+
+    /// Whether any `--add-<list>` or `--remove-<list>` flag is given (F152).
+    fn edits_a_list(&self) -> bool {
+        self.repeated
+            .keys()
+            .any(|flag| flag.starts_with("add-") || flag.starts_with("remove-"))
     }
 }
 
@@ -986,7 +1029,7 @@ async fn edit(
         }
     };
     let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
-    let (written, regenerated) = state
+    let (written, regenerated, lists) = state
         .services
         .directory
         .edit(&project, repo, id, change, actor, &why)
@@ -1000,6 +1043,7 @@ async fn edit(
         "commit": written.commit,
         "paths": written.paths,
         "routes": routes,
+        "lists": lists,
     }))
 }
 

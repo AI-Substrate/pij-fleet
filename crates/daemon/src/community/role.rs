@@ -51,6 +51,100 @@ pub struct RoleFields {
     pub packet: Option<String>,
     /// `standing_packet` brief file: a repo-relative link to an existing file.
     pub brief: Option<String>,
+    /// `edit --add-<list>` and `--remove-<list>` (F152): one item each,
+    /// applied after any replacing flag, removes before adds.
+    pub list_ops: Vec<ListOp>,
+}
+
+/// A role's list-valued fields: the flag that names each, and where it lives
+/// in the document (F152).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoleList {
+    /// `--scope-path`: `scope.paths`.
+    ScopePaths,
+    /// `--rule`: `scope.rules`.
+    Rules,
+    /// `--out-of-scope`: `out_of_scope`.
+    OutOfScope,
+    /// `--forbidden`: `forbidden_paths`.
+    Forbidden,
+    /// `--input`: `inputs`.
+    Inputs,
+    /// `--output-kind`: `output_kinds`.
+    OutputKinds,
+}
+
+impl RoleList {
+    /// Every list, in the order an edit applies and reports them.
+    pub const ALL: [Self; 6] = [
+        Self::ScopePaths,
+        Self::Rules,
+        Self::OutOfScope,
+        Self::Forbidden,
+        Self::Inputs,
+        Self::OutputKinds,
+    ];
+
+    /// The flag that replaces it (`--add-<flag>` and `--remove-<flag>` edit it).
+    pub const fn flag(self) -> &'static str {
+        match self {
+            Self::ScopePaths => "scope-path",
+            Self::Rules => "rule",
+            Self::OutOfScope => "out-of-scope",
+            Self::Forbidden => "forbidden",
+            Self::Inputs => "input",
+            Self::OutputKinds => "output-kind",
+        }
+    }
+
+    /// `(section, key within it)`; `None` for a section that is the list.
+    const fn location(self) -> (&'static str, Option<&'static str>) {
+        match self {
+            Self::ScopePaths => ("scope", Some("paths")),
+            Self::Rules => ("scope", Some("rules")),
+            Self::OutOfScope => ("out_of_scope", None),
+            Self::Forbidden => ("forbidden_paths", None),
+            Self::Inputs => ("inputs", None),
+            Self::OutputKinds => ("output_kinds", None),
+        }
+    }
+
+    /// The list's items in `document`, empty when absent.
+    pub fn items(self, document: &Value) -> Vec<String> {
+        let (name, key) = self.location();
+        let value = section(document, name);
+        let list = match key {
+            Some(key) => value.map(|value| &value[key]),
+            None => value,
+        };
+        list.and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn set(self, sections: &mut Vec<Value>, items: &[String]) {
+        let (name, key) = self.location();
+        match key {
+            Some(key) => slot(sections, name, json!({}))[key] = json!(items),
+            None => *slot(sections, name, json!([])) = json!(items),
+        }
+    }
+}
+
+/// One `--add-<list>` or `--remove-<list>` item (F152).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ListOp {
+    /// Which list.
+    pub list: RoleList,
+    /// Add (`true`) or remove.
+    pub add: bool,
+    /// The item, matched exactly.
+    pub item: String,
 }
 
 /// A role document from flags, without a changelog (see [`stamp`]).
@@ -175,7 +269,92 @@ pub fn apply_fields(mut document: Value, fields: &RoleFields) -> Result<Value, R
     if let Some(packet) = section(&overrides, "standing_packet") {
         *slot(sections, "standing_packet", json!({})) = packet.clone();
     }
+    apply_list_ops(&mut document, &fields.list_ops)?;
     Ok(document)
+}
+
+/// Apply `--add-<list>` and `--remove-<list>` (F152), in a stated order:
+/// after any replacing flag, per list, every remove then every add, each in
+/// the order given. A remove of an item the list does not hold, or an add of
+/// one it already holds, refuses: nothing is written.
+///
+/// # Errors
+/// `E-RS-ARG` naming the list and the item.
+pub fn apply_list_ops(document: &mut Value, ops: &[ListOp]) -> Result<(), Refusal> {
+    for list in RoleList::ALL {
+        let mine: Vec<&ListOp> = ops.iter().filter(|op| op.list == list).collect();
+        if mine.is_empty() {
+            continue;
+        }
+        let mut items = list.items(document);
+        for op in mine.iter().filter(|op| !op.add) {
+            let Some(at) = items.iter().position(|item| *item == op.item) else {
+                return Err(Refusal::new(
+                    "E-RS-ARG",
+                    format!(
+                        "--remove-{} {}: not in the list ({})",
+                        list.flag(),
+                        pij_core::render::caller_text(&op.item),
+                        shown_list(&items)
+                    ),
+                ));
+            };
+            items.remove(at);
+        }
+        for op in mine.iter().filter(|op| op.add) {
+            if items.contains(&op.item) {
+                return Err(Refusal::new(
+                    "E-RS-ARG",
+                    format!(
+                        "--add-{} {}: already in the list",
+                        list.flag(),
+                        pij_core::render::caller_text(&op.item)
+                    ),
+                ));
+            }
+            items.push(op.item.clone());
+        }
+        let Some(sections) = document["sections"].as_array_mut() else {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "the role document has no sections array",
+            ));
+        };
+        list.set(sections, &items);
+    }
+    Ok(())
+}
+
+/// A list's items in a refusal or receipt: each fenced, comma-joined.
+pub fn shown_list(items: &[String]) -> String {
+    if items.is_empty() {
+        return "empty".to_string();
+    }
+    items
+        .iter()
+        .map(|item| pij_core::render::caller_text(item))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// What an edit did to each list (F152): `{list, before, after, removed,
+/// added}` for every list whose items changed, in [`RoleList::ALL`] order.
+pub fn list_changes(before: &Value, after: &Value) -> Vec<Value> {
+    RoleList::ALL
+        .iter()
+        .filter_map(|list| {
+            let (old, new) = (list.items(before), list.items(after));
+            (old != new).then(|| {
+                json!({
+                    "list": list.flag(),
+                    "before": old,
+                    "after": new,
+                    "removed": old.iter().filter(|item| !new.contains(item)).collect::<Vec<_>>(),
+                    "added": new.iter().filter(|item| !old.contains(item)).collect::<Vec<_>>(),
+                })
+            })
+        })
+        .collect()
 }
 
 /// `meta.state` for a role that is no longer in use (plan 206, req-28).
