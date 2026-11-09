@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bf0a-68ef-7c23-9203-9522895b4834",
+				"date": "2026-11-09",
+				"head": "a552625169d54b45015c6681b689da334b470987",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/208#issuecomment-6735541034",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:208",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Trace prepare/send/stamp/release and limit_body at a552625; calculate distinct-instance footer lowerbound",
+					"exit_code": 0,
+					"log": "F001 unconditional accumulatedfooter exceeds2KB:30ordinary reviewerinstance hints total2372bytes alone. Same-instance60test misses. No prematurestamp on grouped failure: admissiononly stamps, refusal/error/no-recipient releases, interruptedclaims lease retry. Sourcecounterexample, not Rustexecution."
+				},
+				{
+					"command": "Inspect CI42573708131 artifact13654273061, CIcommit2f6bfc2 and pr-freeze208",
+					"exit_code": 0,
+					"log": "2341 Rustpasses, six nextestskips. Groupdelivery, sameinstancecap, no-recipient and interruptedclaim retry casesexecute. Latestfivechecks pass FINAL/CLEAN. CI/head tree705284167a3cd8db3a9e2fcd566b1bf5dfbbad4e. C34 optionalmutants notrequired; no localbuilds/productedits."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: BLOCK\n\nPR #208 at `a552625169d54b45015c6681b689da334b470987`, answering `01a1bf0a-68ef-7c23-9203-9522895b4834`. One bounded-message correctness finding under C34.\n\n**F001: the claimed 2 KB cap excludes the footer.** `limit_body` collects a release command for every distinct role instance/project (`crates/daemon/src/delivery/role_send.rs:1830-1859`) and appends that footer unconditionally (`:1896`). Thirty ordinary `reviewer/<PR>` release hints alone produce a **2,372-byte footer**, before the header and request list. Such requests group together by recipient/holder/kind, so this is a valid batch, not malformed input. The 60-request test deduplicates to one release hint and misses it.\n\n**Fix:** bound the whole message, including recovery hints, while retaining the omitted-count summary. A compact generic hint or hints only for displayed entries suffices; add a distinct-instance cap case. The byte calculation is a source counterexample, not execution of the Rust function.\n\n**Failure safety checked:** requests are only stamped after a delivered/queued/held outcome. Refused/error/no-recipient members release their claims for retry (`role_send.rs:1522-1593`); interrupted claims expire, and pinned admission recovery remains. No premature-stamp/lost-on-failed-send finding. Existing post-admission stamp-failure duplicates remain the documented Known limit.\n\nExact-head CI `42573708131`, artifact `13654273061`: **2,341 Rust passes**, six separately skipped. Grouped delivery, same-instance cap and no-recipient/interrupted-claim retry cases executed. Latest five checks pass; `pr-freeze` FINAL/CLEAN; CI/head tree `705284167a3cd8db3a9e2fcd566b1bf5dfbbad4e`. No local builds/tests, product edits or HEAD movement.\n"
+		}
+	]
+}
