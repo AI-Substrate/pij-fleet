@@ -1263,9 +1263,13 @@ impl DirectoryService {
     /// one writer commit. The role is read under the writer lock, the change
     /// applied, its changelog kept, and one row added.
     ///
+    /// Returns the commit, the routes it regenerated, and what it did to each
+    /// list ([`role::list_changes`]: before, after, removed, added).
+    ///
     /// # Errors
-    /// [`E_ROLE_MISSING`]; `E-RS-ARG` for an edit that changes nothing or a
-    /// document for another id; any writer refusal. Nothing is written.
+    /// [`E_ROLE_MISSING`]; `E-RS-ARG` for an edit that changes nothing, a
+    /// document for another id, or a list item to remove that is not there or
+    /// to add that already is; any writer refusal. Nothing is written.
     pub async fn edit(
         &self,
         project: &str,
@@ -1274,7 +1278,7 @@ impl DirectoryService {
         change: RoleEdit,
         actor: &SeatId,
         why: &str,
-    ) -> Result<(Written, Regenerated), Refusal> {
+    ) -> Result<(Written, Regenerated, Vec<Value>), Refusal> {
         let paths = RolePaths::new(id)?;
         let pending = self.pending(project).await?;
         let message = format!(
@@ -1312,6 +1316,7 @@ impl DirectoryService {
                         format!("the edit changes nothing in role {id:?}"),
                     ));
                 }
+                built.lists = role::list_changes(&current, &edited);
                 let stamped = role::stamp(edited, &id, &by, &why, &super::holders::today())?;
                 let mut files = vec![NewFile {
                     path: paths.document.clone(),
@@ -1333,7 +1338,7 @@ impl DirectoryService {
             })
             .await?;
         self.flushed(&built.landed, &written).await?;
-        Ok((written, built.routes.unwrap_or_default()))
+        Ok((written, built.routes.unwrap_or_default(), built.lists))
     }
 
     /// Any other directory write (`directory add`, `directory routes --write`):
@@ -2632,6 +2637,8 @@ struct Built {
     routes: Option<Regenerated>,
     batch: Vec<(Assignment, Option<String>)>,
     skipped: Vec<String>,
+    /// An edit's list changes (F152), from [`role::list_changes`].
+    lists: Vec<Value>,
 }
 
 fn store_refusal(written: &Written, error: &pij_core::error::PijError) -> Refusal {

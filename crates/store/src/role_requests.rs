@@ -16,9 +16,10 @@ use crate::orchestration::{SqliteOrchestration, adapter_error, sql_i64, sql_u64}
 use crate::spine::append_in_transaction;
 
 /// Each holder's unanswered delivered requests for one role (plan 215, F90).
+/// A `--reply none` request expects no answer, so it is never counted (F150).
 const UNANSWERED_SQL: &str = "SELECT holder, COUNT(*) AS open FROM role_requests \
      INDEXED BY role_requests_by_project WHERE project = ?1 AND state = 'delivered' \
-     AND role = ?2 AND answered_at IS NULL AND holder IS NOT NULL \
+     AND role = ?2 AND answered_at IS NULL AND holder IS NOT NULL AND reply <> 'none' \
      GROUP BY holder ORDER BY holder";
 
 /// The spine event a withdrawn request leaves (plan 206): its row is gone, so
@@ -1355,6 +1356,42 @@ mod tests {
             "{text}"
         );
         assert!(!plan.iter().any(|line| line.starts_with("SCAN")), "{text}");
+    }
+
+    /// F150: a `--reply none` request expects no answer, so the directory's
+    /// open-work count leaves it out; a reply-wake one is still counted.
+    #[tokio::test]
+    async fn a_reply_none_request_is_not_counted_as_open() {
+        let pool = crate::open("").await.expect("memory");
+        for (id, holder, reply) in [
+            ("r1", "pij-a", "none"),
+            ("r2", "pij-a", "none"),
+            ("r3", "pij-b", "none"),
+            ("r4", "pij-b", "wake"),
+            ("r5", "pij-b", "fyi"),
+        ] {
+            sqlx::query(
+                "INSERT INTO role_requests (id, project, role, requester, body, reply, state, \
+                 holder, created_at, delivered_at) \
+                 VALUES (?1, 'fleet', 'security', 'pij-asker', 'do it', ?2, 'delivered', ?3, 1, 1)",
+            )
+            .bind(id)
+            .bind(reply)
+            .bind(holder)
+            .execute(&pool)
+            .await
+            .expect("insert");
+        }
+        let counts: Vec<(String, i64)> = sqlx::query(super::UNANSWERED_SQL)
+            .bind("fleet")
+            .bind("security")
+            .fetch_all(&pool)
+            .await
+            .expect("count")
+            .iter()
+            .map(|row| (row.get("holder"), row.get("open")))
+            .collect();
+        assert_eq!(counts, vec![("pij-b".to_string(), 2)]);
     }
 
     async fn limit_probe_is_indexed(pool: &crate::StorePool, sql: &str) {

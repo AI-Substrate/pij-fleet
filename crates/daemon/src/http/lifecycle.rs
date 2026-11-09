@@ -75,7 +75,7 @@ fn parse(body: Value, operation: Operation) -> std::result::Result<Call, String>
         caller,
         attribution: Vec::new(),
         seat: None,
-        reason: "owner-close".to_string(),
+        reason: pij_core::model::OWNER_CLOSE.to_string(),
         dry_run: false,
     };
     if let Some(actor) = object.get("actor") {
@@ -195,6 +195,23 @@ pub(super) fn runtime_failure(command: &str, error: PijError) -> Response {
             &Envelope::<Value>::refused(command, ErrorKind::Refused, error.to_string()),
         ),
         _ => internal(command, error),
+    }
+}
+
+/// What a close leaves running (F149): it retires the seat, never its process
+/// or pane. The seat can no longer register under its id; the process stays
+/// until its parent kills the pane.
+pub(super) fn process_note(pane: Option<&str>) -> String {
+    let pane = pane.filter(|pane| {
+        pane.len() > 1
+            && pane.starts_with('%')
+            && pane[1..].bytes().all(|byte| byte.is_ascii_digit())
+    });
+    match pane {
+        Some(pane) => format!(
+            "pij close retires the seat; its process keeps running. To stop it, its parent runs: tmux kill-pane -t {pane}"
+        ),
+        None => "pij close retires the seat; its process keeps running. To stop it, its parent kills its pane (tmux kill-pane -t <pane>)".to_string(),
     }
 }
 
@@ -357,6 +374,7 @@ async fn handle(
                     Err(response) => *response,
                 };
             };
+            let pane = expected.pane.clone();
             match memory_turn::hold(
                 &state,
                 command,
@@ -367,7 +385,11 @@ async fn handle(
                     reason: call.reason,
                 },
             ) {
-                Ok(held) => envelope(StatusCode::OK, &Envelope::ok(command, held)),
+                Ok(held) => {
+                    let mut data = serde_json::to_value(&held).unwrap_or(Value::Null);
+                    data["process"] = process_note(pane.as_deref()).into();
+                    envelope(StatusCode::OK, &Envelope::ok(command, data))
+                }
                 Err(refusal) => *refusal,
             }
         }
@@ -385,6 +407,9 @@ pub(super) async fn close_seat(
     reason: String,
     expected: Option<SeatDescriptor>,
 ) -> std::result::Result<Value, Box<Response>> {
+    // Recorded as an owner's close, so the seat's own next registration can't
+    // lift it (F149).
+    let reason = pij_core::model::owner_close_reason(&reason);
     let expected = match expected {
         Some(expected) => expected,
         None => match state.services.registry.get(&target).await {
@@ -401,7 +426,16 @@ pub(super) async fn close_seat(
             Err(error) => return Err(Box::new(runtime_failure(command, error))),
         },
     };
-    let receipt = if expected.tombstoned_at.is_some() {
+    let pane = expected.pane.clone();
+    // A repeat close returns the existing owner-close. A seat retired for any
+    // other reason (observed dead, reaped) is closed again as its owner's, so
+    // its own session can't lift it either (F149, review of #200).
+    let owner_closed = expected.tombstoned_at.is_some()
+        && expected
+            .tombstone_reason
+            .as_deref()
+            .is_some_and(pij_core::model::is_owner_close);
+    let receipt = if owner_closed {
         tombstone_receipt(
             state.services.spine.as_ref(),
             &target,
@@ -426,6 +460,7 @@ pub(super) async fn close_seat(
         Ok(Some(receipt)) => {
             let ends = end_holdings(state, &target, actor).await;
             let mut data = serde_json::to_value(&receipt).unwrap_or(Value::Null);
+            data["process"] = process_note(pane.as_deref()).into();
             if !ends.committed.is_empty() || !ends.pending.is_empty() {
                 data["directory"] = serde_json::to_value(&ends).unwrap_or(Value::Null);
             }

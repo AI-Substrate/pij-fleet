@@ -303,6 +303,21 @@ async fn revive_legacy_tombstone_records_audit_before_relaunch() {
     }
 }
 
+/// F149: a seat its owner closed can't register again, but `revive` still
+/// brings it back: it writes a fresh row before the new process registers.
+#[tokio::test]
+async fn revive_brings_back_a_seat_its_owner_closed() {
+    let f = fixture(Arc::new(FakeLiveness::new())).await;
+    let mut prior = target();
+    prior.tombstoned_at = Some(1);
+    prior.tombstone_reason = Some("owner-close: PR merged".into());
+    f.services.registry.put(prior.clone()).await.unwrap();
+    let body = post(&f, &request()).await;
+    assert_eq!(body["ok"], true, "{body}");
+    let revived = f.services.registry.get(&prior.id).await.unwrap().unwrap();
+    assert_eq!(revived.tombstoned_at, None);
+}
+
 #[tokio::test]
 async fn revive_legacy_audit_failure_does_not_relaunch() {
     let f = fixture(Arc::new(FakeLiveness::new())).await;

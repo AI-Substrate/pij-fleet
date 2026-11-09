@@ -8,7 +8,7 @@
 
 A **workstream** orders PRD rows and blueprint pieces into steps (in `docs/project/workstreams/`; [how to write one](../community/workstream.md)); it nests (`part_of`) and maps to 0..n lanes. A **pij stream** is one lane of a workstream (C29).
 
-The directory lives on the governance branch under `<government-root>/community/` ([where that is](../prime/rituals/bootstrap.md#governance-branch--the-rules)). Only pij's writer changes it: every verb below validates with ddocs and commits only its own paths. Never hand-edit a role, holders, output or memory document. `pij directory '<verb>' --help` works with no daemon. The API and refusals are in [Community directory](../../../../docs/how/pij-rs-api.md#community-directory-plan-190).
+The directory lives on the governance branch under `<government-root>/community/` ([where that is](../prime/rituals/bootstrap.md#governance-branch--the-rules)). Only pij's writer changes it: every verb below validates with ddocs and commits only its own paths. Never hand-edit a role, holders, output or memory document. `pij directory '<verb>' --help` works with no daemon. The API and refusals are in [Community directory](../../../../docs/how/pij-rs-api.md#community-directory-plan-190). The trust boundary is the user account (C33): pij guards against misattribution, not against a same-user process.
 
 ## Prime: build from needs, then reshape
 
@@ -57,10 +57,13 @@ pij directory assign 'coder/<step>' '<seat>' --why '<step and plan>'
 pij send 'role:<id>[/<instance>]' --body-file '<packet>' [--reply wake|fyi|none] [--limit 45m]
 pij outputs --subject 'pr:<n>' --head '<sha>'    # verdicts at the exact head; none once it moves
 pij directory release 'coder/<step>' '<seat>' --why merged
+pij requests [--role '<id>'] [--state queued|delivering|delivered|closed]   # the project's role requests
+pij requests close '<id>' --quiet                # clear a finished one; its time limit stops
 pij delivered '<pr>'                             # the merger, once per merge: prints the ddocs edits
 ```
 
-- Send to a role, not a remembered seat: the directory resolves the holder, and a role with no holder queues the request and wakes the PA.
+- Send to a role, not a remembered seat: the directory resolves the holder, and a role with no holder queues the request and wakes the PA. `--reply` (and `--limit`) go only on a `role:` send; a seat send refuses them (`E-RS-ROLE-ONLY`). `--reply` sets only how the requester hears back, never delivery.
+- **Stall checks**: when a request's limit (`--limit`, else the role's `default_limit`) passes with no output and no card update, its holder gets a check-in, then the PA (else the prime) an escalation. Give merger-like roles one: `--set default_limit=1h` on `edit`.
 - Packets carry the work: paths, proofs, the report target, and the trailers. Write the packet to disk and send its path (dispatch invariant 2).
 - Flip states in the PR that delivers them, with a `Delivers:` line in its body.
 - A PR that fixes F-items says so on its own line, `Fixes: F119, F117` (each `F` and its number, comma-separated). `pij delivered` ends the `coder/f<N>` holdings it names; with no line, it ends none (it never guesses from the title).
@@ -74,12 +77,25 @@ pij directory memory add '<role>' --title '<t>' --hook '<one line>' [--tags '<a,
 ```
 
 - Before a role holder is compacted or closed (including one that released a role since its last compact), pij gives it a memory turn and holds the compact or close until that turn ends. Check the note landed and that its INDEX line reads well.
+- **Context**: 600k is the limit; compact at it. Never revive a large seat (revive resumes its whole conversation): spawn a fresh one on its handover. Record a role's model in its default seat (`--model` on add, or `--set model=<m>`: Sonnet for builders, Opus for the prime and hard design); pij doesn't apply it, so pass it when you spawn a holder.
+- **Closing**: `pij close` only tombstones the seat; then `tmux kill-pane` its pane, since the process keeps running.
 - The view's `memory-stale` action marks a role whose last 2 closes left no memory note, with the holder's `memory add` line. Nudge the holder; never write its memory for it.
 - A cold Claude holder over about 300k that must come back can be compacted on Sonnet 5.5, on the prime's call only (plan 225): once its process and pane are gone, `pij-rs revive <seat> --cheap` relaunches it on Sonnet and compacts it through the same memory turn. It stays on Sonnet; `pij-rs revive <seat> --model claude-opus-5-5` (after a close and kill) takes it back. Nothing runs it automatically.
 
+## What the daemon tells you (prime and PA)
+
+| Message | Who gets it | Do |
+|---|---|---|
+| No live PA for 20 min while the fleet works, or a PA with no turn for 30 (plan 217) | the prime (a dormant PA is woken first, the prime 10 min later) | Revive or spawn the PA with the command the message gives; a PA stuck on a dialog is the last row |
+| A seat over 600k (plan 217) | the prime, as one FYI per crossing | Have the PA compact it at its next boundary if it is working or needed again; else let it finish and close it |
+| `compaction-wake`, 5 min after a compact left a holder idle (plan 222) | the seat | Re-read the handover and resume, or tell the parent it is blocked |
+| `idle-nudge`, 60 min idle with in-flight work: a task holding, a plan or fix claim, an unanswered request (plan 224; on in the fleet via `PIJ_IDLE_NUDGE=1`) | the seat, only if warm; its prime (else parent) an FYI | Seat: resume, report blocked, or release. A cold seat is never woken and the FYI says so: wake it (a full re-read) or reassign |
+| A working seat silent for 20 min on its harness's dialog (plan 219) | its parent and the PA (else the prime) | Send its pane the key the message names (Copilot ctrl+d, Claude esc) |
+
 ## Every role holder
 
-- Results are outputs, not chat: `pij output verdict --role '<id>' --subject '<address>' --head '<sha>' --result pass|pass-with-notes|block [--answers '<msg_id>']`, or `deliverable|note|handover` without `--head`. `--answers` tells the requester in the mode it asked for.
+- Results are outputs, not chat: `pij output verdict --role '<id>' --subject '<address>' --head '<sha>' --result pass|pass-with-notes|block [--answers '<msg_id>']`, or `deliverable|note|handover` without `--head`. A subject is `<kind>:<id>`: `pr:182`, `step:s05`, `issue:F123`, `role:pa`, `prd:003`. A file path (with `#`) is written, but daemon notices show it as invalid. `--answers` tells the requester in the mode it asked for.
+- A role request is answered by that output, or by your reply with `--in-reply-to '<request id>'`; either stops its check-ins.
 - Write a memory note before a compact or close, and read your role's `memory/INDEX.md` when you take a role.
 - Your packet says what to do; this route does not.
 

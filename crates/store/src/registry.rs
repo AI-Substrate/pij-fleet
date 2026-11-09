@@ -344,6 +344,7 @@ impl SqliteRegistry {
         &self,
         descriptor: SeatDescriptor,
         keep_parent: bool,
+        lift_owner_close: bool,
     ) -> Result<(Seq, PutBinding)> {
         let pool = self.pool.clone();
         let (seq, binding) = self
@@ -378,7 +379,9 @@ impl SqliteRegistry {
 
                     let seq = append_in_transaction(&mut tx, &event).await?;
 
-                    upsert_seat(&mut tx, &descriptor, seq).await?;
+                    // An owner-close the put would clear refuses here, and the
+                    // dropped transaction takes the event with it (F149).
+                    upsert_seat(&mut tx, &descriptor, seq, lift_owner_close).await?;
 
                     tx.commit().await.map_err(adapter_error)?;
                     event.seq = Some(seq);
@@ -412,14 +415,22 @@ impl Registry for SqliteRegistry {
     }
 
     async fn put_reporting(&self, descriptor: SeatDescriptor) -> Result<(Seq, PutBinding)> {
-        self.put_committed(descriptor, false).await
+        self.put_committed(descriptor, false, false).await
     }
 
     async fn put_reporting_keeping_parent(
         &self,
         descriptor: SeatDescriptor,
     ) -> Result<(Seq, PutBinding)> {
-        self.put_committed(descriptor, true).await
+        self.put_committed(descriptor, true, false).await
+    }
+
+    async fn put_lifting_owner_close(
+        &self,
+        descriptor: SeatDescriptor,
+        keep_parent: bool,
+    ) -> Result<(Seq, PutBinding)> {
+        self.put_committed(descriptor, keep_parent, true).await
     }
 
     async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>> {
@@ -516,12 +527,29 @@ impl Registry for SqliteRegistry {
 }
 
 /// The sole seats-row upsert, shared by registry puts and atomic placements.
+/// The upsert's guard (F149): a row its owner closed (`tombstone_reason`
+/// `owner-close`, or `owner-close: ` and the caller's reason, as
+/// `pij_core::model::is_owner_close` reads it) keeps that exact tombstone,
+/// neither cleared nor swapped for a reason continuity may lift, unless `?24`
+/// lifts it on purpose. Checked against the row as the write finds it, so no
+/// snapshot taken before a close can undo it.
+const KEEPS_OWNER_CLOSE: &str = " WHERE ?24 OR seats.tombstoned_at IS NULL \
+     OR seats.tombstone_reason IS NULL \
+     OR (seats.tombstone_reason <> 'owner-close' \
+     AND substr(seats.tombstone_reason, 1, 13) <> 'owner-close: ') \
+     OR (excluded.tombstoned_at IS seats.tombstoned_at \
+     AND excluded.tombstone_reason IS seats.tombstone_reason)";
+
+/// Write `descriptor`'s row. A put that would clear an owner-close tombstone,
+/// without `lift_owner_close`, writes nothing and refuses with
+/// `E-RS-SEAT-RETIRED` (F149); the caller's transaction must then not commit.
 pub(crate) async fn upsert_seat(
     connection: &mut sqlx::SqliteConnection,
     descriptor: &SeatDescriptor,
     seq: Seq,
+    lift_owner_close: bool,
 ) -> Result<()> {
-    sqlx::query(
+    let written = sqlx::query(&format!(
         "INSERT INTO seats (id, harness, harness_session, pane, pid, proc_start, folder, state, \
          semantic_state, role, parent, relay, tombstoned_at, tombstone_reason, seq, \
          spawn_id, model, provider, effort, cross_session_inbound_accept, native_extension_delivery, \
@@ -540,8 +568,9 @@ pub(crate) async fn upsert_seat(
          provider=excluded.provider, effort=excluded.effort, \
          cross_session_inbound_accept=excluded.cross_session_inbound_accept, \
          native_extension_delivery=excluded.native_extension_delivery, \
-         extension_build=excluded.extension_build, extension_path=excluded.extension_path",
-    )
+         extension_build=excluded.extension_build, extension_path=excluded.extension_path\
+         {KEEPS_OWNER_CLOSE}"
+    ))
     .bind(descriptor.id.as_str())
     .bind(descriptor.harness.as_str())
     .bind(descriptor.harness_session.as_deref())
@@ -565,8 +594,16 @@ pub(crate) async fn upsert_seat(
     .bind(i64::from(descriptor.native_extension_delivery))
     .bind(descriptor.extension_build.as_deref())
     .bind(descriptor.extension_path.as_deref())
+    .bind(lift_owner_close)
     .execute(connection)
     .await
-    .map_err(adapter_error)?;
+    .map_err(adapter_error)?
+    .rows_affected();
+    if written == 0 {
+        return Err(PijError::GovernanceRefused {
+            code: "E-RS-SEAT-RETIRED".to_string(),
+            record: descriptor.id.to_string(),
+        });
+    }
     Ok(())
 }
