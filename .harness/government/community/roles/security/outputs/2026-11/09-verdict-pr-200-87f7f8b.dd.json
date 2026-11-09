@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "87f7f8b19f8e138a2207165ed5a88c035bc85b36",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/200#issuecomment-6731894438",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:200",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #200, exact head `87f7f8b19f8e138a2207165ed5a88c035bc85b36`. Final delta review from `633f43a`, graded under current C33/C34.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new in-scope vulnerability or normal-use blocker identified | - |\n\nThe seat upsert checks owner-close in its own SQL statement. Ordinary puts that would clear/change that tombstone affect zero rows and return E-RS-SEAT-RETIRED; the surrounding uncommitted transaction rolls back its event (`crates/store/src/registry.rs:344-430,527-610`). Registration translates that refusal to the rendered retired response; only explicit launch/revive placement and verified reclaim use the lifting write (`crates/daemon/src/http/mod.rs:1599-1610`; `crates/daemon/src/registration.rs:1215-1243`; `crates/store/src/role_assertion.rs:233-287`).\n\nClosing an observed-dead/reaped seat now records owner-close; only an already owner-closed repeat returns the existing receipt (`crates/daemon/src/http/lifecycle.rs:427-447`). No new raw-reason rendering or C19/C21 disclosure was identified.\n\n**C34 follow-up:** F151, the stated predecessor-supersede edge and pre-change custom reasons remain Known limits. Prior marker/pane-advice qualifications stand. No extra fixtures or mutation runs are required by this verdict.\n\nGitHub metadata and the remote pull ref agree; final status is CLEAN. CI `42558396212` and latest Delivers `42558398335` passed at this exact SHA; the cancelled Delivers run is superseded. No local builds, tests, probes or mutations ran.\n"
+		}
+	]
+}
