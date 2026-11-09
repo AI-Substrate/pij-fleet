@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "633f43a23a8344cf5cdd0824fba7951a308d425d",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/200#issuecomment-6730837599",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:200",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #200, exact head `633f43a23a8344cf5cdd0824fba7951a308d425d`.\n\nThe complete ten-file diff and directly dependent marker, reason and lifecycle paths were source-reviewed under C33. No new in-scope security vulnerability was identified.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new in-scope vulnerability identified | - |\n\n### Marker scope and readers\n\nThe statusline derives `<state>/heal/pane-<pane>.closed` from its existing state/HOME and TMUX_PANE, not repository cwd or session text. It writes session ID and rendered seat through a temporary file plus rename; the same script is its only production reader (`harness/scripts/claude-statusline-pij.sh:144-192`).\n\nMatching sessions suppress adopting. A changed conversation or successful matching whoami clears the marker; only the retired-code branch creates it. Read uses read -r, not eval or shell sourcing.\n\nThe new retired refusal supplies a grammar-rendered seat and omits the custom reason (`crates/daemon/src/registration.rs:1364`). Cached contents are not independently validated before statusline `%b` output (`claude-statusline-pij.sh:254`), so this relies on the trusted writer/environment rather than arbitrary-file sanitization. No foreign-party write path was established. C33: same-user file/environment manipulation is out of scope.\n\n### Close reason, process advice and authority\n\nOwner-close classification accepts the exact token or its `: ` suffix, not arbitrary similarly prefixed text (`crates/core/src/model.rs:93-107`). Receipts keep the custom reason as JSON data, including JSON-serialized human success output (`crates/cli/src/lib.rs:46-65`), rather than inserting it into the new retired prose.\n\nThe process advice permits only percent followed by ASCII digits for its tmux target; invalid panes use a fixed placeholder (`crates/daemon/src/http/lifecycle.rs:204-215`). This prevents text/command injection but is syntax validation, not fresh pane-ownership proof. It is advice, not process execution.\n\nRegister/adopt reject owner-closed rows before continuity lifting (`crates/daemon/src/registration.rs:847-856`). Deliberate reclaim retains parent/prime, harness and liveness guards; observation errors and active processes refuse, with the inherited processless-tombstone exception (`crates/daemon/src/http/identity.rs:458-525`). Revive remains the explicit relaunch path.\n\nUnchanged identity/generic-retired refusal paths still interpolate their reasons (`identity.rs:417`; `registration.rs:1341`); this is not blanket historical reason-rendering hardening.\n\n### Proof\n\nNo new C19/C21 disclosure was identified. GitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42550583851` and Delivers run `42550583867` both identify this SHA and success.\n\nNo local builds, tests, statusline/adopt/close operations, marker experiments, credential reads or mutations were performed.\n"
+		}
+	]
+}
