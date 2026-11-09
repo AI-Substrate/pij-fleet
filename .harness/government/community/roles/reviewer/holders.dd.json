@@ -1101,6 +1101,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "PRD 003 req-10 dropped (C33), docs only"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-09T00:54:31.315Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "199",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "F148 spawn exit-status race"
 				}
 			]
 		}
