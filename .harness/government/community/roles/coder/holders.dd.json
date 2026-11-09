@@ -778,6 +778,16 @@
 					"seat": "pij-swift-kestrel",
 					"to": "2026-11-09T08:42:56.770Z",
 					"why": "F161 group time-limit alerts per holder; dead-holder advice (delivery/role_send.rs)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-09T21:47:46.402Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "225b",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "plan 225 amendment: Jordan's cold-revive rules (plain/ask/cheap + switch back)"
 				}
 			]
 		}
