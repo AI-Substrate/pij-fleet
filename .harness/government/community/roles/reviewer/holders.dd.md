@@ -112,3 +112,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 205 | 2026-11-09T05:12:01.873Z | 2026-11-09T06:09:52.431Z | pij-steady-otter | pij-far-jackal | F154 native send in_reply_to | PR #205 merged (f7744c5c3f67) |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 207 | 2026-11-09T06:37:36.375Z | — | pij-steady-otter | — | plan 225 cheap-model compaction | — |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 209 | 2026-11-09T06:38:56.724Z | — | pij-steady-otter | — | F159/F165 docs and shipped schemas | — |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 208 | 2026-11-09T06:41:32.586Z | — | pij-steady-otter | — | F161 grouped time-limit alerts | — |

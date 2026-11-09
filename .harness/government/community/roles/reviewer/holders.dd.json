@@ -1218,6 +1218,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "F159/F165 docs and shipped schemas"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-09T06:41:32.586Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "208",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F161 grouped time-limit alerts"
 				}
 			]
 		}
