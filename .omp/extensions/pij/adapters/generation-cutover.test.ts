@@ -245,9 +245,18 @@ describe("rs cutover has no legacy escape", () => {
 	});
 });
 
+// The shim's HTTP contract covers only verbs it still sends to the daemon. A
+// verb pij-rs owns natively (project since F156) is handed to pij-rs instead,
+// and its daemon route keeps its own Rust contract tests.
+const shimPostCases = postCases.filter((fixture) => {
+	const verb = fixture.argv[0];
+	const route = verb === undefined ? undefined : findRoute(verb, leafOf(fixture.argv));
+	return route === undefined || !("nativeCommand" in route);
+});
+
 describe("governance shim preserves canonical HTTP contracts", () => {
 	it.each(
-		postCases,
+		shimPostCases,
 	)("$id POST preserves argv, caller and complete v2 success bytes", async (fixture) => {
 		const argv = [...fixture.argv, "--json"];
 		const verb = fixture.argv[0];
