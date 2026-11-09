@@ -169,18 +169,37 @@ impl SqliteBackground {
     /// Returns a schema error on skew or an adapter error for invalid stored
     /// facts or SQLite failure.
     pub async fn pending(&self) -> Result<Vec<BackgroundJob>> {
+        self.pending_skipping(&[]).await
+    }
+
+    /// [`Self::pending`] without the jobs in `skip`, left out by the query, so
+    /// a job waiting for its next look (F139) is never loaded or decoded.
+    ///
+    /// # Errors
+    /// As [`Self::pending`].
+    pub async fn pending_skipping(&self, skip: &[String]) -> Result<Vec<BackgroundJob>> {
         require_current_schema(&self.pool).await?;
-        sqlx::query(
+        let skipped = if skip.is_empty() {
+            String::new()
+        } else {
+            format!(" AND job_id NOT IN ({})", vec!["?"; skip.len()].join(", "))
+        };
+        let sql = format!(
             "SELECT * FROM background_jobs \
-             WHERE state IN ('queued', 'running') OR notified = 0 \
-             ORDER BY started_at, job_id",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(adapter_error)?
-        .iter()
-        .map(decode_job)
-        .collect()
+             WHERE (state IN ('queued', 'running') OR notified = 0){skipped} \
+             ORDER BY started_at, job_id"
+        );
+        let mut query = sqlx::query(&sql);
+        for job in skip {
+            query = query.bind(job);
+        }
+        query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?
+            .iter()
+            .map(decode_job)
+            .collect()
     }
 
     /// Record the spawned identity only while the job is still queued.
