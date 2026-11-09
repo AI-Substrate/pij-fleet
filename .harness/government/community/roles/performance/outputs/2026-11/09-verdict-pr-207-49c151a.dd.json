@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "49c151a5d3bcb1e6725e61a257cf0895b9752c58",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/207#issuecomment-6733957917",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:207",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `49c151a5d3bcb1e6725e61a257cf0895b9752c58`, under **C34**.\n\n**Option only:** production callers are the explicit revive request and its successful CLI follow-up. No watchdog, sweep or threshold enables `cheap`; no new periodic loop, timer or executable site. One use takes the existing relaunch path on Sonnet 5.5, then one ordinary compact control with the existing memory-turn gates. No `/model` injection or automatic return to Opus.\n\n**Per-use budget:** the pre-write admission adds one existing session-status/cache-warmth read, waited up to three seconds. The successful CLI follow-up adds existing caller resolution and a compact-control request. Plain revive remains no-wait; `--cheap` explicitly opts into the **existing waiting-spawn poll**, so “no poll” means no new implementation/background schedule, not zero per-use polling. That loop sleeps 50 ms between capture/registry/status/pane checks, with the existing default30-second registration deadline; its existing model-mismatch footer wait can add up to eight seconds. Blocking operations can outlast waits. There is no fleet-wide per-seat tax without an explicit use.\n\nThe launch model-match check precedes success and compact. Non-Claude/known-warm refusals and incompatible flags precede writes. The savings threshold/pricing is design intent, not a newly measured fleet saving. **C34 follow-up:** existing wait/capture cost and cache-unknown behavior retain their existing proof limits; a failed compact leaves Sonnet running uncompacted as the stated Known limit.\n\n**CI:** [42573687553](https://github.com/AI-Substrate/pij-fleet/actions/runs/42573687553), attempt 1, Rust job `129016552495`, upload artifact **13654387342**, pinned to this head: **2,342 executed passed**, no failures/errors; six separately skipped. Verified cold-Claude Sonnet registration/resume, warm/non-Claude and flag refusals, ordinary compact request and six spawn guards. Rust lint, Node22/24 and delivers succeed. Mutants not run under C34.\n\nFrozen worktree/GitHub heads agree, clean/CLEAN. No local build/test, live cheap revive, model switch, compact or probe; no normal-use cost blocker found. Other roles' verdicts remain independent.\n"
+		}
+	]
+}
