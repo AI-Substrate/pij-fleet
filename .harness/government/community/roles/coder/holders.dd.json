@@ -711,6 +711,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-swift-kestrel",
 					"why": "F154 reply does not mark role request answered (plan 214 AC6 path)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-09T03:46:28.092Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f155",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "F155 delivered requests stay bound to an old holder (after F154)"
 				}
 			]
 		}
