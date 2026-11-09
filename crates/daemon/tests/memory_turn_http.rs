@@ -298,6 +298,14 @@ async fn a_holders_close_answers_held_at_once_and_closes_after_the_turn() {
     assert_eq!(held["ok"], true, "{held}");
     assert_eq!(held["data"]["held"], "memory-turn", "{held}");
     assert_eq!(held["data"]["memory_turn"]["bound_ms"], 30_000, "{held}");
+    // F149: a held close says up front that the process keeps running.
+    assert!(
+        held["data"]["process"]
+            .as_str()
+            .is_some_and(|note| note.contains("its process keeps running")
+                && note.contains("tmux kill-pane -t")),
+        "{held}"
+    );
     let prompt = prompt_for(&rig, "holder").await;
     assert_eq!(prompt.from.as_str(), pij_core::BG_ACTOR);
     assert!(
@@ -321,6 +329,13 @@ async fn a_holders_close_answers_held_at_once_and_closes_after_the_turn() {
     assert_eq!(turn["bound_ms"], 30_000);
     assert!(turn["note"].is_null(), "{turn}");
     assert!(tombstoned(&rig, "holder").await);
+    // F149: the close that lands after the turn is an owner's close, the
+    // reason registration continuity never lifts.
+    let closed = rig.registry.get(&"holder".into()).await.unwrap().unwrap();
+    assert_eq!(
+        closed.tombstone_reason.as_deref(),
+        Some("owner-close: done")
+    );
     rig.server.abort();
 }
 

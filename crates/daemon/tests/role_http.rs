@@ -846,3 +846,54 @@ async fn a_folder_with_a_control_character_is_refused_where_it_is_set() {
         "nothing published"
     );
 }
+
+/// Review of #200, F002: closing a seat already retired for another reason
+/// (observed dead) records it as its owner's close, so its own process
+/// registering again is refused instead of lifting the tombstone.
+#[tokio::test]
+async fn closing_an_observed_dead_seat_makes_it_an_owner_close() {
+    let fixture = Fixture::start().await;
+    let template = event_case("seat-put")["decoded_payload"].clone();
+    let context = routes()["fixture_context"].clone();
+    let panes = context["panes"].as_object().expect("panes");
+    let (index, (worker_pane, _)) = panes
+        .iter()
+        .enumerate()
+        .find(|(_, (_, id))| *id == &context["worker"])
+        .expect("worker");
+    let (parent_pane, _) = panes
+        .iter()
+        .find(|(_, id)| *id == &context["parent"])
+        .expect("parent");
+    let worker = SeatId::from(context["worker"].as_str().expect("worker id"));
+    fixture
+        .registry
+        .tombstone(&worker, "observed-dead")
+        .await
+        .expect("observed dead");
+
+    let (status, closed) = fixture
+        .post(
+            "/v1/close",
+            &json!({"seat": worker.as_str(), "caller": {"TMUX_PANE": parent_pane}}),
+        )
+        .await;
+    assert_eq!(status, 200, "{closed}");
+    assert_eq!(closed["data"]["reason"], "owner-close", "{closed}");
+    let row = fixture.registry.get(&worker).await.unwrap().unwrap();
+    assert_eq!(row.tombstone_reason.as_deref(), Some("owner-close"));
+
+    let request = json!({"id": worker.as_str(), "harness": template["harness"],
+        "folder": template["folder"], "pane": worker_pane,
+        "pid": template["proc"]["pid"].as_u64().expect("pid") + index as u64,
+        "proc_start": template["proc"]["proc_start"]});
+    let (status, refused) = fixture.post("/v1/register", &request).await;
+    assert!(status >= 400, "{refused}");
+    assert!(
+        refused.to_string().contains("E-RS-SEAT-RETIRED"),
+        "{refused}"
+    );
+    let row = fixture.registry.get(&worker).await.unwrap().unwrap();
+    assert!(row.tombstoned_at.is_some(), "still closed");
+    assert_eq!(row.tombstone_reason.as_deref(), Some("owner-close"));
+}
