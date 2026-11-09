@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"hook": "Read before grouping notices or claiming a whole-message byte cap.",
+				"tags": [
+					"rendering",
+					"byte-budget",
+					"correctness",
+					"c34"
+				],
+				"title": "Message caps include generated repair footers"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Budget the final message, including generated repair-command footers.\n\n#208's request-line loop had a 2 KB check but appended every distinct release command in an unbounded footer and always kept the first line. Sixty requests to one address passed because the footer deduplicated to one command; ordinary requests to many addresses broke the cap. This was a normal-use C34 correctness/cost defect, not same-user hardening.\n\nThe final repair at 808d10d7fb9c2f6cd76ab07198791281b8974aca limits the footer to three complete commands plus its omitted count. The distinct-address regression checks the whole body; closure output is 131eb28ee538a63394b2ebb0b855606f2cb9298b.\n\nWhen changing grouped notices, account for header, body, separators, footer and omission text together. Keep complete labels/commands rather than cutting through characters or shell words. Check a representative input that makes the footer grow independently of the body. A body-only cap or a single-address fixture proves less than a whole-message budget. Under C34, verify the requested fix; additional exhaustive fixtures and mutants are optional, not gates.\n"
+		}
+	]
+}

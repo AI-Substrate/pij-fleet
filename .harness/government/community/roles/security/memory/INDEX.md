@@ -31,4 +31,5 @@
 - [2026-11-08 Workstream phase-one safety review](2026-11-08-workstream-phase-one-safety.dd.md): Read before carrying phase-one workstream documentation proof into later code-moving or coverage phases. (workstreams, docs, privacy, scope)
 - [2026-11-09 C33 C34 wind-up and rendering boundaries](2026-11-09-c33-c34-wind-up-and-rendering-boundaries.dd.md): Read before carrying old herring verdicts or role notes into a new security review. (policy, rendering, closure, handoff)
 - [2026-11-09 Daemon notice IDs need a protected dedupe namespace](2026-11-09-daemon-notice-ids-need-a-protected.dd.md): Read before adding daemon-authored notification IDs or accepting a duplicate FYI as admission of an audited notice. (notifications, deduplication, authority, recovery)
+- [2026-11-09 Message caps include generated repair footers](2026-11-09-message-caps-include-generated-repair.dd.md): Read before grouping notices or claiming a whole-message byte cap. (rendering, byte-budget, correctness, c34)
 <!-- /pij:generated -->
