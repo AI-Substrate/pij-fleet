@@ -73,4 +73,4 @@
 | — | pij-exuberant-wildcat | copilot | cc88fc7c-b066-44d1-a82d-fa6560786ddf | ops.osk.lan | f150 | 2026-11-08T23:52:09.560Z | — | pij-steady-otter | — | F150: reply-none requests counted as unanswered | — |
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | f152 | 2026-11-08T23:54:49.554Z | — | pij-steady-otter | — | F152 directory edit list flags (after F148) | — |
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f154 | 2026-11-09T02:38:53.825Z | — | pij-steady-otter | — | F154 reply does not mark role request answered (plan 214 AC6 path) | — |
-| — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f155 | 2026-11-09T03:46:28.092Z | — | pij-steady-otter | — | F155 delivered requests stay bound to an old holder (after F154) | — |
+| — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f155 | 2026-11-09T03:46:28.092Z | 2026-11-09T03:47:44.380Z | pij-steady-otter | pij-steady-otter | F155 delivered requests stay bound to an old holder (after F154) | C34 wind-up: F155 deferred |

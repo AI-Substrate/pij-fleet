@@ -719,7 +719,10 @@
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"instance_key": "f155",
 					"machine": "ops.osk.lan",
+					"release_why": "C34 wind-up: F155 deferred",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-09T03:47:44.380Z",
 					"why": "F155 delivered requests stay bound to an old holder (after F154)"
 				}
 			]
