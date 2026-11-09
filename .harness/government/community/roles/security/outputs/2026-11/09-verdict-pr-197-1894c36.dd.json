@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "1894c36072158cd3c1e85a4c49db8fcc027aeaf3",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/197#issuecomment-6732723417",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:197",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes**, final C34 round at `1894c36072158cd3c1e85a4c49db8fcc027aeaf3`, against `ef598b5437ef6a5578a2e478f358736a2e1226a4` (output `4e7c048b7066e10f5089b787152b6d8e446c42ad`).\n\nThe three requested normal-use repairs are present: atomic Telegram settlement, owner/settlement checks before tail reads with failed-read braking, and admission rechecking after ambiguous delivery errors. No remaining blocking bug was established in those repairs. The Telegram-header rendering issue is explicitly deferred under C34, not falsely claimed fixed.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/sidecars/src/telegram.rs | 1261-1280 | C34 follow-up: raw owner/folder Telegram header remains outside the repaired notice body | 9/10 |\n\n## Three repair checks\n\n`SqliteBackground::settle_by_telegram` updates the settlement record, inserts the Telegram job and marks the terminal background job notified in one owned SQLite transaction (`store/src/background.rs:764-818`). A failed write cannot commit only the record or only the mark. Production real queue/background adapters share the same persistent pool (`daemon/src/lib.rs:412-435,457-463,594-596`). The former commit-before-enqueue/failed-undo loss path is removed.\n\n`notify` checks saved orphan settlement and owner classification before calling `final_body`. A gone owner can settle without reading a missing Done/timed-out log. A present owner's failed tail read sets the next look 60 seconds ahead. `settle_braked` retains the same brake for settlement failures.\n\nAfter `accept()` errors, the prime leg now rereads `delivery.admitted`: an admitted notice completes as prime; a known non-admission permits fallback; a failed recheck returns an error without changing the Prime route (`background.rs:1703-1713`). The next attempt is braked. This closes the earlier `DeliveryAuditFailed`-after-admission dual-channel path.\n\nThese are local persistence/admission guarantees, not proof that a human observed the notice or that an external Telegram network request is exactly once. The existing sidecar's ambiguous network retries are not redesigned by this patch.\n\n## C33/C34 limits\n\n**C34 follow-up:** final Telegram text/document header rendering remains raw for the original owner/folder, as disclosed in Known limits. The body retains its owner/prime rendering and path/diagnostic fences. Under the explicit final-round grading instruction, this is a named follow-up rather than another block.\n\n**C34 follow-up:** offline/fake-queue configurations cannot consume the Telegram row inserted into the background database; production uses the shared real pool. Offline mode has no Telegram sidecar. This disclosed adapter limitation is not a newly required architecture change.\n\nThe orphan path still sends a summary/log path, not command, event or log-tail contents. C33 same-user-only adversarial isolation remains out of scope. No new unauthorized destination or secret egress was established.\n\n## Evidence\n\nLocal/remote/GitHub heads agree; detached shared worktree clean; PR is OPEN and CLEAN. Own repair commit `cf43a115b09a7ef1a3e7720c11b53553400c3004` is carried through the final main merge; unrelated main changes were not regraded.\n\nCI [42563037861](https://github.com/AI-Substrate/pij-fleet/actions/runs/42563037861) succeeded on merge `df0ff987464e547090c9a447cff404fb79661ef2`, with this head and main `3e31243799c2cde48a8cb9ba87d6a203d8ad0ef4` as parents. Tree `2a572c69d822cd520b71265882379a104c51df97` equals the reviewed head's tree.\n\nJUnit artifact [13650302788](https://github.com/AI-Substrate/pij-fleet/actions/runs/42563037861/artifacts/13650302788) confirms 2,331 passing cases, no failures; five separately skipped. Executed: transactional rollback/retry and completed settlement, missing-log Done/timed-out cases, admitted settlement with missing log, post-admission audit failure and unknown admission preservation. Current Node/Rust/Delivers checks succeed; an older Delivers run was cancelled.\n\nMutants are optional under C34 and were not fully rerun. Fixture/failpoint cases are not real process crashes or Telegram network delivery proof. The helper returned no assessment; the verdict rests on direct inspection and verified CI.\n\nNo local builds/tests, mutation/live-system probes, credential reads, product edits or deployment.\n"
+		}
+	]
+}
