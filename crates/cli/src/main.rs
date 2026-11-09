@@ -4110,6 +4110,15 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
     }))
 }
 
+/// Write the child's exit status whole (F148): a staged file renamed into
+/// place, so the daemon polling for it never reads a created-but-empty or
+/// half-written file.
+fn write_exit_status(status_file: &Path, code: i32) -> std::io::Result<()> {
+    let staged = status_file.with_extension("status.partial");
+    std::fs::write(&staged, format!("exit_code={code}\n"))?;
+    std::fs::rename(&staged, status_file)
+}
+
 fn run_spawn_child(status_file: &Path, log_file: &Path, command: &[OsString]) -> ExitCode {
     let Some((executable, args)) = command.split_first() else {
         eprintln!("pij-rs spawn child: no executable followed `--`");
@@ -4133,7 +4142,7 @@ fn run_spawn_child(status_file: &Path, log_file: &Path, command: &[OsString]) ->
             let message = format!("could not launch {executable:?}: {error}");
             eprintln!("pij-rs spawn child: {message}");
             let _ = std::fs::write(log_file, format!("{message}\n"));
-            let _ = std::fs::write(status_file, "exit_code=127\n");
+            let _ = write_exit_status(status_file, 127);
             std::thread::sleep(Duration::from_secs(2));
             return ExitCode::from(127);
         }
@@ -4180,7 +4189,7 @@ fn run_spawn_child(status_file: &Path, log_file: &Path, command: &[OsString]) ->
         }
     };
     let _ = copier.join();
-    if let Err(error) = std::fs::write(status_file, format!("exit_code={code}\n")) {
+    if let Err(error) = write_exit_status(status_file, code) {
         eprintln!(
             "pij-rs spawn child: could not write status {}: {error}",
             status_file.display()
@@ -5101,6 +5110,31 @@ PEC notice";
             )),
             "{human}"
         );
+    }
+
+    /// F148: the wrapper writes the status by renaming a staged file into
+    /// place, so a reader never sees it half-written. A reader holding the
+    /// old file open still reads it as it was (a new file replaced it), which
+    /// an in-place write would not give; and no staged file is left behind.
+    #[test]
+    fn the_spawn_status_is_written_whole() {
+        let dir = pij_testkit::fresh_dir("pij-spawn-status-write");
+        let status = dir.join("s-1.status");
+        std::fs::write(&status, "").expect("created by the waiter");
+        let mut held = std::fs::File::open(&status).expect("a reader holds it");
+        super::write_exit_status(&status, 3).expect("written");
+        let mut before = String::new();
+        std::io::Read::read_to_string(&mut held, &mut before).expect("read the held file");
+        assert_eq!(
+            before, "",
+            "the held file was replaced, not written in place"
+        );
+        assert_eq!(std::fs::read_to_string(&status).unwrap(), "exit_code=3\n");
+        assert!(
+            !dir.join("s-1.status.partial").exists(),
+            "no staged file left"
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// F142 (#193 round 2): a drained request's delivery error can carry a
