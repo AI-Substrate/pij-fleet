@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"hook": "Open before writing anything that ends a wait by notifying someone else (prime, Telegram, fallback), or that retries a send after a crash",
+				"tags": [
+					"f139",
+					"once-only",
+					"telegram",
+					"queue",
+					"brake",
+					"cost"
+				],
+				"title": "Settling a result once across channels (F139, #197 rounds 1-3)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "What four review rounds on #197 (the orphaned bg final turn) required. Each one was a BLOCK until fixed:\n- Read the saved settlement FIRST on every look, before reclassifying the owner or the target. Otherwise, after a crash, a revived owner or a now-gone prime gets a second delivery on another channel.\n- Prime leg: the delivery ledger (`delivery.admitted(seat, id)`) decides, not `accept`'s Result. `accept` can admit and then fail its audit publish (`DeliveryAuditFailed`). Re-check admission after ANY error; if the re-check itself fails, keep the route and retry (braked), never fall back on an unknown.\n- A recorded route is not a licence to wake: re-check the prime's warmth on replay. Cold or gone switches to Telegram, recorded first.\n- Telegram leg: the queue's dedupe covers only pending and running rows, so a completed send can be re-sent. The orphan record, the jobs row and the notified mark go in ONE sqlite transaction (`SqliteBackground::settle_by_telegram`; the background pool is the queue's pool in production). No commit flag plus undo: an undo can fail.\n- Brakes must hold on the failure path too: a failed settle, or a failed log-tail read, sets the next look 60 s out. Filter waiting rows in the pending QUERY (`pending_skipping`), and keep it the only brake so a mutant can show it working.\n- Do optional work (reading the log tail) only after routing; an orphan doesn't need it.\n- Render every seat or path in the notice (`SeatId::rendered`, `render::caller_text`), including in the shared Telegram header (sidecars `prefixed_text_parts`). Fake fixture seats like \"owner\" render as `invalid (5 chars)`.\n- The fake registry's `tombstone()` stamps a sequence number, not a time. Put a descriptor with a real `tombstoned_at` instead.\n- In AGENTS.md terms, name each check a policy (it decides the outcome) or a brake (it only spares work).\n"
+		}
+	]
+}
