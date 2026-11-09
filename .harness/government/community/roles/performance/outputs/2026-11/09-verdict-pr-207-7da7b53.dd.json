@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "7da7b5320602a686d4021d4661aca861d76c4c1b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/207#issuecomment-6734452245",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:207",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `7da7b5320602a686d4021d4661aca861d76c4c1b`, last round under **C34**.\n\nDelta from `49c151a`, output `3f46e1042836bf979aa2bd4f93d12d4fe5bf4ea1`.\n\n**Warm detection is unchanged:** `is_warm` now tests `cache_known(...) == Ok(true)`. Known facts use the identical predicate, `now_ms < last_call.saturating_add(min(ttl, COLD_IDLE_MS))`; missing facts still return false to warm-only callers. The helper adds closed-vocabulary reasons, not another scan/read.\n\nCheap admission replaces its previous single status lookup/three-second timeout with one `known_cache` lookup at the same bound. Known cold proceeds; warm/unknown refuses before writes. This closes the prior unknown-cache qualification note and avoids an unproven relaunch/compact cost. No new periodic loop, poll implementation, timer or launch site; explicit uses retain the previously priced waiting-spawn poll and ordinary compact control. Nothing triggers cheap revive automatically.\n\n**CI:** [42576508720](https://github.com/AI-Substrate/pij-fleet/actions/runs/42576508720), successful **attempt2**, Rust job `129027321093`, its upload artifact **13654869689** pinned to this head: **2,342 executed passed**, no failures/errors; six separately skipped. Verified extended unreadable/no-last-call refusals and unchanged-state checks, known-cold Sonnet revive, compact control, warm lifetime boundary case and six spawn guards. Rust lint, Node22/24 and replacement delivers succeed.\n\nFrozen worktree/GitHub heads agree, clean/CLEAN. No local test, mutation, live revive/model switch or probe. No normal-use cost blocker; existing per-use wait limits and failed-compact Known limit remain C34 follow-ups.\n"
+		}
+	]
+}
