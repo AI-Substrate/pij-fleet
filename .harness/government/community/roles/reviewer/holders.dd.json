@@ -1198,6 +1198,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-09T06:09:52.431Z",
 					"why": "F154 native send in_reply_to"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-09T06:37:36.375Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "207",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "plan 225 cheap-model compaction"
 				}
 			]
 		}
