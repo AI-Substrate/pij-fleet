@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "efa4b81a5af690ebe2d57e6361e26c4e852310a6",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/202#issuecomment-6732343329",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:202",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `efa4b81a5af690ebe2d57e6361e26c4e852310a6` (F152), graded under C33/C34.\n\nThe scoped human receipt fences every list item, including original stored items and newly added/removed caller text. The six edit pairs preserve the stated ordering and reject invalid operations before a writer commit. No reportable scoped security vulnerability or normal-use blocking bug was established.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No scoped vulnerabilities found | - |\n\n## Rendering and edit boundary\n\n`render_edit` applies `render::caller_text` independently to each removed, added, before and after item (`crates/cli/src/main.rs:3549-3596`). It never concatenates caller list text into an unquoted prose field. Role/project headings and list labels use closed renderers; the displayed commit prefix comes from the writer, not a list item.\n\n`caller_text` always invokes the existing fence: debug-escaped Unicode characters, enclosing quotes, at most 500 input characters per item and a visible ellipsis with a retained closing quote. It does not grant trust based on whether text looks harmless. The human renderer is selected only for successful non-JSON edit responses carrying the list receipt. JSON intentionally preserves raw values as untrusted structured data.\n\nList-operation refusals also fence the selected item and the existing list. The same six field mappings supply operation application and receipt calculation. Replacing flags apply first, each list's removes precede adds, and exact item comparisons preserve the documented move-to-end operation.\n\nApplication changes a local document copy inside the writer's edit callback. A missing remove or duplicate add returns before the callback creates replacement files, so earlier in-memory operations do not leak into a partial commit. New add/remove flags are refused on non-edit verbs. No new authority, shell command construction or launch path is added.\n\nThe before/after arrays preserve ordering; removed/added arrays report membership changes rather than claiming a remove/add reorder changed membership.\n\n## Notes and scope\n\nThe community skill route does not yet show the flags. This is the packet's disclosed documentation follow-up; edit help and the API document explain replacement versus incremental operations. It is not a block or a reason to require another review round.\n\nFencing protects presentation structure, not semantic prompt-injection immunity or secret redaction. Per-item caps are not a total receipt-size cap. No new blocking normal-use issue or separate C34 hardening follow-up was established.\n\nC33 excludes same-user-only adversarial identity/credential isolation. Safe rendering remains in scope. Mutation runs, extra fixtures and exhaustive inventories are not C34 gates.\n\n## Exact evidence\n\nThe shared detached worktree is clean; local/remote/GitHub heads agree. Own F152 commit `9f52e396`, main merge `e227c02b` and the final skill-example cleanup `efa4b81a` comprise the reviewed branch changes.\n\nCI [42558901456](https://github.com/AI-Substrate/pij-fleet/actions/runs/42558901456) succeeded, checking merge `f28f39168f08f6f172172fa41cc8d3936636d43b` with this exact head and main `033b36f60a3a53a51aea761ee2de42345b54d842` as parents; tree `9e4310e8335a7e2dd258d849ab1131b2362d8be4`.\n\nJUnit artifact [13648542744](https://github.com/AI-Substrate/pij-fleet/actions/runs/42558901456/artifacts/13648542744) confirms 2,307 passing cases, no failures; five separately skipped. Executed: all-six-list HTTP operations/refusals, combined ordering/edit-only HTTP case, exact hostile-item human receipt and the previously failing community-command coverage case. Node/Rust/Delivers checks succeed.\n\nThe 16 mutant kills are author evidence, not independently executed mutations. The review helper returned a bare no-findings summary; the supporting judgment here rests on direct source inspection and verified CI execution.\n\nNo local builds/tests, mutations, credential reads, live-system probes or product/governance edits outside the requested canonical verdict publication.\n"
+		}
+	]
+}
