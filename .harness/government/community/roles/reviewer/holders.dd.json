@@ -1182,6 +1182,16 @@
 					"seat": "pij-double-bobcat",
 					"to": "2026-11-09T05:06:43.845Z",
 					"why": "F150 reply-none not counted; grouped capped idle notices"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-09T05:12:01.873Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "205",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F154 native send in_reply_to"
 				}
 			]
 		}

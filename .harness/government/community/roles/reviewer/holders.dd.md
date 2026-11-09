@@ -109,3 +109,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 202 | 2026-11-09T04:31:34.699Z | — | pij-steady-otter | — | F152 directory edit add/remove list flags | — |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 203 | 2026-11-09T04:49:37.722Z | 2026-11-09T04:54:09.856Z | pij-steady-otter | pij-far-jackal | docs follow-up F157/F160 while #197 r3 is pending | PR #203 merged (7f6ed760ed98) |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 204 | 2026-11-09T05:00:14.402Z | 2026-11-09T05:06:43.845Z | pij-steady-otter | pij-far-jackal | F150 reply-none not counted; grouped capped idle notices | PR #204 merged (952ba22dc4c6) |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 205 | 2026-11-09T05:12:01.873Z | — | pij-steady-otter | — | F154 native send in_reply_to | — |
