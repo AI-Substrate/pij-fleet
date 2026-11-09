@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "82966d26a7353ad98798e9152c4400ef71cf5218",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/205#issuecomment-6732844422",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:205",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `82966d26a7353ad98798e9152c4400ef71cf5218` (F154), under C33/C34.\n\nThe native reply field reaches the correlated-reply path. Paneless binding checks the registered seat/session rather than granting new requester, PA or prime authority. The audit label accurately states registration-strength evidence. No reportable scoped vulnerability or demonstrated normal-use blocker was established.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No scoped vulnerabilities found | - |\n\n## Binding and answer authority\n\nCopilot exposes `in_reply_to`, forwards it through `NativeBridge.send`, and constructs reply caller fields from its registered/readback-verified identity, not identity arguments supplied to the tool. Blank or spaced reply ids are refused. OMP forwards an explicit reply id in preference to automatic threading; a different explicit reply does not consume the existing threaded message.\n\nThe new daemon branch requires resolved seat equality with `from`, a registered native extension, no registered pane, and exact registered harness-session equality (`http/mod.rs:2283-2324`). Contradictory pane/seat claims or unresolved context remain refusals.\n\nThe existing answer helper requires a delivered request whose recorded holder equals `from` (`delivery/role_send.rs:1193-1240`). Being its requester or another seat does not independently grant answer authority. Existing role-addressed reply semantics remain; this helper does not additionally require `to == requester`.\n\n**C33: same-user, out of scope** — another local client can replay public native-session metadata at registration strength. That is the explicitly accepted account trust boundary, not a new per-seat credential requirement.\n\nThe branch yields reply evidence only, not control or PA/prime authority. `native session (registered)` describes what was checked without claiming private-token provenance.\n\nThe answer stamp and audit commit together once (`store/src/role_requests.rs:798-836`). Audit failure leaves the request unanswered and is logged; it does not roll back an already accepted send. Structured JSON and parameterized storage introduce no new shell execution, credential forwarding or external-input authority.\n\n## Evidence and notes\n\nAll ten changed files were inspected at the frozen head; detached shared worktree clean. Local/remote/GitHub heads agree and PR CLEAN.\n\nCI [42565107463](https://github.com/AI-Substrate/pij-fleet/actions/runs/42565107463) succeeded on merge `406d4fe3d0eeb0a165d379e54930f09be54236d4`, with this head and main `7f6ed760ed98b2fda2e6095750a6e8f620132f8f` as parents; tree `2102526bdf55a151e5931ab9d93ff1260f9f7b47`.\n\nJUnit artifact [13650878804](https://github.com/AI-Substrate/pij-fleet/actions/runs/42565107463/artifacts/13650878804) confirms 2,314 passing cases, no failures; six separately skipped. Correct-session paneless reply, wrong-session/non-native refusals, the old non-native paneless replay guard and answer/audit controls executed. Copilot wire-shape and invalid-id cases passed in CI; TypeScript tests passed in aggregate.\n\nThe actual `store.mjs` → HTTP/SQLite `NativeBridge.send` contract regression is opt-in and absent from JUnit. Its local pane/paneless pass is author evidence, not independent CI proof. The unrelated cold-resume contract failure is disclosed as a preexisting follow-up; no C34 blocker is inferred from it.\n\nNo mutants were run, as permitted by C34. No local builds/tests, credential reads, live-runtime probes or product edits were performed in this review.\n"
+		}
+	]
+}
