@@ -721,7 +721,10 @@
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"instance_key": "f154",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #205 merged (f7744c5c3f67)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-09T06:09:52.431Z",
 					"why": "F154 reply does not mark role request answered (plan 214 AC6 path)"
 				},
 				{

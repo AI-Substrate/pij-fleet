@@ -1193,7 +1193,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "205",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #205 merged (f7744c5c3f67)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-09T06:09:52.431Z",
 					"why": "F154 native send in_reply_to"
 				}
 			]
