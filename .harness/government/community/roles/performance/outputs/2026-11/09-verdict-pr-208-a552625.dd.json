@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "a552625169d54b45015c6681b689da334b470987",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/208#issuecomment-6734012636",
+				"result": "block",
+				"role": "performance",
+				"subject": "pr:208",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: BLOCK P208-F001** at `a552625169d54b45015c6681b689da334b470987`, under **C34**.\n\n**Normal-use output-cap bug:** `limit_body` collects every distinct release command into its footer (`role_send.rs:1830-1855`). That footer is appended whole, and the first request line is unconditional (`:1879-1899`). The 2,048-byte check only drops subsequent request lines. Many valid distinct role/instance/project addresses sharing one recipient/holder/kind therefore produce a footer exceeding 2 KB even after `...and N more`. This is the same alert-volume cost the PR promises to cap, not optional hardening.\n\n**Fix:** budget the complete message, including release commands/footer and first line; retain bounded recovery guidance and an explicit omitted count. The current 60-request fixture uses one shared address and deduplicates its footer to one command. A distinct-address case is the relevant check.\n\n**Read/claim cost:** no new per-round query path found. The open-limited read, per-request card/arrival/holder/recipient reads, claim/pin and finish/release operations remain. One registry `get` replaces the prior live-seat helper's `get`. Sends and their cold/status checks fall from one per request to one per group.\n\n**C34 follow-up:** the claimed batch itself has no row/byte cap: it follows all due requests and retains cloned request/descriptor data. Sorting costs O(N log N); vector-based group lookup can cost O(N x G), and release-command deduplication can cost O(M x U). These are in-process work, not a new timer/launch, but a message-size cap does not bound preparation.\n\n**CI:** [42573708131](https://github.com/AI-Substrate/pij-fleet/actions/runs/42573708131), attempt 1, Rust job `129016615772`, upload artifact **13654273061**, pinned to this head: **2,341 executed passed**, no failures/errors; six separately skipped. Verified grouped gone-holder stamps/quiet next round, same-address cap, revive hint and six spawn guards. Rust lint, Node22/24 and delivers succeed. CI does not cover the uncapped distinct-command footer.\n\nFrozen worktree/GitHub heads agree, clean/CLEAN. No local build/test, mutation or live probe. The oldest-ID retry/stamp Known limit stays a follow-up; other roles' verdicts are independent.\n"
+		}
+	]
+}
