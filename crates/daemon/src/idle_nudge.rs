@@ -250,18 +250,30 @@ async fn due<'a>(
             pij_core::render::name(&claim.project)
         )
     }));
-    held.extend(requests.iter().map(|request| {
-        let instance = if request.instance.is_empty() {
-            String::new()
-        } else {
-            format!("/{}", pij_core::render::name(&request.instance))
-        };
-        format!(
-            "an unanswered role:{}{instance} request (project {})",
-            pij_core::render::name(&request.role),
-            pij_core::render::name(&request.project)
-        )
-    }));
+    // One line per role address and project, with a count and the oldest's
+    // age, so 40 requests to one role are one line, not 40 (F150).
+    let mut grouped: std::collections::BTreeMap<(&str, &str, &str), (usize, u64)> =
+        std::collections::BTreeMap::new();
+    for request in requests {
+        let entry = grouped
+            .entry((&request.role, &request.instance, &request.project))
+            .or_insert((0, request.delivered_at));
+        entry.0 += 1;
+        entry.1 = entry.1.min(request.delivered_at);
+    }
+    held.extend(
+        grouped
+            .into_iter()
+            .map(|((role, instance, project), (count, oldest))| {
+                pij_core::idle_nudge::requests_label(
+                    role,
+                    instance,
+                    project,
+                    count,
+                    now_ms.saturating_sub(oldest),
+                )
+            }),
+    );
     if held.is_empty() {
         return None;
     }

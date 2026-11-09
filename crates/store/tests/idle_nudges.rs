@@ -103,6 +103,7 @@ async fn in_flight_counts_only_task_work() {
             project: "crane".into(),
             role: "delivery".into(),
             instance: "7".into(),
+            delivered_at: 1,
         }]
     );
 }
