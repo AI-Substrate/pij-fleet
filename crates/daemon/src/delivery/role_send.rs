@@ -1253,7 +1253,7 @@ pub struct LimitAction {
 }
 
 /// Why the PA (else the prime) is being told about a request.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Silence {
     /// The holder had its check-in and a further limit passed with no card
     /// update.
@@ -1286,12 +1286,105 @@ pub async fn time_limits(services: &Services, now_ms: u64) -> Vec<LimitAction> {
         }
     };
     let mut actions = Vec::new();
+    let mut due = Vec::new();
     for request in &open {
-        if let Some(action) = time_limit_step(services, request, now_ms).await {
-            actions.push(action);
+        match prepare_step(services, request, now_ms).await {
+            Some(Step::Done(action)) => actions.push(action),
+            Some(Step::Due(item)) => due.push(*item),
+            None => {}
         }
     }
+    // F161: one message per recipient, holder and kind in a round, oldest
+    // first, never one per request.
+    due.sort_by(|a, b| {
+        (a.request.delivered_at, &a.request.id).cmp(&(b.request.delivered_at, &b.request.id))
+    });
+    let mut groups: Vec<Vec<Due>> = Vec::new();
+    for item in due {
+        match groups.iter_mut().find(|group| group[0].same_message(&item)) {
+            Some(group) => group.push(item),
+            None => groups.push(vec![item]),
+        }
+    }
+    for group in groups {
+        actions.extend(send_due(services, group, now_ms).await);
+    }
     actions
+}
+
+/// One request's step: settled already, or claimed and due to be told.
+enum Step {
+    Done(LimitAction),
+    Due(Box<Due>),
+}
+
+/// A claimed notification, its recipient resolved, not yet sent (F161).
+struct Due {
+    request: RoleRequest,
+    stage: LimitStage,
+    holder: SeatId,
+    limit: u64,
+    held_ms: u64,
+    /// Why the PA is told; `None` for a check-in.
+    silence: Option<Silence>,
+    to: Option<SeatDescriptor>,
+    /// Set when the holder is not live.
+    gone: Option<Gone>,
+}
+
+impl Due {
+    fn same_message(&self, other: &Self) -> bool {
+        self.stage == other.stage
+            && self.holder == other.holder
+            && self.silence == other.silence
+            && self.to.as_ref().map(|seat| &seat.id) == other.to.as_ref().map(|seat| &seat.id)
+    }
+}
+
+/// A holder that is not live: how it went, and who can bring it back.
+#[derive(Clone)]
+struct Gone {
+    /// "was observed dead", "was closed" or "is not a seat on this machine".
+    state: &'static str,
+    /// Its recorded parent, which may revive it as the prime can.
+    parent: Option<SeatId>,
+    /// A seat row exists, so `pij-rs revive` can relaunch it.
+    revivable: bool,
+}
+
+impl Gone {
+    fn of(row: Option<&SeatDescriptor>) -> Self {
+        match row {
+            None => Self {
+                state: "is not a seat on this machine",
+                parent: None,
+                revivable: false,
+            },
+            Some(seat) => Self {
+                state: if seat.tombstone_reason.as_deref() == Some("observed-dead") {
+                    "was observed dead"
+                } else {
+                    "was closed"
+                },
+                parent: seat.parent.clone(),
+                revivable: true,
+            },
+        }
+    }
+
+    /// The first thing to try: revive it, when it can be (F161).
+    fn revive(&self, holder: &str) -> Option<String> {
+        self.revivable.then(|| {
+            let by = match &self.parent {
+                Some(parent) => format!("its parent {} or the prime", parent.rendered()),
+                None => "the prime".to_string(),
+            };
+            format!(
+                "revive it ({}, run by {by})",
+                command(&["pij-rs", "revive", holder])
+            )
+        })
+    }
 }
 
 /// One request's step, from the round's read, which can be stale by the time
@@ -1306,6 +1399,18 @@ pub async fn time_limit_step(
     request: &RoleRequest,
     now_ms: u64,
 ) -> Option<LimitAction> {
+    match prepare_step(services, request, now_ms).await? {
+        Step::Done(action) => Some(action),
+        Step::Due(item) => send_due(services, vec![*item], now_ms)
+            .await
+            .into_iter()
+            .next(),
+    }
+}
+
+/// [`time_limit_step`] up to the send: the claim, a stopped attempt's
+/// recovery, and the recipient.
+async fn prepare_step(services: &Services, request: &RoleRequest, now_ms: u64) -> Option<Step> {
     let (Some(limit), Some(holder), Some(delivered_at)) = (
         request.limit_ms,
         request.holder.as_deref().map(SeatId::from),
@@ -1356,13 +1461,13 @@ pub async fn time_limit_step(
                 if let Err(cause) = settled {
                     eprintln!("pij-rs: time limits: settle {}: {cause}", request.id);
                 }
-                return Some(LimitAction {
+                return Some(Step::Done(LimitAction {
                     request: request.id.clone(),
                     kind: limit_kind(told),
                     to: Some(SeatId::from(pinned)),
                     delivery: "already admitted".to_string(),
                     admitted: true,
-                });
+                }));
             }
             Ok(None) => {}
             // Keep the claim and its pin: after the lease, the next round
@@ -1373,64 +1478,113 @@ pub async fn time_limit_step(
             }
         }
     }
-    let told = match stage {
-        LimitStage::CheckIn => match live_seat(services.registry.as_ref(), holder.as_str()).await {
-            Ok(Some(seat)) => Ok((
-                LimitStage::CheckIn,
-                check_in(services, request, &seat, limit, held_ms, now_ms).await,
-            )),
-            Ok(None) => Ok((
-                LimitStage::Notice,
-                notice(
-                    services,
-                    store,
-                    request,
-                    &holder,
-                    limit,
-                    Silence::HolderGone,
-                    now_ms,
-                )
-                .await,
-            )),
-            Err(refusal) => Err(refusal.message),
-        },
-        LimitStage::Notice => Ok((
-            LimitStage::Notice,
-            notice(
-                services,
-                store,
-                request,
-                &holder,
-                limit,
-                Silence::Unanswered,
-                now_ms,
-            )
-            .await,
-        )),
-    };
-    let (settled, action) = match told {
-        Ok((told, action)) if action.admitted => (
-            store
-                .finish_role_request_limit(&request.id, told, now_ms, now_ms)
-                .await,
-            Some(action),
-        ),
-        Ok((_, action)) => (
-            store.release_role_request_limit(&request.id, now_ms).await,
-            Some(action),
-        ),
+    let row = match services.registry.get(&holder).await {
+        Ok(row) => row,
         Err(cause) => {
             eprintln!("pij-rs: time limits: holder {holder}: {cause}");
-            (
-                store.release_role_request_limit(&request.id, now_ms).await,
-                None,
-            )
+            if let Err(cause) = store.release_role_request_limit(&request.id, now_ms).await {
+                eprintln!("pij-rs: time limits: settle {}: {cause}", request.id);
+            }
+            return None;
         }
     };
-    if let Err(cause) = settled {
-        eprintln!("pij-rs: time limits: settle {}: {cause}", request.id);
+    let live = row.clone().filter(|seat| seat.tombstoned_at.is_none());
+    let gone = live.is_none().then(|| Gone::of(row.as_ref()));
+    let (stage, silence, to) = match (stage, live) {
+        (LimitStage::CheckIn, Some(seat)) => (LimitStage::CheckIn, None, Some(seat)),
+        (LimitStage::CheckIn, None) => (
+            LimitStage::Notice,
+            Some(Silence::HolderGone),
+            notice_target(services, store, &request.project).await,
+        ),
+        (LimitStage::Notice, _) => (
+            LimitStage::Notice,
+            Some(Silence::Unanswered),
+            notice_target(services, store, &request.project).await,
+        ),
+    };
+    Some(Step::Due(Box::new(Due {
+        request: request.clone(),
+        stage,
+        holder,
+        limit,
+        held_ms,
+        silence,
+        to,
+        gone,
+    })))
+}
+
+/// Send one message for `group` (one recipient, holder and kind), then stamp
+/// every request delivery admitted and release the rest for the next round.
+/// It goes under the oldest request's fixed msg_id, so a group of one is
+/// exactly the earlier single notification.
+async fn send_due(services: &Services, group: Vec<Due>, now_ms: u64) -> Vec<LimitAction> {
+    let store = services.governance.store();
+    let mut outcomes = vec![String::new(); group.len()];
+    let mut sendable = Vec::new();
+    match group.first().and_then(|first| first.to.as_ref()) {
+        None => outcomes.fill("no live PA or prime to tell".to_string()),
+        Some(to) => {
+            for (index, item) in group.iter().enumerate() {
+                match store
+                    .pin_role_request_limit(&item.request.id, now_ms, to.id.as_str())
+                    .await
+                {
+                    Ok(true) => sendable.push(index),
+                    Ok(false) => outcomes[index] = "claim lost, nothing sent".to_string(),
+                    Err(cause) => outcomes[index] = format!("error: pin: {cause}"),
+                }
+            }
+        }
     }
-    action
+    let members: Vec<&Due> = sendable.iter().map(|&index| &group[index]).collect();
+    if let (Some(first), Some(to)) = (
+        members.first(),
+        group.first().and_then(|first| first.to.as_ref()),
+    ) {
+        let reason = match first.stage {
+            LimitStage::CheckIn => "role-limit-check-in",
+            LimitStage::Notice => "role-limit-notice",
+        };
+        let delivery = crate::pa_watchdog::wake_pa(
+            services,
+            to,
+            limit_body(&members),
+            limit_msg_id(first.stage, &first.request),
+            reason,
+            now_ms,
+        )
+        .await
+        .0;
+        for &index in &sendable {
+            outcomes[index].clone_from(&delivery);
+        }
+    }
+    let mut actions = Vec::with_capacity(group.len());
+    for (item, delivery) in group.into_iter().zip(outcomes) {
+        let told = admitted(&delivery);
+        let settled = if told {
+            store
+                .finish_role_request_limit(&item.request.id, item.stage, now_ms, now_ms)
+                .await
+        } else {
+            store
+                .release_role_request_limit(&item.request.id, now_ms)
+                .await
+        };
+        if let Err(cause) = settled {
+            eprintln!("pij-rs: time limits: settle {}: {cause}", item.request.id);
+        }
+        actions.push(LimitAction {
+            request: item.request.id,
+            kind: limit_kind(item.stage),
+            to: item.to.map(|seat| seat.id),
+            admitted: told,
+            delivery,
+        });
+    }
+    actions
 }
 
 /// Delivery took the message: delivered, queued or held, never refused.
@@ -1478,41 +1632,6 @@ async fn already_admitted(
     Ok(None)
 }
 
-/// Pin `to` on the claim, then send. Nothing is sent when the claim is gone.
-async fn send_limit(
-    services: &Services,
-    request: &RoleRequest,
-    stage: LimitStage,
-    to: &SeatDescriptor,
-    body: String,
-    now_ms: u64,
-) -> String {
-    match services
-        .governance
-        .store()
-        .pin_role_request_limit(&request.id, now_ms, to.id.as_str())
-        .await
-    {
-        Ok(true) => {}
-        Ok(false) => return "claim lost, nothing sent".to_string(),
-        Err(cause) => return format!("error: pin: {cause}"),
-    }
-    let reason = match stage {
-        LimitStage::CheckIn => "role-limit-check-in",
-        LimitStage::Notice => "role-limit-notice",
-    };
-    crate::pa_watchdog::wake_pa(
-        services,
-        to,
-        body,
-        limit_msg_id(stage, request),
-        reason,
-        now_ms,
-    )
-    .await
-    .0
-}
-
 /// Where a delivered request is on its way to the holder's session.
 enum Arrival {
     /// It reached the session at this time (ms).
@@ -1551,25 +1670,6 @@ async fn arrival(
     }
 }
 
-async fn check_in(
-    services: &Services,
-    request: &RoleRequest,
-    seat: &SeatDescriptor,
-    limit: u64,
-    held_ms: u64,
-    now_ms: u64,
-) -> LimitAction {
-    let body = checkin_body(request, limit, held_ms);
-    let delivery = send_limit(services, request, LimitStage::CheckIn, seat, body, now_ms).await;
-    LimitAction {
-        request: request.id.clone(),
-        kind: "check-in",
-        to: Some(seat.id.clone()),
-        admitted: admitted(&delivery),
-        delivery,
-    }
-}
-
 /// The holder's check-in text. Every stored field shows only when it fits
 /// its grammar (F132).
 fn checkin_body(request: &RoleRequest, limit: u64, held_ms: u64) -> String {
@@ -1598,85 +1698,216 @@ fn checkin_body(request: &RoleRequest, limit: u64, held_ms: u64) -> String {
     )
 }
 
-async fn notice(
+/// Who hears about a request whose holder is silent or gone: the project's
+/// PA, else its prime.
+async fn notice_target(
     services: &Services,
     store: &SqliteOrchestration,
-    request: &RoleRequest,
-    holder: &SeatId,
-    limit: u64,
-    silence: Silence,
-    now_ms: u64,
-) -> LimitAction {
-    let target = match store.assignments(&request.project).await {
+    project: &str,
+) -> Option<SeatDescriptor> {
+    match store.assignments(project).await {
         Ok(assignments) => wake_target(services, store, &assignments)
             .await
             .ok()
             .flatten(),
         Err(cause) => {
-            eprintln!(
-                "pij-rs: time limits: assignments for {}: {cause}",
-                request.project
-            );
+            eprintln!("pij-rs: time limits: assignments for {project}: {cause}");
             None
         }
-    };
-    let body = notice_body(request, holder, limit, silence);
-    let delivery = match &target {
-        Some(seat) => send_limit(services, request, LimitStage::Notice, seat, body, now_ms).await,
-        None => "no live PA or prime to tell".to_string(),
-    };
-    LimitAction {
-        request: request.id.clone(),
-        kind: "notice",
-        to: target.map(|seat| seat.id),
-        admitted: admitted(&delivery),
-        delivery,
     }
 }
 
 /// The PA's (or prime's) time-limit notice. Every stored field shows only
-/// when it fits its grammar (F132).
-fn notice_body(request: &RoleRequest, holder: &SeatId, limit: u64, silence: Silence) -> String {
-    let address = RoleAddress {
+/// when it fits its grammar (F132). A holder that is not live is named as
+/// such, with how to revive it when it can be (F161).
+fn notice_body(
+    request: &RoleRequest,
+    holder: &SeatId,
+    limit: u64,
+    silence: Silence,
+    gone: Option<&Gone>,
+) -> String {
+    let address = request_address(request);
+    let holder = holder.rendered();
+    let next = notice_next(&holder, gone, &[release_command(request, &holder)]);
+    match silence {
+        Silence::Unanswered => format!(
+            "[pij time limit] {holder} has not answered the check-in for request {} ({address} in {}, from {}): \
+             no output and no card update for {} since{}. Nothing has been stopped. Next: {next}.",
+            render::msg_id(&request.id),
+            request.project,
+            render::seat(&request.requester),
+            human_duration(limit),
+            gone.map_or_else(String::new, |gone| format!(", and {holder} {}", gone.state)),
+        ),
+        Silence::HolderGone => format!(
+            "[pij time limit] Request {} ({address} in {}, from {}) passed its limit of {} and its holder \
+             {holder} {}, so it could not be checked in. Nothing has been stopped. Next: {next}.",
+            render::msg_id(&request.id),
+            request.project,
+            render::seat(&request.requester),
+            human_duration(limit),
+            gone.map_or("is not live", |gone| gone.state),
+        ),
+    }
+}
+
+fn request_address(request: &RoleRequest) -> String {
+    RoleAddress {
         role: request.role.clone(),
         instance: request.instance.clone(),
     }
-    .display();
-    let holder = holder.rendered();
-    let release = command(&[
+    .display()
+}
+
+/// Every printed command quotes its words: `holder` and the instance are
+/// stored text (#149, herring).
+fn release_command(request: &RoleRequest, holder: &str) -> String {
+    let address = request_address(request);
+    command(&[
         "pij",
         "directory",
         "release",
         address.trim_start_matches(ROLE_PREFIX),
-        &holder,
+        holder,
         "--why",
         "<why>",
         "--project",
         &request.project,
-    ]);
-    // Every printed command quotes its words: `holder` and the instance are
-    // stored text (#149, herring).
-    let look = command(&["pij", "state", &holder]);
-    match silence {
-        Silence::Unanswered => format!(
-            "[pij time limit] {holder} has not answered the check-in for request {} ({address} in {}, from {}): \
-             no output and no card update for {} since. Nothing has been stopped. Next: look at it \
-             ({look}), or give the role another holder ({release}).",
-            render::msg_id(&request.id),
-            request.project,
-            render::seat(&request.requester),
-            human_duration(limit),
-        ),
-        Silence::HolderGone => format!(
-            "[pij time limit] Request {} ({address} in {}, from {}) passed its limit of {} and its holder \
-             {holder} is not live, so it could not be checked in. Nothing has been stopped. Next: give the \
-             role another holder ({release}).",
-            render::msg_id(&request.id),
-            request.project,
-            render::seat(&request.requester),
-            human_duration(limit),
-        ),
+    ])
+}
+
+/// What the PA does next: revive a gone holder when it can be, else look at a
+/// live one, or give the role another holder.
+fn notice_next(holder: &str, gone: Option<&Gone>, releases: &[String]) -> String {
+    let first = match gone {
+        Some(gone) => gone.revive(holder),
+        None => Some(format!(
+            "look at it ({})",
+            command(&["pij", "state", holder])
+        )),
+    };
+    // Review of #208 (ocelot): the footer is capped too, so many distinct
+    // addresses never push the message past its cap.
+    let shown = releases.len().min(LIMIT_RELEASES_SHOWN);
+    let more = match releases.len() - shown {
+        0 => String::new(),
+        more => format!("; ...and {more} more, one per role"),
+    };
+    let release = format!(
+        "give the role another holder ({}{more})",
+        releases[..shown].join("; ")
+    );
+    match first {
+        Some(first) => format!("{first}, or {release}"),
+        None => release,
     }
+}
+
+/// The most a grouped time-limit message carries (F161, as F150's idle notice).
+const LIMIT_BODY_CAP: usize = 2_048;
+
+/// How many release commands a notice spells out before "...and N more".
+const LIMIT_RELEASES_SHOWN: usize = 3;
+
+/// One message for a group: the earlier single text for one request, else
+/// one line per request, oldest first, capped with "...and N more".
+fn limit_body(members: &[&Due]) -> String {
+    let [first, ..] = members else {
+        return String::new();
+    };
+    if members.len() == 1 {
+        return match first.silence {
+            None => checkin_body(&first.request, first.limit, first.held_ms),
+            Some(silence) => notice_body(
+                &first.request,
+                &first.holder,
+                first.limit,
+                silence,
+                first.gone.as_ref(),
+            ),
+        };
+    }
+    let count = members.len();
+    let holder = first.holder.rendered();
+    let (head, foot) = match first.silence {
+        None => (
+            format!(
+                "[pij time limit] {count} of your requests passed their limits with no card update, oldest first:"
+            ),
+            "Write down what you have, update your card (pij report now \"<what you did>\" \"<what is next>\"), \
+             and say why each needs longer. Nothing has been stopped."
+                .to_string(),
+        ),
+        Some(silence) => {
+            let mut releases: Vec<String> = Vec::new();
+            for member in members {
+                let release = release_command(&member.request, &holder);
+                if !releases.contains(&release) {
+                    releases.push(release);
+                }
+            }
+            let gone = first.gone.as_ref();
+            let head = match silence {
+                Silence::Unanswered => format!(
+                    "[pij time limit] {holder} has not answered the check-ins for {count} requests: no output and no \
+                     card update for a further limit since each{}. Oldest first:",
+                    gone.map_or_else(String::new, |gone| format!(", and {holder} {}", gone.state)),
+                ),
+                Silence::HolderGone => format!(
+                    "[pij time limit] {count} requests held by {holder} passed their limits, and {holder} {}, so \
+                     none could be checked in. Oldest first:",
+                    gone.map_or("is not live", |gone| gone.state),
+                ),
+            };
+            (
+                head,
+                format!(
+                    "Nothing has been stopped. Next: {}.",
+                    notice_next(&holder, gone, &releases)
+                ),
+            )
+        }
+    };
+    let lines: Vec<String> = members
+        .iter()
+        .map(|member| {
+            let held = if member.silence.is_none() && member.held_ms >= 60_000 {
+                format!(
+                    ", waited {} in delivery first",
+                    human_duration(member.held_ms)
+                )
+            } else {
+                String::new()
+            };
+            format!(
+                "- {} ({} in {}, from {}), limit {}{held}",
+                render::msg_id(&member.request.id),
+                request_address(&member.request),
+                member.request.project,
+                render::seat(&member.request.requester),
+                human_duration(member.limit),
+            )
+        })
+        .collect();
+    let mut body = head;
+    for (shown, line) in lines.iter().enumerate() {
+        let more = count - shown - 1;
+        let tail = if more == 0 {
+            0
+        } else {
+            format!("\n...and {more} more").len()
+        };
+        if shown > 0 && body.len() + 1 + line.len() + tail + 1 + foot.len() > LIMIT_BODY_CAP {
+            body.push_str(&format!("\n...and {} more", count - shown));
+            break;
+        }
+        body.push('\n');
+        body.push_str(line);
+    }
+    body.push('\n');
+    body.push_str(&foot);
+    body
 }
 
 #[cfg(test)]
@@ -1710,6 +1941,81 @@ mod tests {
         }
     }
 
+    /// F161: a grouped time-limit message stays within 2 KB, oldest first,
+    /// with one header and "...and N more" for what does not fit.
+    #[test]
+    fn a_grouped_limit_message_is_capped_and_says_how_many_more() {
+        let gone = Gone::of(None);
+        let members: Vec<Due> = (0..60)
+            .map(|index| Due {
+                request: RoleRequest {
+                    id: format!("req-{index:02}"),
+                    requester: "pij-asker".to_string(),
+                    instance: String::new(),
+                    ..forged()
+                },
+                stage: LimitStage::Notice,
+                holder: SeatId::from("pij-holder"),
+                limit: 60_000,
+                held_ms: 0,
+                silence: Some(Silence::HolderGone),
+                to: None,
+                gone: Some(gone.clone()),
+            })
+            .collect();
+        let refs: Vec<&Due> = members.iter().collect();
+        let body = limit_body(&refs);
+        assert!(body.len() <= LIMIT_BODY_CAP, "{} bytes", body.len());
+        assert!(
+            body.starts_with("[pij time limit] 60 requests held by pij-holder passed their limits"),
+            "{body}"
+        );
+        assert_eq!(body.matches("[pij time limit]").count(), 1, "{body}");
+        assert!(body.contains("\n- req-00 ("), "{body}");
+        let shown = body.matches("\n- req-").count();
+        assert!(
+            body.contains(&format!("\n...and {} more\n", 60 - shown)),
+            "{body}"
+        );
+        assert!(body.ends_with("Nothing has been stopped. Next: give the role another holder (pij directory release pm-001 pij-holder --why '<why>' --project fleet)."), "{body}");
+    }
+
+    /// Review of #208 (ocelot): every request under its own role, instance
+    /// and project gives a distinct release command; the footer lists a few
+    /// and the whole message still stays within 2 KB.
+    #[test]
+    fn a_grouped_limit_message_with_many_addresses_stays_within_the_cap() {
+        let members: Vec<Due> = (0..60)
+            .map(|index| Due {
+                request: RoleRequest {
+                    id: format!("req-{index:02}"),
+                    project: format!("project-{index:02}"),
+                    role: format!("role-{index:02}"),
+                    instance: format!("instance-{index:02}"),
+                    requester: "pij-asker".to_string(),
+                    ..forged()
+                },
+                stage: LimitStage::Notice,
+                holder: SeatId::from("pij-holder"),
+                limit: 60_000,
+                held_ms: 0,
+                silence: Some(Silence::Unanswered),
+                to: None,
+                gone: Some(Gone::of(None)),
+            })
+            .collect();
+        let refs: Vec<&Due> = members.iter().collect();
+        let body = limit_body(&refs);
+        assert!(body.len() <= LIMIT_BODY_CAP, "{} bytes: {body}", body.len());
+        assert_eq!(
+            body.matches("pij directory release").count(),
+            LIMIT_RELEASES_SHOWN,
+            "{body}"
+        );
+        assert!(body.contains("...and 57 more, one per role)."), "{body}");
+        assert!(body.contains("\n- req-00 ("), "{body}");
+    }
+
     /// F132: the holder frame, the check-in and both limit notices are
     /// daemon-authored; a forged request id or seat shows only as its length.
     #[test]
@@ -1729,8 +2035,8 @@ mod tests {
                 .unwrap_or_default()
                 .to_string(),
             checkin_body(&request, 60_000, 120_000),
-            notice_body(&request, &holder, 60_000, Silence::Unanswered),
-            notice_body(&request, &holder, 60_000, Silence::HolderGone),
+            notice_body(&request, &holder, 60_000, Silence::Unanswered, None),
+            notice_body(&request, &holder, 60_000, Silence::HolderGone, None),
         ];
         for text in &texts {
             assert!(text.contains(&id), "{text}");

@@ -5781,7 +5781,8 @@ async fn a_limit_on_a_holder_that_is_gone_tells_the_pa_at_once() {
     let notices = inbox_bodies(&rig, "pij-second").await;
     assert_eq!(notices.len(), 1, "{notices:?}");
     assert!(
-        notices[0].contains("its holder pij-holder is not live"),
+        notices[0].contains("its holder pij-holder was closed")
+            && notices[0].contains("pij-rs revive pij-holder"),
         "{}",
         notices[0]
     );
@@ -5792,6 +5793,66 @@ async fn a_limit_on_a_holder_that_is_gone_tells_the_pa_at_once() {
         .unwrap()
         .expect("row");
     assert_eq!((row.checkin_at, row.escalated_at), (None, Some(due)));
+}
+
+/// F161: after the tmux crash the prime got eight alerts in a row for one
+/// dead holder. A round now tells the PA once per holder: one message naming
+/// every overdue request, oldest first, saying the holder was observed dead
+/// and how to revive it; each request is stamped, and the next round is quiet.
+#[tokio::test]
+async fn a_round_tells_the_pa_once_about_every_request_of_a_gone_holder() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let (rig, repo, _) = limit_rig("pij-limit-grouped", true).await;
+    for id in ["req-limit-2", "req-limit-3"] {
+        let sent = send_to(
+            rig.addr,
+            &repo.main,
+            "role:pm-001",
+            id,
+            json!({"limit": "10m"}),
+        )
+        .await;
+        assert_eq!(sent["ok"], true, "{sent}");
+    }
+    let mut latest = 0;
+    for id in ["req-limit", "req-limit-2", "req-limit-3"] {
+        let row = rig.store.role_request(id).await.unwrap().expect("row");
+        latest = latest.max(row.delivered_at.expect("delivered"));
+    }
+    rig.services
+        .registry
+        .tombstone(&SeatId::from("pij-holder"), "observed-dead")
+        .await
+        .unwrap();
+    let due = latest + LIMIT_MS;
+    let acts = limit_acts(time_limits(&rig.services, due).await);
+    assert_eq!(acts.len(), 3, "{acts:?}");
+    assert!(
+        acts.iter().all(|(_, kind, to, admitted)| *kind == "notice"
+            && to.as_deref() == Some("pij-second")
+            && *admitted),
+        "{acts:?}"
+    );
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, due + 3 * LIMIT_MS).await),
+        []
+    );
+    let notices = inbox_bodies(&rig, "pij-second").await;
+    assert_eq!(notices.len(), 1, "one message, not three: {notices:?}");
+    let notice = &notices[0];
+    assert!(
+        notice.starts_with(
+            "[pij time limit] 3 requests held by pij-holder passed their limits, and pij-holder was observed dead"
+        ) && notice.contains("pij-rs revive pij-holder"),
+        "{notice}"
+    );
+    let first = notice.find("- req-limit (").expect("req-limit listed");
+    let third = notice.find("- req-limit-3 (").expect("req-limit-3 listed");
+    assert!(first < third, "oldest first: {notice}");
+    for id in ["req-limit", "req-limit-2", "req-limit-3"] {
+        let row = rig.store.role_request(id).await.unwrap().expect("row");
+        assert_eq!(row.escalated_at, Some(due), "{id}");
+    }
 }
 
 /// Review of #133, F002 residual: a stopped daemon claimed a notice, pinned
