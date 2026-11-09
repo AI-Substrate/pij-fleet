@@ -1,0 +1,170 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Cheap-model compaction for cold Claude seats (option only)",
+        "slug": "cheap-compaction",
+        "ordinal": 225,
+        "complexity": "CS-2",
+        "summary": "A cold Claude seat that must come back can be compacted on Sonnet 5.5 instead of Opus, at the prime's explicit choice, so the uncached re-read and the summary are paid at Sonnet rates.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "One explicit verb restarts a cold Claude seat on Sonnet 5.5 with --resume --model, compacts it through the normal gates, and leaves it on Sonnet; going back to Opus is a separate explicit revive. Cold, Claude and Sonnet only; never automatic; never /model in a pane. One coder, two review rounds (C34)."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A cold Claude seat that must come back can be compacted on Sonnet 5.5 instead of Opus, at the prime's explicit choice, so the uncached re-read and the summary are paid at Sonnet rates."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Automatic use (no watchdog, sweep or threshold).",
+        "A quality study of Sonnet summaries.",
+        "Copilot or OMP support.",
+        "Threshold tuning."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "One explicit verb compacts a cold Claude seat on Sonnet 5.5 (for example `pij compact <seat> --cheap`, or revive with a model followed by the existing compact command, whichever is simpler). It restarts the seat with `--resume --model <sonnet 5.5 id>`, runs the normal compaction through the existing gates, and leaves the seat on Sonnet. It never types /model into a pane (in-session /model rewrites Jordan's global default in Claude settings.json). pij's recorded model (boundModel) shows Sonnet afterwards.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Cold seats only, Claude only, Sonnet only. A warm seat is refused in one line (warm seats already get the cache discount, so a normal compact is cheaper). A non-Claude seat is refused in one line (Copilot bills per request, so the benefit is unproven). The model is Sonnet 5.5, never Haiku (its 200k window can't hold these seats).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "It is an option, never automatic: only an explicit call by the prime (or the PA when the prime asks) runs it. No watchdog, PA sweep or threshold triggers it. Going back to Opus is a separate explicit step (revive with the Opus model), done only when the seat takes on hard work again.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Docs: one short entry in the PA brief and in skills/pij/references/routes/community.md: when to use it (a cold Claude seat over about 300k that must come back), that it's the prime's call, and how to go back to Opus.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No loop, timer or poll. One seat restart per explicit use. No new launch site per tick; any new launch site is recorded in crates/testkit/tests/spawn_sites.rs.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Docs and states. PA brief and skills/pij/references/routes/community.md: one entry each (when, whose call, how to go back). docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00e1",
+          "title": "Cheap-model compaction for cold Claude seats (option only)",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-2.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Jordan approved on 2026-11-09: 'yes have it built, only for cold seats and its an option'. Earlier rules, 2026-10-01 (Unasphere prime session): 'for seats that are old and uncache that we want to revivie to ask questions or compact we can consuer sonner 5.5'; 'lets leave first class switching out for now'; back to Opus 'only if it then takes on hard work'. Analysis: ~/games/unasphere/scratch/usage-blowout/cold-seat-model-switch.md, section 4 thresholds (300k+ pays) and section 5 (Jordan's pattern): switching every cold seat would have lost money because most went back to Opus within the hour, so option only. Plan 161's POC branch plan-161-model-switch-poc has the per-harness restart-with-model method. Traps from last time: never type /model into a pane (it rewrites the global default; pa.md already says so); update boundModel after the switch or pij list lies."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
