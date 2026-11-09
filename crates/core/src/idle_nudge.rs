@@ -93,15 +93,67 @@ pub fn prime_body(seat: &SeatId, idle_ms: u64, held: &[String]) -> String {
     )
 }
 
+/// The most bytes of named work a notice lists (F150). With the fixed text
+/// around it, every notice stays under 2 KB; past it, `...and N more`.
+pub const HELD_TEXT_MAX: usize = 1_500;
+
+/// One line for a seat's unanswered requests to one role address in one
+/// project (F150): `an unanswered role:<role> request (project <p>)`, or with
+/// several, `N unanswered role:<role> requests (project <p>), oldest <age>`.
+/// Names are rendered here.
+#[must_use]
+pub fn requests_label(
+    role: &str,
+    instance: &str,
+    project: &str,
+    count: usize,
+    oldest_ms: u64,
+) -> String {
+    let instance = if instance.is_empty() {
+        String::new()
+    } else {
+        format!("/{}", crate::render::name(instance))
+    };
+    let role = crate::render::name(role);
+    let project = crate::render::name(project);
+    if count == 1 {
+        format!("an unanswered role:{role}{instance} request (project {project})")
+    } else {
+        format!(
+            "{count} unanswered role:{role}{instance} requests (project {project}), oldest {}",
+            age(oldest_ms)
+        )
+    }
+}
+
 fn minutes(ms: u64) -> String {
     format!("{} min", ms / 60_000)
 }
 
+fn age(ms: u64) -> String {
+    if ms < 2 * 60 * 60_000 {
+        minutes(ms)
+    } else {
+        format!("{} h", ms / (60 * 60_000))
+    }
+}
+
 fn join(held: &[String]) -> String {
-    match held {
-        [] => "nothing".to_string(),
-        [one] => one.clone(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    let mut shown: Vec<&str> = Vec::new();
+    let mut used = 0;
+    for item in held {
+        if !shown.is_empty() && used + item.len() > HELD_TEXT_MAX {
+            break;
+        }
+        used += item.len() + 2;
+        shown.push(item);
+    }
+    let more = held.len() - shown.len();
+    match (shown.as_slice(), more) {
+        ([], _) => "nothing".to_string(),
+        ([one], 0) => (*one).to_string(),
+        ([rest @ .., last], 0) => format!("{} and {last}", rest.join(", ")),
+        (shown, more) => format!("{}, ...and {more} more", shown.join(", ")),
     }
 }
 
@@ -136,6 +188,33 @@ mod tests {
         ] {
             assert!(!is_task_instance(resting), "{resting:?}");
         }
+    }
+
+    /// F150: a seat holding a great deal is listed up to a budget, then
+    /// `...and N more`, so no notice passes 2 KB.
+    #[test]
+    fn a_long_list_is_capped_with_a_count_of_the_rest() {
+        let held: Vec<String> = (0..100)
+            .map(|n| format!("an unanswered role:pm-{n:03} request (project pij-fleet)"))
+            .collect();
+        let seat = SeatId::from("pij-exuberant-wildcat");
+        for body in [
+            nudge_body(IDLE_NUDGE_AFTER_MS, &held),
+            prime_body(&seat, IDLE_NUDGE_AFTER_MS, &held),
+            prime_cold_body(&seat, IDLE_NUDGE_AFTER_MS, &held),
+        ] {
+            assert!(body.len() <= 2_048, "{} bytes", body.len());
+            let shown = body.matches("an unanswered role:").count();
+            assert!(shown > 1, "{body}");
+            assert!(
+                body.contains(&format!(", ...and {} more", 100 - shown)),
+                "{body}"
+            );
+        }
+        assert_eq!(
+            requests_label("pm-001", "", "pij-fleet", 40, 3 * 60 * 60_000),
+            "40 unanswered role:pm-001 requests (project pij-fleet), oldest 3 h"
+        );
     }
 
     #[test]

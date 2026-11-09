@@ -27,9 +27,13 @@ const WORK_CLAIMS_SQL: &str = "SELECT DISTINCT seat FROM claims INDEXED BY claim
 
 /// Role requests delivered to a holder and not answered. A request that is
 /// answered and closed leaves `role_requests` (migration 0040), so the table
-/// holds only open requests: queued, being delivered, or delivered.
-const UNANSWERED_REQUESTS_SQL: &str = "SELECT id, holder, project, role, instance FROM role_requests \
-     WHERE state = 'delivered' AND answered_at IS NULL AND holder IS NOT NULL";
+/// holds only open requests: queued, being delivered, or delivered. A
+/// `--reply none` request expects no answer, so it is never unanswered work
+/// (F150).
+const UNANSWERED_REQUESTS_SQL: &str = "SELECT id, holder, project, role, instance, delivered_at \
+     FROM role_requests \
+     WHERE state = 'delivered' AND answered_at IS NULL AND holder IS NOT NULL \
+     AND reply <> 'none'";
 
 /// A delivered role request a seat has not answered.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +46,8 @@ pub struct OpenRequest {
     pub role: String,
     /// The role's instance, empty for none.
     pub instance: String,
+    /// When it was delivered, in ms (0 if unrecorded).
+    pub delivered_at: u64,
 }
 
 /// The in-flight work a nudge names: the keys the conditional mark checks
@@ -118,10 +124,12 @@ const CLAIM_STILL_OPEN: &str = "EXISTS (SELECT 1 FROM json_each(?5) AS held \
      AND c.kind = json_extract(held.value, '$[1]') \
      AND c.number = json_extract(held.value, '$[2]'))";
 
-/// One of the nudge's requests is still delivered to the seat and unanswered.
+/// One of the nudge's requests is still delivered to the seat and unanswered,
+/// and expects an answer (F150).
 const REQUEST_STILL_OPEN: &str = "EXISTS (SELECT 1 FROM json_each(?6) AS held \
      JOIN role_requests AS r ON r.id = held.value \
-     WHERE r.holder = ?1 AND r.state = 'delivered' AND r.answered_at IS NULL)";
+     WHERE r.holder = ?1 AND r.state = 'delivered' AND r.answered_at IS NULL \
+     AND r.reply <> 'none')";
 
 /// Whether `seat` owns a live (queued or running) background job: one seek on
 /// `background_jobs_live_by_owner`.
@@ -177,6 +185,11 @@ impl SqliteOrchestration {
                     project: row.try_get("project").map_err(adapter_error)?,
                     role: row.try_get("role").map_err(adapter_error)?,
                     instance: row.try_get("instance").map_err(adapter_error)?,
+                    delivered_at: row
+                        .try_get::<Option<i64>, _>("delivered_at")
+                        .map_err(adapter_error)?
+                        .and_then(|at| u64::try_from(at).ok())
+                        .unwrap_or_default(),
                 });
         }
         Ok(in_flight)

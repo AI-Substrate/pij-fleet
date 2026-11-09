@@ -66,7 +66,7 @@ the handover files you check, you are read-only.
    - `ready`/idle, quiet a whole interval: is it stalled or just done? Capture its pane. If it is
      stalled, send **one** specific ask. If it is done, tell the prime in your round line.
    - A seat with in-flight work (a task holding like `coder/224`, a plan or fix claim, or an unanswered
-     role request) that does nothing of its own for an hour, with nothing queued
+     role request that expects a reply; `--reply none` ones don't count) that does nothing of its own for an hour, with nothing queued
      and no background job, is sent one `idle N min while holding ...; resume, report blocked, or
      release.` by pij itself (on in the fleet: `just bounce-rs` and `just rs-autostart` start the daemon with `PIJ_IDLE_NUDGE=1`, F147),
      and its prime an FYI (plan 224), once per idle stretch. Don't send

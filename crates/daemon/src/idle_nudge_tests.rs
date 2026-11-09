@@ -715,6 +715,75 @@ async fn an_unanswered_request_is_in_flight_work() {
     );
 }
 
+/// F150: a `--reply none` request expects no answer, so it is not unanswered
+/// work. A seat whose only open requests are reply-none, beside a resting
+/// role, gets no nudge and its prime no FYI; once a reply-wake request
+/// arrives it is nudged, and the notice names that one request only.
+#[tokio::test]
+async fn a_reply_none_request_is_not_unanswered_work() {
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    hold(&services, "crane", "delivery", "").await;
+    for id in ["req-none-1", "req-none-2"] {
+        request_with_reply(&services, id, None, "none").await;
+    }
+    let start = crate::http::system_time_ms().unwrap();
+    report(&services, start).await;
+    assert!(
+        round(&services, start + IDLE_NUDGE_AFTER_MS + MINUTE)
+            .await
+            .is_empty()
+    );
+    assert!(sent(&services).await.is_empty());
+    assert_eq!(fyis(&services, PARENT).await, 0);
+    assert_eq!(fyis(&services, PRIME).await, 0);
+
+    request(&services, "req-wake", None).await;
+    assert_eq!(
+        round(&services, start + IDLE_NUDGE_AFTER_MS + 2 * MINUTE)
+            .await
+            .len(),
+        1
+    );
+    let body = &sent(&services).await[0].body;
+    assert!(
+        body.starts_with(
+            "idle 62 min while holding an unanswered role:delivery request (project crane);"
+        ),
+        "{body}"
+    );
+    assert_eq!(body.matches("unanswered role:").count(), 1, "{body}");
+}
+
+/// F150: 40 open requests to one role are one line with a count and the
+/// oldest's age, not 40 lines.
+#[tokio::test]
+async fn forty_requests_to_one_role_are_one_line() {
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    hold(&services, "crane", "delivery", "").await;
+    for n in 0..40 {
+        request(&services, &format!("req-{n}"), None).await;
+    }
+    let start = crate::http::system_time_ms().unwrap();
+    report(&services, start).await;
+    assert_eq!(
+        round(&services, start + IDLE_NUDGE_AFTER_MS + MINUTE)
+            .await
+            .len(),
+        1
+    );
+    let body = &sent(&services).await[0].body;
+    assert!(
+        body.starts_with(
+            "idle 61 min while holding 40 unanswered role:delivery requests (project crane), oldest "
+        ),
+        "{body}"
+    );
+    assert_eq!(body.matches("unanswered role:").count(), 1, "{body}");
+    assert!(body.len() <= 2_048, "{} bytes", body.len());
+}
+
 /// F144: never a cold wake for a nudge. A holder with real in-flight work
 /// that is cold, or whose context is unknown, is sent nothing; its prime
 /// gets the FYI saying so.
@@ -781,7 +850,7 @@ async fn a_cold_holder_is_not_woken_and_its_prime_is_told() {
 /// a bare long-lived role holding left, the mark refuses and nothing is sent.
 #[tokio::test]
 async fn the_mark_refuses_once_the_in_flight_work_is_gone() {
-    for case in ["holding", "claim", "request"] {
+    for case in ["holding", "claim", "request", "reply-none"] {
         let (services, _store, _config, folder) = services().await;
         fleet(&services, &folder).await;
         hold(&services, "crane", "delivery", "").await;
@@ -819,7 +888,9 @@ async fn the_mark_refuses_once_the_in_flight_work_is_gone() {
                           WHERE seat = ?1 AND instance = '224'"
             }
             "claim" => "UPDATE claims SET released_at = 2 WHERE seat = ?1",
-            _ => "UPDATE role_requests SET answered_at = 2 WHERE holder = ?1",
+            "request" => "UPDATE role_requests SET answered_at = 2 WHERE holder = ?1",
+            // F150: the mark's own re-check leaves out reply-none requests.
+            _ => "UPDATE role_requests SET reply = 'none' WHERE holder = ?1",
         };
         seat_row(&services, end).await;
         assert!(
@@ -844,15 +915,26 @@ async fn the_mark_refuses_once_the_in_flight_work_is_gone() {
 /// A role request for `role:delivery` in crane delivered to the merger;
 /// `answered` sets `answered_at`.
 async fn request(services: &crate::Services, id: &str, answered: Option<i64>) {
+    request_with_reply(services, id, answered, "wake").await;
+}
+
+/// [`request`] with the requester's reply mode.
+async fn request_with_reply(
+    services: &crate::Services,
+    id: &str,
+    answered: Option<i64>,
+    reply: &str,
+) {
     sqlx::query(
         "INSERT INTO role_requests (id, project, role, requester, body, reply, state, holder, \
          created_at, delivered_at, answered_at) \
-         VALUES (?1, 'crane', 'delivery', ?2, 'do it', 'wake', 'delivered', ?3, 1, 1, ?4)",
+         VALUES (?1, 'crane', 'delivery', ?2, 'do it', ?5, 'delivered', ?3, 1, 1, ?4)",
     )
     .bind(id)
     .bind(PARENT)
     .bind(SEAT)
     .bind(answered)
+    .bind(reply)
     .execute(&services.store_pools[0])
     .await
     .unwrap();
