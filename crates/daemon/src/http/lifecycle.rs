@@ -427,7 +427,15 @@ pub(super) async fn close_seat(
         },
     };
     let pane = expected.pane.clone();
-    let receipt = if expected.tombstoned_at.is_some() {
+    // A repeat close returns the existing owner-close. A seat retired for any
+    // other reason (observed dead, reaped) is closed again as its owner's, so
+    // its own session can't lift it either (F149, review of #200).
+    let owner_closed = expected.tombstoned_at.is_some()
+        && expected
+            .tombstone_reason
+            .as_deref()
+            .is_some_and(pij_core::model::is_owner_close);
+    let receipt = if owner_closed {
         tombstone_receipt(
             state.services.spine.as_ref(),
             &target,

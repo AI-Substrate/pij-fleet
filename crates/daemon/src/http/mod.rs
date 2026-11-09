@@ -1599,10 +1599,12 @@ async fn launch_seat_locked(
             .await
             .map(|receipt| receipt.descriptor)
             .map_err(|error| error.to_string()),
+        // A fresh launch row: for a revive it replaces the retired row, an
+        // owner's close included, which only revive may lift (F149).
         _ => state
             .services
             .registry
-            .put(descriptor.clone())
+            .put_lifting_owner_close(descriptor.clone(), false)
             .await
             .map(|_| descriptor.clone())
             .map_err(|error| error.to_string()),

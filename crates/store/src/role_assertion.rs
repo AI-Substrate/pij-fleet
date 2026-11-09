@@ -233,6 +233,9 @@ impl SqliteOrchestration {
             if live_seat(&mut tx, &actor).await?.is_none() {
                 return Err(refused("E-RS-ARG", &actor));
             }
+            // A spawn placement is a fresh launch (revive included): it may
+            // replace an owner-closed row (F149). A link writes a live row.
+            let lift_owner_close = matches!(placement, Placement::Spawn(_));
             let (mut descriptor, previous_parent, write_row) = match placement {
                 Placement::Spawn(descriptor) => {
                     let mut descriptor = *descriptor;
@@ -281,7 +284,7 @@ impl SqliteOrchestration {
             if write_row {
                 let mut event = descriptor_event(&descriptor)?;
                 let seq = append_in_transaction(&mut tx, &event).await?;
-                upsert_seat(&mut tx, &descriptor, seq).await?;
+                upsert_seat(&mut tx, &descriptor, seq, lift_owner_close).await?;
                 event.seq = Some(seq);
                 events.push(event);
             }
