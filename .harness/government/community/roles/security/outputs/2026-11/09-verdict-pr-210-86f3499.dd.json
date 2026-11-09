@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "86f3499d3ad88e4b7eb58957448291d9ca388a19",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/210#issuecomment-6734597362",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:210",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `86f3499d3ad88e4b7eb58957448291d9ca388a19`, under C33/C34.\n\nPacket-file expansion reads literal file/stdin content in the CLI and forwards one packet argument, without shell evaluation or a daemon-side caller-file read. Invalid-subject refusal uses a length-only rendering rather than echoing hostile input. No scoped vulnerability or demonstrated normal-use blocker was established.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No scoped security vulnerabilities found | - |\n\n## Focused source checks\n\n`file_flag_to_value` supports separate and `=` path forms, preserves arguments after `--`, refuses a missing value and propagates read failure before sending. The CLI reads `-` from stdin and other sources with `read_to_string`, relative to its working directory. File content is a JSON argv value for `--packet`, not shell syntax. Existing packet/brief validation remains in the daemon.\n\nThe new subject check trims the value and compares its closed renderer result. Nonmatching values are refused with shared accepted-form guidance and no raw subject content. Stored metadata also trims the subject. `file:<path>` is a subject label, not an instruction to read that file.\n\n**C34 follow-up:** an exact invalid-label fixed point, such as `invalid (18 chars)`, can equal its own rendered result and pass the comparison despite lacking `<kind>:<name>`. This cannot inject framing; a grammar predicate would enforce the documented acceptance rule exactly. It is not a normal-use blocker.\n\nFile-read errors identify the selected path, not file contents. Their CLI path presentation remains raw for unusual filenames; no shell evaluation is involved. No new per-seat file isolation is required under C33.\n\nProject help returns before client creation; shim help uses the same fixed text. Native verb forwarding and OMP routing are updated together. The generic edit-help form now supports the existing role-flag examples. No new authority or launch path was identified.\n\nThis implementation supplies the subject-refusal dependency for #209, but #209 must still merge after the bundle. No live inventory scan or claim of every possible file-path syntax is made.\n\n## Evidence\n\nThe shared detached worktree is clean; local/remote/GitHub heads agree. CI [42577561325](https://github.com/AI-Substrate/pij-fleet/actions/runs/42577561325) succeeded on merge `3cafe0848dd404037e880095055fec93579d73fd`, with this head and main `f7744c5c3f677732af8b3c0a4dad657544811ce0` as parents; tree `c7f88ce01a575c78396fc4e21783c6b81a3dd3d9`.\n\nJUnit artifact [13655474821](https://github.com/AI-Substrate/pij-fleet/actions/runs/42577561325/artifacts/13655474821) confirms 2,342 passing cases, no failures; six separately skipped. Offline project help, injected-read packet/stdin expansion, native-forwarding parity, edit-help and subject-refusal cases executed successfully. The packet test verifies the conversion with a supplied reader, not a live filesystem/stdin process probe.\n\nThe helper returned no assessment; supporting judgment rests on direct scoped source inspection and CI. No local builds/tests, credential reads, live-system probes or product edits.\n"
+		}
+	]
+}
