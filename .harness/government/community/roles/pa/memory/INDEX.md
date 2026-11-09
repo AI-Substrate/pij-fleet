@@ -24,4 +24,5 @@
 - [2026-11-08 Recheck size before sending compact: Copilot may have auto-compacted](2026-11-08-recheck-size-before-compact.dd.md): read after 'handover ready' arrives, before pij send --command compact (pa, compact, copilot)
 - [2026-11-08 Stray text on a Copilot input line may be screen-only](2026-11-08-stray-pane-text-may-be-screen-only.dd.md): read when a pane's input line shows text nobody typed (pa, pane, copilot, input)
 - [2026-11-08 After compacting a seat with a live holding, wake it \(F111\)](2026-11-08-wake-after-compaction-f111.dd.md): read right after any compaction completes, and in each round's holdings check (pa, compact, f111, holdings, wake)
+- [2026-11-09 Reviewers that queue work for a 'next turn' stall](2026-11-09-reviewer-queued-next-turn-stall.dd.md): read when a reviewer holds reviewer/\<pr\> but sits idle with no verdict (pa, stall, reviewer, gpt)
 <!-- /pij:generated -->

@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"hook": "read when a reviewer holds reviewer/<pr> but sits idle with no verdict",
+				"tags": [
+					"pa",
+					"stall",
+					"reviewer",
+					"gpt"
+				],
+				"title": "Reviewers that queue work for a 'next turn' stall"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Seen twice on 2026-11-09 with pij-whole-spoonbill (gpt-6.1-sol reviewer): it put the next review in its own task list or wrote \"queued next turn\" on its card (#205 after #202 at 15:12; #210 at 18:3x), then ended its turn. A queued item in a seat's own list never wakes it, so it sat idle with an empty prompt until a time-limit notice or PA check (49 min and over 1 h).\n\nSpot it: a reviewer holding reviewer/<pr> with no reviewer verdict on that PR (git log in governance for \"reviewer verdict on pr:<n>\"), idle, with a card like \"queued next turn\" or \"<pr> queued after <other>\". Act: one ask to start it now in this turn, naming the head and the request id to answer with --answers. First check the PR isn't already merged (#205 merged before spoonbill started, so the ask had to be withdrawn). Report to pm-001 in one line.\n"
+		}
+	]
+}
