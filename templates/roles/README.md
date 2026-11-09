@@ -22,7 +22,7 @@ Roles some communities need and others never will. Each is an example of one way
 | [devcontainer](devcontainer/v1/role.dd.json) | specialist | one | Keeps the development container and toolchain building and current. |
 | [researcher](researcher/v1/role.dd.json) | general, per task | many | Answers one research question with sources. |
 | [note-taker](note-taker/v1/role.dd.json) | specialist | one | Records decisions, open questions and actions. |
-| [topic-expert](topic-expert/v1/role.dd.json) | specialist | one per topic | Advises on one subject and reviews changes to it (`topic-expert/<topic>`). |
+| [topic-expert](topic-expert/v2/role.dd.json) | specialist | one | Advises on one subject and reviews changes to it; add one role per topic (`<topic>-expert`). |
 | [docs-keeper](docs-keeper/v1/role.dd.json) | specialist | one | Keeps user and contributor docs true to the code. |
 | [infra](infra/v1/role.dd.json) | specialist | one | Keeps CI, build machines and shared services working. |
 | [release](release/v1/role.dd.json) | specialist | one | Prepares releases; publishes only with the operator's go. |
