@@ -692,7 +692,10 @@
 					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
 					"instance_key": "f150",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #204 merged (952ba22dc4c6)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-exuberant-wildcat",
+					"to": "2026-11-09T05:06:43.845Z",
 					"why": "F150: reply-none requests counted as unanswered"
 				},
 				{

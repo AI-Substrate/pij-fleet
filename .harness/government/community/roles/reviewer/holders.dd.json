@@ -1174,7 +1174,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "204",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #204 merged (952ba22dc4c6)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-09T05:06:43.845Z",
 					"why": "F150 reply-none not counted; grouped capped idle notices"
 				}
 			]
