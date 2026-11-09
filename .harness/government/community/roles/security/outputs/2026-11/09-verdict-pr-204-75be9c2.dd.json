@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "75be9c2fdd4534883ae4ed49c1392fef5c010804",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/204#issuecomment-6732683004",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:204",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `75be9c2fdd4534883ae4ed49c1392fef5c010804` (F150), under C33/C34.\n\nGrouped request labels render role, instance and project through closed grammars. Notice shortening keeps complete labels, so it cannot split UTF-8 characters. Reply-none filtering is consistent across qualification, conditional marking and the directory open-work count. No scoped security vulnerability or normal-use blocking bug was established.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No scoped vulnerabilities found | - |\n\n## Scoped checks\n\nGrouping uses the original role/instance/project tuple and derives counts and oldest age from the existing request read. Rendering occurs only when composing the label; rendered identities do not become operational keys. Unshowable stored labels become fixed length text rather than raw framing.\n\nThe notice joiner stops between complete strings rather than slicing a string at a byte offset. Thus its byte accounting cannot bisect a Unicode character. The omission count describes omitted label groups/holdings, not omitted individual requests.\n\nThe 1,500-byte budget is for named work, not a universal cap on arbitrary strings passed to the helper. It always includes the first label and adds conjunction/omission text outside that accounting. Current production inputs are bounded, grammar-rendered holding/claim/request labels, and fixed surrounding notice text leaves the complete messages below 2 KB. No generic arbitrary-input guarantee or new cap machinery is required for this scoped fix.\n\nBoth existing unanswered-request selectors and the mark's current-state predicate exclude `reply = none`. Time-limit check-ins intentionally remain unchanged. F161 grouping is still a known follow-up, not claimed closed.\n\nNo new route authority, shell construction, read, loop or launch was introduced by this change. C33 same-user isolation and C34 optional hardening/mutants are not gates. This does not claim semantic prompt-injection immunity or trust for raw JSON.\n\n## Evidence\n\nLocal/remote/GitHub heads agree; detached shared worktree clean; PR CLEAN. Own F150 commit `59e68632` is carried through the two main merges.\n\nCI [42564236452](https://github.com/AI-Substrate/pij-fleet/actions/runs/42564236452) succeeded on merge `28f8e1837adb0b48cd260a0b6623d10afdce2bff`, with this head and main `7f6ed760ed98b2fda2e6095750a6e8f620132f8f` as parents; tree `f58402284934cabfd81b5633470e1b5eed9cd9a9`.\n\nJUnit artifact [13649914418](https://github.com/AI-Substrate/pij-fleet/actions/runs/42564236452/artifacts/13649914418) confirms 2,317 passing cases, no failures; five separately skipped. Executed: reply-none qualification, reply-none mark recheck, directory count, forty-request grouping and all-three-message length/omission tests. Current Node/Rust/Delivers checks succeed.\n\nThe length fixture uses ASCII labels; character safety also follows directly from retaining whole strings. Mutants were intentionally skipped under C34. The helper returned a bare no-findings summary; supporting judgment rests on direct source inspection and verified CI.\n\nNo local builds/tests, mutations, credential reads, live-system probes or product edits.\n"
+		}
+	]
+}
