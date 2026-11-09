@@ -188,7 +188,9 @@ pub struct Config {
     /// Whether the PA watchdog round nudges idle holders (plan 224). Off by
     /// default: as merged it treated a resting long-lived role holder as
     /// stalled work and cold-woke specialists overnight (F144). The daemon
-    /// composition root reads `PIJ_IDLE_NUDGE` (`1`, `on` or `true`).
+    /// composition root reads `PIJ_IDLE_NUDGE` (`1`, `on` or `true`). A bare
+    /// daemon has it off; the fleet's `just bounce-rs` and `just rs-autostart`
+    /// turn it on (F147).
     pub idle_nudge: bool,
 }
 

@@ -180,6 +180,8 @@ That refusal carries the typed discriminator `details:{code:"E-RS-SEAT-RETIRED",
 
 A native Copilot claim that names an address recorded for a different native session is refused before the daemon observes the host (plan 211, issue #145): `E-RS-SEAT-RETIRED` when that address is retired, else the different-session refusal. The same check decides again under the registration lock, so this early read is a brake: removing it refuses the same claims later, after the ancestry `ps`. The native Copilot extension treats `E-RS-SEAT-RETIRED` on `/v1/register` as final: its receive and heartbeat loops stop and report `receive-held` once, instead of re-registering on a 5 s backoff.
 
+An owner's close is final for continuity (F149). `pij close` records its reason as `owner-close` (or `owner-close: <reason>` with `--reason`), and a seat retired with that reason is refused on `/v1/register` and `/v1/adopt` even when its own session, spawn or process claims it, with `E-RS-SEAT-RETIRED` and the message `E-RS-SEAT-RETIRED seat <id> was closed by its owner; ...` (the code first, so a client that only prints the message can still match it). The row stays tombstoned. Without this a closed seat whose process was still running lifted its own close about a second later: the Claude status line's heal loop re-adopted the same conversation. Only `pij revive <id>`, which writes a fresh live row before it relaunches, and an operator's verified `adopt --reclaim` (a deliberate, checked operator action like revive) bring the address back. The store enforces this at the write, not only at the registration's earlier read: the seat upsert keeps an owner-close tombstone exactly as it is (neither cleared nor swapped for a liftable reason) unless the write is revive's or reclaim's, and otherwise writes nothing and refuses with `E-RS-SEAT-RETIRED`. So a registration that read the seat live, then lost the race to its owner's close, is answered as closed and the close stands (review of #200). A close of a seat already retired for another reason (`observed-dead`, `reaped`) records it again as `owner-close`; a repeat close of an owner-closed seat returns its existing receipt. Every other tombstone reason (`observed-dead`, `reaped`, a pre-F149 free-text close reason) keeps the continuity lift. The Claude status line keeps a `.closed` marker for the session after this refusal, shows `closed: <seat>` and stops adopting until the conversation changes; OMP re-registers only on a re-attach notice, so it is refused once rather than in a loop.
+
 ## Adopt continuity order (plan 156)
 
 `/v1/adopt <pane> --harness <h>` picks the seat in this order:
@@ -1657,7 +1659,7 @@ The caller is answered at once with `data.held: "memory-turn"` and
 close runs in the daemon. A held compact's answer is still a control receipt
 (`msg_id` the control's own, `outcome` `{"outcome":"held","reason":"memory-turn"}`,
 `at`), so every client decodes it as it decodes any send; a held close carries
-`data.seat`. So no client's request timeout can cut the hold
+`data.seat` and `data.process` (the close leaves the process running). So no client's request timeout can cut the hold
 short (the Copilot extension gives up after 65 s, Node's fetch after 300 s), and
 a seat compacting or closing itself, which is mid-turn, is handled the same
 way. A held close therefore has no `tombstoned_at` in its answer: the tombstone
@@ -1963,6 +1965,8 @@ Send/probe errors or Held/Refused transport outcomes cannot be presented as succ
 
 `pij close <seat>` is a self-or-recorded-parent tombstone, **not process termination or pane teardown**. The active roster excludes tombstones; history retains the reason/sequence. A parent repeat-close returns existing evidence. Retired self identity still refuses, naming tombstone evidence; it is not an authentication exception. There is no `--force` bypass.
 
+A close doesn't stop the process. Its answer says so in `data.process` (on a held close too), naming the pane when the seat has one: `pij close retires the seat; its process keeps running. To stop it, its parent runs: tmux kill-pane -t %N`. A parent that wants the process gone kills the pane after the close. The closed seat can't register under its id again (see [owner-close continuity](#registration-and-tombstone-continuity)), so a process left running is a seat with no address, not a seat that comes back.
+
 ```bash
 pij reap --dry-run --json
 # Only an authorized operator deciding to reconcile records runs the mutation:
@@ -2092,7 +2096,7 @@ A compaction can end a seat's turn with nothing queued, and nothing wakes it (F1
 
 A seat can sit idle while it holds work for reasons other than a compaction: a plain send it finished, a missed message, a turn that just stopped (F136: a merger held its role for hours after a plain send, with no role request and no time limit to escalate). Plan 222 only covers the compaction case, and s12's limits only cover role requests. So the PA watchdog's 60 s round also nudges a holder that has done nothing of its own for an hour. It adds no timer, poll or launch.
 
-**Off by default (F144).** As merged, the nudge treated a resting long-lived role holder (docs-system, delivery, security, a merger) as stalled work and cold-woke specialists overnight. It runs only when the daemon starts with `PIJ_IDLE_NUDGE` set to `1`, `on` or `true`. Since F144's fix it looks only at real in-flight work and never cold-wakes a seat for a nudge; the switch stays off by default until the prime turns it on.
+**Off in a bare daemon, on in the fleet (F144, F147).** The nudge runs only when the daemon starts with `PIJ_IDLE_NUDGE` set to `1`, `on` or `true`; a bare `pij-rs daemon` has it off (`Config::idle_nudge` defaults to `false`). The fleet's own launchers turn it on. `just bounce-rs` and the LaunchAgent that `just rs-autostart` writes both pass `PIJ_IDLE_NUDGE=${PIJ_IDLE_NUDGE-1}`, so it is on unless the variable is set otherwise when they run: `PIJ_IDLE_NUDGE=0 just bounce-rs` turns it off for that bounce, and `PIJ_IDLE_NUDGE=0 just rs-autostart` writes it off into the LaunchAgent. Both recipes accept exactly `1`, `on`, `true`, `0`, `off` or `false` (any case) and pass only `1` or `0`. Any other value is refused before anything is built, stopped or written, so it can never reach the daemon's environment or the plist (review of #196, S196-001). As first merged (#189), the nudge treated a resting long-lived role holder (docs-system, delivery, security, a merger) as stalled work and cold-woke specialists overnight. Since F144's fix it looks only at real in-flight work and never cold-wakes a seat for a nudge.
 
 - **Who is looked at.** Only seats with **real in-flight work** (F144):
   - a role holding whose instance names one task: a PR or plan number, optionally with one letter (`coder/224`, `reviewer/183b`), or an F-item (`coder/f144`), each at most 9 digits (`TASK_NUMBER_MAX_DIGITS`). Real numbers are three or four digits; the bound keeps the grammar closed, so a long digit string is never taken for a task;

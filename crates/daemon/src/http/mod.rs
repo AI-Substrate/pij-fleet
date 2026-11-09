@@ -1599,10 +1599,12 @@ async fn launch_seat_locked(
             .await
             .map(|receipt| receipt.descriptor)
             .map_err(|error| error.to_string()),
+        // A fresh launch row: for a revive it replaces the retired row, an
+        // owner's close included, which only revive may lift (F149).
         _ => state
             .services
             .registry
-            .put(descriptor.clone())
+            .put_lifting_owner_close(descriptor.clone(), false)
             .await
             .map(|_| descriptor.clone())
             .map_err(|error| error.to_string()),
@@ -1779,7 +1781,7 @@ pub(crate) fn spawn_evidence_paths(spawn_id: &str) -> (PathBuf, PathBuf) {
     )
 }
 
-async fn read_spawn_exit(path: &Path) -> Result<Option<i32>> {
+pub(crate) async fn read_spawn_exit(path: &Path) -> Result<Option<i32>> {
     let value = match tokio::fs::read_to_string(path).await {
         Ok(value) => value,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -1793,6 +1795,12 @@ async fn read_spawn_exit(path: &Path) -> Result<Option<i32>> {
             });
         }
     };
+    // F148: a status file created but not yet written is no exit yet; the
+    // next poll reads it whole. Read as malformed, a child's exit became a
+    // 500 instead of a 502 (Linux CI).
+    if value.trim().is_empty() {
+        return Ok(None);
+    }
     let value = value
         .trim()
         .strip_prefix("exit_code=")

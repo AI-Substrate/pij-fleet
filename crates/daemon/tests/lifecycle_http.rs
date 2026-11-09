@@ -51,6 +51,31 @@ async fn close_parent_tombstones_once_with_canonical_receipt() {
     server.abort();
 }
 
+/// F149: a close with the caller's own reason is recorded as an owner's
+/// close (`owner-close: <reason>`), the form registration never lifts, and
+/// the reply says the process keeps running and how its parent stops it.
+#[tokio::test]
+async fn close_records_an_owner_close_and_says_the_process_keeps_running() {
+    let fixtures = contracts();
+    let (addr, server, _store) = daemon(&fixtures).await;
+    let mut request = case(&fixtures, "seat-close")["request"].clone();
+    request["reason"] = json!("PR merged");
+    let response: Value = post(addr, "/v1/close", &request)
+        .await
+        .json()
+        .await
+        .expect("close envelope");
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(response["data"]["reason"], "owner-close: PR merged");
+    let process = response["data"]["process"].as_str().unwrap_or_default();
+    assert!(
+        process.starts_with("pij close retires the seat; its process keeps running.")
+            && process.contains("tmux kill-pane -t"),
+        "{response}"
+    );
+    server.abort();
+}
+
 #[tokio::test]
 async fn close_outsider_and_unknown_target_refuse_without_retiring_a_seat() {
     let fixtures = contracts();

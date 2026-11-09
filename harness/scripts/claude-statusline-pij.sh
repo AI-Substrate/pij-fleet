@@ -134,6 +134,11 @@ fi
 # the line shows the red double segment and fires no further adopt for it; the
 # marker goes once rs answers with this conversation (the human adopted after
 # closing a copy) or the conversation changes.
+# F149: a heal adopt refused because the seat's owner closed it
+# (E-RS-SEAT-RETIRED, which only an owner's close puts in the printed refusal)
+# leaves a `.closed` marker the same way: the line says the seat is closed and
+# fires no further adopt for this conversation, so a closed seat whose process
+# still runs costs one refused adopt, not one every 15 s.
 if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ] && [ -n "$SESSION_ID" ] && [ -z "$DOUBLE_FMT" ] \
   && { [ -n "$PIJID" ] || [ -z "${LEGACYID:-}" ]; }; then
   HEAL_DIR=${PIJ_RS_STATE_DIR:-${HOME:-/tmp}/.pij-rs}/heal
@@ -142,16 +147,24 @@ if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ] && [ -n "$SESSION_ID" ] && [ 
   if [ -f "$HEAL_KEY.double" ]; then
     { IFS= read -r DOUBLE_SID; IFS= read -r DOUBLE_AT; } <"$HEAL_KEY.double"
   fi
+  CLOSED_SID=""
+  if [ -f "$HEAL_KEY.closed" ]; then
+    { IFS= read -r CLOSED_SID; IFS= read -r CLOSED_SEAT; } <"$HEAL_KEY.closed"
+  fi
   case "$RS_OUTPUT" in
     *"\"session\":\"$SESSION_ID\""*)
       [ -n "$DOUBLE_SID" ] && rm -f "$HEAL_KEY.double"
+      [ -n "$CLOSED_SID" ] && rm -f "$HEAL_KEY.closed"
       ;;
     *)
       if [ -n "$DOUBLE_SID" ] && [ "$DOUBLE_SID" = "$SESSION_ID" ]; then
         DOUBLE_FMT=" \033[31m⚠ double: ${DOUBLE_AT:-seat}\033[0m"
         PIJ_FMT=$DOUBLE_FMT
+      elif [ -n "$CLOSED_SID" ] && [ "$CLOSED_SID" = "$SESSION_ID" ]; then
+        PIJ_FMT=" \033[2m⛓ closed: ${CLOSED_SEAT:-seat}\033[0m"
       else
         [ -n "$DOUBLE_SID" ] && rm -f "$HEAL_KEY.double"
+        [ -n "$CLOSED_SID" ] && rm -f "$HEAL_KEY.closed"
         mkdir -p "$HEAL_DIR" 2>/dev/null
         if mkdir "$HEAL_KEY.lock" 2>/dev/null; then
           NOW=$(date +%s)
@@ -172,6 +185,11 @@ if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ] && [ -n "$SESSION_ID" ] && [ 
                     D_PANE=$(printf '%s' "$ONE" | sed -n 's/.*(pane \([^)]*\)).*/\1/p')
                     printf '%s\n%s in %s\n' "$SESSION_ID" "${D_SEAT:-?}" "${D_PANE:-no pane}" \
                       >"$HEAL_KEY.double.tmp" && mv "$HEAL_KEY.double.tmp" "$HEAL_KEY.double"
+                    ;;
+                  *E-RS-SEAT-RETIRED*)
+                    C_SEAT=$(printf '%s' "$OUT" | tr '\n' ' ' | sed -n 's/.*seat `\([^`]*\)` was closed by its owner.*/\1/p')
+                    printf '%s\n%s\n' "$SESSION_ID" "${C_SEAT:-seat}" \
+                      >"$HEAL_KEY.closed.tmp" && mv "$HEAL_KEY.closed.tmp" "$HEAL_KEY.closed"
                     ;;
                 esac
               fi

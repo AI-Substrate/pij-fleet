@@ -81,6 +81,32 @@ pub fn check_seat_id(id: &SeatId) -> Result<(), String> {
 /// The stable code a seat-id refusal carries.
 pub const SEAT_ID_REFUSAL: &str = "E-RS-SEAT-ID";
 
+/// The tombstone reason `pij close` records (F149). A seat its owner closed
+/// stays retired: registration continuity never lifts it, and only `revive`
+/// brings the address back. A close's own reason is kept after it
+/// ([`owner_close_reason`]).
+pub const OWNER_CLOSE: &str = "owner-close";
+
+/// The tombstone reason for a close with the caller's `reason`: [`OWNER_CLOSE`]
+/// alone, or `owner-close: <reason>`.
+#[must_use]
+pub fn owner_close_reason(reason: &str) -> String {
+    if is_owner_close(reason) {
+        reason.to_string()
+    } else {
+        format!("{OWNER_CLOSE}: {reason}")
+    }
+}
+
+/// Whether a tombstone reason records an owner's close ([`owner_close_reason`]).
+#[must_use]
+pub fn is_owner_close(reason: &str) -> bool {
+    reason == OWNER_CLOSE
+        || reason
+            .strip_prefix(OWNER_CLOSE)
+            .is_some_and(|rest| rest.starts_with(": "))
+}
+
 /// How daemon-authored text names a string that failed its grammar: its
 /// length, never its content.
 pub fn invalid_text(raw: &str) -> String {
@@ -1304,5 +1330,32 @@ mod process_start_tests {
         assert_eq!(record_utc, 20_260_831_100_254);
         assert_eq!(observed_local, 20_260_831_200_254);
         assert_ne!(record_utc, observed_local);
+    }
+}
+
+#[cfg(test)]
+mod owner_close_tests {
+    use super::{is_owner_close, owner_close_reason};
+
+    #[test]
+    fn an_owner_close_reason_is_recognised_and_only_it() {
+        assert_eq!(owner_close_reason("owner-close"), "owner-close");
+        assert_eq!(owner_close_reason("PR merged"), "owner-close: PR merged");
+        assert_eq!(
+            owner_close_reason("owner-close: PR merged"),
+            "owner-close: PR merged"
+        );
+        for reason in ["owner-close", "owner-close: PR merged"] {
+            assert!(is_owner_close(reason), "{reason}");
+        }
+        for reason in [
+            "observed-dead",
+            "owner-closed",
+            "owner-close:x",
+            "PR merged",
+            "",
+        ] {
+            assert!(!is_owner_close(reason), "{reason}");
+        }
     }
 }
