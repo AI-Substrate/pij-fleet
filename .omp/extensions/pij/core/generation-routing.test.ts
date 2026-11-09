@@ -274,6 +274,7 @@ describe("explicit generation forcing", () => {
 			"delivered",
 			"output",
 			"outputs",
+			"project",
 			"requests",
 		];
 		const native = RS_ROUTE_TABLE.filter(

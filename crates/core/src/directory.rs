@@ -126,6 +126,7 @@ Flags:
   --output-kind verdict|deliverable|note|handover   repeatable
   --harness <h>  --model <m>  --effort <e>          the default seat
   --packet <text> | --brief <repo-relative path>     the standing packet
+  --packet-file <path|->                            the packet read from a file or stdin
   --file <json>             the whole document instead of flags
   --batch <dir>             every *.dd.json in <dir>, one commit, all or nothing";
 
@@ -133,6 +134,7 @@ const EDIT: &str = "\
 pij directory edit: change a role that exists (plan 206).
 
 Usage:
+  pij directory edit <id> --why <text> [role flags]
   pij directory edit <id> --why <text> --set <field>=<value> [--set ...] [role flags]
   pij directory edit <id> --why <text> --file <role.dd.json>
 
@@ -320,6 +322,17 @@ mod tests {
             "{add}"
         );
         assert!(add.contains("The shortest add:"), "{add}");
+    }
+
+    /// F164: edit's usage covers an edit with only role flags (such as
+    /// `--add-rule`), so a printed command of that shape matches its help.
+    #[test]
+    fn edit_help_covers_an_edit_with_only_role_flags() {
+        let edit = help(Some("edit")).unwrap();
+        assert!(
+            edit.contains("  pij directory edit <id> --why <text> [role flags]\n"),
+            "{edit}"
+        );
     }
 
     /// Plan 209, F38: add --help says each add commits on its own.

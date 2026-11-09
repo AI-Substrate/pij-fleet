@@ -62,12 +62,16 @@ pub async fn governance(
 /// The flag without a value, or a body that cannot be read.
 pub fn inline_body_file(
     args: &[String],
-    read: impl FnMut(&str) -> std::io::Result<String>,
+    mut read: impl FnMut(&str) -> std::io::Result<String>,
 ) -> Result<Vec<String>, String> {
-    if args.first().map(String::as_str) != Some("memory") {
-        return Ok(args.to_vec());
-    }
-    body_file_to_body(args, read)
+    let args = if args.first().map(String::as_str) == Some("memory") {
+        body_file_to_body(args, &mut read)?
+    } else {
+        args.to_vec()
+    };
+    // `directory add|edit --packet-file <path|->` (F158): an inline
+    // `--packet "$(cat f)"` is blocked by some harness shell guards.
+    file_flag_to_value(&args, "packet", read)
 }
 
 /// `--body-file <path|->` read here and sent as `--body`, so stdin works and
@@ -77,8 +81,18 @@ pub fn inline_body_file(
 /// The flag without a value, or a body that cannot be read.
 pub fn body_file_to_body(
     args: &[String],
+    read: impl FnMut(&str) -> std::io::Result<String>,
+) -> Result<Vec<String>, String> {
+    file_flag_to_value(args, "body", read)
+}
+
+/// `--<name>-file <path|->` read here and sent as `--<name> <text>`.
+fn file_flag_to_value(
+    args: &[String],
+    name: &str,
     mut read: impl FnMut(&str) -> std::io::Result<String>,
 ) -> Result<Vec<String>, String> {
+    let file_flag = format!("--{name}-file");
     let mut out = Vec::with_capacity(args.len());
     let mut tokens = args.iter();
     while let Some(token) = tokens.next() {
@@ -87,10 +101,10 @@ pub fn body_file_to_body(
             out.extend(tokens.by_ref().cloned());
             break;
         }
-        let source = match token.strip_prefix("--body-file") {
+        let source = match token.strip_prefix(&file_flag) {
             Some("") => tokens
                 .next()
-                .ok_or("--body-file requires a path, or - for stdin")?
+                .ok_or_else(|| format!("{file_flag} requires a path, or - for stdin"))?
                 .clone(),
             Some(rest) if rest.starts_with('=') => rest[1..].to_string(),
             _ => {
@@ -98,11 +112,11 @@ pub fn body_file_to_body(
                 continue;
             }
         };
-        let body = read(&source).map_err(|error| {
+        let text = read(&source).map_err(|error| {
             let from = if source == "-" { "stdin" } else { &source };
-            format!("could not read the body from {from}: {error}")
+            format!("could not read the {name} from {from}: {error}")
         })?;
-        out.extend(["--body".to_string(), body]);
+        out.extend([format!("--{name}"), text]);
     }
     Ok(out)
 }
@@ -140,6 +154,16 @@ mod tests {
         );
         let other = argv(&["add", "qa", "--body-file", "x"]);
         assert_eq!(super::inline_body_file(&other, read).unwrap(), other);
+        // F158: a role's standing packet from a file or stdin, on any leaf.
+        assert_eq!(
+            super::inline_body_file(&argv(&["add", "qa", "--packet-file", "-"]), read).unwrap(),
+            argv(&["add", "qa", "--packet", "from -"])
+        );
+        assert_eq!(
+            super::inline_body_file(&argv(&["edit", "qa", "--packet-file=p.md"]), read).unwrap(),
+            argv(&["edit", "qa", "--packet", "from p.md"])
+        );
+        assert!(super::inline_body_file(&argv(&["add", "qa", "--packet-file"]), read).is_err());
         assert!(
             super::inline_body_file(&argv(&["memory", "add", "qa", "--body-file"]), read).is_err()
         );

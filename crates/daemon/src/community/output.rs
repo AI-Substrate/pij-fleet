@@ -84,6 +84,15 @@ pub fn check(fields: &OutputFields) -> Result<(), Refusal> {
     if fields.subject.trim().is_empty() || fields.subject.contains(['\n', '\r']) {
         return arg("--subject <address> is required and is one line, such as pr:132".into());
     }
+    // F159: a subject every notice can show. One outside the address grammar
+    // (a bare file path, say) was written, then shown as `invalid` in the FYI.
+    if pij_core::render::subject(fields.subject.trim()) != fields.subject.trim() {
+        return arg(format!(
+            "--subject {} is not an address. {}",
+            pij_core::render::subject(fields.subject.trim()),
+            pij_core::outputs::SUBJECT_FORMS
+        ));
+    }
     if fields.kind == "verdict" {
         match (&fields.head, &fields.result) {
             (Some(head), Some(result))
@@ -270,6 +279,21 @@ mod tests {
             requester: None,
             body: "looks right".into(),
         }
+    }
+
+    /// F159: a subject outside the address grammar (a bare file path) is
+    /// refused at the writer with the valid forms, instead of being written
+    /// and shown as `invalid` in every notice. `file:<path>` is the form.
+    #[test]
+    fn a_subject_must_be_an_address_a_notice_can_show() {
+        let mut fields = verdict();
+        fields.subject = "docs/how/pij-rs-api.md".into();
+        let refusal = check(&fields).expect_err("a bare path");
+        let text = refusal.message;
+        assert!(text.contains("is not an address"), "{text}");
+        assert!(text.contains("file:docs/how/pij-rs-api.md"), "{text}");
+        fields.subject = "file:docs/how/pij-rs-api.md".into();
+        check(&fields).expect("a file subject");
     }
 
     #[test]

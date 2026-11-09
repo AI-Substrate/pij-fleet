@@ -38,6 +38,7 @@ pub mod outputs;
 pub mod pa_digest;
 pub mod ports;
 pub mod program;
+pub mod projects;
 pub mod render;
 pub mod report;
 pub mod requests;

@@ -558,7 +558,8 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Create, list, read or update governed projects.
+    /// Create, list, read or update governed projects; `--help` (F156).
+    #[command(disable_help_flag = true)]
     Project {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -1281,6 +1282,13 @@ async fn run(cli: Cli) -> ExitCode {
         && pij_core::directory::wants_help(args)
     {
         print!("{}", pij_core::requests::HELP);
+        return ExitCode::SUCCESS;
+    }
+    // Project help needs no daemon (F156).
+    if let Command::Project { args } = &cli.command
+        && pij_core::directory::wants_help(args)
+    {
+        print!("{}", pij_core::projects::HELP);
         return ExitCode::SUCCESS;
     }
     let client = match DaemonClient::new(&state_dir, &addr) {
