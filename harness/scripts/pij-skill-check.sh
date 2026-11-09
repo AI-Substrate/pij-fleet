@@ -68,7 +68,7 @@ budget "$SKILL/references/00-routing.md" 250
 budget "$SKILL/references/routes/pair.md" 350
 for m in ready peer agent skill ops delegate node; do budget "$SKILL/references/routes/$m.md" 150; done
 # Plan 204: the community route stays token-lean.
-budget "$SKILL/references/routes/community.md" 100
+budget "$SKILL/references/routes/community.md" 110
 
 soft_budget() {
   [ -f "$1" ] || return 0

@@ -29,7 +29,7 @@ description: Route pij platform jobs — adopt a seat and wait (/pij ready), spa
 | `ops` | daemon health, registry & tmux hygiene — and **recovering a prime after a reboot** ("revive our prime") | `references/routes/ops.md` |
 | `node` | work durable project/stream/dispatch truth, node states, adoption repair, and anomaly queries | `references/routes/node.md` |
 | `prime` | govern many agents in one repo: one o-prime seat, streams below, platform-store facts and single-writer documents | `references/routes/prime.md` |
-| `community` | run a Pij Emergent Community (PEC): roles built from the work's needs and reshaped as it changes, assignments, role sends, outputs and memory | `references/routes/community.md` |
+| `community` | run a Pij Emergent Community (PEC): roles built from the work's needs and reshaped as it changes, assignments, role sends and requests, stall checks, outputs, memory, what the daemon tells the prime and PA, closing seats | `references/routes/community.md` |
 | `watch` | file-change subscription intent | *no route module — rs CLI unported: named refusal; see Unsupported status below* |
 
 Module missing at its path → say so and stop. Never improvise a route from memory.
