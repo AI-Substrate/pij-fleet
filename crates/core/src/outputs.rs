@@ -2,6 +2,11 @@
 //! native CLI, which prints it without a daemon, and the daemon, which answers
 //! shim callers, so the two cannot drift.
 
+/// The subject forms `pij output` accepts (F159), as its refusal and help say.
+pub const SUBJECT_FORMS: &str = "A subject is <kind>:<name>, at most 96 characters: a lowercase kind, then \
+letters, digits, `.`, `_`, `/`, `@` or `-`. For example pr:132, plan:224, f:150, \
+role:security, or file:docs/how/pij-rs-api.md for a repo-relative file path.";
+
 /// The help for `pij output --help` (`family` "output") or `pij outputs --help`.
 pub fn help(family: &str) -> &'static str {
     if family == "outputs" { OUTPUTS } else { OUTPUT }
@@ -16,7 +21,8 @@ Usage:
 
 Flags:
   --role <id>               the role it is written for
-  --subject <address>       what it is about, such as pr:132
+  --subject <address>       what it is about: <kind>:<name>, such as pr:132,
+                            f:150 or file:docs/how/pij-rs-api.md
   --head <sha>              the exact head a verdict is for (required for a verdict)
   --result <r>              a verdict's result; other kinds may say failed
   --note-owed <text>        repeatable; what the work still owes

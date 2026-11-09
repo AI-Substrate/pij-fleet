@@ -126,6 +126,7 @@ Flags:
   --output-kind verdict|deliverable|note|handover   repeatable
   --harness <h>  --model <m>  --effort <e>          the default seat
   --packet <text> | --brief <repo-relative path>     the standing packet
+  --packet-file <path|->                            the packet read from a file or stdin
   --file <json>             the whole document instead of flags
   --batch <dir>             every *.dd.json in <dir>, one commit, all or nothing";
 

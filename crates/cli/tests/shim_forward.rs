@@ -424,3 +424,32 @@ fn a_relative_path_entry_never_supplies_pij_rs() {
     );
     assert_eq!(output.status.code(), Some(127), "{output:?}");
 }
+
+/// F156: `pij project <leaf> --help` prints its usage with no daemon, like the
+/// directory verbs, instead of `E-RS-ARG --help requires a value`.
+#[test]
+fn project_help_needs_no_daemon() {
+    for args in [
+        &["project", "--help"][..],
+        &["project", "create", "--help"],
+        &["project", "set", "-h"],
+        &["project", "show", "--help"],
+        &["project", "list", "--help"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_pij-rs"))
+            .args(args)
+            .env(
+                "PIJ_RS_STATE_DIR",
+                std::env::temp_dir().join("pij-shim-forward-no-daemon"),
+            )
+            .env("PIJ_RS_ADDR", "127.0.0.1:9")
+            .output()
+            .expect("run pij-rs");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        assert!(
+            stdout.contains("pij project create <name>"),
+            "{args:?}: {stdout}"
+        );
+    }
+}

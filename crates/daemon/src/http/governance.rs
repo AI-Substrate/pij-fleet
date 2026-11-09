@@ -544,6 +544,16 @@ pub(crate) async fn handle(
     Json(request): Json<GovernanceRequest>,
 ) -> Response {
     let command = format!("pij {}", uri.path().trim_start_matches("/v1/"));
+    // The shim's `pij project ... --help` gets the same text the CLI prints,
+    // before any flag parsing or identity check (F156).
+    if uri.path() == "/v1/project"
+        && pij_core::directory::wants_help(request.argv.get(1..).unwrap_or_default())
+    {
+        return envelope(
+            StatusCode::OK,
+            &Envelope::ok(command, json!({"help": pij_core::projects::HELP})),
+        );
+    }
     let call = match Arguments::parse(&request.argv) {
         Ok(call) => call,
         Err(error) => return error.response(&command),
