@@ -1117,6 +1117,16 @@
 					"seat": "pij-double-bobcat",
 					"to": "2026-11-09T01:02:13.893Z",
 					"why": "F148 spawn exit-status race"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-09T02:27:44.414Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "200",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F149 owner-close terminal"
 				}
 			]
 		}

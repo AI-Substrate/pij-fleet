@@ -104,3 +104,4 @@
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 197 | 2026-11-08T23:44:10.202Z | — | pij-steady-otter | — | F139 stuck bg final turn | — |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 198 | 2026-11-08T23:49:42.347Z | 2026-11-09T01:02:34.645Z | pij-steady-otter | pij-far-jackal | PRD 003 req-10 dropped (C33), docs only | PR #198 merged (033b36f60a3a) |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 199 | 2026-11-09T00:54:31.315Z | 2026-11-09T01:02:13.893Z | pij-steady-otter | pij-far-jackal | F148 spawn exit-status race | PR #199 merged (4257dfe39e86) |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 200 | 2026-11-09T02:27:44.414Z | — | pij-steady-otter | — | F149 owner-close terminal | — |
