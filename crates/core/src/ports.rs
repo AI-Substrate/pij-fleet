@@ -90,6 +90,25 @@ pub trait Registry: Send + Sync {
     /// serialization/transaction boundary; there is no read-then-write default.
     async fn put_reporting_keeping_parent(&self, d: SeatDescriptor) -> Result<(Seq, PutBinding)>;
 
+    /// [`Self::put_reporting`] (`keep_parent` false) or
+    /// [`Self::put_reporting_keeping_parent`] (true) that may clear an
+    /// owner-close tombstone (F149). Only `revive` and a verified
+    /// `adopt --reclaim` use it. The store's other puts refuse to clear one,
+    /// with `E-RS-SEAT-RETIRED`, in the statement that writes, so a writer
+    /// that read the seat live before its owner closed it cannot erase the
+    /// close. In-memory fakes keep no such guard, so this default delegates.
+    async fn put_lifting_owner_close(
+        &self,
+        d: SeatDescriptor,
+        keep_parent: bool,
+    ) -> Result<(Seq, PutBinding)> {
+        if keep_parent {
+            self.put_reporting_keeping_parent(d).await
+        } else {
+            self.put_reporting(d).await
+        }
+    }
+
     /// Every seat matching `filter`, ordered by id so callers can diff listings.
     async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>>;
 

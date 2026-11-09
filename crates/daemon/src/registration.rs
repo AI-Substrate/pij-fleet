@@ -840,6 +840,21 @@ impl RegistrationService {
             // and paneless claims, before their stronger ownership checks.
             return Err(retired_refusal(seat, &claim.harness));
         }
+        // F149: an owner's close is final for continuity. A live process whose
+        // seat was closed would otherwise lift its own close at its next hook.
+        // Only revive (which writes a fresh row first) and an operator's
+        // verified reclaim bring the address back.
+        if !reclaim
+            && let Some(seat) = existing.filter(|seat| {
+                seat.tombstoned_at.is_some()
+                    && seat
+                        .tombstone_reason
+                        .as_deref()
+                        .is_some_and(pij_core::model::is_owner_close)
+            })
+        {
+            return Err(closed_refusal(&seat.id));
+        }
         // Explicit, verified spawn intent owns the new id and parent. Its saved
         // conversation may be retired, but neither address's mail is moved.
         let spawn_predecessor = handoff
@@ -1200,14 +1215,26 @@ impl RegistrationService {
                 .await
                 .map_err(RegistrationError::Runtime)?;
         }
-        let committed = if parent_claimed {
+        // Only a verified reclaim may lift an owner's close. Any other put
+        // that finds one (the owner closed the seat after this registration
+        // read it live) is refused by the store and answered as closed (F149).
+        let committed = if reclaim {
+            self.registry
+                .put_lifting_owner_close(descriptor.clone(), !parent_claimed)
+                .await
+        } else if parent_claimed {
             self.registry.put_reporting(descriptor.clone()).await
         } else {
             self.registry
                 .put_reporting_keeping_parent(descriptor.clone())
                 .await
         };
-        let (_, binding) = committed.map_err(RegistrationError::Runtime)?;
+        let (_, binding) = committed.map_err(|error| match error {
+            PijError::GovernanceRefused { code, .. } if code == "E-RS-SEAT-RETIRED" => {
+                closed_refusal(&descriptor.id)
+            }
+            error => RegistrationError::Runtime(error),
+        })?;
         if native && let Some(receivers) = &self.native_receivers {
             // Still under the shared native lock: the committed holder is never
             // visible without its lease and precedence (plan 168 review F2).
@@ -1339,6 +1366,21 @@ fn retired_refusal(seat: &SeatDescriptor, claimed_harness: &str) -> Registration
     RegistrationError::Retired {
         seat: seat.id.clone(),
         reason,
+    }
+}
+
+/// The refusal for a seat its owner closed (F149): the same typed code as any
+/// retired seat, and the code first in the message too, so a client that only
+/// sees the printed text (the Claude status line) can stop retrying. The
+/// close's own reason is the caller's text and is not repeated here.
+fn closed_refusal(seat: &SeatId) -> RegistrationError {
+    let id = pij_core::render::seat(seat.as_str());
+    RegistrationError::Retired {
+        seat: seat.clone(),
+        reason: format!(
+            "E-RS-SEAT-RETIRED seat `{id}` was closed by its owner; a closed seat never registers again under its id. \
+             Its process keeps running until its parent kills the pane; to bring the seat back, run `pij revive {id}`"
+        ),
     }
 }
 
@@ -2536,6 +2578,203 @@ mod tests {
     #[tokio::test]
     async fn retired_session_resume_does_not_replace_recorded_role() {
         retired_session_resume_contract(Harness::Omp, Some("pm")).await;
+    }
+
+    /// F149: a seat its owner closed stays closed. Its own session registering
+    /// again (the Claude status line's heal adopt, an OMP reattach) is refused
+    /// with the typed retired code, the code first in the message, and the row
+    /// stays tombstoned. Any other retirement still resumes on continuity.
+    #[tokio::test]
+    async fn an_owner_close_is_final_for_registration_continuity() {
+        for (reason, resumes) in [
+            ("owner-close", false),
+            ("owner-close: PR merged", false),
+            ("observed-dead", true),
+        ] {
+            let mut old = native_seat("pij-closed-by-owner");
+            old.harness = Harness::Omp;
+            old.native_extension_delivery = false;
+            old.harness_session = Some("same-session".into());
+            old.tombstoned_at = Some(149);
+            old.tombstone_reason = Some(reason.into());
+            let (service, registry) = native_service(vec![old.clone()], native_liveness()).await;
+            let mut claim = native_claim(old.id.as_str());
+            claim.harness = "omp".into();
+            let result = service
+                .register_with_harness_session(claim, Some("same-session".into()))
+                .await;
+            let row = registry.get(&old.id).await.unwrap().unwrap();
+            if resumes {
+                assert_eq!(result.expect(reason).0.tombstoned_at, None, "{reason}");
+            } else {
+                match result {
+                    Err(RegistrationError::Retired { seat, reason: text }) => {
+                        assert_eq!(seat, old.id);
+                        assert!(
+                            text.starts_with("E-RS-SEAT-RETIRED seat `pij-closed-by-owner` was closed by its owner"),
+                            "{text}"
+                        );
+                        assert!(
+                            !text.contains("PR merged"),
+                            "the close's own text is not echoed"
+                        );
+                    }
+                    other => panic!("{reason}: {other:?}"),
+                }
+                assert_eq!(row.tombstoned_at, Some(149), "{reason}: still closed");
+            }
+        }
+    }
+
+    /// A registry whose seat is closed by its owner between the registration's
+    /// snapshot and its write: the close lands, then the put runs (review of
+    /// #200, F001). Everything else passes through to the real store.
+    struct ClosesBeforePut {
+        inner: Arc<dyn Registry>,
+        closed: std::sync::atomic::AtomicBool,
+    }
+    impl ClosesBeforePut {
+        async fn close_first(&self, seat: &SeatId) -> pij_core::error::Result<()> {
+            if !self.closed.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                let current = self.inner.get(seat).await?.expect("the seat is there");
+                self.inner
+                    .tombstone_if_unchanged(current, pij_core::model::OWNER_CLOSE.to_string())
+                    .await?;
+            }
+            Ok(())
+        }
+    }
+    #[async_trait::async_trait]
+    impl Registry for ClosesBeforePut {
+        async fn get(&self, seat: &SeatId) -> pij_core::error::Result<Option<SeatDescriptor>> {
+            self.inner.get(seat).await
+        }
+        async fn put(&self, d: SeatDescriptor) -> pij_core::error::Result<pij_core::model::Seq> {
+            self.inner.put(d).await
+        }
+        async fn put_reporting(
+            &self,
+            d: SeatDescriptor,
+        ) -> pij_core::error::Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
+            self.close_first(&d.id).await?;
+            self.inner.put_reporting(d).await
+        }
+        async fn put_reporting_keeping_parent(
+            &self,
+            d: SeatDescriptor,
+        ) -> pij_core::error::Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
+            self.close_first(&d.id).await?;
+            self.inner.put_reporting_keeping_parent(d).await
+        }
+        async fn list(&self, filter: SeatFilter) -> pij_core::error::Result<Vec<SeatDescriptor>> {
+            self.inner.list(filter).await
+        }
+        async fn tombstone(
+            &self,
+            seat: &SeatId,
+            reason: &str,
+        ) -> pij_core::error::Result<pij_core::model::Seq> {
+            self.inner.tombstone(seat, reason).await
+        }
+        async fn tombstone_if_unchanged(
+            &self,
+            expected: SeatDescriptor,
+            reason: String,
+        ) -> pij_core::error::Result<pij_core::model::Seq> {
+            self.inner.tombstone_if_unchanged(expected, reason).await
+        }
+        async fn set_activity(
+            &self,
+            seat: &SeatId,
+            state: pij_core::model::SystemState,
+            reason: Option<&str>,
+        ) -> pij_core::error::Result<Option<pij_core::model::Seq>> {
+            self.inner.set_activity(seat, state, reason).await
+        }
+    }
+
+    /// Review of #200, F001: a registration reads its seat live, its owner
+    /// closes the seat before the registration writes, then the write runs.
+    /// The real store refuses to clear the close, so the close stands and the
+    /// registration is answered as closed.
+    #[tokio::test]
+    async fn an_owner_close_between_the_snapshot_and_the_put_stands() {
+        let pool = pij_store::open("").await.expect("isolated SQLite");
+        let bus = Arc::new(
+            EventBus::new(Arc::new(pij_store::SqliteSpine::new(pool.clone())), 16)
+                .expect("event bus"),
+        );
+        let store: Arc<dyn Registry> =
+            Arc::new(pij_store::SqliteRegistry::new(pool.clone(), bus.clone()));
+        let mut live = native_seat("pij-closed-mid-registration");
+        live.harness = Harness::Omp;
+        live.native_extension_delivery = false;
+        live.harness_session = Some("same-session".into());
+        store.put(live.clone()).await.expect("live seat");
+        let registry: Arc<dyn Registry> = Arc::new(ClosesBeforePut {
+            inner: store.clone(),
+            closed: std::sync::atomic::AtomicBool::new(false),
+        });
+        let roles = Arc::new(RoleService::new(
+            registry.clone(),
+            pij_store::SqliteOrchestration::new(pool),
+            bus.clone(),
+        ));
+        let service = RegistrationService::new(registry, native_liveness(), bus, Vec::new(), roles);
+        let mut claim = native_claim(live.id.as_str());
+        claim.harness = "omp".into();
+        let result = service
+            .register_with_harness_session(claim, Some("same-session".into()))
+            .await;
+        match result {
+            Err(RegistrationError::Retired { seat, reason }) => {
+                assert_eq!(seat, live.id);
+                assert!(
+                    reason.starts_with(
+                        "E-RS-SEAT-RETIRED seat `pij-closed-mid-registration` was closed by its owner"
+                    ),
+                    "{reason}"
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        let row = store.get(&live.id).await.unwrap().unwrap();
+        assert!(row.tombstoned_at.is_some(), "the close stands");
+        assert_eq!(row.tombstone_reason.as_deref(), Some("owner-close"));
+    }
+
+    /// F149: a verified reclaim is the operator's override, like revive. It
+    /// lifts an owner's close through the real store, which refuses the same
+    /// write from an ordinary registration.
+    #[tokio::test]
+    async fn a_reclaim_lifts_an_owner_close_through_the_store() {
+        let pool = pij_store::open("").await.expect("isolated SQLite");
+        let bus = Arc::new(
+            EventBus::new(Arc::new(pij_store::SqliteSpine::new(pool.clone())), 16)
+                .expect("event bus"),
+        );
+        let registry: Arc<dyn Registry> =
+            Arc::new(pij_store::SqliteRegistry::new(pool.clone(), bus.clone()));
+        let mut closed = native_seat("pij-reclaimed-after-close");
+        closed.harness = Harness::Omp;
+        closed.native_extension_delivery = false;
+        closed.tombstoned_at = Some(149);
+        closed.tombstone_reason = Some("owner-close: PR merged".into());
+        registry.put(closed.clone()).await.expect("closed seat");
+        let roles = Arc::new(RoleService::new(
+            registry.clone(),
+            pij_store::SqliteOrchestration::new(pool),
+            bus.clone(),
+        ));
+        let service =
+            RegistrationService::new(registry.clone(), native_liveness(), bus, Vec::new(), roles);
+        let mut claim = native_claim(closed.id.as_str());
+        claim.harness = "omp".into();
+        let reclaimed = service.reclaim(claim).await.expect("the reclaim lifts it");
+        assert_eq!(reclaimed.tombstoned_at, None);
+        let row = registry.get(&closed.id).await.unwrap().unwrap();
+        assert_eq!(row.tombstoned_at, None);
+        assert_eq!(row.tombstone_reason, None);
     }
 
     #[tokio::test]

@@ -263,3 +263,92 @@ async fn concurrent_put_reporting_observes_the_previous_committed_writer() {
         Some(last)
     );
 }
+
+/// F149 (review of #200, F001): a writer that read a seat live, paused, and
+/// put it back after its owner closed it can't erase the close. The put is
+/// refused with `E-RS-SEAT-RETIRED` in the statement that writes, and leaves
+/// neither a row change nor a spine event. Swapping the owner-close for a
+/// liftable reason is refused the same way. Revive and reclaim lift it on
+/// purpose; any other tombstone still clears as before.
+#[tokio::test]
+async fn a_put_never_erases_an_owner_close_it_did_not_read() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let registry = SqliteRegistry::new(pool.clone(), support::publisher());
+    let spine = SqliteSpine::new(pool.clone());
+    for reason in ["owner-close", "owner-close: PR merged"] {
+        let id = format!("pij-closed-{}", reason.len());
+        let mut live = SeatDescriptor::new(id.as_str(), Harness::Claude, "/tmp/closed");
+        live.harness_session = Some("same-conversation".into());
+        live.proc = Some(ProcIdentity {
+            pid: 149,
+            proc_start: 1,
+        });
+        registry.put(live.clone()).await.expect("live seat");
+        // The paused writer's snapshot: the seat as it read it, live.
+        let snapshot = registry.get(&live.id).await.unwrap().unwrap();
+        registry
+            .tombstone_if_unchanged(snapshot.clone(), reason.to_string())
+            .await
+            .expect("the owner closes it");
+        let closed = registry.get(&live.id).await.unwrap().unwrap();
+        let events = spine.tail(Some(&live.id), Seq(0)).await.unwrap().len();
+
+        let mut resumed = snapshot.clone();
+        resumed.pane = Some("%9".into());
+        let mut swapped = snapshot.clone();
+        swapped.tombstoned_at = Some(1);
+        swapped.tombstone_reason = Some("superseded".into());
+        for (name, put) in [("clear", resumed.clone()), ("swap", swapped)] {
+            for keep_parent in [false, true] {
+                let refused = if keep_parent {
+                    registry.put_reporting_keeping_parent(put.clone()).await
+                } else {
+                    registry.put_reporting(put.clone()).await
+                };
+                match refused {
+                    Err(pij_core::error::PijError::GovernanceRefused { code, record }) => {
+                        assert_eq!(code, "E-RS-SEAT-RETIRED", "{reason} {name}");
+                        assert_eq!(record, id);
+                    }
+                    other => panic!("{reason} {name}: {other:?}"),
+                }
+            }
+            assert_eq!(
+                registry.get(&live.id).await.unwrap(),
+                Some(closed.clone()),
+                "{reason} {name}: the close stands"
+            );
+            assert_eq!(
+                spine.tail(Some(&live.id), Seq(0)).await.unwrap().len(),
+                events,
+                "{reason} {name}: no event"
+            );
+        }
+        // A write that keeps the close exactly is still allowed.
+        let mut kept = closed.clone();
+        kept.pane = Some("%10".into());
+        registry.put(kept).await.expect("the close kept as it is");
+        // Revive and reclaim lift it on purpose.
+        let (_, binding) = registry
+            .put_lifting_owner_close(resumed.clone(), true)
+            .await
+            .expect("an explicit lift");
+        assert!(!binding.inserted);
+        assert_eq!(
+            registry.get(&live.id).await.unwrap().unwrap().tombstoned_at,
+            None
+        );
+    }
+
+    // Any other retirement clears on an ordinary put, as before.
+    let mut seat = SeatDescriptor::new("pij-observed-dead", Harness::Claude, "/tmp/dead");
+    registry.put(seat.clone()).await.unwrap();
+    registry.tombstone(&seat.id, "observed-dead").await.unwrap();
+    seat.pane = Some("%11".into());
+    registry
+        .put(seat.clone())
+        .await
+        .expect("continuity still lifts");
+    assert_eq!(registry.get(&seat.id).await.unwrap(), Some(seat));
+}
