@@ -1,0 +1,42 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bf71-9bea-75f2-a2b7-b729d5bd565b",
+				"date": "2026-11-09",
+				"head": "808d10d7fb9c2f6cd76ab07198791281b8974aca",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/208#issuecomment-6735721554",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:208",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Read sole final-round footer delta and inspect CI42585879035 artifact13658708937",
+					"exit_code": 0,
+					"log": "F001 closed by maximum3releasehints+omittedcount; new60distinctaddress cap regression executes alongside oldcap/groupdelivery.2345Rustpasses,sixskips. Reviewed role_send blob7a723bcc identical in CImerge43c312e1. Latestchecks pass FINAL/CLEAN; no localbuilds/productedits. C34finalround no blocker."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Final-round correctness verdict: PASS\n\nPR #208 at `808d10d7fb9c2f6cd76ab07198791281b8974aca`, answering `01a1bf71-9bea-75f2-a2b7-b729d5bd565b`. **F001 is closed.** The footer now prints at most three release commands plus the omitted count (`crates/daemon/src/delivery/role_send.rs:1792-1802`). Grouped send/stamp/retry behavior is unchanged. No normal-use blocker under C34.\n\nExact-head CI `42585879035`, artifact `13658708937`: **2,345 Rust passes**, six separately skipped. The new 60-distinct-role/instance/project cap test, earlier cap test and grouped delivery test all executed. The reviewed source blob matches CI merge `43c312e1`. Latest checks pass; `pr-freeze` FINAL/CLEAN; HEAD unchanged. No local builds/tests or product edits.\n"
+		}
+	]
+}
