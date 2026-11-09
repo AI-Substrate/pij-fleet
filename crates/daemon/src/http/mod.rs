@@ -2209,21 +2209,26 @@ pub(crate) async fn note_turn_wait(state: &AppState, to: &SeatId, receipt: &mut 
 pub const REPLY_ANSWER_EVENT_KIND: &str = "request.answered_by_reply";
 
 /// How a reply's sender was established, for the audit: the route, and what
-/// bound the caller to a seat (`pane (derived)`)
+/// bound the caller to a seat (`pane (derived)` or [`NATIVE_SESSION_BOUND`])
 /// with the evidence it gave. A reply is never unbound (C32 (1)).
 pub(crate) type ReplyEvidence = serde_json::Value;
 
+/// What bound a paneless native seat's reply: its registered native session.
+pub const NATIVE_SESSION_BOUND: &str = "native session (registered)";
+
 /// Check a reply's sender before anything is sent (S152-001, F88; ruling C32).
 /// Only a send whose `in_reply_to` names a role request, open or closed, is
-/// checked; any other id keeps today's uncorrelated behaviour. The sender must
-/// be bound by the caller's pane: the one binding the daemon observes itself.
-/// A `from` that differs from the bound seat is refused `E-RS-REPLY-SENDER`;
-/// context that cannot be resolved is refused as the identity ladder refuses
-/// it; and a caller with no context, or only an asserted session id, is
-/// refused `E-RS-REPLY-IDENTITY`, normal or FYI. Roster metadata (a seat's
-/// native session, PID and start, also the native receiver lease's key) is
-/// readable by any client, so it never binds a reply (security review of #152,
-/// S152-001). Paneless seats lose correlated replies until PRD 003 req-10.
+/// checked; any other id keeps today's uncorrelated behaviour. The sender is
+/// bound where the daemon already knows it (ruling C33): by the caller's pane,
+/// or, for a paneless native-extension seat, by the native session it
+/// registered with (F154: a Copilot seat outside tmux replies through its
+/// native `pij_send`). A `from` that differs from the bound seat is refused
+/// `E-RS-REPLY-SENDER`; context that cannot be resolved is refused as the
+/// identity ladder refuses it; and a caller with no context, or only an
+/// asserted session id, is refused `E-RS-REPLY-IDENTITY`, normal or FYI. The
+/// native session is roster metadata any local client can read, so it binds
+/// at registration strength only: the residual C32 accepts and C33 makes
+/// permanent (the trust boundary is the user account).
 pub(crate) async fn reply_sender(
     state: &AppState,
     route: &'static str,
@@ -2260,8 +2265,8 @@ pub(crate) async fn reply_sender(
             format!(
                 "E-RS-REPLY-IDENTITY: this reply to request {id} carries {what}, so pij cannot \
                  tell which seat sends it, and it never delivers a reply as {from} on a claim. \
-                 Send it from {from}'s tmux pane. A seat outside tmux cannot send a reply to a \
-                 request until PRD 003 req-10: send the message without --in-reply-to (it is \
+                 Send it from {from}'s tmux pane, or from its native pij_send tool. Otherwise \
+                 send the message without --in-reply-to (it is \
                  delivered, but answers nothing), and if {from} holds the request, mark it \
                  answered with pij output <kind> --role <role> --subject <address> --answers {id}"
             ),
@@ -2277,6 +2282,18 @@ pub(crate) async fn reply_sender(
     match identity::resolve_seat(state, "pij send", session.clone(), pane.clone()).await {
         identity::Resolved::Seat(seat, by) if seat.id != *from => {
             Err(sender(&seat.id, by.as_str()))
+        }
+        identity::Resolved::Seat(seat, identity::ResolvedBy::AssertedId)
+            if native_session_binds(&seat, caller) =>
+        {
+            Ok(Some(serde_json::json!({
+                "route": route,
+                "bound": NATIVE_SESSION_BOUND,
+                "pane": null,
+                "session": session,
+                "pid": seat.proc.map(|proc| proc.pid),
+                "proc_start": seat.proc.map(|proc| proc.proc_start),
+            })))
         }
         identity::Resolved::Seat(_, identity::ResolvedBy::AssertedId) => Err(unbound(
             "only an asserted session id (PIJ_SESSION_ID, no pane), which pij checks for existence only",
@@ -2294,6 +2311,16 @@ pub(crate) async fn reply_sender(
         // downgraded to an unbound reply (ruling C32 (2); S152-001).
         identity::Resolved::Refusal(response) => Err(Box::new(response)),
     }
+}
+
+/// A paneless native-extension seat named by the caller, whose registered
+/// native session the caller also gives (F154; ruling C33).
+fn native_session_binds(seat: &SeatDescriptor, caller: Option<&CallerContext>) -> bool {
+    seat.native_extension_delivery
+        && seat.pane.is_none()
+        && seat.harness_session.as_deref().is_some_and(|registered| {
+            caller.and_then(|caller| caller.harness_session.as_deref()) == Some(registered)
+        })
 }
 
 /// A reply from a role request's holder answers it (plan 214, F68): the

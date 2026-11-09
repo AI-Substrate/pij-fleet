@@ -513,6 +513,30 @@ describe("RustRuntimeSession", () => {
 			runtime.shutdown("quit");
 		}
 	});
+	it("a named in_reply_to answers that request, over the threaded message (F154)", async () => {
+		vi.stubEnv("TMUX_PANE", "%51");
+		const { acknowledgements, runtime, sends } = await bootPushedEvent(
+			PUSHED_EVENT_WIRE,
+			new FakePiRuntime(),
+		);
+		try {
+			await vi.waitFor(() => expect(acknowledgements).toHaveLength(1));
+			await runtime.send("pij-from", "answer", { inReplyTo: "01a1be2c-request" });
+			expect(sends.at(-1)).toMatchObject({
+				in_reply_to: "01a1be2c-request",
+				caller: { tmuxPane: "%51" },
+			});
+			// The threaded message was not the one answered, so it still threads.
+			await runtime.send("pij-from", "reply");
+			expect(sends.at(-1)?.in_reply_to).toBe("000000000000feed-0000000000000000");
+			await expect(runtime.send("pij-from", "x", { inReplyTo: "two ids" })).rejects.toThrow(
+				/in_reply_to/,
+			);
+			expect(sends).toHaveLength(2);
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
 	it("observes its own process start once per runtime, not per send", async () => {
 		// Review of #152, P152-F004: the default reader launches `ps`. Boot, a
 		// correlated reply and a control each need the start; it is read once.
