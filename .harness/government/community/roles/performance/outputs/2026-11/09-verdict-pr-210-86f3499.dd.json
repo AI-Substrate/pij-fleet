@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-09",
+				"head": "86f3499d3ad88e4b7eb58957448291d9ca388a19",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/210#issuecomment-6734533014",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:210",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `86f3499d3ad88e4b7eb58957448291d9ca388a19`, under **C34**.\n\n**Project routing:** the CJS shim takes one existing `spawnSync` branch per call: now the resolved absolute `pij-rs` executable instead of the old Node/tsx branch. It does not execute both. The OMP/native-route adapter likewise invokes its existing native runner once. This counts the forwarding child, not the entire wrapper/tsx process tree. No new daemon launch site, loop, poll or per-tick work.\n\nProject help returns before client construction; the daemon's shim path uses the same help text. Valid calls retain their existing operation cost. `--packet-file` uses the existing in-process file/stdin reader and argument rewriting, not `cat` or another child; its read/copy cost follows packet bytes once per invocation. Subject validation adds grammar/trim checks per output, with accepted subjects capped at 96 bytes; malformed-input length/trim work remains data-sized. No added periodic read, migration or writer commit.\n\n**CI:** [42577561325](https://github.com/AI-Substrate/pij-fleet/actions/runs/42577561325), attempt 1, Rust job **`129028607038`**, upload artifact **13655474821**, pinned to this head: **2,342 executed passed**, no failures/errors; six separately skipped. Verified daemon-free project help, native-verb inventory, packet-file conversion, subject/address and edit-help cases; six spawn guards pass. Node22/24 routing checks, Rust lint and delivers succeed.\n\nFrozen worktree/GitHub heads agree, clean/CLEAN. No local build/test, CLI probe or mutation. No normal-use cost blocker; C34 follow-up for inherited unbounded input preparation only. Other roles' verdicts remain independent.\n"
+		}
+	]
+}
