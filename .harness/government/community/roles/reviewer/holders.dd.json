@@ -1154,7 +1154,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "202",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #202 merged (a856c3a10282)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-09T05:16:11.415Z",
 					"why": "F152 directory edit add/remove list flags"
 				},
 				{

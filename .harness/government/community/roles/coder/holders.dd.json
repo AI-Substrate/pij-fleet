@@ -708,7 +708,10 @@
 					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
 					"instance_key": "f152",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #202 merged (a856c3a10282)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-back-tapir",
+					"to": "2026-11-09T05:16:11.415Z",
 					"why": "F152 directory edit list flags (after F148)"
 				},
 				{
