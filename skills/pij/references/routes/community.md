@@ -62,7 +62,7 @@ pij requests close '<id>' --quiet                # clear a finished one; its tim
 pij delivered '<pr>'                             # the merger, once per merge: prints the ddocs edits
 ```
 
-- Send to a role, not a remembered seat: the directory resolves the holder, and a role with no holder queues the request and wakes the PA. `--reply` sets only how the requester hears back, never delivery.
+- Send to a role, not a remembered seat: the directory resolves the holder, and a role with no holder queues the request and wakes the PA. `--reply` (and `--limit`) go only on a `role:` send; a seat send refuses them (`E-RS-ROLE-ONLY`). `--reply` sets only how the requester hears back, never delivery.
 - **Stall checks**: when a request's limit (`--limit`, else the role's `default_limit`) passes with no output and no card update, its holder gets a check-in, then the PA (else the prime) an escalation. Give merger-like roles one: `--set default_limit=1h` on `edit`.
 - Packets carry the work: paths, proofs, the report target, and the trailers. Write the packet to disk and send its path (dispatch invariant 2).
 - Flip states in the PR that delivers them, with a `Delivers:` line in its body.
@@ -93,7 +93,7 @@ pij directory memory add '<role>' --title '<t>' --hook '<one line>' [--tags '<a,
 
 ## Every role holder
 
-- Results are outputs, not chat: `pij output verdict --role '<id>' --subject '<address>' --head '<sha>' --result pass|pass-with-notes|block [--answers '<msg_id>']`, or `deliverable|note|handover` without `--head`. `--answers` tells the requester in the mode it asked for.
+- Results are outputs, not chat: `pij output verdict --role '<id>' --subject '<address>' --head '<sha>' --result pass|pass-with-notes|block [--answers '<msg_id>']`, or `deliverable|note|handover` without `--head`. A subject is `<kind>:<id>`: `pr:182`, `step:s05`, `issue:F123`, `role:pa`, `prd:003`. A file path (with `#`) is written, but daemon notices show it as invalid. `--answers` tells the requester in the mode it asked for.
 - A role request is answered by that output, or by your reply with `--in-reply-to '<request id>'`; either stops its check-ins.
 - Write a memory note before a compact or close, and read your role's `memory/INDEX.md` when you take a role.
 - Your packet says what to do; this route does not.
