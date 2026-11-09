@@ -760,7 +760,10 @@
 					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
 					"instance_key": "f156",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #210 merged (b80fe3e7ad9c)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-exuberant-wildcat",
+					"to": "2026-11-09T09:42:23.337Z",
 					"why": "CLI papercuts bundle F156, F158, F159 (after F150)"
 				},
 				{
