@@ -1248,17 +1248,29 @@ writer commit as any add. No loop or timer.
 `instance_key`, `default_limit`, `summary`, `template`, `template_version`,
 `harness`, `model`, `effort`, `packet` or `brief`) and any of the role flags
 `add` takes, or `--file <json>` for the whole document. The writer reads the
-committed role under its lock, applies the change (a repeated flag replaces the
-whole list, as for `add --from`), keeps the changelog (a `--file` document's
-own changelog is replaced by the committed one), adds one row with `--why`, and
-commits it like an add (validate, build, commit, pointer), with `ROUTES.md`
-regenerated in the same commit when the role's scope changed (plan 202).
-`data` is `{project, id, path, commit, paths, routes}`, `routes` as for `add`.
+committed role under its lock, applies the change, keeps the changelog (a
+`--file` document's own changelog is replaced by the committed one), adds one
+row with `--why`, and commits it like an add (validate, build, commit, pointer),
+with `ROUTES.md` regenerated in the same commit when the role's scope changed
+(plan 202).
+
+A list flag (`--scope-path`, `--rule`, `--out-of-scope`, `--forbidden`,
+`--input`, `--output-kind`) replaces the whole list, as for `add --from`. To
+change one item, each list has a pair: `--add-<list> <item>` and
+`--remove-<list> <item>` (for example `--add-rule`, `--remove-scope-path`),
+repeatable and `edit` only (F152). Per list, in one call, the replacing flag
+applies first, then every remove, then every add, each in the order given, so a
+remove then an add of the same item moves it to the end. A remove of an item the
+list does not hold, or an add of one it already holds, refuses and writes
+nothing. `data` is `{project, id, path, commit, paths, routes, lists}`, `routes`
+as for `add`; `lists` has one `{list, before, after, removed, added}` per list
+the edit changed (`list` is the flag name), and the human view prints each item
+removed and added, then the list before and after, every item fenced.
 
 | Refusal | When |
 |---|---|
 | `E-RS-DIRECTORY-ROLE-MISSING` | the role has no `role.dd.json`; the next step is `pij directory add` |
-| `E-RS-ARG` | no id, no `--why`, nothing to change, an edit that changes nothing, `--set` without `=`, a field `--set` cannot set, a field given twice, `--file` with flags, a document naming another id, or `--set` on any verb but edit |
+| `E-RS-ARG` | no id, no `--why`, nothing to change, an edit that changes nothing, `--set` without `=`, a field `--set` cannot set, a field given twice, `--file` with flags, a document naming another id, `--set` on any verb but edit, `--add-<list>` or `--remove-<list>` on any verb but edit, a remove of an item the list does not hold, or an add of one it already holds |
 | `E-RS-DDOCS-INVALID` | ddocs refuses the edited document; nothing is committed |
 
 `pij directory retire <role> --why <text>` and `pij directory merge <from>

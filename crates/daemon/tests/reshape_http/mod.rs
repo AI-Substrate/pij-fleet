@@ -1857,3 +1857,277 @@ async fn a_not_told_refusal_never_prints_a_hostile_requester() {
         "{meta}"
     );
 }
+
+/// Where each list lives in the committed document.
+fn list_at(document: &Value, flag: &str) -> Value {
+    match flag {
+        "scope-path" => section(document, "scope")["paths"].clone(),
+        "rule" => section(document, "scope")["rules"].clone(),
+        "out-of-scope" => section(document, "out_of_scope"),
+        "forbidden" => section(document, "forbidden_paths"),
+        "input" => section(document, "inputs"),
+        "output-kind" => section(document, "output_kinds"),
+        other => panic!("{other}"),
+    }
+}
+
+/// F152: for each list flag, --add appends, --remove removes only the named
+/// item, a missing remove or a duplicate add refuses and commits nothing, and
+/// every edit reports what it removed with the list before and after.
+#[tokio::test]
+async fn every_list_flag_has_an_add_and_remove_pair() {
+    for (flag, a, b, c) in [
+        ("scope-path", "src/a/**", "src/b/**", "src/c/**"),
+        ("rule", "a", "b", "c"),
+        ("out-of-scope", "a", "b", "c"),
+        ("forbidden", "x/a/**", "x/b/**", "x/c/**"),
+        ("input", "a", "b", "c"),
+        ("output-kind", "verdict", "note", "handover"),
+    ] {
+        let repo = repo(&format!("pij-directory-edit-lists-{flag}"));
+        let (addr, server, _fresh) = daemon().await;
+        fleet(addr, &repo).await;
+        let added = directory(
+            addr,
+            &repo,
+            &[
+                "add",
+                "lists",
+                "--title",
+                "Lists",
+                "--kind",
+                "specialist",
+                "--lifecycle",
+                "long-lived",
+                "--holders",
+                "one",
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+        let flag_arg = format!("--{flag}");
+        let (add, remove) = (format!("--add-{flag}"), format!("--remove-{flag}"));
+        let edit = |argv: Vec<String>| {
+            let repo = &repo;
+            async move {
+                let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+                directory(addr, repo, &argv).await
+            }
+        };
+        let words = |parts: &[&str]| {
+            parts
+                .iter()
+                .map(|part| (*part).to_string())
+                .collect::<Vec<_>>()
+        };
+
+        // The replacing flag: the whole list is the given items.
+        let seeded = edit(words(&[
+            "edit", "lists", &flag_arg, a, &flag_arg, b, "--why", "seed",
+        ]))
+        .await;
+        assert_eq!(seeded["ok"], true, "{flag}: {seeded}");
+        assert_eq!(
+            list_at(&committed(&repo, "lists"), flag),
+            json!([a, b]),
+            "{flag}"
+        );
+
+        // --add appends.
+        let appended = edit(words(&["edit", "lists", &add, c, "--why", "add"])).await;
+        assert_eq!(appended["ok"], true, "{flag}: {appended}");
+        assert_eq!(
+            list_at(&committed(&repo, "lists"), flag),
+            json!([a, b, c]),
+            "{flag}"
+        );
+        let change = &appended["data"]["lists"][0];
+        assert_eq!(change["list"], flag, "{appended}");
+        assert_eq!(change["added"], json!([c]), "{appended}");
+        assert_eq!(change["removed"], json!([]), "{appended}");
+
+        // --remove removes only the named item, and reports it.
+        let removed = edit(words(&["edit", "lists", &remove, a, "--why", "remove"])).await;
+        assert_eq!(removed["ok"], true, "{flag}: {removed}");
+        assert_eq!(
+            list_at(&committed(&repo, "lists"), flag),
+            json!([b, c]),
+            "{flag}"
+        );
+        let change = &removed["data"]["lists"][0];
+        assert_eq!(change["removed"], json!([a]), "{removed}");
+        assert_eq!(change["before"], json!([a, b, c]), "{removed}");
+        assert_eq!(change["after"], json!([b, c]), "{removed}");
+
+        // A missing item, or a duplicate add, refuses and commits nothing.
+        let before = head(&repo);
+        let missing = edit(words(&["edit", "lists", &remove, a, "--why", "again"])).await;
+        assert_eq!(missing["ok"], false, "{flag}: {missing}");
+        assert!(
+            missing["meta"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("not in the list"),
+            "{missing}"
+        );
+        let duplicate = edit(words(&["edit", "lists", &add, b, "--why", "dup"])).await;
+        assert_eq!(duplicate["ok"], false, "{flag}: {duplicate}");
+        assert!(
+            duplicate["meta"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("already in the list"),
+            "{duplicate}"
+        );
+        assert_eq!(head(&repo), before, "{flag}: nothing committed");
+
+        // The replacing form reports every item it removed.
+        let replaced = edit(words(&["edit", "lists", &flag_arg, a, "--why", "replace"])).await;
+        assert_eq!(replaced["ok"], true, "{flag}: {replaced}");
+        let change = &replaced["data"]["lists"][0];
+        assert_eq!(change["removed"], json!([b, c]), "{replaced}");
+        assert_eq!(change["after"], json!([a]), "{replaced}");
+        server.abort();
+    }
+}
+
+/// F152: in one call, per list, the replacing flag applies first, then every
+/// remove, then every add; other lists are untouched. The same item may be
+/// removed and added back in one call (it moves to the end).
+#[tokio::test]
+async fn combined_list_edits_apply_replace_then_remove_then_add() {
+    let repo = repo("pij-directory-edit-lists-order");
+    let (addr, server, _fresh) = daemon().await;
+    fleet(addr, &repo).await;
+    let added = directory(
+        addr,
+        &repo,
+        &[
+            "add",
+            "lists",
+            "--title",
+            "Lists",
+            "--kind",
+            "specialist",
+            "--lifecycle",
+            "long-lived",
+            "--holders",
+            "one",
+            "--rule",
+            "r1",
+            "--rule",
+            "r2",
+            "--input",
+            "i1",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    let edited = directory(
+        addr,
+        &repo,
+        &[
+            "edit",
+            "lists",
+            "--add-rule",
+            "r4",
+            "--remove-rule",
+            "r3",
+            "--rule",
+            "r1",
+            "--rule",
+            "r3",
+            "--add-input",
+            "i2",
+            "--why",
+            "both",
+        ],
+    )
+    .await;
+    assert_eq!(edited["ok"], true, "{edited}");
+    let document = committed(&repo, "lists");
+    assert_eq!(
+        section(&document, "scope")["rules"],
+        json!(["r1", "r4"]),
+        "replace, remove, add"
+    );
+    assert_eq!(section(&document, "inputs"), json!(["i1", "i2"]));
+    let lists: Vec<&str> = edited["data"]["lists"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|change| change["list"].as_str().unwrap())
+        .collect();
+    assert_eq!(lists, ["rule", "input"], "{edited}");
+    assert_eq!(
+        edited["data"]["lists"][0]["removed"],
+        json!(["r2"]),
+        "{edited}"
+    );
+
+    let moved = directory(
+        addr,
+        &repo,
+        &[
+            "edit",
+            "lists",
+            "--remove-rule",
+            "r1",
+            "--add-rule",
+            "r1",
+            "--why",
+            "move",
+        ],
+    )
+    .await;
+    assert_eq!(moved["ok"], true, "{moved}");
+    assert_eq!(
+        section(&committed(&repo, "lists"), "scope")["rules"],
+        json!(["r4", "r1"])
+    );
+
+    let not_edit = directory(
+        addr,
+        &repo,
+        &[
+            "add",
+            "other",
+            "--title",
+            "O",
+            "--kind",
+            "specialist",
+            "--lifecycle",
+            "long-lived",
+            "--holders",
+            "one",
+            "--rule",
+            "r",
+            "--add-rule",
+            "x",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+    )
+    .await;
+    assert_eq!(not_edit["ok"], false, "{not_edit}");
+    assert!(
+        not_edit["meta"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("belong to `edit`"),
+        "{not_edit}"
+    );
+    server.abort();
+}

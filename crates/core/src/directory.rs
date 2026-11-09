@@ -138,8 +138,14 @@ Usage:
 
 --set takes title, kind, lifecycle, holders, instance_key, default_limit,
 summary, template, template_version, harness, model, effort, packet or brief.
-The role flags `add` takes work too (a repeated flag such as --rule replaces
-the whole list). --file replaces the whole document but keeps its changelog.
+The role flags `add` takes work too. A list flag (--rule, --scope-path,
+--out-of-scope, --forbidden, --input, --output-kind) REPLACES THE WHOLE LIST
+with the items given. To change one item, use --add-<list> <item> or
+--remove-<list> <item> (repeatable, for example --add-rule, --remove-scope-path):
+per list, any replacing flag applies first, then every remove, then every add.
+Removing an item the list does not hold, or adding one it already holds,
+refuses. Every edit prints each list it changed, before and after, and each
+item it removed. --file replaces the whole document but keeps its changelog.
 Every edit adds one changelog row (--why) and commits through the writer; an
 edit that changes nothing, or a role that does not exist, refuses.";
 
