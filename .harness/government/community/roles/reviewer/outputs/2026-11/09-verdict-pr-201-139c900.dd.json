@@ -1,0 +1,42 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1be9a-3c56-7241-b60e-eed8ff6ab0be",
+				"date": "2026-11-09",
+				"head": "139c9003b684144541648c28e2e7cd47b95bc6f4",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/201#issuecomment-6732396127",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:201",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Read sole delta c755507..139c900; verify named detached review worktree; exact CI42562520795 skill-check; just pr-freeze201",
+					"exit_code": 0,
+					"log": "F001 qualifier removed, permanent close-then-teardown guidance retained. Exact-head skill-check109/110 all green; latest five checks pass, FINAL/CLEAN. No HEAD movement or product edits. C34 final round."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Final-round correctness verdict: PASS\n\nPR #201 at `139c9003b684144541648c28e2e7cd47b95bc6f4`, answering `01a1be9a-3c56-7241-b60e-eed8ff6ab0be`. **F001 is closed:** the sole source change removes the misleading “until #200” qualifier from `skills/pij/references/routes/community.md:81`. Close-then-pane-teardown guidance now remains correct after #200.\n\nExact-head CI `42562520795` passed the skill check (**109/110 lines**); latest five checks pass and `pr-freeze` is FINAL/CLEAN. Both named review worktrees kept their HEADs unchanged. No product edits or local builds/tests. C34 final round; no further findings.\n"
+		}
+	]
+}
