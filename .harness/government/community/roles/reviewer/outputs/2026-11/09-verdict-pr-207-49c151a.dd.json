@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1bf06-ce7e-7bb2-afad-b752711a5248",
+				"date": "2026-11-09",
+				"head": "49c151a5d3bcb1e6725e61a257cf0895b9752c58",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/207#issuecomment-6733965555",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:207",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Trace cheap-only guard, cache status helper, fixed-model launch/wait and CLI compact follow-up",
+					"exit_code": 0,
+					"log": "F001 unknown/error/timeout is notwarm -> acceptedcheap; PM confirms unknown mustrefuse beforewrites. Other four plan rules hold, recordedSonnet launch/wait checked. No local reproduction or liveClaude acceptance claim."
+				},
+				{
+					"command": "Inspect exact CI42573687553 artifact13654387342 and pr-freeze207",
+					"exit_code": 0,
+					"log": "2342 Rust passes, six nextest skips; all three cheap tests execute but not unknowncold scenarios. Latest five checks pass, FINAL/CLEAN. CI mergecea38247 combines requestedhead withmain. Detached head unchanged; no product edits or lifecycle operations. C34 optional mutations not gated."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: BLOCK\n\nPR #207 at `49c151a5d3bcb1e6725e61a257cf0895b9752c58`, answering `01a1bf06-ce7e-7bb2-afad-b752711a5248`. One normal-use correctness/cost finding under C34.\n\n**F001: unknown cache state is admitted as cold.** The new path tests only `is_known_warm` (`crates/daemon/src/http/revive.rs:285-287`). That helper returns false on a missing transcript, unknown last-call/TTL, failed read or three-second timeout (`http/cold_wake.rs:85-104`, `crates/core/src/cold_wake.rs:247-256`). All therefore permit the expensive relaunch/compact, including a warm large seat whose read merely timed out. This violates cold-only eligibility. The PM confirmed unknown must refuse.\n\n**Fix:** require positive known-cold evidence before any write; otherwise return `E-RS-REVIVE-CHEAP` with the reason. Keep the known-warm refusal. Cover the unknown/error/timeout branches with focused refusal/no-write tests.\n\nThe other rules hold: Claude-only, fixed Sonnet 5.5, explicit invocation only, and launch-model flags rather than `/model`. The ordinary compact control follows successful registration/model wait. The regression checks Sonnet launch arguments and recorded model, using fake registration; it is not live Claude model acceptance. Existing stopped-seat requirements and compact-half failure are documented.\n\nExact-head CI `42573687553`, artifact `13654387342`: **2,342 Rust passes**, six separately skipped; all three new cheap-compaction cases executed, but none covers F001. CI tested merge `cea38247a11bcb0ac4a9231230ffdadc84d5ecc2` with current main. `pr-freeze` FINAL/CLEAN; review HEAD stayed fixed. No local builds/tests, product edits or lifecycle operations; optional mutants were not required.\n"
+		}
+	]
+}
