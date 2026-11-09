@@ -770,7 +770,10 @@
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"instance_key": "f161",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #208 merged (0acfae12380a)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-09T08:42:56.770Z",
 					"why": "F161 group time-limit alerts per holder; dead-holder advice (delivery/role_send.rs)"
 				}
 			]

@@ -1229,7 +1229,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "208",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #208 merged (0acfae12380a)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-09T08:42:56.770Z",
 					"why": "F161 grouped time-limit alerts"
 				},
 				{
