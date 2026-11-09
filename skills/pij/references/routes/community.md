@@ -21,7 +21,6 @@ pij directory add '<id>' --why '<the need>' --title '<title>' --rule '<rule>' --
 pij directory assign '<role>[/<instance>]' '<seat>' --why '<text>'
 pij directory release '<role>[/<instance>]' '<seat>' --why '<text>'
 pij directory edit '<id>' --why '<text>' --set '<field>=<value>' [role flags]
-pij directory edit '<id>' --why '<text>' --add-rule '<rule>' --remove-scope-path '<path>'  # one item; a bare --rule replaces the whole list
 pij directory retire '<role>' --why '<text>' [--drop-queued]
 pij directory merge '<from>' --into '<to>' --why '<text>' [--drop-queued]
 pij directory template-diff '<id>'               # upstream change since the role's version; never applied
