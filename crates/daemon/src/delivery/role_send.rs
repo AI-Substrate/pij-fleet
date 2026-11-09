@@ -1787,7 +1787,17 @@ fn notice_next(holder: &str, gone: Option<&Gone>, releases: &[String]) -> String
             command(&["pij", "state", holder])
         )),
     };
-    let release = format!("give the role another holder ({})", releases.join("; "));
+    // Review of #208 (ocelot): the footer is capped too, so many distinct
+    // addresses never push the message past its cap.
+    let shown = releases.len().min(LIMIT_RELEASES_SHOWN);
+    let more = match releases.len() - shown {
+        0 => String::new(),
+        more => format!("; ...and {more} more, one per role"),
+    };
+    let release = format!(
+        "give the role another holder ({}{more})",
+        releases[..shown].join("; ")
+    );
     match first {
         Some(first) => format!("{first}, or {release}"),
         None => release,
@@ -1796,6 +1806,9 @@ fn notice_next(holder: &str, gone: Option<&Gone>, releases: &[String]) -> String
 
 /// The most a grouped time-limit message carries (F161, as F150's idle notice).
 const LIMIT_BODY_CAP: usize = 2_048;
+
+/// How many release commands a notice spells out before "...and N more".
+const LIMIT_RELEASES_SHOWN: usize = 3;
 
 /// One message for a group: the earlier single text for one request, else
 /// one line per request, oldest first, capped with "...and N more".
@@ -1965,6 +1978,42 @@ mod tests {
             "{body}"
         );
         assert!(body.ends_with("Nothing has been stopped. Next: give the role another holder (pij directory release pm-001 pij-holder --why '<why>' --project fleet)."), "{body}");
+    }
+
+    /// Review of #208 (ocelot): every request under its own role, instance
+    /// and project gives a distinct release command; the footer lists a few
+    /// and the whole message still stays within 2 KB.
+    #[test]
+    fn a_grouped_limit_message_with_many_addresses_stays_within_the_cap() {
+        let members: Vec<Due> = (0..60)
+            .map(|index| Due {
+                request: RoleRequest {
+                    id: format!("req-{index:02}"),
+                    project: format!("project-{index:02}"),
+                    role: format!("role-{index:02}"),
+                    instance: format!("instance-{index:02}"),
+                    requester: "pij-asker".to_string(),
+                    ..forged()
+                },
+                stage: LimitStage::Notice,
+                holder: SeatId::from("pij-holder"),
+                limit: 60_000,
+                held_ms: 0,
+                silence: Some(Silence::Unanswered),
+                to: None,
+                gone: Some(Gone::of(None)),
+            })
+            .collect();
+        let refs: Vec<&Due> = members.iter().collect();
+        let body = limit_body(&refs);
+        assert!(body.len() <= LIMIT_BODY_CAP, "{} bytes: {body}", body.len());
+        assert_eq!(
+            body.matches("pij directory release").count(),
+            LIMIT_RELEASES_SHOWN,
+            "{body}"
+        );
+        assert!(body.contains("...and 57 more, one per role)."), "{body}");
+        assert!(body.contains("\n- req-00 ("), "{body}");
     }
 
     /// F132: the holder frame, the check-in and both limit notices are
