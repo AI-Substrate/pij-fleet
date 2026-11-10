@@ -909,6 +909,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-doubtful-lemur",
 					"why": "F162 promoted (prime): standing-by Copilot session lease retries are the main launch source"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T05:17:07.164Z",
+					"harness": "copilot",
+					"harness_session": "a400e300-fa07-43e7-8444-52c45ecf15d5",
+					"instance_key": "f175",
+					"machine": "ops.osk.lan",
+					"seat": "pij-doubtful-lemur",
+					"why": "F175 kill-pane hint on a recycled pane can kill a live seat (priority, prime)"
 				}
 			]
 		}

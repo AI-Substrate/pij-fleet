@@ -88,3 +88,4 @@
 | — | pij-doubtful-lemur | copilot | a400e300-fa07-43e7-8444-52c45ecf15d5 | ops.osk.lan | f173 | 2026-11-10T04:51:19.454Z | — | pij-steady-otter | — | F173 flaky display-hook test (EPIPE race) | — |
 | — | pij-rival-salmon | copilot | ef7816c2-f4dd-41a8-995d-94742dbced39 | ops.osk.lan | f174 | 2026-11-10T04:59:58.620Z | — | pij-steady-otter | — | F174 CLI/extension retry while the daemon restarts (stoat friction) | — |
 | — | pij-doubtful-lemur | copilot | a400e300-fa07-43e7-8444-52c45ecf15d5 | ops.osk.lan | f162 | 2026-11-10T05:04:27.038Z | — | pij-steady-otter | — | F162 promoted (prime): standing-by Copilot session lease retries are the main launch source | — |
+| — | pij-doubtful-lemur | copilot | a400e300-fa07-43e7-8444-52c45ecf15d5 | ops.osk.lan | f175 | 2026-11-10T05:17:07.164Z | — | pij-steady-otter | — | F175 kill-pane hint on a recycled pane can kill a live seat (priority, prime) | — |
