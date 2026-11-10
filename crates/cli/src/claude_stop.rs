@@ -7,12 +7,11 @@
 use std::time::Duration;
 
 use pij_core::model::{Envelope, ErrorKind};
+use pij_core::turn_end::{TurnEndResult, may_end_with_block};
 use serde_json::{Value, json};
 
-use crate::client::{CallerContext, DaemonClient};
+use crate::client::{CallerContext, DaemonClient, TurnEndRequest};
 
-/// The daemon route that runs a reply's closing pij block.
-pub const TURN_END_ROUTE: &str = "/v1/turn-end";
 /// A block of up to 20 commands runs in order; a wedged daemon must not hold
 /// the stop past the hook script's own watchdog.
 pub const TURN_END_TIMEOUT: Duration = Duration::from_secs(30);
@@ -34,16 +33,6 @@ pub struct StopInput {
     pub last_assistant_message: Option<String>,
 }
 
-/// The cheap tail check before any daemon call: the text, trimmed at the end,
-/// closes a fence, and some line opens a `pij` one. The daemon parses for real.
-#[must_use]
-pub fn ends_with_pij_fence(text: &str) -> bool {
-    text.trim_end().ends_with("```")
-        && text
-            .lines()
-            .any(|line| line.trim_start().starts_with("```pij"))
-}
-
 /// What the hook prints, and whether the seat is idle now.
 #[derive(Debug, PartialEq, Eq)]
 pub struct StopAnswer {
@@ -57,17 +46,15 @@ pub struct StopAnswer {
 /// Decide from the daemon's answer. `followup` set means the block failed; the
 /// seat gets its one follow-up turn only when this stop is not already one.
 #[must_use]
-pub fn answer(response: &Envelope<Value>, stop_hook_active: bool) -> StopAnswer {
+pub fn answer(response: &Envelope<TurnEndResult>, stop_hook_active: bool) -> StopAnswer {
     let (summary, followup) = if response.ok {
-        let field = |name: &str| {
-            response
-                .data
-                .as_ref()
-                .and_then(|data| data[name].as_str())
-                .filter(|value| !value.trim().is_empty())
-                .map(str::to_string)
-        };
-        (field("summary"), field("followup"))
+        let nonblank =
+            |field: Option<&String>| field.filter(|value| !value.trim().is_empty()).cloned();
+        let data = response.data.as_ref();
+        (
+            nonblank(data.and_then(|data| data.summary.as_ref())),
+            nonblank(data.and_then(|data| data.followup.as_ref())),
+        )
     } else {
         let (summary, followup) = unreached(response);
         (Some(summary), Some(followup))
@@ -96,7 +83,7 @@ pub fn answer(response: &Envelope<Value>, stop_hook_active: bool) -> StopAnswer 
 /// The daemon gave no result. A refusal it sent ran nothing; a lost or
 /// timed-out call may have run some of the block, so the seat must check
 /// before resending. The same wording as the OMP and Copilot hooks.
-fn unreached(response: &Envelope<Value>) -> (String, String) {
+fn unreached(response: &Envelope<TurnEndResult>) -> (String, String) {
     let reason = clip_reason(response.meta.as_deref().unwrap_or_default());
     let reason = if reason.is_empty() {
         "the daemon did not answer".to_string()
@@ -161,7 +148,7 @@ pub struct StopRun {
 pub async fn run(client: &DaemonClient, pane: &str, input: &str) -> StopRun {
     let stop: StopInput = serde_json::from_str(input.trim()).unwrap_or_default();
     let text = stop.last_assistant_message.as_deref().unwrap_or_default();
-    let answer = if ends_with_pij_fence(text) {
+    let answer = if may_end_with_block(text) {
         let caller = CallerContext {
             pane: Some(pane.to_string()),
             claude_session: stop.session_id.clone(),
@@ -172,19 +159,20 @@ pub async fn run(client: &DaemonClient, pane: &str, input: &str) -> StopRun {
             }),
             ..CallerContext::default()
         };
-        let body = json!({"text": text, "caller": caller, "via": "hook:claude"});
-        let response = tokio::time::timeout(
-            TURN_END_TIMEOUT,
-            client.post::<Value, _>("pij turn-end", TURN_END_ROUTE, &body),
-        )
-        .await
-        .unwrap_or_else(|_| {
-            Envelope::refused(
-                "pij turn-end",
-                ErrorKind::Adapter,
-                format!("no answer in {}s", TURN_END_TIMEOUT.as_secs()),
-            )
-        });
+        let request = TurnEndRequest {
+            text: text.to_string(),
+            caller,
+            via: Some("hook:claude".to_string()),
+        };
+        let response = tokio::time::timeout(TURN_END_TIMEOUT, client.turn_end(&request))
+            .await
+            .unwrap_or_else(|_| {
+                Envelope::refused(
+                    pij_daemon::http::TURN_END,
+                    ErrorKind::Adapter,
+                    format!("no answer in {}s", TURN_END_TIMEOUT.as_secs()),
+                )
+            });
         answer(&response, stop.stop_hook_active)
     } else {
         StopAnswer {
@@ -212,26 +200,27 @@ pub async fn run(client: &DaemonClient, pane: &str, input: &str) -> StopRun {
 mod tests {
     use super::*;
 
-    fn ok(data: Value) -> Envelope<Value> {
-        Envelope::ok("pij turn-end", data)
-    }
+    use pij_core::turn_end::Outcome;
 
-    #[test]
-    fn the_tail_check_wants_a_closing_fence_and_a_pij_opening() {
-        assert!(ends_with_pij_fence(
-            "Done.\n\n```pij\nsend a \"b\"\n```\n  "
-        ));
-        assert!(!ends_with_pij_fence("```pij\nsend a b\n```\nAnd prose."));
-        assert!(!ends_with_pij_fence("```bash\nls\n```"));
-        assert!(!ends_with_pij_fence(""));
+    fn ok(
+        outcome: Outcome,
+        summary: Option<&str>,
+        followup: Option<&str>,
+    ) -> Envelope<TurnEndResult> {
+        Envelope::ok(
+            pij_daemon::http::TURN_END,
+            TurnEndResult {
+                outcome,
+                summary: summary.map(str::to_string),
+                followup: followup.map(str::to_string),
+                ..TurnEndResult::none()
+            },
+        )
     }
 
     #[test]
     fn a_block_that_ran_shows_one_line_and_the_seat_goes_idle() {
-        let answer = answer(
-            &ok(json!({"outcome": "ran", "ran": 2, "summary": "pij ✓ 2 sent", "followup": null})),
-            false,
-        );
+        let answer = answer(&ok(Outcome::Ran, Some("pij ✓ 2 sent"), None), false);
         assert_eq!(
             answer,
             StopAnswer {
@@ -239,7 +228,7 @@ mod tests {
                 publish_idle: true,
             }
         );
-        let none = super::answer(&ok(json!({"outcome": "none", "summary": null})), false);
+        let none = super::answer(&ok(Outcome::None, None, None), false);
         assert_eq!(
             none,
             StopAnswer {
@@ -251,12 +240,11 @@ mod tests {
 
     #[test]
     fn a_failed_block_gets_one_follow_up_turn_and_stays_working() {
-        let refused = ok(json!({
-            "outcome": "refused",
-            "ran": 1,
-            "summary": "pij ✗ line 2 refused (1 ran)",
-            "followup": "Ran, do not resend: line 1.",
-        }));
+        let refused = ok(
+            Outcome::Refused,
+            Some("pij ✗ line 2 refused (1 ran)"),
+            Some("Ran, do not resend: line 1."),
+        );
         assert_eq!(
             answer(&refused, false),
             StopAnswer {
@@ -282,8 +270,11 @@ mod tests {
 
     #[test]
     fn a_refusal_ran_nothing_and_a_lost_call_may_have_run_some() {
-        let refused =
-            Envelope::<Value>::refused("pij turn-end", ErrorKind::Refused, "bad body\nsecond line");
+        let refused = Envelope::<TurnEndResult>::refused(
+            "pij turn-end",
+            ErrorKind::Refused,
+            "bad body\nsecond line",
+        );
         let output = answer(&refused, false).output.expect("output");
         assert_eq!(
             output["systemMessage"],
@@ -295,7 +286,7 @@ mod tests {
                 .is_some_and(|reason| reason.contains("Nothing was sent."))
         );
 
-        let lost = Envelope::<Value>::refused(
+        let lost = Envelope::<TurnEndResult>::refused(
             "pij turn-end",
             ErrorKind::Adapter,
             "could not reach the daemon: connection reset",
