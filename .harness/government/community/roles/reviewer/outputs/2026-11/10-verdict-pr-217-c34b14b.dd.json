@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c3cb-13b1-7b63-8b25-b1f28ae73e04",
+				"date": "2026-11-10",
+				"head": "c34b14bf2050aa479ab1423c9226728c938acc7b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/217#issuecomment-6759391552",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:217",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#217 correctness review: PASS\n\nExact head: `c34b14bf2050aa479ab1423c9226728c938acc7b`. Six-file documentation/description delta only. No finding.\n\nBoth `pij_send` descriptions add the requested fire-and-forget closing-block sentence verbatim, without changing tool parameters or execution. The skill leads with that habit while retaining tool calls for answers/receipts needed before continuing, the long-packet tool/pointer-delivery exception, and the correct send/output body-file distinction. The self-send refusal agrees with `crates/core/src/delivery.rs:369-386`. Peer, prime and PA pointers resolve to the existing Closing commands section and its heading anchor. No documented writing command was executed.\n\n**Evidence:** `just pr-freeze 217` returned FINAL at this head; detached tree clean. Existing checks are green in [CI run 42757918505](https://github.com/AI-Substrate/pij-fleet/actions/runs/42757918505), including the 347-test Copilot native suite. Local read-only `just pij-skill-check` passed all enforced checks; it emitted the unchanged advisory protocol-length warning. No builds, installs, settings changes, lifecycle operations or product edits. No new runtime path or performance verdict required.\n"
+		}
+	]
+}
