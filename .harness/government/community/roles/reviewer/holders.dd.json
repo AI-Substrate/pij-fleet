@@ -1297,7 +1297,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "215",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #215 merged (02328d7a471b)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-10T04:58:32.965Z",
 					"why": "#215 plan 225 amendment (kestrel), FINAL 4b719a4"
 				},
 				{
