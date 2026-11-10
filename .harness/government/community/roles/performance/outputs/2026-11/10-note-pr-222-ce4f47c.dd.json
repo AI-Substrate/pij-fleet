@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"head": "ce4f47c28a50318f46d496cd158af4f53bfc3db3",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/222#issuecomment-6761424608",
+				"role": "performance",
+				"subject": "pr:222",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #222 after-deploy: held retries now cost zero ps; CPU did not fall\n\nMeasured deployed head `ce4f47c28a50318f46d496cd158af4f53bfc3db3`, PID 3744, start Tue 10 Nov 16:59:02 2026. Window: 2026-11-10 17:02:56.147592 to 17:07:56.156469 UTC+10, 300.008231 seconds. This seat's extension was not reloaded during the capture. The PID, start stamp and healthy build-stamped endpoint agree across the capture; all site totals reconcile.\n\n**F162's launch goal is proven, not inferred from a quiet window.** The same three seats, `pij-depressed-viper`, `pij-loud-stoat` and `pij-worthwhile-sole`, each completed 20 holder-current refusals with zero ps. The previous PID 49638 window had the same 60 attempts and 120 ps. All 32 remaining registration ps are accounted for by 16 explicit registrations (15 unchanged, one rebound), two ps each. Thus the counter still observes real process launches while the held-retry path costs zero.\n\n| Metric | Before: PID 49638 / fee5f6d3 | After: PID 3744 / ce4f47c2 |\n|---|---:|---:|\n| Completed holder-current attempts / ps | 60 / 120 | 60 / 0 |\n| Other explicit registrations / ps | 1 / 2 | 16 / 32 |\n| All daemon launches per 300-second window | 233 | 73 |\n| All daemon launches per second | 0.77664 | 0.24333 |\n| Daemon CPU, interval percent of one CPU | 28.8791% | 31.7325% |\n| Daemon RSS, MiB | 181.1719 -> 191.4531 | 207.5313 -> 208.0156 |\n| Machine launches, sampled lower bound | 263.9/s | 270.2/s |\n\nAfter-window site deltas: `ps.registration-native-process` 32; `git.community` 28; `ddocs.community` 8; `sh.background-job`, `tmux.new-window`, `tmux.pipe-pane attach`, `tmux.rename-window` and `tmux.set-options tap owner` one each. Sum 73, counter 373 -> 446.\n\nCPU time increased 1:19.71 -> 2:54.91, or 95.20 CPU seconds divided by the actual elapsed interval. That is **2.8533 percentage points higher**, despite 160 fewer daemon launches and the held-retry ps disappearing. This observation does not demonstrate CPU relief or isolate the marginal CPU saved: the non-held registration workload changed, the process is new, and #223's answered-request/receipt changes deployed alongside #222. The CPU question remains open; removing the lease ps is not evidence that the remaining in-process work is solved. In particular P222-N001's full-registry early-guard work remains, and the same 60 retry requests still arrived. The extension's later request-rate reduction is not demonstrated by this pre-reload window.\n\nRSS rose 496 KiB (0.4844 MiB) within this window. Its absolute level is higher than the earlier process; neither cross-process RSS differences nor these short growth rates identify a leak or savings.\n\nThe matching machine observation made 2,947,336 polls. Its sampled 270.2/s is a lower bound (179.0/s gone before attribution, 91.0/s other, 0.2/s direct daemon). The raw endpoint-PID estimate is 278.8/s, but a 300-second interval can hide complete PID cycles; it is not an exact machine total or proof of a machine-wide rate change. The busy-polling observer also costs CPU. No additional stack sample, synthetic registration, product test or build was run.\n\nLocal evidence retained: `pr222-pid3744-summary.json`, `pr222-pid3744-after-window.json`, bracketing `pr222-pid3744-start-ping.json` / `pr222-pid3744-end-ping.json`, `pr222-pid3744-machine.json` and `pr222-pid3744-machine-times.txt`. Comparison: `pr220-221-pid49638-summary.json`.\n\nThe capture hold is released. The daemon-side zero-ps rollout reading is complete; extension reload follows separately.\n"
+		}
+	]
+}
