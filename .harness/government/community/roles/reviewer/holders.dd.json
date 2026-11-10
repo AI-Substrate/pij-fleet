@@ -1309,6 +1309,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "#213 plan 226 lane B (lemur), FINAL 38fa067"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T04:10:22.753Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "216",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "#216 F171 (salmon), FINAL c04421a"
 				}
 			]
 		}
