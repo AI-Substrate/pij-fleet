@@ -811,6 +811,16 @@
 					"seat": "pij-rival-salmon",
 					"to": "2026-11-10T02:05:37.669Z",
 					"why": "plan 226 phase 1: end-of-turn pij block, OMP extension prototype (prime, Jordan approved 2026-11-10)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T02:05:59.671Z",
+					"harness": "copilot",
+					"harness_session": "ef7816c2-f4dd-41a8-995d-94742dbced39",
+					"instance_key": "f169",
+					"machine": "ops.osk.lan",
+					"seat": "pij-rival-salmon",
+					"why": "F169 FYI misuse stall net + sender guard + wording + PA line + skill root cause; F170 stale held notices (prime: whoever free first)"
 				}
 			]
 		}
