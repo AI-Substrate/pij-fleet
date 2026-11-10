@@ -11,7 +11,7 @@ use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::{Arc, Mutex};
@@ -171,6 +171,17 @@ pub struct TmuxAdapter {
 struct TapState {
     path: PathBuf,
     offset: u64,
+    /// The sink, kept open between drains (F182): a busy pane's drain opened
+    /// it on every tick, the daemon's hottest syscall at rest. Reopened when
+    /// the file at `path` is another one (its device and inode differ).
+    held: Option<HeldSink>,
+}
+
+#[derive(Debug)]
+struct HeldSink {
+    file: File,
+    dev: u64,
+    ino: u64,
 }
 
 impl TmuxAdapter {
@@ -1239,6 +1250,7 @@ impl TmuxPort for TmuxAdapter {
                 TapState {
                     path: sink.to_path_buf(),
                     offset: 0,
+                    held: None,
                 },
             );
         }
@@ -1258,14 +1270,13 @@ impl TmuxPort for TmuxAdapter {
         })?;
         // Stat before open: an unchanged tap costs no open(), which Defender
         // inspects (plan 185, D4: two opens per pane per 600 ms tick).
-        let length = fs::metadata(&tap.path)
-            .map_err(|error| {
-                self.error(format!(
-                    "could not inspect tap sink {:?}: {error}",
-                    tap.path
-                ))
-            })?
-            .len();
+        let metadata = fs::metadata(&tap.path).map_err(|error| {
+            self.error(format!(
+                "could not inspect tap sink {:?}: {error}",
+                tap.path
+            ))
+        })?;
+        let length = metadata.len();
         if length < tap.offset {
             // A sink that shrank under us is read from its new end.
             tap.offset = length;
@@ -1283,9 +1294,29 @@ impl TmuxPort for TmuxAdapter {
             }
             return Ok(Vec::new());
         }
-        let mut file = File::open(&tap.path).map_err(|error| {
-            self.error(format!("could not open tap sink {:?}: {error}", tap.path))
-        })?;
+        // The open sink is reused while it is still the file at the path; the
+        // offset means what it always did (bytes of the file at the path).
+        if tap
+            .held
+            .as_ref()
+            .is_none_or(|held| held.dev != metadata.dev() || held.ino != metadata.ino())
+        {
+            let file = File::open(&tap.path).map_err(|error| {
+                self.error(format!("could not open tap sink {:?}: {error}", tap.path))
+            })?;
+            let opened = file.metadata().map_err(|error| {
+                self.error(format!(
+                    "could not inspect tap sink {:?}: {error}",
+                    tap.path
+                ))
+            })?;
+            tap.held = Some(HeldSink {
+                dev: opened.dev(),
+                ino: opened.ino(),
+                file,
+            });
+        }
+        let mut file = &tap.held.as_ref().expect("held above").file;
         file.seek(SeekFrom::Start(tap.offset)).map_err(|error| {
             self.error(format!("could not seek tap sink {:?}: {error}", tap.path))
         })?;

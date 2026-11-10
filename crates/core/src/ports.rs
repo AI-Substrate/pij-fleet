@@ -49,6 +49,9 @@ pub struct SeatFilter {
     pub folder: Option<String>,
     /// Only seats governed by this parent.
     pub parent: Option<SeatId>,
+    /// Only seats whose recorded pane is this one, live or retired (F182: a
+    /// caller resolved by its pane reads those rows, not the whole roster).
+    pub pane: Option<String>,
 }
 
 /// The binding replaced by one committed registry write.

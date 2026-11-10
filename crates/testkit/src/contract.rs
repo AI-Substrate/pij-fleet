@@ -131,6 +131,42 @@ pub async fn registry_contract(registry: &dyn Registry) {
         Some(&tombstoned),
         "get and list must expose identical tombstone facts"
     );
+    // A pane filter (F182) matches the recorded pane exactly, retired rows
+    // included: a pane's history explains its refusals.
+    let mut on_pane = SeatDescriptor::new("pij-contract-pane", Harness::Pi, "/tmp/pane");
+    on_pane.pane = Some("%7".to_string());
+    registry
+        .put(on_pane.clone())
+        .await
+        .expect("put must not fail");
+    registry
+        .tombstone(&on_pane.id, "contract pane")
+        .await
+        .expect("tombstone must not fail");
+    let pane = |pane: &str| SeatFilter {
+        pane: Some(pane.to_string()),
+        ..SeatFilter::default()
+    };
+    let ids =
+        |seats: Vec<SeatDescriptor>| seats.into_iter().map(|seat| seat.id).collect::<Vec<_>>();
+    assert_eq!(
+        ids(registry.list(pane("%7")).await.expect("list must not fail")),
+        [on_pane.id.clone()],
+        "a pane filter keeps that pane's retired rows"
+    );
+    assert_eq!(
+        ids(registry.list(pane("")).await.expect("list must not fail")),
+        [empty_descriptor.id.clone()],
+        "an empty pane is a value, not an absent pane"
+    );
+    assert!(
+        registry
+            .list(pane("%70"))
+            .await
+            .expect("list must not fail")
+            .is_empty(),
+        "a pane filter is exact, never a prefix"
+    );
 
     // 6. Re-registering a live descriptor clears its old tombstone; otherwise a
     // live seat remains dead according to the same row.

@@ -1662,6 +1662,67 @@ fn an_unchanged_tap_drains_without_opening_its_sink() {
     block_on(tmux.detach_pane_tap(&pane.id)).expect("detach tap");
 }
 
+/// F182: a busy tap is opened once and kept open, not reopened on each drain.
+/// Proof by denial: with read permission removed after the first drain, new
+/// bytes still drain, which a reopening drain could not do. Every byte arrives
+/// once.
+#[test]
+fn a_busy_tap_keeps_its_sink_open_between_drains() {
+    let Some(session) = TestSession::start_or_skip("tap-held") else {
+        return;
+    };
+    let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let pane = block_on(tmux.list_panes())
+        .expect("list isolated panes")
+        .into_iter()
+        .next()
+        .expect("isolated session pane");
+    let sink = tap_sink_path(&session.tap_root, &pane.id);
+    block_on(tmux.attach_pane_tap(&pane.id, &sink)).expect("attach tap");
+    block_on(tmux.send_keys(&pane.id, "held-one")).expect("emit bytes");
+    drain_until_quiet(&tmux, &session.server, &pane.id, "held-one");
+
+    fs::set_permissions(&sink, fs::Permissions::from_mode(0o200)).expect("deny read");
+    block_on(tmux.send_keys(&pane.id, "held-two")).expect("emit more bytes");
+    let second = drain_until_quiet(&tmux, &session.server, &pane.id, "held-two");
+    fs::set_permissions(&sink, fs::Permissions::from_mode(0o600)).expect("restore");
+    let text = String::from_utf8_lossy(&second);
+    assert_eq!(text.matches("held-two").count(), 1, "{text:?}");
+    assert!(!text.contains("held-one"), "nothing twice: {text:?}");
+    block_on(tmux.detach_pane_tap(&pane.id)).expect("detach tap");
+}
+
+/// F182: a sink replaced at its path (another file, another inode) is opened
+/// afresh, never read through the old file's descriptor; the offset keeps its
+/// meaning, bytes of the file at the path.
+#[test]
+fn a_replaced_tap_sink_is_reopened() {
+    let Some(session) = TestSession::start_or_skip("tap-replaced") else {
+        return;
+    };
+    let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let pane = block_on(tmux.list_panes())
+        .expect("list isolated panes")
+        .into_iter()
+        .next()
+        .expect("isolated session pane");
+    let sink = tap_sink_path(&session.tap_root, &pane.id);
+    block_on(tmux.attach_pane_tap(&pane.id, &sink)).expect("attach tap");
+    block_on(tmux.send_keys(&pane.id, "before-swap")).expect("emit bytes");
+    let first = drain_until_quiet(&tmux, &session.server, &pane.id, "before-swap");
+
+    // Another file at the path: the old prefix's length, then new bytes.
+    let moved = sink.with_extension("moved");
+    fs::rename(&sink, &moved).expect("move the old sink away");
+    let mut fresh = vec![b'x'; first.len()];
+    fresh.extend_from_slice(b"AFTER-SWAP");
+    fs::write(&sink, &fresh).expect("a new sink at the path");
+    let after = block_on(tmux.drain_pane_tap(&pane.id)).expect("drain the new sink");
+    assert_eq!(String::from_utf8_lossy(&after), "AFTER-SWAP");
+    fs::remove_file(&moved).expect("clean the moved sink");
+    block_on(tmux.detach_pane_tap(&pane.id)).expect("detach tap");
+}
+
 fn backdate(path: &Path, age: Duration) {
     fs::File::options()
         .write(true)

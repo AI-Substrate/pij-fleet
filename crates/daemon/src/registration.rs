@@ -528,9 +528,14 @@ impl RegistrationService {
         session: &str,
         identity: ProcIdentity,
     ) -> std::result::Result<NativeHandoff, RegistrationError> {
+        // Both uses below read only Copilot seats (F182: not the whole roster).
+        let copilot = SeatFilter {
+            harness: Some(Harness::Copilot),
+            ..SeatFilter::default()
+        };
         let seats = self
             .registry
-            .list(SeatFilter::default())
+            .list(copilot)
             .await
             .map_err(RegistrationError::Runtime)?;
         let prebind = native_prebind(claim, session, &seats).cloned();

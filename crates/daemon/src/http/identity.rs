@@ -1247,7 +1247,14 @@ pub(crate) async fn resolve_seat(
         ));
     }
     if let Some(pane) = pane.as_deref() {
-        let mut seats = match state.services.registry.list(SeatFilter::default()).await {
+        // Only this pane's rows, live or retired: every use below is of a seat
+        // that records this pane (F182; it read the whole roster per call, and
+        // the status lines call this once per render, per seat).
+        let filter = SeatFilter {
+            pane: Some(pane.to_string()),
+            ..SeatFilter::default()
+        };
+        let mut seats = match state.services.registry.list(filter).await {
             Ok(seats) => seats,
             Err(error) => return Resolved::Refusal(internal(command, error)),
         };
