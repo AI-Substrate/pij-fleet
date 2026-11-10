@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c32c-2cd6-7060-bd1b-05d88e340141",
+				"date": "2026-11-10",
+				"head": "8024824250b6caae856a09a18fca95039f173ce0",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/212#issuecomment-6756837970",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:212",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #212, final round 2, at **8024824250b6caae856a09a18fca95039f173ce0**. Reviewed the ten-file delta from `68ecd898a068ac4420b0defb2fd7445f7ccffafd` and directly relevant final source under C33/C34. No normal-use security blocker identified.\n\n**S212-N001 is addressed for the accepted C33 boundary.** Core follow-up commands and details now use `render::caller_text`; summary reasons use `render::fenced(first_line, 120)` (`crates/core/src/turn_end.rs:424-489`, regression at `746-777`). OMP clips its no-result reason before both the human notice and continuation text: first LF-delimited line, escaped C0/C1 controls, then up to 120 characters plus an ellipsis (`.omp/extensions/pij/core/turn-end.ts:232-272`, regression at `core/turn-end.test.ts:141-149`). This closes the requested repair; it is not a claim of general prompt-injection isolation or a whole-message byte cap.\n\n| Delta | Security disposition and evidence |\n|---|---|\n| F001 fence containment | Core and OMP track fences from the start, preserving inner `pij` openers as enclosing-fence content (`crates/core/src/turn_end.rs:108-171`; OMP `core/turn-end.ts:109-133,180-206`). The reported four-line text example neither executes nor hides. Core, HTTP and TS assertions cover it. |\n| F002 preflight | Reuses the send path's pure role/address checks, role-option parsers, attachment resolver and force-reason rule (`http/turn_end.rs:197-245`; `http/role_send.rs:56-135`; `http/cold_wake.rs:202-230`; `http/shim.rs:567-580`). Ordinary send keeps its checks. The HTTP regression checks nine invalid sends after a valid FYI, zero held/delivered messages, and a positive FYI control (`crates/daemon/tests/turn_end_http.rs:300-353`). |\n| Caller/local-key boundary | Dispatch still passes the original caller to existing handlers (`http/turn_end.rs:248-283`; `http/shim.rs:713-735,1133-1153`). Turn-end remains bearer-protected and excluded from peer-key routes (`http/mod.rs:441-446,733-778`). |\n| Parser, cap and cwd | Literal tokenization/no shell dispatch and the 20-command prevalidation cap remain. Send body files remain unsupported; output file paths resolve against absolute caller cwd, with stdin rejected (`core/turn_end.rs:174-250`; `http/turn_end.rs:93-158,197-207`; `http/output.rs:163-184`; `http/directory.rs:1976-1986`). |\n| Deliberate strictness | A non-FYI block send using `--force` requires a reason, including a queue-only role send (`http/turn_end.rs:216-243`). The stricter block contract is documented; it is not accidental ordinary-send parity. |\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None identified in reviewed delta under C33 | - |\n\n**Retained limits, not new blockers:** preflight does not make execution transactional, freeze file contents, prove eventual upload success, or prevent later state/delivery refusals. Earlier successes are not rolled back; repeat endpoint submissions can repeat commands. Live OMP display/lifecycle and lane B were not independently exercised. The documented remaining streaming scan is the performance lane's qualification, not a new security finding.\n\n**CI proof:** clean detached worktree HEAD and GitHub/remote heads agree; GitHub reports CLEAN and successful checks. Run [42738518665](https://github.com/AI-Substrate/pij-fleet/actions/runs/42738518665) checked merge `58d0f6fc61e281ae9952717a42c9850c8b672bce`, whose parents are base `ef43f591ee50dbada0ebce778d5daca8c57da936` and this exact head. Rust reports **2,366 passed, 6 skipped**. Successful JUnit artifact `13727009911` includes all 18 core parser/HTTP cases, including fence containment, fenced echoes and invalid-send preflight. Node 22 logs show 15 core turn-end and 6 adapter tests passing.\n\nRead-only source review and existing CI only. No local builds/tests, commands under review, product mutations, credential reads or live probes.\n"
+		}
+	]
+}
