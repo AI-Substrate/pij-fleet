@@ -847,6 +847,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-rival-salmon",
 					"why": "F171 pij claim seeds from existing numbered files (stoat friction)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T03:48:04.236Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f168",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "F168 role:prime resolves to the designated prime (crane friction 13)"
 				}
 			]
 		}
