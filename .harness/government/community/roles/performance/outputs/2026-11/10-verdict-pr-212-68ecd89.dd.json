@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c301-c1a1-70a0-86d1-4c3f8739d87c",
+				"date": "2026-11-10",
+				"head": "68ecd898a068ac4420b0defb2fd7445f7ccffafd",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/212#issuecomment-6756060656",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:212",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After-deploy launch/CPU/RSS reading after merge against the feature-off baseline; long-reply renderer latency/allocation remains an unmeasured C34 follow-up."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `68ecd898a068ac4420b0defb2fd7445f7ccffafd`, under **C33/C34**, for plan226 laneA.\n\n**Turn-end path:** OMP installs the handler only for its own runtime. A clean `session_stop` with a candidate block makes one logical in-process HTTP call; ordinary prose, tool-ending and aborted replies make none. There is no new background tick or OS launch in this adapter. Existing HTTP key refresh can retry a rejected auth request once; this is not automatic replay after successful execution.\n\nThe candidate check is conservative, not a complete trailing-block parser: an earlier pij example followed by another fenced block can cause a harmless call whose daemon result is `none`. `textOf`/tail checking still inspect final text on ordinary stops; “nothing” means no RPC/launch, not zero local CPU.\n\n**Renderer cost, P212-N001 / C34 follow-up:** every invocation splits the **whole text** into lines and scans backward, even for long ordinary replies with no pij block. Hiding also slices/filters/counts body lines and rebuilds the prose prefix. It adds O(B) scan/allocation work per draw and O(B) transient storage for B text bytes/line data, with no memoization or text-size cap. The 64-entry never-run timestamp list bounds only that lookup, not parsing.\n\nAcross streaming draws the cost is O(sum of prefix sizes), or O(B x D) for D draws; fixed-size incremental growth gives quadratic cumulative work in final reply length. Static replies are also rescanned whenever the host invokes this renderer. This is not a constant-cost function call, nor covered by the 20-command execution cap. Existing Markdown rendering is additional work. CI/e2e establish behavior, not a long-reply latency/allocation ceiling; no local benchmark was run. OMP's documented loss of smooth-stream reveal is retained as a Known limit.\n\n**Timers and daemon work:** the client creates a per-call25-second abort deadline. A pending result line uses a bounded **50ms idle-wait chain, at most40 timers (about2s)**, including failed attempts, not a permanent poll. Neither exists on a normal turn with no pending result.\n\nThe daemon creates one owned Tokio task, not a process, validates before dispatch and runs at most20 accepted commands sequentially through existing handlers. It adds full-text/token/argv/envelope allocations and duplicate parsing, not20 additional HTTP calls. Oversized-command-count blocks are parsed/materialized before rejection, so20 caps execution count, not input/preparation bytes. An output `--body-file` can be read during validation and again during execution; result/follow-up data remains input-sized. These are **C34 follow-ups**, not normal-use blockers.\n\nEach command retains its verb's store, delivery, wake and writer costs: in particular output commits may launch existing git/ddocs adapters. No new daemon executable site; six spawn guards pass. Link/doctor setup does add one existing-style `omp config get` process per managed setting, plus `set` or `reset` when needed, only per explicit recipe invocation. The author's one approved nice-only build batch is spent build cost, not a new periodic recipe or permission for another local build.\n\n**Exact-head CI:** [42733044676](https://github.com/AI-Substrate/pij-fleet/actions/runs/42733044676), attempt1, Rust job `129555526233`, upload artifact **13726565343**, metadata pinned to this head: **2,363 executed passed**, no failures/errors; six separately skipped. Verified nine core parser cases, six HTTP run/refusal/invalid/no-block cases and six spawn guards. Node22 actually executes the12 turn-end decision tests, six adapter tests and37 link-global tests; its npm suite reports2,278 passed/six skipped. Node24, Rust lint and replacement delivers succeed. The author's E1 spawn10-to10 receipt supports the send-only e2e, not arbitrary output-command cost; it was not rerun.\n\n**Authorized feature-off baseline:** healthy PID55265, start09Nov19:42:16+10, embedded commit `e10198baa0`, not this feature. **10Nov11:12:01.969542 to11:13:01.974756+10**,60.005060s:\n\n| Metric | Observation |\n|---|---|\n| Daemon launches | **17,456 to17,472: +16**,0.2666/s; every increment registration ps, all20 populated sites reconciled |\n| Attribution | Eight holder-current lease retries: viper and stoat each four retries/eight ps |\n| Daemon CPU | **11.74 CPU seconds,19.57%** of one CPU |\n| RSS | **130,400 to130,784KiB**,127.344 to127.719MiB (+384KiB) |\n| Machine sample | 11:12:09–11:12:29+10,20s: **89.5/s estimate,88.3/s sampled**,178,780 polls;0.2/s recognized direct daemon children |\n\nSampler overlaps the minute and costs CPU; attribution is a lower bound. Load averages moved105.64 to87.54. The earlier FYI's112% rolling ps figure was not reproduced as this minute's cumulative-CPU rate; neither the registration counter nor this baseline establishes its cause. No post-deploy comparison is claimed.\n\nFrozen worktree/GitHub heads agree, clean/CLEAN. No local build/test, synthetic block, long-text probe, reload or mutation. Both reading helpers completed. Raw baseline: `pr212-before-start-ping.json`, `pr212-before-window.json`, `pr212-before-machine.json`, `pr212-before-machine-times.txt`, `pr212-before-end-ping.json`. **After-deploy reading remains owed after merge**; other roles' verdicts and laneB's shared ACs are independent.\n"
+		}
+	]
+}
