@@ -32,4 +32,5 @@
 - [2026-11-10 Fleet rested 2026-11-10 19:26; pa state and round procedure](2026-11-10-wind-down-at-rest-2026-11-10.dd.md): read first when the fleet resumes after the 10 Nov rest (pa, rest, wind-down, procedure)
 - [2026-11-11 F180 root cause: each extensions\_reload stacks host stderr; compact before a reload, not after](2026-11-11-f180-root-cause-reload-before-compact.dd.md): read before compacting a Copilot seat, especially during or after a reload rollout (pa, compact, f180, copilot, reload)
 - [2026-11-11 pij-rs is a symlink into ~/pi-hacking/pij/target; a target wipe breaks it](2026-11-11-pij-rs-symlink-into-target.dd.md): read when pij-rs is 'command not found' or the shim says 'cannot run pij-rs' (pa, pij-rs, install, daemon)
+- [2026-11-11 pa: start here \(reading order of the pa notes\)](2026-11-11-start-here-reading-order.dd.md): open first after a compact or when taking over pa (pa, onboarding, index)
 <!-- /pij:generated -->

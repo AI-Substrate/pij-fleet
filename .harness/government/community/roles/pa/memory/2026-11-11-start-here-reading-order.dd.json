@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-11",
+				"hook": "open first after a compact or when taking over pa",
+				"tags": [
+					"pa",
+					"onboarding",
+					"index"
+				],
+				"title": "pa: start here (reading order of the pa notes)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Start here after a compact or when taking over pa. Read these in order (pij directory memory pa --note <slug>):\n1. wind-down-at-rest-2026-11-10: fleet state at rest and the round procedure.\n2. prime-is-silkworm: escalations go to pij-outstanding-silkworm.\n3. compaction-line-600k, recheck-size-before-compact, digest-ctx-stale-after-compaction: read the pane footer and events.jsonl, never the digest figure.\n4. held-compact-can-drop-f180, f180-compact-only-without-subagents, f180-root-cause-reload-before-compact: verify every compact in events.jsonl; compact before reload rollouts and only with no sub-agent running; escalate after one drop.\n5. f111-wake-automatic, reviewer-queued-next-turn-stall: who to flag when idle.\n6. receiver-lease-not-delivery-flag, pij-rs-symlink-into-target: what to check when sends or pij-rs fail.\nWithdrawn: the ctrl+d dialog exceptions (dropped for good 08 Nov) and the 400k line (now 600k).\nState at this compact (11 Nov 10:00): fleet resting until Jordan names work; nothing in flight for pa; pij-rs restored 09:58.\n"
+		}
+	]
+}
