@@ -837,7 +837,11 @@ pub(crate) async fn send_as_caller(state: &AppState, request: ShimRequest) -> Re
                 receipt.outcome,
                 pij_core::model::DeliveryOutcome::Refused { .. }
             ) {
-                super::answered_by(state, &reply_from, reply_to.as_deref(), reply).await;
+                if let Some(note) =
+                    super::answered_by(state, &reply_from, reply_to.as_deref(), reply).await
+                {
+                    super::add_warning(&mut receipt, note);
+                }
                 if !call.fyi {
                     super::note_turn_wait(state, &recipient, &mut receipt).await;
                 }

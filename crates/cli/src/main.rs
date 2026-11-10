@@ -3155,6 +3155,10 @@ fn render_requests(data: &Value) -> String {
         return line.to_string();
     }
     let rows = data["requests"].as_array().cloned().unwrap_or_default();
+    let answered = rows
+        .iter()
+        .filter(|row| row["answered_at"].is_u64())
+        .count();
     let mut out = format!(
         "{}: {} {} request{}",
         shown(&data["project"], render::project),
@@ -3162,6 +3166,11 @@ fn render_requests(data: &Value) -> String {
         shown(&data["state"], render::word),
         if rows.len() == 1 { "" } else { "s" }
     );
+    // An answered request stays delivered until it is closed, so say which
+    // ones are answered: their time limits have stopped (F176).
+    if answered > 0 {
+        let _ = write!(out, ", {answered} answered");
+    }
     for row in rows {
         let role = shown(&row["role"], render::name);
         let address = match row["instance"].as_str() {
@@ -3179,11 +3188,17 @@ fn render_requests(data: &Value) -> String {
             (Some(holder), None) => format!("holder {}", render::seat(holder)),
             (None, None) => "no holder".to_string(),
         };
+        let state = shown(&row["state"], render::word);
+        let state = if row["answered_at"].is_u64() {
+            format!("{state} (answered)")
+        } else {
+            state
+        };
         let _ = write!(
             out,
             "\n  {}  {}  {}  from {}  reply {}  {}",
             shown(&row["id"], render::msg_id),
-            shown(&row["state"], render::word),
+            state,
             address,
             shown(&row["requester"], render::seat),
             shown(&row["reply"], render::word),
@@ -4806,6 +4821,27 @@ mod tests {
             2,
             "{text}"
         );
+    }
+
+    /// F176: an answered request stays delivered until it is closed, so the
+    /// list marks it answered and counts the answered ones.
+    #[test]
+    fn the_request_list_marks_answered_requests() {
+        let text = super::render_requests(&serde_json::json!({
+            "project": "fleet", "state": "delivered",
+            "requests": [
+                {"id": "r1", "state": "delivered", "role": "pm", "instance": "",
+                 "requester": "pij-a", "reply": "wake", "holder": "pij-b", "answered_at": 5},
+                {"id": "r2", "state": "delivered", "role": "pm", "instance": "",
+                 "requester": "pij-a", "reply": "wake", "holder": "pij-b", "answered_at": null},
+            ],
+        }));
+        assert!(
+            text.starts_with("fleet: 2 delivered requests, 1 answered"),
+            "{text}"
+        );
+        assert!(text.contains("r1  delivered (answered)  role:pm"), "{text}");
+        assert!(text.contains("r2  delivered  role:pm"), "{text}");
     }
 
     /// F132 (#185 round 5 sweep): the other plain renderers show stored

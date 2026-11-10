@@ -12,7 +12,10 @@ Usage:
 With no --state, the open requests: queued (no holder yet) and delivering
 (claimed, not yet settled). Newest first, at most 100 per state. Bodies are not
 shown. A closed request was withdrawn, closed by the drain because its
-requester took the role (F61), or closed after delivery.
+requester took the role (F61), or closed after delivery. A delivered request
+marked (answered) was answered by its holder's reply (--in-reply-to <id>) or
+by pij output --answers: its time limit has stopped, and it stays delivered
+until someone closes it (F176).
 
 withdraw closes a queued request, so no assign delivers it and the PA digest
 drops it. Its requester, the project's PA or the prime may withdraw it; a

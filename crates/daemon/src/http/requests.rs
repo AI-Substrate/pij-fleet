@@ -637,6 +637,9 @@ fn listed(request: &RoleRequest) -> Value {
         "holder": request.holder,
         "created_at": request.created_at,
         "delivered_at": request.delivered_at,
+        // A holder's reply or `pij output --answers` answered it, which stops
+        // its time limit; it stays delivered until someone closes it (F176).
+        "answered_at": request.answered_at,
     })
 }
 
