@@ -23,6 +23,11 @@ import {
 	type RustSeatDescriptor,
 	type SendRequest,
 } from "../core/daemon-wire.js";
+import {
+	decodeTurnEndResult,
+	type TurnEndRequestWire,
+	type TurnEndResultWire,
+} from "../core/turn-end.js";
 
 export const DEFAULT_PIJ_RS_ADDR = "127.0.0.1:7461";
 
@@ -187,6 +192,11 @@ export class PijDaemonClient {
 
 	send(request: SendRequest): Promise<QueueReceipt> {
 		return this.post<QueueReceipt>("/v1/send", request);
+	}
+
+	/** Run the `pij` block that ends a seat's reply (plan 226). */
+	async turnEnd(request: TurnEndRequestWire, signal?: AbortSignal): Promise<TurnEndResultWire> {
+		return decodeTurnEndResult(await this.post<unknown>("/v1/turn-end", request, signal));
 	}
 
 	/** Atomic pending → delivered claim; a count of 0 carries an empty block. */

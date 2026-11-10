@@ -564,7 +564,10 @@ fn attachment_call(
 }
 
 /// Resolve a typed attachment path the way the caller's shell would have.
-fn attachment_path(typed: &str, caller: Option<&CallerContext>) -> Result<PathBuf, String> {
+pub(crate) fn attachment_path(
+    typed: &str,
+    caller: Option<&CallerContext>,
+) -> Result<PathBuf, String> {
     let path = Path::new(typed);
     if path.is_absolute() {
         return Ok(path.to_path_buf());
@@ -654,6 +657,13 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
         Decoded::Request(request) => request,
         Decoded::Refusal(response) => return response,
     };
+    send_as_caller(&state, *request).await
+}
+
+/// One decoded shim send, sender derived from `request.caller`. The turn-end
+/// runner (plan 226) calls this for each `send` line, so a block's send meets
+/// exactly the parser, ladder and refusals `pij send` does.
+pub(crate) async fn send_as_caller(state: &AppState, request: ShimRequest) -> Response {
     if request
         .argv
         .first()
@@ -667,7 +677,7 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
             );
         }
         return super::send_control(
-            &state,
+            state,
             "pij compact-self",
             super::ControlRequest {
                 to: None,
@@ -686,11 +696,11 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
         Err(why) => return refused(SEND, why),
     };
     if let Some(attachment) = call.attachment {
-        return send_attachment(&state, request.caller.as_ref(), attachment).await;
+        return send_attachment(state, request.caller.as_ref(), attachment).await;
     }
     if let Some(command) = call.command {
         return super::send_control(
-            &state,
+            state,
             SEND,
             super::ControlRequest {
                 to: Some(call.to.seat),
@@ -704,14 +714,14 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
         )
         .await;
     }
-    let from = match subject(&state, SEND, request.caller.as_ref()).await {
+    let from = match subject(state, SEND, request.caller.as_ref()).await {
         Ok(seat) => seat.id,
         Err(response) => return *response,
     };
     let msg_id = state.services.delivery.next_message_id();
     // The shim derives its sender from the caller, so the reply check binds.
     let reply = match super::reply_sender(
-        &state,
+        state,
         "shim",
         &from,
         call.in_reply_to.as_deref(),
@@ -724,7 +734,7 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
     };
     // A send to `role:<id>` resolves through the directory first (plan 199).
     if let Some(response) = super::role_send::route(
-        &state,
+        state,
         super::role_send::RoleSendCall {
             command: SEND,
             from: &from,
@@ -750,7 +760,7 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
         // A holder's reply addressed to a role answers too, when the role send
         // was accepted; a refused receipt is HTTP 200 too (review of #152, F002).
         if super::role_send::accepted(&response) {
-            super::answered_by(&state, &from, call.in_reply_to.as_deref(), reply).await;
+            super::answered_by(state, &from, call.in_reply_to.as_deref(), reply).await;
         }
         return response;
     }
@@ -758,7 +768,7 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
     // holds its own FYIs (plan 164 ruling 6); this one only forwards.
     if call.to.machine.is_some() {
         return super::send_remote(
-            &state,
+            state,
             SEND,
             super::SendRequest {
                 from,
@@ -780,7 +790,7 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
         None
     } else {
         match super::cold_wake::guard(
-            &state,
+            state,
             SEND,
             &from,
             &to,
@@ -818,15 +828,15 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
         Ok(mut receipt) => {
             receipt.cold_check = cold_check;
             if call.fyi {
-                super::fyi::after_hold(&state, &recipient, question, &mut receipt).await;
+                super::fyi::after_hold(state, &recipient, question, &mut receipt).await;
             }
             if !matches!(
                 receipt.outcome,
                 pij_core::model::DeliveryOutcome::Refused { .. }
             ) {
-                super::answered_by(&state, &reply_from, reply_to.as_deref(), reply).await;
+                super::answered_by(state, &reply_from, reply_to.as_deref(), reply).await;
                 if !call.fyi {
-                    super::note_turn_wait(&state, &recipient, &mut receipt).await;
+                    super::note_turn_wait(state, &recipient, &mut receipt).await;
                 }
             }
             super::envelope(

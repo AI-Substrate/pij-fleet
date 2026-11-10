@@ -45,6 +45,7 @@ pub mod requests;
 pub mod session_status;
 pub mod spawns;
 pub mod status;
+pub mod turn_end;
 pub mod usage_limit;
 pub mod watchdog;
 pub mod wire;

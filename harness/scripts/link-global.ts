@@ -4,8 +4,11 @@
 // `just link` links only the `pij` extension into OMP, plus pij's curated OMP
 // MCP and model configuration, and the native Copilot extension. OMP deliberately
 // loads no other local extensions. `--check-only` exposes the linked-worktree
-// guard without mutating any home.
+// guard without mutating any home. It also turns on the OMP settings pij's
+// extension needs (OMP_MANAGED_SETTINGS) through OMP's own `omp config` writer,
+// which keeps the rest of the user's config.yml.
 
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
 	closeSync,
@@ -29,10 +32,55 @@ import { pathToFileURL } from "node:url";
 
 type Verdict = "linked" | "already" | "removed" | "missing" | "skipped";
 
+/** OMP settings pij's extension needs, each with what breaks without it. */
+export const OMP_MANAGED_SETTINGS = [
+	{
+		key: "extensionRenderers.assistantText",
+		why: "hiding end-of-turn pij blocks on screen (plan 226)",
+	},
+] as const;
+
+/** OMP's settings, through its own CLI writer. */
+export interface OmpConfigPort {
+	/** The effective value, or undefined when omp cannot be run. */
+	get(key: string): boolean | undefined;
+	set(key: string, value: boolean): void;
+	reset(key: string): void;
+}
+
+/** The real port: `omp config get|set|reset`, against `home`. */
+export function ompConfigCli(home: string): OmpConfigPort {
+	const run = (args: readonly string[]): string =>
+		execFileSync("omp", ["config", ...args], {
+			encoding: "utf8",
+			env: { ...process.env, HOME: home },
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+	return {
+		get(key) {
+			try {
+				return (
+					(JSON.parse(run(["get", key, "--json"])) as { readonly value?: unknown }).value === true
+				);
+			} catch {
+				return undefined;
+			}
+		},
+		set(key, value) {
+			run(["set", key, String(value)]);
+		},
+		reset(key) {
+			run(["reset", key]);
+		},
+	};
+}
+
 export interface RunLinkGlobalOptions {
 	readonly pijRoot: string;
 	readonly home: string;
 	readonly copilotHome?: string;
+	/** OMP's settings writer; when absent, OMP settings are left alone. */
+	readonly ompConfig?: OmpConfigPort;
 	readonly fsync?: (fd: number) => void;
 	readonly args: readonly string[];
 	readonly stdout: (line: string) => void;
@@ -249,6 +297,35 @@ function manageOmpSharedFile(
 	return { changed: 1, skipped: 0 };
 }
 
+function manageOmpSettings(
+	port: OmpConfigPort,
+	removeMode: boolean,
+	stdout: (line: string) => void,
+	stderr: (line: string) => void,
+): { changed: number; skipped: number } {
+	let changed = 0;
+	for (const { key, why } of OMP_MANAGED_SETTINGS) {
+		const value = port.get(key);
+		if (value === undefined) {
+			stderr(`skip omp/config ${key}: omp could not be run (install it: just omp-install)`);
+			continue;
+		}
+		if (removeMode) {
+			if (!value) continue;
+			port.reset(key);
+			stdout(`✗ omp/config ${key}`);
+			changed++;
+		} else if (value) {
+			stdout(`= omp/config ${key} (already on)`);
+		} else {
+			port.set(key, true);
+			stdout(`→ omp/config ${key} = true, for ${why}`);
+			changed++;
+		}
+	}
+	return { changed, skipped: 0 };
+}
+
 function doctorOmp(options: RunLinkGlobalOptions, sourceRoot: string): number {
 	const ompExtensions = join(options.home, ".omp", "agent", "extensions");
 	let names: string[] = [];
@@ -291,7 +368,16 @@ function doctorOmp(options: RunLinkGlobalOptions, sourceRoot: string): number {
 		options.stderr(`OMP models link mismatch: expected ${expectedModels}`);
 		return 1;
 	}
-	options.stdout("✓ OMP policy: pij-only extension + curated MCP and model config");
+	for (const { key, why } of options.ompConfig === undefined ? [] : OMP_MANAGED_SETTINGS) {
+		const value = options.ompConfig?.get(key);
+		if (value !== true) {
+			options.stderr(
+				`OMP setting ${key} is ${value === undefined ? "unreadable (omp could not be run)" : "off"}; it is needed for ${why}. Fix: just link`,
+			);
+			return 1;
+		}
+	}
+	options.stdout("✓ OMP policy: pij-only extension + curated MCP, model and settings config");
 	return 0;
 }
 
@@ -470,6 +556,16 @@ export function runLinkGlobal(options: RunLinkGlobalOptions): number {
 		changed += shared.changed;
 		skipped += shared.skipped;
 	}
+	if (options.ompConfig !== undefined) {
+		const settings = manageOmpSettings(
+			options.ompConfig,
+			removeMode,
+			options.stdout,
+			options.stderr,
+		);
+		changed += settings.changed;
+		skipped += settings.skipped;
+	}
 	const copilot = manageCopilotExtension(options);
 	changed += copilot.changed;
 	skipped += copilot.skipped;
@@ -486,6 +582,7 @@ if (directEntry === import.meta.url) {
 			pijRoot: resolve(import.meta.dirname, "..", ".."),
 			home: homedir(),
 			copilotHome: process.env.COPILOT_HOME,
+			ompConfig: ompConfigCli(homedir()),
 			args: process.argv.slice(2),
 			stdout: console.log,
 			stderr: console.error,

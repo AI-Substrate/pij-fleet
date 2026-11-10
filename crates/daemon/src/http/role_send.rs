@@ -13,7 +13,7 @@ use crate::community::Refusal;
 use crate::delivery::role_send::{
     self, E_ROLE_ADDRESS, RoleAddress, RoleOptions, RoleSend, Routed, replay_receipt, request_json,
 };
-use pij_store::{RequestState, RoleRequest, SqliteOrchestration};
+use pij_store::{ReplyMode, RequestState, RoleRequest, SqliteOrchestration};
 
 /// One send as either surface parsed it.
 pub(crate) struct RoleSendCall<'a> {
@@ -54,47 +54,79 @@ fn mark_accepted(mut response: Response) -> Response {
 /// Otherwise the whole answer: a refusal, a queued request, or the holder's
 /// receipt with the request on it.
 pub(crate) async fn route(state: &AppState, call: RoleSendCall<'_>) -> Option<Response> {
-    let Some(address) = RoleAddress::parse(call.to.seat.as_str()) else {
-        if let Err(refusal) = call.options.refuse_on_seat_send() {
-            return Some(refused(call.command, &refusal));
-        }
-        if call.project.is_some() {
-            return Some(refused(
-                call.command,
-                &Refusal::new(
-                    role_send::E_ROLE_ONLY,
-                    "--project names the directory for a send to role:<id>; a send to a seat has none",
-                ),
+    match check(
+        call.to,
+        call.control,
+        call.forwarded,
+        call.project.as_deref(),
+        &call.options,
+    ) {
+        Ok(None) => None,
+        Err(refusal) => Some(refused(call.command, &refusal)),
+        Ok(Some(address)) => Some(send(state, call, address).await),
+    }
+}
+
+/// The address rules that need no state: `Ok(None)` for a seat send that
+/// may go on, `Ok(Some(address))` for a role send, or the refusal. Pure, so
+/// the turn-end preflight (plan 226) runs it on every block line too.
+pub(crate) fn check(
+    to: &Destination,
+    control: bool,
+    forwarded: bool,
+    project: Option<&str>,
+    options: &RoleOptions,
+) -> Result<Option<RoleAddress>, Refusal> {
+    let Some(address) = RoleAddress::parse(to.seat.as_str()) else {
+        options.refuse_on_seat_send()?;
+        if project.is_some() {
+            return Err(Refusal::new(
+                role_send::E_ROLE_ONLY,
+                "--project names the directory for a send to role:<id>; a send to a seat has none",
             ));
         }
-        return None;
+        return Ok(None);
     };
-    Some(match address {
-        Err(refusal) => refused(call.command, &refusal),
-        Ok(address) => send(state, call, address).await,
-    })
+    let address = address?;
+    if to.machine.is_some() || forwarded {
+        return Err(Refusal::new(
+            E_ROLE_ADDRESS,
+            format!(
+                "{} is resolved by this machine's directory and is never forwarded; send to the remote seat instead",
+                address.display()
+            ),
+        ));
+    }
+    if control {
+        return Err(Refusal::new(
+            E_ROLE_ADDRESS,
+            "a control goes to a seat, not to a role",
+        ));
+    }
+    Ok(Some(address))
+}
+
+/// A role send's `--reply` and `--limit` values, read as delivery reads them,
+/// for the turn-end preflight (plan 226): delivery reads them only after
+/// resolving the role, by which point a block's earlier lines have run.
+pub(crate) fn check_values(options: &RoleOptions) -> Result<(), Refusal> {
+    if let Some(text) = options.reply.as_deref()
+        && ReplyMode::parse(text).is_none()
+    {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("--reply takes wake, fyi or none, not `{text}`"),
+        ));
+    }
+    if let Some(text) = options.limit.as_deref() {
+        super::background::parse_duration_ms(text, "--limit")
+            .map_err(|message| Refusal::new("E-RS-ARG", message))?;
+    }
+    Ok(())
 }
 
 async fn send(state: &AppState, call: RoleSendCall<'_>, address: RoleAddress) -> Response {
     let command = call.command;
-    if call.to.machine.is_some() || call.forwarded {
-        return refused(
-            command,
-            &Refusal::new(
-                E_ROLE_ADDRESS,
-                format!(
-                    "{} is resolved by this machine's directory and is never forwarded; send to the remote seat instead",
-                    address.display()
-                ),
-            ),
-        );
-    }
-    if call.control {
-        return refused(
-            command,
-            &Refusal::new(E_ROLE_ADDRESS, "a control goes to a seat, not to a role"),
-        );
-    }
     let caller = call.caller.cloned().unwrap_or_default();
     let (project, repo) =
         match super::directory::project_and_repo(state, &caller, call.project.clone()).await {

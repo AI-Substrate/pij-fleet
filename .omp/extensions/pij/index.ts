@@ -9,6 +9,7 @@ import { Type } from "typebox";
 import { type DaemonGeneration, detectDaemonGeneration } from "./adapters/daemon-http.js";
 import { computeExtensionBuildIdentity, displayBuild } from "./adapters/extension-build.js";
 import { GitRepositoryAdapter } from "./adapters/git-repository.js";
+import { registerOmpTurnEnd } from "./adapters/omp-turn-end.js";
 import type { CommandControl } from "./adapters/pi-runtime.js";
 import {
 	PiRuntimeAdapter,
@@ -494,7 +495,11 @@ export default function (pi: ExtensionAPI): void {
 		);
 		if (event.reason === "reload") publishReloadCompleted(pi);
 	});
-	if (runtimeBin === "omp") registerOmpReloadCompletion(pi);
+	if (runtimeBin === "omp") {
+		registerOmpReloadCompletion(pi);
+		// Plan 226: run the pij block that ends a reply, at OMP's session_stop.
+		registerOmpTurnEnd(pi, () => rustRuntime);
+	}
 
 	// Event capture (registered once, top-level — reload-safe). Each pi event maps
 	// to exactly one coordinator capture. There is no pi `usage` event.

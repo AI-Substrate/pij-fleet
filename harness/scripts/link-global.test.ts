@@ -17,7 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { runLinkGlobal } from "./link-global.js";
+import { type OmpConfigPort, runLinkGlobal } from "./link-global.js";
 
 const scratch: string[] = [];
 
@@ -46,6 +46,7 @@ function run(
 	home: string,
 	args: readonly string[] = [],
 	fsync?: (fd: number) => void,
+	ompConfig?: OmpConfigPort,
 ): {
 	code: number;
 	stdout: string[];
@@ -57,6 +58,7 @@ function run(
 		pijRoot: root,
 		home,
 		fsync,
+		...(ompConfig === undefined ? {} : { ompConfig }),
 		args,
 		stdout: (line) => stdout.push(line),
 		stderr: (line) => stderr.push(line),
@@ -203,6 +205,79 @@ describe("link-global", () => {
 		expect(existsSync(join(home, ".pi"))).toBe(false);
 		expect(existsSync(join(home, ".omp"))).toBe(false);
 		expect(existsSync(join(home, ".copilot"))).toBe(false);
+	});
+});
+
+/** OMP's settings as `omp config` would hold them; `undefined` means no omp. */
+function fakeOmpConfig(installed = true): OmpConfigPort & {
+	values: Map<string, boolean>;
+	writes: string[];
+} {
+	const values = new Map<string, boolean>();
+	const writes: string[] = [];
+	return {
+		values,
+		writes,
+		get: (key) => (installed ? (values.get(key) ?? false) : undefined),
+		set: (key, value) => {
+			writes.push(`set ${key} ${value}`);
+			values.set(key, value);
+		},
+		reset: (key) => {
+			writes.push(`reset ${key}`);
+			values.delete(key);
+		},
+	};
+}
+
+describe("OMP managed settings (plan 226)", () => {
+	const KEY = "extensionRenderers.assistantText";
+
+	it("link turns the renderer setting on once, through omp config, and unlink resets it", () => {
+		const root = checkout();
+		const home = tempDir("pij-link-home-");
+		const omp = fakeOmpConfig();
+
+		const first = run(root, home, [], undefined, omp);
+		expect(first.code).toBe(0);
+		expect(first.stdout).toContain(
+			`→ omp/config ${KEY} = true, for hiding end-of-turn pij blocks on screen (plan 226)`,
+		);
+		expect(run(root, home, [], undefined, omp).stdout).toContain(
+			`= omp/config ${KEY} (already on)`,
+		);
+		expect(run(root, home, ["--remove"], undefined, omp).stdout).toContain(`✗ omp/config ${KEY}`);
+		expect(omp.writes).toEqual([`set ${KEY} true`, `reset ${KEY}`]);
+	});
+
+	it("doctor names the off setting and its fix, and passes once it is on", () => {
+		const root = checkout();
+		const home = tempDir("pij-link-home-");
+		const omp = fakeOmpConfig();
+		expect(run(root, home).code).toBe(0);
+
+		const off = run(root, home, ["--doctor-omp"], undefined, omp);
+		expect(off.code).toBe(1);
+		expect(off.stderr).toEqual([
+			`OMP setting ${KEY} is off; it is needed for hiding end-of-turn pij blocks on screen (plan 226). Fix: just link`,
+		]);
+		expect(omp.writes).toEqual([]);
+
+		omp.values.set(KEY, true);
+		expect(run(root, home, ["--doctor-omp"], undefined, omp)).toMatchObject({
+			code: 0,
+			stderr: [],
+		});
+	});
+
+	it("a machine without omp is told how to install it and link still succeeds", () => {
+		const root = checkout();
+		const home = tempDir("pij-link-home-");
+		const result = run(root, home, [], undefined, fakeOmpConfig(false));
+		expect(result.code).toBe(0);
+		expect(result.stderr).toEqual([
+			`skip omp/config ${KEY}: omp could not be run (install it: just omp-install)`,
+		]);
 	});
 });
 

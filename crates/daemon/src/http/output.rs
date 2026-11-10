@@ -145,12 +145,12 @@ pub(crate) async fn handle(
     }
 }
 
-async fn write(
-    state: &AppState,
-    actor: &SeatDescriptor,
+/// `output <kind> …`'s fields, checked, touching nothing but a `--body-file`
+/// it reads: what [`write`] and the turn-end validator (plan 226) share.
+fn prepare(
     caller: &super::identity::CallerContext,
     call: &Arguments,
-) -> Result<Value, Refusal> {
+) -> Result<OutputFields, Refusal> {
     let [kind] = call.positions.as_slice() else {
         return Err(Refusal::new(
             "E-RS-ARG",
@@ -190,7 +190,7 @@ async fn write(
         .iter()
         .map(|text| evidence(text))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut fields = OutputFields {
+    let fields = OutputFields {
         kind: kind.clone(),
         role: call.get("role").unwrap_or_default(),
         subject: call.get("subject").unwrap_or_default(),
@@ -204,6 +204,25 @@ async fn write(
         body,
     };
     crate::community::output::check(&fields)?;
+    Ok(fields)
+}
+
+/// Validate one `output …` command's arguments (everything after `output`)
+/// without writing anything: the turn-end runner's first pass (plan 226).
+pub(crate) fn validate(
+    caller: &super::identity::CallerContext,
+    tokens: &[String],
+) -> Result<(), Refusal> {
+    prepare(caller, &Arguments::parse(tokens)?).map(|_| ())
+}
+
+async fn write(
+    state: &AppState,
+    actor: &SeatDescriptor,
+    caller: &super::identity::CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let mut fields = prepare(caller, call)?;
     let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
     let store = state.services.directory.store().clone();
     let store_error =
