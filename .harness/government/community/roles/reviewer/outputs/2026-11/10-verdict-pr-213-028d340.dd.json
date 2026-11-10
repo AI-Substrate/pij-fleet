@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c3ab-7a9e-7c52-9d50-368abeb4ca83",
+				"date": "2026-11-10",
+				"head": "028d340f8e4dcb51c9e44aff4247891c0e9cf7d7",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/213#issuecomment-6758844489",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:213",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#213 correctness review, round 2: PASS\n\nExact head: `028d340f8e4dcb51c9e44aff4247891c0e9cf7d7`. Scoped to the delta from `38fa067782317f1154a0aaf47c4319d4180e32d5`, final round under C34. No blocking correctness finding.\n\n**N001 closed:** `skills/pij/SKILL.md:93` now distinguishes inline quoted send bodies from an output's named body file and explicitly rejects stdin.\n\nThe permissions repair matches the stated behavior: the Stop script sets `umask 077`, places input/output/stderr inside one private `mktemp -d` directory and removes it on exit; background children still close fd 3. Display state creation uses a 0700 directory, tightens a pre-existing laxer directory, and writes a new 0600 temporary file before atomic rename (`crates/cli/src/claude_display.rs:189-254`). Error cleanup removes the temporary file. The fence parser, predecessor ordering and Stop/Copilot execution decisions are unchanged by this delta.\n\n**Evidence:** `just pr-freeze 213` returned FINAL at this head; detached tree clean. [CI run 42754075360](https://github.com/AI-Substrate/pij-fleet/actions/runs/42754075360) records the exact head. Its successful Rust job's [JUnit artifact 13735610285](https://github.com/AI-Substrate/pij-fleet/actions/runs/42754075360/artifacts/13735610285) contains 2,400 executed tests, zero failures/errors; nextest reports six additional skips. Both new permissions cases ran and passed, including tightening an existing directory and checking Stop's three file modes and cleanup. The ordering, installed-script/binary integration and stdout-closure regressions also ran and passed.\n\nP213-N001 remains an explicit C34 performance follow-up: per-flush launches, bounded 2 ms ordering polls, growing state work and aborted-state retention. No new periodic work is introduced by this repair. Source and exact-head CI evidence only; no local builds/tests, settings changes, hook execution/installation, lifecycle operations or product edits.\n"
+		}
+	]
+}
