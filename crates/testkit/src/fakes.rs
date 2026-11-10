@@ -171,6 +171,12 @@ impl Registry for FakeRegistry {
                     .as_ref()
                     .is_none_or(|parent| Some(parent) == seat.parent.as_ref())
             })
+            .filter(|seat| {
+                filter
+                    .pane
+                    .as_ref()
+                    .is_none_or(|pane| Some(pane) == seat.pane.as_ref())
+            })
             .cloned()
             .collect())
     }

@@ -443,11 +443,13 @@ impl Registry for SqliteRegistry {
              WHERE (?1 IS NULL OR harness = ?1) \
                AND (?2 IS NULL OR folder = ?2) \
                AND (?3 IS NULL OR parent = ?3) \
+               AND (?4 IS NULL OR pane = ?4) \
              ORDER BY id",
         )
         .bind(filter.harness.map(Harness::as_str))
         .bind(filter.folder.as_deref())
         .bind(filter.parent.as_ref().map(SeatId::as_str))
+        .bind(filter.pane.as_deref())
         .fetch_all(&self.pool)
         .await
         .map_err(adapter_error)?;
