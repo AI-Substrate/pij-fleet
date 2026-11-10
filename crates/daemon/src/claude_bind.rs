@@ -68,7 +68,13 @@ impl ClaudeBinder {
     }
 
     pub(crate) async fn bind_once(&self) -> Result<usize> {
-        let seats = self.registry.list(SeatFilter::default()).await?;
+        // Only live Claude seats can be pending (F185: not the whole roster).
+        let claude = SeatFilter {
+            harness: Some(Harness::Claude),
+            live_only: true,
+            ..SeatFilter::default()
+        };
+        let seats = self.registry.list(claude).await?;
         let mut bound = 0;
         for seat in seats.into_iter().filter(is_pending_spawned_claude) {
             match self.bind_seat(&seat).await {

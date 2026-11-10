@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use pij_core::error::PijError;
 use pij_core::model::{Event, Harness, ProcIdentity, SeatDescriptor, SeatId};
 use pij_core::names::memorable_pij_id_candidates;
-use pij_core::ports::{LivenessPort, PutBinding, Registry, SeatFilter, TmuxPort};
+use pij_core::ports::{LivenessPort, PutBinding, Registry, RelatedSeats, SeatFilter, TmuxPort};
 use pij_core::wire;
 use pij_harnesses::ensure_claude_inbound_accept;
 
@@ -232,6 +232,27 @@ impl RegistrationService {
         self.registration_lock = delivery.native_lock();
         self.native_receivers = Some(delivery);
         self
+    }
+
+    /// The first memorable id for `seed` that no row, live or retired, holds:
+    /// one primary-key read per candidate tried, under the registration lock
+    /// (F185: it scanned the whole roster). `None` when the space is exhausted.
+    async fn first_free_id(
+        &self,
+        seed: &str,
+    ) -> std::result::Result<Option<String>, RegistrationError> {
+        for candidate in memorable_pij_id_candidates(seed) {
+            if self
+                .registry
+                .get(&candidate)
+                .await
+                .map_err(RegistrationError::Runtime)?
+                .is_none()
+            {
+                return Ok(Some(candidate.to_string()));
+            }
+        }
+        Ok(None)
     }
 
     /// Plan 168 holder rule, a BRAKE on same-process supersede: it can only spare
@@ -502,9 +523,15 @@ impl RegistrationService {
             let session = harness_session
                 .as_deref()
                 .expect("validated native session");
+            // Only the rows this claim's checks can read (F185).
             let seats = self
                 .registry
-                .list(SeatFilter::default())
+                .list_related(&related_seats(
+                    &claim,
+                    Some(session),
+                    Some(identity),
+                    std::iter::empty(),
+                ))
                 .await
                 .map_err(RegistrationError::Runtime)?;
             let target = registration_target(&claim, true, Some(session), &seats);
@@ -771,9 +798,20 @@ impl RegistrationService {
                 self.require_process(*identity).await?;
             }
         }
+        // Every row the checks below read (F185): the ids the claim names or
+        // carries forward, and any seat sharing its session, pane or pid. Only
+        // minting a new id needs the whole id space, and it asks per candidate.
         let seats = self
             .registry
-            .list(SeatFilter::default())
+            .list_related(&related_seats(
+                &claim,
+                harness_session.as_deref(),
+                proc,
+                dead_native
+                    .iter()
+                    .chain(handoff.and_then(|proof| proof.prebind.as_ref()))
+                    .map(|seat| seat.id.clone()),
+            ))
             .await
             .map_err(RegistrationError::Runtime)?;
         if dead_native
@@ -822,17 +860,23 @@ impl RegistrationService {
                     claim.id = target.id.to_string();
                 }
             } else if claim.id.is_empty() {
-                claim.id = memorable_pij_id_candidates(&format!("copilot\0{session}"))
-                    .find(|candidate| seats.iter().all(|seat| seat.id != *candidate))
-                    .ok_or_else(|| native_refusal("memorable Pij ID space is exhausted"))?
-                    .to_string();
+                claim.id = self
+                    .first_free_id(&format!("copilot\0{session}"))
+                    .await?
+                    .ok_or_else(|| native_refusal("memorable Pij ID space is exhausted"))?;
             }
         }
         if paneless.is_some() {
             let session = harness_session
                 .as_deref()
                 .expect("validated paneless session");
-            claim.id = paneless_target(&claim, session, proc, &seats)?;
+            claim.id = match paneless_target(&claim, session, proc, &seats)? {
+                Some(target) => target,
+                None => self
+                    .first_free_id(&format!("{}\0{session}", claim.harness))
+                    .await?
+                    .ok_or_else(|| paneless_refusal("memorable Pij ID space is exhausted"))?,
+            };
         }
         let claimed_id = SeatId::from(claim.id.clone());
         let existing = registration_target(&claim, native, harness_session.as_deref(), &seats);
@@ -1403,12 +1447,13 @@ fn paneless_refusal(reason: impl std::fmt::Display) -> RegistrationError {
     RegistrationError::Refused(format!("paneless external registration refused: {reason}"))
 }
 
+/// The paneless claim's existing address, or `None` when it needs a new one.
 fn paneless_target(
     claim: &Registration,
     session: &str,
     identity: Option<ProcIdentity>,
     seats: &[SeatDescriptor],
-) -> std::result::Result<String, RegistrationError> {
+) -> std::result::Result<Option<String>, RegistrationError> {
     let identity = identity.expect("validated external host identity");
     let target = seats
         .iter()
@@ -1459,13 +1504,30 @@ fn paneless_target(
             ));
         }
     }
-    if let Some(target) = target {
-        return Ok(target.id.to_string());
+    Ok(target.map(|target| target.id.to_string()))
+}
+
+/// The rows a claim's registration checks can read (F185): the claim's id and
+/// the one it supersedes, `carried` (observed owners and a spawn's prebind),
+/// and any seat sharing its native session, pane or pid.
+fn related_seats(
+    claim: &Registration,
+    session: Option<&str>,
+    proc: Option<ProcIdentity>,
+    carried: impl Iterator<Item = SeatId>,
+) -> RelatedSeats {
+    let ids = std::iter::once(claim.id.as_str())
+        .filter(|id| !id.is_empty())
+        .map(SeatId::from)
+        .chain(claim.supersedes.clone())
+        .chain(carried)
+        .collect();
+    RelatedSeats {
+        ids,
+        harness_session: session.map(str::to_string),
+        pane: claim.pane.clone(),
+        pid: proc.map(|proc| proc.pid),
     }
-    memorable_pij_id_candidates(&format!("{}\0{session}", claim.harness))
-        .find(|candidate| seats.iter().all(|seat| seat.id != *candidate))
-        .map(|id| id.to_string())
-        .ok_or_else(|| paneless_refusal("memorable Pij ID space is exhausted"))
 }
 
 fn native_prebind<'a>(

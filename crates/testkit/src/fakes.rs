@@ -177,6 +177,7 @@ impl Registry for FakeRegistry {
                     .as_ref()
                     .is_none_or(|pane| Some(pane) == seat.pane.as_ref())
             })
+            .filter(|seat| !filter.live_only || seat.tombstoned_at.is_none())
             .cloned()
             .collect())
     }

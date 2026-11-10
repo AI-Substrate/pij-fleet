@@ -217,7 +217,12 @@ impl CodexBinder {
         let locks = self.facts.thread_locks();
         let pending: Vec<SeatDescriptor> = self
             .registry
-            .list(SeatFilter::default())
+            // Only live Codex seats can be pending (F185: not the whole roster).
+            .list(SeatFilter {
+                harness: Some(Harness::Codex),
+                live_only: true,
+                ..SeatFilter::default()
+            })
             .await?
             .into_iter()
             .filter(is_pending_spawned_codex)
