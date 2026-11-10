@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Open before taking a before/after spawn reading for a PR, especially one that changes both the daemon and an extension",
+				"tags": [
+					"cost",
+					"f162",
+					"reading",
+					"extension",
+					"deploy"
+				],
+				"title": "After-deploy cost readings: attribute by op and seat, and check which half each seat runs (F162)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- `pij-rs --json ping` is enough for a per-call-site reading: `.data.spawns.by_op` (launches by site), `.data.registrations.by_key` and `.by_seat` (count and ps per outcome and per seat). Take two pings a known time apart, save the raw JSON, and diff by_op so the table names every launch in the window, not only the one you fixed.\n- A fix split between the daemon and an extension is deployed in two steps. A bounce brings the daemon half to every seat at once. The extension half reaches a seat only when that seat reloads, and standing-by seats rarely do. Before claiming a result, read each subject seat's `extension_build` with `pij-rs --json state <seat>` and say which half the reading proves. F162 after: registration ps went to 0 (the daemon brake), but viper, stoat and sole still retried 4 a minute because all three ran extensions older than #222. The stop after 3 refusals stays owed until they reload.\n- A seat's ps in by_seat after a bounce is its one registration, not a retry. Compare deltas, not absolutes.\n- Publish the reading as `pij output note --role coder --subject pr:<n>` with `--evidence` and a `--note-owed` for the unproven half. It works after you released the role (it records writer_holds_role false).\n"
+		}
+	]
+}
