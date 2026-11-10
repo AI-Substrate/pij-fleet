@@ -53,9 +53,8 @@ async fn close_parent_tombstones_once_with_canonical_receipt() {
 
 /// F149: a close with the caller's own reason is recorded as an owner's
 /// close (`owner-close: <reason>`), the form registration never lifts, and
-/// the reply says the process keeps running. F175: this fixture seat records
-/// no process, so its pane can't be checked as still its own and the reply
-/// names no kill command.
+/// the reply says what the close left. F175: this fixture's tmux has no pane
+/// %11, so the reply says it is gone and names no kill command.
 #[tokio::test]
 async fn close_records_an_owner_close_and_says_the_process_keeps_running() {
     let fixtures = contracts();
@@ -71,9 +70,9 @@ async fn close_records_an_owner_close_and_says_the_process_keeps_running() {
     assert_eq!(response["data"]["reason"], "owner-close: PR merged");
     let process = response["data"]["process"].as_str().unwrap_or_default();
     assert!(
-        process.starts_with("pij close retires the seat; its process, if any, keeps running.")
-            && process.contains("could not be checked")
-            && !process.contains("kill-pane -t %"),
+        process.starts_with("pij close retires the seat.")
+            && process.contains("is gone: nothing to kill.")
+            && !process.contains("kill-pane"),
         "{response}"
     );
     server.abort();
