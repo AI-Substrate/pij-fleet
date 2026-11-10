@@ -89,6 +89,7 @@ async function bootPushedEvent(
 	let registeredId = "";
 	const acknowledgements: Array<Record<string, unknown>> = [];
 	const sends: Array<Record<string, unknown>> = [];
+	const sendSignals: Array<AbortSignal | null | undefined> = [];
 	const claimRequests: string[] = [];
 	let eventStreams = 0;
 	const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -132,6 +133,7 @@ async function bootPushedEvent(
 		if (path === "/v1/send") {
 			const sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
 			sends.push(sent);
+			sendSignals.push(init?.signal);
 			return envelope("pij send", { msg_id: sent.msg_id, ...sendReceipt });
 		}
 		if (path === "/v1/state") return envelope("pij state", { id: registeredId, pendingFyis: 0 });
@@ -163,7 +165,7 @@ async function bootPushedEvent(
 		resetRuntimeState: true,
 		reason: "startup",
 	});
-	return { acknowledgements, claimRequests, runtime, sends };
+	return { acknowledgements, claimRequests, runtime, sends, sendSignals };
 }
 
 function announceRuntime(
@@ -469,6 +471,17 @@ describe("RustRuntimeSession", () => {
 			runtime.shutdown("quit");
 		}
 	});
+	it("S219-N001: a tool call's abort signal reaches the daemon send", async () => {
+		const { runtime, sendSignals } = await bootPushedEvent(PUSHED_EVENT_WIRE, new FakePiRuntime());
+		try {
+			const controller = new AbortController();
+			await runtime.send("pij-target", "body", { signal: controller.signal });
+			expect(sendSignals.at(-1)).toBe(controller.signal);
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
+
 	it("a reply carries caller context in the shape the daemon's reply gate binds", async () => {
 		// Review of #152, S152-001: the daemon refuses a reply to a role request
 		// with no caller context. The Rust half replays this fixture.

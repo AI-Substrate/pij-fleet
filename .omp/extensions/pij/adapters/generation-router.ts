@@ -237,17 +237,19 @@ function refused(outcome: RouteOutcome, row?: RsRouteRow): RouteResult {
 
 /**
  * F174: `probeRs`, tried again while nothing answers (a refused connection reads as absent), from
- * 250 ms doubling to 4 s for up to `wait` ms: a bounce closes the port for about a second. The
+ * 250 ms doubling to 4 s for up to `wait` ms (pauses and wall clock alike): a bounce closes the
+ * port for about a second. The
  * probe is a read, and the routed call is made only once it answers, so nothing is sent twice.
  */
 async function probeWaitingOutRestart(deps: GenerationRouterDeps, wait: number): Promise<RsProbe> {
 	const pauseFor =
 		deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+	const deadline = Date.now() + wait;
 	let budget = wait;
 	let pause = RESTART_FIRST_PAUSE_MS;
 	for (;;) {
 		const probe = await probeRs(deps);
-		if (probe.kind !== "absent" || pause > budget) return probe;
+		if (probe.kind !== "absent" || pause > budget || Date.now() + pause > deadline) return probe;
 		await pauseFor(pause);
 		budget -= pause;
 		pause = Math.min(pause * 2, RESTART_MAX_PAUSE_MS);

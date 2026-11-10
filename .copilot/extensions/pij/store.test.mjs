@@ -2562,6 +2562,61 @@ test("F174: a refused connection waits out a daemon restart, then answers", asyn
 	assert.equal(paths.length, 4);
 });
 
+test("F174: the daemon that comes back has a new key, read before each try and after one 401", async () => {
+	const answer = (authorization) =>
+		authorization === "Bearer new-key"
+			? new Response(JSON.stringify({ ok: true, v: 2, data: { msg_id: "m" } }))
+			: new Response(
+					JSON.stringify({ ok: false, v: 2, error: "auth", meta: "missing or wrong bearer token" }),
+					{ status: 401 },
+				);
+	// late: the new daemon publishes its key once the first request has arrived, after its bind.
+	for (const late of [false, true]) {
+		let key = "old-key";
+		let down = 2;
+		const sent = [];
+		const client = new DaemonClient({
+			addr: "127.0.0.1:7461",
+			stateDir: "/isolated",
+			readKey: async () => key,
+			pause: async () => {},
+			fetch: async (_url, init) => {
+				if (down-- > 0) {
+					if (down === 0 && !late) key = "new-key";
+					throw refused();
+				}
+				if (late) key = "new-key";
+				sent.push(init.headers.Authorization);
+				return answer(init.headers.Authorization);
+			},
+		});
+		assert.deepEqual(await client.request("/v1/send", { msg_id: "m" }), { msg_id: "m" });
+		assert.deepEqual(
+			sent,
+			late ? ["Bearer old-key", "Bearer new-key"] : ["Bearer new-key"],
+			`late=${late}`,
+		);
+	}
+});
+
+test("F174: a 401 with no restart behind it is an answer, sent once", async () => {
+	let sent = 0;
+	const client = new DaemonClient({
+		addr: "127.0.0.1:7461",
+		stateDir: "/isolated",
+		readKey: async () => "k",
+		pause: async () => assert.fail("must not wait"),
+		fetch: async () => {
+			sent += 1;
+			return new Response(JSON.stringify({ ok: false, v: 2, error: "auth", meta: "no" }), {
+				status: 401,
+			});
+		},
+	});
+	await assert.rejects(client.request("/v1/send", { msg_id: "m" }));
+	assert.equal(sent, 1);
+});
+
 test("F174: a daemon that stays down is named once the wait runs out", async () => {
 	const pauses = [];
 	const client = new DaemonClient({

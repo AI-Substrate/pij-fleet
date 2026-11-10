@@ -556,21 +556,34 @@ export class DaemonClient {
 
 	/**
 	 * F174: a refused connection is tried again, from 250 ms doubling to 4 s,
-	 * for up to `restartWaitMs`, then refused naming a restart. Only a refused
-	 * connection: nothing reached the daemon, so a write cannot happen twice.
-	 * A timeout, a reset or any reply is answered as before, and only the
-	 * routes in WAITS_OUT_RESTART wait.
+	 * for up to `restartWaitMs` (pauses and wall clock alike), then refused
+	 * naming a restart. Only a refused connection: nothing reached the daemon,
+	 * so a write cannot happen twice. A timeout, a reset or any reply is
+	 * answered as before, and only the routes in WAITS_OUT_RESTART wait.
+	 *
+	 * The daemon that comes back has a new boot key, so the key is read again
+	 * before each try. It publishes that key after it binds, so a try made with
+	 * the key read just before can meet a 401: the bearer layer refuses before
+	 * any handler runs, so that one is sent once more, with the key read again
+	 * (review of #219, F001). Resolves to the response and the key last sent.
 	 */
-	async #fetchWaitingOutRestart(path, init, signal) {
+	async #fetchWaitingOutRestart(path, init, signal, key) {
 		const waits = this.restartWaitMs > 0 && WAITS_OUT_RESTART.has(path.split("?")[0]);
+		const deadline = Date.now() + this.restartWaitMs;
 		let budget = this.restartWaitMs;
 		let pause = RESTART_FIRST_PAUSE_MS;
+		let recovering = false;
 		for (;;) {
+			let response;
 			try {
-				return await this.fetch(`${this.url}${path}`, { ...init, signal });
+				response = await this.fetch(`${this.url}${path}`, {
+					...init,
+					headers: { Authorization: `Bearer ${key}`, ...init.headers },
+					signal,
+				});
 			} catch (error) {
 				if (!waits || signal.aborted || !refusedConnection(error)) throw error;
-				if (pause > budget)
+				if (pause > budget || Date.now() + pause > deadline)
 					throw new NativeError(
 						`the daemon is restarting or down: retry, or run pij-rs ping (${this.url.slice("http://".length)} refused connections for ${Math.round(this.restartWaitMs / 1000)} s)`,
 						true,
@@ -579,7 +592,23 @@ export class DaemonClient {
 				await this.pause(pause, signal);
 				budget -= pause;
 				pause = Math.min(pause * 2, RESTART_MAX_PAUSE_MS);
+				recovering = true;
+				key = await this.#keyAgain(key);
+				continue;
 			}
+			if (!recovering || response.status !== 401) return { response, key };
+			recovering = false;
+			await response.body?.cancel();
+			key = await this.#keyAgain(key);
+		}
+	}
+
+	/** The boot key read again; an unreadable or empty file keeps `held`. */
+	async #keyAgain(held) {
+		try {
+			return (await this.readKey()).trim() || held;
+		} catch {
+			return held;
 		}
 	}
 
@@ -599,18 +628,16 @@ export class DaemonClient {
 		let response;
 		let raw;
 		try {
-			response = await this.#fetchWaitingOutRestart(
+			({ response, key } = await this.#fetchWaitingOutRestart(
 				path,
 				{
 					method: body === undefined ? "GET" : "POST",
-					headers: {
-						Authorization: `Bearer ${key}`,
-						...(body === undefined ? {} : { "Content-Type": "application/json" }),
-					},
+					headers: body === undefined ? {} : { "Content-Type": "application/json" },
 					...(body === undefined ? {} : { body: JSON.stringify(body) }),
 				},
 				requestSignal,
-			);
+				key,
+			));
 			raw = await response.text();
 		} catch (error) {
 			if (signal?.aborted) throw signal.reason;

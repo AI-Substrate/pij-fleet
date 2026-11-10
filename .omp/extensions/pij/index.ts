@@ -181,7 +181,7 @@ export default function (pi: ExtensionAPI): void {
 				],
 			},
 		),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			requirePeerContext(ctx);
 			const message = typeof params.message === "string" ? params.message.trim() : "";
 			const command = typeof params.command === "string" ? params.command : undefined;
@@ -199,6 +199,7 @@ export default function (pi: ExtensionAPI): void {
 					fyi,
 					...(force ? { force: { reason: params.reason ?? "" } } : {}),
 					...(typeof params.in_reply_to === "string" ? { inReplyTo: params.in_reply_to } : {}),
+					...(signal === undefined ? {} : { signal }),
 				});
 				const coldCheck =
 					receipt.coldCheck === undefined ? "" : ` (cold-check: ${receipt.coldCheck})`;
@@ -345,7 +346,7 @@ export default function (pi: ExtensionAPI): void {
 				}),
 			),
 		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			requirePeerContext(ctx);
 			if (!session) throw new Error("pij_spawn: session not booted yet");
 			if (!rustRuntime)
@@ -359,6 +360,7 @@ export default function (pi: ExtensionAPI): void {
 				effort: typeof params.effort === "string" ? params.effort : undefined,
 				layout: params.layout === "window" || params.layout === "split" ? params.layout : undefined,
 				...(params.role === undefined ? {} : { role: params.role }),
+				...(signal === undefined ? {} : { signal }),
 				cwd: ctx.cwd, // §M6: cwd from tool execute context
 			});
 			if (!res.ok) {

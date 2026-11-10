@@ -1,7 +1,8 @@
 //! Authenticated HTTP client for the daemon wire.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use pij_core::error::{PijError, Result};
@@ -142,7 +143,12 @@ pub struct SendRequest {
 pub struct DaemonClient {
     http: reqwest::Client,
     base_url: String,
-    token: String,
+    /// The bearer token, shared by this client's clones.
+    token: Arc<RwLock<String>>,
+    /// Where a boot key is read from. Every daemon boot mints a new one, so it
+    /// is read again while a restart is waited out (review of #219, F001). A
+    /// job token has none and never changes.
+    key_file: Option<PathBuf>,
     /// How long a refused connection is tried again (F174); zero tries once.
     restart_wait: Duration,
 }
@@ -161,11 +167,13 @@ impl DaemonClient {
     /// # Errors
     /// When the key cannot be read.
     pub fn new(state_dir: &Path, addr: &str) -> Result<Self> {
-        let token = pij_daemon::auth::read_key(&state_dir.join("daemon.key"))?;
+        let key_file = state_dir.join("daemon.key");
+        let token = pij_daemon::auth::read_key(&key_file)?;
         Ok(Self {
             http: reqwest::Client::new(),
             base_url: format!("http://{addr}"),
-            token,
+            token: Arc::new(RwLock::new(token)),
+            key_file: Some(key_file),
             restart_wait: Duration::ZERO,
         })
     }
@@ -186,7 +194,8 @@ impl DaemonClient {
         Self {
             http: reqwest::Client::new(),
             base_url: format!("http://{addr}"),
-            token,
+            token: Arc::new(RwLock::new(token)),
+            key_file: None,
             restart_wait: Duration::ZERO,
         }
     }
@@ -561,22 +570,38 @@ impl DaemonClient {
 
     /// Send `request` with the key. A refused connection is tried again for
     /// the client's restart wait (F174); `Err` is the sentence to refuse with.
+    ///
+    /// The daemon that comes back has a new boot key, so the key file is read
+    /// again before each try. It publishes that key after it binds, so a try
+    /// made with the key read just before can meet a 401: the bearer layer
+    /// refuses before any handler runs, so that one is sent once more, with
+    /// the key read again (review of #219, F001).
     async fn transmit(
         &self,
         request: reqwest::RequestBuilder,
     ) -> std::result::Result<reqwest::Response, String> {
-        let request = self.auth(request);
         let deadline = tokio::time::Instant::now() + self.restart_wait;
         let mut pause = RESTART_FIRST_PAUSE;
+        let mut recovering = false;
         loop {
             // A streamed body cannot be cloned; it is sent once.
             let Some(attempt) = request.try_clone() else {
-                return request
+                return self
+                    .auth(request)
                     .send()
                     .await
                     .map_err(|error| format!("could not reach the daemon: {error}"));
             };
-            let error = match attempt.send().await {
+            let error = match self.auth(attempt).send().await {
+                Ok(response)
+                    if recovering
+                        && self.key_file.is_some()
+                        && response.status() == reqwest::StatusCode::UNAUTHORIZED =>
+                {
+                    recovering = false;
+                    self.read_key_again();
+                    continue;
+                }
                 Ok(response) => return Ok(response),
                 Err(error) => error,
             };
@@ -593,14 +618,32 @@ impl DaemonClient {
             }
             tokio::time::sleep(pause).await;
             pause = (pause * 2).min(RESTART_MAX_PAUSE);
+            recovering = true;
+            self.read_key_again();
+        }
+    }
+
+    /// Read the boot key file again, for this client and its clones. A job
+    /// token has no file; an unreadable or empty file keeps the key held.
+    fn read_key_again(&self) {
+        if let Some(file) = &self.key_file
+            && let Ok(key) = pij_daemon::auth::read_key(file)
+            && !key.is_empty()
+        {
+            *self
+                .token
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = key;
         }
     }
 
     fn auth(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        request.header(
-            reqwest::header::AUTHORIZATION,
-            format!("Bearer {}", self.token),
-        )
+        let token = self
+            .token
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        request.header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
     }
 
     async fn get<T: DeserializeOwned>(&self, command: &str, path: &str) -> Envelope<T> {
@@ -933,35 +976,82 @@ mod tests {
         state_dir
     }
 
-    /// F174: a bounce closes the port for about a second. A refused
-    /// connection is tried again until the new daemon answers.
-    #[tokio::test]
-    async fn a_refused_connection_is_tried_again_until_the_daemon_is_back() {
-        let state_dir = keyed_dir("cli-restart-back");
-        let addr = refused_addr();
-        let server = std::thread::spawn(move || {
+    /// The daemon a bounce brings back at `addr` after 400 ms, with a new boot
+    /// key in `key_file`: published before it binds or, when `late`, once the
+    /// first request has arrived, as a boot that publishes after its bind. It
+    /// answers 200 only to that key and 401 to any other, and returns, per
+    /// connection, whether the request bore it.
+    fn replacement_daemon(
+        addr: std::net::SocketAddr,
+        key_file: std::path::PathBuf,
+        late: bool,
+    ) -> std::thread::JoinHandle<Vec<bool>> {
+        std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(400));
+            let publish = || std::fs::write(&key_file, "new-boot-key\n").expect("publish key");
+            if !late {
+                publish();
+            }
             let listener = TcpListener::bind(addr).expect("the new daemon binds");
-            let (mut socket, _) = listener.accept().expect("accept client");
-            let mut request = [0_u8; 4096];
-            let _ = socket.read(&mut request).expect("read request");
-            let body = r#"{"ok":true,"command":"pij ping","v":2,"data":{}}"#;
-            write!(
-                socket,
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            )
-            .expect("write response");
-        });
-        let client = DaemonClient::new(&state_dir, &addr.to_string())
-            .expect("client")
-            .with_restart_wait(Duration::from_secs(10));
-        let started = Instant::now();
-        let reply = client.ping().await;
-        assert!(reply.ok, "{:?}", reply.meta);
-        assert!(started.elapsed() >= Duration::from_millis(400));
-        server.join().expect("fake daemon");
+            listener.set_nonblocking(true).expect("nonblocking");
+            let mut bore = Vec::new();
+            let until = Instant::now() + Duration::from_secs(5);
+            while Instant::now() < until && !bore.contains(&true) {
+                let Ok((mut socket, _)) = listener.accept() else {
+                    std::thread::sleep(Duration::from_millis(10));
+                    continue;
+                };
+                socket.set_nonblocking(false).expect("blocking socket");
+                let mut request = [0_u8; 4096];
+                let read = socket.read(&mut request).expect("read request");
+                if late && bore.is_empty() {
+                    publish();
+                }
+                let keyed = String::from_utf8_lossy(&request[..read])
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer new-boot-key\r\n");
+                bore.push(keyed);
+                let (status, body) = if keyed {
+                    (
+                        "200 OK",
+                        r#"{"ok":true,"command":"pij ping","v":2,"data":{}}"#,
+                    )
+                } else {
+                    (
+                        "401 Unauthorized",
+                        r#"{"ok":false,"command":"auth","v":2,"error":"auth","meta":"missing or wrong bearer token"}"#,
+                    )
+                };
+                write!(
+                    socket,
+                    "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .expect("write response");
+            }
+            bore
+        })
+    }
+
+    /// F174: a bounce closes the port for about a second, and the daemon that
+    /// comes back has a new boot key (review of #219, F001). A refused
+    /// connection is tried again with the key read again; a 401 from a daemon
+    /// that published its key after its bind is sent once more.
+    #[tokio::test]
+    async fn a_refused_connection_is_tried_again_with_the_new_daemons_key() {
+        for (late, bore) in [(false, vec![true]), (true, vec![false, true])] {
+            let state_dir = keyed_dir("cli-restart-back");
+            let addr = refused_addr();
+            let server = replacement_daemon(addr, state_dir.join("daemon.key"), late);
+            let client = DaemonClient::new(&state_dir, &addr.to_string())
+                .expect("client")
+                .with_restart_wait(Duration::from_secs(10));
+            let started = Instant::now();
+            let reply = client.ping().await;
+            assert!(reply.ok, "late={late}: {:?}", reply.meta);
+            assert!(started.elapsed() >= Duration::from_millis(400));
+            assert_eq!(server.join().expect("fake daemon"), bore, "late={late}");
+        }
     }
 
     /// F174: past the wait the refusal names a restart; with no wait (hooks,
@@ -990,35 +1080,62 @@ mod tests {
     }
 
     /// F174: only a refused connection is tried again. A daemon that read the
-    /// request and closed without a reply may have acted on it, so the write
-    /// is never sent twice.
+    /// request and closed without a reply may have acted on it, and a 401
+    /// with no restart behind it is an answer, so neither is sent twice.
     #[tokio::test]
     async fn a_request_the_daemon_read_is_never_sent_again() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake daemon");
-        let addr = listener.local_addr().expect("fake daemon address");
-        listener.set_nonblocking(true).expect("nonblocking");
-        let server = std::thread::spawn(move || {
-            let mut accepted = 0;
-            let until = Instant::now() + Duration::from_millis(1_500);
-            while Instant::now() < until {
-                match listener.accept() {
-                    Ok((mut socket, _)) => {
-                        socket.set_nonblocking(false).expect("blocking socket");
-                        let mut request = [0_u8; 4096];
-                        let _ = socket.read(&mut request);
-                        accepted += 1;
+        for unauthorized in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake daemon");
+            let addr = listener.local_addr().expect("fake daemon address");
+            listener.set_nonblocking(true).expect("nonblocking");
+            let server = std::thread::spawn(move || {
+                let mut accepted = 0;
+                let until = Instant::now() + Duration::from_millis(1_500);
+                while Instant::now() < until {
+                    match listener.accept() {
+                        Ok((mut socket, _)) => {
+                            socket.set_nonblocking(false).expect("blocking socket");
+                            let mut request = [0_u8; 4096];
+                            let _ = socket.read(&mut request);
+                            accepted += 1;
+                            if unauthorized {
+                                let body = r#"{"ok":false,"command":"auth","v":2,"error":"auth","meta":"no"}"#;
+                                let _ = write!(
+                                    socket,
+                                    "HTTP/1.1 401 Unauthorized\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                                    body.len()
+                                );
+                            }
+                        }
+                        Err(_) => std::thread::sleep(Duration::from_millis(10)),
                     }
-                    Err(_) => std::thread::sleep(Duration::from_millis(10)),
                 }
+                accepted
+            });
+            let state_dir = keyed_dir("cli-restart-once");
+            let reply = if unauthorized {
+                DaemonClient::new(&state_dir, &addr.to_string())
+                    .expect("client")
+                    .with_restart_wait(Duration::from_secs(10))
+                    .ping()
+                    .await
+            } else {
+                DaemonClient::with_token(&addr.to_string(), "job-token".to_string())
+                    .with_restart_wait(Duration::from_secs(10))
+                    .bg_emit("job", "once only", None)
+                    .await
+            };
+            assert!(!reply.ok, "unauthorized={unauthorized}");
+            if !unauthorized {
+                let meta = reply.meta.expect("no reply");
+                assert!(meta.starts_with("could not reach the daemon: "), "{meta}");
             }
-            accepted
-        });
-        let client = DaemonClient::with_token(&addr.to_string(), "job-token".to_string())
-            .with_restart_wait(Duration::from_secs(10));
-        let reply = client.bg_emit("job", "once only", None).await;
-        let meta = reply.meta.expect("no reply");
-        assert!(meta.starts_with("could not reach the daemon: "), "{meta}");
-        assert_eq!(server.join().expect("fake daemon"), 1, "sent once");
+            assert_eq!(
+                server.join().expect("fake daemon"),
+                1,
+                "unauthorized={unauthorized}: sent once"
+            );
+        }
     }
 
     #[test]

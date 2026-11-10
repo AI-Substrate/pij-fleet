@@ -477,6 +477,23 @@ describe("pij-rs HTTP client", () => {
 		expect(pauses).toEqual([250, 500, 1_000, 2_000, 4_000, 4_000, 4_000, 4_000]);
 	});
 
+	it("S219-N001: a send cancelled while a restart is waited out is never sent again", async () => {
+		const stateDir = root();
+		const controller = new AbortController();
+		const fetchMock = vi.fn(async () => Promise.reject(refused("node")));
+		const client = new PijDaemonClient({ addr: "127.0.0.1:7461", stateDir }, "secret", {
+			...deps(fetchMock as typeof fetch),
+			sleep: async () => controller.abort(),
+		});
+		await expect(
+			client.send(
+				{ from: "pij-a", to: { seat: "pij-b" }, body: "x", msg_id: "m1" },
+				controller.signal,
+			),
+		).rejects.toThrow();
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
 	it("F174: a reset is never sent again, and hooks and loops answer at once", async () => {
 		const stateDir = root();
 		const reset = (): Error =>

@@ -185,19 +185,22 @@ export class PijDaemonClient {
 		return this.get<HealthPayload>("/health");
 	}
 
-	spawn(request: {
-		readonly harness: Registration["harness"];
-		readonly model?: string;
-		readonly effort?: string;
-		readonly cwd: string;
-		readonly caller_pane?: string;
-		readonly parent: string;
-		readonly no_wait: boolean;
-		readonly accept_inbound: boolean;
-		readonly role?: string;
-		readonly caller?: { readonly PIJ_SESSION_ID: string; readonly TMUX_PANE?: string };
-	}): Promise<RustSeatDescriptor> {
-		return this.post<RustSeatDescriptor>("/v1/spawn", request);
+	spawn(
+		request: {
+			readonly harness: Registration["harness"];
+			readonly model?: string;
+			readonly effort?: string;
+			readonly cwd: string;
+			readonly caller_pane?: string;
+			readonly parent: string;
+			readonly no_wait: boolean;
+			readonly accept_inbound: boolean;
+			readonly role?: string;
+			readonly caller?: { readonly PIJ_SESSION_ID: string; readonly TMUX_PANE?: string };
+		},
+		signal?: AbortSignal,
+	): Promise<RustSeatDescriptor> {
+		return this.post<RustSeatDescriptor>("/v1/spawn", request, signal);
 	}
 
 	register(claim: Registration): Promise<RustSeatDescriptor> {
@@ -209,8 +212,9 @@ export class PijDaemonClient {
 		return (await this.get<FederatedRoster>("/v1/seats", signal)).seats;
 	}
 
-	send(request: SendRequest): Promise<QueueReceipt> {
-		return this.post<QueueReceipt>("/v1/send", request);
+	/** `signal` cancels the send, including while a restart is waited out (S219-N001). */
+	send(request: SendRequest, signal?: AbortSignal): Promise<QueueReceipt> {
+		return this.post<QueueReceipt>("/v1/send", request, signal);
 	}
 
 	/** Run the `pij` block that ends a seat's reply (plan 226). */
@@ -488,9 +492,10 @@ export class PijDaemonClient {
 
 	/**
 	 * F174: on a route in WAITS_OUT_RESTART, a refused connection is tried again, from 250 ms
-	 * doubling to 4 s, for up to RESTART_WAIT_MS, then refused naming a restart. Only a refused
-	 * connection: nothing reached the daemon, so a write cannot happen twice. A timeout, a reset or
-	 * any reply is answered as before.
+	 * doubling to 4 s, for up to RESTART_WAIT_MS (pauses and wall clock alike), then refused naming
+	 * a restart. Only a refused connection: nothing reached the daemon, so a write cannot happen
+	 * twice. A timeout, a reset or any reply is answered as before, and a call cancelled while it
+	 * waits is never sent again (S219-N001).
 	 */
 	private async waitingOutRestart(
 		path: string,
@@ -498,6 +503,7 @@ export class PijDaemonClient {
 		signal: AbortSignal | undefined,
 	): Promise<Response> {
 		const waits = WAITS_OUT_RESTART.has(path.split("?")[0] ?? path);
+		const deadline = Date.now() + RESTART_WAIT_MS;
 		let budget = RESTART_WAIT_MS;
 		let pause = RESTART_FIRST_PAUSE_MS;
 		for (;;) {
@@ -505,12 +511,13 @@ export class PijDaemonClient {
 				return await send();
 			} catch (error) {
 				if (!waits || signal?.aborted || !isConnectionRefused(error)) throw error;
-				if (pause > budget) {
+				if (pause > budget || Date.now() + pause > deadline) {
 					throw new Error(
 						`the daemon is restarting or down: retry, or run pij-rs ping (${this.location.addr} refused connections for ${RESTART_WAIT_MS / 1_000} s)`,
 					);
 				}
 				await (this.deps.sleep ?? sleep)(pause, signal ?? new AbortController().signal);
+				signal?.throwIfAborted();
 				budget -= pause;
 				pause = Math.min(pause * 2, RESTART_MAX_PAUSE_MS);
 			}
