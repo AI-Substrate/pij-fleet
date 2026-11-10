@@ -491,27 +491,35 @@ impl RegistrationService {
                 return Err(refused);
             }
         }
-        // F162, a brake: a claim that supersedes a live same-process holder which
-        // keeps the seat (plan 168) is refused as NativeHolderCurrent under the
-        // lock whatever the host proves, so refuse it before paying for the proof
-        // (two `ps` per claim, from every standing-by session). Removing this
-        // check refuses the same claims later, after the ancestry reads; it never
-        // admits one.
-        if let (Some(previous), Some(claimed)) =
-            (claim.supersedes.as_ref(), claim.native_precedence)
-            && let Some(holder) = self
+        // F162, a brake: a claim whose predecessor (named, or inferred as the
+        // locked path infers it, `native_supersedes`) is a live same-process
+        // holder that keeps the seat (plan 168) is refused as
+        // NativeHolderCurrent under the lock whatever the host proves, so refuse
+        // it before paying for the proof (two `ps` per claim, from every
+        // standing-by session). Removing this check refuses the same claims
+        // later, after the ancestry reads; it never admits one.
+        if let Some(claimed) = claim.native_precedence {
+            let session = harness_session
+                .as_deref()
+                .expect("validated native session");
+            let seats = self
                 .registry
-                .get(previous)
+                .list(SeatFilter::default())
                 .await
-                .map_err(RegistrationError::Runtime)?
-                .filter(|seat| {
-                    seat.proc == Some(identity)
+                .map_err(RegistrationError::Runtime)?;
+            let target = registration_target(&claim, true, Some(session), &seats);
+            if let Some(previous) =
+                native_supersedes(&claim, session, Some(identity), target, &seats)
+                && let Some(holder) = seats.iter().find(|seat| {
+                    seat.id == previous
+                        && seat.proc == Some(identity)
                         && seat.tombstoned_at.is_none()
                         && seat.native_extension_delivery
                 })
-            && self.holder_keeps_seat(&holder, claimed).await
-        {
-            return Err(RegistrationError::NativeHolderCurrent(holder.id));
+                && self.holder_keeps_seat(holder, claimed).await
+            {
+                return Err(RegistrationError::NativeHolderCurrent(holder.id.clone()));
+            }
         }
         tokio::time::timeout(
             HOST_OBSERVATION_TIMEOUT,
@@ -801,36 +809,12 @@ impl RegistrationService {
                     "native session has multiple Pij addresses; refresh the roster".into(),
                 ));
             }
-            if let Some(target) = registration_target(&claim, true, Some(session), &seats) {
-                if claim.id.is_empty()
-                    && target.native_extension_delivery
-                    && target.proc == proc
-                    && target.pane == claim.pane
-                {
-                    claim.supersedes = None;
-                }
+            let target = registration_target(&claim, true, Some(session), &seats);
+            let supersedes = native_supersedes(&claim, session, proc, target, &seats);
+            if let Some(target) = target {
+                claim.supersedes = supersedes;
                 if claim.id != target.id.as_str() {
                     claim.id = target.id.to_string();
-                }
-                // --resume can first register a temporary bootstrap conversation.
-                // Only its verified current host may retire that predecessor.
-                if target.harness_session.as_deref() == Some(session) && claim.supersedes.is_none()
-                {
-                    claim.supersedes = seats
-                        .iter()
-                        .find(|seat| {
-                            seat.id != target.id
-                                && seat.harness == Harness::Copilot
-                                && !seat.relay
-                                && seat.tombstoned_at.is_none()
-                                && seat.proc == proc
-                                && seat.pane == claim.pane
-                                && seat
-                                    .harness_session
-                                    .as_deref()
-                                    .is_some_and(|old| old != session)
-                        })
-                        .map(|seat| seat.id.clone());
                 }
             } else if claim.id.is_empty() {
                 claim.id = memorable_pij_id_candidates(&format!("copilot\0{session}"))
@@ -1500,6 +1484,52 @@ fn native_prebind<'a>(
                 .as_deref()
                 .is_none_or(|native| native == session)
     })
+}
+
+/// The predecessor a native claim supersedes, as the locked registration
+/// resolves it: the claim's own, cleared when the claim names its own live
+/// incarnation; or, when the claim lands on its own session's row, the
+/// same-process, same-pane seat of another live session (a `--resume`
+/// bootstrap, or the session that took the seat, plan 168). The pre-proof
+/// brake (F162) asks this too, so the two can't disagree.
+fn native_supersedes(
+    claim: &Registration,
+    session: &str,
+    proc: Option<ProcIdentity>,
+    target: Option<&SeatDescriptor>,
+    seats: &[SeatDescriptor],
+) -> Option<SeatId> {
+    let Some(target) = target else {
+        return claim.supersedes.clone();
+    };
+    let mut supersedes = claim.supersedes.clone();
+    if claim.id.is_empty()
+        && target.native_extension_delivery
+        && target.proc == proc
+        && target.pane == claim.pane
+    {
+        supersedes = None;
+    }
+    // --resume can first register a temporary bootstrap conversation.
+    // Only its verified current host may retire that predecessor.
+    if target.harness_session.as_deref() == Some(session) && supersedes.is_none() {
+        supersedes = seats
+            .iter()
+            .find(|seat| {
+                seat.id != target.id
+                    && seat.harness == Harness::Copilot
+                    && !seat.relay
+                    && seat.tombstoned_at.is_none()
+                    && seat.proc == proc
+                    && seat.pane == claim.pane
+                    && seat
+                        .harness_session
+                        .as_deref()
+                        .is_some_and(|old| old != session)
+            })
+            .map(|seat| seat.id.clone());
+    }
+    supersedes
 }
 
 fn registration_target<'a>(
@@ -3660,6 +3690,23 @@ mod tests {
         assert_eq!(registry.list(SeatFilter::default()).await.unwrap(), before);
     }
 
+    /// [`attest`], counting the host-proof process reads into `reads`.
+    async fn attest_counted(
+        service: &RegistrationService,
+        claim: Registration,
+        session: &str,
+        tmux: &FakeTmux,
+        reads: &AtomicU64,
+    ) -> std::result::Result<SeatDescriptor, RegistrationError> {
+        service
+            .register_native_with_observer(claim, Some(session.to_string()), tmux, |pid| {
+                reads.fetch_add(1, Ordering::SeqCst);
+                fixture_process(pid)
+            })
+            .await
+            .map(|(descriptor, _)| descriptor)
+    }
+
     /// F162: a standing-by session retries its claim; each refusal used to read
     /// the host's process tree first (two `ps` a claim). It reads none now.
     #[tokio::test]
@@ -3675,23 +3722,82 @@ mod tests {
         .await
         .expect("history session registers");
         let reads = AtomicU64::new(0);
-        let held = service
-            .register_native_with_observer(
-                precedence_claim("", Some(holder.id.as_str()), None, 3_000),
-                Some("blank-boot-session".to_string()),
-                &tmux,
-                |pid| {
-                    reads.fetch_add(1, Ordering::SeqCst);
-                    fixture_process(pid)
-                },
-            )
-            .await
-            .map(|(descriptor, _)| descriptor);
+        let held = attest_counted(
+            &service,
+            precedence_claim("", Some(holder.id.as_str()), None, 3_000),
+            "blank-boot-session",
+            &tmux,
+            &reads,
+        )
+        .await;
         held_by(held, &holder.id);
         assert_eq!(
             reads.load(Ordering::SeqCst),
             0,
             "no process read for a held claim"
+        );
+    }
+
+    /// F162, review of #222 (F001): a session retired when a newer one took the
+    /// seat retries with its own id and no `supersedes`, so its holder is only
+    /// inferred. While that holder keeps the seat, no process is read; once the
+    /// old session's newer prompt outranks it, the claim is proved and admitted.
+    #[tokio::test]
+    async fn a_retired_session_retrying_its_own_id_reads_no_process_until_it_may_take_over() {
+        const NEW: &str = "user-created-new-session";
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let tmux = native_tmux();
+        let old = attest(
+            &service,
+            precedence_claim("", None, Some(100), 1_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("old chat");
+        let new = attest(
+            &service,
+            precedence_claim("", Some(old.id.as_str()), Some(200), 2_000),
+            Some(NEW),
+            &tmux,
+        )
+        .await
+        .expect("the first prompt in the new chat takes the seat");
+        assert!(!live(&registry, &old.id).await);
+
+        let reads = AtomicU64::new(0);
+        for _ in 0..3 {
+            held_by(
+                attest_counted(
+                    &service,
+                    precedence_claim(old.id.as_str(), None, Some(100), 1_000),
+                    SESSION,
+                    &tmux,
+                    &reads,
+                )
+                .await,
+                &new.id,
+            );
+        }
+        assert_eq!(
+            reads.load(Ordering::SeqCst),
+            0,
+            "an inferred holder refuses before the proof too"
+        );
+
+        let back = attest_counted(
+            &service,
+            precedence_claim(old.id.as_str(), None, Some(300), 1_000),
+            SESSION,
+            &tmux,
+            &reads,
+        )
+        .await
+        .expect("a newer prompt in the old chat takes the seat back");
+        assert_eq!(back.id, old.id);
+        assert!(
+            reads.load(Ordering::SeqCst) > 0,
+            "a claim that is admitted is proved"
         );
     }
 
