@@ -24,9 +24,18 @@ pub const STALL_MIN_FYIS: u64 = 2;
 /// told (Jordan, 2026-11-10).
 pub const STALL_AFTER_MS: u64 = 15 * 60_000;
 
-/// The most bytes of FYI lines a stall notice lists; past it, `...and N more`.
-/// With the fixed text around it, the notice stays under 2 KB (as F150, F161).
-pub const STALL_LIST_MAX: usize = 1_300;
+/// The most bytes a delivered stall notice may take, with the waiting-FYIs
+/// line a PA's turn carries appended after a blank line (F150, F161's 2 KB).
+pub const STALL_DELIVERED_MAX: usize = 2_048;
+
+/// How the waiting-FYIs line starts; a body ending with it carries one.
+pub const WAITING_LINE_LEAD: &str = "Waiting FYIs: ";
+
+/// The most bytes the waiting-FYIs line takes; past it, `+N more`.
+pub const WAITING_LINE_MAX: usize = 300;
+
+/// The most bytes the stall notice itself takes, leaving room for the line.
+pub const STALL_NOTICE_MAX: usize = STALL_DELIVERED_MAX - WAITING_LINE_MAX - 2;
 
 /// How much of each FYI's first line the stall notice shows.
 pub const STALL_FIRST_LINE_CHARS: usize = 100;
@@ -87,6 +96,15 @@ pub fn stall_body(seat: &SeatId, fyis: &[HeldFyi], now_ms: u64) -> String {
         ordered.len(),
         crate::cold_wake::human_duration(oldest),
     );
+    let tail = format!(
+        "\nRead them in full: pij-rs fyi-read --seat {seat_shown} --pending\n\
+         If any needs {seat_shown} to act, wake it with a normal send: pij send {seat_shown} \"<what to do>\". \
+         pij never wakes it for this, cold or warm.\n\
+         (Sent once for this backlog; again only if new FYIs arrive.)"
+    );
+    // Whatever the seat ids' lengths, the list gets what the fixed text
+    // leaves, keeping room for the `...and N more` line.
+    let budget = STALL_NOTICE_MAX.saturating_sub(text.len() + tail.len() + MORE_LINE_MAX);
     let mut used = 0;
     let mut shown = 0;
     for fyi in &ordered {
@@ -99,7 +117,7 @@ pub fn stall_body(seat: &SeatId, fyis: &[HeldFyi], now_ms: u64) -> String {
                 STALL_FIRST_LINE_CHARS
             ),
         );
-        if shown > 0 && used + line.len() > STALL_LIST_MAX {
+        if used + line.len() > budget {
             break;
         }
         used += line.len();
@@ -109,14 +127,12 @@ pub fn stall_body(seat: &SeatId, fyis: &[HeldFyi], now_ms: u64) -> String {
     if shown < ordered.len() {
         text.push_str(&format!("\n- ...and {} more", ordered.len() - shown));
     }
-    text.push_str(&format!(
-        "\nRead them in full: pij-rs fyi-read --seat {seat_shown} --pending\n\
-         If any needs {seat_shown} to act, wake it with a normal send: pij send {seat_shown} \"<what to do>\". \
-         pij never wakes it for this, cold or warm.\n\
-         (Sent once for this backlog; again only if new FYIs arrive.)"
-    ));
+    text.push_str(&tail);
     text
 }
+
+/// Room for `\n- ...and N more`.
+const MORE_LINE_MAX: usize = 32;
 
 fn sender(fyi: &HeldFyi) -> String {
     match &fyi.from_machine {
@@ -147,7 +163,7 @@ pub fn waiting_line(waiting: &[(Backlog, SystemState)], now_ms: u64) -> Option<S
             .cmp(&b.0.oldest_ms)
             .then(a.0.seat.cmp(&b.0.seat))
     });
-    let shown: Vec<String> = ordered
+    let entries: Vec<String> = ordered
         .iter()
         .take(WAITING_LINE_TOP)
         .map(|(backlog, state)| {
@@ -165,14 +181,27 @@ pub fn waiting_line(waiting: &[(Backlog, SystemState)], now_ms: u64) -> Option<S
             )
         })
         .collect();
-    let more = ordered.len().saturating_sub(WAITING_LINE_TOP);
-    let more = if more > 0 {
-        format!(", +{more} more")
-    } else {
-        String::new()
-    };
-    Some(format!("Waiting FYIs: {}{more}", shown.join(", ")))
+    // At most WAITING_LINE_MAX bytes, keeping room for `, +N more`.
+    let mut line = WAITING_LINE_LEAD.to_string();
+    let mut shown = 0;
+    for entry in &entries {
+        let sep = if shown == 0 { "" } else { ", " };
+        if shown > 0 && line.len() + sep.len() + entry.len() + MORE_SUFFIX_MAX > WAITING_LINE_MAX {
+            break;
+        }
+        line.push_str(sep);
+        line.push_str(entry);
+        shown += 1;
+    }
+    let more = ordered.len() - shown;
+    if more > 0 {
+        line.push_str(&format!(", +{more} more"));
+    }
+    Some(line)
 }
+
+/// Room for `, +N more`.
+const MORE_SUFFIX_MAX: usize = 16;
 
 /// What a held state notice is checked against when it flushes (F170).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -321,23 +350,56 @@ mod tests {
         assert!(body.contains("pij send pij-held-seat \"<what to do>\""));
     }
 
-    /// F150's cap: a seat holding a great deal is listed up to a budget, then
-    /// counted, and the notice stays under 2 KB. Caller text is fenced.
+    /// F150's cap, as delivered: a seat holding a great deal is listed up to a
+    /// budget, then counted, and the notice with a PA's waiting-FYIs line
+    /// appended stays within 2 KB, whatever the seat ids' lengths (review of
+    /// #214, N001). Caller text is fenced.
     #[test]
-    fn the_stall_notice_is_capped_and_fences_caller_text() {
+    fn the_delivered_stall_notice_stays_within_2_kb_and_fences_caller_text() {
+        let long = |n: usize| {
+            let id = format!("pij-{n}-{}", "a".repeat(crate::model::SEAT_ID_MAX_BYTES));
+            id[..crate::model::SEAT_ID_MAX_BYTES].to_string()
+        };
+        let seat = SeatId::from(long(0).as_str());
         let fyis: Vec<HeldFyi> = (0..60)
             .map(|n| {
                 fyi(
                     &format!("m{n}"),
-                    "pij-many-c",
+                    &long(1),
                     &"x".repeat(300),
-                    NOW - n * MIN,
+                    NOW - (82 + n) * MIN,
                 )
             })
             .collect();
-        let body = stall_body(&SeatId::from("pij-held-seat"), &fyis, NOW);
-        assert!(body.len() <= 2_048, "{} bytes", body.len());
+        let body = stall_body(&seat, &fyis, NOW);
+        assert!(body.len() <= STALL_NOTICE_MAX, "{} bytes", body.len());
         assert!(body.contains("- ...and "), "{body}");
+        let waiting: Vec<(Backlog, SystemState)> = (2..9)
+            .map(|n| {
+                (
+                    Backlog {
+                        seat: SeatId::from(long(n).as_str()),
+                        count: 999,
+                        oldest_ms: NOW - 6_000 * MIN,
+                        newest_ms: NOW,
+                    },
+                    SystemState::Working,
+                )
+            })
+            .collect();
+        let line = waiting_line(&waiting, NOW).expect("a line");
+        assert!(
+            line.len() <= WAITING_LINE_MAX,
+            "{} bytes: {line}",
+            line.len()
+        );
+        assert!(line.contains(" more"), "{line}");
+        let delivered = format!("{body}\n\n{line}");
+        assert!(
+            delivered.len() <= STALL_DELIVERED_MAX,
+            "{} bytes",
+            delivered.len()
+        );
         let hostile = stall_body(
             &SeatId::from("pij-held-seat"),
             &[fyi("m", "pij-a-b", "\u{1b}[2Jforged", NOW - 20 * MIN)],

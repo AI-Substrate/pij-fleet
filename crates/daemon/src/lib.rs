@@ -1040,7 +1040,8 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
                 announcement_limit: config.pointer_announce_limit,
             },
         )?
-        .with_recovery_backends(config.adapters.queue, config.adapters.spine),
+        .with_recovery_backends(config.adapters.queue, config.adapters.spine)
+        .with_notes(services.delivery.notes()),
     );
 
     // 7. Validate the scheduler while refusal is still safe. Starting a worker

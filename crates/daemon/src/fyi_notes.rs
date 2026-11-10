@@ -1,9 +1,9 @@
 //! What delivery reads from the store for a turn it delivers (F169, F170).
 //!
-//! Two things, both computed when the turn is delivered, with no loop, timer
+//! Two things, both computed when a turn is handed over, with no loop, timer
 //! or launch of their own:
 //!
-//! - **The PA line** (F169). Every turn delivered to a PA ends with one line
+//! - **The PA line** (F169). Every turn handed to a PA ends with one line
 //!   naming the seats in its fleet whose peer FYIs are waiting:
 //!   `Waiting FYIs: pij-x 3 (oldest 22m, idle), ...`. An FYI wakes no one, so
 //!   a hand-off sent as one is easy to miss; the PA sees the pile on every
@@ -24,9 +24,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use pij_core::fyi::HeldFyi;
+use pij_core::fyi::{HeldFyi, append_block};
 use pij_core::fyi_watch::{Backlog, SeatNow, refresh_notice, waiting_line};
-use pij_core::model::{SeatDescriptor, SeatId, SystemState};
+use pij_core::model::{Msg, SeatDescriptor, SeatId, SystemState};
 use pij_core::ports::{Registry, SeatFilter};
 use pij_core::watchdog::PA_ROLE;
 use pij_store::SqliteOrchestration;
@@ -53,6 +53,35 @@ pub fn refreshed(fyis: &[HeldFyi], fleet: Option<&HashMap<SeatId, SeatNow>>) -> 
         Some(fleet) => fyis.iter().map(|fyi| refresh_notice(fyi, fleet)).collect(),
         None => fyis.to_vec(),
     }
+}
+
+/// A body handed to `recipient` now, with a PA's waiting-FYIs line appended
+/// (F169). Called where a turn is handed over, never where it is queued, so a
+/// queued turn's line is as of its delivery (review of #214, F002). A control,
+/// a closed recipient, or a body that already ends with the line (a direct
+/// typed attempt that was deferred, queued with the text it staged) is left
+/// alone.
+pub async fn noted(
+    notes: Option<&dyn DeliveryNotes>,
+    recipient: &SeatDescriptor,
+    mut msg: Msg,
+    now_ms: u64,
+) -> Msg {
+    if msg.command.is_some() || recipient.tombstoned_at.is_some() || carries_pa_line(&msg.body) {
+        return msg;
+    }
+    if let Some(notes) = notes
+        && let Some(line) = notes.pa_line(recipient, now_ms).await
+    {
+        msg.body = append_block(&msg.body, &line);
+    }
+    msg
+}
+
+/// Does `body` already end with a waiting-FYIs line?
+fn carries_pa_line(body: &str) -> bool {
+    body.rsplit_once("\n\n")
+        .is_some_and(|(_, last)| last.starts_with(pij_core::fyi_watch::WAITING_LINE_LEAD))
 }
 
 /// Each seat's last known context size, written by the PA watchdog's round

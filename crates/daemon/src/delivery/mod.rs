@@ -327,11 +327,15 @@ impl DeliveryService {
         }
     }
 
-    async fn pa_line(&self, recipient: &SeatDescriptor, at: u64) -> Option<String> {
-        match &self.notes {
-            Some(notes) => notes.pa_line(recipient, at).await,
-            None => None,
-        }
+    /// The notes, for the pane worker's hand-over (F169).
+    pub(crate) fn notes(&self) -> Option<Arc<dyn crate::fyi_notes::DeliveryNotes>> {
+        self.notes.clone()
+    }
+
+    /// `msg` as handed to `recipient` now: a PA's turn ends with its fleet's
+    /// waiting FYIs, as of this moment (F169; review of #214, F002).
+    async fn noted(&self, recipient: &SeatDescriptor, msg: Msg, at: u64) -> Msg {
+        crate::fyi_notes::noted(self.notes.as_deref(), recipient, msg, at).await
     }
 
     fn with_sources(
@@ -939,11 +943,10 @@ impl DeliveryService {
         let job = delivery_job(&msg, Some(recipient))?;
         let offset = local_utc_offset();
         let fleet = self.fleet_now().await;
-        let tail = self.pa_line(recipient, at).await;
         let attach: pij_core::ports::AttachFyis =
             Arc::new(move |payload: &str, fyis: &[HeldFyi]| {
                 let fyis = crate::fyi_notes::refreshed(fyis, fleet.as_ref());
-                attach_fyi_block(payload, &fyis, at, offset, tail.as_deref())
+                attach_fyi_block(payload, &fyis, at, offset)
             });
         let via = format!("{VIA_MESSAGE_PREFIX}{}", msg.msg_id);
         let queue = Arc::clone(&self.queue);
@@ -1031,7 +1034,7 @@ impl DeliveryService {
         let attach: pij_core::ports::AttachFyis =
             Arc::new(move |payload: &str, fyis: &[HeldFyi]| {
                 let fyis = crate::fyi_notes::refreshed(fyis, fleet.as_ref());
-                attach_fyi_block(payload, &fyis, at, offset, None)
+                attach_fyi_block(payload, &fyis, at, offset)
             });
         let via = format!("{VIA_MESSAGE_PREFIX}{}", msg.msg_id);
         let queue = Arc::clone(&self.queue);
@@ -1127,14 +1130,10 @@ impl DeliveryService {
                 seat: to.clone(),
                 store: "the daemon registry".to_string(),
             })?;
-        // F169: a turn delivered to a PA ends with its fleet's waiting FYIs.
-        let mut msg = msg;
-        if msg.command.is_none()
-            && recipient.tombstoned_at.is_none()
-            && let Some(line) = self.pa_line(&recipient, at).await
-        {
-            msg.body = format!("{}\n\n{line}", msg.body);
-        }
+        // F169: a body handed over directly (socket or typed) carries a PA's
+        // waiting-FYIs line as of now; a queued row is noted when it is handed
+        // over instead, and is stored without it (review of #214, F002).
+        let direct = self.noted(&recipient, msg.clone(), at).await;
         let native_guard = if recipient.harness == Harness::Copilot && msg.command.is_none() {
             Some(self.native_lock.clone().lock_owned().await)
         } else {
@@ -1300,7 +1299,7 @@ impl DeliveryService {
                                 publish_to_recipient = false;
                                 DeliveryOutcome::Delivered { origin }
                             }
-                            None => match self.transport.deliver(&recipient, &msg).await {
+                            None => match self.transport.deliver(&recipient, &direct).await {
                                 Ok(DeliveryOutcome::Queued { reason, .. }) => {
                                     self.queue
                                         .forget_delivered(
@@ -1346,7 +1345,7 @@ impl DeliveryService {
                             .as_deref()
                             .expect("typed-body rung requires a pane");
                         let framed =
-                            frame_message(&msg.from, msg.from_machine.as_deref(), &msg.body);
+                            frame_message(&msg.from, msg.from_machine.as_deref(), &direct.body);
                         if framed.len() > MAX_TYPED_FRAME_BYTES {
                             match self
                                 .queue
@@ -1398,9 +1397,15 @@ impl DeliveryService {
                                         // Keep admission evidence ahead of a worker's completion.
                                         _delivery_order =
                                             Some(self.event_bus.socket_delivery_order.lock().await);
+                                        // The text it staged, PA line and all, so a
+                                        // retry types the same text and knows its own
+                                        // leftover (plan 184).
                                         match self
                                             .queue
-                                            .enqueue_delivery(delivery_job(&msg, Some(&recipient))?)
+                                            .enqueue_delivery(delivery_job(
+                                                &direct,
+                                                Some(&recipient),
+                                            )?)
                                             .await?
                                         {
                                             DeliveryEnqueue::Queued {
@@ -2048,7 +2053,13 @@ impl DeliveryService {
                         held_reason: Some(TURN_WAIT_HOLD.to_string()),
                     });
                 }
-                let message = payload.message;
+                let message = match observed.as_ref() {
+                    Some(recipient) => {
+                        self.noted(recipient, payload.message, (self.clock)()?)
+                            .await
+                    }
+                    None => payload.message,
+                };
                 self.publish_pointer_unparked_if_parked(seat, 1).await?;
                 match self
                     .revalidate_inbox_observation(seat, identity, observed.as_ref())
@@ -2564,14 +2575,12 @@ async fn publish_outcome_with_control(
 }
 
 /// Append the rendered FYI block to a delivery payload's body. A body-less
-/// payload is a warm flush (plan 159): the block is the whole message, then
-/// `tail` (a PA's waiting-FYIs line, F169).
+/// payload is a warm flush (plan 159): the block is the whole message.
 fn attach_fyi_block(
     payload: &str,
     fyis: &[HeldFyi],
     claimed_at_ms: u64,
     utc_offset_minutes: i32,
-    tail: Option<&str>,
 ) -> Result<String> {
     let invalid = |error: String| PijError::Adapter {
         adapter: "daemon/fyi".into(),
@@ -2583,11 +2592,7 @@ fn attach_fyi_block(
         .as_str()
         .ok_or_else(|| invalid("no body".to_string()))?;
     let body = if body.is_empty() {
-        let block = render_block(fyis, Lead::Flush, claimed_at_ms, utc_offset_minutes);
-        match tail {
-            Some(tail) => append_block(&block, tail),
-            None => block,
-        }
+        render_block(fyis, Lead::Flush, claimed_at_ms, utc_offset_minutes)
     } else {
         append_block(
             body,

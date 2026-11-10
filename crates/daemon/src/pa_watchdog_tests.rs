@@ -3308,6 +3308,30 @@ async fn hold(services: &crate::Services, to: &str, id: &str, body: &str) {
         .unwrap();
 }
 
+/// Every turn handed to `seat` through its inbox claim, oldest first,
+/// acknowledged: what the seat is given, not what was queued.
+async fn handed(services: &crate::Services, seat: &str) -> Vec<pij_core::model::Msg> {
+    let mut messages = Vec::new();
+    loop {
+        let claims = services
+            .delivery
+            .claim_inbox(&seat.into(), false)
+            .await
+            .unwrap();
+        if claims.is_empty() {
+            return messages;
+        }
+        for claim in claims {
+            services
+                .queue
+                .ack(claim.job_id, pij_core::model::Outcome::Done)
+                .await
+                .unwrap();
+            messages.push(claim.message);
+        }
+    }
+}
+
 fn kind_of(outcomes: &[RoundOutcome], kind: &str) -> Vec<(String, String, Vec<String>)> {
     presence(outcomes)
         .into_iter()
@@ -3351,9 +3375,10 @@ async fn a_seat_idle_on_held_fyis_is_reported_to_its_pa_once_per_backlog() {
         kind_of(&due, "fyi-stall"),
         vec![("fyi-stall".into(), "pij-pa".into(), vec!["pij-idle".into()])]
     );
-    let told = drain(&services, "pij-pa").await;
+    let told = handed(&services, "pij-pa").await;
     assert_eq!(told.len(), 1, "{told:?}");
     let body = &told[0].body;
+    assert!(body.len() <= 2_048, "{} bytes", body.len());
     assert!(body.contains("pij-idle has held 2 FYIs"), "{body}");
     assert!(
         body.contains("from pij-busy") && body.contains("\"step 3 done, your turn\""),
@@ -3392,10 +3417,73 @@ async fn a_seat_idle_on_held_fyis_is_reported_to_its_pa_once_per_backlog() {
         .await
         .unwrap();
     assert_eq!(kind_of(&rearmed, "fyi-stall").len(), 1, "{rearmed:?}");
-    let told = drain(&services, "pij-pa").await;
+    let told = handed(&services, "pij-pa").await;
     assert!(
         told[0].body.contains("pij-idle has held 3 FYIs"),
         "{told:?}"
+    );
+}
+
+async fn to_pa(services: &crate::Services, msg_id: &str) {
+    services
+        .delivery
+        .accept(pij_core::model::Msg {
+            from: "pij-busy".into(),
+            to: "pij-pa".into(),
+            body: "hello".to_string(),
+            msg_id: msg_id.to_string(),
+            from_machine: None,
+            in_reply_to: None,
+            command: None,
+        })
+        .await
+        .unwrap();
+}
+
+/// Review of #214 (F002): a turn queued for a PA carries the waiting-FYIs
+/// line as of its hand-over, not as of its queueing: FYIs held after it was
+/// queued are on it, and a pile claimed meanwhile is not. The stored body
+/// never carries the line.
+#[tokio::test]
+async fn a_queued_pa_turn_carries_the_line_as_of_its_hand_over() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let _fleet = active_fleet(&services, &repos).await;
+    let pa = seat("pij-pa", &repos.path("main"), Some("pij-prime"));
+    make_pa(&services, &pa).await;
+
+    to_pa(&services, "q-1").await;
+    hold(&services, "pij-idle", "f-1", "step 3 done, your turn").await;
+    hold(&services, "pij-idle", "f-2", "ready for review").await;
+    let first = handed(&services, "pij-pa").await;
+    assert_eq!(first.len(), 1, "{first:?}");
+    assert_eq!(
+        first[0].body, "hello\n\nWaiting FYIs: pij-idle 2 (oldest 0m, idle)",
+        "FYIs held after it was queued"
+    );
+
+    to_pa(&services, "q-2").await;
+    let (_, stored) = services
+        .queue
+        .peek(&["delivery:pij-pa".to_string()])
+        .await
+        .unwrap()
+        .expect("queued");
+    assert!(
+        !stored.payload.contains("Waiting FYIs"),
+        "never stored: {}",
+        stored.payload
+    );
+    let (claimed, _) = services
+        .delivery
+        .claim_fyis(&"pij-idle".into(), "hook:claude")
+        .await
+        .unwrap();
+    assert_eq!(claimed.len(), 2);
+    let second = handed(&services, "pij-pa").await;
+    assert_eq!(
+        second[0].body, "hello",
+        "a pile claimed meanwhile is not listed"
     );
 }
 

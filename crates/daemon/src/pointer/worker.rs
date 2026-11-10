@@ -118,7 +118,16 @@ pub struct DrainWorker {
     /// earlier retries would fail on its first look. A restart starts the count
     /// again, which only lengthens a hold; no schema field exists for it.
     holds: std::sync::Mutex<std::collections::HashMap<u64, Held>>,
+    /// Hands a PA its fleet's waiting-FYIs line with each turn (F169).
+    notes: Option<Arc<dyn crate::fyi_notes::DeliveryNotes>>,
+    /// The body each job was first handed over with in this run, by job id,
+    /// so a retry types the same text and knows its own leftover (plan 184).
+    /// Bounded: the oldest jobs are forgotten first.
+    noted: std::sync::Mutex<std::collections::BTreeMap<u64, String>>,
 }
+
+/// How many jobs' noted bodies the worker remembers.
+const NOTED_MEMORY: usize = 64;
 
 impl DrainWorker {
     /// Construct a worker and validate the retained pointer-policy configuration.
@@ -156,7 +165,48 @@ impl DrainWorker {
             clock: system_time_ms,
             recovery_authority_shared: true,
             holds: std::sync::Mutex::new(std::collections::HashMap::new()),
+            notes: None,
+            noted: std::sync::Mutex::new(std::collections::BTreeMap::new()),
         })
+    }
+
+    /// Append a PA's waiting-FYIs line to each turn handed to it (F169).
+    #[must_use]
+    pub(crate) fn with_notes(
+        mut self,
+        notes: Option<Arc<dyn crate::fyi_notes::DeliveryNotes>>,
+    ) -> Self {
+        self.notes = notes;
+        self
+    }
+
+    /// `msg` as handed to `recipient`: a PA's turn carries its fleet's
+    /// waiting FYIs as of this job's first hand-over in this run (review of
+    /// #214, F002), the same text on every retry.
+    async fn noted(&self, job_id: JobId, recipient: &SeatDescriptor, msg: Msg) -> Result<Msg> {
+        if self.notes.is_none() {
+            return Ok(msg);
+        }
+        let remembered = self
+            .noted
+            .lock()
+            .ok()
+            .and_then(|noted| noted.get(&job_id.0).cloned());
+        if let Some(body) = remembered {
+            return Ok(Msg { body, ..msg });
+        }
+        let original = msg.body.clone();
+        let msg =
+            crate::fyi_notes::noted(self.notes.as_deref(), recipient, msg, (self.clock)()?).await;
+        if msg.body != original
+            && let Ok(mut noted) = self.noted.lock()
+        {
+            if noted.len() >= NOTED_MEMORY {
+                noted.pop_first();
+            }
+            noted.insert(job_id.0, msg.body.clone());
+        }
+        Ok(msg)
     }
 
     pub(crate) fn with_recovery_backends(
@@ -293,6 +343,7 @@ impl DrainWorker {
         if (recipient.harness == Harness::Copilot) != (job.kind == control_kind(&msg.to)) {
             return self.defer_body(job_id, "native-consumer-owned").await;
         }
+        let msg = self.noted(job_id, &recipient, msg).await?;
         let Some(pane) = recipient.pane.as_deref() else {
             return self.release_or_backoff(job_id, job, &msg, "paneless").await;
         };

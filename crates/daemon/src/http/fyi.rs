@@ -79,12 +79,7 @@ pub(crate) async fn claim(
         Err(error) => return internal(CLAIM, error),
     };
     // F170: a held state notice is re-checked as it flushes into this turn.
-    let fyis = if pij_core::fyi_watch::holds_state_notice(&fyis) {
-        let fleet = state.services.delivery.fleet_now().await;
-        crate::fyi_notes::refreshed(&fyis, fleet.as_ref())
-    } else {
-        fyis
-    };
+    let fyis = rechecked(&state, fyis).await;
     let offset = pij_harnesses::proc::local_utc_offset_minutes().unwrap_or(0);
     envelope(
         StatusCode::OK,
@@ -138,11 +133,19 @@ pub(crate) async fn read(
             .read_claimed_fyis(&request.seat, claimed_at_ms)
             .await
         {
-            Ok(fyis) => (fyis.len(), render_read(&fyis, offset)),
+            Ok(fyis) => {
+                // A digest's full read shows what it left out: re-checked as
+                // the flush re-checked the rest (review of #214, F001).
+                let fyis = rechecked(&state, fyis).await;
+                (fyis.len(), render_read(&fyis, offset))
+            }
             Err(error) => return internal(READ, error),
         },
         (None, true) => match state.services.watchdogs().pending_fyis(&request.seat).await {
-            Ok(fyis) => (fyis.len(), render_pending(&fyis, offset)),
+            Ok(fyis) => {
+                let fyis = rechecked(&state, fyis).await;
+                (fyis.len(), render_pending(&fyis, offset))
+            }
             Err(error) => return internal(READ, error),
         },
         _ => {
@@ -163,6 +166,20 @@ pub(crate) async fn read(
             },
         ),
     )
+}
+
+/// `fyis` with each held daemon state notice re-checked against the fleet
+/// now (F170). Shown only: the stored bodies are never changed. A batch with
+/// no such notice reads nothing more.
+async fn rechecked(
+    state: &AppState,
+    fyis: Vec<pij_core::fyi::HeldFyi>,
+) -> Vec<pij_core::fyi::HeldFyi> {
+    if !pij_core::fyi_watch::holds_state_notice(&fyis) {
+        return fyis;
+    }
+    let fleet = state.services.delivery.fleet_now().await;
+    crate::fyi_notes::refreshed(&fyis, fleet.as_ref())
 }
 
 /// After an FYI is held (plan 159): warn when it looks like a question or
