@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Open before typing any slash command into a Claude pane from pij (e.g. /model), or writing a tokio paused-clock test that builds Services",
+				"tags": [
+					"claude",
+					"settings",
+					"revive",
+					"testing",
+					"tokio"
+				],
+				"title": "Driving Claude Code in-session: /model writes settings.json; tests on a paused clock"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Measured on Claude Code 2.1.321 (plan 225b, #215):\n- In-session `/model <id>` rewrites the user's default \"model\" in ~/.claude/settings.json (CLAUDE_CONFIG_DIR) every time. Snapshot the file's BYTES first (and whether it exists) and write them back; reserialising the JSON is not byte-identical, and a failed snapshot must refuse before switching.\n- `/model` typed during a running `/compact` opens a \"Switch model?\" dialog at once. Confirming it (Enter) applies the switch immediately, and the compaction finishes undisturbed (190k to 13.7k tokens in about 19 s either way). With an empty context there is no dialog. pij presses only the dialog it opened (TmuxPort::press_enter), matched by its title and its \"1. Yes, switch to\" line.\n- The proof the switch applied: settings.json took the new model id. A missed or late dialog leaves it unchanged; report that, never record the model.\nTesting: tokio `start_paused` or `time::pause()` before `build_services` times out the SQLite pool (\"pool timed out\"), and on a paused clock a SQLite write reads as an idle runtime, so time jumps. Build services on the real clock, swap in FakeRegistry and an EventBus over FakeSpine, then call `tokio::time::pause()` inside the test.\nA throwaway Claude probe seat: `pij-rs spawn --harness claude --role worker --cwd <wt>`, then `tmux send-keys -l` and Enter; afterwards `pij close`, `tmux kill-pane`, and check the pid is gone.\n"
+		}
+	]
+}
