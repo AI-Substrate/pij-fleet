@@ -91,6 +91,8 @@ the handover files you check, you are read-only.
      stale card on an idle or done seat is not a trigger (protocol rule 6), and never wake a ❄ seat for it.
 3. **One line to the prime, only when something happened**: `PA: compacted <seat> (NNNk → Mk), resumed <item>`,
    `PA: <seat> stalled since 14:20, nudged`, … Nothing happened → send nothing.
+   Send it, and any other send that closes the round, as an end-of-turn pij block rather than tool
+   calls ([SKILL.md § Closing commands](../../SKILL.md#closing-commands-the-end-of-turn-pij-block-plan-226)).
 
 ## Rules (each one learned at a cost)
 
