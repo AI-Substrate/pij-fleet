@@ -799,7 +799,10 @@
 					"harness_session": "a400e300-fa07-43e7-8444-52c45ecf15d5",
 					"instance_key": "226a",
 					"machine": "ops.osk.lan",
+					"release_why": "merged #213 (516d796)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-doubtful-lemur",
+					"to": "2026-11-10T04:59:21.838Z",
 					"why": "plan 226 phase 1: end-of-turn pij block, Copilot extension prototype (prime, Jordan approved 2026-11-10)"
 				},
 				{
