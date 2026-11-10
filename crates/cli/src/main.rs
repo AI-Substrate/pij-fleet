@@ -5481,11 +5481,14 @@ PEC notice";
                 // Adding a verb to this roster is meant to be a DELIBERATE act
                 // that fails this test first — which is exactly what it did for
                 // `report` (u-report), adopt/whoami/phonehome (u-identity) and
-                // `state` (u-readback), `doctor` (plan 126) and `fleet-report` (plan 162).
+                // `state` (u-readback), `doctor` (plan 126) and `fleet-report` (plan 162),
+                // `claude-hooks` and `hook` (plan 226).
                 "daemon",
                 "peers",
                 "ping",
                 "doctor",
+                "claude-hooks",
+                "hook",
                 "register",
                 "adopt",
                 "whoami",
@@ -5603,10 +5606,19 @@ PEC notice";
             .collect::<Vec<_>>();
         assert_eq!(
             names,
-            ["claude-inbound", "claude-hook", "claude-statusline"]
+            [
+                "claude-inbound",
+                "claude-hook",
+                "claude-statusline",
+                "claude-hooks"
+            ]
         );
         assert!(Cli::try_parse_from(["pij-rs", "doctor", "claude-hook"]).is_ok());
         assert!(Cli::try_parse_from(["pij-rs", "doctor", "claude-statusline"]).is_ok());
+        assert!(Cli::try_parse_from(["pij-rs", "doctor", "claude-hooks"]).is_ok());
+        // Plan 226: removal is its own verb, never a doctor (read-only) leaf.
+        assert!(Cli::try_parse_from(["pij-rs", "claude-hooks"]).is_err());
+        assert!(Cli::try_parse_from(["pij-rs", "claude-hooks", "--remove"]).is_ok());
     }
 
     #[test]
