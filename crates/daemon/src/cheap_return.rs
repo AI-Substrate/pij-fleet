@@ -119,23 +119,58 @@ fn compact_started(event: &Event, msg_id: &str) -> Option<bool> {
 /// What the switch back did.
 #[derive(Debug)]
 pub struct Switched {
-    /// The "Switch model?" dialog showed and was confirmed.
+    /// `/model` was typed into the pane.
+    pub typed: bool,
+    /// The "Switch model?" dialog showed and Enter was pressed.
     pub confirmed: bool,
+    /// The switch was seen to apply: Claude wrote the model into a settings
+    /// file whose saved value was something else. Only then is the seat's
+    /// recorded model changed (review of #215, F002).
+    pub applied: bool,
+    /// Why it did not apply, when it didn't.
+    pub why: Option<String>,
     /// Each Claude home's `"model"`: found after the switch, and left.
     pub settings: Vec<ModelRestore>,
 }
 
-/// Type `/model <recorded model>`, confirm the dialog only if it shows, put
-/// each home's `"model"` back, and record the seat's model again.
+/// A model id pij will type into a pane: the closed grammar of Claude's ids
+/// (`claude-opus-5-5`, `claude-opus-5-5[1m]`), never free text.
+#[must_use]
+pub fn is_model_id(model: &str) -> bool {
+    (1..=80).contains(&model.len())
+        && model.as_bytes()[0].is_ascii_alphanumeric()
+        && model
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b".-_[]".contains(&byte))
+}
+
+/// Claude Code's "Switch model?" dialog, matched by its title and its
+/// confirming choice, never a bare substring.
+fn shows_switch_dialog(screen: &str) -> bool {
+    let lines: Vec<&str> = screen.lines().map(str::trim).collect();
+    lines.contains(&SWITCH_MODAL)
+        && lines.iter().any(|line| {
+            line.trim_start_matches('❯')
+                .trim()
+                .starts_with("1. Yes, switch to")
+        })
+}
+
+/// Type `/model <recorded model>`, confirm the dialog only if it shows, and
+/// put each home's settings back on every path. The seat's model is recorded
+/// only when the switch is seen to apply.
 ///
 /// # Errors
-/// The seat is gone or has no pane, `/model` was not typed, or the dialog
-/// could not be confirmed; settings are put back whenever `/model` was typed.
+/// Before anything is typed: the seat is gone or has no pane, the model id is
+/// not one pij types, or the settings snapshot failed.
 pub async fn switch_back(
     services: &Services,
     pending: &Return,
     timing: Timing,
 ) -> Result<Switched, String> {
+    if !is_model_id(&pending.model) {
+        return Err("the recorded model is not a model id pij types".to_string());
+    }
     let seat = services
         .registry
         .get(&pending.seat)
@@ -144,45 +179,82 @@ pub async fn switch_back(
         .filter(|seat| seat.tombstoned_at.is_none())
         .ok_or("the seat is no longer live")?;
     let pane = seat.pane.clone().ok_or("the seat has no pane")?;
-    let saved = save_claude_models(&pending.homes);
-    match services
-        .interaction
-        .submit_with_owned_input(&pane, &format!("/model {}", pending.model))
-        .await
-    {
-        Ok(StagedSubmission::Submitted) => {}
-        Ok(_) => return Err("/model was held at the composer and not typed".to_string()),
-        Err(error) => return Err(format!("/model was not typed: {error}")),
-    }
-    tokio::time::sleep(timing.modal).await;
-    // One read. An unreadable pane presses nothing: pij answers only the
-    // dialog it can see it opened.
-    let confirmed = match services.tmux.capture(&pane, 40).await {
-        Ok(screen) if screen.contains(SWITCH_MODAL) => {
-            services.tmux.press_enter(&pane).await.map(|()| true)
-        }
-        Ok(_) => Ok(false),
-        Err(error) => Err(error),
+    let saved = save_claude_models(&pending.homes)
+        .map_err(|why| format!("settings snapshot failed, so nothing was switched: {why}"))?;
+    let mut switched = Switched {
+        typed: false,
+        confirmed: false,
+        applied: false,
+        why: None,
+        settings: Vec::new(),
     };
-    tokio::time::sleep(timing.settle).await;
-    let settings = restore_claude_models(&saved);
-    let confirmed = confirmed.map_err(|error| format!("the dialog was not confirmed: {error}"))?;
-    let mut seat = services
-        .registry
-        .get(&pending.seat)
-        .await
-        .map_err(|error| error.to_string())?
-        .ok_or("the seat is gone")?;
-    seat.model = Some(pending.model.clone());
-    services
-        .registry
-        .put(seat)
-        .await
-        .map_err(|error| error.to_string())?;
-    Ok(Switched {
-        confirmed,
-        settings,
-    })
+    let attempt = async {
+        match services
+            .interaction
+            .submit_with_owned_input(&pane, &format!("/model {}", pending.model))
+            .await
+        {
+            Ok(StagedSubmission::Submitted) => switched.typed = true,
+            Ok(_) => return Err("/model was held at the composer and not typed".to_string()),
+            Err(error) => return Err(format!("/model was not typed: {error}")),
+        }
+        tokio::time::sleep(timing.modal).await;
+        // One read. A pane that can't be read, or shows no dialog, presses
+        // nothing: pij answers only the dialog it opened.
+        if let Ok(screen) = services.tmux.capture(&pane, 40).await
+            && shows_switch_dialog(&screen)
+        {
+            services
+                .tmux
+                .press_enter(&pane)
+                .await
+                .map_err(|error| format!("the dialog was not confirmed: {error}"))?;
+            switched.confirmed = true;
+        }
+        tokio::time::sleep(timing.settle).await;
+        Ok(())
+    };
+    let attempted = attempt.await;
+    // Every path, failures included, puts the settings back.
+    switched.settings = restore_claude_models(&saved);
+    let witness = saved.iter().zip(&switched.settings).any(|(before, after)| {
+        before.model().as_deref() != Some(pending.model.as_str())
+            && after.found.as_deref() == Some(pending.model.as_str())
+    });
+    switched.why = match attempted {
+        Err(why) => Some(why),
+        Ok(()) if !witness => Some(
+            "the switch was not seen to apply (no settings file took the model; the dialog may have come late), so the seat stays on Sonnet"
+                .to_string(),
+        ),
+        Ok(()) => None,
+    };
+    if let Some(error) = switched
+        .settings
+        .iter()
+        .find_map(|restore| restore.error.clone())
+    {
+        eprintln!(
+            "pij-rs revive --cheap: settings not put back for {}: {error}",
+            pending.seat
+        );
+    }
+    if switched.why.is_none() {
+        let mut seat = services
+            .registry
+            .get(&pending.seat)
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or("the seat is gone")?;
+        seat.model = Some(pending.model.clone());
+        services
+            .registry
+            .put(seat)
+            .await
+            .map_err(|error| error.to_string())?;
+        switched.applied = true;
+    }
+    Ok(switched)
 }
 
 async fn audit(services: &Services, pending: &Return, outcome: &Result<Switched, String>) {
@@ -194,6 +266,7 @@ async fn audit(services: &Services, pending: &Return, outcome: &Result<Switched,
                     "home": restore.home,
                     "found": restore.found,
                     "left": restore.left,
+                    "exact": restore.exact,
                     "error": restore.error,
                 })
             })
@@ -203,14 +276,18 @@ async fn audit(services: &Services, pending: &Return, outcome: &Result<Switched,
         Ok(switched) => json!({
             "model": pending.model,
             "compact_msg_id": pending.compact_msg_id,
-            "returned": true,
+            "returned": switched.applied,
+            "typed": switched.typed,
             "confirmed": switched.confirmed,
+            "why": switched.why,
             "settings": settings(&switched.settings),
+            "settings_restored": switched.settings.iter().all(|restore| restore.error.is_none()),
         }),
         Err(why) => json!({
             "model": pending.model,
             "compact_msg_id": pending.compact_msg_id,
             "returned": false,
+            "typed": false,
             "why": why,
         }),
     };
@@ -384,44 +461,127 @@ mod tests {
             "{payload}"
         );
         assert_eq!(payload["settings"][0]["left"], "sonnet", "{payload}");
+        assert_eq!(payload["settings"][0]["exact"], true, "{payload}");
         std::fs::remove_dir_all(&home).unwrap();
     }
 
-    /// No dialog (an empty context switches at once): nothing is pressed.
-    /// A compact that never starts switches nothing and says so.
-    #[tokio::test]
-    async fn no_dialog_presses_nothing_and_a_compact_that_never_starts_switches_nothing() {
-        let store = FreshStore::new();
-        let (services, tmux) = rig(&store).await;
-        // Built on the real clock (the store's pool times out on a paused one).
-        tokio::time::pause();
-        let pending = Return {
+    fn zero() -> Timing {
+        Timing {
+            after_start: Duration::ZERO,
+            modal: Duration::ZERO,
+            settle: Duration::ZERO,
+            start_wait: Duration::ZERO,
+        }
+    }
+
+    fn settings_home(name: &str, text: &str) -> std::path::PathBuf {
+        let home = std::env::temp_dir().join(format!(
+            "pij-cheap-{name}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join("settings.json"), text).unwrap();
+        home
+    }
+
+    fn pending(model: &str, homes: Vec<std::path::PathBuf>) -> Return {
+        Return {
             seat: SeatId::from(SEAT),
             compact_msg_id: "m-compact".to_string(),
-            model: "claude-fable-5".to_string(),
-            homes: Vec::new(),
-        };
+            model: model.to_string(),
+            homes,
+        }
+    }
+
+    /// Review of #215, F002: the dialog came late (not on screen at the one
+    /// read), so nothing is pressed and the switch never applies. The seat
+    /// keeps its true model (Sonnet), the return is reported incomplete, and
+    /// settings are byte-identical.
+    #[tokio::test]
+    async fn a_late_dialog_leaves_the_seat_on_its_true_model_and_reports_it() {
+        let store = FreshStore::new();
+        let (services, tmux) = rig(&store).await;
+        let before = "{\n  \"model\": \"sonnet\"\n}\n";
+        let home = settings_home("late", before);
         let switched = switch_back(
             &services,
-            &pending,
-            Timing {
-                after_start: Duration::ZERO,
-                modal: Duration::ZERO,
-                settle: Duration::ZERO,
-                start_wait: Duration::ZERO,
-            },
+            &pending("claude-fable-5", vec![home.clone()]),
+            zero(),
         )
         .await
         .unwrap();
-        assert!(!switched.confirmed);
+        assert!(
+            switched.typed && !switched.confirmed && !switched.applied,
+            "{switched:?}"
+        );
+        assert!(
+            switched
+                .why
+                .as_deref()
+                .unwrap()
+                .contains("not seen to apply"),
+            "{switched:?}"
+        );
         assert!(!tmux.calls().iter().any(|call| call.starts_with("enter:")));
+        let seat = services
+            .registry
+            .get(&SeatId::from(SEAT))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            seat.model.as_deref(),
+            Some("claude-sonnet-5-5"),
+            "its true model"
+        );
+        assert_eq!(
+            std::fs::read_to_string(home.join("settings.json")).unwrap(),
+            before
+        );
+        std::fs::remove_dir_all(&home).unwrap();
+    }
 
-        let tmux_calls = tmux.calls().len();
+    /// Review of #215, F001: a settings snapshot that fails refuses before
+    /// anything is typed; a model id outside the grammar is never typed.
+    #[tokio::test]
+    async fn a_failed_snapshot_or_a_bad_model_id_types_nothing() {
+        let store = FreshStore::new();
+        let (services, tmux) = rig(&store).await;
+        let home = settings_home("invalid", "{ not json");
+        let before = tmux.calls().len();
+        let error = switch_back(
+            &services,
+            &pending("claude-fable-5", vec![home.clone()]),
+            zero(),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("snapshot failed"), "{error}");
+        let forged = switch_back(&services, &pending("x\n/clear", Vec::new()), zero())
+            .await
+            .unwrap_err();
+        assert!(forged.contains("not a model id"), "{forged}");
+        assert_eq!(
+            tmux.calls().len(),
+            before,
+            "nothing typed: {:?}",
+            tmux.calls()
+        );
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    /// A compact that never starts switches nothing and says so.
+    #[tokio::test]
+    async fn a_compact_that_never_starts_switches_nothing() {
+        let store = FreshStore::new();
+        let (services, tmux) = rig(&store).await;
+        tokio::time::pause();
         let task = arm(
             &services,
             Return {
                 compact_msg_id: "m-never".to_string(),
-                ..pending
+                ..pending("claude-fable-5", Vec::new())
             },
             Timing {
                 start_wait: Duration::from_secs(60),
@@ -431,7 +591,7 @@ mod tests {
         outcome(&services, "m-never", "refused").await;
         run_for(Duration::from_secs(10)).await;
         task.await.unwrap();
-        assert_eq!(tmux.calls().len(), tmux_calls, "nothing typed");
+        assert!(!typed_model(&tmux), "nothing typed");
         let returned = services
             .event_bus
             .latest_matching(&SeatId::from(SEAT), &[RETURN_KIND])

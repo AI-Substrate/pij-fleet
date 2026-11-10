@@ -2,7 +2,7 @@
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use pij_core::model::{Envelope, ErrorKind, Event, Liveness, SeatDescriptor, SeatId, Seq};
 use pij_core::wire;
 use serde::Serialize;
@@ -72,6 +72,59 @@ fn cold_refusal(seat: &SeatDescriptor, cache: Result<bool, &str>) -> Option<Resp
         "code":"E-RS-REVIVE-COLD", "seat":id, "commands":commands, "model":seat.model,
     }));
     Some(envelope(StatusCode::CONFLICT, &answer))
+}
+
+/// The revive's answer with what restoring each Claude home's settings did
+/// (`details.settings`). A home not put back is said in `meta`, so the
+/// revive's own result is where a human sees it (review of #215).
+async fn with_settings(response: Response, restored: &[pij_harnesses::ModelRestore]) -> Response {
+    let status = response.status();
+    let Ok(bytes) = axum::body::to_bytes(response.into_body(), usize::MAX).await else {
+        return envelope(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &Envelope::<Value>::refused(
+                COMMAND,
+                ErrorKind::Refused,
+                "the revive's answer could not be read back".to_string(),
+            ),
+        );
+    };
+    let Ok(mut answer) = serde_json::from_slice::<Value>(&bytes) else {
+        return (status, bytes).into_response();
+    };
+    let settings: Vec<Value> = restored
+        .iter()
+        .map(|restore| {
+            json!({
+                "home": restore.home, "found": restore.found, "left": restore.left,
+                "exact": restore.exact, "error": restore.error,
+            })
+        })
+        .collect();
+    let failed: Vec<String> = restored
+        .iter()
+        .filter_map(|restore| {
+            restore
+                .error
+                .as_ref()
+                .map(|error| format!("{}: {error}", restore.home.display()))
+        })
+        .collect();
+    if !answer["details"].is_object() {
+        answer["details"] = json!({});
+    }
+    answer["details"]["settings"] = json!(settings);
+    if !failed.is_empty() {
+        let note = format!(
+            "WARNING: Claude settings \"model\" NOT put back: {}",
+            failed.join("; ")
+        );
+        answer["meta"] = json!(match answer["meta"].as_str() {
+            Some(meta) => format!("{meta}; {note}"),
+            None => note,
+        });
+    }
+    (status, axum::Json(answer)).into_response()
 }
 
 #[derive(Serialize)]
@@ -356,12 +409,39 @@ pub(super) async fn revive_seat(
     // `--cheap` returns to the seat's recorded model, whatever it is.
     let return_model = if request.cheap {
         match prior.model.clone() {
-            Some(model) => Some(model),
+            Some(model) if crate::cheap_return::is_model_id(&model) => Some(model),
+            Some(_) => {
+                return argument_failure(format!(
+                    "seat `{}` records a model that is not a model id pij types; use --ask or --plain",
+                    prior.id
+                ));
+            }
             None => {
                 return argument_failure(format!(
                     "seat `{}` records no model to return to; use --ask or --plain",
                     prior.id
                 ));
+            }
+        }
+    } else {
+        None
+    };
+    // A launch on another model never changes the user's default (plan 225b):
+    // snapshot before any write, and refuse rather than switch unprotected.
+    let saved_models = if request.ask || request.cheap {
+        match pij_harnesses::save_claude_models(&pij_harnesses::claude_homes()) {
+            Ok(saved) => Some(saved),
+            Err(why) => {
+                let mut answer: Envelope<Value> = Envelope::refused(
+                    COMMAND,
+                    ErrorKind::Refused,
+                    format!(
+                        "E-RS-REVIVE-SETTINGS seat `{}`: the Claude settings snapshot failed ({why}), so nothing was switched; fix the file, or use --plain",
+                        prior.id
+                    ),
+                );
+                answer.details = Some(json!({"code":"E-RS-REVIVE-SETTINGS", "seat":prior.id}));
+                return envelope(StatusCode::CONFLICT, &answer);
             }
         }
     } else {
@@ -545,10 +625,6 @@ pub(super) async fn revive_seat(
         receipt.compact_msg_id = Some(pending.compact_msg_id.clone());
         receipt.return_model = Some(pending.model.clone());
     }
-    // A launch on another model never changes the user's default: saved here,
-    // put back after the launch (plan 225b).
-    let saved_models = (request.ask || request.cheap)
-        .then(|| pij_harnesses::save_claude_models(&pij_harnesses::claude_homes()));
     // Preserve durable launch intent, not old process/port ownership. The existing
     // launch path still owns post-mortem publication and pane rollback on failure.
     // Reviving an existing seat is an explicit operator override of retirement.
@@ -589,13 +665,11 @@ pub(super) async fn revive_seat(
         Some(receipt),
     )
     .await;
-    if let Some(saved) = &saved_models {
-        for restore in pij_harnesses::restore_claude_models(saved) {
-            if let Some(error) = restore.error {
-                eprintln!("pij-rs revive: settings model not put back: {error}");
-            }
-        }
-    }
+    // Put back on every path; a failure is loud in the result (review of #215).
+    let response = match &saved_models {
+        Some(saved) => with_settings(response, &pij_harnesses::restore_claude_models(saved)).await,
+        None => response,
+    };
     if response.status().is_success()
         && let Some(pending) = pending
     {

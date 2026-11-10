@@ -19,7 +19,7 @@ pub use adapter::{
 };
 pub use claude_settings::{
     ClaudeHookState, ClaudeInboundState, ClaudeStatuslineState, EnsurePlan, EnsureReport,
-    ModelRestore, SavedModel, claude_homes, claude_homes_from, copilot_home,
+    ModelRestore, RestorePlan, SavedModel, claude_homes, claude_homes_from, copilot_home,
     ensure_claude_inbound_accept, ensure_claude_session_start_hook, ensure_claude_statusline,
     ensure_claude_stop_failure_hook, ensure_claude_stop_hook,
     ensure_claude_user_prompt_submit_hook, ensure_copilot_statusline, inspect_claude_inbound,
