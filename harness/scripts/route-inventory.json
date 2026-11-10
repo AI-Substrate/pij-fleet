@@ -626,6 +626,15 @@
 		},
 		{
 			"method": "POST",
+			"path": "/v1/turn-end",
+			"authority": "seat-authority",
+			"class": "send-as",
+			"grants_by": ["seat", "parent", "holder", "prime"],
+			"guard": ["S", "C", "R"],
+			"note": "Runs the pij block that ends a seat's reply (plan 226): each send, output and requests close line goes through the /v1/shim/send, /v1/output or /v1/requests handler, with that route's caller ladder and refusals."
+		},
+		{
+			"method": "POST",
 			"path": "/v1/bg/{job}/emit",
 			"authority": "job-token",
 			"reason": "Its own per-job secret, outside the bearer ring (plan 163); the daemon key plus a seat's identifiers is not enough."

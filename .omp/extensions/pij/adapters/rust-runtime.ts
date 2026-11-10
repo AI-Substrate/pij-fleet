@@ -28,6 +28,7 @@ import {
 	type SessionShutdownReason,
 	type SpawnOpts,
 } from "../core/session.js";
+import { TURN_END_CALL_TIMEOUT_MS, type TurnEndResultWire } from "../core/turn-end.js";
 import {
 	type EventQuery,
 	err,
@@ -562,6 +563,28 @@ export class RustRuntimeSession {
 			...(receipt.cold_check === undefined ? {} : { coldCheck: receipt.cold_check }),
 			...(receipt.warning === undefined ? {} : { warning: receipt.warning }),
 		};
+	}
+
+	/**
+	 * Hand the reply that ended this turn to POST /v1/turn-end (plan 226). The
+	 * caller is this seat as registered: its id, pane and native session.
+	 */
+	async turnEnd(text: string): Promise<TurnEndResultWire> {
+		const seat = this.self;
+		if (seat === "") throw new Error("this seat is not registered");
+		return this.client.turnEnd(
+			{
+				text,
+				caller: {
+					PIJ_SESSION_ID: seat,
+					...(this.paneId === undefined ? {} : { TMUX_PANE: this.paneId }),
+					...(this.nativeSession === undefined ? {} : { HARNESS_SESSION_ID: this.nativeSession }),
+					cwd: process.cwd(),
+				},
+				via: "hook:omp",
+			},
+			AbortSignal.timeout(TURN_END_CALL_TIMEOUT_MS),
+		);
 	}
 
 	/**

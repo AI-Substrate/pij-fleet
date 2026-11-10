@@ -12,7 +12,7 @@ use pij_daemon::delivery::InboxClaim;
 use pij_daemon::http::InboxAckRequest;
 pub use pij_daemon::http::{
     CallerContext, FederatedRoster, IdentityRequest, Phonehome, ReviveRequest, SpawnRequest,
-    StateCard, StreamFrame,
+    StateCard, StreamFrame, TurnEndRequest,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -233,6 +233,15 @@ impl DaemonClient {
     /// Publish a seat's own busy/idle observation (plan 158; Claude hooks, plan 157).
     pub async fn activity(&self, request: &serde_json::Value) -> Envelope<serde_json::Value> {
         self.post("pij activity", "/v1/activity", request).await
+    }
+
+    /// Run the `pij` block that ends a seat's reply (plan 226), for a turn-end hook.
+    pub async fn turn_end(
+        &self,
+        request: &TurnEndRequest,
+    ) -> Envelope<pij_core::turn_end::TurnEndResult> {
+        self.post(pij_daemon::http::TURN_END, "/v1/turn-end", request)
+            .await
     }
 
     /// Claim the FYIs held for a seat (plan 158).

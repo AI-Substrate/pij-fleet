@@ -314,6 +314,33 @@ async fn withdraw(
     }
 }
 
+/// `requests close <id> [--why <text>] [--quiet]`, parsed: what the verb and
+/// the turn-end validator (plan 226) both read.
+pub(crate) struct Close {
+    pub id: String,
+    pub why_given: Option<String>,
+    pub quiet: bool,
+}
+
+/// Parse `close`'s arguments (everything after `close`), touching nothing.
+pub(crate) fn parse_close(args: &[String]) -> Result<Close, Refusal> {
+    let quiet = args.iter().any(|arg| arg == "--quiet");
+    let args: Vec<String> = args
+        .iter()
+        .filter(|arg| *arg != "--quiet")
+        .cloned()
+        .collect();
+    let (positions, flags) = parse(&args, &["why"], CLOSE_USAGE)?;
+    let [id] = positions.as_slice() else {
+        return Err(Refusal::new("E-RS-ARG", format!("usage: {CLOSE_USAGE}")));
+    };
+    Ok(Close {
+        id: id.clone(),
+        why_given: flag(&flags, "why"),
+        quiet,
+    })
+}
+
 /// `pij requests close <id> [--why] [--quiet]` (F83): close a delivered
 /// request that was answered or abandoned, so its time limit stops. Withdraw's
 /// authority plus the request's holder. The close records what it owes the
@@ -329,17 +356,13 @@ async fn close(
     caller: &Caller,
     args: &[String],
 ) -> Result<Value, Refusal> {
-    let quiet = args.iter().any(|arg| arg == "--quiet");
-    let args: Vec<String> = args
-        .iter()
-        .filter(|arg| *arg != "--quiet")
-        .cloned()
-        .collect();
-    let (positions, flags) = parse(&args, &["why"], CLOSE_USAGE)?;
-    let [id] = positions.as_slice() else {
-        return Err(Refusal::new("E-RS-ARG", format!("usage: {CLOSE_USAGE}")));
-    };
-    let why = flag(&flags, "why").unwrap_or_else(|| CLOSE_WHY.to_string());
+    let Close {
+        id,
+        why_given,
+        quiet,
+    } = parse_close(args)?;
+    let id = &id;
+    let why = why_given.clone().unwrap_or_else(|| CLOSE_WHY.to_string());
     let store = state.services.governance.store();
     let request = match store.role_request(id).await.map_err(store_refusal)? {
         Some(request) => request,
@@ -352,7 +375,7 @@ async fn close(
                 may_close(state, actor, caller, &closed.request).await?;
                 let told = notify_owned(state, &closed).await;
                 let mut data = closed_entry(&closed);
-                let ignored = if flag(&flags, "why").is_some() {
+                let ignored = if why_given.is_some() {
                     " (the close's own reason is sent; this --why is not used)"
                 } else {
                     ""

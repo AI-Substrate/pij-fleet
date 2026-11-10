@@ -28,6 +28,7 @@ mod role_send;
 mod routes;
 mod shim;
 pub mod steer;
+mod turn_end;
 mod types;
 mod watchdog;
 
@@ -71,6 +72,7 @@ pub use auth::{AuthRing, AuthRingError};
 pub use client::{PeerEndpoint, get_from_peer, post_to_peer, stream_from_peer};
 pub use exposure::{BindRefusal, Exposure, RemoteListener, boot_banner, check_bind};
 pub use identity::{CallerContext, IdentityQuery, IdentityRequest, Phonehome};
+pub use turn_end::{TURN_END, TurnEndRequest};
 pub use types::{
     CursorResetDetail, FederatedRoster, InboxAckRequest, InboxHeartbeatRequest, NativePrecedence,
     PeerStreamState, Registration, ReviveRequest, SendRequest, SpawnRequest, SpawnResponse,
@@ -216,13 +218,16 @@ enum Endpoint {
     Delivered,
     /// `pij requests` and `pij requests withdraw` (plan 212, F59).
     Requests,
+    /// The `pij` block that ends a seat's reply, handed over by its harness at
+    /// turn end (plan 226). See `turn_end.rs`.
+    TurnEnd,
     /// `pij bg emit`'s hook. Authenticated by its own per-job token (plan 163),
     /// so it is mounted OUTSIDE the bearer layer: see [`Self::auth`].
     BackgroundEmit,
 }
 
 impl Endpoint {
-    const ALL: [Self; 60] = [
+    const ALL: [Self; 61] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -282,6 +287,7 @@ impl Endpoint {
         Self::Claims,
         Self::Delivered,
         Self::Requests,
+        Self::TurnEnd,
         Self::BackgroundEmit,
     ];
 
@@ -341,6 +347,7 @@ impl Endpoint {
             Self::Claims => "/v1/claims",
             Self::Delivered => "/v1/delivered",
             Self::Requests => "/v1/requests",
+            Self::TurnEnd => "/v1/turn-end",
             Self::BackgroundEmit => background::EMIT_PATH,
             // PLAN 119 — a DISTINCT, VERSIONED path for shim-originated calls, never
             // an overload of `/v1/send` / `/v1/inbox`. Those structs tolerate
@@ -399,6 +406,7 @@ impl Endpoint {
             | Self::Claims
             | Self::Delivered
             | Self::Requests
+            | Self::TurnEnd
             | Self::BackgroundEmit => Method::POST,
             Self::ShimSend | Self::ShimCompactSelf | Self::ShimInbox | Self::ShimInboxAck => {
                 Method::POST
@@ -641,6 +649,7 @@ fn router_with_optional_federation(
                     | Endpoint::Claims
                     | Endpoint::Delivered
                     | Endpoint::Requests
+                    | Endpoint::TurnEnd
                     | Endpoint::BackgroundEmit
             ) {
                 Method::POST
@@ -721,6 +730,7 @@ fn router_with_optional_federation(
                 router.route(endpoint.path(), post(claims::handle))
             }
             Endpoint::Requests => router.route(endpoint.path(), post(requests::handle)),
+            Endpoint::TurnEnd => router.route(endpoint.path(), post(turn_end::handle)),
             Endpoint::ShimSend => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimCompactSelf => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimInbox => router.route(endpoint.path(), post(shim::shim_inbox)),
