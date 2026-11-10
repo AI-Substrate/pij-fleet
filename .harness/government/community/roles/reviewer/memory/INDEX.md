@@ -79,4 +79,5 @@
 - [2026-11-09 Final reviewer handoff and orphan admission versus settlement](2026-11-09-final-reviewer-handoff-and-orphan.dd.md): Before reviewing background completion, notification retries, or resuming bobcat history after the C34 wind-up. (review, recovery, notifications, c34, handover)
 - [2026-11-09 Generated inventory closure and independent oracles](2026-11-09-generated-inventory-closure-and.dd.md): Before reviewing generated enums or registries, reserved notice IDs, or source-scan coverage claims (review, inventory, notice-id, proof)
 - [2026-11-09 Proof lifetime seams and 03:42 reviewer continuation](2026-11-09-proof-lifetime-seams-and-03-42-reviewer.dd.md): When resuming reviewer/183b after the 03:42 compact, or reviewing reissue proof, PID walks or notification fanout. (review, capability, proof-lifetime, handover)
+- [2026-11-10 Fence context before executable markers](2026-11-10-fence-context-before-executable-markers.dd.md): Before reviewing executable end-of-turn blocks or transcript renderers (review, turn-end, parser, render)
 <!-- /pij:generated -->

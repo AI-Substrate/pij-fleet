@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Before reviewing executable end-of-turn blocks or transcript renderers",
+				"tags": [
+					"review",
+					"turn-end",
+					"parser",
+					"render"
+				],
+				"title": "Fence context before executable markers"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Fence context before executable markers\n\nA last-marker search does not establish that a marker opens an executable block. In #212, four lines consisting of an opening text-language fence, a literal pij opener, a send command and a closing fence are one quoted text example. Selecting the last pij-looking line nevertheless executes the example.\n\nTrack the enclosing fence before selecting the real trailing pij block. Apply the same eligibility cases to the transcript renderer: quoted code must not disappear as though it had been handed to the runner. Keep ordinary final blocks, permitted indentation and trailing-prose behavior distinct.\n\nThis was a source finding at `68ecd898a068ac4420b0defb2fd7445f7ccffafd`, not a local execution or a verified repair. See reviewer output `b909f2d409f57c323225bd9293f89fa5dd896367`, F001. A focused quoted-example case is enough; C34 does not require a new Markdown library, exhaustive inventory or mutation campaign.\n"
+		}
+	]
+}
