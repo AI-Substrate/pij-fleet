@@ -54,37 +54,37 @@
         {
           "id": "ac-0003",
           "claim": "Claude (lane B, lemur). Extend the existing Stop hook path (~/.pij-rs/claude-stop-pij.sh, plan 157); no second Stop hook. It hands last_assistant_message to the endpoint when the text ends with a `pij` fence; success returns {systemMessage: one line}; failure returns {decision: block, reason} only when stop_hook_active is false. A MessageDisplay hook hides the block on screen and shows one line (\"⚙ pij: N command(s) handed to pij\"): a tiny fast script that touches no daemon, keeping per-message_id state across flushes (in fence or not, and the line count, carried across flushes).",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0004",
           "claim": "Copilot (lane B, lemur). The pij Copilot extension keeps the last root assistant.message (no agentId) from its event stream, deduped by messageId and reset per run, and on onAgentStop hands it to the endpoint when it ends with a `pij` fence. Success shows one line via session.log; failure returns {decision: block, reason} only when stopHookActive is false. An aborted turn runs nothing. The block stays visible (Copilot has no display hook; accepted).",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
         {
           "id": "ac-0005",
           "claim": "Skill (lane B, lemur). One short section in the pij skill: end a reply with a `pij` block for fire-and-forget sends, outputs and request closes; keep a tool call when you need the answer before continuing; only the final block runs; what a failure looks like.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },
         {
           "id": "ac-0006",
           "claim": "Setup is first-class, like the rest (Jordan, 2026-11-10): no hand edits, no setup a human or seat has to do. (a) Claude's MessageDisplay hook goes through crates/harnesses/src/claude_settings.rs exactly as SessionStart, UserPromptSubmit, Stop and StopFailure do: a managed script in harness/scripts/ (include_str!), installed to ~/.pij-rs/, registered by the same pure settings decision, idempotent and removable; the Stop hook's new work extends claude-stop-pij.sh in place (lane B). (b) OMP's extensionRenderers.assistantText goes into the OMP config pij already manages (`just link`, `just omp-doctor`), never ~/.omp by hand (lane A). (c) The Copilot side ships in the linked .copilot extension (lane B). (d) `just doctor` (and `just omp-doctor`) reports each one missing or stale, with the fix command. A fresh `just install` leaves all three harnesses working with no other step.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0006"
         },
         {
           "id": "ac-0007",
           "claim": "Cost (AGENTS.md, resource cost is a correctness property). Steady state: one daemon call per turn end that ends with a `pij` block; nothing on turns without one; nothing per tick; no loop, no timer, no poll. Copilot and OMP extensions launch nothing (in-process, existing connections). The Claude Stop hook already launches once per stop (plan 157); the block adds no launch there. The Claude MessageDisplay hook launches one tiny process per flush of every Claude reply: measure it (launches per reply and per minute for a busy Claude seat, with `just spawn-rate --seconds 20` before and after) and state it per seat in the PR; it must touch no daemon.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0007"
         },
         {
           "id": "ac-0008",
           "claim": "Docs and states. The pij skill section (AC5); docs/how/pij-rs-api.md for the endpoint. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0008"
         }
       ]
