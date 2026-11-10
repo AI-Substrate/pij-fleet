@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c439-f921-74a3-97a3-872b505a5459",
+				"date": "2026-11-10",
+				"head": "31bf8fb74039744fcdb4b28cb392ed9393184ff5",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:219",
+				"writer": "pij-polite-starfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#219 correctness review, round 2: PASS\n\nHead: 31bf8fb74039744fcdb4b28cb392ed9393184ff5.\n\nF001 / P219-F001 is closed. Rust refreshes only key-file clients after connection refusal, shares the refreshed key with clones, and never replaces an explicit job token. Copilot reads its boot key again for each recovery attempt. Both allow one additional 401 attempt after recovery, with another key read, then return an ordinary repeated 401. A 401 without a preceding refusal is returned once. The daemon bearer middleware refuses unauthorized requests before next.run, so this additional attempt cannot replay an admitted handler. Body-read errors, resets and non-refusal transport errors remain outside the retry loop.\n\nThe replacement-server tests validate Authorization with genuinely different fixture keys and both publication orders. They cover the actual defect rather than only port recovery. No real credential file was read during review.\n\nS219-N001 is closed for the requested daemon tool path: the OMP tool signal travels through RustSendOptions/SpawnOpts, runtime, client send/spawn and fetch; cancellation during sleep throws before another attempt. The client cancellation regression and runtime signal-identity regression are present. The new JS wall-clock checks stop adding pauses beyond the deadline without adding periodic activity. OMP's pre-existing authentication retry/second-wait limit is explicitly disclosed, not a new block.\n\nProof: just pr-freeze 219 returned FINAL at the exact head, clean detached tree and all latest checks passed. CI run 42769195128 is successful at this head: 2,423 Rust tests passed, six skipped. Successful-job JUnit artifact 13740868919 individually records the rotated-key recovery, request-read-once/plain-401, bounded-down and wait-setting tests passing. Node 22 CI passed generation-router (70), daemon-http (24) and rust-runtime (116); total Vitest 2,289 passed, six skipped. Node 24, typecheck and Rust lint also passed.\n\nReviewer-local just copilot-native-test: 352 tests, 349 passed, zero failed, three skipped. Both new key-publication/plain-401 cases and the existing refusal/reset exclusions passed. No local Rust/Vitest build, dependency install/symlink, product edits or daemon/lifecycle operations. CI supplies those proof surfaces under C25.\n\nNo correctness changes owed and no new C34 follow-up. Performance's live fleet evidence is separately owned; this is not a deployment or live-bounce receipt.\n"
+		}
+	]
+}
