@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c2e0-d25b-77b3-907c-207d42c2209a",
+				"date": "2026-11-10",
+				"head": "04865ac60bebcef0a391ccf00521bf6e0fa22c1f",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/211#issuecomment-6755468211",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:211",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #211 at **04865ac60bebcef0a391ccf00521bf6e0fa22c1f**.\n\nReviewed the four changed documents against the command producers for fresh-reader review rows 1 and 3-8. SKILL.md:42 and row 9/F169 are excluded. C33 and C34 apply.\n\n| Change | Source check |\n|---|---|\n| `directory add` without a template now names required metadata | `crates/core/src/directory.rs:96-104`; `crates/daemon/src/http/directory.rs:485-490,674-680`. A file brief supplies the packet, not those metadata fields. |\n| `directory external add <seat> --from-project <slug> --why <note> [--role <id>]` | `crates/daemon/src/http/directory.rs:240-254,1739-1772`. |\n| C23/C28/C30/C31 links | Targets exist in the delivery and steering API sections and the community route; the excluded earlier C31 occurrence remains untouched. |\n| Spawn requires `--harness`, with optional `--model` | `crates/cli/src/main.rs:276-287`. |\n| Linked-worktree refusal cites `is_linked_worktree` | `crates/cli/src/main.rs:4072-4079`. |\n| `link` permits `[--parent <you>]` | `crates/daemon/src/http/role.rs:555-613,630-637`; an explicit parent must name the caller. |\n| `report clear [--assignment <id>]` | `crates/daemon/src/http/report.rs:114-124`. |\n\nNo security vulnerabilities, credentials, private machine-specific additions, or newly introduced shell-evaluation paths were identified in the scoped changes.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None identified in scoped changes | - |\n\n**Nonblocking C34 clarity follow-up:** `skills/pij/references/routes/community.md:19-20` uses bare pipe alternatives such as `specialist|general` inside a bash-fenced usage block. The surrounding block already contains schematic brackets and placeholders, so this is not evidence of an injection vulnerability or an explicitly paste-ready command. Concrete values or an explicit usage-notation label would remove ambiguity for readers following the placeholder-filling instruction. No block requested.\n\n**Proof:** worktree HEAD, GitHub head and remote branch agree; GitHub reports CLEAN and all five checks successful. CI run [42728459436](https://github.com/AI-Substrate/pij-fleet/actions/runs/42728459436) checked merge `f960a238db3409fbd07d32d1d897ca955417d3e4`, whose parents are base `e10198baa0b5e4432acf39233f5113d8a7b3a48b` and this exact head. Its Rust job reports **2,348 passed, 6 skipped**. Both Node jobs passed `pij-skill-check`.\n\nStatic source review and existing CI only. No local builds/tests, example-command execution, product mutations, credential reads or live probes. This verdict does not claim production execution of the documented writing commands.\n"
+		}
+	]
+}
