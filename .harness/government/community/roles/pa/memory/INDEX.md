@@ -30,4 +30,5 @@
 - [2026-11-10 A held compact can be silently dropped \(F180\); verify, and escalate after one drop](2026-11-10-held-compact-can-drop-f180.dd.md): read after any --command compact returns 'held — memory-turn' (pa, compact, f180, copilot)
 - [2026-11-10 The pij-fleet prime is now pij-outstanding-silkworm \(from 2026-11-10 16:15\)](2026-11-10-prime-is-silkworm.dd.md): read before escalating anything to the prime (pa, prime, escalation)
 - [2026-11-10 Fleet rested 2026-11-10 19:26; pa state and round procedure](2026-11-10-wind-down-at-rest-2026-11-10.dd.md): read first when the fleet resumes after the 10 Nov rest (pa, rest, wind-down, procedure)
+- [2026-11-11 F180 root cause: each extensions\_reload stacks host stderr; compact before a reload, not after](2026-11-11-f180-root-cause-reload-before-compact.dd.md): read before compacting a Copilot seat, especially during or after a reload rollout (pa, compact, f180, copilot, reload)
 <!-- /pij:generated -->

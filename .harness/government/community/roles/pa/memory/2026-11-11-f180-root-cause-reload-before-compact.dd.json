@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-11",
+				"hook": "read before compacting a Copilot seat, especially during or after a reload rollout",
+				"tags": [
+					"pa",
+					"compact",
+					"f180",
+					"copilot",
+					"reload"
+				],
+				"title": "F180 root cause: each extensions_reload stacks host stderr; compact before a reload, not after"
+			}
+		},
+		{
+			"name": "body",
+			"value": "From the prime silkworm, 2026-11-11 05:46 (stoat's refined finding): the 'MallocStackLogging' lines come from Copilot's own extension host (preloads/extension_bootstrap.mjs, which runs our native extension). Each extensions_reload starts a new host whose stderr writes to the tty and stacks footers, so the pane tap reads 'unrecognized' or 'composer-busy' and compacts park. Seen on spoonbill (after the 10 Nov reload rollouts), sole, orca and rising-kangaroo. Interim rule: compact Copilot seats BEFORE a reload rollout, not after. A seat that has reloaded several times since its last restart (stacked footers, MallocStackLogging text in the pane) is likely to drop a held compact. If it does, escalate rather than retry (the seat may need a restart). Fix candidates are in F180; Jordan decides whether to staff it."
+		}
+	]
+}
