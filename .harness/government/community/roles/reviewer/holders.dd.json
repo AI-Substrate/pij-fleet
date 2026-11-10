@@ -1258,7 +1258,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "211",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #211 merged (ef43f591ee50)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-10T00:45:12.686Z",
 					"why": "#211 skill review fixes (guan), FINAL 04865ac"
 				}
 			]
