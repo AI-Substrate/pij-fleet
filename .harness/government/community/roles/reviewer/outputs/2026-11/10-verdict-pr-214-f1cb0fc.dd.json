@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c384-bd42-7a31-9475-41ecc792c855",
+				"date": "2026-11-10",
+				"head": "f1cb0fc3bae3d17b13b3d9718a0d7e336b840f9b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/214#issuecomment-6758229314",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:214",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#214 F003 repair check: PASS\n\nExact head: `f1cb0fc3bae3d17b13b3d9718a0d7e336b840f9b`. Scoped to F003 and the one-file delta from `b1461b876ddf13894d2635d85af46b958c5ea63e`, as requested under C34.\n\n**F003 closed.** `crates/daemon/src/pointer/worker.rs:188-210` now remembers the first rendering whether or not a PA line was added. A new FYI between an aborted paste and its retry therefore cannot change the attempted frame or invalidate recognition of its original leftover. `forget_holds` also removes the rendering (`:974-982`), including the typed-success and terminal-failure cleanup paths. The existing 64-entry bound remains; no added launch, timer or periodic work.\n\nThe focused regression `pointer::worker::tests::a_retry_after_a_staged_abort_types_the_first_rendering_even_when_fyis_arrive` starts without a note, aborts after a partial paste, enables the FYI note before retry, then asserts the old leftover is cleared, the original frame is submitted without the new suffix, and the queue is empty. This covers the reported failure rather than only testing the cache accessor.\n\n**Evidence:** `just pr-freeze 214` returned FINAL at this head; detached tree clean. [CI run 42749050916](https://github.com/AI-Substrate/pij-fleet/actions/runs/42749050916) records the exact head and passed its checks. The successful Rust job's [JUnit artifact 13732882414](https://github.com/AI-Substrate/pij-fleet/actions/runs/42749050916/artifacts/13732882414) lists that exact regression as executed and passed, with 2,379 executed tests and zero failures/errors overall; nextest reports six additional skips. Source review and CI evidence only; no local builds/tests, product edits or live delivery exercises. Earlier F001/F002/N001 closures remain unchanged.\n"
+		}
+	]
+}
