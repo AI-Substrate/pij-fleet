@@ -394,6 +394,57 @@ fn a_lost_control_client_falls_back_then_reconnects() {
     });
 }
 
+/// F175 (review of #220, P220-N001): a close's pane read answers only over a
+/// control client that is already live. Cold or disabled, it answers `None`
+/// and launches nothing; live, the pane's process, or `Some(None)` for a
+/// pane tmux doesn't have, still without a launch.
+#[test]
+fn pane_process_without_launch_never_starts_a_client_or_forks() {
+    let server = Server::start();
+    let pane = server.panes[0].clone();
+    block_on(async {
+        let disabled = server.adapter(false);
+        let cold = server.adapter(true);
+        let before = server.launches().len();
+        assert_eq!(
+            disabled
+                .pane_process_without_launch(&pane)
+                .await
+                .expect("read"),
+            None
+        );
+        assert_eq!(
+            cold.pane_process_without_launch(&pane).await.expect("read"),
+            None
+        );
+        assert_eq!(
+            server.launches().len(),
+            before,
+            "cold or disabled: no launch"
+        );
+
+        cold.list_panes()
+            .await
+            .expect("warm: starts the control client");
+        let warm = server.launches().len();
+        let process = cold
+            .pane_process_without_launch(&pane)
+            .await
+            .expect("read")
+            .expect("a live client answers")
+            .expect("the pane exists");
+        assert!(process.pid > 0, "{process:?}");
+        assert_eq!(
+            cold.pane_process_without_launch("%999999")
+                .await
+                .expect("read"),
+            Some(None),
+            "a pane tmux doesn't have"
+        );
+        assert_eq!(server.launches().len(), warm, "a live client: no launch");
+    });
+}
+
 /// Plan 219 (P156-F001): the modal-stall detector's read answers only over a
 /// control client that is already live. Cold, lost or disabled, it answers
 /// `None` and launches nothing: no client start, no forked capture.

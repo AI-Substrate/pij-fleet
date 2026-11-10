@@ -339,6 +339,68 @@ async fn a_holders_close_answers_held_at_once_and_closes_after_the_turn() {
     rig.server.abort();
 }
 
+/// `prime` becomes project fleet's designated prime (C24).
+async fn designate_project_prime(rig: &Rig, prime: &str) {
+    let store = pij_store::SqliteOrchestration::new(
+        pij_store::open(&rig._store.path()).await.expect("store"),
+    );
+    let project = pij_core::orchestration::Project {
+        slug: "fleet".to_string(),
+        description: None,
+        repo: None,
+        plan_path: None,
+        prime_id: Some(prime.into()),
+        created_by: prime.into(),
+        created_at: 1,
+    };
+    if !store
+        .create_project(&project)
+        .await
+        .expect("create project")
+    {
+        store
+            .update_project(
+                "fleet",
+                &pij_core::orchestration::ProjectUpdate {
+                    prime_id: Some(Some(prime.into())),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("update project")
+            .expect("project fleet");
+    }
+}
+
+/// F175, review of #220 (F001): the designated prime's close of a dead
+/// parentless role holder is held for its memory turn, and the held close
+/// then runs: the continuation rechecks with the close route's own predicate.
+#[tokio::test]
+async fn a_primes_close_of_a_dead_parentless_holder_is_held_then_completes() {
+    // Only `prime`'s process lives: `holder` (pid 920_002) has died.
+    let rig = rig_with(Duration::from_secs(30), &["holder"], |services| {
+        services.liveness = Arc::new(FakeLiveness::new().with_proc(ProcIdentity {
+            pid: 920_001,
+            proc_start: 7,
+        }));
+    })
+    .await;
+    let mut orphan = rig.registry.get(&"holder".into()).await.unwrap().unwrap();
+    orphan.parent = None;
+    rig.registry.put(orphan).await.unwrap();
+    designate_project_prime(&rig, "prime").await;
+
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["ok"], true, "{held}");
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "holder").await;
+    take_turn(&rig, "holder", &prompt).await;
+    let turn = turn_event(&rig, "holder").await;
+    assert_eq!(turn["then"], "closed", "{turn}");
+    assert!(tombstoned(&rig, "holder").await);
+    rig.server.abort();
+}
+
 #[tokio::test]
 async fn a_seat_holding_no_role_is_closed_and_compacted_directly() {
     let rig = rig(Duration::from_secs(30), &["holder"]).await;

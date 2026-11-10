@@ -229,35 +229,36 @@ pub(super) enum SeatProcess {
 
 /// Decide [`PaneNow`] from what tmux and liveness show. `root_start` is the
 /// pane's root process start (`None` when unreadable); `holder` is another
-/// live seat recorded on the same pane.
+/// live seat recorded on the same pane, which always vetoes `Own`: a native
+/// successor keeps its predecessor's process and pane (review of #220,
+/// S220-001), and withholding the command is only ever more conservative.
 pub(super) fn judge_pane(
     root_start: Option<u64>,
     process: SeatProcess,
     holder: Option<SeatId>,
 ) -> PaneNow {
-    let unless_held = |holder: Option<SeatId>| match holder {
-        Some(seat) => PaneNow::Other(Some(seat)),
-        None => PaneNow::Unchecked,
-    };
+    if holder.is_some() {
+        return PaneNow::Other(holder);
+    }
     match (process, root_start) {
         (SeatProcess::Alive(start), Some(root)) if root <= start => PaneNow::Own,
-        (SeatProcess::Alive(_), Some(_)) | (SeatProcess::Gone, _) => PaneNow::Other(holder),
-        (SeatProcess::Alive(_), None) | (SeatProcess::Unknown, _) => unless_held(holder),
+        (SeatProcess::Alive(_), Some(_)) | (SeatProcess::Gone, _) => PaneNow::Other(None),
+        (SeatProcess::Alive(_), None) | (SeatProcess::Unknown, _) => PaneNow::Unchecked,
     }
 }
 
-/// Read what `seat`'s recorded pane holds now. One tmux read over the daemon's
-/// control client (the read the reaper makes), then in-process liveness and
-/// the registry: no launch of its own.
+/// Read what `seat`'s recorded pane holds now: one tmux read, only over an
+/// already-live control client (never a start or a fork), then in-process
+/// liveness and the registry.
 pub(super) async fn pane_now(state: &AppState, seat: &SeatDescriptor) -> PaneNow {
     let Some(pane) = seat.pane.as_deref() else {
         return PaneNow::Unchecked;
     };
     let liveness = state.services.liveness.as_ref();
-    let root_start = match state.services.tmux.pane_process(pane).await {
-        Ok(Some(root)) => liveness.proc_start(root.pid).await.ok().flatten(),
-        Ok(None) => return PaneNow::Gone,
-        Err(_) => return PaneNow::Unchecked,
+    let root_start = match state.services.tmux.pane_process_without_launch(pane).await {
+        Ok(Some(Some(root))) => liveness.proc_start(root.pid).await.ok().flatten(),
+        Ok(Some(None)) => return PaneNow::Gone,
+        Ok(None) | Err(_) => return PaneNow::Unchecked,
     };
     let process = match seat.proc {
         Some(proc) => match pij_core::liveness::alive(proc, liveness).await {
@@ -307,7 +308,8 @@ pub(super) fn process_note(pane: Option<&str>, now: &PaneNow) -> String {
             format!("pij close retires the seat. Its pane {pane} is gone: nothing to kill.")
         }
         PaneNow::Other(Some(seat)) => format!(
-            "pij close retires the seat. Pane {pane} now runs {seat}, not this seat: nothing to kill."
+            "pij close retires the seat. Pane {pane} now runs {}, not this seat: nothing to kill.",
+            pij_core::render::seat(seat.as_str())
         ),
         PaneNow::Other(None) => format!(
             "pij close retires the seat. Pane {pane} now runs another process, not this seat's: nothing to kill."
@@ -316,6 +318,15 @@ pub(super) fn process_note(pane: Option<&str>, now: &PaneNow) -> String {
             "pij close retires the seat; its process, if any, keeps running. Pane {pane} could not be checked as still this seat's, so pij names no kill command: look with `tmux list-panes -a` first."
         ),
     }
+}
+
+/// Who may close `seat` (one predicate for the close route and the close held
+/// for a memory turn, review of #220 F001): the seat itself, its recorded
+/// parent, or a designated prime for a dead parentless seat.
+pub(super) async fn may_close(state: &AppState, actor: &SeatId, seat: &SeatDescriptor) -> bool {
+    actor == &seat.id
+        || seat.parent.as_ref() == Some(actor)
+        || prime_closes_dead_orphan(state, actor, seat).await
 }
 
 /// F175: a parentless seat whose process is observed dead has no owner left
@@ -482,10 +493,7 @@ async fn handle(
                 }
                 Err(error) => return runtime_failure(command, error),
             };
-            if actor.id != expected.id
-                && expected.parent.as_ref() != Some(&actor.id)
-                && !prime_closes_dead_orphan(&state, &actor.id, &expected).await
-            {
+            if !may_close(&state, &actor.id, &expected).await {
                 return ownership_failure(command, &actor.id, &target, expected.parent.as_ref());
             }
             // Plan 201: a role holder writes its memory before it is closed,
@@ -638,10 +646,16 @@ mod tests {
         let alive = SeatProcess::Alive(SEAT_START);
         // The pane's root is as old as the seat's process, or older.
         assert_eq!(judge_pane(Some(SEAT_START), alive, None), PaneNow::Own);
-        assert_eq!(
-            judge_pane(Some(SEAT_START - 5), alive, Some(eel())),
-            PaneNow::Own
-        );
+        assert_eq!(judge_pane(Some(SEAT_START - 5), alive, None), PaneNow::Own);
+        // Review of #220 (S220-001, F002): two live records on one pane, root
+        // older than both, as a native successor that kept its predecessor's
+        // process and pane. The other record vetoes the command.
+        for root in [SEAT_START - 5, SEAT_START] {
+            assert_eq!(
+                judge_pane(Some(root), alive, Some(eel())),
+                PaneNow::Other(Some(eel()))
+            );
+        }
         // F175: tmux restarted and the id came back on a later pane.
         assert_eq!(
             judge_pane(Some(SEAT_START + 60), alive, Some(eel())),
@@ -665,7 +679,7 @@ mod tests {
             PaneNow::Unchecked
         );
         assert_eq!(
-            judge_pane(Some(SEAT_START), SeatProcess::Unknown, Some(eel())),
+            judge_pane(None, SeatProcess::Unknown, Some(eel())),
             PaneNow::Other(Some(eel()))
         );
     }
@@ -798,9 +812,24 @@ mod tests {
                     Some("%62"),
                     Some((700, 2_000)),
                 ),
+                // A native successor keeps its predecessor's process and pane.
+                seat(
+                    "pij-predecessor",
+                    Some("pij-parent"),
+                    Some("%65"),
+                    Some((1_100, 3_000)),
+                ),
+                seat("pij-successor", None, Some("%65"), Some((1_100, 3_000))),
             ],
-            &[("%61", 599), ("%62", 699)],
-            &[(599, 4_990), (600, 5_000), (699, 1_990), (700, 2_000)],
+            &[("%61", 599), ("%62", 699), ("%65", 1_099)],
+            &[
+                (599, 4_990),
+                (600, 5_000),
+                (699, 1_990),
+                (700, 2_000),
+                (1_099, 2_990),
+                (1_100, 3_000),
+            ],
         )
         .await;
         let (status, old) = close(addr, "pij-parent", "pij-old").await;
@@ -810,6 +839,16 @@ mod tests {
             note.contains("Pane %61 now runs pij-estimated-eel, not this seat: nothing to kill.")
                 && !note.contains("kill-pane"),
             "{old}"
+        );
+        // Review of #220 (S220-001, F002): the predecessor's process and root
+        // pass, but the pane's live successor vetoes the command.
+        let (status, predecessor) = close(addr, "pij-parent", "pij-predecessor").await;
+        assert_eq!(status, 200, "{predecessor}");
+        let note = predecessor["data"]["process"].as_str().unwrap_or_default();
+        assert!(
+            note.contains("Pane %65 now runs pij-successor, not this seat: nothing to kill.")
+                && !note.contains("kill-pane"),
+            "{predecessor}"
         );
         let (status, worker) = close(addr, "pij-parent", "pij-worker").await;
         assert_eq!(status, 200, "{worker}");

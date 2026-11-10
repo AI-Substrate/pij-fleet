@@ -454,6 +454,25 @@ impl TmuxAdapter {
         })
     }
 
+    /// `<pid>\t<path>`, as [`pane_process_args`] asks for it.
+    fn parse_pane_process(&self, pane: &str, output: &str) -> Result<PaneProcess> {
+        let line = output.trim_end_matches('\n');
+        let Some((pid, cwd)) = line.split_once('\t') else {
+            return Err(self.error(format!(
+                "display-message for {pane:?} returned {line:?}, expected `<pid>\\t<path>` — update pij-tmux for this tmux wire shape"
+            )));
+        };
+        let pid = pid.trim().parse::<u32>().map_err(|error| {
+            self.error(format!(
+                "pane_pid for {pane:?} was {pid:?}, which is not a pid: {error}"
+            ))
+        })?;
+        Ok(PaneProcess {
+            pid,
+            cwd: cwd.to_string(),
+        })
+    }
+
     /// The control client's answer, shaped exactly as the forked client's
     /// stdout or `finish` error would have been.
     fn control_stdout(&self, operation: &str, reply: control::Reply) -> Result<String> {
@@ -834,16 +853,7 @@ impl TmuxPort for TmuxAdapter {
     async fn pane_process(&self, pane: &str) -> Result<Option<PaneProcess>> {
         // ONE tmux call for both facts, so pid and cwd cannot describe two
         // different moments of the same pane.
-        let Ok(output) = self.stdout(
-            "display-message pane_pid/pane_current_path",
-            &os_args([
-                "display-message",
-                "-p",
-                "-t",
-                pane,
-                "#{pane_pid}\t#{pane_current_path}",
-            ]),
-        ) else {
+        let Ok(output) = self.stdout(PANE_PROCESS, &pane_process_args(pane)) else {
             // tmux failed. Ask the ONE question that separates the two causes: is
             // the pane gone (an answer adoption needs, and a refusal it must make)
             // or did tmux itself fail (an error nothing should swallow)? Same
@@ -861,21 +871,28 @@ impl TmuxPort for TmuxAdapter {
                 Ok(None)
             };
         };
-        let line = output.trim_end_matches('\n');
-        let Some((pid, cwd)) = line.split_once('\t') else {
-            return Err(self.error(format!(
-                "display-message for {pane:?} returned {line:?}, expected `<pid>\\t<path>` — update pij-tmux for this tmux wire shape"
-            )));
+        self.parse_pane_process(pane, &output).map(Some)
+    }
+
+    async fn pane_process_without_launch(&self, pane: &str) -> Result<Option<Option<PaneProcess>>> {
+        // The live control client or nothing: no start, no fork (F175).
+        let Some(reply) = self.control.query_live(&pane_process_args(pane)) else {
+            return Ok(None);
         };
-        let pid = pid.trim().parse::<u32>().map_err(|error| {
-            self.error(format!(
-                "pane_pid for {pane:?} was {pid:?}, which is not a pid: {error}"
-            ))
-        })?;
-        Ok(Some(PaneProcess {
-            pid,
-            cwd: cwd.to_string(),
-        }))
+        let Ok(output) = self.control_stdout(PANE_PROCESS, reply) else {
+            // Gone, or tmux failed: the live pane list tells the two apart.
+            return match self.list_panes_without_launch().await? {
+                None => Ok(None),
+                Some(panes) if panes.iter().any(|listed| listed.id == pane) => {
+                    Err(self.error(format!(
+                        "could not read pane_pid/pane_current_path for {pane:?} though tmux still lists it"
+                    )))
+                }
+                Some(_) => Ok(Some(None)),
+            };
+        };
+        self.parse_pane_process(pane, &output)
+            .map(|process| Some(Some(process)))
     }
 
     async fn acquire_submit(&self, pane: &str) -> Result<StagedSubmit> {
@@ -1475,6 +1492,19 @@ impl TmuxPort for TmuxAdapter {
 
 fn os_args<const N: usize>(args: [&str; N]) -> Vec<OsString> {
     args.into_iter().map(OsString::from).collect()
+}
+
+/// The one read behind [`TmuxPort::pane_process`]: pid and cwd together.
+const PANE_PROCESS: &str = "display-message pane_pid/pane_current_path";
+
+fn pane_process_args(pane: &str) -> Vec<OsString> {
+    os_args([
+        "display-message",
+        "-p",
+        "-t",
+        pane,
+        "#{pane_pid}\t#{pane_current_path}",
+    ])
 }
 
 fn shell_quote(value: &str) -> String {

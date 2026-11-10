@@ -369,15 +369,16 @@ async fn proceed(state: &AppState, held: &SeatDescriptor, then: Then) -> (String
     if let Some(skip) = skip_reason(held, &now) {
         return (skip.to_string(), None);
     }
-    // Authority is rechecked too: the closer must still be the seat or its
-    // recorded parent. A seat reparented during the turn is not closed.
+    // Authority is rechecked too, against the row as it is now, with the
+    // close route's own predicate (review of #220, F001): the closer must
+    // still be the seat, its recorded parent, or a designated prime of a dead
+    // parentless seat. A seat reparented during the turn is not closed.
     if let Then::Close { actor, .. } = &then
-        && actor != &now.id
-        && now.parent.as_ref() != Some(actor)
+        && !super::lifecycle::may_close(state, actor, &now).await
     {
         return (
             format!(
-                "skipped: {actor} no longer owns the seat (its parent changed during the memory turn)"
+                "skipped: {actor} no longer owns the seat (its parent, or what let {actor} close it, changed during the memory turn)"
             ),
             None,
         );

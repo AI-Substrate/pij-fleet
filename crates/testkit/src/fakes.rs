@@ -2253,6 +2253,17 @@ impl TmuxPort for FakeTmux {
         Ok(state.pane_processes.get(pane).cloned())
     }
 
+    async fn pane_process_without_launch(&self, pane: &str) -> Result<Option<Option<PaneProcess>>> {
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        state
+            .recorder
+            .record(format!("pane_process_without_launch:{pane}"));
+        if state.control_down {
+            return Ok(None);
+        }
+        Ok(Some(state.pane_processes.get(pane).cloned()))
+    }
+
     async fn acquire_submit(&self, pane: &str) -> Result<StagedSubmit> {
         let mut state = self.state.lock().expect("fake tmux mutex");
         if state.staged.values().any(|(staged, _)| staged.pane == pane) {
