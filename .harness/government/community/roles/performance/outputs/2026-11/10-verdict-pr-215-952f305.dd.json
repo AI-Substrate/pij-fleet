@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c3ca-a600-7843-9392-ef29155445ae",
+				"date": "2026-11-10",
+				"head": "952f305936f4596366ccf9b322f11be0cfaaf357",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/215#issuecomment-6759327518",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:215",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `952f305936f4596366ccf9b322f11be0cfaaf357`, scoped to S215-002/F002 and its test correction under C34's normal-use exception. The main merge is not a new review round.\n\nThe fix stops asserting Sonnet when the return cannot be distinguished from no switch. Positive settings evidence records the requested model; an observable non-switch keeps the prior record; a typed but unconfirmable return records **unknown**, with `unconfirmed:true`, `returned:false` and `last_confirmed_model`. The new regression actually presents the dialog after typing and verifies confirmation, unknown record, audit and byte-identical settings.\n\n**Cost delta:** no new wait, retry loop, event subscription, pane/settings read or process launch. It adds a bounded-H pass over saved originals (H at most two), reparsing their model values, a small model-string copy and audit fields. The newly handled unconfirmed branch now takes the same **one registry read/write pair**, with existing store guards, previously used only for a witnessed return. This is once per explicit use, not per tick; there is no automatic attempt to resolve unknown.\n\nExisting programmed waits, 4H settings reads/2H restore writes-or-removals, snapshot memory and shared-broadcast fan-out retain the [final-round cost budget](https://github.com/AI-Substrate/pij-fleet/pull/215#issuecomment-6758812487). **P215-N001 remains a C34 follow-up.** Unknown is not evidence that the seat actually runs on a cheaper model, and no per-use savings are claimed.\n\n**Exact-head CI:** [42757530097](https://github.com/AI-Substrate/pij-fleet/actions/runs/42757530097), Rust job `129635268105`, successful-upload artifact **13735844387**, matching trigger-head metadata: **2,412 executed passed**, zero failures/errors; six skips separately reported by nextest. JUnit names the new already-default/unconfirmed regression, the existing applied/late-dialog/refusal cases and all six spawn guards. Node22/24, Rust lint and final delivers succeed; worktree clean and matching GitHub head/CLEAN.\n\nNo local build/test/probe, live settings read, revive, compact or model switch. No normal-use performance blocker found in the requested fix.\n"
+		}
+	]
+}
