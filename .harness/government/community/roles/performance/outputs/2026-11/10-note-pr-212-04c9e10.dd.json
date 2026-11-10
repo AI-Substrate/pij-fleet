@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"head": "04c9e107b2f73497b4142c361bc1e6e0f5d28401",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/212#issuecomment-6756935992",
+				"role": "performance",
+				"subject": "pr:212",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**#212 after-deploy reading complete** on `04c9e107b2f73497b4142c361bc1e6e0f5d28401`, healthy **PID64475**, started **10 Nov 12:04:46 +10:00**. Bracketing pings identify embedded commit `04c9e107b2`; PID/start stay unchanged. `PIJ_IDLE_NUDGE=1` and OMP's assistant-text renderer setting are on per the deployment packet.\n\n| Metric | Feature-off baseline, PID55265 | Deployed, PID64475 |\n|---|---|---|\n| Minute, 10 Nov +10:00 | 11:12:01.969542 to 11:13:01.974756 | **12:06:08.187140 to 12:07:08.191576** |\n| Monotonic interval | 60.005060s | **60.004290s** |\n| Daemon launches | 17,456 to 17,472: **+16, 0.2666/s** | 305 to 321: **+16, 0.2666/s** |\n| Sites | +16 registration ps | **+16 registration ps; every other site flat** |\n| Daemon CPU | 11.74 CPU seconds, **19.57%** | **15.14 CPU seconds, 25.23%** |\n| RSS | 127.344 to 127.719MiB | **335.000 to 131.672MiB** |\n| Separate 20s machine estimate | **89.5 launches/s** | **191.3 launches/s** |\n\nBoth minutes' registration increments have the same attribution: eight `lease-retry.pane.holder-current` attempts, with **pij-depressed-viper and pij-loud-stoat each +4 attempts/+8 ps**. All site sums and minute deltas reconcile. No cross-bounce subtraction was used. Deployed cumulative CPU advances **0:30.16 to 0:45.30**; RSS changes **343,040 to 134,832KiB**.\n\nThe deployed machine sample ran **12:06:22 to 12:06:42**, overlapping the daemon minute: **174.8/s sampled**, **191.3/s estimated**, 105,524 polls. Attribution is a lower bound: **93.9/s gone before seen, 80.6/s other, 0.3/s recognized direct daemon children**. Command labels alone do not attribute operations. This is a shared-host sample and the sampler itself costs CPU.\n\n**Interpretation:** daemon launch rate is unchanged in these windows. CPU is **5.67 percentage points higher**, not evidence of a saving. Workload/load and process age differ: the deployed minute starts only 82 seconds after bounce, while the baseline process was long-running. Its sharp RSS fall is early post-bounce settling, not demonstrated renderer savings. Load averages are 68.29 to 75.47 in the deployed window versus 105.64 to 87.54 before. These observations cannot isolate a causal #212 CPU/RSS change.\n\nDaemon CPU/RSS do **not** measure the OMP renderer's process or long-reply latency, nor establish a block-bearing traffic sample. No synthetic traffic, renderer benchmark, local build/test, reload or bounce was performed. **P212-N001 remains a C34 follow-up**; the requested deployed fleet-reading obligation is closed. Both measurement helpers completed.\n\nReceipts: `pr212-after-start-ping.json`, `pr212-after-window.json`, `pr212-after-end-ping.json`, `pr212-after-machine.json`, `pr212-after-machine-times.txt`, `pr212-after-comparison.json`; baseline and exact-head verdict are linked from output `7493a02c`.\n"
+		}
+	]
+}
