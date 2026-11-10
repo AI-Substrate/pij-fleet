@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c467-68e6-73b1-add6-0d3393f68521",
+				"date": "2026-11-10",
+				"head": "cb5744c2757802f7984e6733f75731a9d7fc2ab1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/225#issuecomment-6761985213",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:225",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After deploy: live PID/start/build-stamped CPU/RSS and the tap-open plus identity/registration hot-path readings, bracketing per-site ping spawn counters and short machine spawn-rate receipt under real busy-pane/status-line traffic. Compare saved before receipts; no claim of measured CPU savings before this proof."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Performance PASS WITH NOTES: #225 / F182\n\nExact head `cb5744c2757802f7984e6733f75731a9d7fc2ab1`; detached review tree clean, GitHub CLEAN, checks green. Read-only review of the nine-file +167/-15 delta. No local builds, tests, mutations, private daemon or runtime probes.\n\n**The two structural reductions are real. Live CPU improvement remains owed after deployment, not a pre-merge blocker.**\n\n| Path | Rate and scaling | Change and remaining cost |\n|---|---|---|\n| Pane tap drains | Existing observer, default 600 ms, two drains per tracked pane per successful cycle | A grown, unchanged sink reuses its read fd: metadata check, seek and `read_to_end`, no repeated read-open. Avoids up to two read-opens per pane per tick when both drains find bytes, not a measured universal rate. Adds at most one retained read fd per tracked tap after first use, released when its map entry is removed on detach. |\n| Pane-derived identity | Per request, including each status-line whoami render | SQL applies the exact pane predicate before fetching/decoding descriptors. Decoding becomes that pane's live **and historical** rows, not the entire roster. Existing ordering and every candidate test in the identity ladder are preserved; asserted-ID-only lookup is unchanged. |\n| Native Copilot handoff observation | Per registration reaching `observe_dead_native_owners` | SQL applies the Copilot predicate before decoding. Both consumers already require Copilot. The locked registration re-read remains whole-roster. See the integrated F162 qualification below. |\n\nNo new loop, timer, subprocess or daemon launch site. Observer cadence, control-client operations, byte processing and existing launch fallbacks are unchanged; `spawn_sites.rs` is unchanged. There is no registry memoization or sequence-based invalidation assumption. Pane history and Copilot history are still growing sets, not hard row/byte bounds. No new index means reduced Rust materialization, not a claimed constant-time database lookup.\n\nThe held reader checks path metadata before using its fd and reopens on a changed device/inode when reading new bytes. A missing path returns an explicit error rather than reading the orphaned handle. Existing seek/offset and shrink/trim rules remain. **The zero-open claim is specifically the repeated read-open on a grown, unchanged sink:** initial opens, replacement opens and the existing quiet, consumed-at-least-1-MiB trimming write-open remain (`lib.rs:45-46,1285-1294`). This is not a claim that the observer makes no file opens.\n\n**P225-N001, non-blocking budget clarification:** `docs/how/daemon-cost.md` says a registration costs one full-roster read instead of two. That describes the changed handoff snapshot plus the locked snapshot in isolation, not every integrated registration. Current base `a1a5552c` also contains #222's F162 early guard, which decodes a full roster for a precedence-bearing native attempt before host proof. With this PR merged, a continuing such registration still has **two full-roster snapshots plus the Copilot-only snapshot**; a holder-current refusal stops at the guard's one full-roster snapshot and does not benefit from the later handoff filter. Ordinary continuing native registrations without that guard have one full plus one Copilot-only snapshot. Also, `PaneObserver::observe_once` still decodes the full roster each observer tick (`pane_observer.rs:228`). The PR reduces these costs; it does not eliminate all full-registry decoding per registration or all observer database work. P222-N001 therefore remains relevant.\n\n**CI proof:** [run 42776326266](https://github.com/AI-Substrate/pij-fleet/actions/runs/42776326266), successful at the requested head. Rust job [129695551983](https://github.com/AI-Substrate/pij-fleet/actions/runs/42776326266/job/129695551983) explicitly checks out merge ref `cbf904e5ac649d7b55afe4feafbaed04bba447ba`, merging this exact head into `a1a5552c4359ec7aafd0380e86d7ebb1ef1fb06a`. Its own upload log identifies JUnit artifact **13744461235**, not a name-only download. XML contains **2,428 executed testcases, zero failures/errors**; nextest reports six skips separately. It includes both new real-tmux tests (held sink 0.227 s, replaced sink 0.144 s), existing unchanged/trim tests, the fake and SQLite registry contracts, 102 registration unit cases including the integrated F162 regressions, retired-identity cases and the real-store double-seat case. Linux CI proves those behaviors, not macOS CPU savings.\n\n**Owed after deploy:** a live PID/start/build-stamped CPU/RSS interval, the two sampled operation families (tap file opens and identity/registration registry work), bracketing ping spawn-site counters and a short whole-machine spawn-rate receipt under real busy-pane/status-line traffic. Keep existing before receipts as separate build/workload observations, including paired PID 45657 output `115ba874` and the later PID 49638/3744 receipts; do not turn wall-stack counts or reduced row counts into CPU percentages. A private daemon without the fleet's panes cannot close this debt. Merge may proceed with this note owed.\n\nHarness opportunity, not a merge condition: promote the existing bounded receipt capture into one canonical harness command, so the PID/build continuity checks and CPU/site/rate calculations are repeatable without reconstructing scratch scripts.\n"
+		}
+	]
+}
