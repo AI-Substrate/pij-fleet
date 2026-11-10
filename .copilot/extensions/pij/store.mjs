@@ -26,6 +26,18 @@ export const RECEIVER_PROBE_INTERVAL_MS = 1000;
 export const HOOK_REQUEST_TIMEOUT_MS = 3000;
 /** A session standing by behind a newer same-process holder retries this slowly (plan 168). */
 export const STANDBY_RETRY_MS = 30000;
+/**
+ * After this many holder refusals in a row, a standby stops its 30 s retry (F162):
+ * nothing changes for it until its own prompt or a resume of its session, which
+ * retry at once and re-arm the count.
+ */
+export const STANDBY_REFUSAL_LIMIT = 3;
+/**
+ * A stopped standby re-checks only this often, so a holder that went silent with
+ * no event here is still noticed. The daemon refuses a held claim before reading
+ * any process, so the check launches nothing there.
+ */
+export const STANDBY_STOPPED_RETRY_MS = 600000;
 /** Plan 226: the daemon route that runs a reply's closing pij block. */
 export const TURN_END_ROUTE = "/v1/turn-end";
 /** A block of up to 20 commands runs in order; a wedged daemon must not hold the stop forever. */
@@ -85,10 +97,13 @@ export class NativePrecedence {
 		this.deadlineMs = deadlineMs;
 		this.lastUserMessageAt = null;
 		this.scanned = false;
-		// Each newer prompt bumps the generation. A native-holder refusal records the
-		// generation its own request carried; only a newer prompt retries at once.
+		// Each newer prompt, or a resume of this session, bumps the generation. A
+		// native-holder refusal records the generation its own request carried;
+		// only a newer change retries at once.
 		this.generation = 0;
 		this.refusedGeneration = 0;
+		// Holder refusals in a row (F162); a prompt, a resume or a success clears it.
+		this.holderRefusals = 0;
 		this.waiters = new Set();
 	}
 	observe(event) {
@@ -97,6 +112,19 @@ export class NativePrecedence {
 		if (!positiveInteger(at) || (this.lastUserMessageAt !== null && at <= this.lastUserMessageAt))
 			return;
 		this.lastUserMessageAt = at;
+		this.rearm();
+	}
+	/**
+	 * A live event of this session. A resume is a change a standby retries on (F162);
+	 * history replays only prompts, through `observe`.
+	 */
+	observeLive(event) {
+		if (event?.type === "session.resume") this.rearm();
+		else this.observe(event);
+	}
+	/** Retry at once, and give the standby its 30 s retries again. */
+	rearm() {
+		this.holderRefusals = 0;
 		this.generation++;
 		for (const wake of [...this.waiters]) wake();
 	}
@@ -157,11 +185,22 @@ export class NativePrecedence {
 	refused(generation) {
 		if (Number.isSafeInteger(generation))
 			this.refusedGeneration = Math.max(this.refusedGeneration, generation);
+		this.holderRefusals++;
+	}
+	/** A registration went through: no holder stands in the way (F162). */
+	accepted() {
+		this.holderRefusals = 0;
+	}
+	/** The standby's next timed retry: 30 s, or the slow check once stopped (F162). */
+	standbyRetryMs() {
+		return this.holderRefusals >= STANDBY_REFUSAL_LIMIT
+			? STANDBY_STOPPED_RETRY_MS
+			: STANDBY_RETRY_MS;
 	}
 	/**
-	 * Slow standby retry, cut short by this session's own next prompt or by stop.
-	 * A prompt newer than every refused request retries at once, whatever other
-	 * request (a heartbeat, the other loop) carried it in the meantime.
+	 * Slow standby retry, cut short by this session's own next prompt, a resume of
+	 * it, or stop. A change newer than every refused request retries at once,
+	 * whatever other request (a heartbeat, the other loop) carried it meanwhile.
 	 */
 	async standby(delay, signal) {
 		throwIfStopped(signal);
@@ -174,7 +213,7 @@ export class NativePrecedence {
 			this.waiters.add(wake);
 		});
 		try {
-			await Promise.race([delay(STANDBY_RETRY_MS, linked).catch(() => undefined), prompted]);
+			await Promise.race([delay(this.standbyRetryMs(), linked).catch(() => undefined), prompted]);
 		} finally {
 			this.waiters.delete(wake);
 			done.abort();
@@ -224,7 +263,9 @@ function withPrecedence(body, precedence) {
 async function registerWithPrecedence(client, body, signal, precedence) {
 	const generation = precedence?.generation;
 	try {
-		return await client.request("/v1/register", withPrecedence(body, precedence), signal);
+		const seat = await client.request("/v1/register", withPrecedence(body, precedence), signal);
+		precedence?.accepted();
+		return seat;
 	} catch (error) {
 		if (error?.holdKind === "native-holder") precedence?.refused(generation);
 		throw error;
@@ -1385,7 +1426,7 @@ export class NativeBridge {
 	}
 	/** Quiet standby (plan 168): a log line for diagnosis, never a timeline banner. */
 	async standby(signal, delay = this.delay) {
-		this.emit("standby", { retryMs: STANDBY_RETRY_MS });
+		this.emit("standby", { retryMs: this.precedence?.standbyRetryMs() ?? STANDBY_RETRY_MS });
 		if (this.precedence) await this.precedence.standby(delay, signal);
 		else await delay(STANDBY_RETRY_MS, signal);
 	}

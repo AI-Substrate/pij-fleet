@@ -174,10 +174,15 @@ observed history, never by registration order:
 - A claim that does not outrank the live holder gets HTTP 409
   `details:{retryable:true,hold:"native-holder"}`. The extension stands by
   quietly: one stderr line, no timeline banner, no tombstone of the holder. It
-  retries every 30 seconds and at once when its own session sees a prompt,
-  including a prompt that arrived while the refused registration was in flight.
+  retries every 30 seconds, and at once when its own session sees a prompt
+  (including one that arrived while the refused registration was in flight) or
+  is resumed. After three refusals in a row it stops the 30-second retry (F162)
+  and waits for that prompt or resume, checking once every 10 minutes for a
+  holder that went silent. The daemon refuses such a claim before reading any
+  process, so a standing-by session launches nothing there.
 - It takes over without outranking only once the holder's receiver lease lapses,
-  i.e. its extension stopped heartbeating.
+  i.e. its extension stopped heartbeating (a stopped standby notices within its
+  10-minute check).
 - Resume without typing: the resumed chat has older prompts and the blank boot
   session has none, so the resumed chat holds the seat as soon as it loads.
 - **`/new`: the old chat keeps the seat until the first prompt is typed in the
