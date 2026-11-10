@@ -832,7 +832,10 @@
 					"harness_session": "ef7816c2-f4dd-41a8-995d-94742dbced39",
 					"instance_key": "f169",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #214 merged (f23b6dfa072a)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-rival-salmon",
+					"to": "2026-11-10T03:39:44.034Z",
 					"why": "restore until #214 merges (pij delivered ends it)"
 				}
 			]
