@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c430-3dcd-7193-a044-5a36ed731bec",
+				"date": "2026-11-10",
+				"head": "31bf8fb74039744fcdb4b28cb392ed9393184ff5",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/219#issuecomment-6761123992",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "performance",
+				"subject": "pr:219",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: BLOCK** at `31bf8fb74039744fcdb4b28cb392ed9393184ff5`, round 2 under C34, for one remaining normal-use cancellation path: **P219-F002 / S219-N001**.\n\n**P219-F001 is fixed.** Rust key-file clients reread after refusal, share the refreshed credential across clones, and allow the guarded post-restart401 recovery; job tokens retain no key-file source. Copilot also rereads and handles the publication-after-bind race. The new tests validate Authorization with different old/new keys in both publication orders, and plain401/reset paths remain single-send. The JS helpers now check elapsed wall time before another backoff.\n\n**The documented task-bearing `pij_spawn` still drops its abort signal on the task send.** The tool passes `params.task` and its signal into `RustRuntimeSession.spawn` (`index.ts:349-366`). The initial `client.spawn` receives `opts.signal`, but after that succeeds the same function calls:\n\n`if (opts.task !== undefined) await this.send(child.id, opts.task);`\n\n(`rust-runtime.ts:719`). That omits send options, so its `/v1/send` gets no tool signal; `daemon-http.ts:460-465` supplies none implicitly.\n\nNormal failure sequence: spawn a Claude/Copilot/Codex worker with an initial task; its creation succeeds; the task-send connection meets a bounce and enters the new retry wait; the user cancels `pij_spawn`; the uncancelled send can still recover and **queue/wake the child with that task after cancellation**. The initial spawn's signal does not cancel the later request. This is the remaining compound-tool case of the already-raised cancellation finding, not speculative hardening.\n\nForward the same call signal through the follow-up task send and prove that focused case in CI (child already created, task send waiting, abort, then daemon recovery must produce no task write). No child rollback or broader redesign is required. Current runtime coverage checks direct `runtime.send` signal propagation, not this spawn-with-task continuation.\n\n**Cost otherwise:** no new process or steady-state network retry. Recovery adds key-file reads/token-lock bookkeeping and possible auth-only replay, not a tick. The nominal nine-attempt transport phase is not a universal call bound once guarded401 recovery or OMP's existing refresh phase is included. Hooks/registration/inbox/stream route exclusions remain. Direct OMP send and initial spawn cancellation now reach the HTTP request and backoff.\n\n**Exact-head CI:** [42769195128](https://github.com/AI-Substrate/pij-fleet/actions/runs/42769195128), Rust job `129672734298`, successful-upload artifact **13740868919**, matching trigger-head metadata: **2,423 executed passed**, zero failures/errors; six skips separately reported by nextest. JUnit names the rotated-key and single-send regressions. Node22 npm2,289 passed/six skipped; Node24, Rust lint and delivers succeed; worktree clean and matching GitHub head/CLEAN. Those results do not cover the task-bearing spawn cancellation above.\n\nNo local product build/test, synthetic requests, real spawn or credential-file read. The separate authorized deployment readings do not exercise this branch.\n"
+		}
+	]
+}
