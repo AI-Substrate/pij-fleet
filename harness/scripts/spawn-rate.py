@@ -85,6 +85,14 @@ def daemon_pid(port):
     return int(out[0]) if out else None
 
 
+# A pij-managed Claude hook, by its own argv: the managed script, or the
+# `pij-rs hook ...` it execs into (plan 226). Short-lived, so a lower bound.
+CLAUDE_HOOK_MARKS = (
+    ("display", ("claude-message-display-pij", "hook claude-display")),
+    ("stop", ("claude-stop-pij", "hook claude-stop")),
+)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seconds", type=float, default=20)
@@ -115,6 +123,7 @@ def main():
     by_comm = collections.Counter()
     daemon_children = collections.Counter()
     statusline_runs = 0
+    claude_hook_runs = collections.Counter()
     while time.time() - t0 < args.seconds:
         cur = pids()
         polls += 1
@@ -129,6 +138,10 @@ def main():
             words = argv(pid) or []
             if any("copilot-statusline-pij" in w for w in words):
                 statusline_runs += 1
+            text = " ".join(words)
+            for hook, marks in CLAUDE_HOOK_MARKS:
+                if any(mark in text for mark in marks):
+                    claude_hook_runs[hook] += 1
             kind = classify_parent(ppid)
             if kind == "pij-rs daemon":
                 sub = " ".join(words[1:3]) if words and words[0].endswith("tmux") else ""
@@ -149,6 +162,9 @@ def main():
         "attributed_per_s_lower_bound": {k: rate(v) for k, v in by_class.most_common()},
         "daemon_children_per_s_lower_bound": {k: rate(v) for k, v in daemon_children.most_common(10)},
         "statusline_runs_seen_per_s": rate(statusline_runs),
+        "pij_claude_hook_runs_seen_per_s_lower_bound": {
+            hook: rate(claude_hook_runs[hook]) for hook, _ in CLAUDE_HOOK_MARKS
+        },
         "top_commands_per_s_lower_bound": {k: rate(v) for k, v in by_comm.most_common(12)},
     }
     if args.json:
