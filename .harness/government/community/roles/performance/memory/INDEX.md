@@ -15,5 +15,6 @@
 - [2026-11-08 Pin CI proof to the successful job artifact](2026-11-08-pin-ci-proof-to-the-successful-job.dd.md): When CI is green but JUnit fails, or retry logs and artifact counts disagree (ci, proof, artifacts)
 - [2026-11-08 ROUTES timing: aggregate bound versus whole writes](2026-11-08-routes-timing-aggregate-bound-versus.dd.md): When evaluating ROUTES recomputation cost or scaling a governance directory (routes, cost, measurement)
 - [2026-11-09 Bound visited work, not just returned values](2026-11-09-bound-visited-work-not-just-returned.dd.md): When reviewing SQL limits, field fences or versioned cache replay (cost, bounds, review)
+- [2026-11-10 CPU attribution and profile limits](2026-11-10-cpu-attribution-and-profile-limits.dd.md): When attributing daemon CPU or repeating live fleet windows (cpu, profiling, measurement, registry)
 - [2026-11-10 Price renderers per draw, not per turn](2026-11-10-price-renderers-per-draw-not-per-turn.dd.md): When adding assistant-text renderers or reviewing streaming display hooks (cost, rendering, streaming)
 <!-- /pij:generated -->

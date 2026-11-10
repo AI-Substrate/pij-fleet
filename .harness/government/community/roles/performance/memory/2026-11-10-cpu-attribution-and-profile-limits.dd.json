@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "When attributing daemon CPU or repeating live fleet windows",
+				"tags": [
+					"cpu",
+					"profiling",
+					"measurement",
+					"registry"
+				],
+				"title": "CPU attribution and profile limits"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# CPU attribution and profile limits\n\nUse process CPU, launch counters and stack samples as different instruments. Today established several traps that the earlier role notes do not cover.\n\n## Repeating a live CPU reading\n\nPin PID, process-start identity and deployed commit across a known monotonic interval. Compute CPU from the daemon's cumulative `ps time` delta, not lifetime `%cpu`. Darwin `ps` without `-S` does not add exited-child CPU to that parent time. Reconcile every spawn-site delta against the total, and save the before snapshot first so an interrupted capture cannot look complete. Request/release the bounce hold explicitly.\n\nF162 removed the held retries' ps without resolving the remaining parent CPU: the same three holders still completed 60 refusals/300 s with zero ps while PID 3744 measured 31.73% CPU. A launch-rate explanation is not an in-process CPU attribution. The same-PID 45657 baseline/hour pair stayed 32.63/32.97%, not an uncontrolled uptime climb; its RSS growth was not an identified leak.\n\nMatch startup age, sampling protocol and real activity. The F185 before/after windows started at almost identical ages (160.14/159.73 s), both had 60 held refusals/zero ps and neither had a machine sampler. But before also had one explicit registration and 46 launches; after had neither and a quieter host. The observed 19.736-to-9.820% change is real, not an isolated estimate assigning every saved CPU second to F185.\n\n## Reading the one authorized stack sample\n\n`sample` counts across threads are wall-stack observations, not CPU shares, query counts or syscall counts. Main-thread observation totals differ between samples; waits dominate. Never turn a branch-count ratio into a CPU percentage.\n\nThe collapsed top-of-stack table omits counts below five. In the F182 after sample, `__open` was missing there but the raw tree contained two observations under community-root discovery, plus a nocancel open. Positive tap reads were present with no sampled tap-open branch. Do not equate an omitted leaf with zero work.\n\nCheck renamed APIs and optimized callers. Native registration's older `register_inner`/guard work can appear inside `register_via`; a new `list_related` must be checked alongside `list`. The F185 before profile positively showed combined `register_via -> list -> row_to_descriptor/SQLx row drops`, but could not split guard from locked reread. Its after slice did not separately catch either native API despite 60 completed held requests in the full window. Name the coverage limit instead of inventing eliminated work. Observer list/decoding was still present, but its inclusive sampled branch fell from 74 to two; queries remain.\n\n## Long machine-window trap\n\nThe existing spawn-rate estimator uses endpoint PID delta and cannot recover extra complete PID cycles. A 300-second baseline estimated 16.5 launches/s while its observed lower bound was 318.2/s, proving that estimate invalid. Other long-window estimates can pass that minimum check and still be wrap-ambiguous. Prefer the explicitly requested short machine window; retain sampled rates as lower bounds, and never invent a machine comparison when the before recipe had none. The busy-polling sampler and profiler themselves add overhead.\n\n## Current evidence and remaining budgets\n\n| Evidence | Native output |\n|---|---|\n| Same-PID 45657 paired CPU/RSS and the two original samples | `115ba874` (baseline `99e9228`) |\n| F162 held-retry ps gone, parent CPU still 31.73% | `194b2f93` |\n| F182 held tap fd and scoped identity/handoff reads, CPU 19.41% | `33fd1e2a` |\n| F185 BEFORE on 90264/f424a390, CPU 19.736% | `16eeb6e0` |\n| F185 AFTER on 49653/5f9727e9, CPU 9.820%, zero counted daemon launches | `d5450438` |\n\nKeep the existing “Bound visited work, not just returned values” lesson. P227-N001 still applies: SQL can visit historical rows even when only live/related descriptors are decoded; related history is not a hard cap. Automatic ID minting now performs per-candidate PK gets under the registration lock, and each public store operation also reads `PRAGMA user_version`. Do not drop that schema guard for speed. The live after window did not exercise a completed admitted registration or ID-allocation collision budget; source/CI proof is not a live latency measurement.\n"
+		}
+	]
+}
