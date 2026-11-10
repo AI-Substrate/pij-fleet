@@ -1427,7 +1427,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "224",
 					"machine": "ops.osk.lan",
+					"release_why": "spoonbill stuck at 725k, compaction dropped twice (F180); moved to fresh reviewer (silkworm)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-10T06:50:45.318Z",
 					"why": "#224 OMP opus-5.5 1M override (prime), FINAL 654505d"
 				},
 				{
