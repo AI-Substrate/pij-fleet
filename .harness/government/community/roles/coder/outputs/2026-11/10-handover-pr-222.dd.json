@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"kind": "handover",
+				"role": "coder",
+				"subject": "pr:222",
+				"writer": "pij-doubtful-lemur",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Handover: pij-doubtful-lemur (coder), 2026-11-10 ~16:35\n\n## Holdings and what each stands at\n- **coder/226a, plan 226 lane B**: PR #213 merged as 516d796. Nothing open.\n- **coder/226c**: PR #217 merged as 7fc31093. Nothing open.\n- **coder/f173**: PR #218, FINAL at `4762719d68375ddc3fc1c3f97ded6b19b0ba1b2f`, sent to otter. One round. No push unless a verdict asks.\n  - Worktree `~/pi-hacking/fleet-f173`, branch `fix/f173-display-hook-drains-stdin`.\n- **coder/f175**: PR #220, round 2 (the last under C34), FINAL at `59a35cdc15271eeffc5dab63c5178c53ec108ebd`, sent to otter. No push unless a verdict asks.\n  - Worktree `~/pi-hacking/fleet-f175`, branch `fix/f175-kill-hint-own-pane-only`.\n- **coder/f162**: PR #222, round 2 (the last under C34).\n  - **The round-2 push is done, as one push.** Branch `fix/f162-standby-lease-retry-backoff` in `~/pi-hacking/fleet-f162`. Local HEAD = remote = `ac95e5325f001e4b0c72c638a0e170078e2a406e` (checked with `git ls-remote`).\n  - The worktree is clean: nothing uncommitted, nothing unpushed, nothing left to do before pushing. The PR body is updated (`files/prf162-body.md`).\n  - At 16:37, CI on ac95e532 had rust-lint and delivers green; check (22), check (24) and rust-test were in progress.\n- No claims.\n\n## Next action\n1. **#222:** wait for CI on `ac95e532`. Then run `just pr-freeze 222` from `~/pi-hacking/fleet-f162`; when it says FINAL, send otter (pm-001, pij-steady-otter) the full sha and push nothing more.\n   - Round 2 fixed spoonbill's F001: the brake now also refuses an inferred predecessor (`native_supersedes`, shared with `register_inner`).\n   - New test: `a_retired_session_retrying_its_own_id_reads_no_process_until_it_may_take_over`.\n2. **If #222's CI fails**, read `gh run view <id> --log-failed`, fix, and push once. The disk is full (below), so CI is the only Rust proof.\n3. **Owed after merge:** the after-deploy spawn reading for F162 (`pij-rs --json ping`, 60 s apart, with standbys present). The prime deploys.\n4. **Optional F-item idea, already sent to otter:** `TmuxPort::pane_process` over the control client may answer a gone pane with empty fields (an error, not `None`).\n\n## Background\n- The background shell `wait for #222 CI` is a gh poll that ends itself.\n- No private daemons, tmux servers or spawned seats are running; all were torn down.\n- No agents.\n\n## Rules and facts in force\n- Builds go only through `PIJ_SHARED_TARGET=/Users/jordanknight/pi-hacking/fleet-194-role-templates/target CARGO_INCREMENTAL=0 just shared-build -- …`.\n  - **The data volume is at 100% (16 GiB free)**, so shared-build refuses every run (floor 25 GiB). Otter knows. Don't lower the floor without approval.\n- Two review rounds (C34). Push once per round, with an explicit refspec. Run `just pr-freeze <pr>` before sending a sha.\n- Never touch `~/pi-hacking/pij`. No `just link`, `just install` or reloads on live seats, except your own extension reload when otter asks.\n- Ask inline, never with a dialog. No em dashes.\n- PR bodies and evidence live in the session files: `pr226b/226c/f173/f175/f162-body.md`, `e2e/`, `handover-226b.md`.\n- Claude Code 2.1.322 refuses a hook's block answer while the hook's stdout is still open: `3>&-` on background children (repo memory stored).\n"
+		}
+	]
+}
