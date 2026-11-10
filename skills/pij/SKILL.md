@@ -90,7 +90,7 @@ send pij-steady-otter "MERGED #210, daemon bounced"
 output verdict --role reviewer --subject pr:211 --head abc1234 --result pass
 ```
 
-- One command per line, written like the CLI without the leading `pij`, shell-style quoting, nothing expanded. Verbs: `send`, `output`, `requests close`; `--body-file -` is refused, so write the file first and name it.
+- One command per line, written like the CLI without the leading `pij`, shell-style quoting, nothing expanded. Verbs: `send`, `output`, `requests close`. A `send` body is inline and quoted (a block's `send` takes no `--body-file`); an `output` may name a body file, never stdin (`--body-file -`).
 - `send --fyi` in a block follows the FYI rule: only what the recipient need not act on. Hand-offs, ready, verdicts, blockers, questions and decisions are normal sends.
 - Only a block that ends the reply runs: nothing after its closing fence but whitespace. A block quoted mid-reply, followed by prose, or written before a tool call never runs.
 - Every line is checked first, and if any is wrong nothing runs. Then they run in order, as you, through the same paths as the CLI, and stop at the first refusal.

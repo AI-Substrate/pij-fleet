@@ -183,9 +183,12 @@ fn progress_before(path: &Path, index: u64) -> Progress {
     }
 }
 
+/// The message's state holds the hidden block's text, so it lives in a
+/// directory only this user can enter, in files only this user can read
+/// (S213-001); a reply aborted mid-stream leaves its file there, still private.
 fn write_progress(path: &Path, progress: &Progress) -> std::io::Result<()> {
     let parent = path.parent().unwrap_or(Path::new("."));
-    std::fs::create_dir_all(parent)?;
+    private_dir(parent)?;
     let temp = parent.join(format!(
         ".{}.{}.tmp",
         path.file_name()
@@ -193,11 +196,61 @@ fn write_progress(path: &Path, progress: &Progress) -> std::io::Result<()> {
             .unwrap_or("progress"),
         std::process::id()
     ));
-    std::fs::write(
+    let _ = std::fs::remove_file(&temp);
+    let written = write_private_new(
         &temp,
-        serde_json::to_vec(progress).expect("progress serializes"),
-    )?;
-    std::fs::rename(&temp, path)
+        &serde_json::to_vec(progress).expect("progress serializes"),
+    )
+    .and_then(|()| std::fs::rename(&temp, path));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    written
+}
+
+#[cfg(unix)]
+fn private_dir(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)?;
+    // `mode` applies only to a directory it creates: tighten one left laxer.
+    if std::fs::metadata(dir)?.permissions().mode() & 0o077 != 0 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn private_dir(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)
+}
+
+/// `create_new`, because `mode` applies only to a file it creates.
+#[cfg(unix)]
+fn write_private_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?
+        .write_all(bytes)
+}
+
+#[cfg(not(unix))]
+fn write_private_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?
+        .write_all(bytes)
 }
 
 /// The hook: one flush in, the hook's stdout out (`None` when this flush
@@ -371,6 +424,39 @@ mod tests {
         assert!(started.elapsed() < ORDER_WAIT + Duration::from_millis(200));
         assert_eq!(run(&state, &input("../escape", 0, true, "```pij\n")), None);
         assert_eq!(run(&state, "not json"), None);
+        let _ = std::fs::remove_dir_all(&state);
+    }
+
+    /// The state holds the hidden block's lines (S213-001).
+    #[cfg(unix)]
+    #[test]
+    fn the_state_is_readable_by_this_user_alone() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = |path: &Path| {
+            std::fs::metadata(path)
+                .expect("metadata")
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        let state = scratch("private");
+        let dir = state.join("claude-display");
+        let opening = input("m-3", 0, false, "Done.\n\n```pij\nsend a \"secret\"\n");
+        let _ = run(&state, &opening);
+        assert!(
+            std::fs::read_to_string(dir.join("m-3"))
+                .expect("state")
+                .contains("secret"),
+            "the state holds the hidden text"
+        );
+        assert_eq!(mode(&dir), 0o700, "only this user enters the directory");
+        assert_eq!(mode(&dir.join("m-3")), 0o600, "only this user reads it");
+
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let _ = run(&state, &input("m-4", 0, false, "```pij\nsend b c\n"));
+        assert_eq!(mode(&dir), 0o700, "a directory left laxer is tightened");
+        assert_eq!(mode(&dir.join("m-4")), 0o600);
         let _ = std::fs::remove_dir_all(&state);
     }
 }

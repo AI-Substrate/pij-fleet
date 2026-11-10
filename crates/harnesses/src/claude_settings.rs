@@ -2501,6 +2501,7 @@ mod tests {
                     "  case \"$FAKE_MODE\" in\n",
                     "    hang) exec sleep 30 ;;\n",
                     "    fail) printf '{\"systemMessage\":\"pij ✓ 1 sent\"}\\n'; printf 'idle not published\\n' >&2; exit 4 ;;\n",
+                    "    modes) ls -ld \"$TMPDIR\"/pij-stop.* \"$TMPDIR\"/pij-stop.*/* >\"$FAKE_CALLS.modes\" 2>&1 ;;\n",
                     "  esac\n",
                     "  printf '{\"decision\":\"block\",\"reason\":\"Ran: line 1.\"}\\n'; exit 0\n",
                     "fi\n",
@@ -2529,6 +2530,7 @@ mod tests {
                 .map(|dir| format!(":{}", dir.display()))
                 .unwrap_or_default();
             let path = format!("{}{jq_dir}:/usr/bin:/bin", bin_dir.display());
+            fs::create_dir_all(root.path().join("tmp")).expect("tmp directory");
             let script = install(&root.path().join("state")).expect("install script");
             Self { root, script, path }
         }
@@ -2564,6 +2566,7 @@ mod tests {
             let mut hook = std::process::Command::new(&self.script);
             hook.env("PATH", &self.path)
                 .env("HOME", self.root.path())
+                .env("TMPDIR", self.root.path().join("tmp"))
                 .env("PIJ_RS_STATE_DIR", self.root.path().join("state"))
                 .env("PIJ_RS_FYI_CLAIM_TIMEOUT", "1")
                 .env("PIJ_RS_ACTIVITY_TIMEOUT", bound)
@@ -2918,6 +2921,36 @@ mod tests {
                 "{mode}: stdout held open for {took:?}"
             );
         }
+    }
+
+    /// The reply text and the daemon's answer are this user's alone, even
+    /// under a shared /tmp (S213-001), and their directory goes with the hook.
+    #[cfg(unix)]
+    #[test]
+    fn stop_hook_keeps_the_reply_in_a_private_directory() {
+        let rig = HookRig::stop();
+        let (output, _) = rig.run("modes", BLOCK_STOP);
+        assert!(output.status.success());
+        let listing = fs::read_to_string(rig.root.path().join("calls.modes")).expect("listing");
+        let modes = listing
+            .lines()
+            .filter_map(|line| line.split_whitespace().next())
+            .collect::<Vec<_>>();
+        let (dirs, files): (Vec<&str>, Vec<&str>) =
+            modes.into_iter().partition(|mode| mode.starts_with('d'));
+        assert_eq!((dirs.len(), files.len()), (1, 3), "{listing}");
+        assert!(dirs[0].starts_with("drwx------"), "{listing}");
+        assert!(
+            files.iter().all(|mode| mode.starts_with("-rw-------")),
+            "in, out and err are 0600: {listing}"
+        );
+        assert_eq!(
+            fs::read_dir(rig.root.path().join("tmp"))
+                .expect("tmp")
+                .count(),
+            0,
+            "the directory goes with the hook"
+        );
     }
 
     const DISPLAY_HOOK: &str = "/Users/test/.pij-rs/claude-message-display-pij.sh";
