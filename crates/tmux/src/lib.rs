@@ -879,20 +879,19 @@ impl TmuxPort for TmuxAdapter {
         let Some(reply) = self.control.query_live(&pane_process_args(pane)) else {
             return Ok(None);
         };
-        let Ok(output) = self.control_stdout(PANE_PROCESS, reply) else {
-            // Gone, or tmux failed: the live pane list tells the two apart.
-            return match self.list_panes_without_launch().await? {
+        let read = self
+            .control_stdout(PANE_PROCESS, reply)
+            .and_then(|output| self.parse_pane_process(pane, &output));
+        match read {
+            Ok(process) => Ok(Some(Some(process))),
+            // A missing target can fail the read or answer with empty fields
+            // (control mode does the latter): the live pane list decides.
+            Err(error) => match self.list_panes_without_launch().await? {
                 None => Ok(None),
-                Some(panes) if panes.iter().any(|listed| listed.id == pane) => {
-                    Err(self.error(format!(
-                        "could not read pane_pid/pane_current_path for {pane:?} though tmux still lists it"
-                    )))
-                }
+                Some(panes) if panes.iter().any(|listed| listed.id == pane) => Err(error),
                 Some(_) => Ok(Some(None)),
-            };
-        };
-        self.parse_pane_process(pane, &output)
-            .map(|process| Some(Some(process)))
+            },
+        }
     }
 
     async fn acquire_submit(&self, pane: &str) -> Result<StagedSubmit> {
