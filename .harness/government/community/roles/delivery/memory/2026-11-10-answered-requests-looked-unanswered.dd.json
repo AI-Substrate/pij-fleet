@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Open when someone reports role requests stuck delivered though replied, before touching pij requests output, or the in_reply_to receipt note",
+				"tags": [
+					"f176",
+					"role-requests",
+					"replies",
+					"diagnosis",
+					"receipts"
+				],
+				"title": "Answered requests looked unanswered: answered_at was invisible (F176)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- **F176 was a visibility bug, not a stamping bug.** The unimatrix PA hand-closed 28 requests. All 28 had `request.answered_by_reply` events (pane-bound, holder matched, sent through the native `pij_send` with the request id), so the limits had already stopped. But `pij requests --state delivered` showed plain `delivered`, and its JSON had no answered field. The PA's transcript says exactly that, then shows it scanning Copilot transcripts.\n- **To diagnose:** compare `closed_role_requests` (closed_by, close_why) with `spine_events` of kind `request.answered_by_reply` (`json_extract(payload,'$.request')`). unimatrix's requests are in the same store (158 closed); only open ones live in `role_requests`.\n- **Fix (#223):** the list carries `answered_at`; the text shows `delivered (answered)` and an answered count. An answered request still stays delivered until closed (closing tells the requester).\n- **Receipt note:** it fires only when `in_reply_to` names a ROLE request that the reply didn't answer (held by another seat, no holder, not delivered, closed, or already answered). An `in_reply_to` naming an ordinary message must leave the receipt byte-identical: `.omp/extensions/pij/cli.inbox.integration.test.ts` pins those receipts, and the first version broke it.\n- **Where it lives:** `answered_by` in `http/mod.rs` returns the note, and `add_warning` merges it. The FYI hold answers inside `hold_fyi`, so its receipt gets the note too.\n"
+		}
+	]
+}
