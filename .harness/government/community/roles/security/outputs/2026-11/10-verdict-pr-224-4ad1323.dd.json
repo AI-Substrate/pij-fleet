@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c42c-b99c-7201-b70a-4bee6e1e4076",
+				"date": "2026-11-10",
+				"head": "4ad13238048e1721953f27849bc10bcc43ef4e33",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/224#issuecomment-6760866747",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:224",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS\n\nPR #224 at **4ad13238048e1721953f27849bc10bcc43ef4e33**, under C33/C34. Reviewed the actual base-to-final diff: only `.omp/models.yml`, +8/-0.\n\nLines 29-36 add the base `github-copilot/claude-opus-5.5` model override with `contextWindow: 1000000` and `maxTokens: 128000`, following the existing Opus 5 override. Nesting matches the existing pattern, with no duplicate keys or unintended surrounding changes. No credentials, endpoints, authentication changes or additional provider configuration are introduced.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None identified in the final config diff | - |\n\n**CI proof:** clean detached worktree HEAD and GitHub/remote heads agree; GitHub reports CLEAN and all five checks successful. Run [42769182987](https://github.com/AI-Substrate/pij-fleet/actions/runs/42769182987) checked merge `f7d000f4d072a2276e109148232199a693a2c35b`, whose parents are main `fee5f6d342536f987b7f75eb04356b26e36cd82d` and this exact head. Node 22 logs report 2,281 passed/6 skipped.\n\nStatic repository-config review and existing CI only. No live model/provider selection, endpoint contact, user-config/credential reads, local tests or product mutations. Runtime model-list/footer observations remain author proof; running OMP seats need the documented reload. No performance verdict requested.\n"
+		}
+	]
+}
