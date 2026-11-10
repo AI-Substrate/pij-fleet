@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c41c-8cc3-7342-a369-edaecd7cfeb2",
+				"date": "2026-11-10",
+				"head": "ac95e5325f001e4b0c72c638a0e170078e2a406e",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/222#issuecomment-6760648052",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:222",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #222, final round 2, at **ac95e5325f001e4b0c72c638a0e170078e2a406e**, reviewing the one-file delta from `992fd0a1b55e95843550dc5fc6d3475e4bac4611` under C33/C34.\n\nThe shared candidate helper preserves the previous locked-path resolution for both explicit and inferred predecessors (`crates/daemon/src/registration.rs:1495-1532`). An inferred predecessor must be non-relay Copilot, non-tombstoned, on the same process incarnation/pane and a different session. Both paths use that helper; the later admission path still applies its stricter roster checks (`1591-1727`).\n\nThe early branch only refuses (`513-521`). Every fallthrough still requires host proof, executable/pane ancestry and process-start checks (`524-549,605-711`), followed by locked roster revalidation and existing foreign-session/owner-close/parent-preservation guards (`766-867,1098-1105`). No new candidate can itself admit, retire, cancel work or extend a lease.\n\nMissing/tombstoned/different-process holders bypass the early brake. Refusals only read incarnation-matched lease state, and an expired lease lets takeover reach proof; they do not renew the holder's lease.\n\nThe explicit regression asserts zero observer calls. The retired-own-ID regression asserts three refusals naming the current holder with zero observations, then newer activity restoring the old ID through full proof with observations (`registration.rs:3713-3790`). The existing lease-expiry case remains at `3863`.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None identified in the scoped delta under C33 | - |\n\n**Retained notes:** S222-N001's earlier disclosure remains within the accepted local-key trust boundary; the delta changes neither request fields nor authentication routing. S222-N002's unlocked snapshot/refusal-order qualification remains. Neither is represented as atomic refusal equivalence or a new admission capability.\n\n**CI proof:** clean detached worktree HEAD and GitHub/remote heads agree; GitHub reports CLEAN and successful current checks. Run [42767043953](https://github.com/AI-Substrate/pij-fleet/actions/runs/42767043953) checked merge `e06242fb12a2ac48de9a66e6172888eccf60bc86`, whose parents are main `a0dcf2c0c093b08f8944a590622517686a26f854` and this exact head. Rust reports **2,415 passed, 6 skipped**. Successful artifact `13740012315` explicitly lists `a_held_claim_is_refused_before_any_process_read` and `a_retired_session_retrying_its_own_id_reads_no_process_until_it_may_take_over` as passed.\n\nStatic source review and existing CI only. No local builds/tests, real process/pane probes, config/credential reads or product mutations. No full authentication or live cost re-audit.\n"
+		}
+	]
+}
