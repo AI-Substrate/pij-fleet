@@ -923,7 +923,10 @@
 					"harness_session": "a400e300-fa07-43e7-8444-52c45ecf15d5",
 					"instance_key": "f175",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #220 merged (fee5f6d34253)",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-doubtful-lemur",
+					"to": "2026-11-10T06:24:32.458Z",
 					"why": "F175 kill-pane hint on a recycled pane can kill a live seat (priority, prime)"
 				},
 				{
