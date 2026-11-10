@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c373-2ef2-7232-a92a-6fe93042ff2a",
+				"date": "2026-11-10",
+				"head": "b1461b876ddf13894d2635d85af46b958c5ea63e",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/214#issuecomment-6757991900",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:214",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#214 correctness review, round 2: BLOCK\n\nExact head: `b1461b876ddf13894d2635d85af46b958c5ea63e`. Delta from `6c831f4eb1f293446ecd81cb1ec506849034dc68`. F001, F002 and N001 are repaired, but the new retry cache has a normal-use delivery regression.\n\n**F003: an initially absent PA line is not remembered, so a retry can stop recognizing its own staged text.** `crates/daemon/src/pointer/worker.rs:186-210` caches a job's body only when `msg.body != original`. Consider an ordinary queued message to a PA using the typed fallback:\n\n1. No fleet FYIs wait on its first attempt. `noted` returns the original body and records no cache entry.\n2. The paste/commit aborts after staging some text. The interaction gate records that exact attempted text and its pasted prefix (`crates/harnesses/src/interaction.rs:267-281`); the worker keeps the job queued for retry (`pointer/worker.rs:660-665`).\n3. Before retry, a fleet seat receives an FYI. The cache is still empty, so `noted` now appends `Waiting FYIs:` and changes the attempted frame.\n4. `InteractionGate::own_leftover` requires the recorded text to equal the attempted text (`interaction.rs:691-712`). Neither that record nor the new full-frame candidate matches the old leftover. The gate treats pij's own draft as a human draft and defers instead of clearing it (`:630-645`). The worker then holds the wanted message and can eventually fail it at the body hold limit (`pointer/worker.rs:893-920`).\n\nThis is the existing, supported staged-submission recovery path, not a hostile caller or a restart/eviction scenario. It can stall a PA on pij's own composer residue, so it meets C34's normal-use correctness exception.\n\nFix: remember the first attempted rendering even when no PA suffix was added, so the existing per-job cache also preserves the unchanged/empty-note outcome. Add one focused regression: no waiting FYIs on the first attempt, a staged abort, an FYI arriving before retry, then recognition/clearing of the original leftover and eventual delivery. This finding is a source trace, not a reviewer-run reproduction.\n\n**Round-1 dispositions:** F001 closes: both claimed-batch and pending reads now use the same read-only `rechecked` helper (`crates/daemon/src/http/fyi.rs:133-184`), and the six-item digest/full-read regression covers the omitted resolved notice. F002 closes for ordinary unattempted queue hand-over: the saved row is no longer given an admission-time suffix, and inbox/native claims and the pane worker add it at hand-over; the new queued-PA regression checks both newly held and consumed piles. F003 above is the retry regression in that repair. N001 closes: the 300-byte waiting line has reserved space inside the 2,048-byte composed budget, with long-ID and delivered-message checks. Documented direct-typed deferral/restart limits and P214-N001 remain named limits/follow-ups, not additional blockers.\n\n**Evidence:** `just pr-freeze 214` returned FINAL at this head; detached tree remained clean. [CI run 42747508415](https://github.com/AI-Substrate/pij-fleet/actions/runs/42747508415) records this exact head. The successful Rust job's [JUnit artifact 13731519016](https://github.com/AI-Substrate/pij-fleet/actions/runs/42747508415/artifacts/13731519016) contains 2,378 executed tests, zero failures/errors; nextest reports six additional skips. The digest/full-read, queued-PA hand-over and composed-cap cases ran and passed. Existing partial-stage recovery and other-text-is-a-human-draft tests also passed, but do not combine that recovery with the new PA-note cache and an initially absent suffix. Node 22 CI reports 2,281 passed, six skipped.\n\nCost: no new timer or process launch in this delta; the existing 60-second stall round is unchanged. Notes move to claim/typing paths and keep bounded retry text; P214-N001 records the fleet-wide read cost. This is not independent live-fleet performance proof. No product edits, local builds/tests, mutations or live delivery exercises.\n"
+		}
+	]
+}
