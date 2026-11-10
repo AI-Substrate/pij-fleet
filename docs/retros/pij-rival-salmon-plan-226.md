@@ -39,3 +39,17 @@ target).
   knows, so it records the reply and asks for a redraw.
 - OMP caps `continue: true` stop-hook continuations at 8 but never caps
   `decision: block`, so the loop guard has to be the extension's own.
+
+**Round 1 review, and what it taught:**
+- "The last ```pij line" is not a Markdown rule. A ```text block that quotes
+  a pij example ends with the same four lines as a real block. Fences must be
+  tracked from the start of the text, in the parser and in every renderer that
+  hides the block (spoonbill F001).
+- Validate-first is only as good as what the preflight checks. `parse_send`
+  stops at syntax, and the send path's other pure rules (force needs a
+  reason, role-only options) ran later, after earlier lines had sent. The fix
+  pulls each rule out as a pure function, which both the send path and the
+  preflight call, so the two can't drift (spoonbill F002).
+- Text a seat or a route wrote, echoed back to a human or a seat, is caller
+  text: fence it, every time (squirrel S212-N001). A renderer called on every
+  frame needs a cheap path for the common case (ocelot P212-N001).

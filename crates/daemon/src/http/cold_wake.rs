@@ -197,6 +197,21 @@ fn cold_refusal(command: &str, to: &SeatId, message: String, verdict: &ColdCheck
     envelope(StatusCode::BAD_REQUEST, &refusal)
 }
 
+/// The override's reason, trimmed, or the refusal for `--force` without one.
+/// Pure: the turn-end preflight (plan 226) runs it on every block line too.
+pub(crate) fn forced_reason(
+    force: bool,
+    reason: Option<&str>,
+) -> std::result::Result<Option<&str>, String> {
+    let reason = reason.map(str::trim).filter(|reason| !reason.is_empty());
+    if force && reason.is_none() {
+        return Err(format!(
+            "{COLD_WAKE_CODE}: --force needs a non-empty --reason saying why the wake is worth it"
+        ));
+    }
+    Ok(reason)
+}
+
 /// Check one local recipient before a real (non-FYI, non-control) send.
 ///
 /// `Ok(label)` allows the send; the label goes on the receipt (`None` when the
@@ -210,18 +225,10 @@ pub(crate) async fn guard(
     msg_id: &str,
     over: Override<'_>,
 ) -> std::result::Result<Option<String>, Box<Response>> {
-    let reason = over
-        .reason
-        .map(str::trim)
-        .filter(|reason| !reason.is_empty());
-    if over.force && reason.is_none() {
-        return Err(Box::new(refused(
-            command,
-            format!(
-                "{COLD_WAKE_CODE}: --force needs a non-empty --reason saying why the wake is worth it"
-            ),
-        )));
-    }
+    let reason = match forced_reason(over.force, over.reason) {
+        Ok(reason) => reason,
+        Err(why) => return Err(Box::new(refused(command, why))),
+    };
     // An absent or retired recipient is delivery's refusal to make, not ours.
     let seat = match state.services.registry.get(to).await {
         Ok(Some(seat)) if seat.tombstoned_at.is_none() => seat,

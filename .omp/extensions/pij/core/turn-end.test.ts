@@ -82,6 +82,24 @@ describe("hideTrailingBlock", () => {
 		});
 		expect(hideTrailingBlock(`${FENCE}pij\nsend a b`, false)).toEqual({ hidden: false });
 	});
+
+	it("draws a pij example inside another fence as written (review of #212, F001)", () => {
+		const quoted = `${FENCE}text\n${FENCE}pij\nsend peer hi\n${FENCE}`;
+		expect(hideTrailingBlock(quoted, false)).toEqual({ hidden: false });
+		expect(hideTrailingBlock(`${FENCE}text\n${FENCE}pij\nsend peer h`, true)).toEqual({
+			hidden: false,
+		});
+		expect(mayEndWithBlock(quoted)).toBe(true);
+		expect(
+			hideTrailingBlock(`\`${FENCE}md\n${FENCE}pij\nsend a b\n${FENCE}\n\`${FENCE}`, false),
+		).toEqual({ hidden: false });
+		const after = `\`${FENCE}md\n${FENCE}pij\nsend a quoted\n${FENCE}\n\`${FENCE}\n${FENCE}pij\nsend b real\n${FENCE}`;
+		expect(hideTrailingBlock(after, false)).toEqual({
+			hidden: true,
+			shown: `\`${FENCE}md\n${FENCE}pij\nsend a quoted\n${FENCE}\n\`${FENCE}\n\n⚙ pij: 1 command(s) handed to pij`,
+			commands: 1,
+		});
+	});
 });
 
 describe("stopDecision", () => {
@@ -118,6 +136,16 @@ describe("stopDecision", () => {
 		expect(unknown.line?.text).toBe("pij ? block outcome unknown: timeout");
 		expect(unknown.block).toContain("may have run");
 		expect(noResultDecision("unknown", "timeout", true).block).toBeUndefined();
+	});
+
+	it("clips and escapes a transport reason to one line (review of #212, S212-N001)", () => {
+		const forged = noResultDecision("unknown", "lost\u001b[31m\nforged line", false);
+		expect(forged.line?.text).toBe("pij ? block outcome unknown: lost\\u{1b}[31m");
+		expect(forged.block).not.toContain("forged");
+		const long = noResultDecision("refused", "x".repeat(500), false);
+		expect(long.line?.text).toBe(
+			`pij ✗ block not run: the daemon refused it (${"x".repeat(120)}…)`,
+		);
 	});
 });
 
@@ -158,5 +186,19 @@ describe("TurnEndDisplay", () => {
 		expect(display.render({ message: { timestamp: 8 }, text: BLOCK, streaming: false })).toBe(
 			"Done.\n\n⚙ pij: 2 command(s) handed to pij",
 		);
+	});
+
+	it("draws a reply without an opener as written, and answers a redraw from memory (P212-N001)", () => {
+		const display = new TurnEndDisplay();
+		const long = `${"prose ".repeat(20_000)}\n${FENCE}js\nx\n${FENCE}`;
+		expect(display.render({ message: {}, text: long, streaming: false })).toBeUndefined();
+		const first = display.render({ message: {}, text: BLOCK, streaming: false });
+		expect(display.render({ message: {}, text: BLOCK, streaming: false })).toBe(first);
+		// Streaming and settled draws of the same text are remembered apart.
+		const streamed = `${BLOCK}more`;
+		expect(display.render({ message: {}, text: streamed, streaming: true })).toBeUndefined();
+		for (let i = 0; i < 40; i++)
+			display.render({ message: {}, text: `${BLOCK}${i}`, streaming: false });
+		expect(display.render({ message: {}, text: BLOCK, streaming: false })).toBe(first);
 	});
 });

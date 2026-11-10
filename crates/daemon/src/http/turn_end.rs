@@ -34,8 +34,9 @@ use serde_json::Value;
 
 use super::governance::GovernanceRequest;
 use super::identity::CallerContext;
-use super::shim::ShimRequest;
+use super::shim::{SendCall, ShimRequest};
 use super::{AppState, envelope};
+use crate::delivery::role_send::RoleOptions;
 
 /// The command name on every answer.
 pub const TURN_END: &str = "pij turn-end";
@@ -183,19 +184,17 @@ fn row(
     }
 }
 
+/// A route's refusal as an invalid line: its first line, and its code.
+fn invalid(refusal: crate::community::Refusal) -> Invalid {
+    let text = refusal.to_string();
+    (
+        text.lines().next().unwrap_or_default().to_string(),
+        Some(refusal.code.to_string()),
+    )
+}
+
 /// Each verb's own argument checks, with nothing written or sent.
 fn validate(caller: &CallerContext, verb: Verb, argv: &[String]) -> Result<(), Invalid> {
-    let refusal = |refusal: crate::community::Refusal| {
-        (
-            refusal
-                .to_string()
-                .lines()
-                .next()
-                .unwrap_or_default()
-                .to_string(),
-            Some(refusal.code.to_string()),
-        )
-    };
     match verb {
         Verb::Send => {
             if argv.iter().any(|arg| arg.starts_with("--body-file")) {
@@ -204,15 +203,46 @@ fn validate(caller: &CallerContext, verb: Verb, argv: &[String]) -> Result<(), I
                     None,
                 ));
             }
-            super::shim::parse_send(argv, None)
-                .map(|_| ())
-                .map_err(|why| (why, None))
+            let call = super::shim::parse_send(argv, None).map_err(|why| (why, None))?;
+            send_rules(caller, &call)
         }
-        Verb::Output => super::output::validate(caller, &argv[1..]).map_err(refusal),
+        Verb::Output => super::output::validate(caller, &argv[1..]).map_err(invalid),
         Verb::RequestsClose => super::requests::parse_close(&argv[2..])
             .map(|_| ())
-            .map_err(refusal),
+            .map_err(invalid),
     }
+}
+
+/// The send path's rules that read nothing but the line, each the function
+/// the send path itself calls, so a line it would refuse on its arguments
+/// alone runs nothing (review of #212, F002). A line they refuse, the send
+/// path refuses too, only later, after earlier lines had run. The one rule
+/// stricter here: `--force` needs its reason on every non-FYI send, a role
+/// send that would only queue included, as `pij send --help` says.
+fn send_rules(caller: &CallerContext, call: &SendCall) -> Result<(), Invalid> {
+    if let Some(attachment) = &call.attachment {
+        return super::shim::attachment_path(&attachment.path, Some(caller))
+            .map(|_| ())
+            .map_err(|why| (why, None));
+    }
+    // A control goes straight to its seat; parse_send has checked all of it.
+    if call.command.is_some() {
+        return Ok(());
+    }
+    let options = RoleOptions {
+        reply: call.reply.clone(),
+        limit: call.limit.clone(),
+    };
+    let role = super::role_send::check(&call.to, false, false, call.project.as_deref(), &options)
+        .map_err(invalid)?;
+    if role.is_some() {
+        super::role_send::check_values(&options).map_err(invalid)?;
+    }
+    if !call.fyi {
+        super::cold_wake::forced_reason(call.force, call.reason.as_deref())
+            .map_err(|why| (why, Some(pij_core::cold_wake::COLD_WAKE_CODE.to_string())))?;
+    }
+    Ok(())
 }
 
 /// Run one command through its verb's own handler.

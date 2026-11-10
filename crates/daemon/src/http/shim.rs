@@ -564,7 +564,10 @@ fn attachment_call(
 }
 
 /// Resolve a typed attachment path the way the caller's shell would have.
-fn attachment_path(typed: &str, caller: Option<&CallerContext>) -> Result<PathBuf, String> {
+pub(crate) fn attachment_path(
+    typed: &str,
+    caller: Option<&CallerContext>,
+) -> Result<PathBuf, String> {
     let path = Path::new(typed);
     if path.is_absolute() {
         return Ok(path.to_path_buf());

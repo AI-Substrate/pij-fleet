@@ -15,8 +15,11 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// The fence's language tag: a block opens with a line that is exactly
-/// `` ```pij `` (leading and trailing spaces allowed).
+use crate::render;
+
+/// The fence's language tag: a block opens with a backtick fence (three or
+/// more) whose info string is `pij`, and closes with a bare fence at least as
+/// long. A `pij` fence inside another open fence is content.
 pub const FENCE_TAG: &str = "pij";
 
 /// The most commands one block may hold; more is invalid and nothing runs. A
@@ -95,32 +98,77 @@ pub fn may_end_with_block(text: &str) -> bool {
 }
 
 fn is_open_fence(line: &str) -> bool {
-    line.trim()
-        .strip_prefix("```")
-        .is_some_and(|tag| tag == FENCE_TAG)
+    fence(line).is_some_and(|fence| fence.is_pij())
 }
 
-fn is_close_fence(line: &str) -> bool {
-    line.trim() == "```"
+/// A Markdown code fence line: three or more backticks or tildes, then an
+/// info string (which, for backticks, holds no backtick).
+struct Fence<'a> {
+    marker: char,
+    len: usize,
+    info: &'a str,
 }
 
-/// The body lines of the last `pij` fence, when that fence is closed and only
-/// whitespace follows it.
+impl Fence<'_> {
+    fn is_pij(&self) -> bool {
+        self.marker == '`' && self.info == FENCE_TAG
+    }
+
+    /// Whether `line` closes this fence: the same marker, at least as long,
+    /// and no info string.
+    fn closed_by(&self, line: &Fence<'_>) -> bool {
+        line.marker == self.marker && line.len >= self.len && line.info.is_empty()
+    }
+}
+
+fn fence(line: &str) -> Option<Fence<'_>> {
+    let trimmed = line.trim();
+    let marker = trimmed.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+    let len = trimmed.chars().take_while(|c| *c == marker).count();
+    // Both markers are one byte, so `len` is also a byte offset. The line is
+    // trimmed, so `info` has no trailing space; a leading one makes it some
+    // other fence, never `pij`, which keeps `` ```pij `` the one opener a
+    // harness's substring check looks for.
+    let info = &trimmed[len..];
+    if len < 3 || (marker == '`' && info.contains('`')) {
+        return None;
+    }
+    Some(Fence { marker, len, info })
+}
+
+/// The body lines of the text's last fenced block, when that block is a `pij`
+/// fence, it is closed, and only whitespace follows it. Fences are tracked from
+/// the start of the text, so a `` ```pij `` line inside another open fence (a
+/// quoted example) is that fence's content, never a block.
 fn trailing_block_body(text: &str) -> Option<Vec<&str>> {
     let lines: Vec<&str> = text.lines().collect();
-    let open = lines.iter().rposition(|line| is_open_fence(line))?;
-    let close = open
-        + 1
-        + lines[open + 1..]
+    let mut open: Option<(usize, Fence<'_>)> = None;
+    let mut last: Option<(usize, usize, bool)> = None;
+    for (index, line) in lines.iter().enumerate() {
+        let Some(found) = fence(line) else {
+            continue;
+        };
+        let closes = open
+            .as_ref()
+            .map(|(start, opener)| (*start, opener.closed_by(&found), opener.is_pij()));
+        match closes {
+            None => open = Some((index, found)),
+            Some((start, true, pij)) => {
+                last = Some((start, index, pij));
+                open = None;
+            }
+            Some((_, false, _)) => {}
+        }
+    }
+    let (start, close, pij) = last.filter(|_| open.is_none())?;
+    if !pij
+        || lines[close + 1..]
             .iter()
-            .position(|line| is_close_fence(line))?;
-    if lines[close + 1..]
-        .iter()
-        .any(|line| !line.trim().is_empty())
+            .any(|line| !line.trim().is_empty())
     {
         return None;
     }
-    Some(lines[open + 1..close].to_vec())
+    Some(lines[start + 1..close].to_vec())
 }
 
 /// Split one command line, shell-style, without expanding anything: `'…'` is
@@ -379,10 +427,18 @@ fn followup(outcome: Outcome, lines: &[TurnEndLine]) -> Option<String> {
             .iter()
             .filter(|line| line.status == status)
             .map(|line| {
+                // The command and the route's reason are caller text: fenced,
+                // so a control character or a forged line never reaches the
+                // seat or the human raw.
+                let command = render::caller_text(&line.command);
                 if with_detail {
-                    format!("  {}. {}  ->  {}", line.line, line.command, line.detail)
+                    format!(
+                        "  {}. {command}  ->  {}",
+                        line.line,
+                        render::caller_text(&line.detail)
+                    )
                 } else {
-                    format!("  {}. {}", line.line, line.command)
+                    format!("  {}. {command}", line.line)
                 }
             })
             .collect()
@@ -424,14 +480,13 @@ fn followup(outcome: Outcome, lines: &[TurnEndLine]) -> Option<String> {
     }
 }
 
+/// A reason's first line for the summary: fenced (escaped onto one line, in
+/// quotes) and cut at [`SUMMARY_REASON_CHARS`].
 fn clip(text: &str) -> String {
-    let first = text.lines().next().unwrap_or_default();
-    if first.chars().count() <= SUMMARY_REASON_CHARS {
-        return first.to_string();
-    }
-    let mut clipped: String = first.chars().take(SUMMARY_REASON_CHARS - 1).collect();
-    clipped.push('…');
-    clipped
+    render::fenced(
+        text.lines().next().unwrap_or_default(),
+        SUMMARY_REASON_CHARS,
+    )
 }
 
 /// How a verb route answered, judged: `Ok(detail)` when it ran, `Err((detail,
@@ -549,6 +604,25 @@ mod tests {
     }
 
     #[test]
+    fn a_pij_fence_inside_another_fence_is_its_content() {
+        // Review of #212: one ```text block whose content is a pij example.
+        assert!(block("```text\n```pij\nsend peer hi\n```").is_none());
+        // A longer fence quotes a whole pij block, closing fence and all.
+        assert!(block("````md\n```pij\nsend peer hi\n```\n````").is_none());
+        assert!(block("~~~\n```pij\nsend peer hi\n```\n~~~\n").is_none());
+        // An outer fence left open swallows the rest of the text.
+        assert!(block("````\n```pij\nsend peer hi\n```").is_none());
+        // A closed quote before the real block leaves the real block to run.
+        let text = "````md\n```pij\nsend a quoted\n```\n````\n```pij\nsend b real\n```";
+        assert_eq!(
+            argv(&block(text).expect("block")),
+            vec![Ok(vec!["send".into(), "b".into(), "real".into()])]
+        );
+        // A longer pij fence holds a bare ``` line as a command line.
+        assert!(block("````pij\nsend a b\n```\n````").is_some());
+    }
+
+    #[test]
     fn the_last_of_two_blocks_is_the_one_that_runs() {
         let text = "```pij\nsend a one\n```\ntext\n```pij\nsend c two\n```";
         let lines = block(text).expect("block");
@@ -658,12 +732,49 @@ mod tests {
         assert_eq!(result.ran, 1);
         assert_eq!(
             result.summary.as_deref(),
-            Some("pij ✗ line 2 refused: E-RS-COLD-WAKE: cold (1 ran, 1 not run)")
+            Some("pij ✗ line 2 refused: \"E-RS-COLD-WAKE: cold\" (1 ran, 1 not run)")
         );
         let followup = result.followup.expect("a follow-up");
-        assert!(followup.contains("Ran, do not resend:\n  1. send x1  ->  queued m1"));
-        assert!(followup.contains("Refused:\n  2. send x2  ->  E-RS-COLD-WAKE: cold"));
-        assert!(followup.contains("Not run:\n  3. output x3"));
+        assert!(followup.contains("Ran, do not resend:\n  1. \"send x1\"  ->  \"queued m1\""));
+        assert!(
+            followup.contains("Refused:\n  2. \"send x2\"  ->  \"E-RS-COLD-WAKE: cold\""),
+            "{followup}"
+        );
+        assert!(followup.contains("Not run:\n  3. \"output x3\""));
+    }
+
+    #[test]
+    fn echoed_command_and_reason_text_is_fenced() {
+        // Review of #212 (S212-N001): a reason or command carrying a terminal
+        // escape or a newline reaches neither the human nor the seat raw.
+        let mut refused = row(
+            1,
+            Verb::Send,
+            LineStatus::Refused,
+            "E-X: \u{1b}[31mred\nforged",
+        );
+        refused.command = "send a \"\u{1b}]0;title\u{7}\"".to_string();
+        let result = TurnEndResult::from_lines(Outcome::Refused, vec![refused]);
+        let summary = result.summary.expect("summary");
+        let followup = result.followup.expect("follow-up");
+        for text in [&summary, &followup] {
+            assert!(
+                !text.contains('\u{1b}') && !text.contains('\u{7}'),
+                "{text}"
+            );
+            assert!(!text.contains("\nforged"), "{text}");
+        }
+        assert!(summary.contains(r#""E-X: \u{1b}[31mred""#), "{summary}");
+        assert!(followup.contains(r#"\u{1b}[31mred\nforged"#), "{followup}");
+        let long = TurnEndResult::from_lines(
+            Outcome::Refused,
+            vec![row(1, Verb::Send, LineStatus::Refused, &"x".repeat(500))],
+        );
+        assert!(
+            long.summary
+                .expect("summary")
+                .contains(&format!("\"{}…\"", "x".repeat(SUMMARY_REASON_CHARS)))
+        );
     }
 
     #[test]
@@ -688,7 +799,7 @@ mod tests {
         assert_eq!(invalid.ran, 0);
         assert_eq!(
             invalid.summary.as_deref(),
-            Some("pij ✗ nothing ran: line 2 invalid: unclosed \" quote")
+            Some("pij ✗ nothing ran: line 2 invalid: \"unclosed \\\" quote\"")
         );
         assert!(
             invalid

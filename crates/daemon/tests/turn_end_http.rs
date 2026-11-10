@@ -220,11 +220,13 @@ async fn a_refusal_stops_the_block_and_names_what_already_ran() {
     assert_eq!(result["ran"], 1);
     let followup = result["followup"].as_str().expect("a follow-up");
     assert!(
-        followup.contains(&format!("Ran, do not resend:\n  1. send {RECIPIENT} one")),
+        followup.contains(&format!(
+            "Ran, do not resend:\n  1. \"send {RECIPIENT} one\""
+        )),
         "{followup}"
     );
     assert!(
-        followup.contains(&format!("Not run:\n  3. send {RECIPIENT} three")),
+        followup.contains(&format!("Not run:\n  3. \"send {RECIPIENT} three\"")),
         "{followup}"
     );
     let bodies: Vec<Value> = inbox(addr)
@@ -279,6 +281,80 @@ async fn any_invalid_line_runs_nothing() {
     server.abort();
 }
 
+/// How many FYIs are held for the recipient, claimed (and so taken) as its
+/// hook would claim them.
+async fn held_fyis(addr: SocketAddr) -> usize {
+    let reply: Value = post(
+        addr,
+        "/v1/fyi/claim",
+        json!({ "seat": RECIPIENT, "pane": RECIPIENT_PANE, "via": "hook:omp" }),
+    )
+    .await
+    .json()
+    .await
+    .expect("claim reply");
+    assert_eq!(reply["ok"], true, "{reply}");
+    reply["data"]["ids"].as_array().expect("ids").len()
+}
+
+/// Review of #212 (F002): a line the send path refuses on its arguments alone
+/// is invalid before anything runs, so the valid FYI ahead of it is never held.
+#[tokio::test]
+async fn a_send_the_send_path_refuses_on_its_arguments_alone_runs_nothing() {
+    let (addr, server, _store) = daemon().await;
+    for (bad, why) in [
+        (
+            format!("send {RECIPIENT} --force two"),
+            "--force needs a non-empty --reason",
+        ),
+        (
+            format!("send {RECIPIENT} --force --reason ' ' two"),
+            "--force needs a non-empty --reason",
+        ),
+        (
+            format!("send {RECIPIENT} --reply wake two"),
+            "--reply and --limit apply to a send to role:<id>",
+        ),
+        (
+            format!("send {RECIPIENT} --limit 5m two"),
+            "--reply and --limit apply to a send to role:<id>",
+        ),
+        (
+            format!("send {RECIPIENT} --project fleet two"),
+            "--project names the directory",
+        ),
+        ("send 'role:no good' two".to_string(), "is not role:<id>"),
+        (
+            "send role:coder@elsewhere two".to_string(),
+            "never forwarded",
+        ),
+        (
+            "send role:coder --reply loud two".to_string(),
+            "--reply takes wake, fyi or none",
+        ),
+        (
+            "send role:coder --limit soon two".to_string(),
+            "--limit must be a duration",
+        ),
+    ] {
+        let text = block(&[&format!("send {RECIPIENT} --fyi 'held first'"), &bad]);
+        let result = turn_end(addr, &text).await;
+        assert_eq!(result["outcome"], "invalid", "{bad}: {result}");
+        assert_eq!(statuses(&result), ["not_run", "invalid"], "{bad}");
+        let detail = result["lines"][1]["detail"].as_str().expect("detail");
+        assert!(detail.contains(why), "{bad}: {detail}");
+    }
+    assert_eq!(held_fyis(addr).await, 0, "no FYI was ever held");
+    assert_eq!(inbox(addr).await, Vec::<Value>::new(), "nothing was sent");
+
+    // The instrument sees a held FYI when there is one.
+    let result = turn_end(addr, &block(&[&format!("send {RECIPIENT} --fyi 'held'")])).await;
+    assert_eq!(result["outcome"], "ran", "{result}");
+    assert_eq!(held_fyis(addr).await, 1);
+
+    server.abort();
+}
+
 #[tokio::test]
 async fn text_without_a_trailing_block_runs_nothing() {
     let (addr, server, _store) = daemon().await;
@@ -286,6 +362,8 @@ async fn text_without_a_trailing_block_runs_nothing() {
         "no block at all".to_string(),
         format!("Like this:\n```pij\nsend {RECIPIENT} quoted\n```\nwhich runs at turn end."),
         format!("```pij\nsend {RECIPIENT} unterminated\n"),
+        // Review of #212 (F001): one ```text block whose content is a pij example.
+        format!("```text\n```pij\nsend {RECIPIENT} quoted\n```"),
     ] {
         let result = turn_end(addr, &text).await;
         assert_eq!(
