@@ -1462,6 +1462,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-polite-starfish",
 					"why": "moved from stuck spoonbill (silkworm, 16:49)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T06:50:46.541Z",
+					"harness": "copilot",
+					"harness_session": "6dcf7ce1-3bf1-4828-876b-e6c3aa567005",
+					"instance_key": "224",
+					"machine": "ops.osk.lan",
+					"seat": "pij-polite-starfish",
+					"why": "moved from stuck spoonbill (silkworm, 16:49)"
 				}
 			]
 		}
