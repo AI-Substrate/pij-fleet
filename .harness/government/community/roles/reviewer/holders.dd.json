@@ -1310,7 +1310,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "213",
 					"machine": "ops.osk.lan",
+					"release_why": "merged #213 (516d796)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-10T04:59:23.853Z",
 					"why": "#213 plan 226 lane B (lemur), FINAL 38fa067"
 				},
 				{
