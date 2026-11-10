@@ -1,0 +1,29 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Open before narrowing a registry/roster read, adding a read-only callerless route, holding a file open in the observer, or renaming a function a source-scan test names",
+				"tags": [
+					"cost",
+					"registry",
+					"f182",
+					"f184",
+					"f185",
+					"observer",
+					"review"
+				],
+				"title": "Cutting daemon at-rest reads: trace predicates, never cache seats (F182, F184, F185)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "What took the daemon from about 33% to about 19% CPU at rest, and what to keep doing.\n\n- **Never cache `seats`.** `store/orchestration.rs::reconcile_descriptors` writes `seats` directly, outside the Registry, and doesn't bump `seq`. A write-invalidated cache or a seq-keyed snapshot would go stale. Instead, narrow the read itself.\n- **Narrow by tracing every predicate, then filter in SQL.** Read each `seats.iter()...` in the function and its helpers. If every row used is matched by one key, filter by it and keep `ORDER BY id`, so `find` and `min_by_key` pick the same row. Tools now in the port:\n  - `SeatFilter.pane`: `resolve_seat` by pane;\n  - `SeatFilter.live_only`: the observer, both binders, the native-receiver reconcile;\n  - `Registry::list_related(&RelatedSeats)`: ids, session, pane or pid, for the F162 brake and the locked registration re-read. Its default filters `list()`, so fakes need nothing.\n  The registry contract (fake and SQLite) pins `list_related` to `RelatedSeats::matches`. A new claim check that reads another kind of row must widen `RelatedSeats`.\n- **Minting is the one check that needs the whole id space.** Use `first_free_id` (one `get` per candidate) under the lock; never a scan.\n- **Tap sinks:** the fd is held in `TapState.held` and reopened only when dev/ino at the path changes. Trim truncates in place, so the same inode is kept. Proof by denial: chmod 0200 after the first drain, and new bytes must still drain.\n- **Callerless reads (F184):** `READ_LEAVES` in `http/governance.rs` is the one allowlist, and `read()` takes no actor. A missing caller refuses `E-RS-NO-CALLER` (`details.code`).\n- **Source-scan guards:** `anomalies_tests.rs::the_three_handlers_never_call_the_unbounded_tail` does `include_str!(\"governance.rs\")` and finds functions by name. A rename breaks it in CI only, so grep `include_str!` for the file before renaming.\n- **Receipts:** ask ocelot for the BEFORE sample (300 s window plus one 10 s sample) before changing anything. Take your own `ps -o time` over 60 s, `pij-rs --json ping | jq .data.spawns.total` twice, and `just spawn-rate --seconds 20`. The AFTER sample is only meaningful post-deploy; a private daemon has no busy panes or status lines. Otter routes it.\n- **Stopping a shared-build run:** stop_bash can orphan its cargo and leave target.lock behind with a dead owner pid. Kill the orphan, then remove the lock only if `owner` names your dead pid.\n"
+		}
+	]
+}
