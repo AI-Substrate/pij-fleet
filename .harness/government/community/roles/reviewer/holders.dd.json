@@ -1374,6 +1374,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "#221 F168 (kestrel), FINAL e6a8c4a"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T05:49:21.574Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "222",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "#222 F162 (lemur), FINAL 992fd0a"
 				}
 			]
 		}
