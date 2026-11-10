@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::time::Duration;
 
 use pij_core::error::{PijError, Result};
 use pij_core::model::{
@@ -142,7 +143,17 @@ pub struct DaemonClient {
     http: reqwest::Client,
     base_url: String,
     token: String,
+    /// How long a refused connection is tried again (F174); zero tries once.
+    restart_wait: Duration,
 }
+
+/// How long a person's command waits out a daemon restart (F174). A bounce
+/// closes the port for about a second; past this the daemon is down.
+pub const RESTART_WAIT: Duration = Duration::from_secs(20);
+/// The first wait after a refused connection; each next one doubles.
+const RESTART_FIRST_PAUSE: Duration = Duration::from_millis(250);
+/// The longest wait between two tries.
+const RESTART_MAX_PAUSE: Duration = Duration::from_secs(4);
 
 impl DaemonClient {
     /// Read the daemon's boot key and construct a client.
@@ -155,7 +166,18 @@ impl DaemonClient {
             http: reqwest::Client::new(),
             base_url: format!("http://{addr}"),
             token,
+            restart_wait: Duration::ZERO,
         })
+    }
+
+    /// Try a refused connection again for up to `wait`, from 250 ms doubling
+    /// to 4 s, then refuse naming a restart (F174). Only a refused connection
+    /// is tried again: nothing reached the daemon, so a write cannot happen
+    /// twice. A timeout, a reset or any reply is answered as it was.
+    #[must_use]
+    pub fn with_restart_wait(mut self, wait: Duration) -> Self {
+        self.restart_wait = wait;
+        self
     }
 
     /// A client whose only credential is one event source's job token: it can
@@ -165,6 +187,7 @@ impl DaemonClient {
             http: reqwest::Client::new(),
             base_url: format!("http://{addr}"),
             token,
+            restart_wait: Duration::ZERO,
         }
     }
 
@@ -494,7 +517,7 @@ impl DaemonClient {
         &self,
         since: &BTreeMap<String, u64>,
     ) -> std::result::Result<TailStream, Box<Envelope<Value>>> {
-        let mut request = self.auth(self.http.get(format!("{}/v1/events", self.base_url)));
+        let mut request = self.http.get(format!("{}/v1/events", self.base_url));
         if !since.is_empty() {
             let encoded = match serde_json::to_string(since) {
                 Ok(encoded) => encoded,
@@ -508,14 +531,10 @@ impl DaemonClient {
             };
             request = request.query(&[("since", encoded)]);
         }
-        let response = match request.send().await {
+        let response = match self.send(request).await {
             Ok(response) => response,
-            Err(error) => {
-                return Err(Box::new(refusal(
-                    "pij tail",
-                    ErrorKind::Adapter,
-                    format!("could not reach the daemon: {error}"),
-                )));
+            Err(unreached) => {
+                return Err(Box::new(refusal("pij tail", ErrorKind::Adapter, unreached)));
             }
         };
         if !response.status().is_success() {
@@ -538,6 +557,43 @@ impl DaemonClient {
             saw_hello: false,
             ended: false,
         })
+    }
+
+    /// Send `request` with the key. A refused connection is tried again for
+    /// the client's restart wait (F174); `Err` is the sentence to refuse with.
+    async fn send(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> std::result::Result<reqwest::Response, String> {
+        let request = self.auth(request);
+        let deadline = tokio::time::Instant::now() + self.restart_wait;
+        let mut pause = RESTART_FIRST_PAUSE;
+        loop {
+            // A streamed body cannot be cloned; it is sent once.
+            let Some(attempt) = request.try_clone() else {
+                return request
+                    .send()
+                    .await
+                    .map_err(|error| format!("could not reach the daemon: {error}"));
+            };
+            let error = match attempt.send().await {
+                Ok(response) => return Ok(response),
+                Err(error) => error,
+            };
+            if self.restart_wait.is_zero() || !connection_refused(&error) {
+                return Err(format!("could not reach the daemon: {error}"));
+            }
+            if tokio::time::Instant::now() + pause > deadline {
+                return Err(format!(
+                    "the daemon is restarting or down: retry, or run pij-rs ping \
+                     ({} refused connections for {} s)",
+                    self.base_url.trim_start_matches("http://"),
+                    self.restart_wait.as_secs()
+                ));
+            }
+            tokio::time::sleep(pause).await;
+            pause = (pause * 2).min(RESTART_MAX_PAUSE);
+        }
     }
 
     fn auth(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
@@ -572,15 +628,9 @@ impl DaemonClient {
         command: &str,
         request: reqwest::RequestBuilder,
     ) -> Envelope<T> {
-        let response = match self.auth(request).send().await {
+        let response = match self.send(request).await {
             Ok(response) => response,
-            Err(error) => {
-                return refusal(
-                    command,
-                    ErrorKind::Adapter,
-                    format!("could not reach the daemon: {error}"),
-                );
-            }
+            Err(unreached) => return refusal(command, ErrorKind::Adapter, unreached),
         };
         let body = match response.text().await {
             Ok(body) => body,
@@ -788,6 +838,22 @@ fn refusal<T>(command: &str, kind: ErrorKind, message: impl Into<String>) -> Env
     Envelope::refused(command, kind, message)
 }
 
+/// Whether `error` is a refused TCP connection: nothing reached the daemon,
+/// so sending again cannot do anything twice (F174).
+fn connection_refused(error: &reqwest::Error) -> bool {
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        if cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|io| io.kind() == std::io::ErrorKind::ConnectionRefused)
+        {
+            return true;
+        }
+        source = cause.source();
+    }
+    false
+}
+
 /// Convert a local setup error into the same structured surface as a daemon
 /// refusal.
 pub fn setup_refusal<T>(command: &str, error: PijError) -> Envelope<T> {
@@ -800,6 +866,7 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::sync::mpsc;
+    use std::time::{Duration, Instant};
 
     use pij_core::model::{Destination, ENVELOPE_VERSION, ErrorKind, Harness};
     use serde_json::json;
@@ -852,6 +919,106 @@ mod tests {
             );
             server.join().expect("fake daemon");
         }
+    }
+
+    /// A loopback port nothing listens on: bound by the OS, then released.
+    fn refused_addr() -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind a free port");
+        listener.local_addr().expect("free port address")
+    }
+
+    fn keyed_dir(name: &str) -> std::path::PathBuf {
+        let state_dir = pij_testkit::fresh_store::fresh_dir(name);
+        std::fs::write(state_dir.join("daemon.key"), "test-token").expect("write key");
+        state_dir
+    }
+
+    /// F174: a bounce closes the port for about a second. A refused
+    /// connection is tried again until the new daemon answers.
+    #[tokio::test]
+    async fn a_refused_connection_is_tried_again_until_the_daemon_is_back() {
+        let state_dir = keyed_dir("cli-restart-back");
+        let addr = refused_addr();
+        let server = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(400));
+            let listener = TcpListener::bind(addr).expect("the new daemon binds");
+            let (mut socket, _) = listener.accept().expect("accept client");
+            let mut request = [0_u8; 4096];
+            let _ = socket.read(&mut request).expect("read request");
+            let body = r#"{"ok":true,"command":"pij ping","v":2,"data":{}}"#;
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write response");
+        });
+        let client = DaemonClient::new(&state_dir, &addr.to_string())
+            .expect("client")
+            .with_restart_wait(Duration::from_secs(10));
+        let started = Instant::now();
+        let reply = client.ping().await;
+        assert!(reply.ok, "{:?}", reply.meta);
+        assert!(started.elapsed() >= Duration::from_millis(400));
+        server.join().expect("fake daemon");
+    }
+
+    /// F174: past the wait the refusal names a restart; with no wait (hooks,
+    /// ping) the first refusal answers at once, as before.
+    #[tokio::test]
+    async fn a_daemon_that_stays_down_is_named_once_the_wait_runs_out() {
+        let state_dir = keyed_dir("cli-restart-down");
+        let addr = refused_addr();
+        let client = DaemonClient::new(&state_dir, &addr.to_string()).expect("client");
+        let started = Instant::now();
+        let waited = client
+            .clone()
+            .with_restart_wait(Duration::from_millis(600))
+            .ping()
+            .await;
+        let meta = waited.meta.expect("refused");
+        assert!(
+            meta.starts_with(&format!(
+                "the daemon is restarting or down: retry, or run pij-rs ping ({addr} refused"
+            )),
+            "{meta}"
+        );
+        assert!(started.elapsed() < Duration::from_secs(3), "bounded");
+        let once = client.ping().await.meta.expect("refused");
+        assert!(once.starts_with("could not reach the daemon: "), "{once}");
+    }
+
+    /// F174: only a refused connection is tried again. A daemon that read the
+    /// request and closed without a reply may have acted on it, so the write
+    /// is never sent twice.
+    #[tokio::test]
+    async fn a_request_the_daemon_read_is_never_sent_again() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake daemon");
+        let addr = listener.local_addr().expect("fake daemon address");
+        listener.set_nonblocking(true).expect("nonblocking");
+        let server = std::thread::spawn(move || {
+            let mut accepted = 0;
+            let until = Instant::now() + Duration::from_millis(1_500);
+            while Instant::now() < until {
+                match listener.accept() {
+                    Ok((mut socket, _)) => {
+                        socket.set_nonblocking(false).expect("blocking socket");
+                        let mut request = [0_u8; 4096];
+                        let _ = socket.read(&mut request);
+                        accepted += 1;
+                    }
+                    Err(_) => std::thread::sleep(Duration::from_millis(10)),
+                }
+            }
+            accepted
+        });
+        let client = DaemonClient::with_token(&addr.to_string(), "job-token".to_string())
+            .with_restart_wait(Duration::from_secs(10));
+        let reply = client.bg_emit("job", "once only", None).await;
+        let meta = reply.meta.expect("no reply");
+        assert!(meta.starts_with("could not reach the daemon: "), "{meta}");
+        assert_eq!(server.join().expect("fake daemon"), 1, "sent once");
     }
 
     #[test]

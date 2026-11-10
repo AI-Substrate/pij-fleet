@@ -108,6 +108,7 @@ function fakeHost(
 		},
 		env: { PIJ_RS_ADDR: ADDR, PIJ_RS_STATE_DIR: "/unused-u6-state" },
 		home: "/unused-u6-home",
+		sleep: async () => {},
 		...over,
 	};
 	return { deps, requests };

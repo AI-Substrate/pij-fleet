@@ -30,6 +30,16 @@ export const STANDBY_RETRY_MS = 30000;
 export const TURN_END_ROUTE = "/v1/turn-end";
 /** A block of up to 20 commands runs in order; a wedged daemon must not hold the stop forever. */
 export const TURN_END_TIMEOUT_MS = 30000;
+/** F174: how long a refused connection is tried again (a bounce closes the port for about a second). */
+const RESTART_WAIT_MS = 20000;
+const RESTART_FIRST_PAUSE_MS = 250;
+const RESTART_MAX_PAUSE_MS = 4000;
+/**
+ * The routes that wait out a restart: the model's pij_send. The registration and inbox loops retry
+ * with their own backoff, and the turn-boundary hooks answer at once, as the CLI's hooks do, so a
+ * stopped daemon never holds a prompt or a stop.
+ */
+const WAITS_OUT_RESTART = new Set(["/v1/send"]);
 /** Message ids already handed over, so a replayed event never runs a block twice. */
 const TURN_END_TAKEN_LIMIT = 64;
 /** Opens every cold-wake refusal's meta (crates/core/src/cold_wake.rs, plan 157 phase 2). */
@@ -450,6 +460,18 @@ export async function resolveRegistration(
 
 class InboxWaitDeadline extends Error {}
 
+/** F174: a refused TCP connection, as Node's fetch reports it (cause code, or each of an AggregateError's). */
+function refusedConnection(error) {
+	let current = error;
+	for (let depth = 0; depth < 5 && current !== null && typeof current === "object"; depth++) {
+		if (current.code === "ECONNREFUSED") return true;
+		if (Array.isArray(current.errors) && current.errors.length > 0)
+			return current.errors.every((each) => each?.code === "ECONNREFUSED");
+		current = current.cause;
+	}
+	return false;
+}
+
 export class DaemonClient {
 	constructor({
 		addr,
@@ -457,6 +479,8 @@ export class DaemonClient {
 		fetch: fetcher = globalThis.fetch,
 		readKey = () => readFile(join(stateDir, "daemon.key"), "utf8"),
 		requestTimeoutMs = 65000,
+		restartWaitMs = RESTART_WAIT_MS,
+		pause = (ms, signal) => sleep(ms, undefined, { signal }),
 	}) {
 		if (!/^(?:[a-zA-Z0-9_.-]+|\[[a-fA-F0-9:]+\]):\d+$/.test(addr))
 			throw new NativeError("PIJ_RS_ADDR must be host:port, without a URL path");
@@ -468,6 +492,8 @@ export class DaemonClient {
 		this.fetch = fetcher;
 		this.readKey = readKey;
 		this.requestTimeoutMs = requestTimeoutMs;
+		this.restartWaitMs = restartWaitMs;
+		this.pause = pause;
 	}
 
 	async request(path, body, signal) {
@@ -528,6 +554,35 @@ export class DaemonClient {
 		return snapshot;
 	}
 
+	/**
+	 * F174: a refused connection is tried again, from 250 ms doubling to 4 s,
+	 * for up to `restartWaitMs`, then refused naming a restart. Only a refused
+	 * connection: nothing reached the daemon, so a write cannot happen twice.
+	 * A timeout, a reset or any reply is answered as before, and only the
+	 * routes in WAITS_OUT_RESTART wait.
+	 */
+	async #fetchWaitingOutRestart(path, init, signal) {
+		const waits = this.restartWaitMs > 0 && WAITS_OUT_RESTART.has(path.split("?")[0]);
+		let budget = this.restartWaitMs;
+		let pause = RESTART_FIRST_PAUSE_MS;
+		for (;;) {
+			try {
+				return await this.fetch(`${this.url}${path}`, { ...init, signal });
+			} catch (error) {
+				if (!waits || signal.aborted || !refusedConnection(error)) throw error;
+				if (pause > budget)
+					throw new NativeError(
+						`the daemon is restarting or down: retry, or run pij-rs ping (${this.url.slice("http://".length)} refused connections for ${Math.round(this.restartWaitMs / 1000)} s)`,
+						true,
+						"Pij daemon restarting or down",
+					);
+				await this.pause(pause, signal);
+				budget -= pause;
+				pause = Math.min(pause * 2, RESTART_MAX_PAUSE_MS);
+			}
+		}
+	}
+
 	async #requestEnvelope(path, body, signal, inboxWait = false) {
 		let key;
 		try {
@@ -544,18 +599,22 @@ export class DaemonClient {
 		let response;
 		let raw;
 		try {
-			response = await this.fetch(`${this.url}${path}`, {
-				method: body === undefined ? "GET" : "POST",
-				headers: {
-					Authorization: `Bearer ${key}`,
-					...(body === undefined ? {} : { "Content-Type": "application/json" }),
+			response = await this.#fetchWaitingOutRestart(
+				path,
+				{
+					method: body === undefined ? "GET" : "POST",
+					headers: {
+						Authorization: `Bearer ${key}`,
+						...(body === undefined ? {} : { "Content-Type": "application/json" }),
+					},
+					...(body === undefined ? {} : { body: JSON.stringify(body) }),
 				},
-				...(body === undefined ? {} : { body: JSON.stringify(body) }),
-				signal: requestSignal,
-			});
+				requestSignal,
+			);
 			raw = await response.text();
 		} catch (error) {
 			if (signal?.aborted) throw signal.reason;
+			if (error instanceof NativeError) throw error;
 			// Only our unanswered long-poll deadline renews; body/read and foreign errors still fail.
 			if (inboxWait && !response && timeout.aborted && error === timeout.reason)
 				throw new InboxWaitDeadline();

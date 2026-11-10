@@ -50,6 +50,19 @@ The `pij` shim ([`pij-cli.cjs`](../../harness/scripts/pij-cli.cjs)) hands pij-rs
 
 Tests: `shim_forward_tests` in [`crates/cli/src/main.rs`](../../crates/cli/src/main.rs) holds the verb list equal to clap's verbs that own their help and the value-flag tables equal to clap's options (with new and stale entries as negative controls), and [`crates/cli/tests/shim_forward.rs`](../../crates/cli/tests/shim_forward.rs) runs the real shim: help byte-equal to `pij-rs`, and every flag pij-rs's help names reaching a recording `pij-rs` with argv, stdin, output and exit code unchanged, with the kept-path calls as negative controls. Cost: one `node` start and one `pij-rs` exec per call, where the routed path started node twice (the second through tsx); measured medians at load 36 were 0.085 s against 0.546 s (`claim --help`) and 0.115 s against 0.639 s (`claims`). Nothing runs per tick, and the daemon launches nothing new.
 
+### Waiting out a daemon restart (F174)
+
+A bounce closes the daemon's port for about a second. A command that meets a **refused connection** then tries again, from 250 ms doubling to 4 s, for up to 20 s, and past that refuses with `the daemon is restarting or down: retry, or run pij-rs ping (<addr> refused connections for 20 s)`. Only a refused connection is tried again: nothing reached the daemon, so a write cannot happen twice. A timeout, a reset (a request the daemon read before it stopped) or any reply is answered at once, as before.
+
+| Caller | Waits | Answers at once |
+|---|---|---|
+| `pij-rs` CLI ([`client.rs`](../../crates/cli/src/client.rs)) | every command a person or seat runs | `ping` (which `just doctor` reads as "not running"), the hooks (`hook`, `activity`, `fyi-claim`, `register`), the status line's `whoami`, `commit-trailers`, `spawn-child` |
+| `pij` routed path ([`generation-router.ts`](../../.omp/extensions/pij/adapters/generation-router.ts)) | the `/health` probe before a routed call (`send` to a seat, `list`, `state`, `adopt`…); the call goes out only once it answers | the `generation` listing |
+| OMP extension ([`daemon-http.ts`](../../.omp/extensions/pij/adapters/daemon-http.ts)) | `pij_send` and `pij_spawn` (`/v1/send`, `/v1/spawn`) | the event stream and inbox (their own reconnect), the turn-boundary hooks (FYI claim, turn end, activity) |
+| Copilot extension ([`store.mjs`](../../.copilot/extensions/pij/store.mjs)) | `pij_send` (`/v1/send`) | registration and inbox loops (their own backoff), the turn-boundary hooks |
+
+A caller's own deadline (a hook's or turn end's timeout signal) still bounds the wait. Cost: nothing in steady state; after a refused connection, at most nine attempts over 20 s, with no launch.
+
 ## Store health and daemon logs
 
 `GET /health` probes the shared status store's schema and acquires then rolls back

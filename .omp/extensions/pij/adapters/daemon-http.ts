@@ -75,6 +75,15 @@ const INITIAL_RECONNECT_MS = 250;
 const MAX_RECONNECT_MS = 5_000;
 const RECONNECT_JITTER = 0.2;
 const MAX_FRAME_ATTEMPTS = 5;
+/** F174: how long a refused connection is tried again; a bounce closes the port for about a second. */
+export const RESTART_WAIT_MS = 20_000;
+export const RESTART_FIRST_PAUSE_MS = 250;
+export const RESTART_MAX_PAUSE_MS = 4_000;
+/**
+ * The routes a tool call drives (pij_send, pij_spawn), which wait out a restart. The event stream
+ * and inbox reconnect on their own, and the turn-boundary hooks answer at once, as the CLI's do.
+ */
+const WAITS_OUT_RESTART: ReadonlySet<string> = new Set(["/v1/send", "/v1/spawn"]);
 
 /** Resolve extension transport controls: explicit environment, then Rust defaults. */
 export function daemonLocation(
@@ -449,10 +458,15 @@ export class PijDaemonClient {
 		extraHeaders: Readonly<Record<string, string>> = {},
 	): Promise<Response> {
 		const request = (): Promise<Response> =>
-			this.deps.fetch(`http://${this.location.addr}${path}`, {
-				...init,
-				headers: { ...this.headers(), ...extraHeaders },
-			});
+			this.waitingOutRestart(
+				path,
+				() =>
+					this.deps.fetch(`http://${this.location.addr}${path}`, {
+						...init,
+						headers: { ...this.headers(), ...extraHeaders },
+					}),
+				init.signal ?? undefined,
+			);
 		let response = await request();
 		if (response.status === 401 || response.status === 403) {
 			await response.body?.cancel();
@@ -460,6 +474,37 @@ export class PijDaemonClient {
 			response = await request();
 		}
 		return response;
+	}
+
+	/**
+	 * F174: on a route in WAITS_OUT_RESTART, a refused connection is tried again, from 250 ms
+	 * doubling to 4 s, for up to RESTART_WAIT_MS, then refused naming a restart. Only a refused
+	 * connection: nothing reached the daemon, so a write cannot happen twice. A timeout, a reset or
+	 * any reply is answered as before.
+	 */
+	private async waitingOutRestart(
+		path: string,
+		send: () => Promise<Response>,
+		signal: AbortSignal | undefined,
+	): Promise<Response> {
+		const waits = WAITS_OUT_RESTART.has(path.split("?")[0] ?? path);
+		let budget = RESTART_WAIT_MS;
+		let pause = RESTART_FIRST_PAUSE_MS;
+		for (;;) {
+			try {
+				return await send();
+			} catch (error) {
+				if (!waits || signal?.aborted || !isConnectionRefused(error)) throw error;
+				if (pause > budget) {
+					throw new Error(
+						`the daemon is restarting or down: retry, or run pij-rs ping (${this.location.addr} refused connections for ${RESTART_WAIT_MS / 1_000} s)`,
+					);
+				}
+				await (this.deps.sleep ?? sleep)(pause, signal ?? new AbortController().signal);
+				budget -= pause;
+				pause = Math.min(pause * 2, RESTART_MAX_PAUSE_MS);
+			}
+		}
 	}
 
 	private headers(): { readonly Authorization: string } {

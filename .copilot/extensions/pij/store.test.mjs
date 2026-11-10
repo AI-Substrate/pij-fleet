@@ -2532,6 +2532,87 @@ test("HTTP client reloads key on every request, binds tuple, keeps bounded non-J
 	);
 });
 
+/** Node's fetch on a closed port: a TypeError whose cause carries ECONNREFUSED. */
+const refused = () =>
+	Object.assign(new TypeError("fetch failed"), {
+		cause: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:7461"), {
+			code: "ECONNREFUSED",
+		}),
+	});
+
+test("F174: a refused connection waits out a daemon restart, then answers", async () => {
+	const paths = [];
+	const pauses = [];
+	let down = 3;
+	const client = new DaemonClient({
+		addr: "127.0.0.1:7461",
+		stateDir: "/isolated",
+		readKey: async () => "k",
+		pause: async (ms) => {
+			pauses.push(ms);
+		},
+		fetch: async (url) => {
+			paths.push(new URL(url).pathname);
+			if (down-- > 0) throw refused();
+			return new Response(JSON.stringify({ ok: true, v: 2, data: { msg_id: "m" } }));
+		},
+	});
+	assert.deepEqual(await client.request("/v1/send", { msg_id: "m" }), { msg_id: "m" });
+	assert.deepEqual(pauses, [250, 500, 1000]);
+	assert.equal(paths.length, 4);
+});
+
+test("F174: a daemon that stays down is named once the wait runs out", async () => {
+	const pauses = [];
+	const client = new DaemonClient({
+		addr: "127.0.0.1:7461",
+		stateDir: "/isolated",
+		readKey: async () => "k",
+		pause: async (ms) => {
+			pauses.push(ms);
+		},
+		fetch: async () => {
+			throw refused();
+		},
+	});
+	await assert.rejects(client.request("/v1/send", { msg_id: "m" }), (error) => {
+		assert.equal(
+			error.message,
+			"the daemon is restarting or down: retry, or run pij-rs ping (127.0.0.1:7461 refused connections for 20 s)",
+		);
+		return true;
+	});
+	assert.deepEqual(pauses, [250, 500, 1000, 2000, 4000, 4000, 4000, 4000]);
+});
+
+test("F174: a reset is never sent again, and only pij_send's route waits", async () => {
+	for (const [path, failure] of [
+		[
+			"/v1/send",
+			() => Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } }),
+		],
+		["/v1/fyi/claim", refused],
+		["/v1/turn-end", refused],
+		["/v1/activity", refused],
+		["/v1/register", refused],
+		["/v1/seats?scope=local", refused],
+	]) {
+		let sent = 0;
+		const client = new DaemonClient({
+			addr: "127.0.0.1:7461",
+			stateDir: "/isolated",
+			readKey: async () => "k",
+			pause: async () => assert.fail(`${path} must not wait`),
+			fetch: async () => {
+				sent += 1;
+				throw failure();
+			},
+		});
+		await assert.rejects(client.request(path, {}), /Pij transport unavailable/);
+		assert.equal(sent, 1, path);
+	}
+});
+
 test("only typed HTTP 409 registration refusals permit retry", async () => {
 	const refusal = {
 		ok: false,

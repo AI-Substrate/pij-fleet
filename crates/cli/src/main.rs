@@ -1382,6 +1382,9 @@ async fn run(cli: Cli) -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let client = match DaemonClient::new(&state_dir, &addr) {
+        Ok(client) if waits_out_a_restart(&cli.command) => {
+            client.with_restart_wait(pij_cli::client::RESTART_WAIT)
+        }
         Ok(client) => client,
         Err(error) => {
             if matches!(cli.command, Command::CommitTrailers) {
@@ -2492,6 +2495,25 @@ async fn statusline_copilot(cli: &Cli) -> ExitCode {
     let _ = stdout.write_all(line.as_bytes());
     let _ = stdout.flush();
     ExitCode::SUCCESS
+}
+
+/// Whether `command` waits out a daemon restart when its connection is
+/// refused (F174). A person's command does; a hook, the status line's whoami,
+/// a registration, ping (which `just doctor` reads as "not running") and the
+/// commit-trailer hook answer at once, so a stopped daemon never stalls a
+/// turn or a commit.
+fn waits_out_a_restart(command: &Command) -> bool {
+    !matches!(
+        command,
+        Command::Ping
+            | Command::SpawnChild { .. }
+            | Command::Hook { .. }
+            | Command::Register { .. }
+            | Command::Whoami { .. }
+            | Command::CommitTrailers
+            | Command::Activity { .. }
+            | Command::FyiClaim { .. }
+    )
 }
 
 /// The daemon client `pij-rs whoami` would build, or the refusal text it

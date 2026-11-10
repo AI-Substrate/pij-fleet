@@ -432,6 +432,82 @@ describe("pij-rs HTTP client", () => {
 		expect(alwaysUnauthorized).toHaveBeenCalledTimes(2);
 	});
 
+	it("F174: a refused send waits out a daemon restart, then answers", async () => {
+		const stateDir = root();
+		const pauses: number[] = [];
+		let down = 3;
+		const fetchMock = vi.fn(async () => {
+			if (down-- > 0) throw refused("node");
+			return new Response(
+				JSON.stringify({
+					ok: true,
+					command: "pij send",
+					v: 2,
+					data: { msg_id: "m1", outcome: { outcome: "queued" }, at: 1 },
+				}),
+			);
+		});
+		const client = new PijDaemonClient({ addr: "127.0.0.1:7461", stateDir }, "secret", {
+			...deps(fetchMock as typeof fetch),
+			sleep: async (ms) => {
+				pauses.push(ms);
+			},
+		});
+		await expect(
+			client.send({ from: "pij-a", to: { seat: "pij-b" }, body: "hello", msg_id: "m1" }),
+		).resolves.toMatchObject({ msg_id: "m1" });
+		expect(pauses).toEqual([250, 500, 1_000]);
+		expect(fetchMock).toHaveBeenCalledTimes(4);
+	});
+
+	it("F174: a daemon that stays down is named once the wait runs out", async () => {
+		const stateDir = root();
+		const pauses: number[] = [];
+		const client = new PijDaemonClient({ addr: "127.0.0.1:7461", stateDir }, "secret", {
+			...deps(vi.fn(async () => Promise.reject(refused("bun"))) as typeof fetch),
+			sleep: async (ms) => {
+				pauses.push(ms);
+			},
+		});
+		await expect(
+			client.send({ from: "pij-a", to: { seat: "pij-b" }, body: "hello", msg_id: "m1" }),
+		).rejects.toThrow(
+			"the daemon is restarting or down: retry, or run pij-rs ping (127.0.0.1:7461 refused connections for 20 s)",
+		);
+		expect(pauses).toEqual([250, 500, 1_000, 2_000, 4_000, 4_000, 4_000, 4_000]);
+	});
+
+	it("F174: a reset is never sent again, and hooks and loops answer at once", async () => {
+		const stateDir = root();
+		const reset = (): Error =>
+			Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } });
+		for (const [label, failure, call] of [
+			[
+				"a reset send",
+				reset,
+				(client: PijDaemonClient) =>
+					client.send({ from: "pij-a", to: { seat: "pij-b" }, body: "x", msg_id: "m1" }),
+			],
+			[
+				"a refused fyi claim",
+				() => refused("node"),
+				(client: PijDaemonClient) =>
+					client.claimFyi({ seat: "pij-a", native_session: "n", via: "hook:omp" }),
+			],
+			["a refused seats read", () => refused("node"), (client: PijDaemonClient) => client.seats()],
+		] as const) {
+			const fetchMock = vi.fn(async () => Promise.reject(failure()));
+			const client = new PijDaemonClient({ addr: "127.0.0.1:7461", stateDir }, "secret", {
+				...deps(fetchMock as typeof fetch),
+				sleep: async () => {
+					throw new Error(`${label} must not wait`);
+				},
+			});
+			await expect(call(client)).rejects.toThrow("fetch failed");
+			expect(fetchMock, label).toHaveBeenCalledTimes(1);
+		}
+	});
+
 	it("caps reconnect backoff after exponential growth", async () => {
 		const stateDir = root();
 		writeFileSync(join(stateDir, "daemon.key"), "secret\n");
