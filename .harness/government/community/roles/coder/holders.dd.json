@@ -870,6 +870,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-doubtful-lemur",
 					"why": "plan 226 docs follow-up: pij_send descriptions + SKILL closing commands + route pointers (prime)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T04:51:19.454Z",
+					"harness": "copilot",
+					"harness_session": "a400e300-fa07-43e7-8444-52c45ecf15d5",
+					"instance_key": "f173",
+					"machine": "ops.osk.lan",
+					"seat": "pij-doubtful-lemur",
+					"why": "F173 flaky display-hook test (EPIPE race)"
 				}
 			]
 		}
