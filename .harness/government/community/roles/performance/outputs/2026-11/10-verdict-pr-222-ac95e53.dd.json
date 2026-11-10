@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c41c-8d17-7c03-98f8-f64a9d31bfdf",
+				"date": "2026-11-10",
+				"head": "ac95e5325f001e4b0c72c638a0e170078e2a406e",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/222#issuecomment-6760717995",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:222",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"#222 after-deploy ps/request-rate and parent-CPU reading, including pre-proof full-registry cost"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `ac95e5325f001e4b0c72c638a0e170078e2a406e`, round 2 (final under C34).\n\nThe shared `native_supersedes` resolver now covers the retired-session/old-ID path as well as an explicit predecessor. Both matched holder-current refusals return before host proof: **zero native process observations/ps**. The new regression makes three inferred-holder refusals with a zero observer count, then gives the old session a newer prompt and positively verifies process observation before takeover. This is not a uniform-negative-only test.\n\n**Important revision to the round-1 cost budget:** the early brake replaces its predecessor PK lookup with **a full registry list plus schema guard** for each precedence-bearing registration that passes the initial checks. It decodes historical rows too, retains an O(S) vector, and runs a constant number of linear candidate-selection passes. This applies to non-standby attempts reaching the brake, not just refusals.\n\nA matched refusal still skips later proof/dead-owner/admission work. A candidate that continues pays the new pre-proof snapshot in addition to the existing later reads. The locked resolver reuses its already-read snapshot, but the early snapshot is not reused across those phases. **Zero process reads does not mean zero store/CPU work.**\n\n**P222-N001 / C34 follow-up:** this full-catalog pre-proof cost supersedes the earlier PK-only description and matters to the CPU investigation. No deployed timing/row-allocation ceiling or normal-use cost breach is established here, so it is not a block or a request for speculative redesign.\n\nThe extension's three-refusal/30s-to600s policy, prompt/live-resume re-arm, successful-registration reset and cancellation cleanup are unchanged from round1. No new timer, loop cadence or launch site; timed checks still scale with standby sessions. After-deploy proof must measure both eliminated ps and remaining in-process work.\n\n**Exact-head CI:** [42767043953](https://github.com/AI-Substrate/pij-fleet/actions/runs/42767043953), Rust job `129665864723`, successful-upload artifact **13740012315**, matching trigger-head metadata: **2,415 executed passed**, zero failures/errors; six skips separately reported by nextest. JUnit names the inferred-holder zero-read/positive-takeover regression; all six spawn guards execute. Node22/24, Rust lint and final delivers succeed; worktree clean and matching GitHub head/CLEAN.\n\nNo local product build/test, synthetic standby traffic, live reload or daemon change. The PID45657 paired baseline is pre-deploy; **#222's after-reading remains owed**.\n"
+		}
+	]
+}
