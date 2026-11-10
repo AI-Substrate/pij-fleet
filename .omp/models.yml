@@ -26,6 +26,14 @@ providers:
         maxTokens: 64000
         compat:
           forceAdaptiveThinking: true
+      # OMP 18.16 discovery caps the base Copilot selector at the default
+      # billing tier (200K prompt + 128K out = 328K) and puts 1M on a synthesized
+      # claude-opus-5.5-1m selector that requests the same Copilot model id.
+      # Keep the base selector at 1M so existing --model/boundModel values work.
+      claude-opus-5.5:
+        name: Claude Opus 5.5 1M (Copilot)
+        contextWindow: 1000000
+        maxTokens: 128000
       gemini-3.6-flash:
         name: Gemini 3.6 Flash 1M (Copilot)
         reasoning: true
