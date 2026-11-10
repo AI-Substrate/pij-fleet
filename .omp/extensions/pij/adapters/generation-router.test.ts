@@ -362,6 +362,26 @@ describe("routeVerb end to end", () => {
 		);
 	});
 
+	it("F174: PIJ_RS_RESTART_WAIT_MS=0 refuses an absent daemon at once", async () => {
+		const result = await routeVerb(
+			"adopt",
+			undefined,
+			["adopt"],
+			deps(
+				() => {
+					throw connectionRefused();
+				},
+				{
+					sleep: async () => {
+						throw new Error("must not wait");
+					},
+					env: { PIJ_RS_RESTART_WAIT_MS: "0" },
+				},
+			),
+		);
+		expect(describeOutcome(result.outcome)).toContain(`no rs daemon answered at ${ADDR}`);
+	});
+
 	it.each([
 		["adopt", undefined, { PIJ_DAEMON_GENERATION: "legacy" }],
 		["spawn", undefined, {}],

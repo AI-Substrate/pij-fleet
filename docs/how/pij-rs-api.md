@@ -61,7 +61,7 @@ A bounce closes the daemon's port for about a second. A command that meets a **r
 | OMP extension ([`daemon-http.ts`](../../.omp/extensions/pij/adapters/daemon-http.ts)) | `pij_send` and `pij_spawn` (`/v1/send`, `/v1/spawn`) | the event stream and inbox (their own reconnect), the turn-boundary hooks (FYI claim, turn end, activity) |
 | Copilot extension ([`store.mjs`](../../.copilot/extensions/pij/store.mjs)) | `pij_send` (`/v1/send`) | registration and inbox loops (their own backoff), the turn-boundary hooks |
 
-A caller's own deadline (a hook's or turn end's timeout signal) still bounds the wait. Cost: nothing in steady state; after a refused connection, at most nine attempts over 20 s, with no launch.
+A caller's own deadline (a hook's or turn end's timeout signal) still bounds the wait. `PIJ_RS_RESTART_WAIT_MS` sets the wait for `pij-rs` and the `pij` router, in milliseconds; `0` refuses at once, as a script that wants a quick answer may prefer. Anything but a whole number keeps the default. Cost: nothing in steady state; after a refused connection, at most nine attempts over 20 s, with no launch.
 
 ## Store health and daemon logs
 

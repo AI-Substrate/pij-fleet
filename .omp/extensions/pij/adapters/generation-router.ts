@@ -50,7 +50,7 @@ import {
 	observedProcessStart,
 	RESTART_FIRST_PAUSE_MS,
 	RESTART_MAX_PAUSE_MS,
-	RESTART_WAIT_MS,
+	restartWaitMs,
 } from "./daemon-http.js";
 
 export interface GenerationRouterDeps {
@@ -237,13 +237,13 @@ function refused(outcome: RouteOutcome, row?: RsRouteRow): RouteResult {
 
 /**
  * F174: `probeRs`, tried again while nothing answers (a refused connection reads as absent), from
- * 250 ms doubling to 4 s for up to 20 s: a bounce closes the port for about a second. The probe is
- * a read, and the routed call is made only once it answers, so nothing is sent twice.
+ * 250 ms doubling to 4 s for up to `wait` ms: a bounce closes the port for about a second. The
+ * probe is a read, and the routed call is made only once it answers, so nothing is sent twice.
  */
-async function probeWaitingOutRestart(deps: GenerationRouterDeps): Promise<RsProbe> {
+async function probeWaitingOutRestart(deps: GenerationRouterDeps, wait: number): Promise<RsProbe> {
 	const pauseFor =
 		deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-	let budget = RESTART_WAIT_MS;
+	let budget = wait;
 	let pause = RESTART_FIRST_PAUSE_MS;
 	for (;;) {
 		const probe = await probeRs(deps);
@@ -389,13 +389,14 @@ export async function routeVerb(
 		if (!parsed.ok) return refused(unported(verb, location.addr, parsed.reason), row);
 		query = parsed.query;
 	}
-	const probe = await probeWaitingOutRestart(deps);
+	const wait = restartWaitMs(deps.env);
+	const probe = await probeWaitingOutRestart(deps, wait);
 	const failure =
-		probe.kind === "absent"
+		probe.kind === "absent" && wait > 0
 			? unported(
 					verb,
 					probe.location.addr,
-					`the daemon is restarting or down: retry, or run pij-rs ping (no rs daemon answered at ${probe.location.addr} for ${RESTART_WAIT_MS / 1_000} s)`,
+					`the daemon is restarting or down: retry, or run pij-rs ping (no rs daemon answered at ${probe.location.addr} for ${wait / 1_000} s)`,
 				)
 			: probeFailure(verb, probe);
 	if (failure !== undefined)

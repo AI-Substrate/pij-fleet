@@ -76,9 +76,19 @@ const MAX_RECONNECT_MS = 5_000;
 const RECONNECT_JITTER = 0.2;
 const MAX_FRAME_ATTEMPTS = 5;
 /** F174: how long a refused connection is tried again; a bounce closes the port for about a second. */
-export const RESTART_WAIT_MS = 20_000;
+const RESTART_WAIT_MS = 20_000;
 export const RESTART_FIRST_PAUSE_MS = 250;
 export const RESTART_MAX_PAUSE_MS = 4_000;
+
+/**
+ * `PIJ_RS_RESTART_WAIT_MS` for the `pij` router, as for `pij-rs` (F174): how long a refused
+ * daemon is waited out, in milliseconds; `0` refuses at once. Anything but a whole number keeps
+ * the default: the setting only ever changes how long to wait.
+ */
+export function restartWaitMs(env: NodeJS.ProcessEnv): number {
+	const value = env.PIJ_RS_RESTART_WAIT_MS;
+	return value !== undefined && /^\d{1,9}$/.test(value) ? Number(value) : RESTART_WAIT_MS;
+}
 /**
  * The routes a tool call drives (pij_send, pij_spawn), which wait out a restart. The event stream
  * and inbox reconnect on their own, and the turn-boundary hooks answer at once, as the CLI's do.

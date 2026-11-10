@@ -299,7 +299,10 @@ describe("closed rs-only CLI", () => {
 		await new Promise<void>((resolve, reject) =>
 			server.close((error) => (error ? reject(error) : resolve())),
 		);
-		const result = await launch(["send", "pij-old", "must not deliver", "--json"]);
+		// F174: a refused daemon is waited out for 20 s by default; this run refuses at once.
+		const result = await launch(["send", "pij-old", "must not deliver", "--json"], {
+			env: { PIJ_RS_RESTART_WAIT_MS: "0" },
+		});
 		expect(result.code).not.toBe(0);
 		expect(JSON.parse(result.stdout)).toMatchObject({
 			ok: false,
