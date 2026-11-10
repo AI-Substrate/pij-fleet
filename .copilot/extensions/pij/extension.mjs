@@ -22,7 +22,6 @@ import {
 	parseProcessStart,
 	resolveNativeHost,
 	resolveRegistration,
-	STANDBY_RETRY_MS,
 	TurnEndTracker,
 } from "./store.mjs";
 
@@ -168,7 +167,7 @@ async function startExtension() {
 		// Plan 168: this host's load time and its session's newest prompt rank it
 		// against any other live session of the same Copilot process.
 		const precedence = new NativePrecedence({ loadedAt: Math.floor(performance.timeOrigin) });
-		const unsubscribePrecedence = session.on((event) => precedence.observe(event));
+		const unsubscribePrecedence = session.on((event) => precedence.observeLive(event));
 		const unsubscribeTurnEnd = session.on((event) => turnEnd.observe(event));
 		const unsubscribeShutdown = session.on("session.shutdown", () => stop("session.shutdown"));
 		unsubscribe = () => {
@@ -253,7 +252,7 @@ async function startExtension() {
 					// quietly until this session is used or that holder goes silent.
 					standingBy = true;
 					failureEpisode = false;
-					nativeReport({ kind: "standby", retryMs: STANDBY_RETRY_MS });
+					nativeReport({ kind: "standby", retryMs: precedence.standbyRetryMs() });
 					await precedence.standby((ms, wait) => sleep(ms, undefined, { signal: wait }), signal);
 					retry = INITIAL_RETRY_MS;
 					continue;

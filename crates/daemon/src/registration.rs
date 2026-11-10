@@ -491,6 +491,28 @@ impl RegistrationService {
                 return Err(refused);
             }
         }
+        // F162, a brake: a claim that supersedes a live same-process holder which
+        // keeps the seat (plan 168) is refused as NativeHolderCurrent under the
+        // lock whatever the host proves, so refuse it before paying for the proof
+        // (two `ps` per claim, from every standing-by session). Removing this
+        // check refuses the same claims later, after the ancestry reads; it never
+        // admits one.
+        if let (Some(previous), Some(claimed)) =
+            (claim.supersedes.as_ref(), claim.native_precedence)
+            && let Some(holder) = self
+                .registry
+                .get(previous)
+                .await
+                .map_err(RegistrationError::Runtime)?
+                .filter(|seat| {
+                    seat.proc == Some(identity)
+                        && seat.tombstoned_at.is_none()
+                        && seat.native_extension_delivery
+                })
+            && self.holder_keeps_seat(&holder, claimed).await
+        {
+            return Err(RegistrationError::NativeHolderCurrent(holder.id));
+        }
         tokio::time::timeout(
             HOST_OBSERVATION_TIMEOUT,
             self.verify_native_host(identity, claim.pane.as_deref(), tmux, &mut observe),
@@ -3636,6 +3658,41 @@ mod tests {
             &holder.id,
         );
         assert_eq!(registry.list(SeatFilter::default()).await.unwrap(), before);
+    }
+
+    /// F162: a standing-by session retries its claim; each refusal used to read
+    /// the host's process tree first (two `ps` a claim). It reads none now.
+    #[tokio::test]
+    async fn a_held_claim_is_refused_before_any_process_read() {
+        let (service, _) = native_service(Vec::new(), native_liveness()).await;
+        let tmux = native_tmux();
+        let holder = attest(
+            &service,
+            precedence_claim("", None, Some(500), 2_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("history session registers");
+        let reads = AtomicU64::new(0);
+        let held = service
+            .register_native_with_observer(
+                precedence_claim("", Some(holder.id.as_str()), None, 3_000),
+                Some("blank-boot-session".to_string()),
+                &tmux,
+                |pid| {
+                    reads.fetch_add(1, Ordering::SeqCst);
+                    fixture_process(pid)
+                },
+            )
+            .await
+            .map(|(descriptor, _)| descriptor);
+        held_by(held, &holder.id);
+        assert_eq!(
+            reads.load(Ordering::SeqCst),
+            0,
+            "no process read for a held claim"
+        );
     }
 
     #[tokio::test]

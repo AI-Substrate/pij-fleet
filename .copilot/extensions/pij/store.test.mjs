@@ -17,7 +17,9 @@ import {
 	NativePrecedence,
 	parseProcessStart,
 	resolveRegistration,
+	STANDBY_REFUSAL_LIMIT,
 	STANDBY_RETRY_MS,
+	STANDBY_STOPPED_RETRY_MS,
 } from "./store.mjs";
 
 const registration = Object.freeze({
@@ -5770,6 +5772,91 @@ test("F5: a prompt that lands while the refused report is in flight retries at o
 	}, new AbortController().signal);
 	assert.equal(await settle(again, 20), "still-pending");
 	assert.deepEqual(scheduled, [STANDBY_RETRY_MS]);
+});
+
+/** What one standby waits for: the delays it schedules, and whether it returned at once. */
+async function standbyWait(precedence) {
+	const scheduled = [];
+	const controller = new AbortController();
+	const waited = precedence.standby(
+		(ms, signal) =>
+			new Promise((_, reject) => {
+				scheduled.push(ms);
+				signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+			}),
+		controller.signal,
+	);
+	const state = await settle(waited, 20);
+	controller.abort();
+	await waited.catch(() => undefined);
+	return { scheduled, state };
+}
+
+test("F162: three holder refusals in a row stop the 30s retry until something changes", async () => {
+	const precedence = new NativePrecedence({ loadedAt: 2_000 });
+	await precedence.scan({
+		read: async () => ({ events: [], cursor: "end", hasMore: false, cursorStatus: "ok" }),
+	});
+	const refuse = () => precedence.refused(precedence.generation);
+	for (let refusal = 1; refusal < STANDBY_REFUSAL_LIMIT; refusal++) {
+		refuse();
+		assert.deepEqual(
+			await standbyWait(precedence),
+			{ scheduled: [STANDBY_RETRY_MS], state: "still-pending" },
+			`refusal ${refusal} retries in 30s`,
+		);
+	}
+	refuse();
+	assert.deepEqual(
+		await standbyWait(precedence),
+		{ scheduled: [STANDBY_STOPPED_RETRY_MS], state: "still-pending" },
+		"stopped: only the slow check, which the daemon answers without reading a process",
+	);
+	refuse();
+	assert.equal(precedence.standbyRetryMs(), STANDBY_STOPPED_RETRY_MS, "more refusals stay stopped");
+
+	// A resume of this session is a change: it retries at once and re-arms the count.
+	precedence.observeLive({ type: "session.resume", timestamp: new Date(3_000).toISOString() });
+	assert.deepEqual(await standbyWait(precedence), { scheduled: [], state: "resolved" });
+	refuse();
+	assert.deepEqual((await standbyWait(precedence)).scheduled, [STANDBY_RETRY_MS], "re-armed");
+
+	// So is this session's own prompt.
+	for (let refusal = 1; refusal < STANDBY_REFUSAL_LIMIT; refusal++) refuse();
+	assert.equal(precedence.standbyRetryMs(), STANDBY_STOPPED_RETRY_MS);
+	precedence.observeLive(prompt(4_000));
+	assert.deepEqual(await standbyWait(precedence), { scheduled: [], state: "resolved" });
+	assert.equal(precedence.standbyRetryMs(), STANDBY_RETRY_MS);
+
+	// And a registration that went through clears it.
+	for (let refusal = 0; refusal < STANDBY_REFUSAL_LIMIT; refusal++) refuse();
+	precedence.accepted();
+	assert.equal(precedence.standbyRetryMs(), STANDBY_RETRY_MS);
+});
+
+test("F162: a stopped standby wakes on a live resume; history replays never re-arm it", async () => {
+	const precedence = new NativePrecedence({ loadedAt: 2_000 });
+	const replayed = { type: "session.resume", timestamp: new Date(1_500).toISOString() };
+	await precedence.scan({
+		read: async () => ({ events: [replayed], cursor: "end", hasMore: false, cursorStatus: "ok" }),
+	});
+	for (let refusal = 0; refusal < STANDBY_REFUSAL_LIMIT; refusal++)
+		precedence.refused(precedence.generation);
+	precedence.observe(replayed);
+	assert.equal(
+		precedence.standbyRetryMs(),
+		STANDBY_STOPPED_RETRY_MS,
+		"a replayed resume is history",
+	);
+	const scheduled = [];
+	const waiting = precedence.standby((ms) => {
+		scheduled.push(ms);
+		return new Promise(() => {});
+	}, new AbortController().signal);
+	assert.equal(await settle(waiting, 20), "still-pending");
+	precedence.observeLive({ type: "session.resume", timestamp: new Date(3_000).toISOString() });
+	assert.equal(await settle(waiting, 50), "resolved", "the resume ends the wait at once");
+	assert.deepEqual(scheduled, [STANDBY_STOPPED_RETRY_MS]);
 });
 
 test("F5: a concurrent heartbeat carrying the newer prompt cannot swallow the refused register's wake", async () => {
