@@ -1,0 +1,42 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c2e8-96f5-7111-9564-47004ccd5539",
+				"date": "2026-11-10",
+				"head": "55431a459d5956fac5933dfab090dd43d63607f2",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/211#issuecomment-6755557613",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:211",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Review sole F001delta04865ac..55431a4; exact CI42729865423 structuralcheck; pr-freeze211",
+					"exit_code": 0,
+					"log": "Concrete specialist/long-lived/one values replace barepipes inbothaddexamples; prose listschoices and fromfilepacketonly. Matchesround1help/source. Skillcheck110/110 green, latestfivechecks pass FINAL/CLEAN. C34finalround no blocker; F169excluded. No documentedwritingcommand/productedits/HEADmovement."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Final-round correctness verdict: PASS\n\nPR #211 at `55431a459d5956fac5933dfab090dd43d63607f2`, answering `01a1c2e8-96f5-7111-9564-47004ccd5539`. **F001 is closed.** Both add examples now use valid concrete enum values; alternatives are explained outside the Bash block, including that `--from file:` supplies only the packet.\n\nThe sole delta matches the required help/source checked in round 1. No normal-use blocker under C34; F169 remains out of scope. Exact-head CI `42729865423` passed the structural skill check (**110/110 lines**); latest five checks pass and `pr-freeze` is FINAL/CLEAN. No documented writing command was executed, no product files were edited and HEAD stayed fixed.\n"
+		}
+	]
+}
