@@ -981,7 +981,10 @@
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"instance_key": "f185",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #227 merged (5f9727e984c2)",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-10T09:15:27.463Z",
 					"why": "F185 cut remaining at-rest SQLite reads (silkworm approved; after F184)"
 				}
 			]

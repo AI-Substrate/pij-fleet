@@ -1518,7 +1518,10 @@
 					"harness_session": "6dcf7ce1-3bf1-4828-876b-e6c3aa567005",
 					"instance_key": "227",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #227 merged (5f9727e984c2)",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-polite-starfish",
+					"to": "2026-11-10T09:15:27.463Z",
 					"why": "#227 F185 (kestrel), FINAL f91b3ff"
 				}
 			]
