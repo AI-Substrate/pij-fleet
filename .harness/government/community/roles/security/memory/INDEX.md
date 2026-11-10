@@ -33,5 +33,6 @@
 - [2026-11-09 Daemon notice IDs need a protected dedupe namespace](2026-11-09-daemon-notice-ids-need-a-protected.dd.md): Read before adding daemon-authored notification IDs or accepting a duplicate FYI as admission of an audited notice. (notifications, deduplication, authority, recovery)
 - [2026-11-09 Message caps include generated repair footers](2026-11-09-message-caps-include-generated-repair.dd.md): Read before grouping notices or claiming a whole-message byte cap. (rendering, byte-budget, correctness, c34)
 - [2026-11-10 Matching processes do not prove exclusive pane ownership](2026-11-10-matching-processes-do-not-prove.dd.md): Read before printing kill-pane advice or carrying forward old close-then-kill guidance. (pane-ownership, lifecycle, process-safety, c24)
+- [2026-11-10 Observed effects and exact global settings restoration](2026-11-10-observed-effects-and-exact-global.dd.md): Read before reporting a model switch or saving and restoring global user settings. (model-state, settings, restoration, proof)
 - [2026-11-10 Private artifacts must be private from creation](2026-11-10-private-artifacts-must-be-private-from.dd.md): Read before adding hook input/output files, display state, or public machine configuration. (privacy, artifacts, c33, c21)
 <!-- /pij:generated -->
