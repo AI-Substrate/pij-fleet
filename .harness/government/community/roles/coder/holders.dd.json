@@ -887,7 +887,10 @@
 					"harness_session": "a400e300-fa07-43e7-8444-52c45ecf15d5",
 					"instance_key": "f173",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #218 merged (765e3320bb52)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-doubtful-lemur",
+					"to": "2026-11-10T05:27:54.143Z",
 					"why": "F173 flaky display-hook test (EPIPE race)"
 				},
 				{

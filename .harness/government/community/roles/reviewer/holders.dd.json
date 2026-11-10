@@ -1349,7 +1349,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "218",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #218 merged (765e3320bb52)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-10T05:27:54.143Z",
 					"why": "#218 F173 (lemur), FINAL 4762719"
 				}
 			]
