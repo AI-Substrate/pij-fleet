@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c3fc-52ae-7db2-b8c9-ac1326de84b7",
+				"date": "2026-11-10",
+				"head": "0eb43f285c5ede32ceccc232f7f23a6c150df23b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/220#issuecomment-6760157926",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:220",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#220 correctness review, round 1: BLOCK\n\nExact head: `0eb43f285c5ede32ceccc232f7f23a6c150df23b`.\n\n**F001: a prime's authorized orphan close is rejected after a memory turn.** `crates/daemon/src/http/lifecycle.rs:484-489` admits the newly authorized designated prime, but a non-tombstoned target with role history takes `memory_turn::hold` (`:491-530`; `http/memory_turn.rs:447-476`). Its continuation still permits only self or recorded parent (`memory_turn.rs:372-384`). For the very parentless orphan the new rule admits, the prime is neither, so the held action unconditionally reports “no longer owns the seat” and never calls close, even though no parent or incarnation changed. This also happens after an undeliverable prompt or the hold bound.\n\nFix: share the close-authorization predicate with the continuation and re-evaluate the designation plus dead/recycled-orphan conditions there. Keep the existing unchanged-incarnation and reparenting brakes. Add a role-holding dead orphan whose prime close is held and then completes, alongside the existing live/revived refusal cases. The new HTTP test has no role history and exercises only the direct path.\n\n**F002: a known competing live holder does not veto the kill hint.** `lifecycle.rs:233-247` returns `PaneNow::Own` when the target process is alive and the pane root is old enough, ignoring `holder: Some(other)`. `pane_now` has just found that other non-tombstoned seat recorded on the same pane (`:270-285`), yet the response then names `tmux kill-pane` for it. The new unit case at `:641-644` explicitly pins this result with `Some(pij-estimated-eel)`.\n\nAn older pane root is the reaper's conservative reason not to prove reincarnation, not independent proof that a conflicting live holder can be ignored (`crates/daemon/src/reaper.rs:145-166`). At minimum, the already-observed other holder must prevent a destructive hint rather than be overridden by compatible timestamps. Fix that precedence, and cover two live records claiming the pane with the older-root case. This needs a cheap safety brake, not new ancestry machinery. Withholding a hint on conflicting ownership can only make teardown more conservative.\n\nThe other requested paths are consistent: different recorded process starts become recycled, newer pane roots veto ownership, failed pane/process observations do not produce a concrete kill command, and direct/held receipts share the formatter. Revive has no kill hint and the F149 refusal names no concrete pane. The orphan admission uses project `prime_id`, not legacy role rows, and refuses live/unknown/no-process or parented targets for an unrelated prime.\n\n**Evidence:** `just pr-freeze 220` returned FINAL at this head; detached tree clean. [CI run 42763375835](https://github.com/AI-Substrate/pij-fleet/actions/runs/42763375835) records the exact head. Its successful Rust job's [JUnit artifact 13739201130](https://github.com/AI-Substrate/pij-fleet/actions/runs/42763375835/artifacts/13739201130) contains 2,416 executed tests, zero failures/errors; nextest reports six additional skips. All four new lifecycle cases and the existing held-close, revived-seat and reparenting cases ran and passed. They do not cover the new prime authority across the hold; the classifier test currently expects F002's unsafe precedence. Findings are source traces, not reviewer-run runtime reproductions.\n\nCost inspection: one pane-process observation on the normal close path, through the existing tmux adapter, plus in-process start checks and registry/project reads. No new launch site or periodic work; `spawn_sites.rs` is unchanged. Independent performance proof remains with that role. No local builds/tests, close/reap/kill commands, lifecycle mutations or product edits.\n"
+		}
+	]
+}
