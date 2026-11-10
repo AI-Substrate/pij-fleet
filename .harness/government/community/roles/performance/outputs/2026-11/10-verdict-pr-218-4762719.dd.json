@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c3e9-f76f-77a1-b688-9889aa003803",
+				"date": "2026-11-10",
+				"head": "4762719d68375ddc3fc1c3f97ded6b19b0ba1b2f",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/218#issuecomment-6759801678",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "performance",
+				"subject": "pr:218",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS** at `4762719d68375ddc3fc1c3f97ded6b19b0ba1b2f`.\n\nThe missing-`pij-rs` fallback drains stdin using only shell builtins: `read` and `:`. **No additional process, daemon call, timer or periodic poll.** The already-host-launched shell blocks for input/EOF rather than exiting early; processing scales with input bytes and retains at most the current line. The installed-binary exec path and per-flush launch rate are unchanged. The new200ms sleep exists only in the regression test.\n\n**Exact-head CI:** [42760955125](https://github.com/AI-Substrate/pij-fleet/actions/runs/42760955125), Rust job `129646248166`, successful-upload artifact **13737587971**, matching trigger-head metadata: **2,412 executed passed**, zero failures/errors; six skips separately reported by nextest. JUnit confirms `display_hook_without_pij_rs_leaves_the_reply_alone` actually ran with its delayed-write assertion; six daemon spawn guards also pass. Node22/24, Rust lint and delivers succeed; worktree clean and matching GitHub head/CLEAN.\n\nNo local build/test, shell-matrix rerun, hook install or live probe. This clean one-round verdict covers F173's fallback delta; P213-N001 and its genuine-Claude-traffic after-proof remain separate.\n"
+		}
+	]
+}
