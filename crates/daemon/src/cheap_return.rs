@@ -584,9 +584,24 @@ mod tests {
         let (services, tmux) = rig(&store).await;
         let before = "{\n  \"model\": \"claude-fable-5\"\n}\n";
         let home = settings_home("same", before);
-        tmux.queue_capture(format!("  {SWITCH_MODAL}\n   ❯ 1. Yes, switch to Fable"));
         let pending = pending("claude-fable-5", vec![home.clone()]);
-        let outcome = switch_back(&services, &pending, zero()).await;
+        tokio::time::pause();
+        let task = {
+            let (services, pending) = (services.clone(), pending.clone());
+            tokio::spawn(async move {
+                let timing = Timing {
+                    modal: Duration::from_secs(1),
+                    ..zero()
+                };
+                switch_back(&services, &pending, timing).await
+            })
+        };
+        run_for(Duration::from_millis(500)).await;
+        assert!(typed_model(&tmux), "{:?}", tmux.calls());
+        // The dialog shows; Claude rewrites the default to the value it had.
+        tmux.queue_capture(format!("  {SWITCH_MODAL}\n   ❯ 1. Yes, switch to Fable"));
+        run_for(Duration::from_secs(1)).await;
+        let outcome = task.await.unwrap();
         let switched = outcome.as_ref().unwrap();
         assert!(
             switched.typed && switched.confirmed && !switched.applied && switched.unconfirmed,
