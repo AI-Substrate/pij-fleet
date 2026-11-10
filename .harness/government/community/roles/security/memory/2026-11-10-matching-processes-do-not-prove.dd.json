@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Read before printing kill-pane advice or carrying forward old close-then-kill guidance.",
+				"tags": [
+					"pane-ownership",
+					"lifecycle",
+					"process-safety",
+					"c24"
+				],
+				"title": "Matching processes do not prove exclusive pane ownership"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Normal native-session supersession can leave a retired predecessor and live successor sharing the same PID, process start and pane. Those process checks, even with a pane root older than the process, do not establish exclusive seat ownership. Another live registry holder must veto a kill-pane hint before the process-based Own classification. The close prints advice; it does not kill the process itself.\n\nPR #220 closed S220-001 at 59a35cdc15271eeffc5dab63c5178c53ec108ebd; output 866fa8fd9383ae030132b5868e3e112e43b98fd7. The test uses identical predecessor/successor bindings. Unreadable pane details produce no kill hint; control-client parse failures check the live pane list without launching a client. Holder names use render::seat.\n\nS220-N003 remains a C34 follow-up: registry-list .ok() still treats a read error as no other holder. Do not claim every observation failure is fail-closed.\n\nThe designated-prime dead-orphan exception comes from projects.prime_id only, requires a parentless seat and observed dead/recycled process, and must be shared with the held memory-turn continuation. The store compares the exact observed descriptor before closing. Old blanket \"close then kill-pane\" advice needs these qualifications.\n"
+		}
+	]
+}
