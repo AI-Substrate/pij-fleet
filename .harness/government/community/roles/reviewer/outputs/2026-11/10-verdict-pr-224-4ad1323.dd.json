@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c43a-153c-7b72-9865-e4f816535bc7",
+				"date": "2026-11-10",
+				"head": "4ad13238048e1721953f27849bc10bcc43ef4e33",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:224",
+				"writer": "pij-polite-starfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#224 correctness review, round 1: PASS\n\nHead: 4ad13238048e1721953f27849bc10bcc43ef4e33.\n\nThe complete delta is the eight-line claude-opus-5.5 modelOverrides entry in .omp/models.yml. It targets the existing github-copilot base selector, pins contextWindow to 1000000 and maxTokens to 128000, and follows the neighboring Opus override mechanism. It does not replace the model ID, API, authentication, reasoning configuration or compatibility settings.\n\nReviewer-local Ruby YAML parsing and structural comparison against the merge-base config passed: removing just this new entry leaves the parsed config identical to the baseline. This proves valid YAML, the intended provider/model nesting and no unrelated configuration changes. Installed OMP's model-registry implementation recognizes modelOverrides, merges matching overrides into discovered models and treats an explicit contextWindow as pinned. No installed configuration or running seat was changed during review.\n\njust pr-freeze 224 returned FINAL at this exact head, clean detached tree, remote/GitHub head agreement and all latest checks passed. CI run 42769182987 is successful at this head: both Node check jobs, Rust lint/test and delivers passed. Node 22 Vitest records 2,281 passed and six skipped.\n\nLocal harness checks --quick was attempted: dependency-free pij-skill and copilot-native passed, while seven TS/tooling-dependent sensors failed because this review tree has no node_modules (including an incompatible ambient Biome fallback). No dependency install or symlink was attempted under C25. A subsequent full harness checks attempt was cancelled rather than continue heavy shared-machine validation after the known local tooling failures. The full local gate is not green and is not claimed as proof; exact-head CI is the relevant tooling proof for this read-only config review.\n\nNo correctness findings or notes owed. No loop, timer or launch is added. Existing OMP seats need the documented reload before the changed configuration takes effect; no reviewer-run live reload/model canary is claimed.\n"
+		}
+	]
+}
