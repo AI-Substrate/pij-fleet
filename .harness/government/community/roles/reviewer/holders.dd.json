@@ -1276,6 +1276,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-10T02:05:13.843Z",
 					"why": "#212 plan 226 lane A, FINAL 68ecd89"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T02:51:36.848Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "214",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "#214 F169+F170 (salmon), FINAL 6c831f4"
 				}
 			]
 		}
