@@ -1423,6 +1423,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "#224 OMP opus-5.5 1M override (prime), FINAL 654505d"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T06:50:39.799Z",
+					"harness": "copilot",
+					"harness_session": "6dcf7ce1-3bf1-4828-876b-e6c3aa567005",
+					"instance_key": "219",
+					"machine": "ops.osk.lan",
+					"seat": "pij-polite-starfish",
+					"why": "moved from stuck spoonbill (silkworm, 16:49)"
 				}
 			]
 		}

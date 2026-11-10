@@ -128,3 +128,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 219 | 2026-11-10T05:53:38.854Z | 2026-11-10T06:50:37.114Z | pij-steady-otter | pij-steady-otter | #219 F174 (salmon), FINAL 0a693ca | spoonbill stuck at 725k, compaction dropped twice (F180); moved to fresh reviewer (silkworm) |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 223 | 2026-11-10T06:06:26.296Z | — | pij-steady-otter | — | #223 F176 (kestrel), FINAL 881a3f5 | — |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 224 | 2026-11-10T06:29:53.020Z | — | pij-steady-otter | — | #224 OMP opus-5.5 1M override (prime), FINAL 654505d | — |
+| — | pij-polite-starfish | copilot | 6dcf7ce1-3bf1-4828-876b-e6c3aa567005 | ops.osk.lan | 219 | 2026-11-10T06:50:39.799Z | — | pij-steady-otter | — | moved from stuck spoonbill (silkworm, 16:49) | — |
