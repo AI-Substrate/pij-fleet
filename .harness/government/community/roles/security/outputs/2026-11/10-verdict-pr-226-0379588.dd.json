@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c494-ffe1-7dd2-9281-08e8c945bfca",
+				"date": "2026-11-10",
+				"head": "0379588ac951e565c287f2b885365c35749755e3",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/226#issuecomment-6762817186",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:226",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS\n\nPR #226 at **0379588ac951e565c287f2b885365c35749755e3**, under C33/C34. Reviewed the five-file delta and directly relevant governance/authentication paths.\n\n`READ_LEAVES` uses exact tuple membership for only `project list/show`, `stream list/show`, `fence show`, `node show`, and `spine events/render` (`crates/daemon/src/http/governance.rs:708-768`). `read()` implements only these eight, and `execute()` delegates to it. Listed reads preserve existing projections and do not reach writers; spine publishing remains separate (`724-756,1525-1643,1682-1734`).\n\nRoute/family agreement and parsing precede the callerless shortcut. Unknown verbs/flags, duplicate flags, aliases or prefixes do not expand it into writes. Both `--actor value` and `--actor=value`, including blank actor values, require caller resolution. A caller-bearing read retains the previous caller/actor checks (`governance.rs:385-607`).\n\n`has_caller()` and resolution use matching nonblank checks and existing wire aliases. Missing-caller refusals have HTTP 400, `details.code: E-RS-NO-CALLER`, and the documented message prefix (`http/identity.rs:67-86,1209-1270`).\n\nBearer authentication still gates governance. Peer keys remain refused, and job-token authentication remains confined to background emission (`http/mod.rs:425-449,479-512,714-789`). Actorless reads return nothing beyond existing local-key-seat reads; this is C33's user-account boundary, not a new unauthenticated or federation read surface.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None identified in scoped changes | - |\n\n**CI proof:** clean detached worktree HEAD and GitHub/remote heads agree; GitHub reports CLEAN and successful current checks. Run [42782287165](https://github.com/AI-Substrate/pij-fleet/actions/runs/42782287165) checked merge `cc8444276205f2fa451c0a4aa6154c5751652656`, whose parents are main `fa5e3d3c315caf3edd2124f1f1368ca4328e1fb8` and this exact head. Rust reports **2,429 passed, 6 skipped**. Successful artifact `13746642569` lists `read_leaves_answer_a_callerless_request_and_writes_still_need_a_caller` and existing governance guards as passed.\n\nThe HTTP regression covers all eight gate paths, write/actor refusals and missing-key 401. Its `stream show` case expects not-found rather than an existing-stream payload; no exhaustive successful-payload coverage is claimed. Static source review and existing CI only: no local builds/tests, live HTTP/process probes, config/credential reads or product mutations.\n"
+		}
+	]
+}
