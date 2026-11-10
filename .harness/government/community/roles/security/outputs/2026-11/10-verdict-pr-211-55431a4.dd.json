@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c2e8-9735-75a1-a8f1-d67ec7acce3c",
+				"date": "2026-11-10",
+				"head": "55431a459d5956fac5933dfab090dd43d63607f2",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/211#issuecomment-6755572216",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:211",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS\n\nPR #211, final round 2, at **55431a459d5956fac5933dfab090dd43d63607f2**. Reviewed only the delta from `04865ac60bebcef0a391ccf00521bf6e0fa22c1f`, under C33/C34.\n\nThe only changed file is `skills/pij/references/routes/community.md`. Both `directory add` examples at lines 19-20 now use concrete `--kind specialist --lifecycle long-lived --holders one` arguments. Line 30 separately lists the accepted alternatives and explains that `--from file:` supplies only the packet.\n\nThe values match help at `crates/core/src/directory.rs:114-116` and the field parser at `crates/daemon/src/http/directory.rs:485-490`. File-brief semantics match core help at line 111, the assignment to `fields.brief` at daemon `http/directory.rs:679`, and standing-packet construction at `community/role.rs:207-217`.\n\n**The prior nonblocking clarity note is closed.** No new security vulnerabilities were identified. The earlier review of unchanged material remains applicable; SKILL.md:42 and horse row 9/F169 remain excluded.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None identified in reviewed delta | - |\n\n**Proof:** clean detached worktree HEAD, GitHub head and remote branch agree. GitHub reports CLEAN and all five checks successful. CI run [42729865423](https://github.com/AI-Substrate/pij-fleet/actions/runs/42729865423) checked merge `427a049d2e10f77e168dcef0c751f31d67c37af9`, whose parents are base `e10198baa0b5e4432acf39233f5113d8a7b3a48b` and this exact head. Its Rust job reports **2,348 passed, 6 skipped**.\n\nStatic source review and existing CI only. No local builds/tests, example-command execution, product mutations, credential reads or live probes.\n"
+		}
+	]
+}
