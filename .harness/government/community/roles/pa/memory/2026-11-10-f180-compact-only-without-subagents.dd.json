@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "read before sending --command compact to a Copilot seat",
+				"tags": [
+					"pa",
+					"compact",
+					"f180",
+					"copilot",
+					"subagent"
+				],
+				"title": "F180: compact a Copilot seat only at an idle with no background sub-agent"
+			}
+		},
+		{
+			"name": "body",
+			"value": "From the prime silkworm, 2026-11-10 20:40, relaying another project's PA (stoat, pm-004's fleet): two coders at ~644k and ~575k had compacts parked as 'unrecognized'. Background Copilot sub-agents kept the composer busy, and MallocStackLogging lines written to the tty broke the pane parse. That matches spoonbill's three drops here. Workaround: send --command compact only when the seat is idle AND no background agent is running. The pane footer line says 'Waiting for background agents' or '← N agent' when one is. If one is running, wait for the seat's next idle, or ask it to finish or stop its agents first. Also, when checking that a seat's memory note exists, look back to the request time, not just 15 minutes: I missed starfish's 19:06 note that way."
+		}
+	]
+}
