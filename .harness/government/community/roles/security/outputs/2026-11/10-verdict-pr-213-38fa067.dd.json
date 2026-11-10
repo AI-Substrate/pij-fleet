@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c393-0e07-70c3-8e8a-e56bfe5e1719",
+				"date": "2026-11-10",
+				"head": "38fa067782317f1154a0aaf47c4319d4180e32d5",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/213#issuecomment-6758581600",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:213",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"S213-001 HIGH: raw Stop input/output siblings and MessageDisplay state must be private from creation; script umask077, files0600, private0700 parent, aborted state private or cleaned."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: BLOCK\n\nPR #213 at **38fa067782317f1154a0aaf47c4319d4180e32d5**, under C33/C34. Reviewed all 22 changed files and directly relevant installation, hook, caller, state-file and presentation paths.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| S213-001 | 🟠 HIGH | `harness/scripts/claude-stop-pij.sh`; `crates/cli/src/claude_display.rs` | 32-41; 186-219 | New plaintext reply/command artifacts can be readable by another OS account | 9/10 |\n\n### S213-001: private payloads are not private from creation\n\nThe Stop script reserves only its stderr base with `mktemp`. It creates sibling `$err.in` and `$err.out` with ordinary shell redirections, without a restrictive umask, explicit modes or a private temporary directory. Under a normal inherited umask of 022, these siblings are created as 0644. The `.in` file contains the complete raw Stop input, including `last_assistant_message` and inline command bodies; `.out` contains hook-answer JSON and can include echoed command text/refusal details.\n\nOn the supported shared `/tmp` fallback, another UID can discover and read those files before exit cleanup. The sticky bit does not prevent reading a world-readable file. No same-user impersonation, race against a secret random filename, or symlink manipulation is required. Previously, only the private stderr base existed; the payload-bearing siblings are new.\n\nThe MessageDisplay path has the same root problem: it creates `claude-display` with ordinary `create_dir_all`, writes serialized progress with `std::fs::write`, and renames the temporary file into place (`claude_display.rs:186-219`). `Progress.hidden` accumulates raw fenced command text (`38-51,86-88,115-123`). With umask 022 and accessible ancestors, the new directory is 0755 and temporary/final files are 0644. An aborted reply deliberately leaves its progress file, extending exposure. Neither this path nor the ordinary state-directory creation establishes a private ancestor.\n\n**Platform scope:** an inherited, private macOS per-user `$TMPDIR` protects the Stop sidecars through its private ancestor in the normal macOS setup; this review did not inspect that deployment's directory permissions. The shared `/tmp` fallback, common on Linux or when TMPDIR is unset, does not provide that protection. Display-state protection separately depends on the state directory's ancestors. Private TMPDIRs, inaccessible homes, ACLs or umask 077 can mitigate a particular deployment, but the code does not require them. This is a different-account confidentiality boundary, **not** an attack confined to C33's trusted user account.\n\nRequired cheap repair: set `umask 077` in the managed script; create payload/state files as 0600 within a private 0700 per-user directory, such as a private `$TMPDIR` or the managed state directory. Clean aborted-reply state or keep it private. Do not rely on the unrelated mktemp base's mode, a later chmod after writing, or cleanup for confidentiality. Keep the existing atomic state replacement and scoped cleanup.\n\n**Proof boundary:** this is source-derived under the stated ordinary permissions, not an executed exploit. No deployed file permissions, real hook inputs, secret-bearing replies or user settings were inspected.\n\n### Other requested checks\n\n- Managed installation/removal uses the existing planner, filters the five managed event/script names, refuses malformed settings, and retains unrelated settings (`crates/harnesses/src/claude_settings.rs:585-674,772-795,875-906`). Writes use backups and exclusive temporary-file creation followed by rename (`1041-1118,1206-1247`).\n- Message IDs have a bounded ASCII alphanumeric/`-`/`_` grammar; state remains under the configured state directory and final flush removes it (`crates/cli/src/claude_display.rs:154-223`). The ordering wait is bounded to one second and then best-effort, not an unconditional ordering guarantee.\n- Claude reply text travels as JSON/stdin, never shell code. Pane, session and cwd caller evidence is separate, and inherited seat ID is cleared (`crates/cli/src/claude_stop.rs:148-195`). Background branches close fd 3; exit cleanup names the three artifacts.\n- Copilot session-checks the hook invocation, selects only root assistant messages, resets on prompt/abort, deduplicates messages and sends registered caller context separately (`.copilot/extensions/pij/extension.mjs:151-176`; `store.mjs:2188-2220,2276-2323`).\n- Claude JSON `systemMessage`/`reason` and Copilot `session.log`/block reasons reuse daemon command/detail fencing; transport errors are clipped and control-escaped (`claude_stop.rs:49-130`; `store.mjs:2332-2381`; `crates/core/src/turn_end.rs:424-490`). That protects presentation, not plaintext-file confidentiality.\n\n**CI proof:** clean detached worktree HEAD and GitHub/remote heads agree; GitHub reports CLEAN and successful checks. Run [42751134764](https://github.com/AI-Substrate/pij-fleet/actions/runs/42751134764) checked merge `54be86aa3b9b8925ac0f1f67925446ad7cf7ecc2`, with parents main `f23b6dfa072a844c6a112c284b7dd2d79e180485` and this exact head. A read-only merge-tree composition check matches CI tree `b902a8f69514524ae8894919b5ccaf326ce28d7c`; this is not a claim that CI tested the standalone head tree. Rust reports **2,398 passed, 6 skipped**. Successful artifact `13734150751` includes display ordering, installed-script, Stop decision/rendering and stdout-closure cases. Node 22 reports 2,281 passed/6 skipped; native extension tests report 347 passed, zero failed.\n\nStatic source review and existing CI only. No local builds/tests, hook execution, real config/credential reads, live probes, pane interaction or product mutations. Live-E2E captures in the PR are author proof, not independent review execution.\n"
+		}
+	]
+}
