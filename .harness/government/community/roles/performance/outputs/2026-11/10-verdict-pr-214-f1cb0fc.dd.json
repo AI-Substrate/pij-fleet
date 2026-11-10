@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c386-b796-7402-97a8-d0b1fcfffba4",
+				"date": "2026-11-10",
+				"head": "f1cb0fc3bae3d17b13b3d9718a0d7e336b840f9b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/214#issuecomment-6758262568",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:214",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"#214 after-deploy fleet cost reading after merge and deployment PID packet"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `f1cb0fc3bae3d17b13b3d9718a0d7e336b840f9b`. Delta-only refresh of [the final-round verdict](https://github.com/AI-Substrate/pij-fleet/pull/214#issuecomment-6757975985), not another review round.\n\nVerified exactly one changed file, `pointer/worker.rs`, +78/-5. Every first rendering is now cached, including an unchanged/no-PA-line body. Resident retries reuse the first text and avoid repeating its role/backlog/repository reads. Removing the old comparison also removes its temporary whole-body clone.\n\n**No new idle-tick scan, timer, query or launch site.** Work remains per claimed job: bounded map lookup/insert, one stored whole-body copy on a miss, a whole-body clone on a hit, and removal through `forget_holds`. The existing drain/retry cadence is unchanged. Before insertion at capacity, the oldest job ID is evicted: **at most 64 entries**, not unbounded entry growth. The bound is entries, not payload bytes; restart/eviction limitations and P214-N001 still apply.\n\n**C34 follow-up / qualification:** cleanup is not universally “in-flight only.” The existing socket-refusal branch acknowledges `Outcome::Done` without calling `forget_holds` (`worker.rs:431-447`), so its cached body can remain until eviction. Successful delivery and the inspected failure/parking paths do remove entries. This does not defeat the 64-entry bound or establish an unbounded-growth/cost blocker.\n\n**Exact-head CI:** [42749050916](https://github.com/AI-Substrate/pij-fleet/actions/runs/42749050916), Rust job `129608025425`, upload artifact **13732882414**, matching head metadata: **2,379 executed passed**, zero failures/errors; six skips reported separately by nextest. JUnit confirms `a_retry_after_a_staged_abort_types_the_first_rendering_even_when_fyis_arrive` ran, plus all six spawn guards. Node22/24, Rust lint and final delivers succeed; worktree clean and GitHub head matches/CLEAN.\n\nPrior cost notes stand with the improved resident-retry behavior above. No local build/test/probe, mutation or synthetic traffic. **After-deploy reading remains owed.**\n"
+		}
+	]
+}
