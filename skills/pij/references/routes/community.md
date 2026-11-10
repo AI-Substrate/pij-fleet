@@ -78,7 +78,7 @@ pij directory memory add '<role>' --title '<t>' --hook '<one line>' [--tags '<a,
 
 - Before a role holder is compacted or closed (including one that released a role since its last compact), pij gives it a memory turn and holds the compact or close until that turn ends. Check the note landed and that its INDEX line reads well.
 - **Context**: 600k is the limit; compact at it. Never revive a large seat (revive resumes its whole conversation): spawn a fresh one on its handover. Record a role's model in its default seat (`--model` on add, or `--set model=<m>`: Sonnet for builders, Opus for the prime and hard design); pij doesn't apply it, so pass it when you spawn a holder.
-- **Closing**: `pij close` only tombstones the seat; then `tmux kill-pane` its pane, since the process keeps running.
+- **Closing**: `pij close` only tombstones the seat; the process keeps running, so kill its pane with the command the answer's `process` line names. It names one only while that pane still runs this seat (F175).
 - The view's `memory-stale` action marks a role whose last 2 closes left no memory note, with the holder's `memory add` line. Nudge the holder; never write its memory for it.
 - A cold Claude holder that must come back is a human's choice (plans 225, 225b). `pij-rs revive <seat>` refuses it, in one line, with three commands; the PA and prime offer all three and never pick: `--plain` (its own model, the full context re-read uncached), `--ask` (Sonnet 5.5, and it stays there; back later with `--model <id>`) or `--cheap` (compact on Sonnet, then back to its own model 5 s after the compaction starts, the user's default model untouched). A warm Claude seat revives on its own model with no choice. Nothing runs any of them automatically.
 
