@@ -1317,7 +1317,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "216",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #216 merged (1be68a2675cf)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-10T04:14:24.702Z",
 					"why": "#216 F171 (salmon), FINAL c04421a"
 				}
 			]

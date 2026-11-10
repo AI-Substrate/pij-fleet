@@ -119,4 +119,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 214 | 2026-11-10T02:51:36.848Z | 2026-11-10T03:39:44.034Z | pij-steady-otter | pij-far-jackal | #214 F169+F170 (salmon), FINAL 6c831f4 | PR #214 merged (f23b6dfa072a) |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 215 | 2026-11-10T03:47:50.707Z | — | pij-steady-otter | — | #215 plan 225 amendment (kestrel), FINAL 4b719a4 | — |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 213 | 2026-11-10T03:49:16.275Z | — | pij-steady-otter | — | #213 plan 226 lane B (lemur), FINAL 38fa067 | — |
-| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 216 | 2026-11-10T04:10:22.753Z | — | pij-steady-otter | — | #216 F171 (salmon), FINAL c04421a | — |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 216 | 2026-11-10T04:10:22.753Z | 2026-11-10T04:14:24.702Z | pij-steady-otter | pij-far-jackal | #216 F171 (salmon), FINAL c04421a | PR #216 merged (1be68a2675cf) |

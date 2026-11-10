@@ -845,7 +845,10 @@
 					"harness_session": "ef7816c2-f4dd-41a8-995d-94742dbced39",
 					"instance_key": "f171",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #216 merged (1be68a2675cf)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-rival-salmon",
+					"to": "2026-11-10T04:14:24.702Z",
 					"why": "F171 pij claim seeds from existing numbered files (stoat friction)"
 				},
 				{
