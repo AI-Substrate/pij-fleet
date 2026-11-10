@@ -1289,6 +1289,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-10T03:39:44.034Z",
 					"why": "#214 F169+F170 (salmon), FINAL 6c831f4"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T03:47:50.707Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "215",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "#215 plan 225 amendment (kestrel), FINAL 4b719a4"
 				}
 			]
 		}
