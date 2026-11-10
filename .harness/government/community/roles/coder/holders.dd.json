@@ -960,6 +960,16 @@
 					"seat": "pij-swift-kestrel",
 					"to": "2026-11-10T07:50:01.113Z",
 					"why": "F182 daemon CPU at rest: pane-tap opens and full registry lists (silkworm approved)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T07:58:23.027Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f184",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "F184 callerless read-only governance leaves + E-RS-NO-CALLER (chainglass prime, ruled by silkworm)"
 				}
 			]
 		}
