@@ -938,6 +938,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-swift-kestrel",
 					"why": "F176 unimatrix role requests not closed by in_reply_to replies (owns F154)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T06:47:38.080Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f182",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "F182 daemon CPU at rest: pane-tap opens and full registry lists (silkworm approved)"
 				}
 			]
 		}
