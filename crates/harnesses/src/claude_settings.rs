@@ -3406,6 +3406,14 @@ mod tests {
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped());
         let mut child = retry_etxtbsy(|| hook.spawn());
+        // Claude may write the flush after the hook has started. The hook reads
+        // it, as pij-rs would, rather than exiting on a pipe that is about to
+        // be written to (F173: the write then failed with a broken pipe).
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(
+            child.try_wait().expect("try_wait").is_none(),
+            "the hook waits for its input"
+        );
         std::io::Write::write_all(&mut child.stdin.take().expect("stdin"), FLUSH.as_bytes())
             .expect("write input");
         let output = wait_bounded(child, std::time::Duration::from_secs(10));

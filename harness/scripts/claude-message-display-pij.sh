@@ -21,5 +21,10 @@ done
 IFS=$saved_ifs
 set +f
 [ -z "$pij_rs" ] && [ -x "${HOME:-}/.npm-global/bin/pij-rs" ] && pij_rs=${HOME:-}/.npm-global/bin/pij-rs
-[ -n "$pij_rs" ] || exit 0
+if [ -z "$pij_rs" ]; then
+    # Read the flush anyway, as pij-rs would, so Claude's write never meets a
+    # closed pipe (F173). Builtins only: this path launches nothing either.
+    while IFS= read -r line; do :; done
+    exit 0
+fi
 exec "$pij_rs" hook claude-display
