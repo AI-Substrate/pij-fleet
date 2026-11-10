@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c393-0db0-72d1-b5c8-b362a1264c93",
+				"date": "2026-11-10",
+				"head": "38fa067782317f1154a0aaf47c4319d4180e32d5",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/213#issuecomment-6758563138",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:213",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N001: clarify that send blocks reject all --body-file forms; only outputs may name an existing body file, never stdin"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#213 correctness review, round 1: PASS-WITH-NOTES\n\nExact head: `38fa067782317f1154a0aaf47c4319d4180e32d5`. Plan 226 lane B, with lane A already merged. No blocking correctness finding.\n\n**N001: distinguish the two body-file rules in the skill.** `skills/pij/SKILL.md:93` says only `--body-file -` is refused and advises writing a file first and naming it. That is valid for an output, but a block's send rejects every `--body-file` argument, including a named path (`crates/daemon/src/http/turn_end.rs:199-204`). Clarify that send bodies must be inline/quoted, while outputs may use a named body file, never stdin. This is a nonblocking wording correction; invalid input is rejected before any command runs.\n\nThe requested paths were checked:\n\n- Claude Stop uses the existing managed hook and daemon handler. It shows the summary, returns a follow-up block only when `stop_hook_active` is false, and leaves the seat working for that follow-up (`crates/cli/src/claude_stop.rs:49-83,143-193`). Unknown outcomes advise checking before resending. The shell's background children close fd 3; its answer survives an idle-publication failure.\n- Display tracks enclosing backtick/tilde fences, holds a potential trailing pij block, carries its command count across ordered flushes, restores prose-followed/unterminated blocks, and leaves text-fenced examples visible (`crates/cli/src/claude_display.rs:54-143`). Flush indices wait for predecessor progress through atomic state-file replacement, bounded at one second (`:168-222`). The tests cover the line-boundary flushes used by the measured Claude integration, including a closing flush arriving first.\n- Copilot tracks the last root message, ignores subagents, resets on prompt/abort and deduplicates handed-over message IDs. The stop hook checks the live owning session and abort signal; failure blocks only when `stopHookActive` is false (`.copilot/extensions/pij/store.mjs:2188-2218,2300-2328`; `extension.mjs:151-164`). The block remains visible as intended.\n- Removal uses the existing managed-script classifier and writer, preserves foreign hook entries and non-hook settings, refuses malformed settings untouched, and leaves absent homes absent (`crates/harnesses/src/claude_settings.rs:565-674`). Installation is idempotent and reconciles stale managed commands. Doctor identifies missing/stale scripts and configuration with a fix; unlink calls the removal verb.\n\n**Evidence:** `just pr-freeze 213` returned FINAL at this head; detached tree remained clean. [CI run 42751134764](https://github.com/AI-Substrate/pij-fleet/actions/runs/42751134764) records the exact head. Its successful Rust job's [JUnit artifact 13734150751](https://github.com/AI-Substrate/pij-fleet/actions/runs/42751134764/artifacts/13734150751) lists 2,398 executed tests with zero failures/errors; nextest reports six additional skips. The display/state-order, Stop decision, fd-closure, managed-script/binary integration, removal, reconciliation and doctor cases ran and passed. Node 22's Copilot native suite passed 347 tests, including all eight new turn-end cases. The PR's live Claude/Copilot captures are author evidence, not reviewer-run runtime acceptance.\n\nCost inspection: Copilot adds no launch and one daemon call only for a candidate closing block. Claude Stop retains one pij-rs launch per stop. Display adds one process per flush, no daemon call, and a 2 ms file-check wait bounded at one second when its predecessor is not ready; this scales with streaming flushes, not idle seats. Author measurements and their lower-bound limitations are stated in the PR; independent live-fleet cost grading remains with performance. No local builds/tests, settings changes, hook installation/removal, lifecycle operations or product edits.\n"
+		}
+	]
+}
