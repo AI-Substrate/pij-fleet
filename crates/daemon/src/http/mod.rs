@@ -2329,24 +2329,25 @@ fn native_session_binds(seat: &SeatDescriptor, caller: Option<&CallerContext>) -
 
 /// A reply from a role request's holder answers it (plan 214, F68): the
 /// stored holder only, once, with its audit event in the same transaction
-/// (S152-001; ruling C32 (3)). Returns a receipt note when the send names an
-/// `in_reply_to` that answered nothing, and why (F176): a reply that silently
-/// answers nothing leaves its request's time limit running.
+/// (S152-001; ruling C32 (3)). Returns a receipt note when the send's
+/// `in_reply_to` names a role request it did not answer, and why (F176): a
+/// reply that silently answers nothing leaves its request's time limit
+/// running. An `in_reply_to` naming an ordinary message gets no note.
 pub(crate) async fn answered_by(
     state: &AppState,
     from: &SeatId,
     in_reply_to: Option<&str>,
     evidence: Option<ReplyEvidence>,
 ) -> Option<String> {
-    let id = in_reply_to?;
-    let shown = pij_core::render::msg_id(id);
-    let Some(evidence) = evidence else {
-        return Some(format!(
-            "in_reply_to {shown} is not a role request, so this reply marks none answered"
-        ));
+    // Evidence exists only when `in_reply_to` names a role request.
+    let (Some(id), Some(evidence)) = (in_reply_to, evidence) else {
+        return None;
     };
     let Ok(now_ms) = system_time_ms() else {
-        return Some(format!("request {shown} was not marked answered"));
+        return Some(format!(
+            "request {} was not marked answered",
+            pij_core::render::msg_id(id)
+        ));
     };
     let mut payload = serde_json::json!({"request": id, "from": from});
     if let (Some(payload), serde_json::Value::Object(evidence)) =

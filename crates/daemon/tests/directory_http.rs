@@ -6065,10 +6065,11 @@ async fn a_reply_from_the_holder_answers_the_request_and_stops_its_clock() {
         .unwrap_or_else(|| panic!("{listed}"));
     assert_eq!(entry["state"], "delivered", "{listed}");
     assert!(entry["answered_at"].is_u64(), "{listed}");
-    // A second reply, or one whose id is no role request, says what it did.
+    // A second reply says it answered nothing; a reply to an ordinary
+    // message keeps its receipt as it was.
     for (msg_id, to, note) in [
-        ("reply-again", "req-limit", "was already answered"),
-        ("reply-plain", "no-such-request", "is not a role request"),
+        ("reply-again", "req-limit", Some("was already answered")),
+        ("reply-plain", "no-such-request", None),
     ] {
         let again = send_to(
             rig.addr,
@@ -6082,12 +6083,16 @@ async fn a_reply_from_the_holder_answers_the_request_and_stops_its_clock() {
             }),
         )
         .await;
-        assert!(
-            again["data"]["warning"]
-                .as_str()
-                .is_some_and(|warning| warning.contains(note)),
-            "{again}"
-        );
+        assert_eq!(again["ok"], true, "{again}");
+        match note {
+            Some(note) => assert!(
+                again["data"]["warning"]
+                    .as_str()
+                    .is_some_and(|warning| warning.contains(note)),
+                "{again}"
+            ),
+            None => assert!(again["data"]["warning"].is_null(), "{again}"),
+        }
     }
 }
 
