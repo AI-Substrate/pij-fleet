@@ -1484,6 +1484,16 @@
 					"seat": "pij-polite-starfish",
 					"to": "2026-11-10T07:02:00.782Z",
 					"why": "moved from stuck spoonbill (silkworm, 16:49)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T07:41:12.958Z",
+					"harness": "copilot",
+					"harness_session": "6dcf7ce1-3bf1-4828-876b-e6c3aa567005",
+					"instance_key": "225",
+					"machine": "ops.osk.lan",
+					"seat": "pij-polite-starfish",
+					"why": "#225 F182 (kestrel), FINAL cb5744c"
 				}
 			]
 		}
