@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c449-fa21-7ce2-9503-947a98587df3",
+				"date": "2026-11-10",
+				"head": "e2142dc70556cd0a649f3c5f0ec7ee5b4c24f801",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/219#issuecomment-6761424562",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "performance",
+				"subject": "pr:219",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Performance PASS: #219 signal delta\n\nHead: `e2142dc70556cd0a649f3c5f0ec7ee5b4c24f801`. Reviewed only `31bf8fb74039744fcdb4b28cb392ed9393184ff5..e2142dc70556cd0a649f3c5f0ec7ee5b4c24f801`: two OMP TypeScript files, +72/-1. The detached review worktree is clean and its HEAD matches GitHub's CLEAN exact head.\n\n**P219-F002 is closed**, including the task-bearing spawn gap in S219-N001. `RustRuntimeSession.spawn` now supplies `opts.signal` to its follow-up task `send` at `rust-runtime.ts:719-725`. That send forwards the signal to the existing HTTP client; the refusal-wait path checks cancellation after its wait and before another attempt. The change adds no launch site, timer, loop or steady-state work beyond passing the options object. A cancelled wait cannot later queue the initial task after recovery.\n\nThe new unskipped regression creates a child, makes the task send receive ECONNREFUSED, aborts the spawn during the wait and makes the daemon available. It asserts rejection, one child, exactly one send attempt and zero task writes. This would fail the old omitted-signal path's attempt/write assertions. An already-created child is deliberately not rolled back; the fix makes no stronger promise.\n\nCI proof: [run 42772008143](https://github.com/AI-Substrate/pij-fleet/actions/runs/42772008143), exact matching head, successful after attempt 2. [Node 22 job 129683611306](https://github.com/AI-Substrate/pij-fleet/actions/runs/42772008143/job/129683611306) passes typecheck, lint and tests; its log records `rust-runtime.spawn.test.ts` with all 16 tests passing, and 2,290 Vitest tests passed with six skips separately. Node 24, Rust lint and the retried Rust test check are green. The ddocs check explicitly reported unavailable rather than validating docs; no docs changed in this delta. No local builds, tests, mutations or runtime probes were run for this review.\n\nThis is the requested delta-only closure, not another review round. Earlier cost qualifications remain unchanged; no new blocking finding.\n"
+		}
+	]
+}
