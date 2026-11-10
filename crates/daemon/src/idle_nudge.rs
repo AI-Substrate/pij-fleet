@@ -397,7 +397,12 @@ async fn nudge(
                     } else {
                         prime_cold_body(&seat.id, due.idle_ms, &due.held)
                     },
-                    format!("idle-nudge-fyi:{}:{}:{own}:{prime}", seat.id, due.anchor),
+                    format!(
+                        "{}{}:{}:{own}:{prime}",
+                        pij_core::fyi_watch::IDLE_NUDGE_FYI_ID_PREFIX,
+                        seat.id,
+                        due.anchor
+                    ),
                 ))
                 .await
                 .map(|receipt| receipt.outcome)

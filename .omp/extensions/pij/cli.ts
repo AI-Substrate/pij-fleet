@@ -19,20 +19,21 @@ const SEND_USAGE = `pij send <id> <text> [--json]
   pij send <id> --body-file <path|-> [--json]
   pij send <id> --force --reason "<why>" <text> [--json]
   --in-reply-to <msg-id> preserves reply correlation without changing the body.
-  --fyi holds a message until the recipient's next turn instead of waking them; the receipt
-    reads held (fyi), and adds a warning if the body looks like a question. Refused with a
-    control command.
-    Use \`--fyi\` only when the recipient's next action doesn't depend on it. If they'd be
-    stuck, wrong or waiting without it, it's a normal send. If they'd be fine not reading it
-    until their next turn, it's \`--fyi\`. If they'd be fine never reading it, don't send it.
-    Always normal sends: work done or a phase complete, review verdicts, hand-offs, blockers,
-    questions, decisions needed.
+  Before --fyi, ask: does the recipient have to do anything because of this message? Yes:
+    normal send, even if you need no reply. No: \`--fyi\`, which is only for information the
+    recipient does not have to act on. If they'd be fine never reading it, don't send it.
+    Never \`--fyi\`: "step done, your turn", hand-offs, "ready", work or a phase complete,
+    review verdicts, blockers, questions, decisions.
+    An FYI never wakes anyone: it is held until something else gives the recipient a turn,
+    so an idle seat may never see it. Five pending flush as one message once the seat is
+    warm. The receipt reads held (fyi), and adds a warning if the body looks like a
+    question. Refused with a control command.
     FYI examples: "merged #452, nothing needed from you"; "heads-up: main moved, rebase when
     you next touch it"; progress notes nobody is waiting on.
-  A cold recipient (large context, idle past its prompt-cache TTL, not working) refuses a
-    waking send with E-RS-COLD-WAKE and the price; nothing is sent. Resend with --fyi if
-    their next action doesn't depend on it, or add --force --reason "<why>" when the wake is
-    worth that price (audited on the spine).
+  A cold recipient (large context, idle over an hour, not working) refuses a waking send
+    with E-RS-COLD-WAKE and the price; nothing is sent. If the recipient has nothing to do
+    with it, resend with --fyi; if they have to act, add --force --reason "<why>" when the
+    wake is worth that price (audited on the spine), or let their parent decide.
   The receipt shows cold-check: clear | busy | forced | unknown: <why> (unknown allows the send).
   --body-file reads literal UTF-8 text from a path or stdin, without shell evaluation.
   Backticks and $(...) substitute in YOUR shell before pij starts: quoted relay text is UNSAFE.

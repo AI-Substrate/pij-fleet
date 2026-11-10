@@ -17,7 +17,7 @@ export interface RsHttpRoute extends RouteIdentity {
 	readonly query?: Readonly<Record<string, readonly string[] | null>>;
 	/** Query parameters the shim always sends, never taken from argv. */
 	readonly fixedQuery?: Readonly<Record<string, string>>;
-	readonly render?: (payload: unknown) => string;
+	readonly render?: (payload: unknown, argv: readonly string[]) => string;
 	readonly acknowledgePath?: string;
 	readonly readsBodyFile?: boolean;
 }
@@ -138,7 +138,7 @@ function renderState(payload: unknown): string {
 	return `${head}${detail.length === 0 ? "" : `\n  ${detail.join("  ·  ")}`}${deferred.length === 0 ? "" : `\n${deferred.join("\n")}`}${sized.length === 0 ? "" : `\n${sized.join("\n")}`}`;
 }
 
-function renderShimSend(payload: unknown): string {
+function renderShimSend(payload: unknown, argv: readonly string[]): string {
 	const outcome = field(payload, "outcome");
 	const word =
 		typeof outcome === "object" && outcome !== null
@@ -148,7 +148,9 @@ function renderShimSend(payload: unknown): string {
 	const msgId = text(payload, "msg_id") ?? "?";
 	if (word === "held" && reason === "fyi") {
 		const warning = text(payload, "warning");
-		return `pij send: held (fyi) — ${msgId}${warning === undefined ? "" : `\n${warning}`}`;
+		// F169: say the consequence; an FYI wakes no one.
+		const seat = argv.slice(1).find((arg) => !arg.startsWith("--")) ?? "the recipient";
+		return `pij send: held (fyi), ${seat} was NOT woken — ${msgId}${warning === undefined ? "" : `\n${warning}`}`;
 	}
 	const coldCheck = text(payload, "cold_check");
 	return `sent (rs) — msg ${msgId} — receipt ${String(word)}${reason === undefined ? "" : ` — ${reason}`}${coldCheck === undefined ? "" : ` — cold-check: ${coldCheck}`}`;
@@ -598,7 +600,7 @@ export function renderRsAnswer(
 	}
 	if (row === undefined || !("rsPath" in row))
 		return { kind: "no-renderer", message: "no HTTP response renderer for this invocation" };
-	if (row.render !== undefined) return { kind: "rendered", text: row.render(payload) };
+	if (row.render !== undefined) return { kind: "rendered", text: row.render(payload, argv) };
 	const line = text(payload, "line");
 	return { kind: "rendered", text: line ?? JSON.stringify(payload, null, 2) };
 }

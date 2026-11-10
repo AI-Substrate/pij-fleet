@@ -29,7 +29,7 @@ describe("pij list table (plan 160)", () => {
 			liveness: "alive",
 			sizeLines: [
 				"context 720k / 1M · last call 2h ago · cache 1h (cold 1h) · 3 compactions",
-				"❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi holds it for $0 now)",
+				"❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi only if it has nothing to do; wakes no one)",
 			],
 		};
 		const rendered = renderRsAnswer(findRoute("state", undefined), payload, ["state", "pij-cold"]);

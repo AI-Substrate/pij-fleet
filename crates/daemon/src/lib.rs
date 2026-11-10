@@ -19,6 +19,7 @@ pub mod death_sweep;
 pub mod delivery;
 pub mod events;
 pub mod federation;
+pub mod fyi_notes;
 mod idle_nudge;
 pub mod lifecycle;
 mod modal_stall;
@@ -156,6 +157,9 @@ pub struct Services {
     /// Context sizes native extensions report at turn boundaries (plan 217):
     /// they fill `session_status`'s unknown context facts.
     pub reported_context: Arc<reported_context::ReportedContext>,
+    /// Each seat's last size from the PA watchdog's round, read when a held
+    /// large-seat notice flushes (F170).
+    pub seat_sizes: Arc<fyi_notes::SeatSizes>,
     /// Usage-limit rejections from harness transcripts (plan 172 R3): the PA
     /// watchdog's limit-reset wake. Blocking; called off the reactor.
     pub usage_limits: Arc<dyn pij_core::usage_limit::UsageLimitSource>,
@@ -544,6 +548,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
 
     let orchestration = Arc::new(OrchestrationService::new());
 
+    let seat_sizes = Arc::new(fyi_notes::SeatSizes::default());
     let delivery = Arc::new(
         delivery::DeliveryService::new(
             Arc::clone(&registry),
@@ -552,7 +557,12 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
             Arc::clone(&interaction),
             Arc::clone(&event_bus),
         )?
-        .with_recovery_backends(config.adapters.queue, config.adapters.spine),
+        .with_recovery_backends(config.adapters.queue, config.adapters.spine)
+        .with_notes(Arc::new(fyi_notes::StoreNotes::new(
+            Arc::clone(&registry),
+            pij_store::SqliteOrchestration::new(spine_pool.clone()),
+            Arc::clone(&seat_sizes),
+        ))),
     );
     let roles = Arc::new(http::role::RoleService::new(
         Arc::clone(&registry),
@@ -642,6 +652,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         liveness,
         session_status,
         reported_context,
+        seat_sizes,
         usage_limits,
         delivery,
         roles,
@@ -1029,7 +1040,8 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
                 announcement_limit: config.pointer_announce_limit,
             },
         )?
-        .with_recovery_backends(config.adapters.queue, config.adapters.spine),
+        .with_recovery_backends(config.adapters.queue, config.adapters.spine)
+        .with_notes(services.delivery.notes()),
     );
 
     // 7. Validate the scheduler while refusal is still safe. Starting a worker

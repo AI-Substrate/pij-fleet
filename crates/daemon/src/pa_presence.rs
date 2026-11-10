@@ -14,6 +14,11 @@
 //!    wake: the prime is told once.
 //! 4. **Large seat.** A fleet seat over [`LARGE_SEAT_TOKENS`]: the prime gets
 //!    one FYI per crossing (never a wake); crossings in one round share it.
+//! 5. **FYI stall** (F169). A seat holding two or more peer FYIs, idle, the
+//!    oldest waiting 15 minutes: its scope's PA (the prime, with no live PA)
+//!    gets one normal message per backlog naming each FYI. An FYI wakes no
+//!    one, so a hand-off sent as one is a stall nobody sees. The seat itself
+//!    is never woken.
 //!
 //! "Active" ([`ScopePresence`]): the prime or a worker was observed working
 //! within [`FLEET_ACTIVE_WINDOW_MS`], and the scope is not on a usage limit.
@@ -29,6 +34,8 @@
 //! repeating it.
 //!
 //! **Cost.** No launch, timer or poll of its own. Per round: one claims read;
+//! one grouped read of pending peer FYIs over their pending-only index, and
+//! per seat newly due a stall notice one read of its pending FYIs;
 //! per live PA in an active scope (or with a standing dormant claim), one
 //! indexed `LIMIT 1` read of its latest `seat.activity`; per fleet seat that
 //! is working, was working last round, has no completed read, or has posted
@@ -39,6 +46,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use pij_core::BG_ACTOR;
+use pij_core::fyi_watch::{
+    FYI_STALL_ID_PREFIX, FYI_STALL_REASON, STALL_MIN_FYIS, stall_body, stalled,
+};
 use pij_core::model::{ProcIdentity, SeatDescriptor, SeatId, SystemState};
 use pij_core::session_status::SessionStatusBlock;
 use pij_core::usage_limit::limit_current;
@@ -200,6 +211,10 @@ impl PaWatchdog {
             self.large(services, seats, &scopes, designated, &mut claimed, now_ms)
                 .await,
         );
+        outcomes.extend(
+            self.fyi_stalls(services, seats, &scopes, &mut claimed, now_ms)
+                .await,
+        );
         {
             let mut trackers = self.presence.lock().await;
             let keys: HashSet<&String> = scopes.iter().map(|scope| &scope.key).collect();
@@ -232,7 +247,7 @@ impl PaWatchdog {
                     PresenceKind::Dormant | PresenceKind::Unresponsive => {
                         !seat.is_some_and(|seat| is_watched_pa(seat) && live(seat))
                     }
-                    PresenceKind::LargeSeat => !seat.is_some_and(live),
+                    PresenceKind::LargeSeat | PresenceKind::FyiStall => !seat.is_some_and(live),
                 }
             })
             .cloned()
@@ -784,7 +799,11 @@ impl PaWatchdog {
             }
             let pas: Vec<SeatId> = scope.pas.iter().map(|pa| pa.id.clone()).collect();
             let body = large_seats_body(&large, &pas);
-            let msg_id = format!("large-seats:{}:{now_ms}", prime.id);
+            let msg_id = format!(
+                "{}{}:{now_ms}",
+                pij_core::fyi_watch::LARGE_SEATS_ID_PREFIX,
+                prime.id
+            );
             let delivery = match services
                 .delivery
                 .hold_fyi(bg_msg(&prime.id, body, msg_id.clone()))
@@ -819,6 +838,149 @@ impl PaWatchdog {
                 kind,
                 to: prime.id.clone(),
                 subjects,
+                delivery,
+            });
+        }
+        outcomes
+    }
+
+    /// F169: a seat holding peer FYIs while idle may be stalled on one it had
+    /// to act on. Its scope's PA is told once per backlog with a normal send,
+    /// or the scope's prime with no live PA; the seat itself is never woken,
+    /// cold or warm. The claim re-arms when the backlog is gone or a newer FYI
+    /// arrives after the notice.
+    async fn fyi_stalls(
+        &self,
+        services: &Services,
+        seats: &[SeatDescriptor],
+        scopes: &[PresenceScope],
+        claimed: &mut BTreeMap<(PresenceKind, String), PresenceClaim>,
+        now_ms: u64,
+    ) -> Vec<RoundOutcome> {
+        let kind = PresenceKind::FyiStall;
+        let store = services.watchdogs();
+        let backlogs = match store.pending_peer_fyi_backlogs().await {
+            Ok(backlogs) => backlogs,
+            Err(cause) => {
+                eprintln!("pa watchdog: fyi stall: pending FYIs: {cause}");
+                return Vec::new();
+            }
+        };
+        // The newest FYI the notice covered, on the FYIs' own clock; a claim
+        // whose answer was never stamped falls back to when it was taken.
+        let standing: Vec<(String, u64)> = claimed
+            .values()
+            .filter(|claim| claim.kind == kind)
+            .map(|claim| {
+                let noticed = serde_json::from_str::<serde_json::Value>(&claim.detail)
+                    .ok()
+                    .and_then(|detail| detail["newest_ms"].as_u64())
+                    .unwrap_or(claim.claimed_at_ms);
+                (claim.subject.clone(), noticed)
+            })
+            .collect();
+        for (subject, noticed) in standing {
+            let backlog = backlogs.iter().find(|row| row.seat.as_str() == subject);
+            if backlog.is_none_or(|row| row.count < STALL_MIN_FYIS || row.newest_ms > noticed) {
+                Self::rearm(services, claimed, kind, &subject).await;
+            }
+        }
+        let mut outcomes = Vec::new();
+        for backlog in &backlogs {
+            let Some(seat) = seats
+                .iter()
+                .find(|seat| seat.id == backlog.seat && live(seat))
+            else {
+                continue;
+            };
+            if !stalled(backlog, seat.state, now_ms)
+                || claimed.contains_key(&(kind, seat.id.to_string()))
+            {
+                continue;
+            }
+            let Some(scope) = scope_for(scopes, seats, seat) else {
+                continue;
+            };
+            let mut to: Vec<&SeatDescriptor> =
+                scope.pas.iter().filter(|pa| pa.id != seat.id).collect();
+            if to.is_empty()
+                && let Some(prime) = scope.prime.as_ref().filter(|prime| prime.id != seat.id)
+            {
+                to.push(prime);
+            }
+            if to.is_empty() {
+                continue;
+            }
+            let fyis: Vec<_> = match store.pending_fyis(&seat.id).await {
+                Ok(fyis) => fyis
+                    .into_iter()
+                    .filter(|fyi| fyi.sender.as_str() != BG_ACTOR || fyi.from_machine.is_some())
+                    .collect(),
+                Err(cause) => {
+                    eprintln!("pa watchdog: fyi stall: FYIs of {}: {cause}", seat.id);
+                    continue;
+                }
+            };
+            if (fyis.len() as u64) < STALL_MIN_FYIS
+                || !Self::claim(services, claimed, kind, seat.id.as_str(), now_ms).await
+            {
+                continue;
+            }
+            let body = stall_body(&seat.id, &fyis, now_ms);
+            let mut told = Vec::new();
+            for target in &to {
+                let msg_id = format!("{FYI_STALL_ID_PREFIX}{}:{}:{now_ms}", seat.id, target.id);
+                let (delivery, cold_check) = wake_pa(
+                    services,
+                    target,
+                    body.clone(),
+                    msg_id.clone(),
+                    FYI_STALL_REASON,
+                    now_ms,
+                )
+                .await;
+                told.push(json!({
+                    "seat": target.id,
+                    "msg_id": msg_id,
+                    "delivery": delivery,
+                    "cold_check": cold_check,
+                }));
+            }
+            // One answer for the claim: released to retry only when every
+            // target refused or failed.
+            let delivery = told
+                .iter()
+                .filter_map(|row| row["delivery"].as_str())
+                .find(|delivery| !failed(delivery))
+                .or_else(|| told.first().and_then(|row| row["delivery"].as_str()))
+                .unwrap_or("error: no target")
+                .to_string();
+            let detail = json!({
+                "delivery": delivery,
+                "told": told,
+                "fyis": fyis.len(),
+                "newest_ms": backlog.newest_ms,
+            });
+            Self::settle(services, claimed, kind, seat.id.as_str(), now_ms, detail).await;
+            self.audit_change(
+                services,
+                kind,
+                seat.id.as_str(),
+                &seat.id,
+                PresenceVerdict::Send,
+                json!({
+                    "scope": scope.key,
+                    "fyis": fyis.len(),
+                    "oldest_ms": now_ms.saturating_sub(backlog.oldest_ms),
+                    "told": told,
+                }),
+                now_ms,
+            )
+            .await;
+            outcomes.push(RoundOutcome::Presence {
+                kind,
+                to: to[0].id.clone(),
+                subjects: vec![seat.id.to_string()],
                 delivery,
             });
         }
@@ -883,12 +1045,40 @@ impl PaWatchdog {
         }
         let ids: HashSet<&SeatId> = fleet.iter().map(|seat| &seat.id).collect();
         trackers.sizes.retain(|seat, _| ids.contains(seat));
+        // F170: a held large-seat notice is re-checked against these when it
+        // flushes.
+        services.seat_sizes.replace(
+            trackers
+                .sizes
+                .iter()
+                .filter_map(|(seat, cached)| cached.tokens.map(|tokens| (seat.clone(), tokens)))
+                .collect(),
+        );
         trackers.was_working = fleet
             .iter()
             .filter(|seat| seat.state == SystemState::Working)
             .map(|seat| seat.id.clone())
             .collect();
     }
+}
+
+/// The scope a seat belongs to: the first whose members hold it, else the
+/// first its parent chain reaches (as the large-seat fleets place it).
+fn scope_for<'a>(
+    scopes: &'a [PresenceScope],
+    seats: &[SeatDescriptor],
+    seat: &SeatDescriptor,
+) -> Option<&'a PresenceScope> {
+    scopes
+        .iter()
+        .find(|scope| scope.members.iter().any(|member| member.id == seat.id))
+        .or_else(|| {
+            scopes.iter().find(|scope| {
+                let members: HashSet<&SeatId> =
+                    scope.members.iter().map(|member| &member.id).collect();
+                descends(seat, seats, &members)
+            })
+        })
 }
 
 /// The designated prime of another scope is never in a fleet.

@@ -816,7 +816,10 @@ pub(crate) async fn send_as_caller(state: &AppState, request: ShimRequest) -> Re
         in_reply_to: call.in_reply_to,
         command: None,
     };
-    let question = call.fyi && pij_core::fyi::looks_like_a_question(&msg.body);
+    let warning = call
+        .fyi
+        .then(|| pij_core::fyi::hold_warning(&msg.body))
+        .flatten();
     let recipient = msg.to.clone();
     let (reply_from, reply_to) = (msg.from.clone(), msg.in_reply_to.clone());
     let accepted = if call.fyi {
@@ -828,7 +831,7 @@ pub(crate) async fn send_as_caller(state: &AppState, request: ShimRequest) -> Re
         Ok(mut receipt) => {
             receipt.cold_check = cold_check;
             if call.fyi {
-                super::fyi::after_hold(state, &recipient, question, &mut receipt).await;
+                super::fyi::after_hold(state, &recipient, warning, &mut receipt).await;
             }
             if !matches!(
                 receipt.outcome,

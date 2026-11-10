@@ -118,7 +118,18 @@ pub struct DrainWorker {
     /// earlier retries would fail on its first look. A restart starts the count
     /// again, which only lengthens a hold; no schema field exists for it.
     holds: std::sync::Mutex<std::collections::HashMap<u64, Held>>,
+    /// Hands a PA its fleet's waiting-FYIs line with each turn (F169).
+    notes: Option<Arc<dyn crate::fyi_notes::DeliveryNotes>>,
+    /// The body each job was first handed over with in this run, by job id,
+    /// so a retry types the same text and knows its own leftover (plan 184).
+    /// Every job's first rendering is kept, with a line or without one
+    /// (review of #214, F003), and dropped when the job ends. Bounded: the
+    /// oldest jobs are forgotten first.
+    noted: std::sync::Mutex<std::collections::BTreeMap<u64, String>>,
 }
+
+/// How many jobs' noted bodies the worker remembers.
+const NOTED_MEMORY: usize = 64;
 
 impl DrainWorker {
     /// Construct a worker and validate the retained pointer-policy configuration.
@@ -156,7 +167,45 @@ impl DrainWorker {
             clock: system_time_ms,
             recovery_authority_shared: true,
             holds: std::sync::Mutex::new(std::collections::HashMap::new()),
+            notes: None,
+            noted: std::sync::Mutex::new(std::collections::BTreeMap::new()),
         })
+    }
+
+    /// Append a PA's waiting-FYIs line to each turn handed to it (F169).
+    #[must_use]
+    pub(crate) fn with_notes(
+        mut self,
+        notes: Option<Arc<dyn crate::fyi_notes::DeliveryNotes>>,
+    ) -> Self {
+        self.notes = notes;
+        self
+    }
+
+    /// `msg` as handed to `recipient`: a PA's turn carries its fleet's
+    /// waiting FYIs as of this job's first hand-over in this run (review of
+    /// #214, F002), the same text on every retry.
+    async fn noted(&self, job_id: JobId, recipient: &SeatDescriptor, msg: Msg) -> Result<Msg> {
+        if self.notes.is_none() {
+            return Ok(msg);
+        }
+        let remembered = self
+            .noted
+            .lock()
+            .ok()
+            .and_then(|noted| noted.get(&job_id.0).cloned());
+        if let Some(body) = remembered {
+            return Ok(Msg { body, ..msg });
+        }
+        let msg =
+            crate::fyi_notes::noted(self.notes.as_deref(), recipient, msg, (self.clock)()?).await;
+        if let Ok(mut noted) = self.noted.lock() {
+            if noted.len() >= NOTED_MEMORY {
+                noted.pop_first();
+            }
+            noted.insert(job_id.0, msg.body.clone());
+        }
+        Ok(msg)
     }
 
     pub(crate) fn with_recovery_backends(
@@ -293,6 +342,7 @@ impl DrainWorker {
         if (recipient.harness == Harness::Copilot) != (job.kind == control_kind(&msg.to)) {
             return self.defer_body(job_id, "native-consumer-owned").await;
         }
+        let msg = self.noted(job_id, &recipient, msg).await?;
         let Some(pane) = recipient.pane.as_deref() else {
             return self.release_or_backoff(job_id, job, &msg, "paneless").await;
         };
@@ -926,6 +976,9 @@ impl DrainWorker {
             .lock()
             .expect("hold counts mutex")
             .remove(&job_id.0);
+        if let Ok(mut noted) = self.noted.lock() {
+            noted.remove(&job_id.0);
+        }
     }
 
     /// Fail a pane delivery by name and tell its sender: the job is terminal
@@ -3249,5 +3302,76 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A PA's waiting-FYIs line, switched on mid-test.
+    #[derive(Default)]
+    struct SwitchedNotes(std::sync::Mutex<Option<String>>);
+
+    #[async_trait]
+    impl crate::fyi_notes::DeliveryNotes for SwitchedNotes {
+        async fn pa_line(&self, _recipient: &SeatDescriptor, _now_ms: u64) -> Option<String> {
+            self.0.lock().expect("notes mutex").clone()
+        }
+
+        async fn fleet_now(
+            &self,
+        ) -> Option<std::collections::HashMap<SeatId, pij_core::fyi_watch::SeatNow>> {
+            None
+        }
+    }
+
+    /// Review of #214, F003: no FYIs wait on a PA's first typed attempt, the
+    /// paste aborts part-way, and an FYI arrives before the retry. The retry
+    /// types the first rendering again, so pij knows its own leftover, clears
+    /// it and delivers, instead of holding it as a human draft.
+    #[tokio::test]
+    async fn a_retry_after_a_staged_abort_types_the_first_rendering_even_when_fyis_arrive() {
+        let tmux = FakeTmux::new()
+            .with_clear_composer("%pa")
+            .script_stage_abort_after(15);
+        let mut fixture = fixture_with_grace(FakeTransport::unreachable(), tmux, 0);
+        let notes = Arc::new(SwitchedNotes::default());
+        fixture.worker = fixture.worker.with_notes(Some(
+            Arc::clone(&notes) as Arc<dyn crate::fyi_notes::DeliveryNotes>
+        ));
+        register(&fixture, seat("pij-pa", Some("%pa"))).await;
+        let msg = message("pij-pa", "check the stalled seat", None);
+        let id = enqueue(&fixture, &msg).await;
+        let framed = frame_message(&msg.from, None, &msg.body);
+
+        assert!(
+            fixture.worker.drain_once().await.is_err(),
+            "the paste aborts"
+        );
+        *notes.0.lock().expect("notes mutex") =
+            Some("Waiting FYIs: pij-x 2 (oldest 16m, idle)".to_string());
+        for _ in 0..2 {
+            if let Some((_, delay)) = fixture.queue.retried().last() {
+                fixture.queue.advance(*delay);
+            }
+            fixture.worker.drain_once().await.expect("retry");
+        }
+
+        let leftover: String = framed.chars().take(15).collect();
+        let leftover = pij_core::ports::staged_leftover(&leftover);
+        let calls = fixture.tmux.calls();
+        assert!(
+            calls.contains(&format!(
+                "clear_staged_leftover:%pa:{}",
+                leftover.chars().count()
+            )),
+            "pij's own leftover is cleared, not held as a draft: {calls:?}"
+        );
+        assert!(
+            calls.contains(&format!("submit:%pa:{framed}")),
+            "the first rendering is delivered: {calls:?}"
+        );
+        assert!(
+            !calls.iter().any(|call| call.contains("Waiting FYIs")),
+            "{calls:?}"
+        );
+        assert_eq!(fixture.queue.live_len(), 0, "delivered");
+        assert_eq!(fixture.queue.attempts(id), 2, "an abort and a clear");
     }
 }

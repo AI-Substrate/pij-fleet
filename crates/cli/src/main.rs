@@ -351,7 +351,7 @@ enum Command {
     },
     /// Durably enqueue one message as the acting seat.
     #[command(
-        after_long_help = "Examples:\n  pij send <id> 'hello'   (the pij shim forwards this form unchanged)\n  pij send role:<id>[/<instance>] 'hello' [--reply wake|fyi|none] [--limit 45m]   (to whoever holds the role)\n  pij-rs send --to <id> --body 'hello'\n  pij-rs send --to <id> --body-file -\n  pij-rs send --to <id> --fyi --body 'merged #452, nothing needed from you' (their next action doesn't depend on it: held, opens no turn)\n  pij-rs send --to <id> --force --reason 'prod is down' --body '...' (wake a cold seat anyway; audited)"
+        after_long_help = "Examples:\n  pij send <id> 'hello'   (the pij shim forwards this form unchanged)\n  pij send role:<id>[/<instance>] 'hello' [--reply wake|fyi|none] [--limit 45m]   (to whoever holds the role)\n  pij-rs send --to <id> --body 'hello'\n  pij-rs send --to <id> --body-file -\n  pij-rs send --to <id> --fyi --body 'merged #452, nothing needed from you' (nothing for them to do: held, wakes no one)\n  pij-rs send --to <id> --force --reason 'prod is down' --body '...' (wake a cold seat anyway; audited)"
     )]
     Send {
         /// Assert the derived sending seat. Omit to use PIJ_SESSION_ID or TMUX_PANE.
@@ -387,18 +387,19 @@ enum Command {
         /// Message id being answered.
         #[arg(long)]
         in_reply_to: Option<String>,
-        /// Use only when the recipient's next action doesn't depend on it. If they'd
-        /// be stuck, wrong or waiting without it, it's a normal send. If they'd be
-        /// fine not reading it until their next turn, it's `--fyi`. If they'd be fine
-        /// never reading it, don't send it. Always normal sends: work done or a phase
-        /// complete, review verdicts, hand-offs, blockers, questions, decisions
-        /// needed. Held until the recipient's next real turn (appended to their next
-        /// message or typed prompt); five pending flush as one message once the
-        /// seat is warm. Receipt: `held (fyi)`, with a warning when the body looks
-        /// like a question.
+        /// Test first: does the recipient have to do anything because of this
+        /// message? Yes: normal send, even if you need no reply. No: `--fyi`, which
+        /// is only for information the recipient does not have to act on. If
+        /// they'd be fine never reading it, don't send it. Never `--fyi`: "step
+        /// done, your turn", hand-offs, "ready", work or a phase complete, review
+        /// verdicts, blockers, questions, decisions. An FYI never wakes anyone: it
+        /// is held until something else gives the recipient a turn, so an idle
+        /// seat may never see it. Five pending flush as one message once the seat
+        /// is warm. Receipt: `held (fyi), <seat> was NOT woken`, with a warning
+        /// when the body looks like a question or reads as actionable.
         #[arg(long, conflicts_with = "command")]
         fyi: bool,
-        /// Wake a cold recipient anyway (large context, idle past the cache TTL).
+        /// Wake a cold recipient anyway (large context, idle over an hour).
         /// Requires --reason; the forced wake and its estimated price are audited.
         #[arg(long, conflicts_with_all = ["command", "fyi"], requires = "reason")]
         force: bool,
@@ -448,14 +449,19 @@ enum Command {
         via: String,
     },
     /// Read, in full, the FYIs one claim delivered (plan 159): the command a
-    /// digest names. Read-only.
+    /// digest names. With `--pending`, the FYIs still held for the seat, which
+    /// it has not seen (F169: what a PA reads before deciding to wake it).
+    /// Read-only.
     FyiRead {
-        /// The seat the FYIs were delivered to.
+        /// The seat the FYIs were delivered to, or are held for.
         #[arg(long)]
         seat: String,
         /// When they were claimed, in epoch ms, as the digest names it.
+        #[arg(long, required_unless_present = "pending", conflicts_with = "pending")]
+        claimed_at: Option<u64>,
+        /// Read the FYIs still held for the seat instead; nothing is claimed.
         #[arg(long)]
-        claimed_at: u64,
+        pending: bool,
     },
     /// Compact the current, daemon-derived seat.
     CompactSelf,
@@ -1535,7 +1541,11 @@ async fn run(cli: Cli) -> ExitCode {
                 response.raw_json = None;
             }
             if !cli.json
-                && let Some(held) = held_fyi_output(&response, &request.msg_id)
+                && let Some(held) = held_fyi_output(
+                    &response,
+                    &pij_core::address::render_destination(&request.to),
+                    &request.msg_id,
+                )
             {
                 println!("{held}");
                 return ExitCode::SUCCESS;
@@ -1592,9 +1602,17 @@ async fn run(cli: Cli) -> ExitCode {
             }
             ExitCode::SUCCESS
         }
-        Command::FyiRead { seat, claimed_at } => {
+        Command::FyiRead {
+            seat,
+            claimed_at,
+            pending,
+        } => {
             let response = client
-                .fyi_read(&serde_json::json!({"seat": seat, "claimed_at_ms": claimed_at}))
+                .fyi_read(&serde_json::json!({
+                    "seat": seat,
+                    "claimed_at_ms": claimed_at,
+                    "pending": pending,
+                }))
                 .await;
             if cli.json || !response.ok {
                 return emit(&response, cli.json);
@@ -1606,7 +1624,12 @@ async fn run(cli: Cli) -> ExitCode {
                 .filter(|block| !block.is_empty())
             {
                 Some(block) => println!("{block}"),
-                None => println!("pij fyi-read: no FYIs were delivered to {seat} at {claimed_at}"),
+                None => match claimed_at {
+                    Some(claimed_at) => {
+                        println!("pij fyi-read: no FYIs were delivered to {seat} at {claimed_at}")
+                    }
+                    None => println!("pij fyi-read: no FYIs are held for {seat}"),
+                },
             }
             ExitCode::SUCCESS
         }
@@ -2961,13 +2984,18 @@ fn with_memory_turn(
 /// Is this send receipt an FYI held for the recipient's next turn?
 /// The human line for a held FYI, with the receipt's warning (plan 159) on
 /// the next line. `None` when the send was not held as an FYI.
-fn held_fyi_output(response: &Envelope<pij_core::model::Receipt>, msg_id: &str) -> Option<String> {
+fn held_fyi_output(
+    response: &Envelope<pij_core::model::Receipt>,
+    to: &str,
+    msg_id: &str,
+) -> Option<String> {
     let receipt = response.data.as_ref().filter(|_| response.ok)?;
     if !matches!(&receipt.outcome, pij_core::model::DeliveryOutcome::Held { reason } if reason == "fyi")
     {
         return None;
     }
-    let mut line = format!("pij send: held (fyi) — {msg_id}");
+    // F169: say the consequence; an FYI wakes no one.
+    let mut line = format!("pij send: held (fyi), {to} was NOT woken — {msg_id}");
     if let Some(warning) = &receipt.warning {
         line.push('\n');
         line.push_str(warning);
@@ -5067,7 +5095,7 @@ PEC notice";
     fn state_prints_the_daemons_size_lines() {
         let lines = [
             "context 720k / 1M · last call 2h ago · cache 1h (cold 1h) · 3 compactions",
-            "❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi holds it for $0 now)",
+            "❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi only if it has nothing to do; wakes no one)",
         ];
         let card: pij_daemon::http::StateCard = serde_json::from_value(serde_json::json!({
             "id": "pij-cold", "state": "idle", "liveness": "active", "cwd": "/abs/tree",
@@ -5332,15 +5360,19 @@ PEC notice";
             envelope
         };
         assert_eq!(
-            super::held_fyi_output(&receipt(Some(pij_core::fyi::QUESTION_WARNING)), "m-1")
-                .as_deref(),
+            super::held_fyi_output(
+                &receipt(Some(pij_core::fyi::QUESTION_WARNING)),
+                "pij-x",
+                "m-1"
+            )
+            .as_deref(),
             Some(
-                "pij send: held (fyi) — m-1\nthis looks like a question; if you need an answer, resend without --fyi"
+                "pij send: held (fyi), pij-x was NOT woken — m-1\nthis looks like a question; if you need an answer, resend without --fyi"
             )
         );
         assert_eq!(
-            super::held_fyi_output(&receipt(None), "m-1").as_deref(),
-            Some("pij send: held (fyi) — m-1")
+            super::held_fyi_output(&receipt(None), "pij-x", "m-1").as_deref(),
+            Some("pij send: held (fyi), pij-x was NOT woken — m-1")
         );
     }
 

@@ -8436,7 +8436,7 @@ async fn the_state_card_shows_size_coldness_and_the_guard() {
     );
     assert_eq!(
         lines[1],
-        "❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi holds it for $0 now)"
+        "❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi only if it has nothing to do; wakes no one)"
     );
     server.abort();
 }

@@ -318,7 +318,10 @@ fn sql_ms(ms: u64) -> Result<i64> {
     })
 }
 
-fn decode_fyi(row: &sqlx::sqlite::SqliteRow, recipient: &SeatId) -> Result<pij_core::fyi::HeldFyi> {
+pub(crate) fn decode_fyi(
+    row: &sqlx::sqlite::SqliteRow,
+    recipient: &SeatId,
+) -> Result<pij_core::fyi::HeldFyi> {
     Ok(pij_core::fyi::HeldFyi {
         id: row.try_get("id").map_err(adapter_error)?,
         recipient: recipient.clone(),

@@ -44,6 +44,58 @@ pub fn looks_like_a_question(body: &str) -> bool {
     body.contains('?')
 }
 
+/// The receipt's caution on a held FYI that reads as something the recipient
+/// has to act on (F169). A warning only, like [`QUESTION_WARNING`]: the FYI is
+/// still held, never converted or refused.
+pub const ACTIONABLE_WARNING: &str = "this reads as actionable: send it normally so it wakes them";
+
+/// Words that mark a body as actionable (F169): a hand-off, a ready, a
+/// verdict, a blocker or a request. Matched case-insensitively at the start of
+/// a word, so `completed` and `reviewer` count and `already` does not.
+pub const ACTIONABLE_MARKERS: [&str; 15] = [
+    "done",
+    "complete",
+    "ready",
+    "your turn",
+    "over to you",
+    "handing off",
+    "handing over",
+    "hand-off",
+    "handoff",
+    "blocked",
+    "please",
+    "can you",
+    "review",
+    "verdict",
+    "pr #",
+];
+
+/// Does an FYI body read as something the recipient has to act on? A false
+/// warning costs a glance; a missed hand-off stalls a seat (F169).
+pub fn looks_actionable(body: &str) -> bool {
+    let lower = body.to_lowercase();
+    ACTIONABLE_MARKERS.iter().any(|marker| {
+        lower.match_indices(marker).any(|(at, _)| {
+            lower[..at]
+                .chars()
+                .next_back()
+                .is_none_or(|before| !before.is_alphanumeric())
+        })
+    })
+}
+
+/// The caution a held FYI's receipt carries, if any: a question first, then
+/// an actionable body (F169).
+pub fn hold_warning(body: &str) -> Option<&'static str> {
+    if looks_like_a_question(body) {
+        Some(QUESTION_WARNING)
+    } else if looks_actionable(body) {
+        Some(ACTIONABLE_WARNING)
+    } else {
+        None
+    }
+}
+
 /// How a block opens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Lead {
@@ -136,6 +188,29 @@ pub fn render_read(fyis: &[HeldFyi], utc_offset_minutes: i32) -> String {
         "1 FYI was delivered to you:".to_string()
     } else {
         format!("{} FYIs were delivered to you:", ordered.len())
+    };
+    push_numbered(&mut block, &ordered, 0, utc_offset_minutes);
+    block
+}
+
+/// Every FYI still held for one seat, in full, for `pij-rs fyi-read
+/// --pending` (F169): what a PA reads before deciding to wake the seat.
+pub fn render_pending(fyis: &[HeldFyi], utc_offset_minutes: i32) -> String {
+    let ordered = oldest_first(fyis);
+    let Some(first) = ordered.first() else {
+        return String::new();
+    };
+    let mut block = if ordered.len() == 1 {
+        format!(
+            "1 FYI is held for {}, not yet seen:",
+            first.recipient.rendered()
+        )
+    } else {
+        format!(
+            "{} FYIs are held for {}, not yet seen:",
+            ordered.len(),
+            first.recipient.rendered()
+        )
     };
     push_numbered(&mut block, &ordered, 0, utc_offset_minutes);
     block
@@ -381,5 +456,36 @@ mod tests {
     #[test]
     fn the_block_follows_the_body_after_a_blank_line() {
         assert_eq!(append_block("do X", "Also, …"), "do X\n\nAlso, …");
+    }
+
+    /// F169: a hand-off, a ready, a verdict or a request held as an FYI is
+    /// warned about; information is not. A question keeps its own warning.
+    #[test]
+    fn an_actionable_fyi_is_warned_about_and_information_is_not() {
+        for actionable in [
+            "Step 3 done, your turn",
+            "READY for review",
+            "over to you",
+            "handing off the branch",
+            "blocked on the lock",
+            "please rebase",
+            "verdict: pass",
+            "PR #212 is final at abc",
+            "Phase 2 completed",
+        ] {
+            assert_eq!(
+                hold_warning(actionable),
+                Some(ACTIONABLE_WARNING),
+                "{actionable}"
+            );
+        }
+        for information in [
+            "merged #452, nothing needed from you",
+            "already merged upstream",
+            "load is ~91, the lock will queue",
+        ] {
+            assert_eq!(hold_warning(information), None, "{information}");
+        }
+        assert_eq!(hold_warning("done? can you check"), Some(QUESTION_WARNING));
     }
 }
