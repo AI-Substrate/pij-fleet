@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c3ab-7b23-73e3-98bb-ea1702ec5d97",
+				"date": "2026-11-10",
+				"head": "028d340f8e4dcb51c9e44aff4247891c0e9cf7d7",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/213#issuecomment-6758846066",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:213",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"#213 after-deploy fleet reading with genuine Claude text traffic; daemon counters exclude host-owned display hooks"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES**, round 2 (final under C34), at `028d340f8e4dcb51c9e44aff4247891c0e9cf7d7`.\n\n**Delta verified:** the Stop wrapper uses builtin `umask 077`, one private `mktemp -d` directory for reply/answer/stderr, and one EXIT cleanup invocation. This replaces the existing mktemp-file/cleanup pair; it does not add another process per stop. Recursive cleanup now walks that small private directory. The one `pij-rs` invocation, candidate RPC gate, watchdog bounds and fd3 closures are unchanged.\n\nDisplay-state privacy uses Rust filesystem operations, **not an external chmod launch**. Each non-final state write now ensures/inspects its directory, conditionally tightens a laxer mode, attempts stale-temp removal, creates a new 0600 temp file, writes and renames it; failure adds a temp-unlink attempt. The metadata check is per state write, not inside the 2ms ordering-read loop, and chmod occurs only when group/other permission bits are present. CI confirms 0700/0600, tightening an existing 0755 directory, and Stop-directory removal.\n\nThe skill's inline quoted-send versus output-file/no-stdin wording is corrected without runtime work.\n\n**Round-1 P213-N001 remains a named C34 follow-up**, now explicitly in Known limits. No change to one host-owned display exec per flush of every Claude reply, linear seat scaling, the 2ms ordering poll with a 1s deadline, growing hidden-block state or aborted-file retention. The cost section no longer labels 16 flushes/3s a universal ceiling. Daemon counters and the six daemon spawn guards still exclude these host-owned launches; the sampler's hook rows remain lower bounds. The longer-lived Stop watchdog sleep qualification is also retained.\n\nNo new periodic loop, launch site or RPC introduced by this delta; the added cost is per-write filesystem metadata/cleanup. No normal-use performance blocker established.\n\n**Exact-head CI:** [42754075360](https://github.com/AI-Substrate/pij-fleet/actions/runs/42754075360), Rust job `129624245202`, successful-upload artifact **13735610285**, matching head metadata: **2,400 executed passed**, zero failures/errors; six skips separately reported by nextest. JUnit names both new permission/cleanup tests and the existing ordering, installed-script, stdout-EOF and six spawn-guard cases. Node22/24, Rust lint and final delivers succeed; worktree clean and matching GitHub head/CLEAN.\n\nNo local build/test/probe, hook install/reload, live settings/transcript read or synthetic traffic. **The after-deploy reading with genuine Claude text traffic remains owed; no new runtime measurement is claimed.**\n"
+		}
+	]
+}
