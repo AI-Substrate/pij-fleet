@@ -837,6 +837,16 @@
 					"seat": "pij-rival-salmon",
 					"to": "2026-11-10T03:39:44.034Z",
 					"why": "restore until #214 merges (pij delivered ends it)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T03:40:28.866Z",
+					"harness": "copilot",
+					"harness_session": "ef7816c2-f4dd-41a8-995d-94742dbced39",
+					"instance_key": "f171",
+					"machine": "ops.osk.lan",
+					"seat": "pij-rival-salmon",
+					"why": "F171 pij claim seeds from existing numbered files (stoat friction)"
 				}
 			]
 		}
