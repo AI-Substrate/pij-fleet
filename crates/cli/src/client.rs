@@ -531,7 +531,7 @@ impl DaemonClient {
             };
             request = request.query(&[("since", encoded)]);
         }
-        let response = match self.send(request).await {
+        let response = match self.transmit(request).await {
             Ok(response) => response,
             Err(unreached) => {
                 return Err(Box::new(refusal("pij tail", ErrorKind::Adapter, unreached)));
@@ -561,7 +561,7 @@ impl DaemonClient {
 
     /// Send `request` with the key. A refused connection is tried again for
     /// the client's restart wait (F174); `Err` is the sentence to refuse with.
-    async fn send(
+    async fn transmit(
         &self,
         request: reqwest::RequestBuilder,
     ) -> std::result::Result<reqwest::Response, String> {
@@ -628,7 +628,7 @@ impl DaemonClient {
         command: &str,
         request: reqwest::RequestBuilder,
     ) -> Envelope<T> {
-        let response = match self.send(request).await {
+        let response = match self.transmit(request).await {
             Ok(response) => response,
             Err(unreached) => return refusal(command, ErrorKind::Adapter, unreached),
         };
