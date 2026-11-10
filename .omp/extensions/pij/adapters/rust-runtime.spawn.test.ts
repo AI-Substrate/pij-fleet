@@ -429,6 +429,71 @@ it("refuses spawning when the daemon cannot report retirement policy", async () 
 	expect(tmux.splits).toEqual([]);
 });
 
+it("P219-F002: a spawn cancelled while its task send waits out a bounce never writes the task", async () => {
+	const controller = new AbortController();
+	const spawns: Record<string, unknown>[] = [];
+	const taskWrites: Record<string, unknown>[] = [];
+	let sendAttempts = 0;
+	let daemonDown = true;
+	const client = new PijDaemonClient({ addr: "127.0.0.1:1", stateDir: "/unused" }, "key", {
+		fetch: async (url, init) => {
+			const path = new URL(String(url)).pathname;
+			if (path === "/health")
+				return new Response(
+					JSON.stringify({ ok: true, command: "health", v: 2, data: { retired_harnesses: [] } }),
+				);
+			if (path === "/v1/spawn") {
+				spawns.push(JSON.parse(String(init?.body)));
+				return new Response(
+					JSON.stringify({
+						ok: true,
+						command: "pij spawn",
+						v: 2,
+						data: { id: "pij-kid", spawn_id: "s1", pane: "%9" },
+					}),
+				);
+			}
+			if (path === "/v1/send") {
+				sendAttempts += 1;
+				if (daemonDown)
+					throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } });
+				const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+				taskWrites.push(body);
+				return new Response(
+					JSON.stringify({
+						ok: true,
+						command: "pij send",
+						v: 2,
+						data: { msg_id: body.msg_id, outcome: { outcome: "queued" }, at: 1 },
+					}),
+				);
+			}
+			throw new Error(`unexpected path ${path}`);
+		},
+		readFile: async () => "key",
+		processStart: () => 1,
+		// The task send meets the bounce; the spawn is cancelled while it waits, then the daemon
+		// is back.
+		sleep: async () => {
+			controller.abort();
+			daemonDown = false;
+		},
+	});
+	const runtime = new RustRuntimeSession(client, new FakeTmux(), []);
+	await expect(
+		runtime.spawn({
+			harness: "copilot",
+			cwd: "/repo",
+			layout: "window",
+			task: "do the thing",
+			signal: controller.signal,
+		}),
+	).rejects.toThrow();
+	expect(spawns).toHaveLength(1);
+	expect(sendAttempts).toBe(1);
+	expect(taskWrites).toEqual([]);
+});
+
 it("forwards a placement role on the daemon spawn route and refuses it on the local omp/pi path", async () => {
 	const bodies: Record<string, unknown>[] = [];
 	const client = new PijDaemonClient({ addr: "127.0.0.1:1", stateDir: "/unused" }, "key", {

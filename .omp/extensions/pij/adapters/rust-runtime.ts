@@ -716,7 +716,13 @@ export class RustRuntimeSession {
 			);
 			if (!child.spawn_id || !child.pane)
 				return err("E-NOREG", "daemon spawn returned no spawn identity or pane");
-			if (opts.task !== undefined) await this.send(child.id, opts.task);
+			// The spawn's abort covers its task send too (review of #219, P219-F002).
+			if (opts.task !== undefined)
+				await this.send(
+					child.id,
+					opts.task,
+					opts.signal === undefined ? {} : { signal: opts.signal },
+				);
 			const spawned = { spawnId: child.spawn_id, paneId: child.pane };
 			return ok({ ...spawned, registration: await this.awaitRegistration(spawned) });
 		}
