@@ -899,6 +899,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-rival-salmon",
 					"why": "F174 CLI/extension retry while the daemon restarts (stoat friction)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T05:04:27.038Z",
+					"harness": "copilot",
+					"harness_session": "a400e300-fa07-43e7-8444-52c45ecf15d5",
+					"instance_key": "f162",
+					"machine": "ops.osk.lan",
+					"seat": "pij-doubtful-lemur",
+					"why": "F162 promoted (prime): standing-by Copilot session lease retries are the main launch source"
 				}
 			]
 		}
