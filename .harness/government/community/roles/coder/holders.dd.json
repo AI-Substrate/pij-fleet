@@ -973,6 +973,16 @@
 					"seat": "pij-swift-kestrel",
 					"to": "2026-11-10T08:36:22.548Z",
 					"why": "F184 callerless read-only governance leaves + E-RS-NO-CALLER (chainglass prime, ruled by silkworm)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T08:38:02.857Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "f185",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "F185 cut remaining at-rest SQLite reads (silkworm approved; after F184)"
 				}
 			]
 		}
