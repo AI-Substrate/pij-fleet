@@ -2547,6 +2547,17 @@ mod tests {
             activity: &str,
             payload: &str,
         ) -> (std::process::Output, std::time::Duration) {
+            self.run_bounded(mode, activity, payload, "1")
+        }
+
+        /// `bound` is the Stop script's watchdog, in seconds, on both paths.
+        fn run_bounded(
+            &self,
+            mode: &str,
+            activity: &str,
+            payload: &str,
+            bound: &str,
+        ) -> (std::process::Output, std::time::Duration) {
             use std::io::Write as _;
             use std::process::Stdio;
 
@@ -2555,8 +2566,8 @@ mod tests {
                 .env("HOME", self.root.path())
                 .env("PIJ_RS_STATE_DIR", self.root.path().join("state"))
                 .env("PIJ_RS_FYI_CLAIM_TIMEOUT", "1")
-                .env("PIJ_RS_ACTIVITY_TIMEOUT", "1")
-                .env("PIJ_RS_TURN_END_TIMEOUT", "1")
+                .env("PIJ_RS_ACTIVITY_TIMEOUT", bound)
+                .env("PIJ_RS_TURN_END_TIMEOUT", bound)
                 .env("TMUX_PANE", "%42")
                 .env("PIJ_SESSION_ID", "pij-inherited-seat")
                 .env("FAKE_MODE", mode)
@@ -2887,6 +2898,26 @@ mod tests {
                 "refused:turn-end pane=%42 status=143 reason=\n",
             )
         );
+    }
+
+    /// Claude reads a hook's stdout to its end, and from 2.1.322 it refuses a
+    /// block answer while a leftover child still holds that pipe. Under a long
+    /// watchdog the script's stdout must close when the script exits.
+    #[cfg(unix)]
+    #[test]
+    fn stop_hook_closes_claudes_stdout_when_it_exits() {
+        let rig = HookRig::stop();
+        for (mode, payload) in [
+            ("answer", BLOCK_STOP),
+            ("block", r#"{"session_id":"sess-7"}"#),
+        ] {
+            let (output, took) = rig.run_bounded(mode, "ok", payload, "30");
+            assert!(output.status.success(), "{mode}");
+            assert!(
+                took < pij_testkit::time::scaled(std::time::Duration::from_secs(5)),
+                "{mode}: stdout held open for {took:?}"
+            );
+        }
     }
 
     const DISPLAY_HOOK: &str = "/Users/test/.pij-rs/claude-message-display-pij.sh";

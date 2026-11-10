@@ -9,7 +9,9 @@
 # every failure is one hook.log line and exit 0.
 set -u
 # Nothing on stdout or stderr but the answer (fd 3): the shell's job-kill
-# notices included.
+# notices included. No background child gets fd 3 (`3>&-`): Claude reads the
+# hook's stdout to its end, and from 2.1.322 it refuses a block answer when a
+# leftover child (the watchdog's sleep) still holds it open.
 exec 3>&1 >/dev/null 2>/dev/null
 
 [ -n "${TMUX_PANE:-}" ] || exit 0
@@ -35,7 +37,7 @@ case $input in
 *'```pij'*)
     # The daemon parses for real; a fence mid-reply only publishes idle there.
     printf '%s\n' "$input" >"$err.in" || exit 0
-    env -u PIJ_SESSION_ID "$pij_rs" hook claude-stop --pane "$TMUX_PANE" <"$err.in" >"$err.out" 2>"$err" &
+    env -u PIJ_SESSION_ID "$pij_rs" hook claude-stop --pane "$TMUX_PANE" <"$err.in" >"$err.out" 2>"$err" 3>&- &
     publish=$!
     bound=${PIJ_RS_TURN_END_TIMEOUT:-35}
     ;;
@@ -46,15 +48,15 @@ case $input in
     command -v jq >/dev/null 2>&1 &&
         { session=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null) || session=""; }
     if [ -n "$session" ]; then
-        env -u PIJ_SESSION_ID "$pij_rs" activity --pane "$TMUX_PANE" --native-session "$session" --state idle 2>"$err" </dev/null &
+        env -u PIJ_SESSION_ID "$pij_rs" activity --pane "$TMUX_PANE" --native-session "$session" --state idle 2>"$err" </dev/null 3>&- &
     else
-        env -u PIJ_SESSION_ID "$pij_rs" activity --pane "$TMUX_PANE" --state idle 2>"$err" </dev/null &
+        env -u PIJ_SESSION_ID "$pij_rs" activity --pane "$TMUX_PANE" --state idle 2>"$err" </dev/null 3>&- &
     fi
     publish=$!
     bound=${PIJ_RS_ACTIVITY_TIMEOUT:-3}
     ;;
 esac
-(sleep "$bound" && kill "$publish") </dev/null &
+(sleep "$bound" && kill "$publish") </dev/null 3>&- &
 watchdog=$!
 status=0
 wait "$publish" || status=$?

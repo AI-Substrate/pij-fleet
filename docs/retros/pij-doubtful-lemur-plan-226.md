@@ -31,6 +31,14 @@ have turned each of those into a one-command check.
   `taskpolicy -b` throttles IO too, so cargo sat at 0% CPU unpacking a crate.
   The shared target fixed it.
 - D-226-6: Claude's folder-trust prompt defaults to "No, exit".
+- D-226-7: Claude Code moved from 2.1.321 to 2.1.322 mid-plan, and 2.1.322
+  refuses a block answer from a hook whose stdout is still open after it exits.
+  The Stop script's watchdog `sleep` had inherited the pipe. Unit tests ran
+  every hook with a 1 s bound, which hid it. Only the live refusal test showed
+  it, so a live e2e on the harness's current version stays worth its cost.
+- D-226-8: a scratch-HOME private daemon can't corroborate a real-HOME Claude
+  seat's adopt, and `cp` over a binary a daemon had been running gets the next
+  launch SIGKILLed on macOS.
 - Copilot's `onAgentStop` input carries no reply text; the text comes from the
   event stream, which arrived 9 to 159 ms before the hook on every stop, while
   the transcript file lagged (phase 1).
