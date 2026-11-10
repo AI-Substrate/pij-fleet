@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c3fd-0eb5-7893-b304-a16c6c48cb55",
+				"date": "2026-11-10",
+				"head": "e6a8c4a2cac6f9494fb273d03dbcb88c96f00233",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/221#issuecomment-6760191197",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:221",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS\n\nPR #221 at **e6a8c4a2cac6f9494fb273d03dbcb88c96f00233**, under C33/C34. Reviewed the four-file delta and directly relevant routing/rendering paths.\n\nThe project's `prime_id` overrides assignment candidates for role:prime (`crates/daemon/src/delivery/role_send.rs:246-258,379-405`). Rows are read earlier, but cannot select the prime recipient. The explicit `!is_prime` fallback condition prevents legacy-row routing even when no designation exists (`252-258`).\n\nRole/instance grammar, exact instance matching and registered/non-tombstoned recipient checks remain (`role_send.rs:69-97,259-272,719-725`). Routes excludes prime rows, reads the same project designation and renders the holder through `render::seat` (`crates/daemon/src/http/routes.rs:79-103`).\n\nThe regression seeds released and open competing prime rows, then asserts delivery to the designated seat and matching routes output (`crates/daemon/tests/directory_http.rs:1767-1818`). This establishes the requested C24 boundary: an assignment row cannot redirect role:prime.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None identified in scoped changes | - |\n\nKnown limits remain: designation does not drain earlier queued requests; a dead designated seat queues. The named regression does not separately assert absent/dead-designation behavior; no exhaustive coverage claim is made.\n\n**CI proof:** clean detached worktree HEAD and GitHub/remote heads agree; GitHub reports CLEAN and successful current checks. Run [42763427155](https://github.com/AI-Substrate/pij-fleet/actions/runs/42763427155) checked merge `6c87e380f1ea4979602c041b38de07745fff6329`, with parents main `765e3320bb524701ddc3bce9db7c5c11bf060165` and this exact head. Rust reports **2,413 passed, 6 skipped**. Successful artifact `13738567269` explicitly lists `role_prime_resolves_to_the_designated_prime_not_its_rows` as passed.\n\nStatic source review and existing CI only. No local builds/tests, commands under review, config/credential reads, live probes or product mutations. No performance verdict requested.\n"
+		}
+	]
+}
