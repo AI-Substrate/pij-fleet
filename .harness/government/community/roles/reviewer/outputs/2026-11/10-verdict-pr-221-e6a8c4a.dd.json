@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c3fd-0c6e-79b0-b148-445675ce3726",
+				"date": "2026-11-10",
+				"head": "e6a8c4a2cac6f9494fb273d03dbcb88c96f00233",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/221#issuecomment-6760224057",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:221",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N001: routes displays a designated prime without checking availability, while send queues when the designated seat is absent or tombstoned"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#221 correctness review, round 1: PASS-WITH-NOTES\n\nExact head: `e6a8c4a2cac6f9494fb273d03dbcb88c96f00233`. No blocking correctness finding.\n\nThe send resolves `role:prime` exclusively from the requested project's `prime_id`, ignoring open and released prime assignments and skipping the ordinary seat-role mismatch check for this designation (`crates/daemon/src/delivery/role_send.rs:242-262,355-361,379-409`). No designation produces no prime candidate, never a fallback to a legacy row; absent/tombstoned designated seats fail the existing live-seat check and queue. Routes uses the same project designation and filters out every prime assignment (`http/routes.rs:78-102`). `directory assign prime` remains refused under C24, so an assignment cannot redirect the queue through normal assignment draining.\n\n**N001, nonblocking: routes does not show the designated holder's availability.** The new routes branch appends `prime_id` without checking the registry, unlike send. A missing/tombstoned designated seat therefore still appears by name under “Holder now” while role sends queue. Keep the designation as the sole identity source, but omit or annotate an unavailable holder, or document this display limitation. This does not redirect delivery to another seat.\n\nThe stated existing-queue limitation is accurate: designation does not drain already queued requests, and replay preserves existing request identity rather than sending it again.\n\n**Evidence:** `just pr-freeze 221` returned FINAL at this head; detached tree clean. [CI run 42763427155](https://github.com/AI-Substrate/pij-fleet/actions/runs/42763427155) records the exact head. Its successful Rust job's [JUnit artifact 13738567269](https://github.com/AI-Substrate/pij-fleet/actions/runs/42763427155/artifacts/13738567269) contains 2,413 executed tests, zero failures/errors; nextest reports six additional skips. `role_prime_resolves_to_the_designated_prime_not_its_rows` ran and passed, checking a released old row and an open row for another seat against both send and routes.\n\nCost: one additional indexed project read on the changed paths; no loop, timer or launch. Source and exact-head CI evidence only; no local builds/tests, live designation/assignment changes, lifecycle operations or product edits.\n"
+		}
+	]
+}
