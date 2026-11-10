@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c301-c162-7710-bbc3-dbab6e9d8303",
+				"date": "2026-11-10",
+				"head": "68ecd898a068ac4420b0defb2fd7445f7ccffafd",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/212#issuecomment-6756088243",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:212",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"S212-N001: caller-text fencing for echoed commands/errors and a 120-character first-line clip for OMP transport errors; check the repair in round 2."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #212, lane A, at **68ecd898a068ac4420b0defb2fd7445f7ccffafd**, under C33/C34. Reviewed the changed source and directly relevant authentication, caller, handler and writer paths. No blocking security vulnerability identified.\n\n| Requested boundary | Source evidence |\n|---|---|\n| Caller derivation and sender selection | `crates/daemon/src/http/turn_end.rs:219-256` invokes existing handlers with the caller context. `http/shim.rs:651-719,1134-1186` shares send parsing/resolution and native-incarnation checks with shim sends; `http/identity.rs:67-148,1226-1360` retains caller-claim contradiction and seat-state refusals. Block text has no accepted `--from`; output's `--actor` must match the resolved caller (`http/output.rs:117-135`). |\n| Local authentication, not federation access | `crates/daemon/src/http/mod.rs:427-446,479-512,733-791`: bearer authentication and the peer-route allowlist exclude turn-end; peer keys receive 403/E-RS-PEER-SCOPE before dispatch. |\n| Quoting without expansion or shell dispatch | `crates/core/src/turn_end.rs:109-222` parses a closed trailing fence and tokenizes quotes without interpolation, substitution or globbing. Only send, output and requests close are classified. `http/turn_end.rs:187-256` calls their parsers/handlers directly, not a shell. Existing native-control and Telegram-upload send capabilities remain subject to their existing handlers and authority checks. |\n| Body-file paths | Send body files are explicitly unsupported in blocks (`http/turn_end.rs:200-213`; API documentation agrees). Output supports file paths, but not stdin; relative paths require and join an absolute caller cwd (`http/output.rs:163-184`; `http/directory.rs:1976-1988`). No daemon-cwd fallback or expansion. |\n| Command cap and execution order | `crates/core/src/turn_end.rs:24,71-87` caps nonblank/noncomment commands at 20. `http/turn_end.rs:92-169` validates every command before any runs; an invalid command or command 21 runs nothing. Runtime refusal stops later commands, without rolling back earlier successes. |\n| Existing mutation authority | Output answer-holder/prime gates remain before writing (`http/output.rs:230-288`); request-close caller, state and ownership checks remain (`http/requests.rs:329-475`). |\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No blocking security vulnerability identified | - |\n\n**S212-N001: result-text rendering, named follow-up.** The new follow-up echoes command/error text without the existing caller-text fence (`crates/core/src/turn_end.rs:376-388,444-470`; output read errors can include the path). OMP transport-error text bypasses the daemon's 120-character first-line clip (`.omp/extensions/pij/adapters/omp-turn-end.ts:133-142`; `core/turn-end.ts:173-194`). The OMP dim-line renderer's width slice is not evidence of sanitization.\n\nPM confirmed the disposition: the follow-up returns only to the seat that wrote the commands, as its own next turn, and no external source reaches it. **C33: same-user, out of scope** as a blocking attack. Safe rendering is not claimed proven. The requested cheap repair is `render::caller_text` for echoed command/error text and the same 120-character first-line clip for OMP transport errors; round 2 can check it. This note does not claim that repair exists at this head.\n\n**Proof:** clean detached worktree HEAD and GitHub/remote heads agree; GitHub reports CLEAN. CI run [42733044676](https://github.com/AI-Substrate/pij-fleet/actions/runs/42733044676) checked merge `246944e013fb065eff49d2839f612b33e7ab72d6`, whose parents are base `ef43f591ee50dbada0ebce778d5daca8c57da936` and this exact head. Rust: **2,363 passed, 6 skipped**; successful artifact `13726565343` includes all 9 parser and 6 turn-end HTTP tests. Node 22 logs show 12 core turn-end and 6 OMP adapter tests passing. The latest delivers run succeeds; a superseded cancelled delivers run is not test proof.\n\n**Limits:** repeated endpoint submissions can repeat commands; timeout does not cancel the independently spawned run. Prevalidation is not a transaction or an output-file-content snapshot. Live OMP stop/abort lifecycle and production display behavior were not independently exercised. Lane B is not reviewed here.\n\nRead-only source review and existing CI only: no local builds/tests, commands under review, product mutations, credential reads or live probes.\n"
+		}
+	]
+}
