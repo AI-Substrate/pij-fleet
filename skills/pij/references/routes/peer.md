@@ -40,14 +40,15 @@ pij-rs spawn --harness <omp|pi|claude|copilot|codex> [--model <exact-model>] [--
 pij attest <new-seat> --plan-id <plan-id> --json
 pij dispatch <new-seat> --packet <path> --wait --json
 pij-rs revive <seat> [--session <tmux-session>] [--name <window-name>] [--fresh] --json
-pij-rs revive <seat> --cheap --json                   # cold Claude seat, prime's call: relaunch on Sonnet 5.5, then compact (plan 225)
-pij-rs revive <seat> --model claude-opus-5-5 --json  # relaunch on another model, e.g. back to Opus
+pij-rs revive <seat> --plain --json   # cold Claude seat, the human's pick (225b): its own model, uncached re-read
+pij-rs revive <seat> --ask --json     # cold Claude seat, the human's pick: Sonnet 5.5, and it stays there
+pij-rs revive <seat> --cheap --json   # cold Claude seat, the human's pick: compact on Sonnet, then back to its own model
 pij-rs revive <seat> --assume-dead --evidence 'Describe why the recorded process binding is stale' --json
 ```
 
 **OMP and Pi cannot start in a linked git worktree.** `pij-rs spawn` refuses `--harness omp|pi` when `--cwd` (or the caller's directory) is a linked worktree, before any daemon call (`is_linked_worktree` in `crates/cli/src/main.rs`): their global and project extension links collide and the peer dies before registering. Don't route around it with `pij_spawn`; the cause is the runtime. For worktree work, spawn `claude` or `copilot` with `--cwd <worktree>`, or spawn the OMP/Pi seat from the main checkout and have it work in the worktree by absolute path.
 
-The shim's `spawn`/`revive` are named refusals because their grammar differs. Native spawn also supports `--id`, `--bin <executable-path>`, `--no-wait`, `--wait-seconds` and Claude inbound-consent flags; it has no legacy `--layout`, `--task`, `--branch` or `--plan-id`. Use its reported pane/window for explicit, owner-controlled tmux placement (§ C5); do not claim a legacy side-stack default. Send a packet after real binding; attest separately. Native revive requires an explicit id; `--print` and `--attach` remain unsupported.
+The shim's `spawn`/`revive` are named refusals because their grammar differs. Native spawn also supports `--id`, `--bin <executable-path>`, `--no-wait`, `--wait-seconds` and Claude inbound-consent flags; it has no legacy `--layout`, `--task`, `--branch` or `--plan-id`. Use its reported pane/window for explicit, owner-controlled tmux placement (§ C5); do not claim a legacy side-stack default. Send a packet after real binding; attest separately. Native revive requires an explicit id; `--print` and `--attach` remain unsupported. `--model <id>` relaunches on another model (the way back from `--ask`). A cold or unknown-cache Claude seat revived with no choice refuses with the three above: the PA and prime offer them and never choose.
 
 **Daemon-owned retirement policy:** `PIJ_RETIRED_HARNESSES` is a comma-separated daemon configuration, empty by default; generic installations retire no harness. This machine's `just bounce-rs` recipe opts into `PIJ_RETIRED_HARNESSES=pi`. Native and in-process Pi spawn then refuse: `harness pi is retired on this machine; use omp (or pass --allow-retired)`. An intentional native `pij-rs spawn --harness pi --allow-retired …` override is accepted with a spine event; preserve its evidence from `pij spine events --peer <new-seat> --json`. It does not change the machine policy or registration/receiver ownership.
 

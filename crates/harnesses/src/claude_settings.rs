@@ -1335,6 +1335,197 @@ fn unix_millis() -> u128 {
         .as_millis()
 }
 
+/// The key Claude Code's in-session `/model` rewrites (plan 225b): typing
+/// `/model <id>` in any seat changes the user's default for every new session.
+const MODEL_KEY: &str = "model";
+
+/// One Claude home's `settings.json` exactly as it was before a pij model
+/// switch (plan 225b): its bytes, or `None` when the file did not exist.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SavedModel {
+    pub home: PathBuf,
+    pub original: Option<String>,
+}
+
+impl SavedModel {
+    /// The saved `"model"` value as text, `None` when absent.
+    #[must_use]
+    pub fn model(&self) -> Option<String> {
+        model_of(self.original.as_deref()?)
+    }
+}
+
+fn model_of(text: &str) -> Option<String> {
+    serde_json::from_str::<Value>(text)
+        .ok()?
+        .get(MODEL_KEY)
+        .map(render_value)
+}
+
+/// What restoring one home did: the `"model"` found, the one left, whether
+/// the file is now byte-identical to the snapshot, and any error.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModelRestore {
+    pub home: PathBuf,
+    pub found: Option<String>,
+    pub left: Option<String>,
+    pub exact: bool,
+    pub error: Option<String>,
+}
+
+/// Snapshot every home's `settings.json` before a model switch. A missing
+/// file is recorded as missing; a file that can't be read, or isn't a JSON
+/// object, fails the whole snapshot, so the caller refuses before switching
+/// rather than switch unprotected.
+///
+/// # Errors
+/// The first home whose settings can't be read or parsed.
+pub fn save_claude_models(homes: &[PathBuf]) -> Result<Vec<SavedModel>, String> {
+    homes
+        .iter()
+        .map(|home| {
+            let path = home.join("settings.json");
+            let original = match fs::read_to_string(&path) {
+                Ok(text) => {
+                    if !serde_json::from_str::<Value>(&text).is_ok_and(|value| value.is_object()) {
+                        return Err(format!("{} is not a JSON object", path.display()));
+                    }
+                    Some(text)
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(format!("could not read {}: {error}", path.display())),
+            };
+            Ok(SavedModel {
+                home: home.clone(),
+                original,
+            })
+        })
+        .collect()
+}
+
+/// How to put one home back.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RestorePlan {
+    /// It already matches the snapshot.
+    Keep,
+    /// Write these bytes. `exact` when they are the snapshot itself.
+    Write { contents: String, exact: bool },
+    /// The file did not exist before, and holds nothing else now.
+    Remove,
+}
+
+/// Plan the restore of `current` to the snapshot `original` (plan 225b). When
+/// nothing but `"model"` changed, the snapshot's own bytes are written back.
+/// When something else changed meanwhile (another writer), only `"model"` is
+/// put back, so their change survives; that is reported as not exact.
+#[must_use]
+pub fn plan_model_restore(original: Option<&str>, current: Option<&str>) -> RestorePlan {
+    let without_model = |text: &str| {
+        serde_json::from_str::<Value>(text).ok().map(|mut value| {
+            if let Some(object) = value.as_object_mut() {
+                object.remove(MODEL_KEY);
+            }
+            value
+        })
+    };
+    match (original, current) {
+        (None, None) => RestorePlan::Keep,
+        (Some(original), None) => RestorePlan::Write {
+            contents: original.to_string(),
+            exact: true,
+        },
+        (Some(original), Some(current)) if original == current => RestorePlan::Keep,
+        (None, Some(current)) => match without_model(current) {
+            Some(Value::Object(rest)) if rest.is_empty() => RestorePlan::Remove,
+            Some(rest) => RestorePlan::Write {
+                contents: pretty(&rest),
+                exact: false,
+            },
+            None => RestorePlan::Keep,
+        },
+        (Some(original), Some(current)) => {
+            let saved = without_model(original);
+            let now = without_model(current);
+            if saved.is_some() && saved == now {
+                return RestorePlan::Write {
+                    contents: original.to_string(),
+                    exact: true,
+                };
+            }
+            let Some(mut now) = now else {
+                return RestorePlan::Write {
+                    contents: original.to_string(),
+                    exact: true,
+                };
+            };
+            let model = serde_json::from_str::<Value>(original)
+                .ok()
+                .and_then(|value| value.get(MODEL_KEY).cloned());
+            if let (Some(model), Some(object)) = (model, now.as_object_mut()) {
+                object.insert(MODEL_KEY.to_string(), model);
+            }
+            RestorePlan::Write {
+                contents: pretty(&now),
+                exact: false,
+            }
+        }
+    }
+}
+
+fn pretty(value: &Value) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_default() + "\n"
+}
+
+/// Put each home back to its snapshot (plan 225b), atomically, no backup file:
+/// it undoes Claude Code's own write of one value. Every failure is reported.
+#[must_use]
+pub fn restore_claude_models(saved: &[SavedModel]) -> Vec<ModelRestore> {
+    saved
+        .iter()
+        .map(|saved| {
+            let path = saved.home.join("settings.json");
+            let mut out = ModelRestore {
+                home: saved.home.clone(),
+                found: None,
+                left: saved.model(),
+                exact: false,
+                error: None,
+            };
+            let current = match fs::read_to_string(&path) {
+                Ok(text) => Some(text),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => {
+                    out.error = Some(format!("could not read {}: {error}", path.display()));
+                    return out;
+                }
+            };
+            out.found = current.as_deref().and_then(model_of);
+            let done = match plan_model_restore(saved.original.as_deref(), current.as_deref()) {
+                RestorePlan::Keep => {
+                    out.exact = current == saved.original;
+                    Ok(())
+                }
+                RestorePlan::Write { contents, exact } => {
+                    out.exact = exact;
+                    atomic_replace(&path, contents.as_bytes())
+                        .map_err(|error| format!("could not write {}: {error}", path.display()))
+                }
+                RestorePlan::Remove => {
+                    out.exact = true;
+                    fs::remove_file(&path)
+                        .map_err(|error| format!("could not remove {}: {error}", path.display()))
+                }
+            };
+            if let Err(error) = done {
+                out.error = Some(error);
+                out.exact = false;
+                out.left.clone_from(&out.found);
+            }
+            out
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     /// Exec of a script this test just wrote can fail with ETXTBSY on Linux when
@@ -2849,6 +3040,104 @@ mod tests {
                 "refused:activity pane=%42 state=idle status=143 reason=\n",
             ),
             "one line per failure"
+        );
+    }
+
+    fn home(name: &str) -> PathBuf {
+        let home = std::env::temp_dir().join(format!(
+            "pij-model-restore-{name}-{}-{}",
+            std::process::id(),
+            unix_millis()
+        ));
+        fs::create_dir_all(&home).unwrap();
+        home
+    }
+
+    /// Plan 225b (review of #215, F001): the snapshot is the file's bytes, so
+    /// a restore is byte-identical: a present model, an absent model key, an
+    /// absent file. Claude's rewrite of `"model"` is undone exactly.
+    #[test]
+    fn a_model_restore_is_byte_identical_for_a_present_absent_or_missing_model() {
+        let rewritten = |text: &str| {
+            let mut value: Value = serde_json::from_str(text).unwrap();
+            value["model"] = serde_json::json!("claude-opus-5-5");
+            serde_json::to_string_pretty(&value).unwrap() + "\n"
+        };
+        for (name, original) in [
+            (
+                "present",
+                Some("{\n  \"theme\":   \"dark\",\n  \"model\": \"sonnet\"\n}\n"),
+            ),
+            ("absent-key", Some("{ \"theme\": \"dark\" }\n")),
+            ("absent-file", None),
+        ] {
+            let home = home(name);
+            let path = home.join("settings.json");
+            if let Some(original) = original {
+                fs::write(&path, original).unwrap();
+            }
+            let saved = save_claude_models(std::slice::from_ref(&home)).expect("snapshot");
+            fs::write(&path, rewritten(original.unwrap_or("{}"))).unwrap();
+            let report = restore_claude_models(&saved);
+            assert_eq!(
+                report[0].found.as_deref(),
+                Some("claude-opus-5-5"),
+                "{name}"
+            );
+            assert!(
+                report[0].error.is_none() && report[0].exact,
+                "{name}: {report:?}"
+            );
+            match original {
+                Some(original) => {
+                    assert_eq!(fs::read_to_string(&path).unwrap(), original, "{name}");
+                }
+                None => assert!(!path.exists(), "{name}: the file is gone again"),
+            }
+            fs::remove_dir_all(&home).unwrap();
+        }
+    }
+
+    /// Review of #215, F001: an unreadable or invalid settings file fails the
+    /// snapshot (the caller refuses before switching), and a failed restore
+    /// is reported, never silent.
+    #[test]
+    fn a_failed_snapshot_or_restore_is_reported() {
+        let invalid = home("invalid");
+        fs::write(invalid.join("settings.json"), "{ not json").unwrap();
+        let error = save_claude_models(std::slice::from_ref(&invalid)).unwrap_err();
+        assert!(error.contains("not a JSON object"), "{error}");
+        let unreadable = home("unreadable");
+        fs::create_dir(unreadable.join("settings.json")).unwrap();
+        assert!(save_claude_models(std::slice::from_ref(&unreadable)).is_err());
+
+        let gone = home("restore-fails");
+        let saved = vec![SavedModel {
+            home: gone.join("no-such-dir"),
+            original: Some("{\"model\":\"sonnet\"}\n".to_string()),
+        }];
+        let report = restore_claude_models(&saved);
+        assert!(report[0].error.is_some() && !report[0].exact, "{report:?}");
+        for dir in [invalid, unreadable, gone] {
+            fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    /// Another writer's change made meanwhile survives: only `"model"` goes back.
+    #[test]
+    fn a_concurrent_edit_keeps_its_change_and_restores_only_the_model() {
+        let plan = plan_model_restore(
+            Some("{\"model\":\"sonnet\",\"a\":1}"),
+            Some("{\"model\":\"claude-opus-5-5\",\"a\":2}"),
+        );
+        let RestorePlan::Write { contents, exact } = plan else {
+            panic!("{plan:?}");
+        };
+        assert!(!exact);
+        let value: Value = serde_json::from_str(&contents).unwrap();
+        assert_eq!(
+            (value["model"].as_str(), value["a"].as_i64()),
+            (Some("sonnet"), Some(2))
         );
     }
 

@@ -41,31 +41,31 @@
       "value": [
         {
           "id": "ac-0001",
-          "claim": "One explicit verb compacts a cold Claude seat on Sonnet 5.5 (for example `pij compact <seat> --cheap`, or revive with a model followed by the existing compact command, whichever is simpler). It restarts the seat with `--resume --model <sonnet 5.5 id>`, runs the normal compaction through the existing gates, and leaves the seat on Sonnet. It never types /model into a pane (in-session /model rewrites Jordan's global default in Claude settings.json). pij's recorded model (boundModel) shows Sonnet afterwards.",
+          "claim": "One explicit verb compacts a cold Claude seat on Sonnet 5.5: `pij-rs revive <seat> --cheap` restarts it with `--resume --model claude-sonnet-5-5`, waits until it registers, and sends the normal compact control through the existing gates. Amended (plan 225b, Jordan 2026-11-10): 5 s after that compaction STARTS, the daemon switches the seat back in-session to its remembered original model, its recorded model (boundModel) before the switch, never assumed to be Opus. It types `/model <original>`, reads the pane once, and confirms the \"Switch model?\" dialog only if it shows. In-session /model rewrites the user default \"model\" in settings.json (measured on Claude Code 2.1.321), so each Claude home value is saved first and put back straight after, after the Sonnet relaunch too. boundModel is updated at both switches, only to what is seen: when every home's default already was the original model, settings cannot show the switch back, so it is reported unconfirmed and boundModel becomes unknown, never Sonnet.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
-          "claim": "Cold seats only, Claude only, Sonnet only. A warm seat is refused in one line (warm seats already get the cache discount, so a normal compact is cheaper). A non-Claude seat is refused in one line (Copilot bills per request, so the benefit is unproven). The model is Sonnet 5.5, never Haiku (its 200k window can't hold these seats).",
+          "claim": "Claude only, Sonnet only. A non-Claude seat refuses --ask and --cheap in one line (Copilot bills per request, so the benefit is unproven). Amended (plan 225b): a warm seat refuses --ask and --cheap in one line, because it revives on its own model with no choice; an unknown cache state counts as cold. The model is Sonnet 5.5, never Haiku (its 200k window cannot hold these seats).",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
-          "claim": "It is an option, never automatic: only an explicit call by the prime (or the PA when the prime asks) runs it. No watchdog, PA sweep or threshold triggers it. Going back to Opus is a separate explicit step (revive with the Opus model), done only when the seat takes on hard work again.",
+          "claim": "Never automatic. Amended (plan 225b, Jordan 2026-11-10): a Claude seat whose cache is known warm revives on its recorded model with no choice. A cold one, or one whose cache state is unknown (counted as cold), refuses `pij-rs revive <seat>` in one line with three runnable commands: --plain (its recorded model, the full context re-read uncached), --ask (Sonnet 5.5, and it stays there: the prompt cache is per model, so going back is an explicit `revive --model <id>` or a compact) and --cheap. A human chooses; the PA and prime offer the three and never choose. No watchdog, sweep or threshold runs any of them. Non-Claude seats revive as before.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0004",
-          "claim": "Docs: one short entry in the PA brief and in skills/pij/references/routes/community.md: when to use it (a cold Claude seat over about 300k that must come back), that it's the prime's call, and how to go back to Opus.",
+          "claim": "Docs: the PA brief, skills/pij/references/routes/community.md and skills/pij/references/routes/peer.md say that for a cold Claude seat the PA and prime offer the three choices (--plain, --ask, --cheap) to the human and never make them, and what each does.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
         {
           "id": "ac-0005",
-          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No loop, timer or poll. One seat restart per explicit use. No new launch site per tick; any new launch site is recorded in crates/testkit/tests/spawn_sites.rs.",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No loop, timer or poll. One seat restart per explicit use. --cheap adds, once per use: one live event subscription until its compact starts, one 5 s wait, one typed /model, one pane read, at most one Enter, one settings read and write per Claude home, one registry write and one audit event. No new launch site: the Enter goes through the tmux adapter run(), counted as tmux.send-keys, so crates/testkit/tests/spawn_sites.rs stays green.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },

@@ -353,15 +353,25 @@ enum Command {
         #[arg(long)]
         fresh: bool,
         /// Relaunch on this model instead of the recorded one; how a seat goes
-        /// back to Opus after --cheap (`--model claude-opus-5-5`).
-        #[arg(long, conflicts_with = "cheap")]
+        /// back to its own model after --ask (`--model <id>`).
+        #[arg(long, conflicts_with_all = ["cheap", "ask", "plain"])]
         model: Option<String>,
-        /// Compact a cold Claude seat on Sonnet 5.5 (plan 225; the prime's call):
-        /// relaunch it with `--resume --model claude-sonnet-5-5`, wait until it
-        /// registers, then send it the normal compact control. The seat stays on
-        /// Sonnet. A warm or non-Claude seat refuses.
-        #[arg(long, conflicts_with = "fresh")]
+        /// A cold Claude seat, a human's choice (plan 225b): compact it on
+        /// Sonnet 5.5, then put it back on its recorded model. Relaunches it
+        /// with `--resume --model claude-sonnet-5-5`, waits until it registers,
+        /// sends it the normal compact control, and 5 s after the compaction
+        /// starts switches it back in-session, leaving your Claude default
+        /// model as it was. A warm or non-Claude seat refuses.
+        #[arg(long, conflicts_with_all = ["fresh", "ask", "plain"])]
         cheap: bool,
+        /// A cold Claude seat, a human's choice (plan 225b): relaunch it on its
+        /// recorded model and pay for the full uncached re-read.
+        #[arg(long, conflicts_with_all = ["fresh", "ask"])]
+        plain: bool,
+        /// A cold Claude seat, a human's choice (plan 225b): relaunch it on
+        /// Sonnet 5.5 and leave it there. Going back is `--model <id>`.
+        #[arg(long, conflicts_with = "fresh")]
+        ask: bool,
     },
     /// Durably enqueue one message as the acting seat.
     #[command(
@@ -1519,7 +1529,14 @@ async fn run(cli: Cli) -> ExitCode {
                 return emit(&revived, cli.json);
             }
             let _ = emit(&revived, cli.json);
-            cheap_compact(&client, &request.id, cli.json).await
+            // Plan 225b: the daemon switches the seat back once THIS compact
+            // starts, so it goes under the id the daemon armed.
+            let msg_id = revived
+                .details
+                .as_ref()
+                .and_then(|details| details["compact_msg_id"].as_str())
+                .map(ToOwned::to_owned);
+            cheap_compact(&client, &request.id, msg_id, cli.json).await
         }
         Command::Send {
             from,
@@ -4404,6 +4421,8 @@ fn prepare_revive_request(command: &Command) -> Result<Option<ReviveRequest>, Pi
         fresh,
         model,
         cheap,
+        plain,
+        ask,
     } = command
     else {
         return Ok(None);
@@ -4433,20 +4452,31 @@ fn prepare_revive_request(command: &Command) -> Result<Option<ReviveRequest>, Pi
         fresh: *fresh,
         model: model.clone(),
         cheap: *cheap,
+        plain: *plain,
+        ask: *ask,
     }))
 }
 
 /// The compact half of `revive --cheap` (plan 225): the caller sends the
 /// revived seat the same compact control `pij send <seat> --command compact`
 /// sends, so every gate a compact has (the memory turn included) applies.
-/// Nothing is typed into the pane but `/compact`; never `/model`.
-async fn cheap_compact(client: &DaemonClient, seat: &SeatId, json: bool) -> ExitCode {
+/// The CLI types nothing but the compact control; the daemon's switch back
+/// (plan 225b) follows it.
+async fn cheap_compact(
+    client: &DaemonClient,
+    seat: &SeatId,
+    msg_id: Option<String>,
+    json: bool,
+) -> ExitCode {
     const NAME: &str = "pij revive --cheap";
     let acting = match resolve_command_seat(client, NAME, None).await {
         Ok(acting) => acting,
         Err(error) => return emit(&setup_refusal::<Value>(NAME, error), json),
     };
-    let request = cheap_compact_request(acting, seat.clone());
+    let mut request = cheap_compact_request(acting, seat.clone());
+    if let Some(msg_id) = msg_id {
+        request.msg_id = msg_id;
+    }
     let mut response = client.send_control(&request, &caller_context()).await;
     let raw = response.raw_json.take();
     response.command = NAME.to_string();

@@ -2013,6 +2013,16 @@ impl FakeTmux {
         self
     }
 
+    /// [`Self::script_capture`] for a fake already behind an `Arc`: what the
+    /// next `capture` returns, queued after any already scripted.
+    pub fn queue_capture(&self, text: impl Into<String>) {
+        self.state
+            .lock()
+            .expect("fake tmux mutex")
+            .captures
+            .push_back(text.into());
+    }
+
     /// Arrange a pane whose composer parses as RECOGNIZED and BLANK, for every
     /// capture rather than once.
     ///
@@ -2485,6 +2495,12 @@ impl TmuxPort for FakeTmux {
     async fn send_keys(&self, pane: &str, keys: &str) -> Result<()> {
         let mut state = self.state.lock().expect("fake tmux mutex");
         state.recorder.record(format!("send_keys:{pane}:{keys}"));
+        Ok(())
+    }
+
+    async fn press_enter(&self, pane: &str) -> Result<()> {
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        state.recorder.record(format!("enter:{pane}"));
         Ok(())
     }
 

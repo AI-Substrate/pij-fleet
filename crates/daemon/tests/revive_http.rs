@@ -596,7 +596,8 @@ async fn revive_resumes_the_recorded_conversation_unless_it_is_live_elsewhere() 
     other.proc = Some(running);
     other.harness_session = Some(SESSION.to_string());
     let since = f.services.registry.put(other.clone()).await.unwrap();
-    let resume = json!({"id":"pij-child","session":"fleet"});
+    // Plan 225b: a Claude seat whose cache is unknown needs a human's choice.
+    let resume = json!({"id":"pij-child","session":"fleet","plain":true});
 
     let body = post(&f, &resume).await;
     assert_eq!(body["ok"], false, "{body}");
@@ -765,37 +766,8 @@ async fn cheap_revive_refuses_a_warm_or_non_claude_seat() {
     );
     unchanged(&f, &warm, since).await;
 
-    // Review (spoonbill, round 1): cold only means KNOWN cold. A cache state
-    // the facts can't establish refuses, naming the missing fact.
-    let unknown_call: Arc<dyn SessionStatusPort> = Arc::new(FakeSessionStatus::new().with_reply(
-        "plan225-no-last-call",
-        SessionStatusReply::Status(SeatStatus {
-            cache_ttl: Fact::native(CacheTtl::OneHour),
-            ..SeatStatus::unknown()
-        }),
-    ));
-    for (status, session, why) in [
-        (None, "plan225-unread", "harness sessions unreadable"),
-        (
-            Some(unknown_call),
-            "plan225-no-last-call",
-            "last call unknown",
-        ),
-    ] {
-        let g = fixture_with(Arc::new(FakeLiveness::new()), Vec::new(), status).await;
-        let seat = claude_target(session);
-        let since = g.services.registry.put(seat.clone()).await.unwrap();
-        let body = post(&g, &cheap).await;
-        assert_eq!(body["details"]["code"], "E-RS-REVIVE-CHEAP", "{body}");
-        assert!(
-            body["meta"]
-                .as_str()
-                .unwrap()
-                .contains(&format!("cache state unknown: {why}")),
-            "{body}"
-        );
-        unchanged(&g, &seat, since).await;
-    }
+    // Plan 225b: an unknown cache state counts as cold, so it is offered
+    // (see `a_cold_or_unknown_claude_seat_refuses_with_the_three_choices`).
 
     for (extra, said) in [("model", "takes no --model"), ("fresh", "--fresh has none")] {
         let mut body = cheap.clone();
@@ -813,8 +785,10 @@ async fn cheap_revive_refuses_a_warm_or_non_claude_seat() {
 
 /// Plan 225 AC1: a cold Claude seat relaunches with `--resume <session>
 /// --model claude-sonnet-5-5`, the call returns once it registers, and the
-/// seat's recorded model (boundModel) is Sonnet. Nothing typed into any pane
-/// is `/model`. A later `--model` revive takes it back to Opus.
+/// seat's recorded model (boundModel) is Sonnet. Plan 225b: the receipt names
+/// the compact's msg_id and the model the seat returns to (its recorded one);
+/// nothing is typed until that compact starts (`cheap_return` tests the
+/// switch back). A later `--model` revive also takes it back.
 #[tokio::test]
 async fn cheap_revive_relaunches_a_cold_claude_seat_on_sonnet() {
     const SESSION: &str = "plan225-cold";
@@ -854,6 +828,13 @@ async fn cheap_revive_relaunches_a_cold_claude_seat_on_sonnet() {
     )
     .await;
     assert_eq!(body["ok"], true, "{body}");
+    assert_eq!(body["details"]["return_model"], "claude-opus-5-5", "{body}");
+    assert!(
+        body["details"]["compact_msg_id"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty()),
+        "{body}"
+    );
     assert_eq!(
         registered.await.unwrap().as_deref(),
         Some(pij_daemon::http::CHEAP_MODEL)
@@ -878,7 +859,7 @@ async fn cheap_revive_relaunches_a_cold_claude_seat_on_sonnet() {
             .iter()
             .filter(|call| call.starts_with("send_keys:") || call.contains("submit:"))
             .all(|call| !call.contains("/model")),
-        "never /model in a pane: {calls:?}"
+        "no /model before the compaction starts: {calls:?}"
     );
 
     // Going back is a separate, explicit revive with the Opus model.
@@ -895,4 +876,138 @@ async fn cheap_revive_relaunches_a_cold_claude_seat_on_sonnet() {
     assert_eq!(body["ok"], true, "{body}");
     let back = f.services.registry.get(&prior.id).await.unwrap().unwrap();
     assert_eq!(back.model.as_deref(), Some("claude-opus-5-5"));
+}
+
+/// Plan 225b rule 1: a Claude seat whose cache is known warm revives on its
+/// recorded model, with no choice asked.
+#[tokio::test]
+async fn a_warm_claude_seat_revives_on_its_recorded_model_with_no_choice() {
+    const SESSION: &str = "plan225b-warm";
+    let f = fixture_with(
+        Arc::new(FakeLiveness::new()),
+        Vec::new(),
+        Some(last_call(SESSION, 60_000)),
+    )
+    .await;
+    let mut prior = claude_target(SESSION);
+    prior.model = Some("claude-fable-5".to_string());
+    f.services.registry.put(prior.clone()).await.unwrap();
+    let body = post(&f, &json!({"id":"pij-child","session":"fleet"})).await;
+    assert_eq!(body["ok"], true, "{body}");
+    let launch = f
+        .tmux
+        .calls()
+        .into_iter()
+        .find(|call| call.starts_with("new_window:"))
+        .expect("launched");
+    assert!(
+        launch.contains("\"--model\", \"claude-fable-5\""),
+        "{launch}"
+    );
+}
+
+/// Plan 225b rule 2: a cold Claude seat, or one whose cache state is unknown
+/// (counted as cold), refuses a revive with no choice, in one line, with the
+/// three runnable commands, before any write. `--plain` then revives it on its
+/// recorded model; `--ask` on Sonnet 5.5, where it stays.
+#[tokio::test]
+async fn a_cold_or_unknown_claude_seat_refuses_with_the_three_choices() {
+    const SESSION: &str = "plan225b-cold";
+    for (status, session) in [
+        (Some(last_call(SESSION, 3 * 60 * 60 * 1_000)), SESSION),
+        (None, "plan225b-unknown"),
+    ] {
+        let f = fixture_with(Arc::new(FakeLiveness::new()), Vec::new(), status).await;
+        let mut prior = claude_target(session);
+        prior.model = Some("claude-fable-5".to_string());
+        let since = f.services.registry.put(prior.clone()).await.unwrap();
+        let body = post(&f, &json!({"id":"pij-child","session":"fleet"})).await;
+        assert_eq!(body["details"]["code"], "E-RS-REVIVE-COLD", "{body}");
+        let meta = body["meta"].as_str().unwrap();
+        assert!(!meta.contains('\n'), "one line: {body}");
+        let commands: Vec<&str> = body["details"]["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|command| command.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            commands,
+            [
+                "pij-rs revive pij-child --plain",
+                "pij-rs revive pij-child --ask",
+                "pij-rs revive pij-child --cheap",
+            ],
+            "{body}"
+        );
+        for command in &commands {
+            assert!(meta.contains(command), "{meta}");
+        }
+        assert!(
+            meta.contains("claude-fable-5"),
+            "names the recorded model: {meta}"
+        );
+        unchanged(&f, &prior, since).await;
+    }
+
+    let f = fixture_with(
+        Arc::new(FakeLiveness::new()),
+        Vec::new(),
+        Some(last_call(SESSION, 3 * 60 * 60 * 1_000)),
+    )
+    .await;
+    let mut prior = claude_target(SESSION);
+    prior.model = Some("claude-fable-5".to_string());
+    f.services.registry.put(prior.clone()).await.unwrap();
+    let body = post(
+        &f,
+        &json!({"id":"pij-child","session":"fleet","plain":true}),
+    )
+    .await;
+    assert_eq!(body["ok"], true, "{body}");
+    let launch = f
+        .tmux
+        .calls()
+        .into_iter()
+        .find(|call| call.starts_with("new_window:"))
+        .expect("launched");
+    assert!(
+        launch.contains("\"--model\", \"claude-fable-5\""),
+        "{launch}"
+    );
+
+    let g = fixture_with(Arc::new(FakeLiveness::new()), Vec::new(), None).await;
+    g.services.registry.put(prior.clone()).await.unwrap();
+    let body = post(&g, &json!({"id":"pij-child","session":"fleet","ask":true})).await;
+    assert_eq!(body["ok"], true, "unknown counts as cold: {body}");
+    assert!(body["details"]["compact_msg_id"].is_null(), "{body}");
+    let calls = g.tmux.calls();
+    let launch = calls
+        .iter()
+        .find(|call| call.starts_with("new_window:"))
+        .expect("launched");
+    assert!(
+        launch.contains("\"--model\", \"claude-sonnet-5-5\""),
+        "{launch}"
+    );
+    let stays = g.services.registry.get(&prior.id).await.unwrap().unwrap();
+    assert_eq!(
+        stays.model.as_deref(),
+        Some("claude-sonnet-5-5"),
+        "it stays on Sonnet"
+    );
+    assert!(
+        calls.iter().all(|call| !call.contains("/model")),
+        "--ask never switches back: {calls:?}"
+    );
+    for (choice, extra) in [("plain", "ask"), ("ask", "cheap"), ("plain", "cheap")] {
+        let mut request = json!({"id":"pij-child","session":"fleet"});
+        request[choice] = json!(true);
+        request[extra] = json!(true);
+        let body = post(&g, &request).await;
+        assert_eq!(
+            body["details"]["code"], "E-RS-ARG",
+            "{choice}+{extra}: {body}"
+        );
+    }
 }
