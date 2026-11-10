@@ -26,6 +26,12 @@ export const RECEIVER_PROBE_INTERVAL_MS = 1000;
 export const HOOK_REQUEST_TIMEOUT_MS = 3000;
 /** A session standing by behind a newer same-process holder retries this slowly (plan 168). */
 export const STANDBY_RETRY_MS = 30000;
+/** Plan 226: the daemon route that runs a reply's closing pij block. */
+export const TURN_END_ROUTE = "/v1/turn-end";
+/** A block of up to 20 commands runs in order; a wedged daemon must not hold the stop forever. */
+export const TURN_END_TIMEOUT_MS = 30000;
+/** Message ids already handed over, so a replayed event never runs a block twice. */
+const TURN_END_TAKEN_LIMIT = 64;
 /** Opens every cold-wake refusal's meta (crates/core/src/cold_wake.rs, plan 157 phase 2). */
 const COLD_WAKE_CODE = "E-RS-COLD-WAKE";
 const ERROR_BODY_LIMIT = 4096;
@@ -2173,6 +2179,38 @@ export class NativeBridge {
 			return undefined;
 		}
 	}
+	/**
+	 * Plan 226: hand the run's final text to the daemon when it ends with a pij
+	 * block, show the human one line, and return the agent-stop hook's answer:
+	 * a block (one follow-up turn) only on failure, and only when this stop is
+	 * not itself a follow-up. Never throws; no block, no call.
+	 */
+	async turnEnd(text, stopHookActive) {
+		if (!this.registered || this.controller.signal.aborted || !endsWithPijFence(text))
+			return undefined;
+		let outcome;
+		try {
+			const result = await this.client.request(
+				TURN_END_ROUTE,
+				{ text, caller: replyCaller(this.registration), via: "hook:copilot" },
+				AbortSignal.any([this.controller.signal, AbortSignal.timeout(TURN_END_TIMEOUT_MS)]),
+			);
+			outcome = turnEndOutcome(result, stopHookActive);
+			this.emit("turn-end", { outcome: result?.outcome ?? null, ran: result?.ran ?? null });
+		} catch (error) {
+			if (this.controller.signal.aborted) return undefined;
+			outcome = turnEndUnreached(error, stopHookActive);
+			this.emit("turn-end-unreached", {
+				status: error?.status ?? null,
+				safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : null,
+			});
+		}
+		if (outcome.line !== undefined)
+			await Promise.resolve()
+				.then(() => this.native.log(outcome.line, { level: outcome.level }))
+				.catch(() => this.emit("turn-end-unshown"));
+		return outcome.block === undefined ? undefined : { decision: "block", reason: outcome.block };
+	}
 	async send(input) {
 		if (!this.registered || this.controller.signal.aborted)
 			return { ok: false, error: "Pij native session is not registered; no message sent" };
@@ -2242,6 +2280,104 @@ export function replyCaller(registration) {
 		...(registration.pane ? { TMUX_PANE: registration.pane } : {}),
 		cwd: registration.folder,
 	};
+}
+
+/**
+ * Plan 226: the cheap tail check before any daemon call. The text, trimmed at
+ * the end, closes a fence, and some line opens a `pij` one. The daemon does the
+ * real parse; this only spares the call on the turns that cannot have a block.
+ */
+export function endsWithPijFence(text) {
+	if (typeof text !== "string" || !text.trimEnd().endsWith("```")) return false;
+	return text.split("\n").some((line) => line.trimStart().startsWith("```pij"));
+}
+
+/**
+ * Plan 226: the root agent's last reply in the current run, from the native
+ * event stream. Sub-agent messages are ignored; a new prompt or an abort starts
+ * over; a message is handed over at most once.
+ */
+export class TurnEndTracker {
+	constructor() {
+		this.last = undefined;
+		this.taken = new Set();
+	}
+	observe(event) {
+		if (!event || nonempty(event.agentId)) return;
+		if (event.type === "user.message" || event.type === "abort") this.last = undefined;
+		else if (
+			event.type === "assistant.message" &&
+			nonempty(event.data?.messageId) &&
+			typeof event.data.content === "string"
+		)
+			this.last = { messageId: event.data.messageId, content: event.data.content };
+	}
+	/** The run's final text, once; undefined when there is none or it was taken. */
+	take() {
+		const last = this.last;
+		this.last = undefined;
+		if (!last || this.taken.has(last.messageId)) return undefined;
+		this.taken.add(last.messageId);
+		if (this.taken.size > TURN_END_TAKEN_LIMIT) this.taken.delete(this.taken.values().next().value);
+		return last.content;
+	}
+}
+
+/**
+ * Plan 226: what the human sees and whether the seat gets its one follow-up
+ * turn. `result` is the daemon's turn-end data; `followup` set means it failed.
+ * The follow-up is given only when this stop is not itself a follow-up.
+ * @returns {{line?: string, level: "info" | "warning", block?: string}}
+ */
+export function turnEndOutcome(result, stopHookActive) {
+	const failed = nonempty(result?.followup);
+	const summary = nonempty(result?.summary) ? result.summary : failed ? "pij ✗ block failed" : "";
+	if (!failed) return { ...(summary ? { line: summary } : {}), level: "info" };
+	return stopHookActive
+		? { line: `${summary} (no follow-up: this turn was already one)`, level: "warning" }
+		: { line: summary, level: "warning", block: result.followup };
+}
+
+/**
+ * Plan 226: the daemon never answered with a result. A refusal (an HTTP status)
+ * ran nothing; a lost or timed-out call may have run some of the block, so the
+ * seat is told not to resend blindly.
+ */
+export function turnEndUnreached(error, stopHookActive) {
+	const refused = Number.isInteger(error?.status) && error.status >= 400 && error.status < 500;
+	const reason =
+		clipReason(
+			error instanceof NativeError ? error.safeDiagnostic : refused ? `HTTP ${error.status}` : "",
+		) || "the daemon did not answer";
+	const [line, followup] = refused
+		? [
+				`pij ✗ block not run: the daemon refused it (${reason})`,
+				`[pij] Your end-of-turn pij block did not run: the daemon refused it (${reason}). Nothing was sent.\nFix it and end your reply with a corrected pij block, or say why not.`,
+			]
+		: [
+				`pij ? block outcome unknown: ${reason}`,
+				`[pij] Your end-of-turn pij block's outcome is unknown (${reason}): some of its commands may have run.\nCheck before you resend any of them, or say why not.`,
+			];
+	return turnEndOutcome({ summary: line, followup }, stopHookActive);
+}
+
+/** How much of a no-result reason the human and the seat see. */
+export const TURN_END_REASON_CHARS = 120;
+
+/**
+ * A transport or refusal reason: its first line, trimmed, control characters
+ * escaped, cut at TURN_END_REASON_CHARS (as OMP's `clipReason`).
+ */
+export function clipReason(reason) {
+	const first = (String(reason ?? "").split("\n")[0] ?? "").trim();
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: escaping them is the point
+	const escaped = first.replace(/[\u0000-\u001f\u007f-\u009f]/g, (ch) => {
+		return `\\u{${ch.charCodeAt(0).toString(16)}}`;
+	});
+	const chars = Array.from(escaped);
+	return chars.length <= TURN_END_REASON_CHARS
+		? escaped
+		: `${chars.slice(0, TURN_END_REASON_CHARS).join("")}…`;
 }
 
 /** Follow OS parent links; neither the extension child nor pane shell is the host. */

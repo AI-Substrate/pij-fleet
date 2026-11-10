@@ -73,7 +73,8 @@ rs-install:
     echo "✓ $bin/pij-rs → $(pwd)/target/release/pij-rs"
 
 # Read-only audit of the installed surfaces: CLI shim, pij-rs, OMP policy,
-# skill link and daemon health.
+# skill link, pij-managed Claude hooks, the Copilot extension and daemon health.
+# Each one missing or stale prints its fix.
 doctor:
     @global_npm_root="$(npm root -g)"; \
       pij_bin="$(command -v pij)"; \
@@ -81,6 +82,8 @@ doctor:
     @echo "pij-rs bin: $(realpath "$(command -v pij-rs)" 2>/dev/null || echo '(not on PATH — run: just rs-install)')"
     @echo "skill:      $(readlink ~/.agents/skills/pij 2>/dev/null || echo '(unlinked — run: just pij-skill-link-global)')"
     just omp-doctor
+    @pij-rs doctor claude-hooks 2>/dev/null || echo 'claude hooks: (unknown: pij-rs is missing or predates this check — run: just rs-install)'
+    @just _copilot-native-install-check || echo 'copilot:    (not ready — the fix is printed above)'
     @printf 'daemon:     '; pij-rs ping 2>/dev/null || echo '(not running — run: just bounce-rs)'
     @printf 'ddocs:      '; pij-rs --json ping 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { let d; try { d = JSON.parse(s).data; } catch { return console.log("(unknown: daemon not running)"); } console.log(d.ddocs === undefined ? "(unknown: this daemon predates the ddocs field)" : (d.ddocs ?? "(missing: install ddocs or set PIJ_DDOCS, then run: just bounce-rs)")); })'
     @printf 'gh:         '; pij-rs --json ping 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { let d; try { d = JSON.parse(s).data; } catch { return console.log("(unknown: daemon not running)"); } console.log(d.gh === undefined ? "(unknown: this daemon predates the gh field)" : (d.gh ?? "(missing: install gh or set PIJ_GH, then run: just bounce-rs)")); })'
@@ -348,6 +351,7 @@ link:
 
 unlink:
     npm run link -- --remove
+    pij-rs claude-hooks --remove
 
 # Report where the machine's live pij currently resolves — CLI bin, extension,
 # skill store, and daemon. The quick answer to "am I on main or the worktree?".

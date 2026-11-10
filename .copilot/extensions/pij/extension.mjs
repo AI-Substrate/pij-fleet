@@ -23,6 +23,7 @@ import {
 	resolveNativeHost,
 	resolveRegistration,
 	STANDBY_RETRY_MS,
+	TurnEndTracker,
 } from "./store.mjs";
 
 const execute = promisify(execFile);
@@ -59,6 +60,8 @@ async function startExtension() {
 	let bridge;
 	let session;
 	let unsubscribe;
+	// Plan 226: the run's final reply, from the native event stream.
+	const turnEnd = new TurnEndTracker();
 	const nativeReport = createNativeReporter({
 		log: (message, options) => session.log(message, options),
 		capture: report,
@@ -143,6 +146,20 @@ async function startExtension() {
 						return undefined;
 					return bridge.claimFyis();
 				},
+				// Plan 226: a reply ending in a pij block runs it at the natural end of
+				// the run (never on abort); failure gives the seat one follow-up turn.
+				onAgentStop: async (input, invocation) => {
+					const text = turnEnd.take();
+					if (
+						!session ||
+						!bridge ||
+						signal.aborted ||
+						invocation?.sessionId !== session.sessionId ||
+						(input?.sessionId ?? session.sessionId) !== session.sessionId
+					)
+						return undefined;
+					return bridge.turnEnd(text, input?.stopHookActive === true);
+				},
 			},
 		});
 		signal.throwIfAborted();
@@ -152,9 +169,11 @@ async function startExtension() {
 		// against any other live session of the same Copilot process.
 		const precedence = new NativePrecedence({ loadedAt: Math.floor(performance.timeOrigin) });
 		const unsubscribePrecedence = session.on((event) => precedence.observe(event));
+		const unsubscribeTurnEnd = session.on((event) => turnEnd.observe(event));
 		const unsubscribeShutdown = session.on("session.shutdown", () => stop("session.shutdown"));
 		unsubscribe = () => {
 			unsubscribePrecedence();
+			unsubscribeTurnEnd();
 			unsubscribeShutdown();
 		};
 
