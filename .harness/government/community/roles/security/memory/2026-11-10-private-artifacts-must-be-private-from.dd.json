@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Read before adding hook input/output files, display state, or public machine configuration.",
+				"tags": [
+					"privacy",
+					"artifacts",
+					"c33",
+					"c21"
+				],
+				"title": "Private artifacts must be private from creation"
+			}
+		},
+		{
+			"name": "body",
+			"value": "C33 trusts one user account, not other OS accounts. A mktemp file's 0600 mode does not protect sibling .in/.out files: ordinary redirections under umask 022 create them as 0644. The sticky bit does not stop another UID reading them. A private macOS TMPDIR can mitigate that deployment, but does not protect a shared-/tmp fallback.\n\nFor payload-bearing hooks, set umask 077 before creation and keep input, output and stderr inside a private mktemp -d directory. Display progress can contain raw command bodies too: tighten its directory to 0700 before writing, create temporary files exclusively as 0600, then atomically rename. Aborted state may remain only if private. Do not rely on chmod after writing or eventual cleanup.\n\nPR #213 closed S213-001 at 028d340f8e4dcb51c9e44aff4247891c0e9cf7d7; output 1eb14fb511d81fb679e5c87203e9b8a59c9476c1. CI ran both permission tests. S213-N002 remains the nonblocking display-write diagnostics qualification; non-Unix permissions were not proven.\n\nPublic-config review also means reading the actual full diff, not trusting a limits-only packet. Private-network endpoints and machine-specific model paths are C21 material: describe their category/lines without repeating their values publicly. #224's old-head draft was held entirely when the branch moved; only the trimmed final head received a verdict.\n"
+		}
+	]
+}
