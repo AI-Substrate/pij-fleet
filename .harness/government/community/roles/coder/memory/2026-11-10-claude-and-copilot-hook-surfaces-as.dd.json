@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Open before adding or changing a Claude hook (any event, especially MessageDisplay or Stop) or a Copilot extension hook, or picking up #213 (plan 226 lane B)",
+				"tags": [
+					"plan-226",
+					"claude",
+					"copilot",
+					"hooks",
+					"concurrency",
+					"e2e"
+				],
+				"title": "Claude and Copilot hook surfaces, as measured (plan 226 lane B)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#213 (lane B) at compaction: draft on main after #212, head 3c2b3330 with CI green. Local ab294f06 (spawn-rate hook attribution) is unpushed. The Claude live captures, the cost numbers and the scratch-HOME removal demo are still to do; full steps in the handover output for pr:213.\n\nClaude Code 2.1.321, verified live:\n- MessageDisplay hooks for consecutive flushes of one reply run CONCURRENTLY (flushes 0 and 1 started in the same ms). State one flush writes can miss the next, so a per-flush hook must order by `index` (`pij-rs hook claude-display` waits up to 1 s for flush i-1 via a state file with atomic rename). The prime's POC looked fine only because its block came in one flush. Test it with a timestamped wrapper; one green run proves nothing.\n- Deltas are whole lines; the final flush may end mid-line, with `final: true`. An empty displayContent hides a flush. Output never reaches the model.\n- Stop input is single-line JSON with last_assistant_message and stop_hook_active. The folder-trust prompt defaults to \"No, exit\": Down, then Enter.\n- Project-level `.claude/settings.local.json` hooks merge with the user's, so a scratch folder can load a branch's hooks without touching ~/.claude. The user's Stop hook still runs too.\n\nCopilot 1.0.109-0 SDK (`~/.copilot/pkg/<ver>/copilot-sdk/*.d.ts`; the HookType enum is in schemas/api.schema.json):\n- onAgentStop carries no text. Take the last root `assistant.message` (no agentId) from session.on: it arrives 9-159 ms before the hook. The transcript file lags. Reset on user.message and abort; abort fires no onAgentStop.\n- `{decision:\"block\", reason}` queues reason as the next user message; re-entry has stopHookActive. session.log lines never reach the model (checked against a positive control). There is no display hook; deltas need `streaming: true`.\n- A project `.github/extensions/<name>` (symlink allowed) shadows the user-level extension of the same name, which is how to load a branch's extension in one scratch seat.\n\nRig hygiene: start a private tmux server with `env -i` and an allowlist. This shell carries PIJ_SESSION_ID, TMUX and COPILOT_*, and a leaked PIJ_SESSION_ID makes seats claim your identity. Give the private daemon a scratch HOME too, or its boot rewrites ~/.pij-rs and ~/.claude for every live Claude seat.\n"
+		}
+	]
+}
