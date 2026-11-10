@@ -1002,6 +1002,19 @@ pub trait TmuxPort: Send + Sync {
         Ok(None)
     }
 
+    /// A pane's root process, as [`Self::pane_process`] answers, only when it
+    /// can be read WITHOUT launching a process (over an already-live tmux
+    /// control client): `Ok(None)` when it can't, `Ok(Some(None))` when tmux
+    /// has no such pane. Never starts a client and never forks (F175). The
+    /// default answers `None`, so an adapter that can't promise this never
+    /// launches.
+    async fn pane_process_without_launch(
+        &self,
+        _pane: &str,
+    ) -> Result<Option<Option<PaneProcess>>> {
+        Ok(None)
+    }
+
     /// Every pane, as [`Self::list_panes`] answers, but only when this can be
     /// read without launching a process (over an already-live tmux control
     /// client); `Ok(None)` when it can't. Never starts a client and never
