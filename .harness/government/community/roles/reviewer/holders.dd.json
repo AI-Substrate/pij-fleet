@@ -1322,6 +1322,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-10T04:14:24.702Z",
 					"why": "#216 F171 (salmon), FINAL c04421a"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T04:50:27.777Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "217",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "#217 plan 226 docs (lemur), FINAL c34b14b"
 				}
 			]
 		}
