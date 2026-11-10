@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c3e9-f680-7431-8cec-55b88ba16159",
+				"date": "2026-11-10",
+				"head": "4762719d68375ddc3fc1c3f97ded6b19b0ba1b2f",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/218#issuecomment-6759806904",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:218",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#218 correctness review: PASS\n\nExact head: `4762719d68375ddc3fc1c3f97ded6b19b0ba1b2f`. No finding.\n\nThe missing-binary branch now drains stdin through EOF using shell builtins before exiting successfully with no output (`harness/scripts/claude-message-display-pij.sh:25-31`). It therefore remains available for a delayed hook-input writer instead of voluntarily closing the pipe first. The normal executable-discovery/exec path is unchanged. The regression waits 200 ms, checks that the hook is still alive, writes and closes stdin, then requires successful bounded completion, empty stdout and no binary invocation.\n\n**Evidence:** `just pr-freeze 218` returned FINAL at this head; detached tree clean. [CI run 42760955125](https://github.com/AI-Substrate/pij-fleet/actions/runs/42760955125) records the exact head. Its successful Rust job's [JUnit artifact 13737587971](https://github.com/AI-Substrate/pij-fleet/actions/runs/42760955125/artifacts/13737587971) lists the delayed-writer case as passed (0.228 s), along with the healthy builtin-discovery/exec case. Overall: 2,412 executed tests, zero failures/errors; six additional nextest skips.\n\nCost inspection: the added `while`/`read`/`:`/`exit` path is in-shell, launches no child, and waits on input rather than polling. Independent performance confirmation remains with that role. Source and CI evidence only; no local builds/tests, live hook execution, settings changes or product edits.\n"
+		}
+	]
+}
