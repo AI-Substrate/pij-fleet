@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c35e-7ab0-75a2-9caf-b2100c91e90d",
+				"date": "2026-11-10",
+				"head": "6c831f4eb1f293446ecd81cb1ec506849034dc68",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/214#issuecomment-6757695864",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:214",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N001: budget the PA suffix inside the stall-message 2 KB cap; the standalone body bound does not cover it"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#214 correctness review, round 1: BLOCK\n\nExact head: `6c831f4eb1f293446ecd81cb1ec506849034dc68`.\n\n**F001: a digest's full-read path restores the stale state notice.** `crates/daemon/src/http/fyi.rs:133-142` renders `read_claimed_fyis` directly, without the refresh applied to the hook claim and carrier paths. The queue's claim changes only state/settlement fields, not the stored body (`crates/store/src/queue.rs:415-438,1284-1306,1353-1369`). With six pending FYIs, an older `large-seats:` notice about a seat that has since compacted is outside the newest three shown by `crates/core/src/fyi.rs:165-178`. Following that digest's advertised `pij-rs fyi-read --seat ... --claimed-at ...` command returns the original over-600k notice, with no `since resolved` marking. The prime can therefore act on the same stale size F170 is meant to fix, even when the size board already knows the new size.\n\nFix: apply the existing state-notice refresh to the full-read response too, preserving its read-only behavior. A focused regression should flush a six-item batch with the resolved notice among the omitted items, follow the digest's full-read command and check the marking. This is a source trace, not a reviewer-run HTTP reproduction.\n\n**F002: the PA line is computed at admission, not when a queued turn is delivered.** `crates/daemon/src/delivery/mod.rs:1127-1140` appends the line before selecting the route and enqueueing the message (`:1242-1247`). Native inbox delivery later returns the saved `payload.message` unchanged (`:1994-2076`); the pane worker likewise decodes the saved body (`crates/daemon/src/pointer/worker.rs:244-252`). For a PA with steering off while working, admit a normal message when no peer FYIs wait, then hold two FYIs for a fleet worker before the PA consumes that message. Its next delivered turn has no `Waiting FYIs:` line. Conversely, an admitted line continues listing piles that were consumed while the message waited. This contradicts the requested delivery-time snapshot in ordinary queued operation.\n\nFix: compute/refresh the optional PA note at the final delivery/claim boundary for queued turns, without duplicating an admission-time line; retain the direct and warm-flush paths. Cover a queued message whose fleet's pending FYIs change before consumption.\n\n**N001, nonblocking: reserve the PA suffix inside the stall-message cap.** `crates/core/src/fyi_watch.rs:77-124` budgets only the stall body, while `delivery/mod.rs:1134-1140` appends the waiting line afterward. Source-derived byte arithmetic gives 1,802 bytes for a 60-item, 1h22m pile at `pij-following-marsupial` (nine listed first lines, each 100 ASCII characters plus truncation), then a 249-byte top-five PA line plus two newlines: **2,053 bytes**, above 2,048. The standalone cap test does not exercise this composition. Budget the appended line as well and test the delivered body. This calculation was not execution of the Rust renderer.\n\nThe other requested paths are consistent with the brief: the stall rule is 2+ peer FYIs, observed idle and oldest at least 15 minutes; claims precede notice admission, successful backlogs remain quiet until re-armed, failures release for retry, and only the scope's PA(s), otherwise prime, are notified, never the subject seat. The warning remains advisory on the direct, shim and role FYI paths. The top-five renderer sorts oldest first and omits empty input. Horse's Part 1 a-h and cold-hour wording are updated. The optional notes port defaults off for existing `DeliveryService::new` users.\n\n**Evidence:** `just pr-freeze 214` returned FINAL at this head; detached tree remained clean. [CI run 42744931063](https://github.com/AI-Substrate/pij-fleet/actions/runs/42744931063) records the exact head. Its successful Rust job uploaded [JUnit artifact 13731521048](https://github.com/AI-Substrate/pij-fleet/actions/runs/42744931063/artifacts/13731521048): 2,376 executed tests, zero failures/errors; nextest reports six additional skips. The new stall, cap, top-five, notice-refresh, fleet, watchdog and warning cases are present and passed. Node 22 CI reports 2,281 passed, six skipped, including the changed routing and roster suites. These tests do not cover F001/F002.\n\nCost inspection: the stall check adds one grouped pending-FYI read to the existing 60-second presence round and a full pile read only for a newly due notice; notes add a role lookup per admission, PA backlog reads and a registry snapshot on FYI carriers. No new timer or process launch. This review does not supply independent live-fleet before/after performance proof. No product edits, local builds/tests, lifecycle operations or reviewer-run live delivery exercises.\n"
+		}
+	]
+}
