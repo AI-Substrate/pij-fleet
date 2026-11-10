@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c2e0-d1ec-76a2-83df-7fff240c4a1a",
+				"date": "2026-11-10",
+				"head": "04865ac60bebcef0a391ccf00521bf6e0fa22c1f",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/211#issuecomment-6755451967",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:211",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Compare scoped horsePart2 rows1,3-8 to read-only help/source at04865ac",
+					"exit_code": 0,
+					"log": "F001row1 bare enum alternatives in Bash formpipelines, leaving firstadd without lifecycle/holders. Use concrete validvalues/quotedplaceholders. Otherchangedflags/syntax/functioncitation/rulinglinks match. Part1,SKILL42,row9excluded(F169). No documentedwritingcommand executed."
+				},
+				{
+					"command": "Inspect exact CI42728459436 skillcheck and Rustjob129540073676; pr-freeze211",
+					"exit_code": 0,
+					"log": "Structuralcheck pass, community110/110;2348Rustpasses,sixskips. Latestchecks pass FINAL/CLEAN; detachedHEAD04865ac unchanged. No productedits/localbuilds. C33/C34scoped review,no performancejudgment."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness verdict: BLOCK\n\nPR #211 at `04865ac60bebcef0a391ccf00521bf6e0fa22c1f`, answering `01a1c2e0-d1ec-76a2-83df-7fff240c4a1a`. One incorrect command example within the requested row-1 fix.\n\n**F001:** `skills/pij/references/routes/community.md:19-20` inserts unquoted `specialist|general`, `long-lived|per-task` and `one|many` into a Bash command. After filling the quoted placeholders, these are shell pipelines, not argument alternatives: the first `pij directory add` still receives no lifecycle or holders. Use concrete valid values, such as `--kind specialist --lifecycle long-lived --holders one` (the help's working example), or quoted placeholders with alternatives explained outside the command.\n\nRows 3–8 otherwise match help/source: external-add syntax, ruling links and anchors, optional spawn model, linked-worktree function citation, optional link parent and assignment-scoped report clear. SKILL.md:42, Part 1 and row 9 remain outside this verdict as requested.\n\nValidation used only help/source and exact-head CI `42728459436`: structural skill check passed (**110/110 community lines**); Rust **2,348 passed**, six separately skipped. Latest checks pass; `pr-freeze` FINAL/CLEAN; HEAD unchanged. No documented add/link/spawn/clear/external writing command was executed, and no product files were edited. C33/C34 applied; no performance judgment or optional proof gate requested.\n"
+		}
+	]
+}
