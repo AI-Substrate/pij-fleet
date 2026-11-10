@@ -7,9 +7,10 @@
 //!   naming the seats in its fleet whose peer FYIs are waiting:
 //!   `Waiting FYIs: pij-x 3 (oldest 22m, idle), ...`. An FYI wakes no one, so
 //!   a hand-off sent as one is easy to miss; the PA sees the pile on every
-//!   turn. One grouped read of pending FYIs (pending-only index), and only
-//!   when that finds any, one roles read, one registry read and an in-process
-//!   repository lookup per seat (files only, no git launch).
+//!   turn. Per delivered turn, one role lookup by seat; for a PA, one grouped
+//!   read of pending FYIs (pending-only index) and, only when some are
+//!   waiting, one registry read and an in-process repository lookup per seat
+//!   (files only, no git launch).
 //! - **The fleet now** (F170). A held state notice (a large seat, an idle
 //!   seat) is re-checked when it flushes, against each seat's state in the
 //!   registry and its last size from the PA watchdog's round, so the reader
@@ -107,6 +108,9 @@ impl StoreNotes {
 #[async_trait]
 impl DeliveryNotes for StoreNotes {
     async fn pa_line(&self, recipient: &SeatDescriptor, now_ms: u64) -> Option<String> {
+        if !self.is_pa(&recipient.id).await {
+            return None;
+        }
         let backlogs = match self.store.pending_peer_fyi_backlogs().await {
             Ok(backlogs) => backlogs,
             Err(cause) => {
@@ -114,7 +118,7 @@ impl DeliveryNotes for StoreNotes {
                 return None;
             }
         };
-        if backlogs.iter().all(|row| row.seat == recipient.id) || !self.is_pa(&recipient.id).await {
+        if backlogs.iter().all(|row| row.seat == recipient.id) {
             return None;
         }
         let seats = match self.registry.list(SeatFilter::default()).await {
