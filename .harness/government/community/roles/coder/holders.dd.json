@@ -986,6 +986,16 @@
 					"seat": "pij-swift-kestrel",
 					"to": "2026-11-10T09:15:27.463Z",
 					"why": "F185 cut remaining at-rest SQLite reads (silkworm approved; after F184)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T23:59:51.375Z",
+					"harness": "copilot",
+					"harness_session": "ef7816c2-f4dd-41a8-995d-94742dbced39",
+					"instance_key": "f186",
+					"machine": "ops.osk.lan",
+					"seat": "pij-rival-salmon",
+					"why": "F186 Jordan ruling: pij builds drop taskpolicy -b (nice -n 19 only)"
 				}
 			]
 		}
