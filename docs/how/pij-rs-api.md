@@ -1777,7 +1777,13 @@ alike, so a number is never handed out under both names. The number is one more 
 highest of every claim for that kind, open or released, and the highest already
 in the project's main checkout: `docs/plans/NNN-*` and `docs/plans/archive/NNN-*`,
 `docs/project/{prds,workstreams,roadmaps,blueprints,workshops}/NNN-*`, and
-`crates/store/migrations/NNNN_*`, read in-process. Each claim is one
+`crates/store/migrations/NNNN_*`, read in-process. Any other kind is read from
+`docs/project/<kind>/NNN-*` then `docs/project/<kind>s/NNN-*` (files and
+folders alike), so a `usage` claim lands past `docs/project/usage/019-*` (F171).
+When neither of those exists, `docs/<kind>` and `docs/<kind>s` are read only to
+warn: if either already holds the claimed number or above, the claim still
+succeeds, with `data.warning` naming the folder and its highest number, also
+appended to `data.line`. They never set the number and never refuse. Each claim is one
 `BEGIN IMMEDIATE` transaction over a unique (project, kind, number) key, so
 concurrent claims get distinct consecutive numbers and projects never interact.
 `data.number`, `data.formatted` (`0033`) and `data.floor` (the checkout's highest)
