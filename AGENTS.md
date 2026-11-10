@@ -169,8 +169,9 @@ citation disputes, all of which resolved as neither party being wrong.)
 - **`just link`** — machine-wide policy from the **canonical main checkout only**.
   It refuses linked worktrees, links only `pij` into `~/.omp/agent/extensions/`
   plus `~/.omp/agent/{mcp.json,models.yml}` → this repo's `.omp/`, and links the
-  native Copilot extension. `just unlink` removes only pij-owned links; real
-  paths and foreign symlinks are never clobbered.
+  native Copilot extension. `just unlink` removes only pij-owned links and
+  pij-managed Claude hooks; real paths, foreign symlinks and foreign hooks are
+  never clobbered.
 - **`just rs-install`** builds `pij-rs` (release) and links it next to the
   `pij` shim in `$(npm prefix -g)/bin`. **`just bounce-rs`** rebuilds and
   restarts the daemon; **`just rs-autostart`** registers a macOS LaunchAgent.
@@ -204,7 +205,9 @@ citation disputes, all of which resolved as neither party being wrong.)
   seat or cwd list removes nothing (F107). `--prune` is macOS only; elsewhere it refuses. It runs on node's TypeScript stripping, with no node_modules, so it works from any review
   worktree (F109).
 - **`just doctor`** — read-only audit: CLI shim shape, `pij-rs` on PATH, skill
-  link, OMP policy and daemon health. The first diagnostic when anything drifts.
+  link, OMP policy, pij-managed Claude hooks, the Copilot extension and daemon
+  health; each one missing or stale prints its fix. The first diagnostic when
+  anything drifts.
 - **npm supply chain** — `.npmrc` enforces a seven-day `min-release-age`
   quarantine; `just lockfile-allowlist` fails on any lockfile source outside the
   allowed registry host; CI runs `npm audit --audit-level=high` as a hard gate.

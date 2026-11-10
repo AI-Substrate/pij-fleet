@@ -23,6 +23,7 @@ import {
 	resolveNativeHost,
 	resolveRegistration,
 	STANDBY_RETRY_MS,
+	TurnEndTracker,
 } from "./store.mjs";
 
 const execute = promisify(execFile);
@@ -59,6 +60,8 @@ async function startExtension() {
 	let bridge;
 	let session;
 	let unsubscribe;
+	// Plan 226: the run's final reply, from the native event stream.
+	const turnEnd = new TurnEndTracker();
 	const nativeReport = createNativeReporter({
 		log: (message, options) => session.log(message, options),
 		capture: report,
@@ -87,7 +90,7 @@ async function startExtension() {
 				{
 					name: "pij_send",
 					description:
-						"Send a message to a Pij peer from this native Copilot seat. A receipt proves queue/native acceptance, not completed model work. Call explicitly; replies are never automatically forwarded. `fyi: true` holds a message and rides along on the recipient's next turn instead of opening one. A normal send lands inside a turn the recipient is already in, so choose fyi unless their current work depends on it. Use `fyi: true` only when the recipient's next action doesn't depend on it. If they'd be stuck, wrong or waiting without it, it's a normal send. If they'd be fine not reading it until their next turn, it's `fyi: true`. If they'd be fine never reading it, don't send it. Always normal sends: work done or a phase complete, review verdicts, hand-offs, blockers, questions, decisions needed. FYI examples: \"merged #452, nothing needed from you\"; \"heads-up: main moved, rebase when you next touch it\"; progress notes nobody is waiting on. A cold recipient (large context, idle past its prompt-cache TTL, not working) refuses a waking message with E-RS-COLD-WAKE naming the price; resend with fyi if their next action doesn't depend on it, or with force and a reason only when the wake is worth that price (audited). When you answer a role request (its header reads `[pij role:<role> request <id> …]`), pass that <id> as in_reply_to: that is what marks the request answered and stops its time limit.",
+						'Send a message to a Pij peer from this native Copilot seat. A receipt proves queue/native acceptance, not completed model work. Call explicitly; replies are never automatically forwarded. Before setting `fyi: true`, ask: does the recipient have to do anything because of this message? Yes: normal send, even if you need no reply. No: fyi, which is only for information the recipient does not have to act on. Never fyi: "step done, your turn", hand-offs, "ready", work or a phase complete, review verdicts, blockers, questions, decisions. An FYI never wakes anyone: it rides along on the recipient\'s next turn, so an idle seat will not see it until something else wakes it. FYI examples: "merged #452, nothing needed from you"; "heads-up: main moved, rebase when you next touch it"; progress notes nobody is waiting on. A cold recipient (large context, idle over an hour, not working) refuses a waking message with E-RS-COLD-WAKE naming the price; if the recipient has nothing to do with it, resend with fyi; if they have to act, resend with force and a reason when the wake is worth that price (audited), or let their parent decide. When you answer a role request (its header reads `[pij role:<role> request <id> …]`), pass that <id> as in_reply_to: that is what marks the request answered and stops its time limit.',
 					parameters: {
 						type: "object",
 						properties: {
@@ -100,7 +103,7 @@ async function startExtension() {
 							fyi: {
 								type: "boolean",
 								description:
-									"Hold until the recipient's next turn instead of opening one. Only when their next action doesn't depend on it: if they'd be stuck, wrong or waiting without it, send normally; if they'd be fine never reading it, don't send it. Never for work done, review verdicts, hand-offs, blockers, questions or decisions needed. Never with force",
+									'Does the recipient have to do anything because of this message? Yes: leave this off and send normally, even when you need no reply. No: true holds it until the recipient\'s next turn; it wakes no one. Never for "step done, your turn", hand-offs, "ready", verdicts, blockers, questions or decisions. Never with force',
 							},
 							force: {
 								type: "boolean",
@@ -143,6 +146,20 @@ async function startExtension() {
 						return undefined;
 					return bridge.claimFyis();
 				},
+				// Plan 226: a reply ending in a pij block runs it at the natural end of
+				// the run (never on abort); failure gives the seat one follow-up turn.
+				onAgentStop: async (input, invocation) => {
+					const text = turnEnd.take();
+					if (
+						!session ||
+						!bridge ||
+						signal.aborted ||
+						invocation?.sessionId !== session.sessionId ||
+						(input?.sessionId ?? session.sessionId) !== session.sessionId
+					)
+						return undefined;
+					return bridge.turnEnd(text, input?.stopHookActive === true);
+				},
 			},
 		});
 		signal.throwIfAborted();
@@ -152,9 +169,11 @@ async function startExtension() {
 		// against any other live session of the same Copilot process.
 		const precedence = new NativePrecedence({ loadedAt: Math.floor(performance.timeOrigin) });
 		const unsubscribePrecedence = session.on((event) => precedence.observe(event));
+		const unsubscribeTurnEnd = session.on((event) => turnEnd.observe(event));
 		const unsubscribeShutdown = session.on("session.shutdown", () => stop("session.shutdown"));
 		unsubscribe = () => {
 			unsubscribePrecedence();
+			unsubscribeTurnEnd();
 			unsubscribeShutdown();
 		};
 

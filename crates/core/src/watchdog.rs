@@ -488,15 +488,20 @@ pub enum PresenceKind {
     Unresponsive,
     /// The prime was told a seat went over [`LARGE_SEAT_TOKENS`]. Subject: the seat.
     LargeSeat,
+    /// The PA (or the prime) was told a seat may be stalled on its held FYIs
+    /// (F169). Subject: the seat; detail: the newest FYI's hold time, so only
+    /// a newer FYI re-arms it.
+    FyiStall,
 }
 
 impl PresenceKind {
     /// Every kind, in store order.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Missing,
         Self::Dormant,
         Self::Unresponsive,
         Self::LargeSeat,
+        Self::FyiStall,
     ];
 
     /// The stored and audited spelling.
@@ -506,6 +511,7 @@ impl PresenceKind {
             Self::Dormant => "pa-dormant",
             Self::Unresponsive => "pa-unresponsive",
             Self::LargeSeat => "large-seat",
+            Self::FyiStall => "fyi-stall",
         }
     }
 

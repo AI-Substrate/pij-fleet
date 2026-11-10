@@ -551,10 +551,10 @@ answer = "Busy: a truncated spinner row still marks a turn in progress; HarnessP
 
 [[fixture]]
 path = "golden/cold-wake/refusal.txt"
-sha256 = "726464d75adbfbe2ef295823cfc5480b547e040edd24c15136c4b220316d5445"
-bytes = 280
-note = "Plan 160: the E-RS-COLD-WAKE refusal, rendered by pij_core::cold_wake::refusal for a 720k-token Claude Opus 5.5 seat idle 1h52m."
-answer = "Header `❄ <seat> is cold (<ctx>, idle <dur>). Options:`, then one aligned row per option (`--fyi` hold for its next turn, $0 now; `--force --reason` wake on its current model, ~$ estimate), then the estimate basis line. No trailing newline."
+sha256 = "bd7ec968a6b9062c09832294a6f9ae12aff584a65eff674d52ac174e936fc387"
+bytes = 304
+note = "Plan 160: the E-RS-COLD-WAKE refusal, rendered by pij_core::cold_wake::refusal for a 720k-token Claude Opus 5.5 seat idle 1h52m. F169 reworded the --fyi row."
+answer = "Header `❄ <seat> is cold (<ctx>, idle <dur>). Options:`, then one aligned row per option (`--fyi` only if they need do nothing; wakes no one, $0 now; `--force --reason` wake on its current model, ~$ estimate), then the estimate basis line. No trailing newline."
 
 [[fixture]]
 path = "golden/cli/list-sized.json"

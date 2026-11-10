@@ -17,15 +17,21 @@ const USER_PROMPT_SUBMIT_KEY: &str = "UserPromptSubmit";
 const STOP_KEY: &str = "Stop";
 /// A turn that ends on an API error fires this instead of `Stop` (review N1).
 const STOP_FAILURE_KEY: &str = "StopFailure";
+/// Fires per flush of a streamed reply; its output replaces that flush on
+/// screen only (Claude Code 2.1.321, plan 226).
+const MESSAGE_DISPLAY_KEY: &str = "MessageDisplay";
 const STATUS_LINE_KEY: &str = "statusLine";
 const SESSION_START_SCRIPT_NAME: &str = "claude-session-start-pij.sh";
 const USER_PROMPT_SUBMIT_SCRIPT_NAME: &str = "claude-user-prompt-submit-pij.sh";
 const STOP_SCRIPT_NAME: &str = "claude-stop-pij.sh";
+const MESSAGE_DISPLAY_SCRIPT_NAME: &str = "claude-message-display-pij.sh";
 const CLAUDE_SESSION_START_SCRIPT: &str =
     include_str!("../../../harness/scripts/claude-session-start-pij.sh");
 const CLAUDE_USER_PROMPT_SUBMIT_SCRIPT: &str =
     include_str!("../../../harness/scripts/claude-user-prompt-submit-pij.sh");
 const CLAUDE_STOP_SCRIPT: &str = include_str!("../../../harness/scripts/claude-stop-pij.sh");
+const CLAUDE_MESSAGE_DISPLAY_SCRIPT: &str =
+    include_str!("../../../harness/scripts/claude-message-display-pij.sh");
 const CLAUDE_STATUSLINE_SCRIPT: &str =
     include_str!("../../../harness/scripts/claude-statusline-pij.sh");
 const COPILOT_STATUSLINE_SCRIPT: &str =
@@ -358,6 +364,18 @@ pub fn plan_claude_stop_failure_hook(existing: Option<&str>, command: &str) -> E
     plan_claude_hook(existing, command, STOP_FAILURE_KEY, STOP_SCRIPT_NAME)
 }
 
+/// Plan the minimal safe edit that installs pij's Claude MessageDisplay hook,
+/// which hides a reply's closing pij block on screen (plan 226).
+#[must_use]
+pub fn plan_claude_message_display_hook(existing: Option<&str>, command: &str) -> EnsurePlan {
+    plan_claude_hook(
+        existing,
+        command,
+        MESSAGE_DISPLAY_KEY,
+        MESSAGE_DISPLAY_SCRIPT_NAME,
+    )
+}
+
 /// Install `command` as the single pij-managed entry under `hooks.<event>`.
 /// A command is pij-managed when it names `script_name`; foreign entries are
 /// preserved byte for byte and stale managed commands are reconciled in place.
@@ -551,6 +569,110 @@ fn is_managed_hook_command(command: &str, script_name: &str) -> bool {
         .is_some_and(|prefix| prefix.ends_with('/'))
 }
 
+/// Every pij-managed Claude hook: the event, and the script that marks it ours.
+const MANAGED_HOOKS: [(&str, &str); 5] = [
+    (SESSION_START_KEY, SESSION_START_SCRIPT_NAME),
+    (USER_PROMPT_SUBMIT_KEY, USER_PROMPT_SUBMIT_SCRIPT_NAME),
+    (STOP_KEY, STOP_SCRIPT_NAME),
+    (STOP_FAILURE_KEY, STOP_SCRIPT_NAME),
+    (MESSAGE_DISPLAY_KEY, MESSAGE_DISPLAY_SCRIPT_NAME),
+];
+
+/// Plan removing every pij-managed hook command from one settings document
+/// (`just unlink`, plan 226). Foreign hooks, the statusline and every other
+/// setting stay as they are; an entry the removal leaves empty goes too.
+#[must_use]
+pub fn plan_remove_claude_hooks(existing: Option<&str>) -> EnsurePlan {
+    let Some(existing) = existing.filter(|document| !document.trim().is_empty()) else {
+        return EnsurePlan::NoChange { before: None };
+    };
+    let mut document = existing.to_string();
+    let mut removed = Vec::new();
+    for (event, script_name) in MANAGED_HOOKS {
+        match remove_managed_hook(&document, event, script_name) {
+            Ok(Some((updated, command))) => {
+                document = updated;
+                removed.push(format!("{event}: {command}"));
+            }
+            Ok(None) => {}
+            Err(error) => return EnsurePlan::Refuse { error },
+        }
+    }
+    if removed.is_empty() {
+        return EnsurePlan::NoChange { before: None };
+    }
+    EnsurePlan::Write {
+        before: Some(removed.join("; ")),
+        contents: document,
+    }
+}
+
+/// Remove `hooks.<event>`'s pij-managed commands; `None` when it has none.
+fn remove_managed_hook(
+    document: &str,
+    event: &str,
+    script_name: &str,
+) -> Result<Option<(String, String)>, String> {
+    let parsed: Value = serde_json::from_str(document)
+        .map_err(|error| format!("malformed settings.json: {error}"))?;
+    let root = parsed
+        .as_object()
+        .ok_or("settings.json root must be a JSON object")?;
+    let Some(hooks) = root.get(HOOKS_KEY) else {
+        return Ok(None);
+    };
+    let hooks = hooks
+        .as_object()
+        .ok_or("settings.json hooks must be a JSON object")?;
+    let Some(entries) = hooks.get(event) else {
+        return Ok(None);
+    };
+    let entries = entries
+        .as_array()
+        .ok_or_else(|| format!("settings.json hooks.{event} must be a JSON array"))?;
+    let Some(first) = first_managed_hook_command(entries, script_name) else {
+        return Ok(None);
+    };
+    let hooks_range = find_top_level_value(document, HOOKS_KEY)
+        .ok_or("could not locate hooks in valid settings.json")?;
+    let hooks_document = &document[hooks_range.clone()];
+    let event_range = find_top_level_value(hooks_document, event)
+        .ok_or_else(|| format!("could not locate hooks.{event} in valid settings.json"))?;
+    let kept = entries
+        .iter()
+        .filter_map(|original| {
+            let mut entry = original.clone();
+            let Some(hooks) = entry.get_mut("hooks").and_then(Value::as_array_mut) else {
+                return Some(entry);
+            };
+            let count = hooks.len();
+            hooks.retain(|hook| {
+                !hook
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .is_some_and(|command| is_managed_hook_command(command, script_name))
+            });
+            (hooks.len() == count || !hooks.is_empty()).then_some(entry)
+        })
+        .collect::<Vec<_>>();
+    let kept = serde_json::to_string(&kept).expect("hook serialization is infallible");
+    let updated_hooks = replace_range(hooks_document, event_range, &kept);
+    Ok(Some((
+        replace_range(document, hooks_range, &updated_hooks),
+        first,
+    )))
+}
+
+/// Remove every pij-managed hook from every named Claude home (`just unlink`).
+/// A home without a settings file is left without one.
+#[must_use]
+pub fn remove_claude_hooks(homes: &[PathBuf]) -> Vec<EnsureReport> {
+    homes
+        .iter()
+        .map(|home| ensure_home(home, "removed", plan_remove_claude_hooks))
+        .collect()
+}
+
 /// Ensure every named Claude home invokes pij's SessionStart hook.
 #[must_use]
 pub fn ensure_claude_session_start_hook(
@@ -646,6 +768,32 @@ pub fn inspect_claude_stop_hook(homes: &[PathBuf], script_path: &Path) -> Vec<Cl
     inspect_claude_hook(homes, script_path, plan_claude_stop_hook)
 }
 
+/// Ensure every named Claude home runs pij's MessageDisplay hook (plan 226).
+#[must_use]
+pub fn ensure_claude_message_display_hook(
+    homes: &[PathBuf],
+    script_path: &Path,
+) -> Vec<EnsureReport> {
+    let command = shell_command(script_path);
+    homes
+        .iter()
+        .map(|home| {
+            ensure_home(home, &command, |existing| {
+                plan_claude_message_display_hook(existing, &command)
+            })
+        })
+        .collect()
+}
+
+/// Inspect the pij MessageDisplay hook in every named Claude home (plan 226).
+#[must_use]
+pub fn inspect_claude_message_display_hook(
+    homes: &[PathBuf],
+    script_path: &Path,
+) -> Vec<ClaudeHookState> {
+    inspect_claude_hook(homes, script_path, plan_claude_message_display_hook)
+}
+
 fn inspect_claude_hook(
     homes: &[PathBuf],
     script_path: &Path,
@@ -722,6 +870,30 @@ pub fn install_claude_user_prompt_submit_script(state_dir: &Path) -> std::io::Re
 /// path (plan 157).
 pub fn install_claude_stop_script(state_dir: &Path) -> std::io::Result<PathBuf> {
     install_script(state_dir, STOP_SCRIPT_NAME, CLAUDE_STOP_SCRIPT)
+}
+
+/// Materialize the embedded Claude MessageDisplay hook at a stable
+/// daemon-owned path (plan 226).
+pub fn install_claude_message_display_script(state_dir: &Path) -> std::io::Result<PathBuf> {
+    install_script(
+        state_dir,
+        MESSAGE_DISPLAY_SCRIPT_NAME,
+        CLAUDE_MESSAGE_DISPLAY_SCRIPT,
+    )
+}
+
+/// Whether an installed managed script still carries the bytes this build
+/// embeds; a daemon boot reinstalls it (plan 226, doctor's stale check).
+#[must_use]
+pub fn claude_script_is_current(state_dir: &Path, name: &str) -> Option<bool> {
+    let embedded = match name {
+        SESSION_START_SCRIPT_NAME => CLAUDE_SESSION_START_SCRIPT,
+        USER_PROMPT_SUBMIT_SCRIPT_NAME => CLAUDE_USER_PROMPT_SUBMIT_SCRIPT,
+        STOP_SCRIPT_NAME => CLAUDE_STOP_SCRIPT,
+        MESSAGE_DISPLAY_SCRIPT_NAME => CLAUDE_MESSAGE_DISPLAY_SCRIPT,
+        _ => return None,
+    };
+    Some(fs::read_to_string(state_dir.join(name)).ok().as_deref() == Some(embedded))
 }
 
 fn install_script(state_dir: &Path, name: &str, contents: &str) -> std::io::Result<PathBuf> {
@@ -2499,6 +2671,10 @@ mod tests {
             Self::new(install_claude_stop_script)
         }
 
+        fn display() -> Self {
+            Self::new(install_claude_message_display_script)
+        }
+
         fn new(install: fn(&Path) -> std::io::Result<PathBuf>) -> Self {
             use std::os::unix::fs::PermissionsExt;
 
@@ -2511,6 +2687,15 @@ mod tests {
                 concat!(
                     "#!/bin/sh\n",
                     "printf '%s|%s\\n' \"${PIJ_SESSION_ID:-unset}\" \"$*\" >>\"$FAKE_CALLS\"\n",
+                    "if [ \"$1\" = hook ]; then\n",
+                    "  cat >\"$FAKE_CALLS.stdin\"\n",
+                    "  case \"$FAKE_MODE\" in\n",
+                    "    hang) exec sleep 30 ;;\n",
+                    "    fail) printf '{\"systemMessage\":\"pij ✓ 1 sent\"}\\n'; printf 'idle not published\\n' >&2; exit 4 ;;\n",
+                    "    modes) ls -ld \"$TMPDIR\"/pij-stop.* \"$TMPDIR\"/pij-stop.*/* >\"$FAKE_CALLS.modes\" 2>&1 ;;\n",
+                    "  esac\n",
+                    "  printf '{\"decision\":\"block\",\"reason\":\"Ran: line 1.\"}\\n'; exit 0\n",
+                    "fi\n",
                     "if [ \"$1\" = activity ]; then\n",
                     "  case \"${FAKE_ACTIVITY:-ok}\" in\n",
                     "    fail) printf 'daemon down\\n' >&2; exit 4 ;;\n",
@@ -2536,6 +2721,7 @@ mod tests {
                 .map(|dir| format!(":{}", dir.display()))
                 .unwrap_or_default();
             let path = format!("{}{jq_dir}:/usr/bin:/bin", bin_dir.display());
+            fs::create_dir_all(root.path().join("tmp")).expect("tmp directory");
             let script = install(&root.path().join("state")).expect("install script");
             Self { root, script, path }
         }
@@ -2554,15 +2740,28 @@ mod tests {
             activity: &str,
             payload: &str,
         ) -> (std::process::Output, std::time::Duration) {
+            self.run_bounded(mode, activity, payload, "1")
+        }
+
+        /// `bound` is the Stop script's watchdog, in seconds, on both paths.
+        fn run_bounded(
+            &self,
+            mode: &str,
+            activity: &str,
+            payload: &str,
+            bound: &str,
+        ) -> (std::process::Output, std::time::Duration) {
             use std::io::Write as _;
             use std::process::Stdio;
 
             let mut hook = std::process::Command::new(&self.script);
             hook.env("PATH", &self.path)
                 .env("HOME", self.root.path())
+                .env("TMPDIR", self.root.path().join("tmp"))
                 .env("PIJ_RS_STATE_DIR", self.root.path().join("state"))
                 .env("PIJ_RS_FYI_CLAIM_TIMEOUT", "1")
-                .env("PIJ_RS_ACTIVITY_TIMEOUT", "1")
+                .env("PIJ_RS_ACTIVITY_TIMEOUT", bound)
+                .env("PIJ_RS_TURN_END_TIMEOUT", bound)
                 .env("TMUX_PANE", "%42")
                 .env("PIJ_SESSION_ID", "pij-inherited-seat")
                 .env("FAKE_MODE", mode)
@@ -2940,5 +3139,278 @@ mod tests {
             (value["model"].as_str(), value["a"].as_i64()),
             (Some("sonnet"), Some(2))
         );
+    }
+
+    #[cfg(unix)]
+    const BLOCK_STOP: &str = r#"{"session_id":"sess-7","hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"Done.\n\n```pij\nsend pij-x \"hi\"\n```"}"#;
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_hook_hands_a_fenced_reply_to_one_call_and_relays_its_answer() {
+        let rig = HookRig::stop();
+        let (output, _) = rig.run("answer", BLOCK_STOP);
+
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).expect("utf-8"),
+            "{\"decision\":\"block\",\"reason\":\"Ran: line 1.\"}\n",
+            "the answer, and only the answer, reaches Claude"
+        );
+        assert_eq!(
+            rig.calls(),
+            ["unset|hook claude-stop --pane %42"],
+            "one launch, no separate idle call, never an inherited seat"
+        );
+        assert_eq!(
+            fs::read_to_string(rig.root.path().join("calls.stdin")).expect("stdin"),
+            format!("{BLOCK_STOP}\n"),
+            "the Stop input passes through whole"
+        );
+        assert_eq!(rig.log(), "");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_hook_block_path_logs_failures_and_is_bounded() {
+        let rig = HookRig::stop();
+        let (output, _) = rig.run("fail", BLOCK_STOP);
+        assert_eq!(
+            String::from_utf8(output.stdout).expect("utf-8"),
+            "{\"systemMessage\":\"pij ✓ 1 sent\"}\n",
+            "a failed idle publish still relays the answer"
+        );
+        let (output, took) = rig.run("hang", BLOCK_STOP);
+        assert!(output.status.success());
+        assert!(output.stdout.is_empty(), "a wedged daemon answers nothing");
+        assert!(took < std::time::Duration::from_secs(3), "held {took:?}");
+        assert_eq!(
+            rig.log(),
+            concat!(
+                "refused:turn-end pane=%42 status=4 reason=idle not published \n",
+                "refused:turn-end pane=%42 status=143 reason=\n",
+            )
+        );
+    }
+
+    /// Claude reads a hook's stdout to its end, and from 2.1.322 it refuses a
+    /// block answer while a leftover child still holds that pipe. Under a long
+    /// watchdog the script's stdout must close when the script exits.
+    #[cfg(unix)]
+    #[test]
+    fn stop_hook_closes_claudes_stdout_when_it_exits() {
+        let rig = HookRig::stop();
+        for (mode, payload) in [
+            ("answer", BLOCK_STOP),
+            ("block", r#"{"session_id":"sess-7"}"#),
+        ] {
+            let (output, took) = rig.run_bounded(mode, "ok", payload, "30");
+            assert!(output.status.success(), "{mode}");
+            assert!(
+                took < pij_testkit::time::scaled(std::time::Duration::from_secs(5)),
+                "{mode}: stdout held open for {took:?}"
+            );
+        }
+    }
+
+    /// The reply text and the daemon's answer are this user's alone, even
+    /// under a shared /tmp (S213-001), and their directory goes with the hook.
+    #[cfg(unix)]
+    #[test]
+    fn stop_hook_keeps_the_reply_in_a_private_directory() {
+        let rig = HookRig::stop();
+        let (output, _) = rig.run("modes", BLOCK_STOP);
+        assert!(output.status.success());
+        let listing = fs::read_to_string(rig.root.path().join("calls.modes")).expect("listing");
+        let modes = listing
+            .lines()
+            .filter_map(|line| line.split_whitespace().next())
+            .collect::<Vec<_>>();
+        let (dirs, files): (Vec<&str>, Vec<&str>) =
+            modes.into_iter().partition(|mode| mode.starts_with('d'));
+        assert_eq!((dirs.len(), files.len()), (1, 3), "{listing}");
+        assert!(dirs[0].starts_with("drwx------"), "{listing}");
+        assert!(
+            files.iter().all(|mode| mode.starts_with("-rw-------")),
+            "in, out and err are 0600: {listing}"
+        );
+        assert_eq!(
+            fs::read_dir(rig.root.path().join("tmp"))
+                .expect("tmp")
+                .count(),
+            0,
+            "the directory goes with the hook"
+        );
+    }
+
+    const DISPLAY_HOOK: &str = "/Users/test/.pij-rs/claude-message-display-pij.sh";
+
+    #[test]
+    fn message_display_hook_covers_every_home_reconciling_stale_and_keeping_foreign() {
+        let root = TestDir::new();
+        let claude = root.path().join(".claude");
+        let alt = root.path().join(".claude-alt");
+        fs::create_dir_all(&claude).expect("home");
+        let original = r#"{"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"/Users/test/.pij-rs/claude-stop-pij.sh"}]}],"MessageDisplay":[{"matcher":"","hooks":[{"type":"command","command":"/tmp/a/claude-message-display-pij.sh"}]},{"hooks":[{"type":"command","command":"foreign-display"}]}]},"theme":"dark"}"#;
+        fs::write(claude.join("settings.json"), original).expect("seed settings");
+        let homes = [claude.clone(), alt.clone()];
+        let before = inspect_claude_message_display_hook(&homes, Path::new(DISPLAY_HOOK));
+        assert_eq!(
+            before[0].command.as_deref(),
+            Some("/tmp/a/claude-message-display-pij.sh")
+        );
+        assert!(!before[0].installed && !before[1].file_exists);
+
+        let reports = ensure_claude_message_display_hook(&homes, Path::new(DISPLAY_HOOK));
+
+        assert!(
+            reports
+                .iter()
+                .all(|report| report.changed && report.error.is_none())
+        );
+        let parsed = written_settings(&claude);
+        let entries = parsed["hooks"]["MessageDisplay"].as_array().expect("array");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0]["hooks"][0]["command"], DISPLAY_HOOK);
+        assert_eq!(entries[1]["hooks"][0]["command"], "foreign-display");
+        assert_eq!(parsed["hooks"]["Stop"][0]["hooks"][0]["command"], STOP_HOOK);
+        assert_eq!(parsed["theme"], "dark");
+        assert_eq!(
+            written_settings(&alt)["hooks"]["MessageDisplay"][0]["hooks"][0]["command"],
+            DISPLAY_HOOK
+        );
+        assert!(
+            inspect_claude_message_display_hook(&homes, Path::new(DISPLAY_HOOK))
+                .iter()
+                .all(|state| state.installed)
+        );
+        assert!(
+            ensure_claude_message_display_hook(&homes, Path::new(DISPLAY_HOOK))
+                .iter()
+                .all(|report| !report.changed && report.backup.is_none()),
+            "idempotent"
+        );
+    }
+
+    #[test]
+    fn removal_takes_every_managed_hook_and_leaves_the_rest_alone() {
+        let root = TestDir::new();
+        let claude = root.path().join(".claude");
+        let alt = root.path().join(".claude-alt");
+        let fresh = root.path().join(".claude-fresh");
+        fs::create_dir_all(&claude).expect("home");
+        fs::create_dir_all(&alt).expect("alt home");
+        fs::write(alt.join("settings.json"), "{not-json").expect("seed alt");
+        let homes = [claude.clone()];
+        let managed = [
+            (
+                ensure_claude_session_start_hook as fn(&[PathBuf], &Path) -> Vec<EnsureReport>,
+                "/Users/test/.pij-rs/claude-session-start-pij.sh",
+            ),
+            (ensure_claude_user_prompt_submit_hook, PROMPT_HOOK),
+            (ensure_claude_stop_hook, STOP_HOOK),
+            (ensure_claude_stop_failure_hook, STOP_HOOK),
+            (ensure_claude_message_display_hook, DISPLAY_HOOK),
+        ];
+        fs::write(
+            claude.join("settings.json"),
+            r#"{"crossSessionInbound":"accept","statusLine":{"type":"command","command":"/Users/test/.pij-rs/claude-statusline-pij.sh"},"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"foreign-stop"}]},{"hooks":[]}]}}"#,
+        )
+        .expect("seed settings");
+        for (ensure, script) in managed {
+            assert!(ensure(&homes, Path::new(script))[0].error.is_none());
+        }
+
+        let reports = remove_claude_hooks(&[claude.clone(), alt.clone(), fresh.clone()]);
+
+        assert!(reports[0].changed && reports[0].backup.is_some());
+        assert_eq!(
+            reports[0]
+                .before
+                .as_deref()
+                .map(|before| before.matches(": ").count()),
+            Some(5),
+            "{:?}",
+            reports[0].before
+        );
+        let parsed = written_settings(&claude);
+        assert_eq!(parsed["crossSessionInbound"], "accept");
+        assert_eq!(
+            parsed["statusLine"]["command"],
+            "/Users/test/.pij-rs/claude-statusline-pij.sh"
+        );
+        assert_eq!(
+            parsed["hooks"]["Stop"],
+            serde_json::json!([
+                {"matcher": "", "hooks": [{"type": "command", "command": "foreign-stop"}]},
+                {"hooks": []},
+            ]),
+            "foreign hooks, and an entry that was empty already, stay"
+        );
+        for event in [
+            "SessionStart",
+            "UserPromptSubmit",
+            "StopFailure",
+            "MessageDisplay",
+        ] {
+            assert_eq!(parsed["hooks"][event], serde_json::json!([]), "{event}");
+        }
+        assert!(!reports[1].changed && reports[1].error.is_some());
+        assert_eq!(
+            fs::read_to_string(alt.join("settings.json")).expect("alt settings"),
+            "{not-json",
+            "malformed settings are refused untouched"
+        );
+        assert!(!reports[2].changed && !fresh.join("settings.json").exists());
+        assert!(
+            remove_claude_hooks(&homes)
+                .iter()
+                .all(|report| !report.changed && report.backup.is_none()),
+            "idempotent"
+        );
+    }
+
+    #[cfg(unix)]
+    const FLUSH: &str = r#"{"session_id":"sess-7","hook_event_name":"MessageDisplay","message_id":"msg-1","index":0,"final":true,"delta":"x\n```pij\nsend a b\n```"}"#;
+
+    #[cfg(unix)]
+    #[test]
+    fn display_hook_hands_each_flush_to_pij_rs_found_with_builtins() {
+        let rig = HookRig::display();
+        let (output, _) = rig.run("answer", FLUSH);
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).expect("utf-8"),
+            "{\"decision\":\"block\",\"reason\":\"Ran: line 1.\"}\n",
+            "pij-rs answers the hook directly"
+        );
+        assert_eq!(
+            rig.calls(),
+            ["pij-inherited-seat|hook claude-display"],
+            "one exec, the flush on stdin"
+        );
+        assert_eq!(
+            fs::read_to_string(rig.root.path().join("calls.stdin")).expect("stdin"),
+            FLUSH
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn display_hook_without_pij_rs_leaves_the_reply_alone() {
+        let rig = HookRig::display();
+        let empty = rig.root.path().join("empty-bin");
+        fs::create_dir_all(&empty).expect("empty bin");
+        let mut hook = std::process::Command::new(&rig.script);
+        hook.env("PATH", &empty)
+            .env("HOME", rig.root.path())
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped());
+        let mut child = retry_etxtbsy(|| hook.spawn());
+        std::io::Write::write_all(&mut child.stdin.take().expect("stdin"), FLUSH.as_bytes())
+            .expect("write input");
+        let output = wait_bounded(child, std::time::Duration::from_secs(10));
+        assert!(output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(rig.calls().is_empty());
     }
 }

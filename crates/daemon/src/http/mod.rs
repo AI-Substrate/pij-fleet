@@ -2456,11 +2456,11 @@ async fn hold_fyi(state: &AppState, request: SendBodyRequest) -> Response {
         in_reply_to: request.in_reply_to,
         command: None,
     };
-    let question = pij_core::fyi::looks_like_a_question(&msg.body);
+    let warning = pij_core::fyi::hold_warning(&msg.body);
     let recipient = msg.to.clone();
     match state.services.delivery.hold_fyi(msg).await {
         Ok(mut receipt) => {
-            fyi::after_hold(state, &recipient, question, &mut receipt).await;
+            fyi::after_hold(state, &recipient, warning, &mut receipt).await;
             envelope(StatusCode::OK, &Envelope::ok("pij send", receipt))
         }
         Err(error) => send_failure("pij send", error),

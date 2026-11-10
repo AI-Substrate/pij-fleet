@@ -252,6 +252,9 @@ pub struct DeliveryService {
     extension_claim_lease_secs: u64,
     recovery_authority_shared: bool,
     admissions: tokio::sync::Mutex<tokio::task::JoinSet<()>>,
+    /// What a delivered turn reads from the store: a PA's waiting-FYIs line
+    /// and the fleet held state notices are re-checked against (F169, F170).
+    notes: Option<Arc<dyn crate::fyi_notes::DeliveryNotes>>,
 }
 
 /// The hold a claim made during a turn gets when the seat's mid-turn steering
@@ -309,6 +312,32 @@ impl DeliveryService {
         self
     }
 
+    /// Read the PA line and the fleet now from `notes` (F169, F170).
+    #[must_use]
+    pub fn with_notes(mut self, notes: Arc<dyn crate::fyi_notes::DeliveryNotes>) -> Self {
+        self.notes = Some(notes);
+        self
+    }
+
+    /// Each seat's state and size now, when notes are wired and readable.
+    pub(crate) async fn fleet_now(&self) -> Option<HashMap<SeatId, pij_core::fyi_watch::SeatNow>> {
+        match &self.notes {
+            Some(notes) => notes.fleet_now().await,
+            None => None,
+        }
+    }
+
+    /// The notes, for the pane worker's hand-over (F169).
+    pub(crate) fn notes(&self) -> Option<Arc<dyn crate::fyi_notes::DeliveryNotes>> {
+        self.notes.clone()
+    }
+
+    /// `msg` as handed to `recipient` now: a PA's turn ends with its fleet's
+    /// waiting FYIs, as of this moment (F169; review of #214, F002).
+    async fn noted(&self, recipient: &SeatDescriptor, msg: Msg, at: u64) -> Msg {
+        crate::fyi_notes::noted(self.notes.as_deref(), recipient, msg, at).await
+    }
+
     fn with_sources(
         registry: Arc<dyn Registry>,
         queue: Arc<dyn Queue>,
@@ -338,6 +367,7 @@ impl DeliveryService {
                 .unwrap_or(60),
             recovery_authority_shared: true,
             admissions: tokio::sync::Mutex::new(tokio::task::JoinSet::new()),
+            notes: None,
         }
     }
 
@@ -912,9 +942,11 @@ impl DeliveryService {
         };
         let job = delivery_job(&msg, Some(recipient))?;
         let offset = local_utc_offset();
+        let fleet = self.fleet_now().await;
         let attach: pij_core::ports::AttachFyis =
             Arc::new(move |payload: &str, fyis: &[HeldFyi]| {
-                attach_fyi_block(payload, fyis, at, offset)
+                let fyis = crate::fyi_notes::refreshed(fyis, fleet.as_ref());
+                attach_fyi_block(payload, &fyis, at, offset)
             });
         let via = format!("{VIA_MESSAGE_PREFIX}{}", msg.msg_id);
         let queue = Arc::clone(&self.queue);
@@ -998,9 +1030,11 @@ impl DeliveryService {
         }
         let at = (self.clock)()?;
         let offset = local_utc_offset();
+        let fleet = self.fleet_now().await;
         let attach: pij_core::ports::AttachFyis =
             Arc::new(move |payload: &str, fyis: &[HeldFyi]| {
-                attach_fyi_block(payload, fyis, at, offset)
+                let fyis = crate::fyi_notes::refreshed(fyis, fleet.as_ref());
+                attach_fyi_block(payload, &fyis, at, offset)
             });
         let via = format!("{VIA_MESSAGE_PREFIX}{}", msg.msg_id);
         let queue = Arc::clone(&self.queue);
@@ -1096,6 +1130,10 @@ impl DeliveryService {
                 seat: to.clone(),
                 store: "the daemon registry".to_string(),
             })?;
+        // F169: a body handed over directly (socket or typed) carries a PA's
+        // waiting-FYIs line as of now; a queued row is noted when it is handed
+        // over instead, and is stored without it (review of #214, F002).
+        let direct = self.noted(&recipient, msg.clone(), at).await;
         let native_guard = if recipient.harness == Harness::Copilot && msg.command.is_none() {
             Some(self.native_lock.clone().lock_owned().await)
         } else {
@@ -1261,7 +1299,7 @@ impl DeliveryService {
                                 publish_to_recipient = false;
                                 DeliveryOutcome::Delivered { origin }
                             }
-                            None => match self.transport.deliver(&recipient, &msg).await {
+                            None => match self.transport.deliver(&recipient, &direct).await {
                                 Ok(DeliveryOutcome::Queued { reason, .. }) => {
                                     self.queue
                                         .forget_delivered(
@@ -1307,7 +1345,7 @@ impl DeliveryService {
                             .as_deref()
                             .expect("typed-body rung requires a pane");
                         let framed =
-                            frame_message(&msg.from, msg.from_machine.as_deref(), &msg.body);
+                            frame_message(&msg.from, msg.from_machine.as_deref(), &direct.body);
                         if framed.len() > MAX_TYPED_FRAME_BYTES {
                             match self
                                 .queue
@@ -1359,9 +1397,15 @@ impl DeliveryService {
                                         // Keep admission evidence ahead of a worker's completion.
                                         _delivery_order =
                                             Some(self.event_bus.socket_delivery_order.lock().await);
+                                        // The text it staged, PA line and all, so a
+                                        // retry types the same text and knows its own
+                                        // leftover (plan 184).
                                         match self
                                             .queue
-                                            .enqueue_delivery(delivery_job(&msg, Some(&recipient))?)
+                                            .enqueue_delivery(delivery_job(
+                                                &direct,
+                                                Some(&recipient),
+                                            )?)
                                             .await?
                                         {
                                             DeliveryEnqueue::Queued {
@@ -2009,7 +2053,13 @@ impl DeliveryService {
                         held_reason: Some(TURN_WAIT_HOLD.to_string()),
                     });
                 }
-                let message = payload.message;
+                let message = match observed.as_ref() {
+                    Some(recipient) => {
+                        self.noted(recipient, payload.message, (self.clock)()?)
+                            .await
+                    }
+                    None => payload.message,
+                };
                 self.publish_pointer_unparked_if_parked(seat, 1).await?;
                 match self
                     .revalidate_inbox_observation(seat, identity, observed.as_ref())

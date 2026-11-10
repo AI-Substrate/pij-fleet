@@ -558,6 +558,59 @@ async fn workstream_and_roadmap_claim_one_sequence_across_both_folders() {
     assert_eq!(released["data"]["kind"], "workstream", "{released}");
 }
 
+/// F171: a kind pij does not know is numbered past its project folder. With
+/// docs/project/usage/001-019 merged, `usage` claims 020, then 021 once 020
+/// exists. An empty or missing folder starts at 001. Files only in
+/// docs/<kind>s warn on the claim but never set its number.
+#[tokio::test]
+async fn other_kinds_claim_past_their_project_folder_and_warn_from_docs() {
+    let rig = rig("pij-claims-other-kinds", Vec::new()).await;
+    let claim = |kind: &'static str| {
+        let rig = &rig;
+        async move {
+            rig.call(CODER, "/v1/claim", &["claim", kind, "--for", "u"])
+                .await
+        }
+    };
+    let usage = rig.main.join("docs/project/usage");
+    std::fs::create_dir_all(&usage).unwrap();
+    for number in 1..=19 {
+        std::fs::write(usage.join(format!("{number:03}-note.md")), "").unwrap();
+    }
+    let first = claim("usage").await;
+    assert_eq!(first["data"]["formatted"], "020", "{first}");
+    assert_eq!(first["data"]["floor"], 19);
+    assert!(first["data"].get("warning").is_none(), "{first}");
+    std::fs::write(usage.join("020-note.md"), "").unwrap();
+    assert_eq!(claim("usage").await["data"]["formatted"], "021");
+
+    std::fs::create_dir_all(rig.main.join("docs/project/benchmarks")).unwrap();
+    let empty = claim("benchmark").await;
+    assert_eq!(empty["data"]["formatted"], "001", "{empty}");
+    let missing = claim("ledger").await;
+    assert_eq!(missing["data"]["formatted"], "001", "{missing}");
+    assert!(missing["data"].get("warning").is_none(), "{missing}");
+
+    let adrs = rig.main.join("docs/adrs");
+    std::fs::create_dir_all(&adrs).unwrap();
+    std::fs::write(adrs.join("003-choice.md"), "").unwrap();
+    let warned = claim("adr").await;
+    assert_eq!(warned["ok"], true, "a warning never refuses: {warned}");
+    assert_eq!(warned["data"]["formatted"], "001", "docs/adrs never seeds");
+    let warning = warned["data"]["warning"].as_str().expect("warned");
+    assert!(
+        warning.starts_with("warning: docs/adrs already holds numbers up to 003"),
+        "{warning}"
+    );
+    assert!(
+        warned["data"]["line"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("\n{warning}")),
+        "{warned}"
+    );
+}
+
 // Review of #131 (pij-pleased-marmot): the four regression candidates from
 // roles/reviewer/outputs/2026-11/pr-131-regression-tests.rs, adopted.
 

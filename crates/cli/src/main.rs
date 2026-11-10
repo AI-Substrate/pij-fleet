@@ -23,13 +23,14 @@ use pij_core::error::PijError;
 use pij_core::model::{Envelope, ErrorKind, Event, Harness, SeatDescriptor, SeatId, SemanticState};
 use pij_core::wire;
 use pij_harnesses::{
-    claude_homes, copilot_home, ensure_claude_inbound_accept, ensure_claude_session_start_hook,
-    ensure_claude_statusline, ensure_claude_stop_failure_hook, ensure_claude_stop_hook,
-    ensure_claude_user_prompt_submit_hook, ensure_copilot_statusline, inspect_claude_inbound,
-    inspect_claude_session_start_hook, inspect_claude_statusline,
-    install_claude_session_start_script, install_claude_statusline_script,
-    install_claude_stop_script, install_claude_user_prompt_submit_script,
-    install_copilot_statusline_script, validate_executable_override,
+    claude_homes, copilot_home, ensure_claude_inbound_accept, ensure_claude_message_display_hook,
+    ensure_claude_session_start_hook, ensure_claude_statusline, ensure_claude_stop_failure_hook,
+    ensure_claude_stop_hook, ensure_claude_user_prompt_submit_hook, ensure_copilot_statusline,
+    inspect_claude_inbound, inspect_claude_session_start_hook, inspect_claude_statusline,
+    install_claude_message_display_script, install_claude_session_start_script,
+    install_claude_statusline_script, install_claude_stop_script,
+    install_claude_user_prompt_submit_script, install_copilot_statusline_script,
+    validate_executable_override,
 };
 use serde_json::{Value, json};
 
@@ -110,6 +111,19 @@ enum Command {
     Doctor {
         #[command(subcommand)]
         action: DoctorAction,
+    },
+    /// Take every pij-managed hook out of every discovered Claude home, for
+    /// `just unlink` (plan 226). Other Claude settings stay. A daemon that
+    /// starts again puts them back.
+    ClaudeHooks {
+        /// Remove them (the only action).
+        #[arg(long, required = true)]
+        remove: bool,
+    },
+    /// A pij-managed harness hook's pij side (run by the hook scripts).
+    Hook {
+        #[command(subcommand)]
+        action: HookAction,
     },
     /// Register one seat claim for daemon verification.
     Register {
@@ -361,7 +375,7 @@ enum Command {
     },
     /// Durably enqueue one message as the acting seat.
     #[command(
-        after_long_help = "Examples:\n  pij send <id> 'hello'   (the pij shim forwards this form unchanged)\n  pij send role:<id>[/<instance>] 'hello' [--reply wake|fyi|none] [--limit 45m]   (to whoever holds the role)\n  pij-rs send --to <id> --body 'hello'\n  pij-rs send --to <id> --body-file -\n  pij-rs send --to <id> --fyi --body 'merged #452, nothing needed from you' (their next action doesn't depend on it: held, opens no turn)\n  pij-rs send --to <id> --force --reason 'prod is down' --body '...' (wake a cold seat anyway; audited)"
+        after_long_help = "Examples:\n  pij send <id> 'hello'   (the pij shim forwards this form unchanged)\n  pij send role:<id>[/<instance>] 'hello' [--reply wake|fyi|none] [--limit 45m]   (to whoever holds the role)\n  pij-rs send --to <id> --body 'hello'\n  pij-rs send --to <id> --body-file -\n  pij-rs send --to <id> --fyi --body 'merged #452, nothing needed from you' (nothing for them to do: held, wakes no one)\n  pij-rs send --to <id> --force --reason 'prod is down' --body '...' (wake a cold seat anyway; audited)"
     )]
     Send {
         /// Assert the derived sending seat. Omit to use PIJ_SESSION_ID or TMUX_PANE.
@@ -397,18 +411,19 @@ enum Command {
         /// Message id being answered.
         #[arg(long)]
         in_reply_to: Option<String>,
-        /// Use only when the recipient's next action doesn't depend on it. If they'd
-        /// be stuck, wrong or waiting without it, it's a normal send. If they'd be
-        /// fine not reading it until their next turn, it's `--fyi`. If they'd be fine
-        /// never reading it, don't send it. Always normal sends: work done or a phase
-        /// complete, review verdicts, hand-offs, blockers, questions, decisions
-        /// needed. Held until the recipient's next real turn (appended to their next
-        /// message or typed prompt); five pending flush as one message once the
-        /// seat is warm. Receipt: `held (fyi)`, with a warning when the body looks
-        /// like a question.
+        /// Test first: does the recipient have to do anything because of this
+        /// message? Yes: normal send, even if you need no reply. No: `--fyi`, which
+        /// is only for information the recipient does not have to act on. If
+        /// they'd be fine never reading it, don't send it. Never `--fyi`: "step
+        /// done, your turn", hand-offs, "ready", work or a phase complete, review
+        /// verdicts, blockers, questions, decisions. An FYI never wakes anyone: it
+        /// is held until something else gives the recipient a turn, so an idle
+        /// seat may never see it. Five pending flush as one message once the seat
+        /// is warm. Receipt: `held (fyi), <seat> was NOT woken`, with a warning
+        /// when the body looks like a question or reads as actionable.
         #[arg(long, conflicts_with = "command")]
         fyi: bool,
-        /// Wake a cold recipient anyway (large context, idle past the cache TTL).
+        /// Wake a cold recipient anyway (large context, idle over an hour).
         /// Requires --reason; the forced wake and its estimated price are audited.
         #[arg(long, conflicts_with_all = ["command", "fyi"], requires = "reason")]
         force: bool,
@@ -458,14 +473,19 @@ enum Command {
         via: String,
     },
     /// Read, in full, the FYIs one claim delivered (plan 159): the command a
-    /// digest names. Read-only.
+    /// digest names. With `--pending`, the FYIs still held for the seat, which
+    /// it has not seen (F169: what a PA reads before deciding to wake it).
+    /// Read-only.
     FyiRead {
-        /// The seat the FYIs were delivered to.
+        /// The seat the FYIs were delivered to, or are held for.
         #[arg(long)]
         seat: String,
         /// When they were claimed, in epoch ms, as the digest names it.
+        #[arg(long, required_unless_present = "pending", conflicts_with = "pending")]
+        claimed_at: Option<u64>,
+        /// Read the FYIs still held for the seat instead; nothing is claimed.
         #[arg(long)]
-        claimed_at: u64,
+        pending: bool,
     },
     /// Compact the current, daemon-derived seat.
     CompactSelf,
@@ -969,6 +989,24 @@ enum PeersAction {
 }
 
 #[derive(Clone, Debug, Subcommand)]
+enum HookAction {
+    /// Claude's Stop hook when the reply holds a pij fence (plan 226): reads the
+    /// Stop input on stdin, runs a closing pij block, publishes idle unless the
+    /// seat gets a follow-up turn, and prints the hook's answer.
+    #[command(name = "claude-stop")]
+    ClaudeStop {
+        /// The seat's tmux pane, as binding evidence.
+        #[arg(long)]
+        pane: String,
+    },
+    /// Claude's MessageDisplay hook (plan 226): reads one streamed flush on
+    /// stdin and prints its replacement when a closing pij block is hidden.
+    /// Touches no daemon.
+    #[command(name = "claude-display")]
+    ClaudeDisplay,
+}
+
+#[derive(Clone, Debug, Subcommand)]
 enum DoctorAction {
     /// Report cross-session inbound state for every discovered Claude home.
     #[command(name = "claude-inbound")]
@@ -979,10 +1017,29 @@ enum DoctorAction {
     /// Report pij's managed Claude statusline state for every discovered home.
     #[command(name = "claude-statusline")]
     Statusline,
+    /// Report every pij-managed Claude hook, missing or stale, with its fix (plan 226).
+    #[command(name = "claude-hooks")]
+    Hooks,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    // Plan 226: once per streamed flush of every Claude reply, so no runtime,
+    // no client, no daemon; any failure leaves the reply as Claude wrote it.
+    if let Command::Hook {
+        action: HookAction::ClaudeDisplay,
+    } = &cli.command
+    {
+        let mut input = String::new();
+        if std::io::Read::read_to_string(&mut std::io::stdin(), &mut input).is_ok()
+            && let Ok(state_dir) =
+                resolve_state_dir(cli.state_dir.clone(), std::env::var_os("PIJ_RS_STATE_DIR"))
+            && let Some(output) = pij_cli::claude_display::run(&state_dir, &input)
+        {
+            println!("{output}");
+        }
+        return ExitCode::SUCCESS;
+    }
     // Keep the sink alive through runtime teardown, including panic diagnostics.
     let _log = if matches!(&cli.command, Command::Daemon { action: None, .. }) {
         match daemon_log::DaemonLog::install() {
@@ -1228,6 +1285,29 @@ async fn run(cli: Cli) -> ExitCode {
             DoctorAction::Inbound => run_claude_inbound_doctor(cli.json),
             DoctorAction::Hook => run_claude_hook_doctor(cli.json, &hook_dir),
             DoctorAction::Statusline => run_claude_statusline_doctor(cli.json, &hook_dir),
+            DoctorAction::Hooks => {
+                let rows = pij_cli::claude_hooks::doctor_rows(&claude_homes(), &hook_dir);
+                if cli.json {
+                    return emit(&Envelope::ok("pij doctor claude-hooks", rows), true);
+                }
+                println!("{}", pij_cli::claude_hooks::render_doctor(&rows));
+                ExitCode::SUCCESS
+            }
+        };
+    }
+
+    if let Command::ClaudeHooks { .. } = &cli.command {
+        let rows = pij_cli::claude_hooks::remove(&claude_homes());
+        let failed = rows.iter().any(|row| row.error.is_some());
+        if cli.json {
+            emit(&Envelope::ok("pij claude-hooks", &rows), true);
+        } else {
+            println!("{}", pij_cli::claude_hooks::render_remove(&rows));
+        }
+        return if failed {
+            ExitCode::FAILURE
+        } else {
+            ExitCode::SUCCESS
         };
     }
 
@@ -1317,6 +1397,9 @@ async fn run(cli: Cli) -> ExitCode {
             unreachable!("statusline returned before client construction")
         }
         Command::Doctor { .. } => unreachable!("doctor returned before client construction"),
+        Command::ClaudeHooks { .. } => {
+            unreachable!("claude-hooks returned before client construction")
+        }
         Command::Peers { .. } => unreachable!("peers returned before client construction"),
         Command::FleetReport { .. } => {
             unreachable!("fleet-report returned before client construction")
@@ -1552,7 +1635,11 @@ async fn run(cli: Cli) -> ExitCode {
                 response.raw_json = None;
             }
             if !cli.json
-                && let Some(held) = held_fyi_output(&response, &request.msg_id)
+                && let Some(held) = held_fyi_output(
+                    &response,
+                    &pij_core::address::render_destination(&request.to),
+                    &request.msg_id,
+                )
             {
                 println!("{held}");
                 return ExitCode::SUCCESS;
@@ -1560,6 +1647,29 @@ async fn run(cli: Cli) -> ExitCode {
             match with_memory_turn(&response, raw.as_deref()).filter(|_| response.ok) {
                 Some(shown) => emit(&shown, cli.json),
                 None => emit(&response, cli.json),
+            }
+        }
+        Command::Hook {
+            action: HookAction::ClaudeDisplay,
+        } => unreachable!("claude-display returned before the runtime"),
+        Command::Hook {
+            action: HookAction::ClaudeStop { pane },
+        } => {
+            let mut input = String::new();
+            if let Err(error) = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input) {
+                eprintln!("could not read the Stop input: {error}");
+            }
+            let run = pij_cli::claude_stop::run(&client, &pane, &input).await;
+            if let Some(output) = &run.answer.output {
+                println!("{output}");
+            }
+            // The hook script logs a failure from stderr and still relays stdout.
+            match run.idle_error {
+                Some(error) => {
+                    eprintln!("idle not published: {error}");
+                    ExitCode::from(4)
+                }
+                None => ExitCode::SUCCESS,
             }
         }
         Command::Activity {
@@ -1609,9 +1719,17 @@ async fn run(cli: Cli) -> ExitCode {
             }
             ExitCode::SUCCESS
         }
-        Command::FyiRead { seat, claimed_at } => {
+        Command::FyiRead {
+            seat,
+            claimed_at,
+            pending,
+        } => {
             let response = client
-                .fyi_read(&serde_json::json!({"seat": seat, "claimed_at_ms": claimed_at}))
+                .fyi_read(&serde_json::json!({
+                    "seat": seat,
+                    "claimed_at_ms": claimed_at,
+                    "pending": pending,
+                }))
                 .await;
             if cli.json || !response.ok {
                 return emit(&response, cli.json);
@@ -1623,7 +1741,12 @@ async fn run(cli: Cli) -> ExitCode {
                 .filter(|block| !block.is_empty())
             {
                 Some(block) => println!("{block}"),
-                None => println!("pij fyi-read: no FYIs were delivered to {seat} at {claimed_at}"),
+                None => match claimed_at {
+                    Some(claimed_at) => {
+                        println!("pij fyi-read: no FYIs were delivered to {seat} at {claimed_at}")
+                    }
+                    None => println!("pij fyi-read: no FYIs are held for {seat}"),
+                },
             }
             ExitCode::SUCCESS
         }
@@ -2719,6 +2842,13 @@ async fn run_daemon(
         .as_ref()
         .map(|script| ensure_claude_stop_failure_hook(&homes, script))
         .unwrap_or_default();
+    // Plan 226: a reply's closing pij block is hidden on screen, one line shown.
+    let display_hook_script = install_claude_message_display_script(&hook_dir)
+        .map_err(|error| format!("could not install Claude MessageDisplay hook script: {error}"));
+    let display_hook_reports = display_hook_script
+        .as_ref()
+        .map(|script| ensure_claude_message_display_hook(&homes, script))
+        .unwrap_or_default();
     let statusline_script = install_claude_statusline_script(&hook_dir)
         .map_err(|error| format!("could not install Claude statusline script: {error}"));
     let statusline_reports = statusline_script
@@ -2785,6 +2915,11 @@ async fn run_daemon(
                     stop_failure_reports.as_slice(),
                 ),
                 (
+                    "config.claude-display-hook-ensured",
+                    "Claude MessageDisplay hook",
+                    display_hook_reports.as_slice(),
+                ),
+                (
                     "config.claude-statusline-ensured",
                     "Claude statusline",
                     statusline_reports.as_slice(),
@@ -2833,6 +2968,7 @@ async fn run_daemon(
                 ("prompt hook", &prompt_hook_reports),
                 ("stop hook", &stop_hook_reports),
                 ("stop-failure hook", &stop_failure_reports),
+                ("display hook", &display_hook_reports),
                 ("statusline", &statusline_reports),
                 ("copilot statusline", &copilot_statusline_reports),
             ] {
@@ -2870,6 +3006,9 @@ async fn run_daemon(
             }
             if let Err(error) = stop_hook_script {
                 eprintln!("pij-rs claude stop hook: {error}");
+            }
+            if let Err(error) = display_hook_script {
+                eprintln!("pij-rs claude display hook: {error}");
             }
             if let Err(error) = statusline_script {
                 eprintln!("pij-rs claude statusline: {error}");
@@ -2978,13 +3117,18 @@ fn with_memory_turn(
 /// Is this send receipt an FYI held for the recipient's next turn?
 /// The human line for a held FYI, with the receipt's warning (plan 159) on
 /// the next line. `None` when the send was not held as an FYI.
-fn held_fyi_output(response: &Envelope<pij_core::model::Receipt>, msg_id: &str) -> Option<String> {
+fn held_fyi_output(
+    response: &Envelope<pij_core::model::Receipt>,
+    to: &str,
+    msg_id: &str,
+) -> Option<String> {
     let receipt = response.data.as_ref().filter(|_| response.ok)?;
     if !matches!(&receipt.outcome, pij_core::model::DeliveryOutcome::Held { reason } if reason == "fyi")
     {
         return None;
     }
-    let mut line = format!("pij send: held (fyi) — {msg_id}");
+    // F169: say the consequence; an FYI wakes no one.
+    let mut line = format!("pij send: held (fyi), {to} was NOT woken — {msg_id}");
     if let Some(warning) = &receipt.warning {
         line.push('\n');
         line.push_str(warning);
@@ -4396,6 +4540,8 @@ impl Command {
         match self {
             Command::Daemon { .. } => "pij daemon",
             Command::Doctor { .. } => "pij doctor",
+            Command::ClaudeHooks { .. } => "pij claude-hooks",
+            Command::Hook { .. } => "pij hook",
             Command::Peers { .. } => "pij peers",
             Command::SpawnChild { .. } => "pij spawn child",
             Command::Ping => "pij ping",
@@ -5097,7 +5243,7 @@ PEC notice";
     fn state_prints_the_daemons_size_lines() {
         let lines = [
             "context 720k / 1M · last call 2h ago · cache 1h (cold 1h) · 3 compactions",
-            "❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi holds it for $0 now)",
+            "❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi only if it has nothing to do; wakes no one)",
         ];
         let card: pij_daemon::http::StateCard = serde_json::from_value(serde_json::json!({
             "id": "pij-cold", "state": "idle", "liveness": "active", "cwd": "/abs/tree",
@@ -5362,15 +5508,19 @@ PEC notice";
             envelope
         };
         assert_eq!(
-            super::held_fyi_output(&receipt(Some(pij_core::fyi::QUESTION_WARNING)), "m-1")
-                .as_deref(),
+            super::held_fyi_output(
+                &receipt(Some(pij_core::fyi::QUESTION_WARNING)),
+                "pij-x",
+                "m-1"
+            )
+            .as_deref(),
             Some(
-                "pij send: held (fyi) — m-1\nthis looks like a question; if you need an answer, resend without --fyi"
+                "pij send: held (fyi), pij-x was NOT woken — m-1\nthis looks like a question; if you need an answer, resend without --fyi"
             )
         );
         assert_eq!(
-            super::held_fyi_output(&receipt(None), "m-1").as_deref(),
-            Some("pij send: held (fyi) — m-1")
+            super::held_fyi_output(&receipt(None), "pij-x", "m-1").as_deref(),
+            Some("pij send: held (fyi), pij-x was NOT woken — m-1")
         );
     }
 
@@ -5393,11 +5543,14 @@ PEC notice";
                 // Adding a verb to this roster is meant to be a DELIBERATE act
                 // that fails this test first — which is exactly what it did for
                 // `report` (u-report), adopt/whoami/phonehome (u-identity) and
-                // `state` (u-readback), `doctor` (plan 126) and `fleet-report` (plan 162).
+                // `state` (u-readback), `doctor` (plan 126) and `fleet-report` (plan 162),
+                // `claude-hooks` and `hook` (plan 226).
                 "daemon",
                 "peers",
                 "ping",
                 "doctor",
+                "claude-hooks",
+                "hook",
                 "register",
                 "adopt",
                 "whoami",
@@ -5515,10 +5668,19 @@ PEC notice";
             .collect::<Vec<_>>();
         assert_eq!(
             names,
-            ["claude-inbound", "claude-hook", "claude-statusline"]
+            [
+                "claude-inbound",
+                "claude-hook",
+                "claude-statusline",
+                "claude-hooks"
+            ]
         );
         assert!(Cli::try_parse_from(["pij-rs", "doctor", "claude-hook"]).is_ok());
         assert!(Cli::try_parse_from(["pij-rs", "doctor", "claude-statusline"]).is_ok());
+        assert!(Cli::try_parse_from(["pij-rs", "doctor", "claude-hooks"]).is_ok());
+        // Plan 226: removal is its own verb, never a doctor (read-only) leaf.
+        assert!(Cli::try_parse_from(["pij-rs", "claude-hooks"]).is_err());
+        assert!(Cli::try_parse_from(["pij-rs", "claude-hooks", "--remove"]).is_ok());
     }
 
     #[test]

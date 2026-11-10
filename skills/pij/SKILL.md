@@ -39,7 +39,7 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 | CLI verb | lives in |
 |---|---|
 | `spawn` `revive` | peer route — shim refuses `E-RS-UNPORTED`; use native `pij-rs spawn` / `pij-rs revive` grammar, never legacy flags |
-| `send` `compact-self` `adopt` `whoami` `state` `inbox` (`check`/`register`; native `pij-rs inbox release`) | peer route — rs; `send --fyi` holds text the seat's next action doesn't depend on; a normal send lands inside a turn the recipient is already in (C31: OMP/Pi, socket Claude, native Copilot unless `pij steer off`), so choose `--fyi` unless their current work depends on it; a stop or cancel order to a working seat is a normal send, never `--fyi`, which arrives only after the action it was meant to stop (F87); `send --force --reason` wakes a cold seat past `E-RS-COLD-WAKE` (§ C1); `send role:<id>[/<instance>]` goes through the project's directory: one live holder delivers, none queues and wakes the PA, several refuse with a runnable `next`; `--reply wake|fyi|none` and `--limit <d>` go only on a `role:` send (a seat send refuses them, `E-RS-ROLE-ONLY`); an assign's receipt lists what it drained; verified external inbox register/wait supported, extension-owned receivers unchanged |
+| `send` `compact-self` `adopt` `whoami` `state` `inbox` (`check`/`register`; native `pij-rs inbox release`) | peer route — rs; before `send --fyi`, ask: does the recipient have to do anything because of this message? If yes (step done, your turn; hand-off; ready; verdict; blocker; question; decision) it is a normal send even when you need no reply; `--fyi` is only for information the recipient does not have to act on, and it wakes no one; a normal send lands inside a turn the recipient is already in (C31: OMP/Pi, socket Claude, native Copilot unless `pij steer off`); a stop or cancel order to a working seat is a normal send, never `--fyi`, which arrives only after the action it was meant to stop (F87); `send --force --reason` wakes a cold seat past `E-RS-COLD-WAKE` (§ C1); `send role:<id>[/<instance>]` goes through the project's directory: one live holder delivers, none queues and wakes the PA, several refuse with a runnable `next`; `--reply wake|fyi|none` and `--limit <d>` go only on a `role:` send (a seat send refuses them, `E-RS-ROLE-ONLY`); an assign's receipt lists what it drained; verified external inbox register/wait supported, extension-owned receivers unchanged |
 | `list` `sessions` | peer route — rs-only; list supports boolean --here plus exact harness/folder/parent/scope=local shim filters; sessions has no filters or legacy union |
 | `tail` | peer route — shim `E-RS-UNPORTED`; native `pij-rs tail` is daemon events, not a transcript |
 | `link` | peer route — rs; `link <seat> [--parent <you>] --role <pm\|worker\|pa>` takes a seat with no live parent or re-roles your own child |
@@ -73,12 +73,30 @@ primitive. `baton` is the other orchestration subcommand.
 |---|---|
 | `ping` | daemon health (`pij-rs ping --json`; ops route) |
 | `peers` (`check`/`new-key`) | machine pairing for federation; then `pij-rs send --to <seat>@<machine>` ([federation](../../docs/how/pij-federation.md)) |
-| `doctor` (`claude-inbound`/`claude-hook`/`claude-statusline`) | read-only audit of every Claude home's pij wiring (ops route) |
+| `doctor` (`claude-inbound`/`claude-hook`/`claude-statusline`/`claude-hooks`) | read-only audit of every Claude home's pij wiring (ops route); `claude-hooks` reports every pij-managed hook missing or stale with its fix, and `just doctor` runs it |
+| `claude-hooks` (`--remove`) | takes every pij-managed hook out of every Claude home and leaves other settings alone; `just unlink` runs it, and a daemon that starts again puts them back |
 | `fyi-read` | read in full the FYIs one claim delivered: `pij-rs fyi-read --seat <s> --claimed-at <ms>`, the command an FYI digest names |
 | `sidecar` (`telegram`) | `pij-rs sidecar telegram --body\|--body-file` messages the operator and binds this seat as the reply target ([telegram](../../docs/how/pij-telegram.md)); the other leaves are queue internals: use `pij bg` |
-| `register` `activity` `fyi-claim` | runtime and hook plumbing (extension registration, turn-boundary busy/idle, typed-turn FYI claim); agents use `pij adopt` / `pij inbox register` (§ C1) |
+| `register` `activity` `fyi-claim` `hook` | runtime and hook plumbing (extension registration, turn-boundary busy/idle, typed-turn FYI claim, `hook claude-stop` running a Claude reply's closing pij block); agents use `pij adopt` / `pij inbox register` (§ C1) |
 
 **Serve or refuse, never another generation.** The [stable API and Unsupported status](../../docs/how/pij-rs-api.md#unsupported-status) names every shim/native gap. Explicit `PIJ_DAEMON_GENERATION=legacy`, missing credentials or an absent daemon never enables fallback. Examples use rs contracts; unsupported leaves/flags refuse, not approximate. Raw `--json` preserves the original complete v2 success/refusal envelope. Canonical fixtures live under `crates/testkit/fixtures/golden/api/`; they are not fresh runtime or production/chainglass proof. Both tables are gated two-sided against the producers, never a copied list: `generation-skill-coverage.test.ts` (shim `RS_ROUTE_TABLE`, both directions, leaves included) and `crates/cli/tests/skill_verb_coverage.rs` (built `pij-rs --help`).
+
+## Closing commands: the end-of-turn pij block (plan 226)
+
+Fire-and-forget commands that close a reply cost no extra model call when they are its last thing, in a fence tagged `pij`:
+
+```pij
+send pij-steady-otter "MERGED #210, daemon bounced"
+output verdict --role reviewer --subject pr:211 --head abc1234 --result pass
+```
+
+- One command per line, written like the CLI without the leading `pij`, shell-style quoting, nothing expanded. Verbs: `send`, `output`, `requests close`. A `send` body is inline and quoted (a block's `send` takes no `--body-file`); an `output` may name a body file, never stdin (`--body-file -`).
+- `send --fyi` in a block follows the FYI rule: only what the recipient need not act on. Hand-offs, ready, verdicts, blockers, questions and decisions are normal sends.
+- Only a block that ends the reply runs: nothing after its closing fence but whitespace. A block quoted mid-reply, followed by prose, or written before a tool call never runs.
+- Every line is checked first, and if any is wrong nothing runs. Then they run in order, as you, through the same paths as the CLI, and stop at the first refusal.
+- Success shows the human one line (`pij ✓ 2 sent`). A failure gives you one follow-up turn listing what ran (do not resend it), what was refused and why, and what did not run. There is no second follow-up.
+- Use a tool call instead when you need the answer before you go on: a reply you will wait on, a receipt you must quote, a refusal you must react to.
+- Claude and OMP show the human one line in place of the block; Copilot shows the block itself.
 
 ## Global invariants (every route)
 

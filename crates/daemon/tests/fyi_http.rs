@@ -57,6 +57,12 @@ async fn serve(config: &Config, seed: bool) -> (SocketAddr, tokio::task::JoinHan
             .await
             .expect("seed recipient");
     }
+    serve_services(services).await
+}
+
+async fn serve_services(
+    services: pij_daemon::Services,
+) -> (SocketAddr, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
@@ -571,6 +577,29 @@ async fn a_question_held_as_an_fyi_warns_but_is_still_held() {
     server.abort();
 }
 
+/// F169: a hand-off held as an FYI is warned about and still held; a warning
+/// never refuses or converts it.
+#[tokio::test]
+async fn an_actionable_fyi_warns_but_is_still_held() {
+    let store = FreshStore::new();
+    let config = config(&store);
+    let (addr, server) = serve(&config, true).await;
+
+    let (status, held) = send(addr, "pij-sender", "step 3 done, your turn", "fyi-a", true).await;
+    assert_eq!(status, 200, "{held}");
+    assert_eq!(
+        held["data"]["outcome"],
+        json!({"outcome": "held", "reason": "fyi"})
+    );
+    assert_eq!(
+        held["data"]["warning"],
+        pij_core::fyi::ACTIONABLE_WARNING,
+        "{held}"
+    );
+    assert_eq!(pending(addr).await, 1, "still held, never refused");
+    server.abort();
+}
+
 #[tokio::test]
 async fn fyis_to_a_seat_not_known_to_be_warm_are_never_flushed() {
     let store = FreshStore::new();
@@ -837,5 +866,102 @@ async fn a_hook_claim_of_a_large_pile_is_a_digest_too() {
         "{block}"
     );
     assert!(block.contains("\nAll 6 were delivered; read them in full with: pij-rs fyi-read --seat pij-fyi-recipient --claimed-at "), "{block}");
+    server.abort();
+}
+
+/// Review of #214 (F001): a digest's full read re-checks a held state notice
+/// the digest left out, as the flush re-checks the ones it shows (F170).
+#[tokio::test]
+async fn a_digests_full_read_marks_a_state_notice_it_left_out() {
+    let store = FreshStore::new();
+    let config = config(&store);
+    let services = pij_daemon::build_services(
+        &config,
+        std::path::Path::new("/tmp/pij-test-pane-signals-fyi"),
+    )
+    .await
+    .expect("services");
+    services.registry.put(recipient()).await.expect("seed");
+    services
+        .registry
+        .put(SeatDescriptor::new(
+            "pij-big-seat",
+            Harness::Omp,
+            "/abs/tree",
+        ))
+        .await
+        .expect("seed");
+    let held = |from: &str, msg_id: String, body: &str| pij_core::model::Msg {
+        from: from.into(),
+        to: RECIPIENT.into(),
+        body: body.to_string(),
+        msg_id,
+        from_machine: None,
+        in_reply_to: None,
+        command: None,
+    };
+    services
+        .delivery
+        .hold_fyi(held(
+            "pij-bg",
+            format!(
+                "{}{RECIPIENT}:1",
+                pij_core::fyi_watch::LARGE_SEATS_ID_PREFIX
+            ),
+            "[pij watchdog] over 600k tokens in your fleet (PA: none):\n\
+             - pij-big-seat 700k role none model unknown",
+        ))
+        .await
+        .expect("held");
+    for n in 1..=5 {
+        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        services
+            .delivery
+            .hold_fyi(held("pij-sender", format!("fyi-{n}"), &format!("note {n}")))
+            .await
+            .expect("held");
+    }
+    services
+        .seat_sizes
+        .replace(std::collections::HashMap::from([(
+            SeatId::from("pij-big-seat"),
+            67_000,
+        )]));
+    let (addr, server) = serve_services(services).await;
+
+    let (status, reply) = post(
+        addr,
+        "/v1/fyi/claim",
+        json!({"pane": PANE, "via": "hook:claude"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    let block = reply["data"]["block"].as_str().expect("block");
+    assert!(
+        !block.contains("pij-big-seat"),
+        "the digest leaves the oldest out: {block}"
+    );
+    let command = block
+        .lines()
+        .last()
+        .and_then(|line| line.strip_prefix("All 6 were delivered; read them in full with: "))
+        .expect("the digest names its full read");
+    let args: Vec<&str> = command.split_whitespace().collect();
+    assert_eq!(
+        &args[..5],
+        ["pij-rs", "fyi-read", "--seat", RECIPIENT, "--claimed-at"]
+    );
+    let (status, read) = post(
+        addr,
+        "/v1/fyi/read",
+        json!({"seat": RECIPIENT, "claimed_at_ms": args[5].parse::<u64>().expect("ms")}),
+    )
+    .await;
+    assert_eq!(status, 200, "{read}");
+    let full = read["data"]["block"].as_str().expect("block");
+    assert!(
+        full.contains("- pij-big-seat 700k role none model unknown (since resolved: now 67k)"),
+        "{full}"
+    );
     server.abort();
 }

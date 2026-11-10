@@ -144,7 +144,7 @@ describe("the explicit rs routing inventory", () => {
 		);
 		expect(rendered).toEqual({
 			kind: "rendered",
-			text: `pij send: held (fyi) — m-2\n${warning}`,
+			text: `pij send: held (fyi), pij-peer was NOT woken — m-2\n${warning}`,
 		});
 	});
 

@@ -479,6 +479,56 @@ impl SqliteOrchestration {
             .collect()
     }
 
+    /// Every seat's pending FYIs from peers, counted (F169): one read per
+    /// watchdog round and per turn delivered to a PA, over the pending-only
+    /// index. This machine's `pij-bg` notices are left out: they are
+    /// information by construction, and the question is whether a peer's
+    /// message sits unread.
+    pub async fn pending_peer_fyi_backlogs(&self) -> Result<Vec<pij_core::fyi_watch::Backlog>> {
+        require_current_schema(&self.pool).await?;
+        let rows = sqlx::query(
+            "SELECT recipient, COUNT(*) AS count, MIN(held_at_ms) AS oldest, \
+             MAX(held_at_ms) AS newest FROM fyis WHERE state = 'pending' \
+             AND NOT (sender = ?1 AND origin = '') \
+             GROUP BY recipient ORDER BY recipient",
+        )
+        .bind(pij_core::BG_ACTOR)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        rows.iter()
+            .map(|row| {
+                let ms = |column: &str| -> Result<u64> {
+                    let value: i64 = row.try_get(column).map_err(adapter_error)?;
+                    u64::try_from(value).map_err(|_| store_range(column))
+                };
+                Ok(pij_core::fyi_watch::Backlog {
+                    seat: SeatId(row.try_get("recipient").map_err(adapter_error)?),
+                    count: ms("count")?,
+                    oldest_ms: ms("oldest")?,
+                    newest_ms: ms("newest")?,
+                })
+            })
+            .collect()
+    }
+
+    /// `recipient`'s pending FYIs, oldest first, left pending (F169): what the
+    /// stall notice and `pij-rs fyi-read --pending` show.
+    pub async fn pending_fyis(&self, recipient: &SeatId) -> Result<Vec<pij_core::fyi::HeldFyi>> {
+        require_current_schema(&self.pool).await?;
+        let rows = sqlx::query(
+            "SELECT id, origin, sender, body, held_at_ms FROM fyis \
+             WHERE recipient = ?1 AND state = 'pending' ORDER BY held_at_ms, id",
+        )
+        .bind(recipient.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        rows.iter()
+            .map(|row| crate::queue::decode_fyi(row, recipient))
+            .collect()
+    }
+
     /// Reserve the complete stream recipe before Git mutates a worktree.
     pub async fn reserve_stream(
         &self,
