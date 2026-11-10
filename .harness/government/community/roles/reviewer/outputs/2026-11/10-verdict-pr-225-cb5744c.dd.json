@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c467-6824-7e40-a13f-fd12846dfffc",
+				"date": "2026-11-10",
+				"head": "cb5744c2757802f7984e6733f75731a9d7fc2ab1",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:225",
+				"writer": "pij-polite-starfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Performance: live post-deploy CPU/hot-frame samples, ping spawn deltas and spawn-rate receipts; nonblocking as agreed in the packet."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#225 correctness review, round 1: PASS WITH NOTES\n\nExact head: cb5744c2757802f7984e6733f75731a9d7fc2ab1.\n\nNo correctness findings in the nine-file delta.\n\nTap continuity: the path is stat-ed on every drain before any held-file read. A missing path still errors rather than reading the unlinked descriptor. When there are unread bytes, a changed device/inode causes an open of the current path, and the held identity comes from the opened file's own metadata. Unchanged sinks reuse their descriptor. Every read seeks to the logical offset, so the file cursor left by a previous read does not defeat in-place trimming. Shrink-to-new-end and equal-length quiet handling are unchanged; replacement preserves the previous offset semantics instead of replaying the replacement's existing prefix. Early returns on shrink/equal length read neither the stale descriptor nor replacement bytes. Detach removes TapState and drops its held file before removing the sink. Existing trim/write races documented by trim_consumed_tap are unchanged, not an absolute no-loss guarantee introduced by this PR.\n\nIdentity equivalence: every use of the former whole-roster vector in resolve_seat's pane branch already required that exact pane. SQLite filters before Rust descriptor decoding, retains tombstoned matches and preserves ORDER BY id. FakeRegistry applies the same exact Option<String> predicate, including empty versus absent values. Live selection, dead-process/pane-reuse refusal, ambiguous retired history, asserted-ID contradictions and no-pane keyed lookup therefore retain their prior answers. The separate double-seat fallback still performs its own global conversation lookup; it is not restricted to the pane-filtered vector.\n\nRegistration: native_prebind and observe_dead_native_owners both required Copilot rows before this change, so the harness-filtered snapshot retains every candidate they could use. register_inner still takes the registration lock and lists SeatFilter::default() for continuity, collision checks and ID minting. No cache or invalidation assumption was added.\n\nProof: just pr-freeze 225 returned FINAL with exact remote/GitHub head agreement, CLEAN and all latest checks passed. CI run 42776326266 is successful at this head: 2,428 Rust tests passed, six skipped. Successful-job JUnit artifact 13744461235 records passing both new tap cases, the existing byte-once/detach, trim/truncation and unchanged-sink cases, and the shared registry contract on fake and SQLite. It also records the recycled-pane/dead-process and asserted-versus-pane controls, all seven retired_identity_http cases and the double-seat controls passing. git diff --check is clean. No reviewer-local build, dependency changes, product edits, credential reads or daemon/lifecycle operations.\n\nCost inspection, not an independent performance verdict: the existing pane-observer interval remains 600 ms, with drains scaling per tracked pane. A growing unchanged sink no longer opens on every drain; replacement/new sinks still open, and the existing trim helper opens for its occasional truncation. One held read fd is added per tracked tap. Pane lookups still scan SQLite but decode only matching rows; the locked registration read remains whole-roster. No new loop, timer or launch.\n\nNote owed, nonblocking under the packet: performance owns the live post-deploy CPU/hot-frame samples plus matching ping spawn deltas and spawn-rate receipts. No private-daemon proxy or reviewer-run live before/after measurement is claimed. This verdict permits the agreed post-deploy proof; it does not declare F182's live CPU reduction measured.\n"
+		}
+	]
+}
