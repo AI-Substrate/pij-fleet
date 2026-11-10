@@ -1250,6 +1250,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-09T09:42:23.337Z",
 					"why": "CLI papercut bundle F156/F158/F159/F164"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T00:34:34.748Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "211",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "#211 skill review fixes (guan), FINAL 04865ac"
 				}
 			]
 		}
