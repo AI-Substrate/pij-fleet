@@ -860,6 +860,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-swift-kestrel",
 					"why": "F168 role:prime resolves to the designated prime (crane friction 13)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T04:42:03.203Z",
+					"harness": "copilot",
+					"harness_session": "a400e300-fa07-43e7-8444-52c45ecf15d5",
+					"instance_key": "226c",
+					"machine": "ops.osk.lan",
+					"seat": "pij-doubtful-lemur",
+					"why": "plan 226 docs follow-up: pij_send descriptions + SKILL closing commands + route pointers (prime)"
 				}
 			]
 		}
