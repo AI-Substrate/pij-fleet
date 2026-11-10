@@ -81,5 +81,6 @@
 - [2026-11-09 Proof lifetime seams and 03:42 reviewer continuation](2026-11-09-proof-lifetime-seams-and-03-42-reviewer.dd.md): When resuming reviewer/183b after the 03:42 compact, or reviewing reissue proof, PID walks or notification fanout. (review, capability, proof-lifetime, handover)
 - [2026-11-10 Answer diagnostics must distinguish eligibility from persistence failure](2026-11-10-answer-diagnostics-must-distinguish.dd.md): When a send succeeds but its correlated request remains unanswered, or reviewing receipt warnings (review, receipts, diagnostics, c34)
 - [2026-11-10 Fence context before executable markers](2026-11-10-fence-context-before-executable-markers.dd.md): Before reviewing executable end-of-turn blocks or transcript renderers (review, turn-end, parser, render)
+- [2026-11-10 Related-row queries need a consumer sufficiency proof](2026-11-10-related-row-queries-need-a-consumer.dd.md): When narrowing registration snapshots, checking carried ownership evidence, or changing RelatedSeats (review, registration, related-rows, proof)
 - [2026-11-10 Restart recovery includes credential rotation](2026-11-10-restart-recovery-includes-credential.dd.md): Before reviewing daemon-bounce retries or a long-lived authenticated client (review, retry, auth, proof)
 <!-- /pij:generated -->
