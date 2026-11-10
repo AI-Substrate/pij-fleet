@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Open before adding a refusal ahead of an expensive check, printing a command that names a pane id, reading tmux from a request path, continuing an action held for a memory turn, or proving a Claude/Copilot change on a private daemon",
+				"tags": [
+					"f162",
+					"f175",
+					"f173",
+					"plan-226",
+					"brake",
+					"tmux",
+					"registration",
+					"e2e",
+					"review"
+				],
+				"title": "Pre-proof brakes, reused pane ids, live-only tmux reads, and private-daemon rig traps (F162, F175, F173, 226)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "What reviewers broke, and what held (F162 #222, F175 #220, F173 #218, plan 226).\n\n1. A brake ahead of a costly proof must reuse the locked path's own resolution, not a narrower copy. #222 r1 refused holder-current before the host proof (2 ps a claim) only when the claim named `supersedes`. The common standby (a retired session retrying its own id) gets its holder INFERRED inside register_inner, so it still paid the proof (spoonbill F001). Fix: one function (`native_supersedes`) both paths call. Prove it with a counting observer: held retries read 0 processes, and an admitted claim reads more than 0.\n\n2. A held action rechecks with the route's own predicate. A memory-turn continuation that re-implemented \"self or parent\" silently refused the new prime-close path (#220 F001). Share one `may_close` and evaluate it against the row as it is when the turn ends; keep the incarnation brake (skip_reason).\n\n3. Pane ids come back after a tmux restart, so never print `kill-pane -t %N` unless the pane is still that seat's own:\n   - its process is alive with its recorded start;\n   - the pane's root started no later than it (the reaper's rule); and\n   - no OTHER live seat is recorded on the pane. A native successor keeps its predecessor's process and pane (squirrel S220-001).\n   Withholding the hint is only ever more conservative.\n\n4. Request-path tmux reads go live-only: `query_live` / `*_without_launch` (never start the control client, never fork); no client means \"unchecked\". Over control mode, `display-message -p -t %gone` answers with EMPTY FIELDS, not an error. Decide gone vs failed with the live pane list. Only the real-tmux test in CI caught this.\n\n5. A hook script must read its stdin before exiting on any path (F173); a builtin `while read` launches nothing. And from Claude 2.1.322, a hook's background children must not hold its stdout (`3>&-`), or a block answer is refused.\n\n6. Private-daemon e2e rig (plan 226):\n   - A scratch-HOME daemon can't corroborate a real-HOME Claude adopt: symlink HOME/.claude/sessions to the real one (the daemon only reads it).\n   - `rm` before `cp` when swapping a pij-rs a daemon ran, or the next launch is SIGKILLed.\n   - Copilot loads the project and user `pij` extensions side by side, and the first to register pij_send wins: check the seat's extension_build and respawn if the wrong one won.\n   - Claude's trust prompt defaults to \"No\": press Down, then Enter.\n\n7. When shared-build refuses (disk floor or a starved lock) and CI is the proof, reread your diff for type errors before the one push of a round (`.map(Some)` vs `Option<Option<_>>` nearly cost a round). Run pr-freeze before every sha you send.\n"
+		}
+	]
+}
