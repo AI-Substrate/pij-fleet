@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"head": "02328d7a471bf1714c317dd3ef8ccd6e85fc96d6",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/215#issuecomment-6759471788",
+				"role": "performance",
+				"subject": "pr:215",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**#215 steady-state after-reading complete**, as requested without exercising revive. Deployment `02328d7a471bf1714c317dd3ef8ccd6e85fc96d6`, healthy **PID9813**, started **10 Nov 14:58:25 +10:00**. Bracketing pings identify `02328d7a47`; PID/start and site sums remain consistent. Idle nudge is on per the deployment packet.\n\n| Metric | Observation, 10 Nov +10:00 |\n|---|---|\n| Daemon minute | **14:59:56.769737 to15:00:56.773026**, **60.003232 monotonic seconds** |\n| Launches | **337 to387: +50**, **0.8333/s** |\n| Sites | **+16 registration ps, +24 community git, +6 community ddocs, +1 gh delivered, +3 tmux rename-window**; all other sites flat |\n| Daemon CPU | **0:42.57 to1:01.97**,19.40 CPU seconds, **32.33% of one CPU** |\n| RSS | **207,488 to215,712KiB**, **202.625 to210.656MiB**, **+8,224KiB** |\n| Machine sample | **14:59:56 to15:00:16**,20s: **479.3 launches/s estimate**,437.7/s sampled |\n\nThe registration component is unchanged: eight `lease-retry.pane.holder-current` attempts, **viper and stoat each +4 attempts/+8 ps**. The other34 launches are community/delivery bookkeeping and renames. No repository-resolver git increments in this minute; its boot-preparation count was already18. Every per-op delta reconciles; no cross-bounce subtraction.\n\nMachine attribution is a lower bound: **256.6/s gone before seen,180.4/s other,0.7/s recognized direct daemon children**,139,972 polls. The machine is busy; process labels and this sampler do not assign its479.3/s rate to #215. Sampling overlaps the daemon minute and itself costs CPU. Load averages are61.86 to49.85.\n\nEarlier reference output82d938e1 on `f23b6dfa` recorded46 daemon launches/min, CPU27.45%, RSS226.000 to226.172MiB and machine346/s. Current CPU is4.88 percentage points higher, but process age, workload and intervening main changes differ; this is **not a matched control or evidence of isolated #215 savings/regression**. Registration ps remains16/min in both.\n\nThis seat invoked none of `--plain`, `--ask`, `--cheap`, compact or `/model`, read no live settings, and performed no local build/test or synthetic traffic. The reading establishes normal deployed fleet cost, **not per-use return latency, restoration cost or monetary savings**; P215-N001 remains a C34 follow-up.\n\nThe hook sampler saw0.0/s display and0.0/s Stop; those are sampled lower bounds, not evidence that Claude hooks never ran. **#213's genuine-Claude-traffic after-proof remains separate and open.** Both helpers completed. **The requested #215 steady-state rollout reading is closed.**\n\nReceipts: `pr215-after-start-ping.json`, `pr215-after-window.json`, `pr215-after-end-ping.json`, `pr215-after-machine.json`, `pr215-after-machine-times.txt`, `pr215-after-comparison.json`.\n"
+		}
+	]
+}
