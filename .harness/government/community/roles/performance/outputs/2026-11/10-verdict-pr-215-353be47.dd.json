@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c3a8-133e-7921-9ead-5dc659a37a83",
+				"date": "2026-11-10",
+				"head": "353be4793b98fe2db5914b2e31c95d5ba029afd1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/215#issuecomment-6758812487",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:215",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES**, round 2 (final under C34), at `353be4793b98fe2db5914b2e31c95d5ba029afd1`.\n\n**Round-1 fixes:** strict snapshots now capture each original file's bytes or absence, and invalid/unreadable settings refuse before the Sonnet launch or return submission. Restoration follows every completed attempt path, including submission failure, and relaunch results expose per-home reports/warnings rather than stderr alone. CI covers exact restoration with present/absent keys and absent files, failed snapshots/restores and concurrent edits. The model write/`returned:true` now require a successful attempt plus a settings witness, not merely a submitted command; the late-dialog case preserves the prior record. The documented already-default-at-target ambiguity remains a Known limit, not proven per-seat model telemetry. The model grammar/dialog checks add no launch; peer.md has three separate commands.\n\n**Cost delta:** no new periodic loop, timer or launch site. The unchanged explicit-use path retains the **up-to-15-minute event wait**, **5 + 1.5 + 2 seconds** after compact start, one model submission, one dialog capture and optional recorded `tmux.send-keys` Enter. Existing registration polling and gate-specific operations remain as priced in [round 1](https://github.com/AI-Substrate/pij-fleet/pull/215#issuecomment-6758479611).\n\nThe corrected read/write count is **per governed home**: a complete cheap cycle has up to **4H whole-file read attempts and 2H restore writes/removals**, H at most two, not four reads total when both homes exist. `--ask` takes only the relaunch half. Missing originals now produce a removal when appropriate; unchanged documents need no write. Protected failure paths now pay their restore I/O rather than skipping it.\n\nSnapshots retain full original file strings during the protected launch/return phase, instead of only the model value. Comparing model-stripped JSON, extracting saved models and serializing concurrent-edit results add repeated O(file-bytes) parsing/allocation. The pending event wait itself holds paths/model, not a 15-minute file snapshot. All settings I/O remains synchronous and byte-sized, without an explicit size/latency ceiling.\n\nSwitch confirmation reuses `restore.found` from the restore's existing current-file read: **no extra confirmation read or poll**. The second registry read/write is now conditional on successful witnessed application. New `with_settings` materializes, parses and reserializes the revive response once and attaches H reports; it adds O(response-bytes) work, not a daemon round or another HTTP call.\n\n**P215-N001 remains a C34 follow-up:** shared-broadcast filtering still costs per pending return/global event, and per-use settings/gate latency, allocation and monetary savings are not measured by this CI run. The amended cost row closes the original undercount; no normal-use cost blocker established.\n\n**Exact-head proof:** [CI 42753534330](https://github.com/AI-Substrate/pij-fleet/actions/runs/42753534330), Rust job `129622491055`, successful-upload artifact **13734587387**, matching trigger-head metadata: **2,388 executed passed**, zero failures/errors; six skips separately reported by nextest. JUnit verifies all four return cases, three restore/snapshot/concurrent-edit cases and six spawn guards. Node22/24, Rust lint and final delivers succeed; worktree clean and matching GitHub head/CLEAN.\n\nNo local build/test/probe, live settings read, revive, compact or model switch. No live per-use savings or new deployment reading is claimed.\n"
+		}
+	]
+}
