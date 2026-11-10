@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c439-ecf1-7f22-88c0-c254f4549668",
+				"date": "2026-11-10",
+				"head": "ac95e5325f001e4b0c72c638a0e170078e2a406e",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:222",
+				"writer": "pij-polite-starfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#222 correctness review, round 2: PASS\n\nHead: ac95e5325f001e4b0c72c638a0e170078e2a406e.\n\nF001 is closed. The pre-proof path and locked registration both resolve registration_target and native_supersedes using the same rules. This includes a retired session retrying its own old ID without supersedes, not just the explicit predecessor case. The extraction preserves the previous locked-path resolution, including blank-ID self-registration and bootstrap predecessor inference.\n\nThis is a refusal-only safety brake, not admission policy. Removing it performs additional proof work before the same refusal. Anything not refused still runs verify_native_host and all locked admission/precedence checks. A stale pre-lock snapshot can postpone takeover once; that existing limitation is disclosed.\n\nProof: just pr-freeze 222 returned FINAL with remote/GitHub head agreement, CLEAN and all latest checks passed. CI run 42767043953 is successful at this exact head: 2,415 Rust tests passed, six skipped. Successful-job artifact 13740012315 individually records passing a_retired_session_retrying_its_own_id_reads_no_process_until_it_may_take_over, a_held_claim_is_refused_before_any_process_read, new_session_takes_the_seat_on_its_first_prompt_and_the_old_chat_stands_by, and both lease-lapse takeover controls. The new retired-session test asserts three held retries cause zero observer reads and a newer prompt is admitted with reads greater than zero.\n\nReviewer-local just copilot-native-test: 349 tests, 346 passed, zero failed, three pre-existing skips, including both F162 standby state-machine tests. harness boot reported dependency-unready in the detached worktree; no dependencies were installed or symlinked. Rust/Vitest proof is exact-head CI, not a local build. No product edits or daemon/lifecycle operations.\n\nNo correctness changes owed and no new C34 follow-up. Performance owns live after-deployment measurements and the disclosed remaining HTTP/roster/lease cost; this correctness verdict does not claim a live zero-CPU or deployed-fleet measurement.\n"
+		}
+	]
+}
