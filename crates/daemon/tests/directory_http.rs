@@ -6079,6 +6079,13 @@ async fn a_reply_from_the_holder_answers_the_request_and_stops_its_clock() {
         async move { store.role_request(id).await.unwrap().expect("row") }
     };
     assert_eq!(row("req-limit").await.answered_at, None, "not the holder");
+    // F176: a reply that answers nothing says so, and why.
+    assert!(
+        third["data"]["warning"]
+            .as_str()
+            .is_some_and(|note| note.contains("is held by pij-holder")),
+        "{third}"
+    );
     let reply = send_to(
         rig.addr,
         &repo.main,
@@ -6093,11 +6100,58 @@ async fn a_reply_from_the_holder_answers_the_request_and_stops_its_clock() {
     .await;
     assert_eq!(reply["ok"], true, "{reply}");
     assert!(row("req-limit").await.answered_at.is_some(), "{reply}");
+    assert!(reply["data"]["warning"].is_null(), "{reply}");
     assert_eq!(
         limit_acts(time_limits(&rig.services, arrived + 5 * LIMIT_MS).await),
         [],
         "an answered request is never checked in"
     );
+    // F176: the PA's list marks it answered, though it stays delivered until
+    // someone closes it (unimatrix's PA closed 28 answered requests by hand).
+    let listed = call_as(
+        rig.addr,
+        "/v1/requests",
+        &["requests", "--state", "delivered"],
+        &repo.main,
+        PANE,
+    )
+    .await;
+    let entry = listed["data"]["requests"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|entry| entry["id"] == "req-limit"))
+        .cloned()
+        .unwrap_or_else(|| panic!("{listed}"));
+    assert_eq!(entry["state"], "delivered", "{listed}");
+    assert!(entry["answered_at"].is_u64(), "{listed}");
+    // A second reply says it answered nothing; a reply to an ordinary
+    // message keeps its receipt as it was.
+    for (msg_id, to, note) in [
+        ("reply-again", "req-limit", Some("was already answered")),
+        ("reply-plain", "no-such-request", None),
+    ] {
+        let again = send_to(
+            rig.addr,
+            &repo.main,
+            SEAT,
+            msg_id,
+            json!({
+                "from": "pij-holder",
+                "caller": {"TMUX_PANE": "%51", "cwd": repo.main},
+                "in_reply_to": to,
+            }),
+        )
+        .await;
+        assert_eq!(again["ok"], true, "{again}");
+        match note {
+            Some(note) => assert!(
+                again["data"]["warning"]
+                    .as_str()
+                    .is_some_and(|warning| warning.contains(note)),
+                "{again}"
+            ),
+            None => assert!(again["data"]["warning"].is_null(), "{again}"),
+        }
+    }
 }
 
 /// Review of #152, F002 and S152-001. A holder's reply addressed to a role

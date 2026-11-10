@@ -2074,15 +2074,7 @@ async fn send(
         return response;
     }
     if request.message.fyi {
-        let (from, in_reply_to) = (
-            request.message.from.clone(),
-            request.message.in_reply_to.clone(),
-        );
-        let response = hold_fyi(&state, request).await;
-        if response.status().is_success() {
-            answered_by(&state, &from, in_reply_to.as_deref(), reply).await;
-        }
-        return response;
+        return hold_fyi(&state, request, reply).await;
     }
     if let Some(command) = request.command {
         if request.message.to.machine.is_some() {
@@ -2157,7 +2149,11 @@ async fn send(
         Ok(mut receipt) => {
             receipt.cold_check = cold_check;
             if !forwarded && !matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
-                answered_by(&state, &reply_from, reply_to.as_deref(), reply).await;
+                if let Some(note) =
+                    answered_by(&state, &reply_from, reply_to.as_deref(), reply).await
+                {
+                    add_warning(&mut receipt, note);
+                }
                 note_turn_wait(&state, &note_to, &mut receipt).await;
             }
             envelope(StatusCode::OK, &Envelope::ok("pij send", receipt))
@@ -2210,10 +2206,7 @@ pub(crate) async fn note_turn_wait(state: &AppState, to: &SeatId, receipt: &mut 
         "{} is mid-turn and {why}: this message may wait for that turn to end.",
         seat.id
     );
-    receipt.warning = Some(match receipt.warning.take() {
-        Some(earlier) => format!("{earlier}; {note}"),
-        None => note,
-    });
+    add_warning(receipt, note);
 }
 
 /// The audit event for a reply that answered a role request (S152-001).
@@ -2336,18 +2329,25 @@ fn native_session_binds(seat: &SeatDescriptor, caller: Option<&CallerContext>) -
 
 /// A reply from a role request's holder answers it (plan 214, F68): the
 /// stored holder only, once, with its audit event in the same transaction
-/// (S152-001; ruling C32 (3)).
+/// (S152-001; ruling C32 (3)). Returns a receipt note when the send's
+/// `in_reply_to` names a role request it did not answer, and why (F176): a
+/// reply that silently answers nothing leaves its request's time limit
+/// running. An `in_reply_to` naming an ordinary message gets no note.
 pub(crate) async fn answered_by(
     state: &AppState,
     from: &SeatId,
     in_reply_to: Option<&str>,
     evidence: Option<ReplyEvidence>,
-) {
+) -> Option<String> {
+    // Evidence exists only when `in_reply_to` names a role request.
     let (Some(id), Some(evidence)) = (in_reply_to, evidence) else {
-        return;
+        return None;
     };
     let Ok(now_ms) = system_time_ms() else {
-        return;
+        return Some(format!(
+            "request {} was not marked answered",
+            pij_core::render::msg_id(id)
+        ));
     };
     let mut payload = serde_json::json!({"request": id, "from": from});
     if let (Some(payload), serde_json::Value::Object(evidence)) =
@@ -2363,14 +2363,54 @@ pub(crate) async fn answered_by(
         seat: Some(from.clone()),
         payload: payload.to_string(),
     };
-    crate::delivery::role_send::answer_by_reply(
+    if crate::delivery::role_send::answer_by_reply(
         &state.services,
         from,
         Some(id),
         now_ms,
         Some(audit),
     )
-    .await;
+    .await
+    {
+        return None;
+    }
+    Some(unanswered(state, from, id).await)
+}
+
+/// Why a reply to role request `id` answered nothing (F176). One read.
+async fn unanswered(state: &AppState, from: &SeatId, id: &str) -> String {
+    use pij_core::render;
+    let shown = render::msg_id(id);
+    let store = state.services.governance.store();
+    match store.role_request(id).await {
+        Ok(Some(request)) => match request.holder.as_deref() {
+            Some(holder) if holder != from.as_str() => format!(
+                "request {shown} is held by {}, so only its reply answers it; this one marks it nothing",
+                render::seat(holder)
+            ),
+            None => format!("request {shown} has no holder yet, so this reply marks it nothing"),
+            Some(_) if request.answered_at.is_some() => {
+                format!("request {shown} was already answered")
+            }
+            Some(_) => format!(
+                "request {shown} is {}, not delivered, so this reply marks it nothing",
+                request.state.as_str()
+            ),
+        },
+        Ok(None) => match store.closed_role_request(id).await {
+            Ok(Some(_)) => format!("request {shown} is closed, so this reply marks it nothing"),
+            _ => format!("request {shown} was not marked answered"),
+        },
+        Err(_) => format!("request {shown} was not marked answered"),
+    }
+}
+
+/// Add `note` to a receipt's warning, after any earlier one.
+pub(crate) fn add_warning(receipt: &mut Receipt, note: String) {
+    receipt.warning = Some(match receipt.warning.take() {
+        Some(earlier) => format!("{earlier}; {note}"),
+        None => note,
+    });
 }
 
 /// `@` is the address separator, so NO msg_id carries it, local or forwarded:
@@ -2436,7 +2476,13 @@ pub(crate) async fn send_remote(state: &AppState, command: &str, request: SendRe
 /// `pij send --fyi` (plan 158): hold the message for the recipient's next real
 /// turn. A remote recipient's FYI is held by ITS daemon: this one forwards it,
 /// and a forwarded FYI is held here exactly as a local one.
-async fn hold_fyi(state: &AppState, request: SendBodyRequest) -> Response {
+/// Hold an FYI; once held, a correlated one answers its request as any reply
+/// does, and its receipt says when it answered nothing (F176).
+async fn hold_fyi(
+    state: &AppState,
+    request: SendBodyRequest,
+    reply: Option<ReplyEvidence>,
+) -> Response {
     if request.command.is_some() {
         return refused(
             "pij send",
@@ -2458,9 +2504,15 @@ async fn hold_fyi(state: &AppState, request: SendBodyRequest) -> Response {
     };
     let warning = pij_core::fyi::hold_warning(&msg.body);
     let recipient = msg.to.clone();
+    let (from, in_reply_to) = (msg.from.clone(), msg.in_reply_to.clone());
     match state.services.delivery.hold_fyi(msg).await {
         Ok(mut receipt) => {
             fyi::after_hold(state, &recipient, warning, &mut receipt).await;
+            if !matches!(receipt.outcome, DeliveryOutcome::Refused { .. })
+                && let Some(note) = answered_by(state, &from, in_reply_to.as_deref(), reply).await
+            {
+                add_warning(&mut receipt, note);
+            }
             envelope(StatusCode::OK, &Envelope::ok("pij send", receipt))
         }
         Err(error) => send_failure("pij send", error),
