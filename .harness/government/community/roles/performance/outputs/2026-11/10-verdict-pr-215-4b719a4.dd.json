@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c391-c2ff-7e90-9363-29bb2db04d92",
+				"date": "2026-11-10",
+				"head": "4b719a4f9446fc847e180905b0b15019a0851eb9",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/215#issuecomment-6758479611",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:215",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: PASS WITH NOTES** at `4b719a4f9446fc847e180905b0b15019a0851eb9`, under C33/C34.\n\n**Explicit use only:** no watchdog, global tick or automatic choice invokes the new return. Ordinary Claude revive now adds the known-cache read with its existing three-second bound; `--plain` bypasses that choice read. `--ask`/`--cheap` admit cold or unknown by the amended human-choice rule, superseding #207's known-cold-only qualification. The existing relaunch path, 50ms registration polling and its deadlines remain per-use costs, not new fleet polling.\n\n**The return has more than one five-second wait.** One task subscribes before the CLI can send its armed compact ID. Its event-driven loop has one absolute **15-minute start deadline**; no history query or periodic wake is added. A matching delivered compact triggers **5s before `/model`, 1.5s before the one dialog capture, then 2s before restoring settings**: 8.5s of programmed waits after start, plus actual gate/I/O latency. A refused compact terminates without switching. The two cheap-return tests execute the delivered/non-delivered and dialog/no-dialog cases; the second test settles a refusal, rather than proving the full default 15-minute timeout elapsed.\n\nThe subscription filters seat/kind **after receiving from the shared live broadcast**, so each pending return still consumes/filter-checks global live events. With U simultaneous pending uses and E broadcast events, that work scales with U x E until termination; there is no permanent idle poll. A task remains until its own return/timeout, and daemon restart loses it as documented.\n\n**Launch accounting:** typing `/model` uses the existing interaction gate, with that gate's own captures/staging/launch costs, not one assumed process. The explicit `capture(...,40)` uses the existing tmux control client or recorded `tmux.capture-pane` fallback; the adapter captures the visible pane before retaining its last40 rows. Optional Enter calls existing `run(\"send-keys\", ...)`: **one recorded `tmux.send-keys` launch**, through the same resolved-program launcher. No new executable site is needed; all six spawn guards pass. There is also the existing relaunch/compact delivery machinery.\n\n**Settings cost:** for H governed homes (at most two), the Sonnet relaunch and return each perform a save read and a restore read, so a complete cheap cycle can add **four whole-file reads and up to two atomic full-file replacements per home**, not one read/write for the entire use. `--ask` takes only the relaunch half. Writes are conditional and use temp write, sync, permissions and rename. JSON parsing is repeated during restore, which also scans the document; the absent-model-key path serializes the whole object. These synchronous operations scale with file bytes and have no explicit byte/latency ceiling. No live settings were read by this review.\n\nThe return additionally takes two registry reads, one model write and one audit event, with existing store guards. **P215-N001 / C34 follow-up:** event fan-out, settings-byte/I/O ceilings and actual interaction-gate launch volume are source-priced, not measured per-use latency or monetary savings. No normal-use cost blocker established.\n\n**Exact-head CI:** [42750463077](https://github.com/AI-Substrate/pij-fleet/actions/runs/42750463077), Rust job `129612593861`, successful-upload artifact **13733790504**, matching head metadata: **2,371 executed passed**, zero failures/errors; six skips separately reported by nextest. Verified both return tests, model-restore case, all19 revive HTTP cases and six spawn guards. Node22/24, Rust lint and delivers succeed; worktree clean and GitHub head matches/CLEAN.\n\nNo local build/test/probe, live revive/compact/model switch or settings change. The author's two throwaway-seat runs are functional gate evidence, not this seat's measurement or a general cost benchmark. Latest fleet baseline is output82d938e1 on main `f23b6dfa`; deployed/traffic-bearing per-use cost is not claimed.\n"
+		}
+	]
+}
