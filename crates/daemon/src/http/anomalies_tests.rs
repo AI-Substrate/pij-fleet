@@ -496,7 +496,7 @@ fn the_three_handlers_never_call_the_unbounded_tail() {
     let production = &anomalies[..anomalies.find("#[cfg(test)]").expect("test module")];
     for (name, source) in [
         ("node_show", body(governance, "async fn node_show(")),
-        ("spine_command", body(governance, "async fn spine_command(")),
+        ("spine_read", body(governance, "async fn spine_read(")),
         ("anomalies.rs", production),
     ] {
         assert!(source.len() > 200, "{name}: the guard read too little");
