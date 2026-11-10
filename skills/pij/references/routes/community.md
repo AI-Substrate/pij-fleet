@@ -16,8 +16,8 @@ The directory lives on the governance branch under `<government-root>/community/
 pij directory [--suggest]                        # the prime, roles, actions, prompts, the boundary review; --suggest: every suggestion
 pij directory templates [--show '<name>[@vN]']   # the shipped examples, and one template's body
 pij directory add '<id>' --from 'template:<name>' --why '<the need>'  [flags override fields]
-pij directory add '<id>' --from 'file:<brief>' --why '<the need>' --rule '<text>' ...
-pij directory add '<id>' --why '<the need>' --title '<title>' --rule '<rule>' --packet '<packet>'  # no template
+pij directory add '<id>' --from 'file:<brief>' --why '<the need>' --title '<title>' --kind specialist|general --lifecycle long-lived|per-task --holders one|many --rule '<text>'
+pij directory add '<id>' --why '<the need>' --title '<title>' --kind specialist|general --lifecycle long-lived|per-task --holders one|many --rule '<rule>' --packet '<packet>'  # no template
 pij directory assign '<role>[/<instance>]' '<seat>' --why '<text>'
 pij directory release '<role>[/<instance>]' '<seat>' --why '<text>'
 pij directory edit '<id>' --why '<text>' --set '<field>=<value>' [role flags]

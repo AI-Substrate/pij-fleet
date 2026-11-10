@@ -56,7 +56,7 @@ pij report now '<did>' '<next>' [--state <word>] [--note '<text>']   # --note on
 pij report question "<what I need from you>" [--assignment <id>] [--refs a,b]
 pij report blocked "<what I am waiting on>" [--assignment <id>] [--refs a,b]
 pij report state <state> [--assignment <id>] [--refs a,b]
-pij report clear
+pij report clear [--assignment <id>]
 pij report verify <seat> [--assignment <id>]
 ```
 

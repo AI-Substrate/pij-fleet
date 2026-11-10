@@ -36,7 +36,7 @@ Verified external/paneless seats use `pij inbox register --json`, then `pij inbo
 | Pi | `--harness pi`; in-process `harness:"pi"` | `--model gpt-5.6-sol --effort high` launches Pi with `--model gpt-5.6-sol:high`; use a model from Pi's own catalog |
 
 ```bash
-pij-rs spawn --harness <omp|pi|claude|copilot|codex> --model <exact-model> [--effort <level>] [--cwd <absolute-path>] [--parent <seat>] [--role <pm|worker|pa>] [--session <tmux-session>] [--name <window-name>] [--allow-retired] --json
+pij-rs spawn --harness <omp|pi|claude|copilot|codex> [--model <exact-model>] [--effort <level>] [--cwd <absolute-path>] [--parent <seat>] [--role <pm|worker|pa>] [--session <tmux-session>] [--name <window-name>] [--allow-retired] --json
 pij attest <new-seat> --plan-id <plan-id> --json
 pij dispatch <new-seat> --packet <path> --wait --json
 pij-rs revive <seat> [--session <tmux-session>] [--name <window-name>] [--fresh] --json
@@ -45,7 +45,7 @@ pij-rs revive <seat> --model claude-opus-5-5 --json  # relaunch on another model
 pij-rs revive <seat> --assume-dead --evidence 'Describe why the recorded process binding is stale' --json
 ```
 
-**OMP and Pi cannot start in a linked git worktree.** `pij-rs spawn` refuses `--harness omp|pi` when `--cwd` (or the caller's directory) is a linked worktree, before any daemon call (`crates/cli/src/main.rs:2650`): their global and project extension links collide and the peer dies before registering. Don't route around it with `pij_spawn`; the cause is the runtime. For worktree work, spawn `claude` or `copilot` with `--cwd <worktree>`, or spawn the OMP/Pi seat from the main checkout and have it work in the worktree by absolute path.
+**OMP and Pi cannot start in a linked git worktree.** `pij-rs spawn` refuses `--harness omp|pi` when `--cwd` (or the caller's directory) is a linked worktree, before any daemon call (`is_linked_worktree` in `crates/cli/src/main.rs`): their global and project extension links collide and the peer dies before registering. Don't route around it with `pij_spawn`; the cause is the runtime. For worktree work, spawn `claude` or `copilot` with `--cwd <worktree>`, or spawn the OMP/Pi seat from the main checkout and have it work in the worktree by absolute path.
 
 The shim's `spawn`/`revive` are named refusals because their grammar differs. Native spawn also supports `--id`, `--bin <executable-path>`, `--no-wait`, `--wait-seconds` and Claude inbound-consent flags; it has no legacy `--layout`, `--task`, `--branch` or `--plan-id`. Use its reported pane/window for explicit, owner-controlled tmux placement (§ C5); do not claim a legacy side-stack default. Send a packet after real binding; attest separately. Native revive requires an explicit id; `--print` and `--attach` remain unsupported.
 
