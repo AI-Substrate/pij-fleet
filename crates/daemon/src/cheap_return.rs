@@ -125,8 +125,15 @@ pub struct Switched {
     pub confirmed: bool,
     /// The switch was seen to apply: Claude wrote the model into a settings
     /// file whose saved value was something else. Only then is the seat's
-    /// recorded model changed (review of #215, F002).
+    /// recorded model set to it (review of #215, F002).
     pub applied: bool,
+    /// `/model` was typed but no settings file could show whether it applied:
+    /// each home's default already was the model (or there was no home). The
+    /// seat is on that model or still on Sonnet, so its recorded model becomes
+    /// unknown rather than either (review of #215 round 2, S215-002).
+    pub unconfirmed: bool,
+    /// The seat's recorded model before the switch: the last one confirmed.
+    pub last_confirmed: Option<String>,
     /// Why it did not apply, when it didn't.
     pub why: Option<String>,
     /// Each Claude home's `"model"`: found after the switch, and left.
@@ -185,6 +192,8 @@ pub async fn switch_back(
         typed: false,
         confirmed: false,
         applied: false,
+        unconfirmed: false,
+        last_confirmed: seat.model.clone(),
         why: None,
         settings: Vec::new(),
     };
@@ -217,17 +226,32 @@ pub async fn switch_back(
     let attempted = attempt.await;
     // Every path, failures included, puts the settings back.
     switched.settings = restore_claude_models(&saved);
+    let target = Some(pending.model.as_str());
     let witness = saved.iter().zip(&switched.settings).any(|(before, after)| {
-        before.model().as_deref() != Some(pending.model.as_str())
-            && after.found.as_deref() == Some(pending.model.as_str())
+        before.model().as_deref() != target && after.found.as_deref() == target
     });
+    // A home whose default already was the model can't show the switch: it
+    // reads the same whether or not it applied.
+    let blind = saved.is_empty()
+        || saved
+            .iter()
+            .any(|before| before.model().as_deref() == target);
     switched.why = match attempted {
-        Err(why) => Some(why),
-        Ok(()) if !witness => Some(
+        Err(why) if !switched.typed => Some(why),
+        _ if witness => None,
+        Err(why) if !blind => Some(why),
+        Ok(()) if !blind => Some(
             "the switch was not seen to apply (no settings file took the model; the dialog may have come late), so the seat stays on Sonnet"
                 .to_string(),
         ),
-        Ok(()) => None,
+        attempted => {
+            switched.unconfirmed = true;
+            let failed = attempted.err().map(|why| format!("{why}; ")).unwrap_or_default();
+            Some(format!(
+                "{failed}the switch could not be confirmed (the default model already was {}, so settings can't show it), so the seat's model is recorded as unknown: it is on {} or still on Sonnet",
+                pending.model, pending.model
+            ))
+        }
     };
     if let Some(error) = switched
         .settings
@@ -239,20 +263,24 @@ pub async fn switch_back(
             pending.seat
         );
     }
-    if switched.why.is_none() {
+    if switched.why.is_none() || switched.unconfirmed {
         let mut seat = services
             .registry
             .get(&pending.seat)
             .await
             .map_err(|error| error.to_string())?
             .ok_or("the seat is gone")?;
-        seat.model = Some(pending.model.clone());
+        seat.model = if switched.unconfirmed {
+            None
+        } else {
+            Some(pending.model.clone())
+        };
         services
             .registry
             .put(seat)
             .await
             .map_err(|error| error.to_string())?;
-        switched.applied = true;
+        switched.applied = !switched.unconfirmed;
     }
     Ok(switched)
 }
@@ -277,6 +305,8 @@ async fn audit(services: &Services, pending: &Return, outcome: &Result<Switched,
             "model": pending.model,
             "compact_msg_id": pending.compact_msg_id,
             "returned": switched.applied,
+            "unconfirmed": switched.unconfirmed,
+            "last_confirmed_model": switched.last_confirmed,
             "typed": switched.typed,
             "confirmed": switched.confirmed,
             "why": switched.why,
@@ -534,6 +564,65 @@ mod tests {
             seat.model.as_deref(),
             Some("claude-sonnet-5-5"),
             "its true model"
+        );
+        assert_eq!(
+            std::fs::read_to_string(home.join("settings.json")).unwrap(),
+            before
+        );
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    /// Review of #215 round 2, S215-002: the user's default already is the
+    /// seat's own model, so the switch back rewrites it to the same value and
+    /// settings can't show whether it applied. The seat is not claimed to be
+    /// on Sonnet (nor on its model): its recorded model becomes unknown, and
+    /// the audit says the return is unconfirmed and names the last confirmed
+    /// model. Settings stay byte-identical.
+    #[tokio::test]
+    async fn a_default_already_on_the_model_leaves_the_return_unconfirmed() {
+        let store = FreshStore::new();
+        let (services, tmux) = rig(&store).await;
+        let before = "{\n  \"model\": \"claude-fable-5\"\n}\n";
+        let home = settings_home("same", before);
+        tmux.queue_capture(format!("  {SWITCH_MODAL}\n   ❯ 1. Yes, switch to Fable"));
+        let pending = pending("claude-fable-5", vec![home.clone()]);
+        let outcome = switch_back(&services, &pending, zero()).await;
+        let switched = outcome.as_ref().unwrap();
+        assert!(
+            switched.typed && switched.confirmed && !switched.applied && switched.unconfirmed,
+            "{switched:?}"
+        );
+        assert!(
+            tmux.calls()
+                .iter()
+                .any(|call| call == &format!("enter:{PANE}")),
+            "{:?}",
+            tmux.calls()
+        );
+        let seat = services
+            .registry
+            .get(&SeatId::from(SEAT))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(seat.model, None, "neither Sonnet nor its model is asserted");
+        audit(&services, &pending, &outcome).await;
+        let returned = services
+            .event_bus
+            .latest_matching(&SeatId::from(SEAT), &[RETURN_KIND])
+            .await
+            .unwrap()
+            .expect("audited");
+        let payload: Value = serde_json::from_str(&returned.payload).unwrap();
+        assert_eq!(payload["returned"], false, "{payload}");
+        assert_eq!(payload["unconfirmed"], true, "{payload}");
+        assert_eq!(
+            payload["last_confirmed_model"], "claude-sonnet-5-5",
+            "{payload}"
+        );
+        assert!(
+            !payload["why"].as_str().unwrap().contains("stays on Sonnet"),
+            "{payload}"
         );
         assert_eq!(
             std::fs::read_to_string(home.join("settings.json")).unwrap(),
