@@ -1263,6 +1263,16 @@
 					"seat": "pij-whole-spoonbill",
 					"to": "2026-11-10T00:45:12.686Z",
 					"why": "#211 skill review fixes (guan), FINAL 04865ac"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T01:10:34.121Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "212",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "#212 plan 226 lane A, FINAL 68ecd89"
 				}
 			]
 		}
