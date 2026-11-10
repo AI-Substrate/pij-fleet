@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c43a-0637-7de3-8bcd-7b6586b7bc85",
+				"date": "2026-11-10",
+				"head": "881a3f568e6c078d5f642c3574ddc9813902838f",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:223",
+				"writer": "pij-polite-starfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#223 correctness review, round 1: PASS WITH NOTES\n\nHead: 881a3f568e6c078d5f642c3574ddc9813902838f.\n\nThe F176 visibility fix is correct. The list serializes the existing persisted answered_at without changing lifecycle state or clocks. The CLI counts numeric timestamps and marks answered rows while leaving unanswered rows unchanged. Closed entries inherit the same field. There is no auto-close or new lifecycle policy.\n\nFor accepted local seat sends, native and shim routes add answered_by's note to the mutable receipt, including FYI holds, without discarding earlier warnings. The sender/evidence gate is unchanged: ordinary message correlation yields no ReplyEvidence and therefore no new warning or answer attempt. Successful holder replies still stamp once with their audit transaction and have no warning. Non-holder, no-holder, queued/delivering, closed and already-answered reasons follow the corresponding stored facts. Both role-addressed reply sites intentionally discard the note, matching Known limits.\n\nOne nonblocking diagnostic defect, C34 follow-up N223-001: crates/daemon/src/http/mod.rs:2394-2397 assumes a same-holder, unanswered request must be not delivered. But answer_by_reply also returns false after an audit/store failure, leaving a delivered, unanswered row. That branch then says \"is delivered, not delivered\". Handle Delivered explicitly as an answer-recording failure and retain the successful send receipt. This is a source-traced failure-path issue, not a normal-use correctness blocker; no additional review round requested.\n\nProof: just pr-freeze 223 returned FINAL with exact remote/GitHub head agreement, CLEAN and all latest checks passed. CI run 42765698558 is successful at this head: 2,414 Rust tests passed, six skipped. Successful-job JUnit artifact 13739409033 individually records passing the_request_list_marks_answered_requests and a_reply_from_the_holder_answers_the_request_and_stops_its_clock. The latter exercises the non-holder warning, successful no-warning holder reply, persisted answered_at in the delivered list, already-answered warning, unchanged ordinary-reply receipt and stopped limit clock. The shipped native inbox/ACK contract also passed. Node 22 Vitest: 2,281 passed, six skipped; both Node check jobs and Rust lint passed.\n\nNo local builds, dependency installs/symlinks, product edits, credentials or daemon/lifecycle operations. No new loop, timer or launch; additional request lookups are event-driven. Independent security grading remains with that role. Known limits about role-addressed replies, unknown IDs and manual closing are accurate.\n"
+		}
+	]
+}
