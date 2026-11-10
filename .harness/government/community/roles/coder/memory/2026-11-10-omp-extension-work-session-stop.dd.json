@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Open before adding an OMP-only hook or renderer to the pij extension, proving an extension change end to end, or picking up #212 (plan 226 lane A)",
+				"tags": [
+					"plan-226",
+					"omp",
+					"turn-end",
+					"e2e",
+					"testing",
+					"build"
+				],
+				"title": "OMP extension work: session_stop, renderers, proving it on a private daemon (plan 226)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#212 state at compaction (plan 226 lane A, draft, head dae2b665): the Rust gate passes in CI. The TS jobs fail because 13 index.test.ts and index.fyi.test.ts cases build a fake `pi` without registerMessageRenderer, and adapters/omp-turn-end.ts calls it unconditionally. Next step: call every OMP-only method optionally (`?.`), push one fix, pr-freeze, mark ready, send pm the sha.\n\nOMP 18.14 facts (all verified live):\n- `session_stop` is OMP's Stop hook: last_assistant_message and stop_hook_active. It fires once at the terminal settle, never for a tool-call reply, an abort, a retry or a subagent. `{decision:\"block\", reason}` gives one hidden turn, and OMP never caps blocks, so the guard is yours.\n- A ctx.ui.notify raised inside session_stop or agent_end never draws. Post `sendMessage({customType, display:true})` once ctx.isIdle(), and draw it with registerMessageRenderer.\n- registerAssistantTextRenderer is display-only and needs extensionRenderers.assistantText (`just link` sets it via `omp config`). It gets the full text on every draw, but a pre-tool segment shows neither the toolCall nor the real stopReason: use message_end plus ui.rerenderMessage(ts).\n- /reload does not re-import an edited extension module; spawn a fresh seat.\n- OMP-only APIs are absent from the earendil typings: type them structurally and call them optionally, because the existing test fakes lack them.\n\nE2E proof without touching live seats: run a private pij-rs (built from the branch) with a temp HOME, XDG_*, COPILOT_HOME, CODEX_HOME, PIJ_HOME and its own --state-dir and --bind. Start seats in tmux with PIJ_RS_ADDR and PIJ_RS_STATE_DIR set and `omp --no-extensions -e <worktree>/.omp/extensions/pij/index.ts --config <overlay.yml>`. Paste multi-line prompts with `tmux load-buffer` then `paste-buffer -p`. Read results from the daemon (state pendingFyis, ping spawns). Script: fleet-226-omp scratch/226-omp-eot/e2e.sh.\n\nNo node_modules (C25): `npx --yes @biomejs/biome@<lockfile version> check <files>`; harness scripts via `node --experimental-transform-types harness/scripts/<x>.ts`; vitest suites through a /tmp stand-in whose `it` awaits promises (mine didn't at first, and async tests passed vacuously). CI still found the fake-API break, so treat CI as the proof.\n\nBuild: at load 55+, `taskpolicy -b` gave clippy 3% CPU (`ps -o time`). pm and the prime approved one nice-only batch on the shared lock, and it did tests, the binary and clippy in 2.5 minutes. Ask; don't drop the rule yourself.\n"
+		}
+	]
+}
