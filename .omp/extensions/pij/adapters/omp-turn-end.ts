@@ -72,7 +72,7 @@ interface OmpTurnEndApi {
 			readonly streaming: boolean;
 		}) => string | undefined,
 	): void;
-	registerMessageRenderer(
+	registerMessageRenderer?(
 		customType: string,
 		renderer: (
 			message: { readonly content: unknown },
@@ -104,7 +104,7 @@ export function registerOmpTurnEnd(pi: unknown, runner: () => TurnEndRunner | un
 	// The renderer draws one line where the block is; the session, exports and
 	// model context keep the reply as written. Needs extensionRenderers.assistantText.
 	omp.registerAssistantTextRenderer?.((context) => display.render(context));
-	omp.registerMessageRenderer(TURN_END_CUSTOM_TYPE, (message, _options, theme) => {
+	omp.registerMessageRenderer?.(TURN_END_CUSTOM_TYPE, (message, _options, theme) => {
 		const text = typeof message.content === "string" ? message.content : "";
 		const color = text.startsWith("pij ✗") ? "warning" : "dim";
 		return {
