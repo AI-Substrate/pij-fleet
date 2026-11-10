@@ -824,6 +824,16 @@
 					"seat": "pij-rival-salmon",
 					"to": "2026-11-10T03:35:15.830Z",
 					"why": "F169 FYI misuse stall net + sender guard + wording + PA line + skill root cause; F170 stale held notices (prime: whoever free first)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T03:35:26.131Z",
+					"harness": "copilot",
+					"harness_session": "ef7816c2-f4dd-41a8-995d-94742dbced39",
+					"instance_key": "f169",
+					"machine": "ops.osk.lan",
+					"seat": "pij-rival-salmon",
+					"why": "restore until #214 merges (pij delivered ends it)"
 				}
 			]
 		}
