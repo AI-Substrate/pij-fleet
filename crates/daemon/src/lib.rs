@@ -11,6 +11,7 @@ pub mod admission;
 pub mod auth;
 pub mod background;
 pub mod bg_routing;
+pub mod cheap_return;
 mod claude_bind;
 pub mod codex_bind;
 pub mod community;

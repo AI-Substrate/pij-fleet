@@ -22,29 +22,56 @@ const COMMAND: &str = "pij revive";
 /// the seats this is for.
 pub const CHEAP_MODEL: &str = "claude-sonnet-5-5";
 
-/// Why `--cheap` refuses this seat, if it does: one line each (plan 225).
-/// Claude only (Copilot bills per request, so a cheaper model saves nothing
-/// proven); known cold only (a warm cache makes a normal compact cheaper, and
-/// an unknown state is not evidence of cold).
-fn cheap_refusal(seat: &SeatDescriptor, cache: Result<bool, &str>) -> Option<String> {
+/// Why `--ask` or `--cheap` (`flag`) refuses this seat, if it does: one line
+/// each (plans 225 and 225b). Claude only (Copilot bills per request, so a
+/// cheaper model saves nothing proven). A warm cache refuses: a warm seat
+/// revives on its own model with no choice. An unknown cache state counts as
+/// cold (plan 225b, Jordan's rule 2), so it is the human's choice.
+fn cheap_refusal(seat: &SeatDescriptor, flag: &str, cache: Result<bool, &str>) -> Option<String> {
     if seat.harness != pij_core::model::Harness::Claude {
         return Some(format!(
-            "E-RS-REVIVE-CHEAP seat `{}` is a {} seat: --cheap is for Claude seats only",
+            "E-RS-REVIVE-CHEAP seat `{}` is a {} seat: {flag} is for Claude seats only",
             seat.id,
             seat.harness.as_str()
         ));
     }
     match cache {
-        Ok(false) => None,
         Ok(true) => Some(format!(
-            "E-RS-REVIVE-CHEAP seat `{}` still has a warm prompt cache: revive it without --cheap and compact it, which is cheaper while the cache lasts",
+            "E-RS-REVIVE-CHEAP seat `{}` still has a warm prompt cache: revive it without {flag}, on its own model, which is cheaper while the cache lasts",
             seat.id
         )),
-        Err(reason) => Some(format!(
-            "E-RS-REVIVE-CHEAP seat `{}`: cache state unknown: {reason}; --cheap needs a known cold cache",
-            seat.id
-        )),
+        Ok(false) | Err(_) => None,
     }
+}
+
+/// Plan 225b: a cold (or unknown) Claude seat revived with no choice refuses,
+/// in one line, with the three runnable choices. A human chooses; pij never
+/// chooses for them.
+fn cold_refusal(seat: &SeatDescriptor, cache: Result<bool, &str>) -> Option<Response> {
+    let state = match cache {
+        Ok(true) => return None,
+        Ok(false) => "has a cold prompt cache".to_string(),
+        Err(why) => format!("has an unknown prompt cache ({why}), which counts as cold"),
+    };
+    let model = seat.model.as_deref().unwrap_or("its recorded model");
+    let id = &seat.id;
+    let commands = [
+        format!("pij-rs revive {id} --plain"),
+        format!("pij-rs revive {id} --ask"),
+        format!("pij-rs revive {id} --cheap"),
+    ];
+    let mut answer: Envelope<Value> = Envelope::refused(
+        COMMAND,
+        ErrorKind::Refused,
+        format!(
+            "E-RS-REVIVE-COLD seat `{id}` {state}; a human chooses: `{}` (on {model}, the full context re-read uncached), `{}` (on {CHEAP_MODEL}, and it stays there) or `{}` (compact on {CHEAP_MODEL}, then back to {model})",
+            commands[0], commands[1], commands[2]
+        ),
+    );
+    answer.details = Some(json!({
+        "code":"E-RS-REVIVE-COLD", "seat":id, "commands":commands, "model":seat.model,
+    }));
+    Some(envelope(StatusCode::CONFLICT, &answer))
 }
 
 #[derive(Serialize)]
@@ -55,6 +82,12 @@ pub(super) struct Receipt {
     assumed_dead_seq: Option<Seq>,
     #[serde(skip_serializing_if = "Option::is_none")]
     legacy_tombstone_seq: Option<Seq>,
+    /// `--cheap` (plan 225b): the msg_id the caller's compact goes under, and
+    /// the model the seat returns to 5 s after that compaction starts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compact_msg_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    return_model: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -263,6 +296,19 @@ pub(super) async fn revive_seat(
             "--cheap compacts the recorded conversation; --fresh has none".to_string(),
         );
     }
+    if [request.plain, request.ask, request.cheap]
+        .iter()
+        .filter(|chosen| **chosen)
+        .count()
+        > 1
+    {
+        return argument_failure("choose one of --plain, --ask and --cheap".to_string());
+    }
+    if (request.plain || request.ask) && (request.model.is_some() || request.fresh) {
+        return argument_failure(
+            "--plain and --ask choose the model for a resumed conversation; they take no --model or --fresh".to_string(),
+        );
+    }
 
     // No pre-lock registry read: a second revive must observe the new incarnation,
     // not the same dead predecessor that the first request is about to replace.
@@ -284,19 +330,43 @@ pub(super) async fn revive_seat(
         }
         Err(error) => return internal(COMMAND, error),
     };
-    if request.cheap {
+    // Plan 225b: a Claude seat resuming its conversation on its recorded model
+    // needs a warm cache, or a human's choice. Non-Claude seats, `--fresh` and
+    // an explicit `--model` are as before.
+    let claude = prior.harness == pij_core::model::Harness::Claude;
+    let choosing = request.ask || request.cheap;
+    if choosing || (claude && !request.plain && !request.fresh && request.model.is_none()) {
         let now = match system_time_ms() {
             Ok(now) => now,
             Err(error) => return internal(COMMAND, error),
         };
         let cache = super::cold_wake::known_cache(&state, &prior, now).await;
-        if let Some(reason) = cheap_refusal(&prior, cache) {
-            let mut answer: Envelope<Value> =
-                Envelope::refused(COMMAND, ErrorKind::Refused, reason);
-            answer.details = Some(json!({"code":"E-RS-REVIVE-CHEAP", "seat":prior.id}));
-            return envelope(StatusCode::CONFLICT, &answer);
+        if choosing {
+            let flag = if request.ask { "--ask" } else { "--cheap" };
+            if let Some(reason) = cheap_refusal(&prior, flag, cache) {
+                let mut answer: Envelope<Value> =
+                    Envelope::refused(COMMAND, ErrorKind::Refused, reason);
+                answer.details = Some(json!({"code":"E-RS-REVIVE-CHEAP", "seat":prior.id}));
+                return envelope(StatusCode::CONFLICT, &answer);
+            }
+        } else if let Some(refusal) = cold_refusal(&prior, cache) {
+            return refusal;
         }
     }
+    // `--cheap` returns to the seat's recorded model, whatever it is.
+    let return_model = if request.cheap {
+        match prior.model.clone() {
+            Some(model) => Some(model),
+            None => {
+                return argument_failure(format!(
+                    "seat `{}` records no model to return to; use --ask or --plain",
+                    prior.id
+                ));
+            }
+        }
+    } else {
+        None
+    };
     // Plan 156 rule 3: revive resumes the recorded conversation. Decided after
     // the liveness refusals and before any write, so every refusal leaves the
     // seat exactly as it was.
@@ -312,6 +382,8 @@ pub(super) async fn revive_seat(
                 seq: Some(receipt.seq),
                 assumed_dead_seq: None,
                 legacy_tombstone_seq: None,
+                compact_msg_id: None,
+                return_model: None,
             },
             Ok(None) => {
                 // A registry tombstone is sufficient even when an older native
@@ -344,6 +416,8 @@ pub(super) async fn revive_seat(
                     seq: None,
                     assumed_dead_seq: None,
                     legacy_tombstone_seq: Some(seq),
+                    compact_msg_id: None,
+                    return_model: None,
                 }
             }
             Err(error) => return internal(COMMAND, error),
@@ -455,9 +529,26 @@ pub(super) async fn revive_seat(
             seq: Some(seq),
             assumed_dead_seq,
             legacy_tombstone_seq: None,
+            compact_msg_id: None,
+            return_model: None,
         }
     };
 
+    let pending = return_model.map(|model| crate::cheap_return::Return {
+        seat: prior.id.clone(),
+        compact_msg_id: state.services.delivery.next_message_id(),
+        model,
+        homes: pij_harnesses::claude_homes(),
+    });
+    let mut receipt = receipt;
+    if let Some(pending) = &pending {
+        receipt.compact_msg_id = Some(pending.compact_msg_id.clone());
+        receipt.return_model = Some(pending.model.clone());
+    }
+    // A launch on another model never changes the user's default: saved here,
+    // put back after the launch (plan 225b).
+    let saved_models = (request.ask || request.cheap)
+        .then(|| pij_harnesses::save_claude_models(&pij_harnesses::claude_homes()));
     // Preserve durable launch intent, not old process/port ownership. The existing
     // launch path still owns post-mortem publication and pane rollback on failure.
     // Reviving an existing seat is an explicit operator override of retirement.
@@ -466,7 +557,7 @@ pub(super) async fn revive_seat(
         harness: prior.harness,
         allow_retired: true,
         executable: None,
-        model: if request.cheap {
+        model: if request.ask || request.cheap {
             Some(CHEAP_MODEL.to_string())
         } else {
             request.model.or(prior.model)
@@ -498,6 +589,22 @@ pub(super) async fn revive_seat(
         Some(receipt),
     )
     .await;
+    if let Some(saved) = &saved_models {
+        for restore in pij_harnesses::restore_claude_models(saved) {
+            if let Some(error) = restore.error {
+                eprintln!("pij-rs revive: settings model not put back: {error}");
+            }
+        }
+    }
+    if response.status().is_success()
+        && let Some(pending) = pending
+    {
+        crate::cheap_return::arm(
+            &state.services,
+            pending,
+            crate::cheap_return::Timing::default(),
+        );
+    }
     if response.status().is_success()
         && let Some(seat) = seat
     {

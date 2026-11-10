@@ -40,8 +40,12 @@ pij-rs spawn --harness <omp|pi|claude|copilot|codex> [--model <exact-model>] [--
 pij attest <new-seat> --plan-id <plan-id> --json
 pij dispatch <new-seat> --packet <path> --wait --json
 pij-rs revive <seat> [--session <tmux-session>] [--name <window-name>] [--fresh] --json
-pij-rs revive <seat> --cheap --json                   # cold Claude seat, prime's call: relaunch on Sonnet 5.5, then compact (plan 225)
+pij-rs revive <seat> --plain --json                   # cold Claude seat, a human's choice: its own model, full uncached re-read (plan 225b)
+pij-rs revive <seat> --ask --json                     # cold Claude seat, a human's choice: Sonnet 5.5, and it stays there
+pij-rs revive <seat> --cheap --json                   # cold Claude seat, a human's choice: compact on Sonnet 5.5, then back to its own model
 pij-rs revive <seat> --model claude-opus-5-5 --json  # relaunch on another model, e.g. back to Opus
+# A cold (or unknown-cache) Claude seat revived with none of the three refuses with all three: the PA and
+# prime put them to the human and never choose. A warm Claude seat revives on its own model, no choice.
 pij-rs revive <seat> --assume-dead --evidence 'Describe why the recorded process binding is stale' --json
 ```
 

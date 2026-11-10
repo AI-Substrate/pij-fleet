@@ -980,6 +980,17 @@ pub trait TmuxPort: Send + Sync {
     /// Type `keys` into a pane, literally. Does NOT send: see [`Self::submit`].
     async fn send_keys(&self, pane: &str, keys: &str) -> Result<()>;
 
+    /// Press Enter in a pane, with nothing typed: only to confirm a dialog pij
+    /// itself opened (plan 225b: Claude's "Switch model?" after a `/model`).
+    /// pij never answers a dialog it did not open (plan 219). The default
+    /// refuses, so an adapter that can't do it never pretends to.
+    async fn press_enter(&self, pane: &str) -> Result<()> {
+        Err(crate::error::PijError::Adapter {
+            adapter: "tmux".to_string(),
+            message: format!("press_enter is not supported for pane {pane}"),
+        })
+    }
+
     /// The last `lines` of a pane's visible output.
     async fn capture(&self, pane: &str, lines: u32) -> Result<String>;
 

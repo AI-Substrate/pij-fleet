@@ -1,0 +1,447 @@
+//! Plan 225b: `revive --cheap` relaunches a cold Claude seat on Sonnet and
+//! compacts it there, then puts the seat back on its own model.
+//!
+//! The switch back happens inside the running session: restarting the
+//! process mid-compaction would kill the compaction. Measured on Claude Code
+//! 2.1.321 (the plan's step-1 gate): a `/model <id>` typed while `/compact`
+//! runs opens a "Switch model?" dialog at once; confirming it applies the
+//! switch, and the compaction finishes undisturbed. The same `/model` also
+//! rewrites the user's default `"model"` in every new session's
+//! `settings.json`, so each Claude home's value is saved first and put back
+//! straight after.
+//!
+//! Cost per use, never per tick: one live event subscription until the compact
+//! starts (bounded by [`Timing::start_wait`]), one 5 s wait, one typed
+//! `/model`, one pane read, at most one Enter, one settings read and write per
+//! Claude home, one registry write and one audit event. No loop, poll or timer
+//! beyond those waits.
+
+use std::path::PathBuf;
+use std::time::Duration;
+
+use pij_core::events::EventFilter;
+use pij_core::model::{Event, SeatId};
+use pij_core::wire;
+use pij_harnesses::{ModelRestore, StagedSubmission, restore_claude_models, save_claude_models};
+use serde_json::{Value, json};
+use tokio_stream::StreamExt;
+
+use crate::Services;
+use crate::events::Subscription;
+
+/// The dialog Claude Code shows for a `/model` on a cached conversation.
+pub const SWITCH_MODAL: &str = "Switch model?";
+
+/// The audit event: what the switch back did, settings included.
+pub const RETURN_KIND: &str = "revive.model-returned";
+
+/// The waits, injectable so tests run them on a paused clock.
+#[derive(Clone, Copy, Debug)]
+pub struct Timing {
+    /// After the compaction starts (the `/compact` was typed), before `/model`.
+    pub after_start: Duration,
+    /// After `/model`, before the one pane read for the dialog.
+    pub modal: Duration,
+    /// After the switch, before settings are put back (Claude writes them).
+    pub settle: Duration,
+    /// How long the compact may take to start: its hold limit is 7 minutes.
+    pub start_wait: Duration,
+}
+
+impl Default for Timing {
+    fn default() -> Self {
+        Self {
+            after_start: Duration::from_secs(5),
+            modal: Duration::from_millis(1_500),
+            settle: Duration::from_secs(2),
+            start_wait: Duration::from_secs(15 * 60),
+        }
+    }
+}
+
+/// One pending switch back.
+#[derive(Clone, Debug)]
+pub struct Return {
+    /// The seat revived with `--cheap`.
+    pub seat: SeatId,
+    /// The msg_id the caller's compact control goes under.
+    pub compact_msg_id: String,
+    /// The seat's recorded model before `--cheap`: never assumed to be Opus.
+    pub model: String,
+    /// The Claude homes whose `"model"` is saved and put back.
+    pub homes: Vec<PathBuf>,
+}
+
+/// Subscribe now, before the caller can send the compact, then follow it.
+pub fn arm(services: &Services, pending: Return, timing: Timing) -> tokio::task::JoinHandle<()> {
+    let events = services
+        .event_bus
+        .subscribe_live(EventFilter::kinds(["delivery.outcome"]).for_seat(pending.seat.clone()));
+    let services = services.clone();
+    tokio::spawn(async move { follow(&services, events, &pending, timing).await })
+}
+
+async fn follow(services: &Services, mut events: Subscription, pending: &Return, timing: Timing) {
+    let deadline = tokio::time::Instant::now() + timing.start_wait;
+    let started = loop {
+        match tokio::time::timeout_at(deadline, events.next()).await {
+            Err(_) | Ok(None) => break false,
+            Ok(Some(event)) => {
+                if let Some(started) = compact_started(&event, &pending.compact_msg_id) {
+                    break started;
+                }
+            }
+        }
+    };
+    let outcome = if started {
+        tokio::time::sleep(timing.after_start).await;
+        switch_back(services, pending, timing).await
+    } else {
+        Err("the compaction never started, so the seat stays on Sonnet".to_string())
+    };
+    audit(services, pending, &outcome).await;
+}
+
+/// Whether `event` settles the compact: `Some(true)` typed into the pane (the
+/// compaction starts), `Some(false)` refused or failed, `None` not yet.
+fn compact_started(event: &Event, msg_id: &str) -> Option<bool> {
+    let payload: Value = serde_json::from_str(&event.payload).ok()?;
+    if payload["msg_id"].as_str() != Some(msg_id) {
+        return None;
+    }
+    match payload["outcome"]["outcome"].as_str()? {
+        "delivered" => Some(true),
+        "queued" | "held" => None,
+        _ => Some(false),
+    }
+}
+
+/// What the switch back did.
+#[derive(Debug)]
+pub struct Switched {
+    /// The "Switch model?" dialog showed and was confirmed.
+    pub confirmed: bool,
+    /// Each Claude home's `"model"`: found after the switch, and left.
+    pub settings: Vec<ModelRestore>,
+}
+
+/// Type `/model <recorded model>`, confirm the dialog only if it shows, put
+/// each home's `"model"` back, and record the seat's model again.
+///
+/// # Errors
+/// The seat is gone or has no pane, `/model` was not typed, or the dialog
+/// could not be confirmed; settings are put back whenever `/model` was typed.
+pub async fn switch_back(
+    services: &Services,
+    pending: &Return,
+    timing: Timing,
+) -> Result<Switched, String> {
+    let seat = services
+        .registry
+        .get(&pending.seat)
+        .await
+        .map_err(|error| error.to_string())?
+        .filter(|seat| seat.tombstoned_at.is_none())
+        .ok_or("the seat is no longer live")?;
+    let pane = seat.pane.clone().ok_or("the seat has no pane")?;
+    let saved = save_claude_models(&pending.homes);
+    match services
+        .interaction
+        .submit_with_owned_input(&pane, &format!("/model {}", pending.model))
+        .await
+    {
+        Ok(StagedSubmission::Submitted) => {}
+        Ok(_) => return Err("/model was held at the composer and not typed".to_string()),
+        Err(error) => return Err(format!("/model was not typed: {error}")),
+    }
+    tokio::time::sleep(timing.modal).await;
+    // One read. An unreadable pane presses nothing: pij answers only the
+    // dialog it can see it opened.
+    let confirmed = match services.tmux.capture(&pane, 40).await {
+        Ok(screen) if screen.contains(SWITCH_MODAL) => {
+            services.tmux.press_enter(&pane).await.map(|()| true)
+        }
+        Ok(_) => Ok(false),
+        Err(error) => Err(error),
+    };
+    tokio::time::sleep(timing.settle).await;
+    let settings = restore_claude_models(&saved);
+    let confirmed = confirmed.map_err(|error| format!("the dialog was not confirmed: {error}"))?;
+    let mut seat = services
+        .registry
+        .get(&pending.seat)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or("the seat is gone")?;
+    seat.model = Some(pending.model.clone());
+    services
+        .registry
+        .put(seat)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(Switched {
+        confirmed,
+        settings,
+    })
+}
+
+async fn audit(services: &Services, pending: &Return, outcome: &Result<Switched, String>) {
+    let settings = |restored: &[ModelRestore]| {
+        restored
+            .iter()
+            .map(|restore| {
+                json!({
+                    "home": restore.home,
+                    "found": restore.found,
+                    "left": restore.left,
+                    "error": restore.error,
+                })
+            })
+            .collect::<Vec<_>>()
+    };
+    let payload = match outcome {
+        Ok(switched) => json!({
+            "model": pending.model,
+            "compact_msg_id": pending.compact_msg_id,
+            "returned": true,
+            "confirmed": switched.confirmed,
+            "settings": settings(&switched.settings),
+        }),
+        Err(why) => json!({
+            "model": pending.model,
+            "compact_msg_id": pending.compact_msg_id,
+            "returned": false,
+            "why": why,
+        }),
+    };
+    let Ok(at) = crate::http::system_time_ms() else {
+        return;
+    };
+    let event = Event {
+        seq: None,
+        v: wire::EVENT_VERSION,
+        at,
+        kind: RETURN_KIND.to_string(),
+        seat: Some(pending.seat.clone()),
+        payload: payload.to_string(),
+    };
+    if let Err(error) = services.event_bus.publish(event).await {
+        eprintln!(
+            "pij-rs revive --cheap: {RETURN_KIND} for {}: {error}",
+            pending.seat
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use pij_core::config::Config;
+    use pij_core::model::{Harness, ProcIdentity, SeatDescriptor};
+    use pij_testkit::FreshStore;
+    use pij_testkit::fakes::{FakeRegistry, FakeSpine, FakeTmux};
+
+    use super::*;
+
+    const SEAT: &str = "pij-cheap";
+    const PANE: &str = "%cheap";
+
+    async fn rig(store: &FreshStore) -> (Services, Arc<FakeTmux>) {
+        let config = Config {
+            store_path: store.path(),
+            ..Default::default()
+        };
+        let mut services =
+            crate::build_services(&config, std::path::Path::new("/tmp/pij-cheap-taps"))
+                .await
+                .expect("services");
+        // Pure in-memory registry and spine: a store write on a paused clock
+        // reads as an idle runtime, which jumps time to the next deadline.
+        services.registry = Arc::new(FakeRegistry::new());
+        services.event_bus =
+            Arc::new(crate::events::EventBus::new(Arc::new(FakeSpine::new()), 64).unwrap());
+        let tmux = Arc::new(FakeTmux::new());
+        tmux.arrange_clear_composer(PANE);
+        services.tmux = tmux.clone();
+        services.interaction = Arc::new(pij_harnesses::InteractionGate::new(tmux.clone()));
+        let mut seat = SeatDescriptor::new(SEAT, Harness::Claude, "/tmp");
+        seat.pane = Some(PANE.to_string());
+        seat.proc = Some(ProcIdentity {
+            pid: 4343,
+            proc_start: 1,
+        });
+        seat.model = Some("claude-sonnet-5-5".to_string());
+        services.registry.put(seat).await.unwrap();
+        (services, tmux)
+    }
+
+    async fn outcome(services: &Services, msg_id: &str, outcome: &str) {
+        services
+            .event_bus
+            .publish(Event {
+                seq: None,
+                v: wire::EVENT_VERSION,
+                at: 1,
+                kind: "delivery.outcome".to_string(),
+                seat: Some(SeatId::from(SEAT)),
+                payload: json!({"msg_id": msg_id, "outcome": {"outcome": outcome}}).to_string(),
+            })
+            .await
+            .unwrap();
+    }
+
+    fn typed_model(tmux: &FakeTmux) -> bool {
+        tmux.calls()
+            .iter()
+            .any(|call| call.contains("/model claude-fable-5"))
+    }
+
+    async fn run_for(duration: Duration) {
+        let end = tokio::time::Instant::now() + duration;
+        while tokio::time::Instant::now() < end {
+            tokio::time::advance(Duration::from_millis(100)).await;
+            tokio::task::yield_now().await;
+        }
+    }
+
+    /// Plan 225b: `--cheap` puts the seat back on its own model (here not
+    /// Opus) 5 s after its compaction STARTS, confirms the "Switch model?"
+    /// dialog only when it shows, leaves the user's default model as it was
+    /// (every other byte too), and records the seat's model again.
+    #[tokio::test]
+    async fn the_switch_back_comes_five_seconds_after_the_compaction_starts() {
+        let store = FreshStore::new();
+        let (services, tmux) = rig(&store).await;
+        // Built on the real clock (the store's pool times out on a paused one).
+        tokio::time::pause();
+        let home = std::env::temp_dir().join(format!("pij-cheap-home-{}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        let before = "{\n  \"theme\": \"dark\",\n  \"model\": \"sonnet\"\n}\n";
+        std::fs::write(home.join("settings.json"), before).unwrap();
+        let task = arm(
+            &services,
+            Return {
+                seat: SeatId::from(SEAT),
+                compact_msg_id: "m-compact".to_string(),
+                model: "claude-fable-5".to_string(),
+                homes: vec![home.clone()],
+            },
+            Timing {
+                start_wait: Duration::from_secs(600),
+                ..Timing::default()
+            },
+        );
+        outcome(&services, "m-other", "delivered").await;
+        outcome(&services, "m-compact", "queued").await;
+        run_for(Duration::from_secs(30)).await;
+        assert!(!typed_model(&tmux), "nothing before the compaction starts");
+
+        outcome(&services, "m-compact", "delivered").await;
+        run_for(Duration::from_millis(4_800)).await;
+        assert!(!typed_model(&tmux), "not before 5 s");
+        run_for(Duration::from_millis(400)).await;
+        assert!(typed_model(&tmux), "{:?}", tmux.calls());
+        // What Claude Code does: the dialog shows, and confirming rewrites the default.
+        tmux.queue_capture(format!("  {SWITCH_MODAL}\n   ❯ 1. Yes, switch to Fable"));
+        std::fs::write(
+            home.join("settings.json"),
+            before.replace("\"sonnet\"", "\"claude-fable-5\""),
+        )
+        .unwrap();
+        run_for(Duration::from_secs(4)).await;
+        task.await.unwrap();
+
+        assert!(
+            tmux.calls()
+                .iter()
+                .any(|call| call == &format!("enter:{PANE}")),
+            "{:?}",
+            tmux.calls()
+        );
+        assert_eq!(
+            std::fs::read_to_string(home.join("settings.json")).unwrap(),
+            before
+        );
+        let seat = services
+            .registry
+            .get(&SeatId::from(SEAT))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(seat.model.as_deref(), Some("claude-fable-5"));
+        let returned = services
+            .event_bus
+            .latest_matching(&SeatId::from(SEAT), &[RETURN_KIND])
+            .await
+            .unwrap()
+            .expect("audited");
+        let payload: Value = serde_json::from_str(&returned.payload).unwrap();
+        assert_eq!(payload["returned"], true, "{payload}");
+        assert_eq!(payload["confirmed"], true, "{payload}");
+        assert_eq!(
+            payload["settings"][0]["found"], "claude-fable-5",
+            "{payload}"
+        );
+        assert_eq!(payload["settings"][0]["left"], "sonnet", "{payload}");
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    /// No dialog (an empty context switches at once): nothing is pressed.
+    /// A compact that never starts switches nothing and says so.
+    #[tokio::test]
+    async fn no_dialog_presses_nothing_and_a_compact_that_never_starts_switches_nothing() {
+        let store = FreshStore::new();
+        let (services, tmux) = rig(&store).await;
+        // Built on the real clock (the store's pool times out on a paused one).
+        tokio::time::pause();
+        let pending = Return {
+            seat: SeatId::from(SEAT),
+            compact_msg_id: "m-compact".to_string(),
+            model: "claude-fable-5".to_string(),
+            homes: Vec::new(),
+        };
+        let switched = switch_back(
+            &services,
+            &pending,
+            Timing {
+                after_start: Duration::ZERO,
+                modal: Duration::ZERO,
+                settle: Duration::ZERO,
+                start_wait: Duration::ZERO,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(!switched.confirmed);
+        assert!(!tmux.calls().iter().any(|call| call.starts_with("enter:")));
+
+        let tmux_calls = tmux.calls().len();
+        let task = arm(
+            &services,
+            Return {
+                compact_msg_id: "m-never".to_string(),
+                ..pending
+            },
+            Timing {
+                start_wait: Duration::from_secs(60),
+                ..Timing::default()
+            },
+        );
+        outcome(&services, "m-never", "refused").await;
+        run_for(Duration::from_secs(10)).await;
+        task.await.unwrap();
+        assert_eq!(tmux.calls().len(), tmux_calls, "nothing typed");
+        let returned = services
+            .event_bus
+            .latest_matching(&SeatId::from(SEAT), &[RETURN_KIND])
+            .await
+            .unwrap()
+            .expect("audited");
+        assert!(
+            returned.payload.contains("\"returned\":false"),
+            "{}",
+            returned.payload
+        );
+    }
+}

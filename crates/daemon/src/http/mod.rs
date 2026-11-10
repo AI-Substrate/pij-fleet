@@ -1661,7 +1661,8 @@ async fn launch_seat_locked(
                 if requested_model_matches(requested_model.as_deref(), bound.model.as_deref(), true)
                 {
                     let _ = tokio::fs::remove_file(&status_path).await;
-                    return spawn_success(command_name, bound, None);
+                    // A revive that waits (`--cheap`) keeps its receipt too.
+                    return spawn_success(command_name, bound, revive_receipt);
                 }
                 let actual = bound.model.as_deref().unwrap_or("no-model");
                 let footer_deadline = tokio::time::Instant::now() + Duration::from_secs(8);

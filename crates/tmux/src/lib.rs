@@ -1063,6 +1063,11 @@ impl TmuxPort for TmuxAdapter {
         Ok(())
     }
 
+    async fn press_enter(&self, pane: &str) -> Result<()> {
+        self.run("send-keys", &os_args(["send-keys", "-t", pane, "Enter"]))?;
+        Ok(())
+    }
+
     async fn capture(&self, pane: &str, lines: u32) -> Result<String> {
         if lines == 0 {
             return Ok(String::new());

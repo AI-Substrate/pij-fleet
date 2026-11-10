@@ -1163,6 +1163,116 @@ fn unix_millis() -> u128 {
         .as_millis()
 }
 
+/// The key Claude Code's in-session `/model` rewrites (plan 225b): typing
+/// `/model <id>` in any seat changes the user's default for every new session.
+const MODEL_KEY: &str = "model";
+
+/// One Claude home's `"model"` value, saved before a pij model switch so it can
+/// be put back (plan 225b). `value` is `None` when the key is absent.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SavedModel {
+    pub home: PathBuf,
+    pub value: Option<Value>,
+}
+
+/// What restoring one home did: the value found and the value left.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModelRestore {
+    pub home: PathBuf,
+    pub found: Option<String>,
+    pub left: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Save every readable home's `"model"` value. A home with no settings file,
+/// or one that does not parse, is skipped: pij never creates or rewrites it.
+#[must_use]
+pub fn save_claude_models(homes: &[PathBuf]) -> Vec<SavedModel> {
+    homes
+        .iter()
+        .filter_map(|home| {
+            let text = fs::read_to_string(home.join("settings.json")).ok()?;
+            let parsed: Value = serde_json::from_str(&text).ok()?;
+            Some(SavedModel {
+                home: home.clone(),
+                value: parsed.as_object()?.get(MODEL_KEY).cloned(),
+            })
+        })
+        .collect()
+}
+
+/// The document with its `"model"` put back to `saved`, or `None` when it
+/// already holds it (or can't be edited safely). Only that one value changes;
+/// every other byte stays as it was.
+#[must_use]
+pub fn plan_model_restore(existing: &str, saved: Option<&Value>) -> Option<String> {
+    let parsed: Value = serde_json::from_str(existing).ok()?;
+    let object = parsed.as_object()?;
+    if object.get(MODEL_KEY) == saved {
+        return None;
+    }
+    match (saved, find_top_level_value(existing, MODEL_KEY)) {
+        (Some(value), Some(range)) => {
+            let value = serde_json::to_string(value).ok()?;
+            Some(format!(
+                "{}{value}{}",
+                &existing[..range.start],
+                &existing[range.end..]
+            ))
+        }
+        (Some(value), None) => Some(insert_object_property(
+            existing,
+            object.is_empty(),
+            MODEL_KEY,
+            &serde_json::to_string(value).ok()?,
+        )),
+        // The key was absent before: remove it again.
+        (None, _) => {
+            let mut object = object.clone();
+            object.remove(MODEL_KEY);
+            serde_json::to_string_pretty(&Value::Object(object))
+                .ok()
+                .map(|text| text + "\n")
+        }
+    }
+}
+
+/// Put each saved home's `"model"` back (plan 225b), atomically, with no
+/// backup file: it undoes Claude Code's own write of one value.
+#[must_use]
+pub fn restore_claude_models(saved: &[SavedModel]) -> Vec<ModelRestore> {
+    saved
+        .iter()
+        .map(|saved| {
+            let path = saved.home.join("settings.json");
+            let shown = |value: Option<&Value>| value.map(render_value);
+            let mut out = ModelRestore {
+                home: saved.home.clone(),
+                found: None,
+                left: shown(saved.value.as_ref()),
+                error: None,
+            };
+            let text = match fs::read_to_string(&path) {
+                Ok(text) => text,
+                Err(error) => {
+                    out.error = Some(format!("could not read {}: {error}", path.display()));
+                    return out;
+                }
+            };
+            out.found = serde_json::from_str::<Value>(&text)
+                .ok()
+                .and_then(|parsed| parsed.get(MODEL_KEY).map(render_value));
+            if let Some(contents) = plan_model_restore(&text, saved.value.as_ref())
+                && let Err(error) = atomic_replace(&path, contents.as_bytes())
+            {
+                out.error = Some(format!("could not write {}: {error}", path.display()));
+                out.left.clone_from(&out.found);
+            }
+            out
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     /// Exec of a script this test just wrote can fail with ETXTBSY on Linux when
@@ -2651,5 +2761,37 @@ mod tests {
             ),
             "one line per failure"
         );
+    }
+
+    /// Plan 225b: only the `"model"` value changes back; every other byte of
+    /// the document stays, and a document already holding it is left alone.
+    #[test]
+    fn a_model_restore_puts_back_only_that_value() {
+        let saved = serde_json::json!("sonnet");
+        let written =
+            "{\n  \"theme\": \"dark\",\n  \"model\": \"claude-opus-5-5\",\n  \"x\": 1\n}\n";
+        assert_eq!(
+            plan_model_restore(written, Some(&saved)).as_deref(),
+            Some("{\n  \"theme\": \"dark\",\n  \"model\": \"sonnet\",\n  \"x\": 1\n}\n")
+        );
+        let same = "{\n  \"model\": \"sonnet\"\n}\n";
+        assert_eq!(plan_model_restore(same, Some(&saved)), None);
+        let absent_before = plan_model_restore(written, None).expect("removed");
+        assert!(!absent_before.contains("model"), "{absent_before}");
+        let home = std::env::temp_dir().join(format!("pij-model-restore-{}", unix_millis()));
+        fs::create_dir_all(&home).unwrap();
+        fs::write(home.join("settings.json"), same).unwrap();
+        let before = save_claude_models(std::slice::from_ref(&home));
+        fs::write(home.join("settings.json"), written.replace("sonnet", "x")).unwrap();
+        let report = restore_claude_models(&before);
+        assert_eq!(report[0].found.as_deref(), Some("claude-opus-5-5"));
+        assert_eq!(report[0].left.as_deref(), Some("sonnet"));
+        assert!(report[0].error.is_none());
+        let after = fs::read_to_string(home.join("settings.json")).unwrap();
+        assert!(
+            after.contains("\"model\": \"sonnet\"") && after.contains("\"theme\""),
+            "{after}"
+        );
+        fs::remove_dir_all(&home).unwrap();
     }
 }

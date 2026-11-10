@@ -93,11 +93,14 @@ the handover files you check, you are read-only.
   uncached; the nudge shows the price. Controls (`--command compact`) skip the cold-wake guard, so the
   daemon will not stop a compact: this rule is the only brake. Report the size and leave it alone. A cold seat that must come
   back is the prime's call (cheap-model compaction or a fresh seat).
-- **Cheap-model compaction (plan 225), only when the prime asks for that seat**: a stopped, cold Claude seat over
-  about 300k that must come back. Run `pij-rs revive <seat> --cheap`: it relaunches the conversation on Sonnet 5.5,
-  waits until it registers, then sends the normal compact (memory turn included). It stays on Sonnet; `pij list`
-  shows it. To go back to Opus when it takes on hard work again: `pij close <seat>`, kill its pane, then
-  `pij-rs revive <seat> --model claude-opus-5-5`. Warm and non-Claude seats refuse.
+- **A cold Claude seat that must come back: offer three choices, never make them (plans 225, 225b).**
+  `pij-rs revive <seat>` revives a warm Claude seat on its own model with no choice. A cold one, or one whose
+  cache state is unknown, refuses in one line with three commands. Put all three to the human (or the prime)
+  and run only the one they pick: `--plain` revives it on its recorded model and pays to re-read the whole
+  context uncached; `--ask` revives it on Sonnet 5.5 and leaves it there (the cache is per model, so going
+  back later is `pij-rs revive <seat> --model <id>` after a close and kill); `--cheap` compacts it on Sonnet
+  (memory turn included) and, 5 s after the compaction starts, switches it back to its own model, leaving
+  the user's Claude default model as it was. Non-Claude seats revive as before.
 - Never `--force` past the cold-wake guard unless the prime says so for that seat.
 - **No blind messages**: no broadcasts, FYIs or acks. Message only a seat that must act.
 - Never type over unsent prompt text, and never click dialogs (feedback, "Add funds"). Report them. The

@@ -238,6 +238,15 @@ pub struct ReviveRequest {
     /// registers, so the caller can compact it at Sonnet rates.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub cheap: bool,
+    /// Plan 225b: a human's choice for a cold Claude seat: relaunch on its
+    /// recorded model and pay the cache rewrite.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub plain: bool,
+    /// Plan 225b: a human's choice for a cold Claude seat: relaunch on Sonnet
+    /// 5.5 and leave it there (the cache is per model, so going back is an
+    /// explicit `--model`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ask: bool,
 }
 
 /// Request accepted by `POST /v1/send`.
