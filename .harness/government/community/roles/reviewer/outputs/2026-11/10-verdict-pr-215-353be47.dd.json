@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c3a8-12bd-7462-a249-cd6a7514e7ee",
+				"date": "2026-11-10",
+				"head": "353be4793b98fe2db5914b2e31c95d5ba029afd1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/215#issuecomment-6758816320",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:215",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#215 correctness review, round 2: BLOCK\n\nExact head: `353be4793b98fe2db5914b2e31c95d5ba029afd1`. Scoped to the repairs since `4b719a4f9446fc847e180905b0b15019a0851eb9`, under C34.\n\n**F002 remains a normal-use correctness blocker: an unchanged global default does not mean the session stayed on Sonnet.** `crates/daemon/src/cheap_return.rs:220-231` requires the saved global model to differ from the target before it accepts the settings value as evidence of a return. If the user's default already is the seat's remembered model, that condition is necessarily false, even after a successful switch.\n\nConcrete case: the saved settings contain `\"model\":\"claude-opus-5-5\"` and the stopped seat records that same model. Cheap revive runs the conversation on Sonnet via its launch override, restoring the global Opus default as intended. Five seconds after compact starts, `/model claude-opus-5-5` and its confirmation successfully return the conversation to Opus; the global default is still Opus. Both `before.model()` and `after.found` equal the target, so `witness` is false. The code skips the registry update (`:242-256`) and audits `returned:false` with “the seat stays on Sonnet.” The actual seat is on Opus, but boundModel still says Sonnet; a subsequent plain revive uses that wrong recorded model.\n\nThe PR's Known limit acknowledges this case, but it does not make the retained Sonnet model truthful. It is an ordinary valid default, not hostile input or optional hardening, and remains within F002's original actual/recorded-model requirement and C34's wrong-result exception.\n\nFix: observe the live applied model independently of whether the global default changed, for example from positive post-switch pane/session evidence. If it cannot be established, report that uncertainty rather than asserting the session stayed on Sonnet. Cover a default already equal to the remembered model, with the session initially on Sonnet and the return positively applied, and assert the resulting recorded model and audit.\n\n**F001 closed:** snapshots now retain original bytes or file absence; invalid/unreadable inputs refuse before switching. Exact restoration covers a present key, absent key and absent file. The concurrent-edit path strips the current model before restoring the saved one, preserving unrelated changes. Returned submission-failure paths also reach restoration, and restore failures are exposed in the revive result/audit. **F003 closed:** peer.md now gives three separate runnable choice commands. Model-id confinement and the title-plus-choice dialog check are also present.\n\n**Evidence:** `just pr-freeze 215` initially encountered transient GitHub merge-state UNKNOWN, then returned FINAL at this unchanged head. Detached tree clean. [CI run 42753534330](https://github.com/AI-Substrate/pij-fleet/actions/runs/42753534330) records the exact head; its successful Rust job's [JUnit artifact 13734587387](https://github.com/AI-Substrate/pij-fleet/actions/runs/42753534330/artifacts/13734587387) contains 2,388 executed tests, zero failures/errors; nextest reports six additional skips. The exact-byte, failed snapshot/restore, concurrent-edit, late-dialog, model-id and timed-return cases ran and passed. None covers an already-equal global default with an applied session switch. F002 is a source trace, not a reviewer-run live reproduction.\n\nCost remains per explicit use: bounded start subscription, 5 + 1.5 + 2 second waits, model submission, pane read/optional Enter and settings I/O; no new periodic activity in the repair. No local builds/tests, settings reads or changes outside source fixtures, lifecycle operations or product edits.\n"
+		}
+	]
+}
