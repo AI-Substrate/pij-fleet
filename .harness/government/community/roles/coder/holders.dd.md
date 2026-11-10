@@ -86,3 +86,4 @@
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | f168 | 2026-11-10T03:48:04.236Z | — | pij-steady-otter | — | F168 role:prime resolves to the designated prime (crane friction 13) | — |
 | — | pij-doubtful-lemur | copilot | a400e300-fa07-43e7-8444-52c45ecf15d5 | ops.osk.lan | 226c | 2026-11-10T04:42:03.203Z | — | pij-steady-otter | — | plan 226 docs follow-up: pij_send descriptions + SKILL closing commands + route pointers (prime) | — |
 | — | pij-doubtful-lemur | copilot | a400e300-fa07-43e7-8444-52c45ecf15d5 | ops.osk.lan | f173 | 2026-11-10T04:51:19.454Z | — | pij-steady-otter | — | F173 flaky display-hook test (EPIPE race) | — |
+| — | pij-rival-salmon | copilot | ef7816c2-f4dd-41a8-995d-94742dbced39 | ops.osk.lan | f174 | 2026-11-10T04:59:58.620Z | — | pij-steady-otter | — | F174 CLI/extension retry while the daemon restarts (stoat friction) | — |
