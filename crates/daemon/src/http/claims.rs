@@ -182,7 +182,7 @@ async fn claim(
         .services
         .governance
         .store()
-        .claim_number(&project, kind, actor, &subject, floor, at)
+        .claim_number(&project, kind, actor, &subject, floor.highest, at)
         .await
         .map_err(store_refusal)?;
     let formatted = claims::format(kind, claim.number);
@@ -194,10 +194,20 @@ async fn claim(
     if typed != kind {
         line.push_str(&format!(" ({typed} is {kind}'s old name)"));
     }
+    let warning = (!floor.found)
+        .then(|| unseeded_warning(&repo, kind, claim.number))
+        .flatten();
+    if let Some(warning) = &warning {
+        line.push('\n');
+        line.push_str(warning);
+    }
     let mut data = serde_json::to_value(&claim).expect("a claim serialises");
     data["formatted"] = json!(formatted);
-    data["floor"] = json!(floor);
+    data["floor"] = json!(floor.highest);
     data["line"] = json!(line);
+    if let Some(warning) = warning {
+        data["warning"] = json!(warning);
+    }
     Ok(data)
 }
 
@@ -764,10 +774,10 @@ async fn edits(
 }
 
 /// The highest number of `kind` already in the project's main checkout, read
-/// in-process (no launch); 0 when the kind has no folder or its folders are
-/// absent. A checkout or folder that exists but cannot be read refuses: an
-/// unread folder is not an empty one (review of #131, F001).
-fn floor(repo: &Path, kind: &str) -> Result<u64, Refusal> {
+/// in-process (no launch), and whether any of its [`claims::seed_folders`]
+/// exists; 0 when none does. A checkout or folder that exists but cannot be
+/// read refuses: an unread folder is not an empty one (review of #131, F001).
+fn floor(repo: &Path, kind: &str) -> Result<Floor, Refusal> {
     let unreadable = |path: &Path, error: std::io::Error| {
         Refusal::new(
             E_CLAIM_SCAN,
@@ -779,23 +789,56 @@ fn floor(repo: &Path, kind: &str) -> Result<u64, Refusal> {
         .with_next("Make the project's checkout readable by the daemon (or fix its recorded repo), then claim again.")
     };
     std::fs::read_dir(repo).map_err(|error| unreadable(repo, error))?;
-    let mut highest = 0;
-    for folder in claims::folders(kind) {
+    let mut floor = Floor::default();
+    for folder in claims::seed_folders(kind) {
         let dir = repo.join(folder);
-        let entries = match std::fs::read_dir(&dir) {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(unreadable(&dir, error)),
-        };
-        for entry in entries {
-            let entry = entry.map_err(|error| unreadable(&dir, error))?;
-            if let Some(number) = claims::number_in_name(kind, &entry.file_name().to_string_lossy())
-            {
-                highest = highest.max(number);
-            }
+        if let Some(highest) = highest_in(&dir, kind).map_err(|error| unreadable(&dir, error))? {
+            floor.highest = floor.highest.max(highest);
+            floor.found = true;
         }
     }
-    Ok(highest)
+    Ok(floor)
+}
+
+/// What the checkout says about a kind's next number.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Floor {
+    /// The highest number in the kind's seed folders.
+    highest: u64,
+    /// Whether any seed folder exists.
+    found: bool,
+}
+
+/// The highest `kind` number among `dir`'s entries (0 when none is
+/// numbered); `None` when `dir` is absent.
+fn highest_in(dir: &Path, kind: &str) -> std::io::Result<Option<u64>> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let mut highest = 0;
+    for entry in entries {
+        if let Some(number) = claims::number_in_name(kind, &entry?.file_name().to_string_lossy()) {
+            highest = highest.max(number);
+        }
+    }
+    Ok(Some(highest))
+}
+
+/// A warning when `docs/<kind>` or `docs/<kind>s` already holds `number` or
+/// above (F171). Read only when no seed folder exists, and only to warn: it
+/// never sets the number and never refuses, so a folder it cannot read warns
+/// nothing.
+fn unseeded_warning(repo: &Path, kind: &str, number: u64) -> Option<String> {
+    claims::warn_folders(kind)
+        .into_iter()
+        .filter_map(|folder| {
+            let highest = highest_in(&repo.join(&folder), kind).ok().flatten()?;
+            (highest >= number).then_some((highest, folder))
+        })
+        .max()
+        .map(|(highest, folder)| claims::unseeded_warning(kind, number, &folder, highest))
 }
 
 async fn project_prime(state: &AppState, project: &str) -> Result<Option<SeatId>, Refusal> {
@@ -891,15 +934,54 @@ mod tests {
             std::fs::create_dir_all(root.join(dir)).unwrap();
         }
         std::fs::write(root.join("crates/store/migrations/0032_x.sql"), "").unwrap();
-        assert_eq!(floor(&root, "plan").unwrap(), 195);
-        assert_eq!(floor(&root, "migration").unwrap(), 32);
-        assert_eq!(floor(&root, "prd").unwrap(), 0, "an absent folder is empty");
-        assert_eq!(floor(&root, "adr").unwrap(), 0);
+        let highest = |kind: &str| floor(&root, kind).unwrap().highest;
+        assert_eq!(highest("plan"), 195);
+        assert_eq!(highest("migration"), 32);
+        assert_eq!(highest("prd"), 0, "an absent folder is empty");
+        assert_eq!(highest("adr"), 0);
         assert_eq!(
             floor(&root.join("missing"), "plan").unwrap_err().code,
             E_CLAIM_SCAN,
             "a checkout that is not there is not an empty one"
         );
+
+        // F171: any other kind is seeded from docs/project/<kind> or
+        // docs/project/<kind>s, files and folders alike. A known kind never
+        // reads them.
+        for dir in [
+            "docs/project/usage/003-folder",
+            "docs/project/benchmarks",
+            "docs/project/plans/400-not-a-plan",
+            "docs/adrs",
+        ] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        for file in [
+            "docs/project/usage/001-a.md",
+            "docs/project/usage/019-b.md",
+            "docs/project/usage/README.md",
+            "docs/project/benchmarks/007-c.md",
+            "docs/adrs/012-d.md",
+        ] {
+            std::fs::write(root.join(file), "").unwrap();
+        }
+        assert_eq!(
+            floor(&root, "usage").unwrap(),
+            Floor {
+                highest: 19,
+                found: true
+            }
+        );
+        assert_eq!(highest("benchmark"), 7, "the plural shape");
+        assert_eq!(highest("plan"), 195, "known kinds as before");
+        assert_eq!(
+            floor(&root, "adr").unwrap(),
+            Floor::default(),
+            "docs/adrs only ever warns"
+        );
+        let warned = unseeded_warning(&root, "adr", 12).expect("012 is taken");
+        assert!(warned.starts_with("warning: docs/adrs already holds numbers up to 012"));
+        assert_eq!(unseeded_warning(&root, "adr", 13), None, "past it");
         let _ = std::fs::remove_dir_all(root);
     }
 }

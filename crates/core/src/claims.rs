@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 /// Kinds pij knows, with their digit widths. Any other lowercase kind is
-/// accepted with [`DEFAULT_WIDTH`] and has no folder to scan.
+/// accepted with [`DEFAULT_WIDTH`] and seeded from [`seed_folders`].
 pub const KNOWN_KINDS: [(&str, usize); 7] = [
     ("plan", 3),
     ("prd", 3),
@@ -63,8 +63,12 @@ is four; any other lowercase kind is three. roadmap is workstream's old name: it
 claims the same numbers, scanning docs/project/workstreams and
 docs/project/roadmaps alike. The next number is one past the highest
 claimed (open or released) and the highest already in the project's main
-checkout. A claim is released when its seat closes, when `pij delivered` sees
-its number in a merged PR's files, or by its seat or the prime.
+checkout. Any other kind is read from docs/project/<kind>, then
+docs/project/<kind>s (NNN-* files and folders). When neither exists,
+docs/<kind> and docs/<kind>s are read only to warn when they already hold
+the claimed number or above; they never set it. A claim is released when its
+seat closes, when `pij delivered` sees its number in a merged PR's files, or by
+its seat or the prime.
 
 `pij delivered` is run once by whoever merges (ruling C23). It reads the PR with
 gh, takes the addresses from the body's `Delivers:` line (with no docs/project in
@@ -115,6 +119,44 @@ pub fn folders(kind: &str) -> &'static [&'static str] {
         "migration" => &["crates/store/migrations"],
         _ => &[],
     }
+}
+
+/// Folders whose entries set `kind`'s next number: a known kind's
+/// [`folders`], else `docs/project/<kind>` then `docs/project/<kind>s`, the
+/// two shapes a project's folders take (`usage`, `prds`) (F171).
+pub fn seed_folders(kind: &str) -> Vec<String> {
+    let known = folders(kind);
+    if known.is_empty() {
+        vec![
+            format!("docs/project/{kind}"),
+            format!("docs/project/{kind}s"),
+        ]
+    } else {
+        known.iter().map(|folder| (*folder).to_string()).collect()
+    }
+}
+
+/// Folders read only to warn, when none of a kind's [`seed_folders`] exists:
+/// `docs/<kind>` then `docs/<kind>s`. None for a known kind (F171).
+pub fn warn_folders(kind: &str) -> Vec<String> {
+    if folders(kind).is_empty() {
+        vec![format!("docs/{kind}"), format!("docs/{kind}s")]
+    } else {
+        Vec::new()
+    }
+}
+
+/// The warning on a claim of `kind` numbered `number` when `folder`, one of
+/// its [`warn_folders`], already holds numbers up to `highest` (F171).
+pub fn unseeded_warning(kind: &str, number: u64, folder: &str, highest: u64) -> String {
+    let seeds = seed_folders(kind).join(" or ");
+    format!(
+        "warning: {folder} already holds numbers up to {}, at or above this claim's {}. \
+         pij numbers {kind} only from {seeds}, so this number may be taken: check, and \
+         if it is, give it back with `pij claim release {kind} {number}`.",
+        format(kind, highest),
+        format(kind, number),
+    )
 }
 
 /// The number a folder entry's name carries for `kind`: exactly the kind's
@@ -549,6 +591,26 @@ mod tests {
         assert_eq!(number_in_name("plan", "archive"), None);
         assert_eq!(number_in_name("plan", "19"), None);
         assert!(folders("adr").is_empty());
+    }
+
+    /// F171: a kind pij does not know is seeded from its project folder, in
+    /// either shape; a known kind keeps exactly its folders and never warns.
+    #[test]
+    fn other_kinds_seed_from_their_project_folder_and_warn_from_docs() {
+        assert_eq!(
+            seed_folders("usage"),
+            ["docs/project/usage", "docs/project/usages"]
+        );
+        assert_eq!(warn_folders("usage"), ["docs/usage", "docs/usages"]);
+        assert_eq!(seed_folders("plan"), folders("plan"));
+        assert_eq!(seed_folders("roadmap"), folders("workstream"));
+        assert!(warn_folders("plan").is_empty());
+        assert_eq!(
+            unseeded_warning("adr", 1, "docs/adrs", 19),
+            "warning: docs/adrs already holds numbers up to 019, at or above this claim's 001. \
+             pij numbers adr only from docs/project/adr or docs/project/adrs, so this number \
+             may be taken: check, and if it is, give it back with `pij claim release adr 1`."
+        );
     }
 
     #[test]
