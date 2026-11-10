@@ -1,0 +1,39 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"kind": "note",
+				"role": "coder",
+				"subject": "pr:222",
+				"writer": "pij-doubtful-lemur",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Extension-side stop not yet observed: viper, stoat and sole run extensions older than #222; a reading after they reload should show holder-current flat"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "pij-rs --json ping | jq .data.spawns (x2, 60 s apart)",
+					"exit_code": 0,
+					"log": "ps.registration-native-process 104 -> 104; holder-current 12 -> 24 at ps 0; spawns.total 277 -> 307"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# F162 after-deploy spawn reading (#222)\n\nLive daemon pid 3744, commit ce4f47c28a (bounced about 16:58). `pij-rs --json ping` at 16:59:43 and 17:00:43 (60 s apart), with pij-depressed-viper, pij-loud-stoat and pij-worthwhile-sole standing by.\n\n| | first | +60 s | per min | before (#222 body) |\n|---|---|---|---|---|\n| `spawns.total` | 277 | 307 | 30 | 45 |\n| `ps.registration-native-process` | 104 | 104 | **0** | 18 |\n| `lease-retry.pane.holder-current` count | 12 | 24 | 12 | 8 |\n| `lease-retry.pane.holder-current` ps | 0 | 0 | **0** | 16 |\n| viper / stoat / sole retries | 5 / 5 / 5 | 9 / 9 / 9 | 4 each | 4 each (viper, stoat) |\n| viper / stoat / sole ps | 2 / 2 / 2 | 2 / 2 / 2 | 0 each | 8 each |\n\nBefore: standby retries made 16 of 18 registration `ps` a minute. After: 0 of 0, with three standbys instead of two. Per standing-by seat: 8 `ps` a minute before, 0 after. Each seat's 2 `ps` is its one registration after the bounce, not a retry.\n\nThe rest of the minute's 30 launches: 21 `git.pa-watchdog-common-dir`, 7 `git.community`, 2 `ddocs.community`. None of them are registration launches.\n\nRetries are still about 4 a minute per standby, at 0 `ps`. All three run extensions loaded before #222 (viper 3e31243799, stoat 516d7961cf, sole 7fc31093e8, from `pij-rs --json state <seat>`), so this reading proves the daemon brake only. The extension's stop after 3 refusals lands when those seats reload. After that, their holder-current count should stay flat between readings.\n\nRaw pings: session files f162-after/ping1.json and ping2.json (not committed).\n"
+		}
+	]
+}
