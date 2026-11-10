@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"head": "5f9727e984c2cb86cb09c34a5ecd758f479f01d0",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/227#issuecomment-6763798816",
+				"role": "performance",
+				"subject": "pr:227",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #227 / F185 after-proof: CPU 9.82% versus 19.74% before\n\nDeployed commit **`5f9727e984c2cb86cb09c34a5ecd758f479f01d0`**, PID **49653**, start **10 Nov 19:16:51 UTC+10**. One window ran **19:19:30.769435 to 19:24:30.774139 UTC+10**, **300.004030 seconds**. Healthy bracketing pings agree on build/PID, process start is unchanged and every site sum reconciles. The bounce hold is released.\n\nThe matching BEFORE is output **`16eeb6e0997e215b179027bb7ee50bab12ed13b5`**, PID 90264 / f424a390. Startup ages match closely: **159.73 seconds after, 160.14 seconds before**. Both protocols used a 300-second CPU/RSS/ping window and exactly one 10-second profile about 20 seconds into it, with no machine sampler.\n\n| Metric | BEFORE F185 | AFTER F185 |\n|---|---:|---:|\n| Daemon CPU, interval percent of one CPU | 19.7361% | **9.8199%** |\n| CPU seconds per approximately 300 s | 59.21 | **29.46** |\n| RSS, MiB | 188.6875 -> 194.1719 | **181.4531 -> 182.3125** |\n| Daemon launches | 46 | **0** |\n| Completed holder-current attempts / ps | 60 / 0 | **60 / 0** |\n| Completed explicit registrations / ps | 1 rebound / 2 | **0 / 0** |\n\nCPU time increased **0:25.62 -> 0:55.08**. The observed reduction is **9.9162 percentage points, 50.24% relative**. This is measured process CPU, not an estimate from stack counts. RSS rose 880 KiB (0.8594 MiB); cross-process RSS differences are not a leak-fix measurement.\n\n## One profile: reduced observer materialization, registration attribution limited\n\nExactly one authorized `/usr/bin/sample 49653 10`, 1 ms interval, starts **19:19:50.860 UTC+10**, inside the window; command receipt 19:19:50 -> 19:20:01. Its launch time agrees with the daemon. Main-thread observations: **6,034**, versus 5,638 before. Raw stacks remain local.\n\n**Observer -> list/decoding remains, but its sampled branch is much smaller:** the old `PaneObserver::start/observe_once -> SqliteRegistry::list` nodes carried 74 inclusive wall-stack observations; the new profile has one such list node carrying **two**. A descendant `row_to_descriptor` is still observed, so this is not a claim that list calls or all descriptor decoding vanished. It supports the intended smaller materialization, without measuring returned-row counts or converting 74-to-2 into CPU savings.\n\n**Both API names were checked:** old `list` and new **`list_related`**. No separately named `register_via`, `register_inner`, native-guard or `list_related` frame was caught in this 10-second slice. Before, the combined `register_via -> list -> row_to_descriptor/SQLx row drops` branch was positively observed (17 entry / 16 descendant-list inclusive observations). Its absence here is **not proof that registration queries stopped**: the same three holders, viper, stoat and worthwhile-sole, each still completed **20 refusals with zero ps** during the full window. Sampling phase and optimized async/inlined frames limit attribution. There were no completed explicit admissions, so this capture does not establish a live budget for the locked admitted path or new ID-candidate lookups.\n\nOther registry-list work persists, including a delivery-drain branch with 20 inclusive observations, other/async contexts with 45, and a whoami/resolve-seat branch with one. Missing separate binder symbols likewise do not mean their loops stopped.\n\n| Collapsed SQLite leaf | BEFORE | AFTER |\n|---|---:|---:|\n| `sqlite3BtreeTableMoveto` | 28 | 25 |\n| `sqlite3VdbeExec` | 17 | 11 |\n| `sqlite3Malloc` | 12 | Not listed (<5 table threshold) |\n| `sqlite3_value_free` | 6 | Not listed (<5 table threshold) |\n| `sqlite3_value_dup` | 6 | Not listed (<5 table threshold) |\n\nThe table does not turn omitted leaves into zero. All these are **all-thread wall-stack observations, not CPU shares, queries or decoded rows**. Waits dominate: condition wait 101,817; semaphore wait 23,681; recv 12,069; kevent 5,925. The continued SQLite work is consistent with the scan/query overhead retained in P227-N001; F185 is not zero database work.\n\n## Ping launch receipt and interpretation\n\nPing total **287 -> 287** over the same 300.004030 seconds: **every launch site is flat**, including registration ps. This is zero **counted daemon launches**, not zero machine launches. The retained preflight counter was 286 before it reached 287 at the window start, so the counter was not uniformly stuck at zero. The 60 completed held requests also show ongoing registration activity. No synthetic positive-control launch was made.\n\nThe live result supports lower CPU and reduced observer hydration with a stable held-retry workload. It is not an isolated causal estimate assigning all 50.24% to F185: the after window had no explicit registration or counted governance launches, versus one and 46 before, and the host was quieter (load 10.87 -> 7.61 versus 15.23 -> 17.67). The process/startup protocol is closely matched, but fleet workload is not controlled.\n\nThe **requested matching CPU/profile/ping after-deliverable is complete**, with native-query/ID-allocation live attribution explicitly limited above. No machine rate was measured or inferred in this matching protocol. No additional profile, private daemon, build, product test, synthetic traffic, reload, settings or transcript read. CPU is improved, not zero; P227-N001's scan/history and allocation budgets remain relevant.\n\nLocal receipts: `pr227-pid49653-summary.json`, `pr227-pid49653-after-window.json`, bracketing ping JSON, preflight JSON, sample command/times, profile summary and the single local-only raw sample. Before: the `f185-pid90264-*` receipts and output `16eeb6e0`.\n"
+		}
+	]
+}
