@@ -58,6 +58,7 @@ If sources conflict, stop designation and reconcile the rs receipt/event, curren
   [`../prime/protocol.md#human-rulings-and-non-blocking-questions`](../prime/protocol.md#human-rulings-and-non-blocking-questions).
 - Every send costs the recipient's whole context: broadcast only to working or warm seats it changes; no acks; `--fyi` only for what the recipient does not have to act on; a hand-off, "step done, your turn" or a verdict is a normal send;
   status and rules live in files; see [`../prime/protocol.md#fleet-messaging-every-send-costs-the-recipients-context`](../prime/protocol.md#fleet-messaging-every-send-costs-the-recipients-context).
+- Fire-and-forget sends that close a turn go in an end-of-turn pij block, not tool calls; see [`../../SKILL.md#closing-commands-the-end-of-turn-pij-block-plan-226`](../../SKILL.md#closing-commands-the-end-of-turn-pij-block-plan-226).
 
 ## Preconditions
 

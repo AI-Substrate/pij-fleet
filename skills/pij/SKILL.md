@@ -83,7 +83,7 @@ primitive. `baton` is the other orchestration subcommand.
 
 ## Closing commands: the end-of-turn pij block (plan 226)
 
-Fire-and-forget commands that close a reply cost no extra model call when they are its last thing, in a fence tagged `pij`:
+When your last actions are fire-and-forget sends or outputs, end your reply with a pij block instead of tool calls. As the reply's last thing, in a fence tagged `pij`, they cost no extra model call:
 
 ```pij
 send pij-steady-otter "MERGED #210, daemon bounced"
@@ -95,7 +95,8 @@ output verdict --role reviewer --subject pr:211 --head abc1234 --result pass
 - Only a block that ends the reply runs: nothing after its closing fence but whitespace. A block quoted mid-reply, followed by prose, or written before a tool call never runs.
 - Every line is checked first, and if any is wrong nothing runs. Then they run in order, as you, through the same paths as the CLI, and stop at the first refusal.
 - Success shows the human one line (`pij ✓ 2 sent`). A failure gives you one follow-up turn listing what ran (do not resend it), what was refused and why, and what did not run. There is no second follow-up.
-- Use a tool call instead when you need the answer before you go on: a reply you will wait on, a receipt you must quote, a refusal you must react to.
+- Use a tool call instead when you need the answer before you go on: a reply you will wait on, a receipt you must quote, a refusal you must react to. A long packet also goes by tool call with `--body-file`, never as a block line (invariant 2, pointer delivery: persist it, then send its path).
+- A seat can't send to itself: a self-send line is refused, and you get the follow-up turn.
 - Claude and OMP show the human one line in place of the block; Copilot shows the block itself.
 
 ## Global invariants (every route)
