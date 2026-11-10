@@ -1299,6 +1299,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "#215 plan 225 amendment (kestrel), FINAL 4b719a4"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T03:49:16.275Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "213",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "#213 plan 226 lane B (lemur), FINAL 38fa067"
 				}
 			]
 		}
