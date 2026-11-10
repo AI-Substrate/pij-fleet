@@ -2345,15 +2345,39 @@ export function turnEndOutcome(result, stopHookActive) {
  */
 export function turnEndUnreached(error, stopHookActive) {
 	const refused = Number.isInteger(error?.status) && error.status >= 400 && error.status < 500;
-	const why =
-		error instanceof NativeError ? error.safeDiagnostic : refused ? `HTTP ${error.status}` : "";
-	const line = refused
-		? `pij ✗ block not run: the daemon refused it (${why})`
-		: `pij ? block outcome unknown: ${why || "the daemon did not answer"}`;
-	const followup = refused
-		? `[pij] Your closing pij block did not run: the daemon refused it (${why}). Nothing ran. Send what still matters with tool calls.`
-		: `[pij] Your closing pij block's outcome is unknown (${why || "the daemon did not answer"}). Some commands may have run. Do not resend blindly; check first.`;
+	const reason =
+		clipReason(
+			error instanceof NativeError ? error.safeDiagnostic : refused ? `HTTP ${error.status}` : "",
+		) || "the daemon did not answer";
+	const [line, followup] = refused
+		? [
+				`pij ✗ block not run: the daemon refused it (${reason})`,
+				`[pij] Your end-of-turn pij block did not run: the daemon refused it (${reason}). Nothing was sent.\nFix it and end your reply with a corrected pij block, or say why not.`,
+			]
+		: [
+				`pij ? block outcome unknown: ${reason}`,
+				`[pij] Your end-of-turn pij block's outcome is unknown (${reason}): some of its commands may have run.\nCheck before you resend any of them, or say why not.`,
+			];
 	return turnEndOutcome({ summary: line, followup }, stopHookActive);
+}
+
+/** How much of a no-result reason the human and the seat see. */
+export const TURN_END_REASON_CHARS = 120;
+
+/**
+ * A transport or refusal reason: its first line, trimmed, control characters
+ * escaped, cut at TURN_END_REASON_CHARS (as OMP's `clipReason`).
+ */
+export function clipReason(reason) {
+	const first = (String(reason ?? "").split("\n")[0] ?? "").trim();
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: escaping them is the point
+	const escaped = first.replace(/[\u0000-\u001f\u007f-\u009f]/g, (ch) => {
+		return `\\u{${ch.charCodeAt(0).toString(16)}}`;
+	});
+	const chars = Array.from(escaped);
+	return chars.length <= TURN_END_REASON_CHARS
+		? escaped
+		: `${chars.slice(0, TURN_END_REASON_CHARS).join("")}…`;
 }
 
 /** Follow OS parent links; neither the extension child nor pane shell is the host. */

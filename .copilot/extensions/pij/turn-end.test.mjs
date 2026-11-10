@@ -5,9 +5,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+	clipReason,
 	DaemonClient,
 	endsWithPijFence,
 	NativeBridge,
+	TURN_END_REASON_CHARS,
 	TURN_END_ROUTE,
 	TurnEndTracker,
 } from "./store.mjs";
@@ -143,7 +145,7 @@ test("a daemon refusal ran nothing; a lost call may have run some", async () => 
 	);
 	const followUp = await refused.bridge.turnEnd(BLOCK, false);
 	assert.equal(followUp.decision, "block");
-	assert.match(followUp.reason, /Nothing ran/);
+	assert.match(followUp.reason, /Nothing was sent\.\nFix it and end your reply/);
 	assert.match(
 		refused.logs[0].line,
 		/^pij ✗ block not run: the daemon refused it \(Pij HTTP 404\)$/,
@@ -153,8 +155,16 @@ test("a daemon refusal ran nothing; a lost call may have run some", async () => 
 		throw new TypeError("fetch failed");
 	});
 	const unknown = await lost.bridge.turnEnd(BLOCK, false);
-	assert.match(unknown.reason, /Some commands may have run\. Do not resend blindly/);
+	assert.match(unknown.reason, /some of its commands may have run\.\nCheck before you resend/);
 	assert.match(lost.logs[0].line, /^pij \? block outcome unknown: /);
+});
+
+test("a no-result reason is one escaped, clipped line", () => {
+	assert.equal(clipReason("  bad\u001b[31m body \nsecond"), "bad\\u{1b}[31m body");
+	assert.equal(
+		clipReason("x".repeat(TURN_END_REASON_CHARS + 5)),
+		`${"x".repeat(TURN_END_REASON_CHARS)}…`,
+	);
 });
 
 test("a stopped bridge neither calls nor reports", async () => {

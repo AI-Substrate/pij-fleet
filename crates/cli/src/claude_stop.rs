@@ -94,31 +94,56 @@ pub fn answer(response: &Envelope<Value>, stop_hook_active: bool) -> StopAnswer 
 }
 
 /// The daemon gave no result. A refusal it sent ran nothing; a lost or
-/// timed-out call may have run some of the block, so the seat must not resend
-/// blindly.
+/// timed-out call may have run some of the block, so the seat must check
+/// before resending. The same wording as the OMP and Copilot hooks.
 fn unreached(response: &Envelope<Value>) -> (String, String) {
-    let why = response
-        .meta
-        .as_deref()
-        .and_then(|meta| meta.lines().next())
-        .map(|line| line.chars().take(160).collect::<String>())
-        .filter(|line| !line.trim().is_empty())
-        .unwrap_or_else(|| "the daemon did not answer".to_string());
+    let reason = clip_reason(response.meta.as_deref().unwrap_or_default());
+    let reason = if reason.is_empty() {
+        "the daemon did not answer".to_string()
+    } else {
+        reason
+    };
     if response.error == Some(ErrorKind::Adapter) {
         (
-            format!("pij ? block outcome unknown: {why}"),
+            format!("pij ? block outcome unknown: {reason}"),
             format!(
-                "[pij] Your closing pij block's outcome is unknown ({why}). Some commands may have run. Do not resend blindly; check first."
+                "[pij] Your end-of-turn pij block's outcome is unknown ({reason}): some of its commands may have run.\nCheck before you resend any of them, or say why not."
             ),
         )
     } else {
         (
-            format!("pij ✗ block not run: the daemon refused it ({why})"),
+            format!("pij ✗ block not run: the daemon refused it ({reason})"),
             format!(
-                "[pij] Your closing pij block did not run: the daemon refused it ({why}). Nothing ran. Send what still matters with tool calls."
+                "[pij] Your end-of-turn pij block did not run: the daemon refused it ({reason}). Nothing was sent.\nFix it and end your reply with a corrected pij block, or say why not."
             ),
         )
     }
+}
+
+/// How much of a no-result reason the human and the seat see.
+pub const REASON_CHARS: usize = 120;
+
+/// A transport or refusal reason: its first line, trimmed, control characters
+/// escaped, cut at [`REASON_CHARS`] (as OMP's `clipReason`).
+#[must_use]
+pub fn clip_reason(reason: &str) -> String {
+    let first = reason.split('\n').next().unwrap_or_default().trim();
+    let escaped = first
+        .chars()
+        .flat_map(|ch| {
+            if ch.is_control() {
+                ch.escape_unicode().collect::<Vec<_>>()
+            } else {
+                vec![ch]
+            }
+        })
+        .collect::<Vec<_>>();
+    if escaped.len() <= REASON_CHARS {
+        return escaped.into_iter().collect();
+    }
+    let mut clipped = escaped[..REASON_CHARS].iter().collect::<String>();
+    clipped.push('…');
+    clipped
 }
 
 /// What one Stop hook call did.
@@ -267,7 +292,7 @@ mod tests {
         assert!(
             output["reason"]
                 .as_str()
-                .is_some_and(|reason| reason.contains("Nothing ran"))
+                .is_some_and(|reason| reason.contains("Nothing was sent."))
         );
 
         let lost = Envelope::<Value>::refused(
@@ -280,10 +305,19 @@ mod tests {
             output["systemMessage"],
             "pij ? block outcome unknown: could not reach the daemon: connection reset"
         );
-        assert!(
-            output["reason"]
-                .as_str()
-                .is_some_and(|reason| reason.contains("Do not resend blindly"))
+        assert!(output["reason"].as_str().is_some_and(|reason| {
+            reason.contains("some of its commands may have run.\nCheck before you resend")
+        }));
+    }
+
+    #[test]
+    fn a_no_result_reason_is_one_escaped_clipped_line() {
+        assert_eq!(
+            clip_reason("  bad\u{1b}[31m body \nsecond"),
+            "bad\\u{1b}[31m body"
         );
+        let long = "x".repeat(REASON_CHARS + 5);
+        assert_eq!(clip_reason(&long), format!("{}…", "x".repeat(REASON_CHARS)));
+        assert_eq!(clip_reason(""), "");
     }
 }
