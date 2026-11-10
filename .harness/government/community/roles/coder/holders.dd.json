@@ -913,7 +913,10 @@
 					"harness_session": "a400e300-fa07-43e7-8444-52c45ecf15d5",
 					"instance_key": "f162",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #222 merged (17aedb79bd97)",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-doubtful-lemur",
+					"to": "2026-11-10T06:54:26.325Z",
 					"why": "F162 promoted (prime): standing-by Copilot session lease retries are the main launch source"
 				},
 				{

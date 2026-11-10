@@ -1450,7 +1450,10 @@
 					"harness_session": "6dcf7ce1-3bf1-4828-876b-e6c3aa567005",
 					"instance_key": "222",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #222 merged (17aedb79bd97)",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-polite-starfish",
+					"to": "2026-11-10T06:54:26.325Z",
 					"why": "moved from stuck spoonbill (silkworm, 16:49)"
 				},
 				{
