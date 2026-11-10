@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c3a6-600b-7b42-b48c-5d74641a6380",
+				"date": "2026-11-10",
+				"head": "c04421ac821e6ca34741f4d031db56e2c1d5f3fe",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/216#issuecomment-6758761616",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:216",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#216 correctness review, round 1: PASS\n\nExact head: `c04421ac821e6ca34741f4d031db56e2c1d5f3fe`. No correctness finding.\n\n`crates/core/src/claims.rs:127-147` retains known kinds' folder mappings and uses the singular then plural project folders for other kinds. `crates/daemon/src/http/claims.rs:780-828` takes the maximum across those folders in the resolved main checkout; the shared name parser counts matching NNN-* files and directories without treating README/nonmatching names as numbers. Empty existing folders count as found, so fallback warnings are considered only when neither project folder exists.\n\nThe store still allocates `max(highest open-or-released claim, checkout floor) + 1` inside its owned write transaction (`crates/store/src/claims.rs:154-189`). The docs-only fallback runs after allocation and changes only the warning/receipt text, not the floor or outcome (`http/claims.rs:197-211,833-843`). Known kinds never use that fallback; roadmap/workstream retain their shared canonical sequence.\n\nThe kind is validated before folder construction (`http/claims.rs:159-170`): lowercase ASCII letter first, then lowercase letters/digits/hyphens, at most 32 bytes (`core/claims.rs:89-95`). Dot, slash, backslash and absolute-path spellings do not pass that grammar.\n\n**Evidence:** `just pr-freeze 216` returned FINAL at this head; detached tree clean. [CI run 42753294790](https://github.com/AI-Substrate/pij-fleet/actions/runs/42753294790) records the exact head. Its successful Rust job's [JUnit artifact 13734119278](https://github.com/AI-Substrate/pij-fleet/actions/runs/42753294790/artifacts/13734119278) contains 2,381 executed tests, zero failures/errors; nextest reports six additional skips. The new core mapping/warning, checkout-floor and HTTP 020/021 seeding cases ran and passed, as did preserved unreadable-checkout, roadmap/workstream, store-floor and concurrent-allocation cases.\n\nCost: bounded folder enumeration per explicit claim, in-process; no new launch, timer or periodic work. No local builds/tests, live claim allocations, lifecycle commands or product edits.\n"
+		}
+	]
+}
