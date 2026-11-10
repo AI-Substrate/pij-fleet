@@ -51,6 +51,7 @@ function deps(
 			throw new Error(`unexpected body read: ${path}`);
 		},
 		home: "/tmp/pij-router-home-fixture",
+		sleep: async () => {},
 		...over,
 		env: { PIJ_RS_ADDR: ADDR, PIJ_RS_STATE_DIR: STATE_DIR, ...over.env },
 	};
@@ -304,6 +305,81 @@ describe("routeVerb end to end", () => {
 			details: { code: "E-RS-UNPORTED" },
 		});
 		expect(describeOutcome(result.outcome)).toContain(ADDR);
+	});
+
+	it("F174: a refused probe waits out a daemon restart before the routed call", async () => {
+		const pauses: number[] = [];
+		const calls: Call[] = [];
+		const adopted = JSON.stringify({
+			ok: true,
+			command: "pij adopt",
+			v: 2,
+			data: { id: "pij-minted-by-rs" },
+		});
+		let down = 2;
+		const result = await routeVerb(
+			"adopt",
+			undefined,
+			["adopt"],
+			deps(
+				(url) => {
+					if (url.endsWith("/health") && down-- > 0) throw connectionRefused();
+					return answering(adopted)(url);
+				},
+				{
+					sleep: async (ms) => {
+						pauses.push(ms);
+					},
+				},
+				calls,
+			),
+		);
+		expect(pauses).toEqual([250, 500]);
+		expect(calls.filter((call) => !call.url.endsWith("/health"))).toHaveLength(1);
+		expect(result.outcome).toMatchObject({ kind: "rs", addr: ADDR });
+	});
+
+	it("F174: a daemon that stays down is named once the wait runs out", async () => {
+		const pauses: number[] = [];
+		const result = await routeVerb(
+			"adopt",
+			undefined,
+			["adopt"],
+			deps(
+				() => {
+					throw connectionRefused();
+				},
+				{
+					sleep: async (ms) => {
+						pauses.push(ms);
+					},
+				},
+			),
+		);
+		expect(pauses).toEqual([250, 500, 1_000, 2_000, 4_000, 4_000, 4_000, 4_000]);
+		expect(describeOutcome(result.outcome)).toContain(
+			"the daemon is restarting or down: retry, or run pij-rs ping",
+		);
+	});
+
+	it("F174: PIJ_RS_RESTART_WAIT_MS=0 refuses an absent daemon at once", async () => {
+		const result = await routeVerb(
+			"adopt",
+			undefined,
+			["adopt"],
+			deps(
+				() => {
+					throw connectionRefused();
+				},
+				{
+					sleep: async () => {
+						throw new Error("must not wait");
+					},
+					env: { PIJ_RS_RESTART_WAIT_MS: "0" },
+				},
+			),
+		);
+		expect(describeOutcome(result.outcome)).toContain(`no rs daemon answered at ${ADDR}`);
 	});
 
 	it.each([

@@ -112,6 +112,8 @@ export interface SpawnOpts {
 	readonly layout?: "window" | "split";
 	/** Role stamped from above on the daemon spawn route (plan 166). */
 	readonly role?: PlacementRole;
+	/** The tool call's abort: a spawn cancelled while a restart is waited out is never sent. */
+	readonly signal?: AbortSignal;
 }
 
 /** What index.ts hands `boot` once it has minted/derived the session id from

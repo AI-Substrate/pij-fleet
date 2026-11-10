@@ -48,6 +48,9 @@ import {
 	daemonLocation,
 	detectDaemonGeneration,
 	observedProcessStart,
+	RESTART_FIRST_PAUSE_MS,
+	RESTART_MAX_PAUSE_MS,
+	restartWaitMs,
 } from "./daemon-http.js";
 
 export interface GenerationRouterDeps {
@@ -63,6 +66,8 @@ export interface GenerationRouterDeps {
 	readonly ambientIdentity?: (() => AmbientNativeIdentity | null) | undefined;
 	/** Only the explicitly declared native row may call this; streams are inherited. */
 	readonly runNative?: ((args: readonly string[]) => Promise<number>) | undefined;
+	/** The pause between probes while a refused daemon restarts (F174); real time by default. */
+	readonly sleep?: ((ms: number) => Promise<void>) | undefined;
 }
 
 export function daemonLocationForRouting(env: NodeJS.ProcessEnv, home: string): DaemonLocation {
@@ -230,6 +235,27 @@ function refused(outcome: RouteOutcome, row?: RsRouteRow): RouteResult {
 	};
 }
 
+/**
+ * F174: `probeRs`, tried again while nothing answers (a refused connection reads as absent), from
+ * 250 ms doubling to 4 s for up to `wait` ms (pauses and wall clock alike): a bounce closes the
+ * port for about a second. The
+ * probe is a read, and the routed call is made only once it answers, so nothing is sent twice.
+ */
+async function probeWaitingOutRestart(deps: GenerationRouterDeps, wait: number): Promise<RsProbe> {
+	const pauseFor =
+		deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+	const deadline = Date.now() + wait;
+	let budget = wait;
+	let pause = RESTART_FIRST_PAUSE_MS;
+	for (;;) {
+		const probe = await probeRs(deps);
+		if (probe.kind !== "absent" || pause > budget || Date.now() + pause > deadline) return probe;
+		await pauseFor(pause);
+		budget -= pause;
+		pause = Math.min(pause * 2, RESTART_MAX_PAUSE_MS);
+	}
+}
+
 function probeFailure(verb: string, probe: RsProbe): RouteOutcome | undefined {
 	const { addr, stateDir } = probe.location;
 	switch (probe.kind) {
@@ -365,8 +391,16 @@ export async function routeVerb(
 		if (!parsed.ok) return refused(unported(verb, location.addr, parsed.reason), row);
 		query = parsed.query;
 	}
-	const probe = await probeRs(deps);
-	const failure = probeFailure(verb, probe);
+	const wait = restartWaitMs(deps.env);
+	const probe = await probeWaitingOutRestart(deps, wait);
+	const failure =
+		probe.kind === "absent" && wait > 0
+			? unported(
+					verb,
+					probe.location.addr,
+					`the daemon is restarting or down: retry, or run pij-rs ping (no rs daemon answered at ${probe.location.addr} for ${wait / 1_000} s)`,
+				)
+			: probeFailure(verb, probe);
 	if (failure !== undefined)
 		return probe.rawEnvelope === undefined
 			? refused(failure, row)

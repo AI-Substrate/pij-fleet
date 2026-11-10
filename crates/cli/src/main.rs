@@ -1382,6 +1382,9 @@ async fn run(cli: Cli) -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let client = match DaemonClient::new(&state_dir, &addr) {
+        Ok(client) if waits_out_a_restart(&cli.command) => client.with_restart_wait(restart_wait(
+            std::env::var_os("PIJ_RS_RESTART_WAIT_MS").as_deref(),
+        )),
         Ok(client) => client,
         Err(error) => {
             if matches!(cli.command, Command::CommitTrailers) {
@@ -2492,6 +2495,39 @@ async fn statusline_copilot(cli: &Cli) -> ExitCode {
     let _ = stdout.write_all(line.as_bytes());
     let _ = stdout.flush();
     ExitCode::SUCCESS
+}
+
+/// Whether `command` waits out a daemon restart when its connection is
+/// refused (F174). A person's command does; a hook, the status line's whoami,
+/// a registration, ping (which `just doctor` reads as "not running") and the
+/// commit-trailer hook answer at once, so a stopped daemon never stalls a
+/// turn or a commit.
+fn waits_out_a_restart(command: &Command) -> bool {
+    !matches!(
+        command,
+        Command::Ping
+            | Command::SpawnChild { .. }
+            | Command::Hook { .. }
+            | Command::Register { .. }
+            | Command::Whoami { .. }
+            | Command::CommitTrailers
+            | Command::Activity { .. }
+            | Command::FyiClaim { .. }
+    )
+}
+
+/// `PIJ_RS_RESTART_WAIT_MS`, else 20 s (F174): how long a refused daemon is
+/// waited out, in milliseconds; `0` refuses at once. Anything but a whole
+/// number keeps the default: the setting only ever changes how long to wait.
+fn restart_wait(value: Option<&std::ffi::OsStr>) -> std::time::Duration {
+    value
+        .and_then(std::ffi::OsStr::to_str)
+        .filter(|ms| (1..=9).contains(&ms.len()) && ms.bytes().all(|byte| byte.is_ascii_digit()))
+        .and_then(|ms| ms.parse().ok())
+        .map_or(
+            pij_cli::client::RESTART_WAIT,
+            std::time::Duration::from_millis,
+        )
 }
 
 /// The daemon client `pij-rs whoami` would build, or the refusal text it
@@ -4614,6 +4650,21 @@ impl Command {
 
 #[cfg(test)]
 mod tests {
+    /// F174: `PIJ_RS_RESTART_WAIT_MS` sets the wait; `0` refuses at once, and
+    /// anything but a whole number keeps the default.
+    #[test]
+    fn the_restart_wait_reads_whole_milliseconds_or_keeps_the_default() {
+        use std::ffi::OsStr;
+        use std::time::Duration;
+        let wait = |value: Option<&str>| super::restart_wait(value.map(OsStr::new));
+        assert_eq!(wait(None), Duration::from_secs(20));
+        assert_eq!(wait(Some("0")), Duration::ZERO);
+        assert_eq!(wait(Some("1500")), Duration::from_millis(1_500));
+        for kept in ["", "-1", "1.5", "20s", "1234567890"] {
+            assert_eq!(wait(Some(kept)), Duration::from_secs(20), "{kept:?}");
+        }
+    }
+
     /// Review of #126, F001: the drift hint names the viewed project.
     #[test]
     fn the_drift_hint_names_the_viewed_project() {

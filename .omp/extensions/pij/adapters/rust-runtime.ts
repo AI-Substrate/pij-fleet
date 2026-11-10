@@ -103,6 +103,8 @@ export interface RustSendOptions {
 	readonly force?: { readonly reason: string };
 	/** The id this answers, over the last message from the recipient (F154). */
 	readonly inReplyTo?: string;
+	/** The tool call's abort: a send cancelled while a restart is waited out is never written. */
+	readonly signal?: AbortSignal;
 }
 
 interface VisibleRuntimePort extends PiRuntimePort {
@@ -504,7 +506,7 @@ export class RustRuntimeSession {
 		readonly coldCheck?: string;
 		readonly warning?: string;
 	}> {
-		const { command, fyi = false, force, inReplyTo: named } = options;
+		const { command, fyi = false, force, inReplyTo: named, signal } = options;
 		if (named !== undefined && (named.trim() === "" || /\s/.test(named)))
 			throw new Error("in_reply_to must be one id with no spaces");
 		const destination = parseDestination(to);
@@ -545,17 +547,20 @@ export class RustRuntimeSession {
 						pid: process.pid,
 						procStart: this.selfProcStart(),
 					});
-		const receipt = await this.client.send({
-			from: this.self,
-			to: destination.value,
-			body,
-			msg_id: msgId,
-			...(command === undefined ? {} : { command }),
-			...(caller === undefined ? {} : { caller }),
-			...(fyi ? { fyi: true } : {}),
-			...(force === undefined ? {} : { force: true, reason: force.reason }),
-			...(inReplyTo === undefined ? {} : { in_reply_to: inReplyTo }),
-		});
+		const receipt = await this.client.send(
+			{
+				from: this.self,
+				to: destination.value,
+				body,
+				msg_id: msgId,
+				...(command === undefined ? {} : { command }),
+				...(caller === undefined ? {} : { caller }),
+				...(fyi ? { fyi: true } : {}),
+				...(force === undefined ? {} : { force: true, reason: force.reason }),
+				...(inReplyTo === undefined ? {} : { in_reply_to: inReplyTo }),
+			},
+			signal,
+		);
 		if (threaded !== undefined && inReplyTo === threaded) this.lastInbound.delete(replyKey);
 		return {
 			msgId,
@@ -687,28 +692,37 @@ export class RustRuntimeSession {
 		if (opts.harness !== "pi" && opts.harness !== "omp") {
 			if (opts.layout === "split")
 				return err("E-ARG", `${opts.harness} uses daemon windows; pass layout:'window'`);
-			const child = await this.client.spawn({
-				harness: opts.harness,
-				model: opts.model,
-				effort: opts.effort,
-				cwd: opts.cwd,
-				caller_pane: process.env.TMUX_PANE,
-				parent: this.self,
-				no_wait: true,
-				accept_inbound: opts.harness === "claude",
-				...(opts.role === undefined
-					? {}
-					: {
-							role: opts.role,
-							caller: {
-								PIJ_SESSION_ID: this.self,
-								...(process.env.TMUX_PANE ? { TMUX_PANE: process.env.TMUX_PANE } : {}),
-							},
-						}),
-			});
+			const child = await this.client.spawn(
+				{
+					harness: opts.harness,
+					model: opts.model,
+					effort: opts.effort,
+					cwd: opts.cwd,
+					caller_pane: process.env.TMUX_PANE,
+					parent: this.self,
+					no_wait: true,
+					accept_inbound: opts.harness === "claude",
+					...(opts.role === undefined
+						? {}
+						: {
+								role: opts.role,
+								caller: {
+									PIJ_SESSION_ID: this.self,
+									...(process.env.TMUX_PANE ? { TMUX_PANE: process.env.TMUX_PANE } : {}),
+								},
+							}),
+				},
+				opts.signal,
+			);
 			if (!child.spawn_id || !child.pane)
 				return err("E-NOREG", "daemon spawn returned no spawn identity or pane");
-			if (opts.task !== undefined) await this.send(child.id, opts.task);
+			// The spawn's abort covers its task send too (review of #219, P219-F002).
+			if (opts.task !== undefined)
+				await this.send(
+					child.id,
+					opts.task,
+					opts.signal === undefined ? {} : { signal: opts.signal },
+				);
 			const spawned = { spawnId: child.spawn_id, paneId: child.pane };
 			return ok({ ...spawned, registration: await this.awaitRegistration(spawned) });
 		}
