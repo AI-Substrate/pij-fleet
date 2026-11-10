@@ -26,5 +26,6 @@
 - [2026-11-08 After compacting a seat with a live holding, wake it \(F111\)](2026-11-08-wake-after-compaction-f111.dd.md): read right after any compaction completes, and in each round's holdings check (pa, compact, f111, holdings, wake)
 - [2026-11-09 Reviewers that queue work for a 'next turn' stall](2026-11-09-reviewer-queued-next-turn-stall.dd.md): read when a reviewer holds reviewer/\<pr\> but sits idle with no verdict (pa, stall, reviewer, gpt)
 - [2026-11-10 After a compaction, the digest's context figure is stale; read the footer](2026-11-10-digest-ctx-stale-after-compaction.dd.md): read when someone reports a just-compacted seat as over the limit (pa, compact, context, digest)
+- [2026-11-10 A held compact can be silently dropped \(F180\); verify, and escalate after one drop](2026-11-10-held-compact-can-drop-f180.dd.md): read after any --command compact returns 'held — memory-turn' (pa, compact, f180, copilot)
 - [2026-11-10 The pij-fleet prime is now pij-outstanding-silkworm \(from 2026-11-10 16:15\)](2026-11-10-prime-is-silkworm.dd.md): read before escalating anything to the prime (pa, prime, escalation)
 <!-- /pij:generated -->

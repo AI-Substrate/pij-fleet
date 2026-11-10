@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "read after any --command compact returns 'held — memory-turn'",
+				"tags": [
+					"pa",
+					"compact",
+					"f180",
+					"copilot"
+				],
+				"title": "A held compact can be silently dropped (F180); verify, and escalate after one drop"
+			}
+		},
+		{
+			"name": "body",
+			"value": "2026-11-10: spoonbill's held compacts at 16:28, 16:33 and 16:42 were all dropped, though the memory turn was answered each time; no session.compaction event, and it stayed at 706k to 723k. The prime's guess: a stale 'Working' pane state never counts as settled for Copilot's typed compact. Its pane also showed MallocStackLogging noise over the input. The receipt 'held — memory-turn' proves nothing. Always verify with session.compaction_complete in the seat's events.jsonl. After one drop, don't keep re-sending: tell the prime and the seat's parent with the evidence (times, size, memory note and handover paths). The fix there was a fresh reviewer seat. F180 tracks it."
+		}
+	]
+}
