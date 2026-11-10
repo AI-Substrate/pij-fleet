@@ -19,16 +19,19 @@ pub use adapter::{
 };
 pub use claude_settings::{
     ClaudeHookState, ClaudeInboundState, ClaudeStatuslineState, EnsurePlan, EnsureReport,
-    claude_homes, claude_homes_from, copilot_home, ensure_claude_inbound_accept,
+    claude_homes, claude_homes_from, claude_script_is_current, copilot_home,
+    ensure_claude_inbound_accept, ensure_claude_message_display_hook,
     ensure_claude_session_start_hook, ensure_claude_statusline, ensure_claude_stop_failure_hook,
     ensure_claude_stop_hook, ensure_claude_user_prompt_submit_hook, ensure_copilot_statusline,
-    inspect_claude_inbound, inspect_claude_session_start_hook, inspect_claude_statusline,
-    inspect_claude_stop_failure_hook, inspect_claude_stop_hook,
-    inspect_claude_user_prompt_submit_hook, install_claude_session_start_script,
-    install_claude_statusline_script, install_claude_stop_script,
-    install_claude_user_prompt_submit_script, install_copilot_statusline_script,
+    inspect_claude_inbound, inspect_claude_message_display_hook, inspect_claude_session_start_hook,
+    inspect_claude_statusline, inspect_claude_stop_failure_hook, inspect_claude_stop_hook,
+    inspect_claude_user_prompt_submit_hook, install_claude_message_display_script,
+    install_claude_session_start_script, install_claude_statusline_script,
+    install_claude_stop_script, install_claude_user_prompt_submit_script,
+    install_copilot_statusline_script, plan_claude_message_display_hook,
     plan_claude_session_start_hook, plan_claude_statusline, plan_claude_stop_failure_hook,
     plan_claude_stop_hook, plan_claude_user_prompt_submit_hook, plan_inbound_accept,
+    plan_remove_claude_hooks, remove_claude_hooks,
 };
 pub use composer::{ComposerRegion, composer_region};
 pub use interaction::{InjectionVerdict, InteractionGate, StagedSubmission};

@@ -10,6 +10,9 @@
 #![deny(missing_docs)]
 pub mod anomalies;
 pub mod bounce;
+pub mod claude_display;
+pub mod claude_hooks;
+pub mod claude_stop;
 pub mod client;
 pub mod decisions;
 pub mod fleet_report;
