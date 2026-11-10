@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Read before editing skills/pij routes or SKILL.md: skill_verb_coverage reads Usage lines, no a|b in commands, 110-line route budget, schema copies in skills/pij/schemas.",
+				"tags": [
+					"docs-system",
+					"skill",
+					"routes",
+					"tests"
+				],
+				"title": "Skill PRs: route test, printed commands, budgets, shipped schemas"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Skill PRs (the pij skill's routes and SKILL.md) since 2026-11-09, what bit:\n\n- `skill_verb_coverage` (`crates/cli/tests/skill_verb_coverage.rs`) checks every `pij ...` command printed in the community route and the templates against the leaf's own `--help`. It requires the flags of one of the leaf's `Usage:` lines. A form the verb accepts but Usage doesn't list fails as \"a required flag is missing\". On #209, `pij directory edit ... --add-rule` failed this way, because Usage lists only --set and --file. Write such forms in prose, and send the Usage gap to its code owner.\n- Never put `a|b` alternatives inside a printed bash command. Run, it becomes a pipeline (#211 round 1, spoonbill). Use one valid value in the command and list the choices in prose after the block.\n- The community route has a 100-line budget, raised to 110 in #201 (`harness/scripts/pij-skill-check.sh`), and it now sits at 109-110. Edit lines in place rather than adding; raise the budget only in the same PR, with a reason.\n- C-numbered rulings (C23, C28, C30, C31...) aren't the skill's § C1-C12 conventions. Link a ruling on first use to where it's explained (the route heading or the docs/how/pij-rs-api.md section).\n- F165 (#209): the pij/{prd,blueprint,workstream} schemas ship in `skills/pij/schemas/pij/`, byte-identical to `.dd/schemas/pij/`. pij-skill-check fails on drift, and biome.json skips that folder. When a schema changes, copy it there in the same PR.\n- Output subjects are `<kind>:<name>`, at most 96 characters (a file is `file:<repo-relative path>`); wildcat's F156 refuses anything else.\n- C34: two review rounds. Prepare the round 2 fix locally and push once, after the last verdict is written.\n- Process: `just pr-freeze <pr>` runs in a worktree with no node_modules. The shared cargo target (fleet-194-role-templates/target) is often held for 30+ minutes, so pass `--timeout` to shared-build. If the target stays busy, rely on CI's rust-test (nextest runs skill_verb_coverage) and say so in the PR.\n- Before writing a claim from a packet, check it against the code. On #201, a role's default_seat.model wasn't applied at spawn, and an --in-reply-to reply did mark a request answered.\n"
+		}
+	]
+}

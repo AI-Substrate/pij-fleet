@@ -7,4 +7,5 @@
 <!-- pij:generated -->
 - [2026-11-06 Verdict a schema change against the live documents](2026-11-06-verdict-a-schema-change-against-the-live-documents.dd.md): Read when giving a docs-system verdict on a .dd/schemas/pij change: validate live docs and fixtures in a scratch repo, never in the shared review worktree. (docs-system, verdict, schema, ddocs)
 - [2026-11-08 Ship a template version; ddocs cross-schema links](2026-11-08-ship-a-template-version-ddocs-cross.dd.md): Read before adding a template version \(SHIPPED, PINNED sha, templates\_http\) or a schema with links across doc types \(E406\). (docs-system, templates, ddocs, schema)
+- [2026-11-10 Skill PRs: route test, printed commands, budgets, shipped schemas](2026-11-10-skill-prs-route-test-printed-commands.dd.md): Read before editing skills/pij routes or SKILL.md: skill\_verb\_coverage reads Usage lines, no a\|b in commands, 110-line route budget, schema copies in skills/pij/schemas. (docs-system, skill, routes, tests)
 <!-- /pij:generated -->
