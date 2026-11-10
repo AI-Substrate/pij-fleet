@@ -1410,6 +1410,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "#223 F176 (kestrel), FINAL 881a3f5"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-10T06:29:53.020Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "224",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "#224 OMP opus-5.5 1M override (prime), FINAL 654505d"
 				}
 			]
 		}

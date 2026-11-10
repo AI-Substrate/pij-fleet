@@ -127,3 +127,4 @@
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 222 | 2026-11-10T05:49:21.574Z | — | pij-steady-otter | — | #222 F162 (lemur), FINAL 992fd0a | — |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 219 | 2026-11-10T05:53:38.854Z | — | pij-steady-otter | — | #219 F174 (salmon), FINAL 0a693ca | — |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 223 | 2026-11-10T06:06:26.296Z | — | pij-steady-otter | — | #223 F176 (kestrel), FINAL 881a3f5 | — |
+| — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 224 | 2026-11-10T06:29:53.020Z | — | pij-steady-otter | — | #224 OMP opus-5.5 1M override (prime), FINAL 654505d | — |
