@@ -874,7 +874,10 @@
 					"harness_session": "a400e300-fa07-43e7-8444-52c45ecf15d5",
 					"instance_key": "226c",
 					"machine": "ops.osk.lan",
+					"release_why": "merged #217 (7fc31093)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-doubtful-lemur",
+					"to": "2026-11-10T05:00:43.884Z",
 					"why": "plan 226 docs follow-up: pij_send descriptions + SKILL closing commands + route pointers (prime)"
 				},
 				{
