@@ -903,7 +903,10 @@
 					"harness_session": "ef7816c2-f4dd-41a8-995d-94742dbced39",
 					"instance_key": "f174",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #219 merged (a1a5552c4359)",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-rival-salmon",
+					"to": "2026-11-10T07:15:44.735Z",
 					"why": "F174 CLI/extension retry while the daemon restarts (stoat friction)"
 				},
 				{
