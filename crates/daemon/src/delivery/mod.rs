@@ -252,6 +252,9 @@ pub struct DeliveryService {
     extension_claim_lease_secs: u64,
     recovery_authority_shared: bool,
     admissions: tokio::sync::Mutex<tokio::task::JoinSet<()>>,
+    /// What a delivered turn reads from the store: a PA's waiting-FYIs line
+    /// and the fleet held state notices are re-checked against (F169, F170).
+    notes: Option<Arc<dyn crate::fyi_notes::DeliveryNotes>>,
 }
 
 /// The hold a claim made during a turn gets when the seat's mid-turn steering
@@ -309,6 +312,28 @@ impl DeliveryService {
         self
     }
 
+    /// Read the PA line and the fleet now from `notes` (F169, F170).
+    #[must_use]
+    pub fn with_notes(mut self, notes: Arc<dyn crate::fyi_notes::DeliveryNotes>) -> Self {
+        self.notes = Some(notes);
+        self
+    }
+
+    /// Each seat's state and size now, when notes are wired and readable.
+    pub(crate) async fn fleet_now(&self) -> Option<HashMap<SeatId, pij_core::fyi_watch::SeatNow>> {
+        match &self.notes {
+            Some(notes) => notes.fleet_now().await,
+            None => None,
+        }
+    }
+
+    async fn pa_line(&self, recipient: &SeatDescriptor, at: u64) -> Option<String> {
+        match &self.notes {
+            Some(notes) => notes.pa_line(recipient, at).await,
+            None => None,
+        }
+    }
+
     fn with_sources(
         registry: Arc<dyn Registry>,
         queue: Arc<dyn Queue>,
@@ -338,6 +363,7 @@ impl DeliveryService {
                 .unwrap_or(60),
             recovery_authority_shared: true,
             admissions: tokio::sync::Mutex::new(tokio::task::JoinSet::new()),
+            notes: None,
         }
     }
 
@@ -912,9 +938,12 @@ impl DeliveryService {
         };
         let job = delivery_job(&msg, Some(recipient))?;
         let offset = local_utc_offset();
+        let fleet = self.fleet_now().await;
+        let tail = self.pa_line(recipient, at).await;
         let attach: pij_core::ports::AttachFyis =
             Arc::new(move |payload: &str, fyis: &[HeldFyi]| {
-                attach_fyi_block(payload, fyis, at, offset)
+                let fyis = crate::fyi_notes::refreshed(fyis, fleet.as_ref());
+                attach_fyi_block(payload, &fyis, at, offset, tail.as_deref())
             });
         let via = format!("{VIA_MESSAGE_PREFIX}{}", msg.msg_id);
         let queue = Arc::clone(&self.queue);
@@ -998,9 +1027,11 @@ impl DeliveryService {
         }
         let at = (self.clock)()?;
         let offset = local_utc_offset();
+        let fleet = self.fleet_now().await;
         let attach: pij_core::ports::AttachFyis =
             Arc::new(move |payload: &str, fyis: &[HeldFyi]| {
-                attach_fyi_block(payload, fyis, at, offset)
+                let fyis = crate::fyi_notes::refreshed(fyis, fleet.as_ref());
+                attach_fyi_block(payload, &fyis, at, offset, None)
             });
         let via = format!("{VIA_MESSAGE_PREFIX}{}", msg.msg_id);
         let queue = Arc::clone(&self.queue);
@@ -1096,6 +1127,14 @@ impl DeliveryService {
                 seat: to.clone(),
                 store: "the daemon registry".to_string(),
             })?;
+        // F169: a turn delivered to a PA ends with its fleet's waiting FYIs.
+        let mut msg = msg;
+        if msg.command.is_none()
+            && recipient.tombstoned_at.is_none()
+            && let Some(line) = self.pa_line(&recipient, at).await
+        {
+            msg.body = format!("{}\n\n{line}", msg.body);
+        }
         let native_guard = if recipient.harness == Harness::Copilot && msg.command.is_none() {
             Some(self.native_lock.clone().lock_owned().await)
         } else {
@@ -2525,12 +2564,14 @@ async fn publish_outcome_with_control(
 }
 
 /// Append the rendered FYI block to a delivery payload's body. A body-less
-/// payload is a warm flush (plan 159): the block is the whole message.
+/// payload is a warm flush (plan 159): the block is the whole message, then
+/// `tail` (a PA's waiting-FYIs line, F169).
 fn attach_fyi_block(
     payload: &str,
     fyis: &[HeldFyi],
     claimed_at_ms: u64,
     utc_offset_minutes: i32,
+    tail: Option<&str>,
 ) -> Result<String> {
     let invalid = |error: String| PijError::Adapter {
         adapter: "daemon/fyi".into(),
@@ -2542,7 +2583,11 @@ fn attach_fyi_block(
         .as_str()
         .ok_or_else(|| invalid("no body".to_string()))?;
     let body = if body.is_empty() {
-        render_block(fyis, Lead::Flush, claimed_at_ms, utc_offset_minutes)
+        let block = render_block(fyis, Lead::Flush, claimed_at_ms, utc_offset_minutes);
+        match tail {
+            Some(tail) => append_block(&block, tail),
+            None => block,
+        }
     } else {
         append_block(
             body,

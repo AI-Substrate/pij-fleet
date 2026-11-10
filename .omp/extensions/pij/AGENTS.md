@@ -64,7 +64,7 @@ block into the project AGENTS.md:
 ## pij — talk to peer pi sessions
 
 If another pi session is running in this repo, you can message and observe it:
-- **Send / control: use the `pij_send` tool** — `pij_send { to, message }` to message a peer (your id is stamped automatically), `pij_send { to, message, fyi: true }` to hold it until their next turn instead of waking them, only when their next action doesn't depend on it ([the FYI rule](../../../skills/pij/references/routes/peer.md#converse)), or `pij_send { to, command: "compact"|"new"|"reload" }` to run an allow-listed control command. Do NOT shell out to `pij send` for this.
+- **Send / control: use the `pij_send` tool** — `pij_send { to, message }` to message a peer (your id is stamped automatically), `pij_send { to, message, fyi: true }` to hold it until their next turn instead of waking them, only when they do not have to do anything because of it ([the FYI rule](../../../skills/pij/references/routes/peer.md#converse)), or `pij_send { to, command: "compact"|"new"|"reload" }` to run an allow-listed control command. Do NOT shell out to `pij send` for this.
 - `pij list --here` — discover peer sessions in this folder (★ = you)
 - `pij tail <id> --since N` — read a peer's new events (cheap incremental review)
 - `pij state <id>` — a peer's working/idle + liveness + latest-event age

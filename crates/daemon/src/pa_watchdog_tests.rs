@@ -3288,3 +3288,164 @@ async fn an_idle_seats_size_is_reread_when_its_activity_changes() {
     assert!(large(round(4).await.unwrap()).is_empty());
     assert_eq!(claims(&services).await, ["large-seat:pij-quiet"]);
 }
+
+// ---- F169, F170: held FYIs ----
+
+/// A peer's FYI to `to`, held as `pij send --fyi` holds it.
+async fn hold(services: &crate::Services, to: &str, id: &str, body: &str) {
+    services
+        .delivery
+        .hold_fyi(pij_core::model::Msg {
+            from: "pij-busy".into(),
+            to: to.into(),
+            body: body.to_string(),
+            msg_id: id.to_string(),
+            from_machine: None,
+            in_reply_to: None,
+            command: None,
+        })
+        .await
+        .unwrap();
+}
+
+fn kind_of(outcomes: &[RoundOutcome], kind: &str) -> Vec<(String, String, Vec<String>)> {
+    presence(outcomes)
+        .into_iter()
+        .filter(|(found, ..)| found == kind)
+        .collect()
+}
+
+/// F169: a seat idle on two peer FYIs, the oldest 15 minutes old, is reported
+/// to its PA once per backlog, naming each FYI; the seat itself is never
+/// woken; a newer FYI re-arms it. The notice is a turn delivered to the PA,
+/// so it ends with the waiting-FYIs line.
+#[tokio::test]
+async fn a_seat_idle_on_held_fyis_is_reported_to_its_pa_once_per_backlog() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let _fleet = active_fleet(&services, &repos).await;
+    let pa = seat("pij-pa", &repos.path("main"), Some("pij-prime"));
+    make_pa(&services, &pa).await;
+    hold(&services, "pij-idle", "f-1", "step 3 done, your turn").await;
+    hold(
+        &services,
+        "pij-idle",
+        "f-2",
+        "ready for review\nsecond line",
+    )
+    .await;
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+
+    let early = watchdog
+        .round(&services, INTERVAL, start + 14 * MINUTE)
+        .await
+        .unwrap();
+    assert!(kind_of(&early, "fyi-stall").is_empty(), "{early:?}");
+
+    let due = watchdog
+        .round(&services, INTERVAL, start + 16 * MINUTE)
+        .await
+        .unwrap();
+    assert_eq!(
+        kind_of(&due, "fyi-stall"),
+        vec![("fyi-stall".into(), "pij-pa".into(), vec!["pij-idle".into()])]
+    );
+    let told = drain(&services, "pij-pa").await;
+    assert_eq!(told.len(), 1, "{told:?}");
+    let body = &told[0].body;
+    assert!(body.contains("pij-idle has held 2 FYIs"), "{body}");
+    assert!(
+        body.contains("from pij-busy") && body.contains("\"step 3 done, your turn\""),
+        "{body}"
+    );
+    assert!(!body.contains("second line"), "first lines only: {body}");
+    assert!(
+        body.contains("pij-rs fyi-read --seat pij-idle --pending"),
+        "{body}"
+    );
+    assert!(
+        body.ends_with("Waiting FYIs: pij-idle 2 (oldest 0m, idle)"),
+        "a turn to the PA ends with the line: {body}"
+    );
+    assert!(drain(&services, "pij-idle").await.is_empty(), "never woken");
+    assert_eq!(
+        services
+            .delivery
+            .pending_fyi_count(&"pij-idle".into())
+            .await
+            .unwrap(),
+        2,
+        "the FYIs stay held"
+    );
+
+    let again = watchdog
+        .round(&services, INTERVAL, start + 17 * MINUTE)
+        .await
+        .unwrap();
+    assert!(kind_of(&again, "fyi-stall").is_empty(), "once per backlog");
+
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    hold(&services, "pij-idle", "f-3", "verdict: pass").await;
+    let rearmed = watchdog
+        .round(&services, INTERVAL, start + 18 * MINUTE)
+        .await
+        .unwrap();
+    assert_eq!(kind_of(&rearmed, "fyi-stall").len(), 1, "{rearmed:?}");
+    let told = drain(&services, "pij-pa").await;
+    assert!(
+        told[0].body.contains("pij-idle has held 3 FYIs"),
+        "{told:?}"
+    );
+}
+
+/// F170: a large-seat notice held for the prime, flushing after the seat
+/// compacted, is marked resolved with the size now, never shown as current.
+#[tokio::test]
+async fn a_held_large_seat_notice_flushes_marked_when_the_seat_has_compacted() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let _fleet = active_fleet(&services, &repos).await;
+    services
+        .delivery
+        .hold_fyi(super::bg_msg(
+            &"pij-prime".into(),
+            "[pij watchdog] over 600k tokens in your fleet (PA: none):\n\
+             - pij-idle 700k role none model unknown\n\
+             - pij-busy 650k role none model unknown"
+                .to_string(),
+            format!("{}pij-prime:1", pij_core::fyi_watch::LARGE_SEATS_ID_PREFIX),
+        ))
+        .await
+        .unwrap();
+    services
+        .seat_sizes
+        .replace(std::collections::HashMap::from([
+            (SeatId::from("pij-idle"), 67_000),
+            (SeatId::from("pij-busy"), 660_000),
+        ]));
+    services
+        .delivery
+        .accept(pij_core::model::Msg {
+            from: "pij-busy".into(),
+            to: "pij-prime".into(),
+            body: "hello".to_string(),
+            msg_id: "m-1".to_string(),
+            from_machine: None,
+            in_reply_to: None,
+            command: None,
+        })
+        .await
+        .unwrap();
+    let delivered = drain(&services, "pij-prime").await;
+    let body = &delivered[0].body;
+    assert!(
+        body.contains("- pij-idle 700k role none model unknown (since resolved: now 67k)"),
+        "{body}"
+    );
+    assert!(
+        body.contains("- pij-busy 650k role none model unknown\n")
+            || body.ends_with("- pij-busy 650k role none model unknown"),
+        "still over the line: as held: {body}"
+    );
+}

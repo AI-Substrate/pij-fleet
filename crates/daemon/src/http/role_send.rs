@@ -197,10 +197,10 @@ async fn send(state: &AppState, call: RoleSendCall<'_>, address: RoleAddress) ->
                 command: None,
             };
             let delivered = if call.fyi {
-                let question = pij_core::fyi::looks_like_a_question(call.body);
+                let warning = pij_core::fyi::hold_warning(call.body);
                 match state.services.delivery.hold_fyi(msg).await {
                     Ok(mut receipt) => {
-                        fyi::after_hold(state, &seat, question, &mut receipt).await;
+                        fyi::after_hold(state, &seat, warning, &mut receipt).await;
                         Ok(receipt)
                     }
                     Err(error) => Err(error),

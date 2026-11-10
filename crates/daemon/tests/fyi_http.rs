@@ -571,6 +571,29 @@ async fn a_question_held_as_an_fyi_warns_but_is_still_held() {
     server.abort();
 }
 
+/// F169: a hand-off held as an FYI is warned about and still held; a warning
+/// never refuses or converts it.
+#[tokio::test]
+async fn an_actionable_fyi_warns_but_is_still_held() {
+    let store = FreshStore::new();
+    let config = config(&store);
+    let (addr, server) = serve(&config, true).await;
+
+    let (status, held) = send(addr, "pij-sender", "step 3 done, your turn", "fyi-a", true).await;
+    assert_eq!(status, 200, "{held}");
+    assert_eq!(
+        held["data"]["outcome"],
+        json!({"outcome": "held", "reason": "fyi"})
+    );
+    assert_eq!(
+        held["data"]["warning"],
+        pij_core::fyi::ACTIONABLE_WARNING,
+        "{held}"
+    );
+    assert_eq!(pending(addr).await, 1, "still held, never refused");
+    server.abort();
+}
+
 #[tokio::test]
 async fn fyis_to_a_seat_not_known_to_be_warm_are_never_flushed() {
     let store = FreshStore::new();

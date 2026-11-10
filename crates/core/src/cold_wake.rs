@@ -288,7 +288,13 @@ pub fn refusal(recipient: &SeatId, check: &ColdCheck) -> Option<String> {
     };
     let wake = wake_price(*estimate_usd, not_estimable.as_deref());
     let options = [
-        ("--fyi", "hold for its next turn", "$0 now".to_string()),
+        // F169: an FYI is for a recipient with nothing to do; it wakes no one,
+        // so it is no way to hand work to a cold seat.
+        (
+            "--fyi",
+            "only if they need do nothing; wakes no one",
+            "$0 now".to_string(),
+        ),
         ("--force --reason \"…\"", "wake on its current model", wake),
     ];
     let mut text = format!(
@@ -297,7 +303,7 @@ pub fn refusal(recipient: &SeatId, check: &ColdCheck) -> Option<String> {
         human_duration(*idle_ms),
     );
     for (flag, effect, price) in options {
-        text.push_str(&format!("\n  {flag:<22} {effect:<31} {price}"));
+        text.push_str(&format!("\n  {flag:<22} {effect:<43} {price}"));
     }
     text.push_str(&format!(
         "\nEstimates at list price: a 1-hour cache write of the whole context, plus about {WAKE_CALLS} calls."
@@ -463,7 +469,7 @@ pub fn size_lines(status: &SessionStatusBlock, size: &SeatSize) -> Vec<String> {
             size.cold_wake.not_estimable.as_deref(),
         );
         lines.push(format!(
-            "❄ cold-wake guard: a normal send is refused; waking it costs {price} (--fyi holds it for $0 now)"
+            "❄ cold-wake guard: a normal send is refused; waking it costs {price} (--fyi only if it has nothing to do; wakes no one)"
         ));
     }
     lines
@@ -581,7 +587,7 @@ mod tests {
             size_lines(&block, &size),
             [
                 "context 720k / 1M · last call 2h ago · cache 1h (cold 1h) · 3 compactions",
-                "❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi holds it for $0 now)",
+                "❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi only if it has nothing to do; wakes no one)",
             ]
             .map(String::from)
         );

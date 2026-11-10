@@ -10,7 +10,7 @@ use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
 use pij_core::error::PijError;
-use pij_core::fyi::{FLUSH_AT, HOOK_VIAS, Lead, render_block, render_read};
+use pij_core::fyi::{FLUSH_AT, HOOK_VIAS, Lead, render_block, render_pending, render_read};
 use pij_core::model::{Envelope, ErrorKind, SeatDescriptor, SeatId, SystemState};
 use pij_core::ports::SeatFilter;
 use serde::{Deserialize, Serialize};
@@ -78,6 +78,13 @@ pub(crate) async fn claim(
         Ok(claimed) => claimed,
         Err(error) => return internal(CLAIM, error),
     };
+    // F170: a held state notice is re-checked as it flushes into this turn.
+    let fyis = if pij_core::fyi_watch::holds_state_notice(&fyis) {
+        let fleet = state.services.delivery.fleet_now().await;
+        crate::fyi_notes::refreshed(&fyis, fleet.as_ref())
+    } else {
+        fyis
+    };
     let offset = pij_harnesses::proc::local_utc_offset_minutes().unwrap_or(0);
     envelope(
         StatusCode::OK,
@@ -93,12 +100,16 @@ pub(crate) async fn claim(
     )
 }
 
-/// One delivered batch to read in full: the seat and when it was claimed.
+/// One delivered batch to read in full: the seat and when it was claimed;
+/// or, with `pending`, the FYIs still held for the seat (F169).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReadRequest {
     seat: SeatId,
-    claimed_at_ms: u64,
+    #[serde(default)]
+    claimed_at_ms: Option<u64>,
+    #[serde(default)]
+    pending: bool,
 }
 
 /// A delivered batch, in full (plan 159's digest names the command).
@@ -112,47 +123,61 @@ pub struct ReadResponse {
     pub block: String,
 }
 
-/// Read the FYIs one claim delivered. Read-only: nothing changes state, so
-/// a digest's reader can see everything it summarised as often as it likes.
+/// Read the FYIs one claim delivered, or with `pending` the FYIs still held
+/// for the seat (F169). Read-only: nothing is claimed or changes state, so a
+/// digest's reader, or a PA checking a stall, can read as often as it likes.
 pub(crate) async fn read(
     State(state): State<AppState>,
     Json(request): Json<ReadRequest>,
 ) -> Response {
-    let fyis = match state
-        .services
-        .delivery
-        .read_claimed_fyis(&request.seat, request.claimed_at_ms)
-        .await
-    {
-        Ok(fyis) => fyis,
-        Err(error) => return internal(READ, error),
-    };
     let offset = pij_harnesses::proc::local_utc_offset_minutes().unwrap_or(0);
+    let (count, block) = match (request.claimed_at_ms, request.pending) {
+        (Some(claimed_at_ms), false) => match state
+            .services
+            .delivery
+            .read_claimed_fyis(&request.seat, claimed_at_ms)
+            .await
+        {
+            Ok(fyis) => (fyis.len(), render_read(&fyis, offset)),
+            Err(error) => return internal(READ, error),
+        },
+        (None, true) => match state.services.watchdogs().pending_fyis(&request.seat).await {
+            Ok(fyis) => (fyis.len(), render_pending(&fyis, offset)),
+            Err(error) => return internal(READ, error),
+        },
+        _ => {
+            return refused(
+                READ,
+                "name one batch: claimed_at_ms (a delivered batch) or pending (what is still held)",
+            );
+        }
+    };
     envelope(
         StatusCode::OK,
         &Envelope::ok(
             READ,
             ReadResponse {
                 seat: request.seat,
-                count: fyis.len(),
-                block: render_read(&fyis, offset),
+                count,
+                block,
             },
         ),
     )
 }
 
-/// After an FYI is held (plan 159): warn when it looks like a question, then
+/// After an FYI is held (plan 159): warn when it looks like a question or
+/// reads as actionable (F169, [`pij_core::fyi::hold_warning`]), then
 /// flush the recipient's pile if this hold brought it to [`FLUSH_AT`] and its
 /// cache is known warm at the hold's own time. Only here: a seat starting a
 /// turn gets the pile free with that turn, so a turn boundary never flushes.
 pub(crate) async fn after_hold(
     state: &AppState,
     recipient: &SeatId,
-    question: bool,
+    warning: Option<&'static str>,
     receipt: &mut pij_core::model::Receipt,
 ) {
-    if question {
-        receipt.warning = Some(pij_core::fyi::QUESTION_WARNING.to_string());
+    if let Some(warning) = warning {
+        receipt.warning = Some(warning.to_string());
     }
     flush_if_warm(state, recipient, receipt.at).await;
 }

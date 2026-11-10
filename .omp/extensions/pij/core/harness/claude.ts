@@ -154,7 +154,7 @@ export function buildInitInjection(
 	const body =
 		`${contextReframe}You are now a pij peer (id: ${pijId})${spawnedByClause}. ` +
 		`Message other sessions with \`pij send <id> "<text>"\`${replyHint} and list peers with \`pij list\`. ` +
-		"Add `--fyi` to hold a message until their next turn instead of waking them, only when their next action doesn't depend on it; questions, blockers, hand-offs, review verdicts and work done are normal sends. " +
+		'Before adding `--fyi`, ask: does the recipient have to do anything because of this message? If yes, send normally, even when you need no reply ("step done, your turn", hand-offs, review verdicts, blockers, questions). If no, `--fyi` holds it until their next turn and wakes no one. ' +
 		// AC-12: pij's own onboarding used to teach ONLY the quoted form, to every
 		// peer on the box — which is how a fleet that relays log lines and source
 		// excerpts all day learned the one form that lets the caller's shell
