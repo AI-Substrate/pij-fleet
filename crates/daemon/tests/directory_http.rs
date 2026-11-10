@@ -1759,6 +1759,64 @@ async fn add_role(rig: &Rig, repo: &Repo, id: &str, path: &str, rule: &str) -> V
     .await
 }
 
+/// F168 (crane, osk-central): after the old prime row was released, a send
+/// to `role:prime` queued with "no live holder" and routes showed "none
+/// live". Under C24 the project designation is the prime's only authority:
+/// `role:prime` goes to the designated prime whatever the prime rows say (a
+/// released one, and an open one for another seat), and routes shows it.
+#[tokio::test]
+async fn role_prime_resolves_to_the_designated_prime_not_its_rows() {
+    let repo = repo("pij-role-prime-designation");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    let added = add_role(&rig, &repo, "prime", "docs/prime/**", "Runs the fleet.").await;
+    assert_eq!(added["ok"], true, "{added}");
+    for (holder, to) in [("pij-holder", Some("2026-11-02T00:00:00Z")), (SEAT, None)] {
+        let row = pij_store::Assignment {
+            project: "fleet".into(),
+            role: "prime".into(),
+            instance: String::new(),
+            seat: holder.into(),
+            harness: None,
+            session: None,
+            machine: None,
+            from: "2026-11-01T00:00:00Z".into(),
+            to: to.map(Into::into),
+            assigned_by: SEAT.into(),
+            released_by: to.map(|_| SEAT.into()),
+            why: "legacy".into(),
+            release_why: to.map(|_| "released".into()),
+            end_pending: false,
+        };
+        rig.store
+            .record_assignment_committed(&row, None, 1)
+            .await
+            .expect("seed a legacy prime row");
+    }
+
+    let sent = send_to(rig.addr, &repo.main, "role:prime", "req-prime", json!({})).await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    assert_eq!(sent["data"]["request"]["state"], "delivered", "{sent}");
+    let request = rig.store.role_request("req-prime").await.unwrap().unwrap();
+    assert_eq!(request.holder.as_deref(), Some("pij-second"), "{sent}");
+
+    let routes = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "routes"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(routes["ok"], true, "{routes}");
+    assert_eq!(
+        routes["data"]["holders"]["prime"],
+        json!(["pij-second"]),
+        "{routes}"
+    );
+    let text = routes["data"]["text"].as_str().unwrap();
+    assert!(text.contains("| role:prime | pij-second |"), "{text}");
+}
+
 /// Plan 202 AC1 and AC3: a role add rewrites ROUTES.md (adopting a hand-written
 /// one) in its own commit, warns on an overlap and tells the prime once per
 /// change; assign and release change no route and tell the prime nothing.

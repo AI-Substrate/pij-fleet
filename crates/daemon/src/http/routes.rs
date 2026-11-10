@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 use crate::Services;
 use crate::community::routes::{self, Change, Table};
 use crate::community::{Refusal, root};
+use crate::delivery::role_send::PRIME_ROLE;
 
 /// What brought the table to a seat.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,9 +75,26 @@ pub(crate) async fn live_holders(
         .await
         .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
     let mut holders: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for row in rows.into_iter().filter(|row| row.to.is_none()) {
+    // C24 (F168): the prime is the project's designation, never a row.
+    for row in rows
+        .into_iter()
+        .filter(|row| row.to.is_none() && row.role != PRIME_ROLE)
+    {
         let seat = holder_label(&row);
         holders.entry(row.role).or_default().push(seat);
+    }
+    let prime = services
+        .directory
+        .store()
+        .project(project)
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .and_then(|record| record.prime_id);
+    if let Some(prime) = prime {
+        holders
+            .entry(PRIME_ROLE.to_string())
+            .or_default()
+            .push(pij_core::render::seat(prime.as_str()).into_owned());
     }
     Ok(holders)
 }

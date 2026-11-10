@@ -239,10 +239,23 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
         .assignments(&send.project)
         .await
         .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
-    let open: Vec<&Assignment> = assignments
-        .iter()
-        .filter(|row| row.to.is_none() && row.role == send.address.role)
-        .collect();
+    // C24 (F168): the prime is designated (`pij project set --prime`), never
+    // assigned, and the designation is its only authority. `role:prime`
+    // resolves to the designated seat when it is live; legacy prime rows count
+    // for nothing, as in the directory view.
+    let is_prime = send.address.role == PRIME_ROLE;
+    let designated = if is_prime {
+        designated_prime(&store, &send.project).await?
+    } else {
+        None
+    };
+    let open: Vec<&Assignment> = match &designated {
+        Some(row) => vec![row],
+        None => assignments
+            .iter()
+            .filter(|row| row.to.is_none() && row.role == send.address.role && !is_prime)
+            .collect(),
+    };
     // An instance on a one-holder role resolves only when a holding has it
     // (plan 212, F52): the per-PR instances a PM assigns are addressable.
     if !send.address.instance.is_empty()
@@ -342,7 +355,9 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
             })
         }
         [(row, seat)] => {
-            check_seat_role(&store, &send.address.role, &seat.id).await?;
+            if !is_prime {
+                check_seat_role(&store, &send.address.role, &seat.id).await?;
+            }
             request.state = RequestState::Delivering;
             request.holder = Some(seat.id.to_string());
             request.instance.clone_from(&row.instance);
@@ -356,6 +371,38 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
         }
         several => Err(several_holders(&send, several)),
     }
+}
+
+/// The role that is designated, never assigned (C24).
+pub const PRIME_ROLE: &str = "prime";
+
+/// The project's designated prime as the one holding `role:prime` resolves
+/// through (C24, F168), or `None` when the project designates none.
+async fn designated_prime(
+    store: &SqliteOrchestration,
+    project: &str,
+) -> Result<Option<Assignment>, Refusal> {
+    let seat = store
+        .project(project)
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .and_then(|record| record.prime_id);
+    Ok(seat.map(|seat| Assignment {
+        project: project.to_string(),
+        role: PRIME_ROLE.to_string(),
+        instance: String::new(),
+        seat: seat.to_string(),
+        harness: None,
+        session: None,
+        machine: None,
+        from: String::new(),
+        to: None,
+        assigned_by: "designation".to_string(),
+        released_by: None,
+        why: String::new(),
+        release_why: None,
+        end_pending: false,
+    }))
 }
 
 /// Two or more live holders (plan 212, F52). Each is listed with its

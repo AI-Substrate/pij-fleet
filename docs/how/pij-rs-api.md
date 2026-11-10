@@ -863,7 +863,7 @@ Sources: [`turn_end.rs`](../../crates/core/src/turn_end.rs) (parse, judge, rende
 
 ## Send to a role (plan 199)
 
-`pij send role:<id>` (or `role:<id>/<instance>` for a many-holder role) is resolved by the project's community directory, never by `seat_roles` (ruling C1). The project is `--project <slug>`, else the one whose repo holds the caller's cwd. The role document is found in the governance worktree without launching git. Live holders are open holdings whose seat is registered and not tombstoned.
+`pij send role:<id>` (or `role:<id>/<instance>` for a many-holder role) is resolved by the project's community directory, never by `seat_roles` (ruling C1). The project is `--project <slug>`, else the one whose repo holds the caller's cwd. The role document is found in the governance worktree without launching git. Live holders are open holdings whose seat is registered and not tombstoned. `role:prime` is the exception (C24, F168): its one holder is the project's designated prime (`pij project set --prime`), and prime assignment rows, open or released, count for nothing, in the send and in `pij directory routes` alike. With no designation, or a designated seat that is not live, it queues as any role with no live holder.
 
 | Live holders | What happens |
 |---|---|
