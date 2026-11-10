@@ -1336,7 +1336,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "217",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #217 merged (7fc31093e8d9)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-10T05:00:30.099Z",
 					"why": "#217 plan 226 docs (lemur), FINAL c34b14b"
 				}
 			]
