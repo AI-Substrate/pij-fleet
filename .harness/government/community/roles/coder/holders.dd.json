@@ -939,7 +939,10 @@
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"instance_key": "f176",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #223 merged (ce4f47c28a50)",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-10T06:57:28.844Z",
 					"why": "F176 unimatrix role requests not closed by in_reply_to replies (owns F154)"
 				},
 				{
