@@ -32,7 +32,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 
-use super::identity::{CallerContext, Resolved, resolve_seat};
+use super::identity::{CallerContext, Resolved, has_caller, resolve_seat};
 use super::{AppState, envelope, system_time_ms};
 use crate::events::EventBus;
 use crate::orchestration_repo::{StreamCreation, reserve_and_create_stream, scan_repo_inventory};
@@ -562,6 +562,21 @@ pub(crate) async fn handle(
         return GovernanceError::refused("E-RS-ARG", "argv family does not match route")
             .response(&command);
     }
+    // A read leaf with no caller context and no --actor claim is answered
+    // without one (F184): the key gates it, and a read acts as no one. With
+    // any caller context, the caller is resolved and checked as before.
+    let callerless = !has_caller(
+        request.caller.session_id.as_deref(),
+        request.caller.pane.as_deref(),
+    );
+    if callerless && is_read_leaf(&call) && call.value("actor").is_none() {
+        let service = &state.services.governance;
+        let _guard = service.mutation.lock().await;
+        return match read(service, &state, &call).await {
+            Ok(data) => envelope(StatusCode::OK, &Envelope::ok(command, data)),
+            Err(error) => error.response(&command),
+        };
+    }
     let actor = match resolve_seat(
         &state,
         &command,
@@ -686,6 +701,61 @@ pub(crate) fn csv(value: Option<&str>) -> Vec<String> {
         .collect()
 }
 
+/// The governance leaves that only read (F184). Under C33 the bearer key
+/// already gates the call and none of them uses its actor, so an
+/// authenticated request with no caller context is answered. This is the one
+/// list: a leaf not named here, every write included, still needs a caller.
+pub(crate) const READ_LEAVES: &[(&str, &str)] = &[
+    ("project", "list"),
+    ("project", "show"),
+    ("stream", "list"),
+    ("stream", "show"),
+    ("fence", "show"),
+    ("node", "show"),
+    ("spine", "events"),
+    ("spine", "render"),
+];
+
+fn is_read_leaf(call: &Arguments) -> bool {
+    READ_LEAVES.contains(&(call.family.as_str(), call.leaf.as_str()))
+}
+
+/// Answer a read leaf. It takes no actor, so it cannot act as anyone.
+async fn read(service: &GovernanceService, state: &AppState, call: &Arguments) -> GovResult<Value> {
+    let store = &service.store;
+    match (call.family.as_str(), call.leaf.as_str()) {
+        ("project", "list") => Ok(json!({"projects": store.list_projects().await?})),
+        ("project", "show") => Ok(
+            json!({"project": required(store.project(&call.positions[0]).await?, "project", &call.positions[0])?}),
+        ),
+        ("stream", "list") => {
+            Ok(json!({"streams": store.list_streams(call.value("project")).await?}))
+        }
+        ("stream", "show") => Ok(
+            json!({"stream": required(store.stream(&call.positions[0]).await?, "stream", &call.positions[0])?}),
+        ),
+        ("fence", "show") => {
+            let mut fences = store.list_fences(call.value("stream")).await?;
+            if let Some(path) = call.value("path") {
+                let mut matched = Vec::new();
+                for fence in fences {
+                    if fence_matches_path(&fence, path)? {
+                        matched.push(fence);
+                    }
+                }
+                fences = matched;
+            }
+            Ok(json!({"fences": fences}))
+        }
+        ("node", "show") => node_show(service, state, &call.positions[0]).await,
+        ("spine", "events" | "render") => spine_read(service, call).await,
+        _ => Err(GovernanceError::internal(format!(
+            "{} {} is not a read leaf",
+            call.family, call.leaf
+        ))),
+    }
+}
+
 async fn execute(
     service: &GovernanceService,
     state: &AppState,
@@ -693,6 +763,9 @@ async fn execute(
     caller: &CallerContext,
     call: &Arguments,
 ) -> GovResult<Value> {
+    if is_read_leaf(call) {
+        return read(service, state, call).await;
+    }
     let store = &service.store;
     let at = system_time_ms()?;
     match (call.family.as_str(), call.leaf.as_str()) {
@@ -755,10 +828,6 @@ async fn execute(
                 .await?;
             Ok(json!({"project": project, "seq": seq}))
         }
-        ("project", "list") => Ok(json!({"projects": store.list_projects().await?})),
-        ("project", "show") => Ok(
-            json!({"project": required(store.project(&call.positions[0]).await?, "project", &call.positions[0])?}),
-        ),
         ("project", "set") => {
             let prime_id = call.value("prime").map(SeatId::from);
             if let Some(prime) = &prime_id {
@@ -884,12 +953,6 @@ async fn execute(
                 .await?;
             Ok(json!({"stream": stream, "seq": seq}))
         }
-        ("stream", "list") => {
-            Ok(json!({"streams": store.list_streams(call.value("project")).await?}))
-        }
-        ("stream", "show") => Ok(
-            json!({"stream": required(store.stream(&call.positions[0]).await?, "stream", &call.positions[0])?}),
-        ),
         ("stream", "close") => {
             let stream = changed(
                 store
@@ -943,19 +1006,6 @@ async fn execute(
                 .publish("fence", &actor.id, Some(&actor.id), "declared", &fence, at)
                 .await?;
             Ok(json!({"fence": fence, "seq": seq}))
-        }
-        ("fence", "show") => {
-            let mut fences = store.list_fences(call.value("stream")).await?;
-            if let Some(path) = call.value("path") {
-                let mut matched = Vec::new();
-                for fence in fences {
-                    if fence_matches_path(&fence, path)? {
-                        matched.push(fence);
-                    }
-                }
-                fences = matched;
-            }
-            Ok(json!({"fences": fences}))
         }
         ("ack", "") => {
             let id = &call.positions[0];
@@ -1085,11 +1135,10 @@ async fn execute(
                 .await?;
             Ok(json!({"task": task, "seq": seq}))
         }
-        ("node", "show") => node_show(service, state, &call.positions[0]).await,
         ("orchestration", _) => {
             orchestration_command(service, state, actor, caller, call, at).await
         }
-        ("spine", _) => spine_command(service, actor, call, at).await,
+        ("spine", "append") => spine_append(service, actor, call, at).await,
         _ => Err(GovernanceError::refused(
             "E-RS-ARG",
             "invalid governance invocation",
@@ -1473,13 +1522,13 @@ fn same_commit(left: &str, right: &str) -> bool {
         && long.starts_with(short)
 }
 
-async fn spine_command(
+async fn spine_append(
     service: &GovernanceService,
     actor: &SeatDescriptor,
     call: &Arguments,
     at: u64,
 ) -> GovResult<Value> {
-    if call.leaf == "append" {
+    {
         let mut payload = json!({"actor": actor.id, "refs": csv(call.value("refs"))});
         if let Some(project) = call.value("project") {
             payload["project"] = json!(project);
@@ -1494,8 +1543,12 @@ async fn spine_command(
                 .map_err(|e| GovernanceError::internal(e.to_string()))?,
         };
         let seq = service.event_bus.publish(event.clone()).await?;
-        return Ok(json!({"seq": seq, "event": event}));
+        Ok(json!({"seq": seq, "event": event}))
     }
+}
+
+/// `spine events` and `spine render`: a page of the local spine (issue #119).
+async fn spine_read(service: &GovernanceService, call: &Arguments) -> GovResult<Value> {
     let since = call
         .value("since")
         .map(str::parse::<u64>)
@@ -2517,8 +2570,7 @@ mod tests {
     async fn spine_events(service: &GovernanceService, argv: &[&str]) -> GovResult<Value> {
         let argv: Vec<String> = argv.iter().map(ToString::to_string).collect();
         let call = Arguments::parse(&argv)?;
-        let actor = SeatDescriptor::new("pij-reader", pij_core::model::Harness::Omp, "/abs");
-        spine_command(service, &actor, &call, 0).await
+        spine_read(service, &call).await
     }
 
     fn seqs(page: &Value) -> Vec<u64> {

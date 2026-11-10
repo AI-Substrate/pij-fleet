@@ -346,3 +346,92 @@ async fn u3_old_http_return_cannot_release_a_reacquired_lease_even_for_same_hold
     );
     server.abort();
 }
+
+/// F184: an authenticated request with no caller context is answered by
+/// every listed read leaf, never refused for want of a caller. A write leaf,
+/// and a read that claims an `--actor`, still refuse `E-RS-NO-CALLER`; a
+/// request without the key is refused before any of it.
+#[tokio::test]
+async fn read_leaves_answer_a_callerless_request_and_writes_still_need_a_caller() {
+    let fixtures = contracts();
+    let (addr, server, _fresh) = daemon(&fixtures).await;
+    let created = post(
+        addr,
+        "/v1/project",
+        &case(&fixtures, "project-create")["request"],
+    )
+    .await;
+    assert!(created.status().is_success());
+    let created: Value = created.json().await.expect("created");
+    let slug = created["data"]["project"]["slug"]
+        .as_str()
+        .expect("slug")
+        .to_string();
+    let callerless = |argv: Vec<&str>| json!({"argv": argv, "caller": {"cwd": "/work/project"}});
+    let code = |answer: &Value| {
+        answer["details"]["code"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    let reads: Vec<(&str, Vec<&str>)> = vec![
+        ("/v1/project", vec!["project", "list"]),
+        ("/v1/project", vec!["project", "show", &slug]),
+        ("/v1/stream", vec!["stream", "list"]),
+        ("/v1/stream", vec!["stream", "show", "no-such-stream"]),
+        ("/v1/fence", vec!["fence", "show"]),
+        ("/v1/node", vec!["node", "show", "pij-worker"]),
+        ("/v1/spine", vec!["spine", "events", "--limit", "5"]),
+        ("/v1/spine", vec!["spine", "render", "--limit", "5"]),
+    ];
+    for (path, argv) in reads {
+        let answer: Value = post(addr, path, &callerless(argv.clone()))
+            .await
+            .json()
+            .await
+            .expect("decodable");
+        assert_ne!(code(&answer), "E-RS-NO-CALLER", "{argv:?}: {answer}");
+        if argv.contains(&"no-such-stream") {
+            assert_eq!(code(&answer), "E-RS-NOT-FOUND", "{argv:?}: {answer}");
+        } else {
+            assert_eq!(answer["ok"], true, "{argv:?}: {answer}");
+        }
+    }
+    let shown: Value = post(addr, "/v1/project", &callerless(vec!["project", "list"]))
+        .await
+        .json()
+        .await
+        .expect("list");
+    assert_eq!(
+        shown["data"]["projects"][0]["slug"],
+        slug.as_str(),
+        "{shown}"
+    );
+
+    for (path, argv) in [
+        ("/v1/project", vec!["project", "create", "Callerless"]),
+        (
+            "/v1/spine",
+            vec!["spine", "append", "--kind", "x.callerless"],
+        ),
+        (
+            "/v1/project",
+            vec!["project", "list", "--actor", "pij-parent"],
+        ),
+    ] {
+        let response = post(addr, path, &callerless(argv.clone())).await;
+        assert!(!response.status().is_success(), "{argv:?}");
+        let answer: Value = response.json().await.expect("decodable refusal");
+        assert_eq!(code(&answer), "E-RS-NO-CALLER", "{argv:?}: {answer}");
+    }
+
+    let unauthenticated = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/project"))
+        .json(&callerless(vec!["project", "list"]))
+        .send()
+        .await
+        .expect("HTTP request");
+    assert_eq!(unauthenticated.status(), reqwest::StatusCode::UNAUTHORIZED);
+    server.abort();
+}

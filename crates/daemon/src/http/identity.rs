@@ -1207,6 +1207,31 @@ pub(crate) async fn phonehome(
     envelope(StatusCode::OK, &answer)
 }
 
+/// The stable code for a request that needs a caller seat and carries no
+/// caller context at all (F184).
+pub const NO_CALLER_CODE: &str = "E-RS-NO-CALLER";
+
+/// Whether a request carries any caller context `resolve_seat` would read.
+pub(crate) fn has_caller(asserted: Option<&str>, pane: Option<&str>) -> bool {
+    asserted.is_some_and(|id| !id.trim().is_empty())
+        || pane.is_some_and(|pane| !pane.trim().is_empty())
+}
+
+fn no_caller(command: &str) -> Response {
+    let mut answer: Envelope<()> = Envelope::refused(
+        command,
+        ErrorKind::Refused,
+        format!(
+            "{NO_CALLER_CODE}: no caller context reached rs, so there is no seat to name. This \
+             route needs a pane (`?pane=%N`, or `caller.TMUX_PANE`) or a seat id (`?seat=<id>`, or \
+             `caller.PIJ_SESSION_ID`). Refusing rather than guessing: with one seat in the store \
+             a guess would even look right."
+        ),
+    );
+    answer.details = Some(json!({ "code": NO_CALLER_CODE }));
+    envelope(StatusCode::BAD_REQUEST, &answer)
+}
+
 /// The identity ladder, shared by the read verbs AND by `report` (plan 117).
 ///
 /// It stopped being read-only when `report` began calling it, and that is
@@ -1238,13 +1263,7 @@ pub(crate) async fn resolve_seat(
     let asserted = asserted.filter(|id| !id.trim().is_empty());
     let pane = pane.filter(|pane| !pane.trim().is_empty());
     if asserted.is_none() && pane.is_none() {
-        return Resolved::Refusal(refused(
-            command,
-            "no caller context reached rs, so there is no seat to name. This route needs a pane \
-             (`?pane=%N`, or `caller.TMUX_PANE`) or a seat id (`?seat=<id>`, or \
-             `caller.PIJ_SESSION_ID`). Refusing rather than guessing: with one seat in the store \
-             a guess would even look right.",
-        ));
+        return Resolved::Refusal(no_caller(command));
     }
     if let Some(pane) = pane.as_deref() {
         // Only this pane's rows, live or retired: every use below is of a seat
