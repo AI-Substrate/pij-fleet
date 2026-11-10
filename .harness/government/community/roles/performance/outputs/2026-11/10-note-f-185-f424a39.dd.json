@@ -1,0 +1,32 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"head": "f424a39002816049f14a73c7092b4a9ad7bbb74f",
+				"kind": "note",
+				"role": "performance",
+				"subject": "f:185",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# F185 BEFORE baseline: PID 90264, CPU 19.736%\n\nThis is **before F185**, on the F184/#226 deployment `f424a39002816049f14a73c7092b4a9ad7bbb74f`. PID **90264**, process start **10 Nov 18:37:35 UTC+10**. The first-minute gate passed at age **160.14 seconds**.\n\nOne window: **18:40:15.204267 to 18:45:15.213435 UTC+10**, **300.008523 seconds**. Healthy bracketing pings agree on build/PID; process-start identity and all site sums reconcile. Exactly one authorized 10-second stack sample ran inside it. The capture is complete; the bounce hold is released and kestrel may proceed.\n\n| Metric | BEFORE F185 |\n|---|---:|\n| Cumulative daemon CPU | 0:39.29 -> 1:38.50 |\n| Interval CPU | **59.21 CPU seconds / 300.008523 s = 19.7361% of one CPU** |\n| RSS | **193,216 -> 198,832 KiB**, 188.6875 -> 194.1719 MiB |\n| RSS change | +5,616 KiB, +5.4844 MiB |\n| Ping launches | **302 -> 348: 46**, 0.15333/s |\n| Completed holder-current attempts / ps | **60 / 0** |\n| Completed explicit registrations / ps | **1 rebound / 2** |\n\nThe same viper, stoat and worthwhile-sole cohort each completed 20 held retries with zero ps. The explicit registration's two ps reconcile with the native-process launch site, providing a positive process-count control. This is measured fleet activity, not synthetic registration traffic.\n\n**Launch-site deltas:** `git.community` 28; `ddocs.community` 8; `ps.registration-native-process` 2; `tmux.rename-window` 2; `gh.delivered`, `git.pa-watchdog-common-dir`, `tmux.new-window`, `tmux.pipe-pane attach`, `tmux.pipe-pane detach` and `tmux.set-options tap owner` one each. Sum 46; all other sites flat.\n\n## SQLite/registry sample and the three requested paths\n\nThe single `/usr/bin/sample 90264 10` profile starts **18:40:35.195 UTC+10**, nominal interval 1 ms; command receipt 18:40:35 -> 18:40:45. Profile launch time 18:37:35.706 agrees with the daemon. Main-thread observations: **5,638**.\n\n| Requested family | What this sample establishes |\n|---|---|\n| F162 guard, logically `register_native_with_observer -> SqliteRegistry::list` | **Combined registration work is positively sampled:** `http::register -> ReportedContext::exclusively -> RegistrationService::register_via -> SqliteRegistry::list`, with `row_to_descriptor`/SQLx row decoding and row drops. There is no separate `register_native_with_observer` symbol, so the profile does not independently attribute a share to the guard. |\n| Locked reread, logically `register_inner -> SqliteRegistry::list` | No separate `register_inner` symbol was sampled. The combined `register_via` stack above is real, but cannot distinguish the locked reread from inlined earlier registration work. One explicit rebound completed somewhere in the full 300-second window; that does not prove its locked phase landed in the 10-second slice. |\n| Observer, `PaneObserver::start/observe_once -> SqliteRegistry::list` | **Directly observed**, including `row_to_descriptor`, SQLx `try_get`/string decoding, row drops and `sqlite3_value_free`. The observer's list nodes carry 74 inclusive wall-stack observations; this is not 74 queries or a CPU percentage. |\n\nThe combined registration entry has 17 inclusive frame observations, with 16 in descendant list nodes. These observations **must not be split or assigned twice** to the guard and locked reread. Missing optimized function symbols are not evidence that either operation was absent.\n\nOther registry-list ancestry is also present under `start_resilient_binders` (61 inclusive observations) and `whoami_resolved -> identity::resolve_seat` (three). These are additional observed consumers, not a request to expand F185's approved scope.\n\nCollapsed SQLite leaf observations: `sqlite3BtreeTableMoveto` **28**; `sqlite3VdbeExec` **17**; `sqlite3Malloc` **12**; `sqlite3_value_free` **6**; `sqlite3_value_dup` **6**. Waits dominate the all-thread census: `__psynch_cvwait` 99,844; semaphore wait 21,664; recv 11,276; kevent 5,525. **Stack counts are wall observations across threads, not CPU shares, call counts or decoded-row counts.** SQLite worker execution and optimized async callers also limit per-query attribution. Raw stacks stay local.\n\n## Comparison contract\n\nUse this PID/build/time-stamped receipt as F185's BEFORE, not a claimed effect of F185. Its CPU is close to F182's earlier 19.4062% after-reading (`33fd1e2a`), but those are separate processes, workloads and ages. An after-reading should repeat the bounded CPU/RSS/ping window and one profile on the deployed F185 build, with actual registration activity and the same attribution cautions.\n\nNo whole-machine sampler was requested or run for this baseline. No private daemon, local product build/test, synthetic traffic, reload, settings or transcript read; no extra profile. Both finite capture helpers completed.\n\nLocal receipts: `f185-pid90264-summary.json`, `f185-pid90264-before-window.json`, bracketing start/end ping JSON, preflight JSON, sample command/times, sanitized profile summary and the single local-only raw sample.\n"
+		}
+	]
+}
