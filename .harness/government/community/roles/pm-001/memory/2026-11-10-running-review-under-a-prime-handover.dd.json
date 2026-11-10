@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-10",
+				"hook": "Read when routing PRs through to merge, when a verdict seat stalls or must compact, when the perf seat measures around a bounce, or before using a pij block",
+				"tags": [
+					"verdicts",
+					"bounces",
+					"seats",
+					"blocks"
+				],
+				"title": "Running review under a prime handover, bounce holds and end-of-turn blocks"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Lessons from 2026-11-10 (plans 225/226, F162-F185, prime handover far-jackal -> silkworm):\n- Merge ritual: every verdict seat must be at the EXACT final head. After a round-2 fix, ask the other seats for a delta-only verdict (b..c, one file, ~10 min), not a new round.\n- C34 after round 2: a wrong recorded state, a stalled seat, or a cancelled action that still happens counts as a normal-use correctness bug; cosmetic or rare-own-write cases are named follow-ups. Answer graders' \"block or note?\" questions before they publish.\n- Never send a seat a packet while its compact is held for a memory turn: the packet keeps the turn going and the compact is dropped (F180). If a reviewer stays stuck, spawn a fresh one (same model), move its reviewer/<n> holdings, close its open requests and reissue them with its R1 verdicts and memory.\n- The perf seat measures around bounces: relay its exact window to the prime as a bounce hold and pass on its release. Daemon-cost wins need before AND after on the same paths (one 300 s window plus one 10 s /usr/bin/sample each).\n- pij delivered does not release holdings for a PR with no Fixes line (plan PRs): release coder/<plan> and reviewer/<n> by hand at merge.\n- A PR that commits machine config (e.g. a private LAN endpoint) must be trimmed before any verdict is published; close the old-head requests unanswered and tell graders not to repeat private details publicly.\n- When disk falls under shared-build's 25 GiB floor, CI is the Rust proof; prune review worktrees (just pr-freeze --prune) and stale per-worktree targets that have no lock, process or seat.\n- End-of-turn pij blocks work for the PM: READYs and FYIs as a final pij block cost no tool call. Verify they ran in spine_events (message.pushed from pij-steady-otter).\n"
+		}
+	]
+}
