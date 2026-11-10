@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c391-c205-7841-8f11-4c36179b90f9",
+				"date": "2026-11-10",
+				"head": "4b719a4f9446fc847e180905b0b15019a0851eb9",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/215#issuecomment-6758485848",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:215",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#215 correctness review, round 1: BLOCK\n\nExact head: `4b719a4f9446fc847e180905b0b15019a0851eb9`.\n\n**F001: the settings snapshot cannot satisfy byte-identical restoration for ordinary absent-file/absent-model states.** `crates/harnesses/src/claude_settings.rs:1173-1202` saves only a parsed model value and silently skips missing, unreadable or unparsable settings files. If the active settings file did not exist and Claude creates it during the switch, there is no saved entry to undo that new default. If the file exists without a `model` key, `plan_model_restore` removes the newly added key by serializing the entire remaining object (`:1226-1234`), changing unrelated formatting/order rather than restoring the original bytes. For example, an original `{ \"theme\": \"dark\" }\\n` cannot be reconstructed from `SavedModel { value: None, ... }`.\n\nFix: retain enough original bytes and file/key-absence information to restore exactly, and surface snapshot failures before switching rather than silently proceeding unprotected. Preserve cleanup on failure paths too: `cheap_return.rs:147-155` currently returns on a submission error before reaching restoration. Add focused absent-model, absent-file and failed-snapshot/restore cases; assert byte equality, not merely that the model key disappeared. No real Claude settings were read or modified for this review.\n\n**F002: a missed dialog is still recorded as a successful model return.** `crates/daemon/src/cheap_return.rs:160-184` treats a pane read without `Switch model?` as `confirmed = false`, but then unconditionally sets `seat.model` to the remembered model and returns success; `:202-209` audits `returned: true`. The PR explicitly allows a dialog drawn later than its single 1.5-second read, where no Enter is pressed and the switch does not apply. In that supported case the seat is still on Sonnet while its recorded/bound model and return audit claim the original model. This also makes future revives use the wrong recorded model.\n\nFix: distinguish positively observed immediate application from an unconfirmed/unknown switch. Update the recorded model and report `returned: true` only after observing that the switch actually applied; otherwise retain truthful model state and report the incomplete return. Add the delayed-dialog case and assert both the actual/recorded model and audit outcome. The current no-dialog test assumes success without simulating evidence of an applied model, so it misses this distinction.\n\n**F003: the skill's new choice command is a shell pipeline that executes `--plain`.** `skills/pij/references/routes/peer.md` adds `pij-rs revive <seat> --plain|--ask|--cheap --json` in a Bash block. After replacing the seat placeholder, the shell runs the plain revive as the first pipeline command and tries to execute programs named `--ask` and `--cheap`; these are not CLI alternatives. Copying the advertised choice line can therefore relaunch on the expensive recorded model instead of leaving the human to choose. Fix: give three separate valid commands, or one concrete command with the alternatives in prose. No documented writing command was executed.\n\nThe policy itself matches the amendment: known-warm Claude resumes its recorded model; cold/unknown without a choice refuses before writes with the three commands; unknown is admitted for explicit cheap/ask; ask launches Sonnet without arming a return. Cheap remembers the prior model, correlates its own compact message id, ignores unrelated/queued outcomes, and waits five seconds after observing that compact's delivered outcome. Enter is attempted only after its model command was submitted and the pane read contains the switch-dialog text. The waiting-launch receipt fix retains the revive receipt.\n\n**Evidence:** `just pr-freeze 215` returned FINAL at this head; detached tree clean. [CI run 42750463077](https://github.com/AI-Substrate/pij-fleet/actions/runs/42750463077) records the exact head. Its successful Rust job's [JUnit artifact 13733790504](https://github.com/AI-Substrate/pij-fleet/actions/runs/42750463077/artifacts/13733790504) contains 2,371 executed tests, zero failures/errors; nextest reports six additional skips. The two cheap-return cases, model-restore case and focused warm/cold/unknown/cheap revive cases ran and passed. Their assertions do not cover the findings above. Source traces, not reviewer-run counterexamples; no local builds/tests, settings changes, seat lifecycle operations or product edits.\n\nCost inspection: one explicit relaunch; cheap adds one event subscription bounded at 15 minutes, a five-second wait, the model submission, a 1.5-second dialog wait/read, at most one Enter, a two-second settle, settings I/O, a registry write and an audit. Enter uses the existing counted tmux adapter launch path. No new periodic sweep or per-seat tick. Independent live-fleet performance proof remains with the performance role.\n"
+		}
+	]
+}
