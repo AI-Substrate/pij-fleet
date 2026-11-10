@@ -52,6 +52,44 @@ pub struct SeatFilter {
     /// Only seats whose recorded pane is this one, live or retired (F182: a
     /// caller resolved by its pane reads those rows, not the whole roster).
     pub pane: Option<String>,
+    /// Only seats that are not tombstoned (F185: the at-rest loops read the
+    /// live seats, not every retired row).
+    pub live_only: bool,
+}
+
+/// The rows a registration can read about one claim (F185): any seat whose id
+/// is one of `ids`, or whose native session, pane or pid is the claim's. A
+/// row matching none of these is never consulted by the claim's checks, so
+/// they read this instead of the whole roster.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RelatedSeats {
+    /// Seat ids the claim names or carries forward.
+    pub ids: Vec<SeatId>,
+    /// The claim's harness session.
+    pub harness_session: Option<String>,
+    /// The claim's pane.
+    pub pane: Option<String>,
+    /// The claim's process id (any start time: paneless matching uses the pid).
+    pub pid: Option<u32>,
+}
+
+impl RelatedSeats {
+    /// Whether `seat` is one of the related rows.
+    #[must_use]
+    pub fn matches(&self, seat: &SeatDescriptor) -> bool {
+        self.ids.contains(&seat.id)
+            || self
+                .harness_session
+                .as_ref()
+                .is_some_and(|session| seat.harness_session.as_ref() == Some(session))
+            || self
+                .pane
+                .as_ref()
+                .is_some_and(|pane| seat.pane.as_ref() == Some(pane))
+            || self
+                .pid
+                .is_some_and(|pid| seat.proc.is_some_and(|proc| proc.pid == pid))
+    }
 }
 
 /// The binding replaced by one committed registry write.
@@ -114,6 +152,15 @@ pub trait Registry: Send + Sync {
 
     /// Every seat matching `filter`, ordered by id so callers can diff listings.
     async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>>;
+
+    /// Every seat [`RelatedSeats::matches`] keeps, ordered by id as [`Self::list`]
+    /// orders (F185). The default filters the whole roster; a store answers it
+    /// with one query.
+    async fn list_related(&self, related: &RelatedSeats) -> Result<Vec<SeatDescriptor>> {
+        let mut seats = self.list(SeatFilter::default()).await?;
+        seats.retain(|seat| related.matches(seat));
+        Ok(seats)
+    }
 
     /// Mark a seat dead, keeping the row and the reason. Rows are tombstoned,
     /// never deleted: a seat that vanishes takes its own post-mortem with it.

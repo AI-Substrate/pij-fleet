@@ -225,7 +225,12 @@ impl PaneObserver {
     }
 
     async fn observe_once(&self) -> Result<()> {
-        let seats = match self.registry.list(SeatFilter::default()).await {
+        // Only live seats' panes are wanted (F185: not every retired row).
+        let live = SeatFilter {
+            live_only: true,
+            ..SeatFilter::default()
+        };
+        let seats = match self.registry.list(live).await {
             Ok(seats) => seats,
             Err(error) => {
                 for pane in self.tracked_panes() {

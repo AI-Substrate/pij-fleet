@@ -14,7 +14,7 @@ use pij_core::error::{PijError, Result};
 use pij_core::model::{
     Event, Harness, ProcIdentity, SeatDescriptor, SeatId, SemanticState, Seq, SystemState,
 };
-use pij_core::ports::{PutBinding, Registry, SeatFilter};
+use pij_core::ports::{PutBinding, Registry, RelatedSeats, SeatFilter};
 
 use crate::migrate::{begin_write, owned_write, require_current_schema};
 use crate::spine::{RegistryPublisher, append_in_transaction};
@@ -444,12 +444,42 @@ impl Registry for SqliteRegistry {
                AND (?2 IS NULL OR folder = ?2) \
                AND (?3 IS NULL OR parent = ?3) \
                AND (?4 IS NULL OR pane = ?4) \
+               AND (?5 = 0 OR tombstoned_at IS NULL) \
              ORDER BY id",
         )
         .bind(filter.harness.map(Harness::as_str))
         .bind(filter.folder.as_deref())
         .bind(filter.parent.as_ref().map(SeatId::as_str))
         .bind(filter.pane.as_deref())
+        .bind(i64::from(filter.live_only))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+
+        rows.iter().map(row_to_descriptor).collect()
+    }
+
+    async fn list_related(&self, related: &RelatedSeats) -> Result<Vec<SeatDescriptor>> {
+        require_current_schema(&self.pool).await?;
+        // The same rows `RelatedSeats::matches` keeps, decoded only for them.
+        let ids =
+            serde_json::to_string(&related.ids.iter().map(SeatId::as_str).collect::<Vec<_>>())
+                .map_err(|error| PijError::Adapter {
+                    adapter: "store/registry".to_string(),
+                    message: format!("could not encode related ids: {error}"),
+                })?;
+        let rows = sqlx::query(
+            "SELECT * FROM seats \
+             WHERE id IN (SELECT value FROM json_each(?1)) \
+                OR (?2 IS NOT NULL AND harness_session = ?2) \
+                OR (?3 IS NOT NULL AND pane = ?3) \
+                OR (?4 IS NOT NULL AND pid = ?4) \
+             ORDER BY id",
+        )
+        .bind(ids)
+        .bind(related.harness_session.as_deref())
+        .bind(related.pane.as_deref())
+        .bind(related.pid.map(i64::from))
         .fetch_all(&self.pool)
         .await
         .map_err(adapter_error)?;

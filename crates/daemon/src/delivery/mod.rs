@@ -23,7 +23,8 @@ use pij_core::model::{
     Receipt, SeatDescriptor, SeatId, SystemState,
 };
 use pij_core::ports::{
-    DeliveryAck, DeliveryEnqueue, ExtensionLease, LivenessPort, Queue, Registry, Transport,
+    DeliveryAck, DeliveryEnqueue, ExtensionLease, LivenessPort, Queue, Registry, SeatFilter,
+    Transport,
 };
 use pij_harnesses::{InteractionGate, StagedSubmission};
 use serde::{Deserialize, Serialize};
@@ -630,7 +631,15 @@ impl DeliveryService {
         // A failed attempt retries at the ordinary cadence instead of spinning
         // on the same elapsed deadline. New renewals install new deadlines.
         *self.native_deadline_checked_at.lock().await = tokio::time::Instant::now();
-        let seats = self.registry.list(Default::default()).await?;
+        // Both uses read only live Copilot seats (F185: not the whole roster).
+        let seats = self
+            .registry
+            .list(SeatFilter {
+                harness: Some(Harness::Copilot),
+                live_only: true,
+                ..SeatFilter::default()
+            })
+            .await?;
         self.native_receivers.lock().await.retain(|id, _| {
             seats.iter().any(|seat| {
                 &seat.id == id

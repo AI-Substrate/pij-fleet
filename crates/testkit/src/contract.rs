@@ -17,8 +17,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use pij_core::ports::{
-    DeferOutcome, DeliveryAck, DeliveryEnqueue, Queue, Registry, ReleaseOutcome, SeatFilter, Spine,
-    SpineWindow, TmuxPort,
+    DeferOutcome, DeliveryAck, DeliveryEnqueue, Queue, Registry, RelatedSeats, ReleaseOutcome,
+    SeatFilter, Spine, SpineWindow, TmuxPort,
 };
 
 /// Every promise the [`Registry`] port makes, in one place.
@@ -135,6 +135,11 @@ pub async fn registry_contract(registry: &dyn Registry) {
     // included: a pane's history explains its refusals.
     let mut on_pane = SeatDescriptor::new("pij-contract-pane", Harness::Pi, "/tmp/pane");
     on_pane.pane = Some("%7".to_string());
+    on_pane.harness_session = Some("contract-session".to_string());
+    on_pane.proc = Some(pij_core::model::ProcIdentity {
+        pid: 4242,
+        proc_start: 1,
+    });
     registry
         .put(on_pane.clone())
         .await
@@ -166,6 +171,79 @@ pub async fn registry_contract(registry: &dyn Registry) {
             .expect("list must not fail")
             .is_empty(),
         "a pane filter is exact, never a prefix"
+    );
+    // F185: `live_only` drops tombstoned rows (both seats above are retired).
+    assert_eq!(
+        ids(registry
+            .list(SeatFilter {
+                live_only: true,
+                ..SeatFilter::default()
+            })
+            .await
+            .expect("list must not fail")),
+        [empty_descriptor.id.clone()],
+        "live_only keeps only untombstoned rows"
+    );
+    // F185: `list_related` is exactly `RelatedSeats::matches` over the roster,
+    // in id order, for each kind of relation and their union.
+    let everything = registry
+        .list(SeatFilter::default())
+        .await
+        .expect("list must not fail");
+    for related in [
+        RelatedSeats {
+            ids: vec![empty_descriptor.id.clone(), SeatId::from("pij-never-was")],
+            ..RelatedSeats::default()
+        },
+        RelatedSeats {
+            harness_session: Some("contract-session".to_string()),
+            ..RelatedSeats::default()
+        },
+        RelatedSeats {
+            pane: Some("%7".to_string()),
+            ..RelatedSeats::default()
+        },
+        RelatedSeats {
+            pid: Some(4242),
+            ..RelatedSeats::default()
+        },
+        RelatedSeats {
+            ids: vec![empty_descriptor.id.clone()],
+            pane: Some("%7".to_string()),
+            ..RelatedSeats::default()
+        },
+        RelatedSeats {
+            harness_session: Some("other".to_string()),
+            pane: Some("%70".to_string()),
+            pid: Some(1),
+            ..RelatedSeats::default()
+        },
+    ] {
+        let expected: Vec<SeatDescriptor> = everything
+            .iter()
+            .filter(|seat| related.matches(seat))
+            .cloned()
+            .collect();
+        assert_eq!(
+            registry
+                .list_related(&related)
+                .await
+                .expect("list_related must not fail"),
+            expected,
+            "list_related keeps exactly the related rows, in id order: {related:?}"
+        );
+    }
+    assert_eq!(
+        ids(registry
+            .list_related(&RelatedSeats {
+                ids: vec![empty_descriptor.id.clone()],
+                pane: Some("%7".to_string()),
+                ..RelatedSeats::default()
+            })
+            .await
+            .expect("list_related must not fail")),
+        [empty_descriptor.id.clone(), on_pane.id.clone()],
+        "a union of relations, in id order"
     );
 
     // 6. Re-registering a live descriptor clears its old tombstone; otherwise a
