@@ -16,8 +16,8 @@ The directory lives on the governance branch under `<government-root>/community/
 pij directory [--suggest]                        # the prime, roles, actions, prompts, the boundary review; --suggest: every suggestion
 pij directory templates [--show '<name>[@vN]']   # the shipped examples, and one template's body
 pij directory add '<id>' --from 'template:<name>' --why '<the need>'  [flags override fields]
-pij directory add '<id>' --from 'file:<brief>' --why '<the need>' --title '<title>' --kind specialist|general --lifecycle long-lived|per-task --holders one|many --rule '<text>'
-pij directory add '<id>' --why '<the need>' --title '<title>' --kind specialist|general --lifecycle long-lived|per-task --holders one|many --rule '<rule>' --packet '<packet>'  # no template
+pij directory add '<id>' --from 'file:<brief>' --why '<the need>' --title '<title>' --kind specialist --lifecycle long-lived --holders one --rule '<text>'
+pij directory add '<id>' --why '<the need>' --title '<title>' --kind specialist --lifecycle long-lived --holders one --rule '<rule>' --packet '<packet>'  # no template
 pij directory assign '<role>[/<instance>]' '<seat>' --why '<text>'
 pij directory release '<role>[/<instance>]' '<seat>' --why '<text>'
 pij directory edit '<id>' --why '<text>' --set '<field>=<value>' [role flags]
@@ -27,7 +27,7 @@ pij directory template-diff '<id>'               # upstream change since the rol
 pij directory routes [--write --why '<text>']    # who owns which paths, with live holders
 ```
 
-Every `<placeholder>` in a printed command sits inside single quotes: fill it there (write a `'` in the value as `'\''`) so the shell passes one literal word. Pass message and note bodies with `--body-file`.
+Every `<placeholder>` in a printed command sits inside single quotes: fill it there (write a `'` in the value as `'\''`) so the shell passes one literal word. Pass message and note bodies with `--body-file`. A role with no template needs `--title`, `--kind` (`specialist` or `general`), `--lifecycle` (`long-lived` or `per-task`) and `--holders` (`one` or `many`); `--from file:` supplies only the packet.
 
 `add --from template:` copies the template as it is. Replace the project's placeholders (`<project>`, `<government-root>`, `<workstream number>`, and a template's own, such as `<topic>`) with flags or a later `edit --set`; `<did>`, `<next>`, `<seat>` and `<path>` in a packet's commands are the holder's to fill at run time. Give real `--scope-path`s, since scopes become ROUTES.md. A repeated flag (`--rule`, `--scope-path`) replaces the template's list. Each packet sends its holder to `<government-root>/community/README.md`: write that once by hand (what the community is for, where its docs live).
 
