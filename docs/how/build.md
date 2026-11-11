@@ -36,8 +36,13 @@ just bounce-rs        # start the daemon
    the npm/cli #9005 compatibility exception described below. The bootstrap
    explicitly strips inherited npm policy overrides and still enforces the
    governed registry plus online revalidation.
-2. **`just rs-install`** — `cargo build --release --locked -p pij-cli`, then link
-   `pij-rs` into `$(npm prefix -g)/bin`, next to the `pij` shim.
+2. **`just rs-install`** — `cargo build --release --locked -p pij-cli`, then
+   install a copy at `~/.local/share/pij/bin/pij-rs` (copied under a temporary
+   name and renamed into place) and link `pij-rs` in `$(npm prefix -g)/bin`,
+   next to the `pij` shim, to that copy. Nothing on PATH points into `target/`,
+   so deleting or cleaning it never takes the CLI down (F187); `just doctor`
+   flags any pij binary on PATH that does. `just bounce-rs` and
+   `pij-rs daemon bounce` install the same way and launch the copy.
 3. **`just omp-install`** — install OMP from the governed registry when absent,
    then `just link` (refuses linked worktrees; links only `pij` into
    `~/.omp/agent/extensions/`, `~/.omp/agent/{mcp.json,models.yml}` to this

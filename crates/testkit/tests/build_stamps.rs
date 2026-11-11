@@ -12,6 +12,11 @@
 //! idle-holder nudge is off in a bare daemon and on from `bounce-rs` and the
 //! LaunchAgent `rs-autostart` writes, unless `PIJ_IDLE_NUDGE` says otherwise
 //! when they run (F147).
+//!
+//! And where pij-rs is installed (F187): `rs-install` and `bounce-rs` put a
+//! copy outside target/ and link PATH to it, `bounce-rs` launches that copy,
+//! and the check `just doctor` runs flags any pij binary on PATH that resolves
+//! into a target/.
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -98,10 +103,20 @@ fn try_run_seeded(name: &str, env: &[(&str, &str)], seed: &[(&str, &str)]) -> (P
         "git",
         "for id in 1111111111aaaa 2222222222bbbb 3333333333cccc 4444444444dddd; do echo $id; done",
     );
+    // The build: a pij-rs that records the environment it runs the daemon with.
+    fake(
+        &scratch,
+        "artifact",
+        &format!(
+            "[ \"$1\" = daemon ] && env > '{out}/daemon.tmp' && mv '{out}/daemon.tmp' '{out}/daemon.env'; exit 0"
+        ),
+    );
     fake(
         &bin,
         "cargo",
-        &format!("env > '{out}/cargo.env'; echo Finished"),
+        &format!(
+            "env > '{out}/cargo.env'; mkdir -p target/release && cp '{out}/artifact' target/release/pij-rs; echo Finished"
+        ),
     );
     fake(
         &bin,
@@ -117,13 +132,19 @@ fn try_run_seeded(name: &str, env: &[(&str, &str)], seed: &[(&str, &str)]) -> (P
     fake(&bin, "sleep", "exit 0");
     fake(&bin, "plutil", "exit 0");
     fake(&bin, "launchctl", "exit 0");
+    // An older install on PATH: launching it instead of the fresh build is a bug.
     fake(
         &global.join("bin"),
         "pij-rs",
-        &format!(
-            "[ \"$1\" = daemon ] && env > '{out}/daemon.tmp' && mv '{out}/daemon.tmp' '{out}/daemon.env'; exit 0"
-        ),
+        &format!("touch '{out}/stale-daemon.env'; exit 0"),
     );
+    let scripts = scratch.join("harness/scripts");
+    std::fs::create_dir_all(&scripts).expect("scratch scripts");
+    std::fs::copy(
+        root.join("harness/scripts/install-pij-rs.sh"),
+        scripts.join("install-pij-rs.sh"),
+    )
+    .expect("the installer the recipes run");
     for (path, contents) in seed {
         let path = scratch.join(path);
         std::fs::create_dir_all(path.parent().expect("a seeded file's folder"))
@@ -344,5 +365,129 @@ fn bounce_rs_passes_only_a_normalized_idle_nudge() {
     assert!(!scratch.join("cargo.env").exists(), "nothing was built");
     std::thread::sleep(std::time::Duration::from_millis(500));
     assert!(!scratch.join("daemon.env").exists(), "nothing was launched");
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// The installed copy and the PATH entry linked to it, in a scratch home.
+fn installed(scratch: &Path) -> (PathBuf, PathBuf) {
+    (
+        scratch.join(".local/share/pij/bin/pij-rs"),
+        scratch.join("global/bin/pij-rs"),
+    )
+}
+
+/// F187: `rs-install` links PATH to a copy outside target/, so deleting
+/// target/ (a disk sweep did, and the CLI was down for 55 minutes) leaves
+/// pij-rs running.
+#[test]
+fn rs_install_links_path_to_a_copy_that_outlives_target() {
+    let scratch = run("rs-install");
+    let (copy, link) = installed(&scratch);
+    assert_eq!(std::fs::read_link(&link).expect("PATH links"), copy);
+    assert!(
+        std::fs::symlink_metadata(&copy)
+            .expect("the copy")
+            .file_type()
+            .is_file(),
+        "the copy is a file, not another link"
+    );
+    assert_eq!(
+        std::fs::read(&copy).expect("the copy"),
+        std::fs::read(scratch.join("target/release/pij-rs")).expect("the build")
+    );
+    let (ok, out) = path_check(&scratch, &[scratch.join("global/bin")]);
+    assert!(ok, "the doctor check passes: {out}");
+    std::fs::remove_dir_all(scratch.join("target")).expect("delete target/");
+    assert!(
+        Command::new(&link).status().expect("run pij-rs").success(),
+        "pij-rs still runs"
+    );
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// F187: `bounce-rs` installs its fresh build the same way and launches that
+/// copy, never an older install or target/.
+#[test]
+fn bounce_rs_launches_its_fresh_copy() {
+    let scratch = run("bounce-rs");
+    daemon_env(&scratch);
+    assert!(
+        !scratch.join("stale-daemon.env").exists(),
+        "the older install never ran"
+    );
+    let (copy, link) = installed(&scratch);
+    assert_eq!(std::fs::read_link(&link).expect("PATH links"), copy);
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// `_pij-bins-path-check`, which `just doctor` runs, over `dirs` then
+/// `/usr/bin:/bin`: whether it passed, and what it printed.
+fn path_check(scratch: &Path, dirs: &[PathBuf]) -> (bool, String) {
+    let justfile =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../justfile"))
+            .expect("read the justfile");
+    let script = scratch.join("path-check.sh");
+    std::fs::write(&script, recipe(&justfile, "_pij-bins-path-check")).expect("write the check");
+    let mut path = dirs
+        .iter()
+        .map(|dir| dir.display().to_string())
+        .collect::<Vec<_>>();
+    path.extend(["/usr/bin".to_string(), "/bin".to_string()]);
+    let output = Command::new("/bin/sh")
+        .arg(&script)
+        .env_clear()
+        .env("PATH", path.join(":"))
+        .output()
+        .expect("run the check");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+    )
+}
+
+/// F187: doctor flags a pij binary on PATH that resolves into a target/, or
+/// whose link is broken, with its fix; the installed copy is clean.
+#[test]
+fn doctor_flags_a_pij_binary_that_resolves_into_target() {
+    let scratch = std::env::temp_dir().join(format!("pij-path-check-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&scratch);
+    let release = scratch.join("repo/target/release");
+    let copies = scratch.join("home/.local/share/pij/bin");
+    for dir in [&release, &copies] {
+        std::fs::create_dir_all(dir).expect("scratch dir");
+    }
+    fake(&release, "pij-rs", "exit 0");
+    fake(&release, "pij-gate", "exit 0");
+    fake(&copies, "pij-rs", "exit 0");
+    let linked = |name: &str, to: &Path| {
+        let dir = scratch.join(name);
+        std::fs::create_dir_all(&dir).expect("PATH dir");
+        let file = to.file_name().expect("a binary name");
+        std::os::unix::fs::symlink(to, dir.join(file)).expect("link");
+        dir
+    };
+    let into_target = linked("into-target", &release.join("pij-rs"));
+    let gate = linked("gate", &release.join("pij-gate"));
+    let broken = linked("broken", &scratch.join("repo/gone/pij-rs"));
+    let copy = linked("copy", &copies.join("pij-rs"));
+
+    let (ok, out) = path_check(&scratch, std::slice::from_ref(&into_target));
+    assert!(!ok, "a link into target/ is flagged");
+    assert!(
+        out.contains("resolves into a cargo target/") && out.contains("run: just rs-install"),
+        "{out}"
+    );
+    let (ok, out) = path_check(&scratch, std::slice::from_ref(&gate));
+    assert!(!ok && out.contains("pij-gate"), "any pij binary: {out}");
+    let (ok, out) = path_check(&scratch, std::slice::from_ref(&broken));
+    assert!(
+        !ok && out.contains("broken link") && out.contains("run: just rs-install"),
+        "{out}"
+    );
+    let (ok, out) = path_check(&scratch, std::slice::from_ref(&copy));
+    assert!(ok, "the installed copy is clean: {out}");
+    // Only the first of each name on PATH runs, so only it is judged.
+    let (ok, out) = path_check(&scratch, &[copy, into_target]);
+    assert!(ok, "a shadowed link is not what runs: {out}");
     let _ = std::fs::remove_dir_all(&scratch);
 }

@@ -7,7 +7,7 @@ use axum::Router;
 use axum::http::StatusCode;
 use axum::routing::get;
 
-use super::{HealthProbe, probe_unauthenticated, reproducible_repo};
+use super::{HealthProbe, install, probe_unauthenticated, reproducible_repo};
 
 static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
 
@@ -82,6 +82,61 @@ fn dirty_and_divergent_are_named_as_different_refusals() {
     let divergent = reproducible_repo(&fixture.root).expect_err("divergent must refuse");
     assert!(divergent.to_string().contains("HEAD"), "{divergent}");
     assert!(divergent.to_string().contains("origin/main"), "{divergent}");
+}
+
+/// A fake release build in the fixture's target/ that prints `word`.
+fn build_fake(root: &Path, word: &str) {
+    let release = root.join("target/release");
+    std::fs::create_dir_all(&release).expect("target/release");
+    let artifact = release.join("pij-rs");
+    std::fs::write(&artifact, format!("#!/bin/sh\necho {word}\n")).expect("fake build");
+    let mut permissions = std::fs::metadata(&artifact)
+        .expect("fake build")
+        .permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+    std::fs::set_permissions(&artifact, permissions).expect("make the build executable");
+}
+
+/// F187: the daemon is launched from a copy outside target/, installed by the
+/// repository's own script, so deleting target/ can't break its next launch.
+#[test]
+fn install_copies_the_build_outside_target_and_replaces_it_by_rename() {
+    let fixture = RepoFixture::new();
+    let scripts = fixture.root.join("harness/scripts");
+    std::fs::create_dir_all(&scripts).expect("scripts dir");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../harness/scripts/install-pij-rs.sh"),
+        scripts.join("install-pij-rs.sh"),
+    )
+    .expect("the installer");
+    let home = fixture.root.join("home");
+
+    build_fake(&fixture.root, "one");
+    let copy = install(&fixture.root, &home).expect("installed");
+    assert_eq!(copy, home.join(".local/share/pij/bin/pij-rs"));
+    // A daemon running the first copy holds its file.
+    let running = fixture.root.join("running");
+    std::fs::hard_link(&copy, &running).expect("hold the running file");
+
+    build_fake(&fixture.root, "two");
+    assert_eq!(install(&fixture.root, &home).expect("reinstalled"), copy);
+    assert_eq!(
+        std::fs::read_to_string(&running).expect("the running file"),
+        "#!/bin/sh\necho one\n",
+        "the running file is never rewritten in place"
+    );
+    let siblings = std::fs::read_dir(copy.parent().expect("bin dir"))
+        .expect("bin dir")
+        .count();
+    assert_eq!(siblings, 1, "no temporary file is left beside the copy");
+
+    std::fs::remove_dir_all(fixture.root.join("target")).expect("delete target/");
+    let output = Command::new(&copy).output().expect("run the copy");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "two\n");
+
+    let error = install(&fixture.root, &home).expect_err("no build to install");
+    assert!(error.to_string().contains("no built pij-rs"), "{error}");
+    assert!(copy.is_file(), "a failed install leaves the copy alone");
 }
 
 async fn server(status: StatusCode) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {

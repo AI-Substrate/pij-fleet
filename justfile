@@ -24,7 +24,8 @@ default:
 #
 # What it does:
 #   1. Install repo dependencies (`npm ci`, locked)
-#   2. Build pij-rs (the daemon + CLI) and link it onto PATH next to npm's bin
+#   2. Build pij-rs (the daemon + CLI), install a copy outside target/ and link
+#      it onto PATH in npm's bin
 #   3. Install OMP if absent, link the pij extension + curated MCP/models into
 #      ~/.omp/agent, and link the native Copilot extension when Copilot is present
 #   4. Link the pij skill machine-wide and the `pij` CLI shim (`npm link`)
@@ -53,8 +54,10 @@ install:
     @echo
     @echo "✓ install complete. Start the daemon with: just bounce-rs"
 
-# Build pij-rs in release mode from the canonical checkout and link it as
-# `pij-rs` in npm's global bin (the same directory as the `pij` shim).
+# Build pij-rs in release mode from the canonical checkout, install a copy at
+# ~/.local/share/pij/bin/pij-rs and link it as `pij-rs` in npm's global bin (the
+# same directory as the `pij` shim). PATH never points into target/, so deleting
+# or cleaning target/ can't take the CLI down (F187).
 rs-install:
     #!/bin/sh
     set -eu
@@ -68,9 +71,8 @@ rs-install:
     PIJ_BUILD_COMMIT="$commit" PIJ_EXT_TREE_COPILOT="$copilot" PIJ_EXT_TREE_OMP="$omp" \
         cargo build --release --locked -p pij-cli
     bin="$(npm prefix -g)/bin"
-    mkdir -p "$bin"
-    ln -sfn "$(pwd)/target/release/pij-rs" "$bin/pij-rs"
-    echo "✓ $bin/pij-rs → $(pwd)/target/release/pij-rs"
+    copy="$(sh harness/scripts/install-pij-rs.sh target/release/pij-rs "$bin")"
+    echo "✓ $bin/pij-rs → $copy (copied from $(pwd)/target/release/pij-rs)"
 
 # Read-only audit of the installed surfaces: CLI shim, pij-rs, OMP policy,
 # skill link, pij-managed Claude hooks, the Copilot extension and daemon health.
@@ -80,6 +82,7 @@ doctor:
       pij_bin="$(command -v pij)"; \
       just _pij-bin-shape-check "$global_npm_root" "$pij_bin"
     @echo "pij-rs bin: $(realpath "$(command -v pij-rs)" 2>/dev/null || echo '(not on PATH — run: just rs-install)')"
+    @just _pij-bins-path-check || echo 'pij bins:   (not safe from a deleted target/: the fix is printed above)'
     @echo "skill:      $(readlink ~/.agents/skills/pij 2>/dev/null || echo '(unlinked — run: just pij-skill-link-global)')"
     just omp-doctor
     @pij-rs doctor claude-hooks 2>/dev/null || echo 'claude hooks: (unknown: pij-rs is missing or predates this check — run: just rs-install)'
@@ -630,6 +633,34 @@ _pij-bin-shape-check global_npm_root pij_bin:
       fi; \
       echo "pij bin: $actual"
 
+# F187: every pij binary on PATH must survive a deleted or cleaned cargo target/.
+# Flags the first `pij` or `pij-*` of each name on PATH (the one that runs) when it
+# resolves into a target/ directory or is a broken link, with its fix. Read-only.
+_pij-bins-path-check:
+    #!/bin/sh
+    bad=0 seen=:
+    IFS=:
+    for dir in $PATH; do
+      case $dir in /*) ;; *) continue ;; esac
+      for f in "$dir"/pij "$dir"/pij-*; do
+        [ -L "$f" ] || [ -e "$f" ] || continue
+        name=${f##*/}
+        case $seen in *:"$name":*) continue ;; esac
+        seen="$seen$name:"
+        case $name in pij-rs) fix="run: just rs-install" ;; *) fix="remove it, or point it at a copy outside target/" ;; esac
+        if [ ! -e "$f" ]; then
+          echo "❌ $f is a broken link (to $(readlink "$f")): $fix"
+          bad=1
+          continue
+        fi
+        case $(realpath "$f") in
+          */target/*) echo "❌ $f resolves into a cargo target/ ($(realpath "$f")), so deleting or cleaning it takes $name down: $fix"; bad=1 ;;
+        esac
+      done
+    done
+    [ "$bad" -eq 0 ] && echo "pij bins:   none on PATH resolve into a cargo target/"
+    exit "$bad"
+
 # Rebuild pij-rs from THIS checkout and restart the production rs daemon in one act
 # (sub-second gap; clients reconnect). Standing order after any rs merge. Verifies pid change + ping.
 bounce-rs:
@@ -652,7 +683,11 @@ bounce-rs:
     # worktrees (#175 review, P175-F001).
     PIJ_BUILD_COMMIT="$commit" PIJ_EXT_TREE_COPILOT="$copilot" PIJ_EXT_TREE_OMP="$omp" \
         cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
-    bin="$(npm prefix -g)/bin/pij-rs"
+    # F187: refresh the installed copy (and the PATH link) from this build and
+    # launch that, never target/. The running daemon keeps its own file.
+    bin="$(npm prefix -g)/bin"
+    sh harness/scripts/install-pij-rs.sh target/release/pij-rs "$bin" >/dev/null
+    bin="$bin/pij-rs"
     old=$(lsof -nP -iTCP:7461 -sTCP:LISTEN -t || true)
     [ -n "$old" ] && kill "$old" && sleep 0.5
     # Telegram worker is OPT-IN by env (crates/daemon/src/lib.rs); a bare restart silently turns it off.
@@ -673,6 +708,8 @@ bounce-rs:
 # No KeepAlive on purpose: bounce-rs kills and relaunches by port, and a KeepAlive
 # respawn would race it for 7461. Env mirrors bounce-rs (the idle nudge ON unless
 # PIJ_IDLE_NUDGE=0 when this runs, F147); PATH is captured from this shell.
+# The plist execs npm's bin/pij-rs, the PATH link to the copy rs-install and
+# bounce-rs install (F187), so it never runs out of target/.
 rs-autostart:
     #!/usr/bin/env sh
     set -eu
