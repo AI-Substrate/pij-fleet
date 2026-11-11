@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-11",
+				"hook": "Open before changing how cargo is wrapped or niced, shared-build's steps, or any recipe that runs cargo directly",
+				"tags": [
+					"f186",
+					"shared-build",
+					"build",
+					"cost",
+					"agents-md"
+				],
+				"title": "Changing how pij builds are scheduled: the five copies of the rule (F186, #228)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Since F186 (Jordan, 2026-11-11), every pij cargo build and test runs under `nice -n 19` only: never `taskpolicy -b`, one build at a time (shared-build's lock), 4 jobs (.cargo/config.toml). A cargo test is one step; plan 209's --no-run split is gone.\n\nThe rule has copies that drift on their own. Change them together:\n1. harness/scripts/shared-build.sh (header comment and run_cargo).\n2. harness/scripts/shared-build.test.ts. Besides the scheduling test, the jobs-cap and --then batch tests count cargo calls per command, so a change in steps breaks them too. Grep for the behaviour, not just the flag.\n3. justfile `route-inventory-check`. It runs cargo directly, with its own wrapper copy, not through shared-build. Also the shared-build recipe comment.\n4. AGENTS.md: resource-cost item 5 and the `just shared-build` paragraph.\n5. .harness/extensions/checks/instructions.md (the route-inventory stage text).\n\ndocs/difficulties.md rows and docs/plans are history: add a note rather than rewriting them. shared-build.test.ts is vitest, so under C25 CI is its proof. Running shared-build.sh directly against a fake `cargo` that echoes `ps -o nice=` and its env is a quick local check.\n"
+		}
+	]
+}
