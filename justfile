@@ -248,15 +248,10 @@ coverage-check:
 # Route inventory (plan 221, F88): every (method, path) pair the daemon really
 # serves (probed through the router from Endpoint::ALL) is classified in
 # harness/scripts/route-inventory.json, and nothing stale is listed there.
-# Resource-safe like shared-build: the compile runs under nice -n 19 and (macOS)
-# taskpolicy -b, the test run nice-only. rust-check skips the probe test so a
-# full gate runs it once; CI's workspace run includes it.
+# Resource-safe like shared-build: nice -n 19 only, in one step (F186: no
+# taskpolicy -b). rust-check skips the probe test so a full gate runs it once;
+# CI's workspace run includes it.
 route-inventory-check:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    background=()
-    if [ -x /usr/sbin/taskpolicy ]; then background=(/usr/sbin/taskpolicy -b); fi
-    /usr/bin/nice -n 19 ${background[@]+"${background[@]}"} cargo test --locked -p pij-daemon --lib --no-run
     /usr/bin/nice -n 19 cargo test --locked -p pij-daemon --lib route_inventory_tests
 
 # Report-only attribution scan, scoped after merge-base with main.
@@ -336,8 +331,8 @@ rust-check:
     cargo test --locked --workspace -- --skip route_inventory_tests::every_served_route_is_in_the_inventory_and_classified
 
 # Cargo into a target several worktrees share, one worktree at a time (plan 198):
-# lock, disk floor, fresh sources, CARGO_INCREMENTAL=0, nice -n 19 and (macOS)
-# taskpolicy -b on every cargo command, always released.
+# lock, disk floor, fresh sources, CARGO_INCREMENTAL=0, nice -n 19 only on
+# every cargo command (F186), always released.
 # `PIJ_SHARED_TARGET=<abs dir> just shared-build [--timeout <min>] -- test -p pij-store --then clippy -p pij-store`
 shared-build *ARGS:
     @bash harness/scripts/shared-build.sh "$@"
