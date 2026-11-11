@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-11",
+				"hook": "Read before installing executables or reusing an unchanged installed binary.",
+				"tags": [
+					"installation",
+					"permissions",
+					"paths",
+					"c33",
+					"c34"
+				],
+				"title": "Executable trust follows directories and physical ancestry"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Executable integrity depends on directory-entry control, not only file mode. Chmod 0755 on a binary does not protect it when another UID can replace an ancestor or plant a predictable temporary path. State the real preconditions: the other UID must be able to traverse the preceding path and write an ancestor. Umask 0002 alone is not exposure behind an inaccessible private home; normal private-home/umask-022 defaults are not automatically vulnerable.\n\nFor installation, create new directories 0700, refuse unsafe ownership or group/world write on checked existing ancestry, create a temporary file exclusively in the destination directory, then rename. Keep the executable outside disposable cargo target/. If bytes are unchanged, preserving its inode avoids deleting the path of a still-running daemon, but byte equality is not a metadata/type check.\n\nPR #229 final 324a47fe0d086c442a7607f0aecd48323acb12ad received PASS WITH NOTES, output d621a3beee05c744d14dde35fd8ac4cb0ed8c3e1. All six F187 regressions passed in Linux CI; no local build/install/probe was run and macOS signed-binary replacement was not established.\n\nResiduals explicitly accepted under C34: S229-N002, following a symlink and validating its endpoint does not validate intervening physical ancestry outside HOME; a shared-writable physical parent can still permit cross-UID substitution. S229-N003, unchanged-byte reuse skips installed-file owner, writability, executable-mode and symlink-type validation. Do not describe the final verdict as universal path hardening or erase the conditional risk.\n\nS229-N001 remains deployment-owned: moving the executable requires the authorized admin/IT owner to migrate the Defender process exclusion. Documentation is not verification of deployed exclusions.\n"
+		}
+	]
+}

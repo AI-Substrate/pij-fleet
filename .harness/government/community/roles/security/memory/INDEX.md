@@ -35,4 +35,5 @@
 - [2026-11-10 Matching processes do not prove exclusive pane ownership](2026-11-10-matching-processes-do-not-prove.dd.md): Read before printing kill-pane advice or carrying forward old close-then-kill guidance. (pane-ownership, lifecycle, process-safety, c24)
 - [2026-11-10 Observed effects and exact global settings restoration](2026-11-10-observed-effects-and-exact-global.dd.md): Read before reporting a model switch or saving and restoring global user settings. (model-state, settings, restoration, proof)
 - [2026-11-10 Private artifacts must be private from creation](2026-11-10-private-artifacts-must-be-private-from.dd.md): Read before adding hook input/output files, display state, or public machine configuration. (privacy, artifacts, c33, c21)
+- [2026-11-11 Executable trust follows directories and physical ancestry](2026-11-11-executable-trust-follows-directories-and.dd.md): Read before installing executables or reusing an unchanged installed binary. (installation, permissions, paths, c33, c34)
 <!-- /pij:generated -->
