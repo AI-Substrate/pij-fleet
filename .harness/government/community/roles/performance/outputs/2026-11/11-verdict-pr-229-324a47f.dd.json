@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c819-a277-7213-9d76-6ea9a0b70ddc",
+				"date": "2026-11-11",
+				"head": "324a47fe0d086c442a7607f0aecd48323acb12ad",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/229#issuecomment-6783761906",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:229",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"P229-N001 retained: admin must add and verify the resolved ~/.local/share/pij/bin/pij-rs Defender process exclusion before production switches. Old target/npm aliases and unchanged launch counts do not prove stable scan/CPU cost; record confirmation with deploy receipt. No local extra build/test: CI is the build; macOS launchd/signing/Defender live behavior remains deployment evidence."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Performance PASS WITH NOTES: #229 final round\n\nExact head **`324a47fe0d086c442a7607f0aecd48323acb12ad`**. Reviewed `63a2ba5..324a47f`, eight files +268/-38, and the round-1 findings. Detached tree clean, GitHub CLEAN, CI green. CI is the build: no local build, test, install, executable copy, runtime probe or machine-build baton request.\n\n**P229-N002 is closed.** Doctor now chooses the first regular executable file, matching the shim; earlier non-executable files no longer hide a later runnable target link, and a broken link before a working copy is not falsely treated as what executes. The updated CI case exercises both orderings. Canonicalization is now reused within the target warning. The extra pass over unresolved broken links is on explicit doctor use only, not a periodic scan.\n\n**P229-F001's resource/availability correction is confirmed in source and CI:** an equal build preserves the installed inode, while a changed build still stages and renames a fresh file. The Linux regression establishes the real `(deleted)` current-executable precondition, proves that raw path cannot execute, and proves the usable installed path can execute. No deleted-executable behavior is inferred merely from a fabricated pathname.\n\nThe final cost shape is:\n\n| Path | Final-round cost |\n|---|---|\n| Explicit install/bounce preparation | One UID lookup and four fixed mkdir/metadata checks for `.local/share/pij/bin`; each find is `-maxdepth 0`, not a directory-tree sweep. These add bounded one-shot helper launches. |\n| Existing installed build | `cmp -s` can read O(B) bytes for binary size B. Equality avoids staging, copy writes and inode replacement; it is not zero work or a guaranteed overall reduction in helper-process count. |\n| Changed/missing build | Exclusive `mktemp`, copy, chmod and same-directory rename, as explicit setup work. The previous staging/resident-old-inode disk budget still applies on replacement. |\n| Child observer launch | `usable_observer_executable` adds one metadata check on a normal existing path, at most a second for the stripped `(deleted)` path. It reads no binary contents and launches nothing. It runs once per requested seat launch, not per live seat/tick. |\n| Daemon/autostart/observer topology | Same daemon-start and child-observer counts as before. No new scheduled loop, retry timer or production subprocess site. |\n\nS229-001's directory hardening creates new directories at 0700, rejects others-writable/foreign-owner directories and uses an exclusive temporary file. The cost is those fixed per-install probes, not a background ownership monitor. Security's independent verdict remains authoritative for permission details.\n\nThe round-1 statement remains: setup/doctor helper counts are **not** unchanged merely because daemon launch counts are unchanged. Daemon counters also do not account for CLI-side installer helpers. Helper wall time and actual disk I/O were not benchmarked here.\n\n**P229-N001 remains explicitly owed at deploy:** an administrator adds and verifies the resolved **`~/.local/share/pij/bin/pij-rs`** Defender process exclusion before production switches to it. An old target-path or npm-alias exclusion is not confirmation. A stable launch count is not proof of stable scan/CPU cost after an executable-path change. Actual macOS launchd/signing/Defender behavior remains deployment evidence, not Linux-CI proof.\n\n**CI:** [run 42934405272](https://github.com/AI-Substrate/pij-fleet/actions/runs/42934405272), successful at this head. Rust job [130240790726](https://github.com/AI-Substrate/pij-fleet/actions/runs/42934405272/job/130240790726) checks out merge **`f6fe848c7ec07044a438301417c5116de0c74d8e`**, this head into `73058adafe368f15ab863e445bb3802d5cef52a9`. The successful job's upload log pins JUnit artifact **13817922147**: **2,435 executed cases, zero failures/errors**, with six nextest skips separately.\n\nAll six F187 cases are present and executed: inode-preserving/replacing install, refusing others-writable directories, real Linux running-install observer execution after replacement, rs-install surviving target deletion, bounce choosing the fresh copy, and doctor executable/target/broken-link cases. Node 22/24 and Rust lint are green.\n\nNo new normal-use performance/correctness blocker found in this final delta. The performance pass retains the admin deployment dependency; it does not authorize local heavy validation or clear another role's block.\n"
+		}
+	]
+}
