@@ -72,8 +72,8 @@ function fixture(): Fixture {
 			// The parallelism cap that reached cargo (F126).
 			'echo "jobs $1 build=$CARGO_BUILD_JOBS test=$RUST_TEST_THREADS" >> "$LOG"',
 			'[ "$1" = drop ] && echo 1024 > "$FREE"',
-			// The scheduling cargo runs under: its niceness and the flag the
-			// fake taskpolicy passed down, if one wrapped it.
+			// The scheduling cargo runs under: its niceness, and the flag a fake
+			// taskpolicy passed down, had one wrapped it (F186: none ever does).
 			'[ -n "$NICENESS" ] && echo "niceness=$(ps -o nice= -p $$ | tr -d \' \') taskpolicy=$FAKE_TASKPOLICY args=$*" >> "$LOG"',
 			// A build child (rustc, a build script) that ticks into the log
 			// while alive; cargo waits for it, as cargo waits for rustc.
@@ -107,8 +107,6 @@ function fixture(): Fixture {
 			PIJ_SHARED_TARGET: target,
 			PIJ_SHARED_BUILD_DF: df,
 			PIJ_SHARED_BUILD_POLL_SECONDS: "1",
-			// Absent unless a test supplies one, as on Linux.
-			PIJ_SHARED_BUILD_TASKPOLICY: join(root, "no-taskpolicy"),
 			PIJ_DISK_FLOOR_GB: "25",
 			// Unset unless a test supplies them: the caps default to 4.
 			PIJ_CARGO_JOBS: "",
@@ -185,12 +183,8 @@ describe("just shared-build", () => {
 		expect(result.stderr).toContain(
 			"shared-build: cargo jobs: 4 (PIJ_CARGO_JOBS), test threads: 4 (RUST_TEST_THREADS)",
 		);
-		// The build, the test compile and the test run all see the cap.
-		expect(jobs(capped)).toEqual([
-			"jobs build build=4 test=4",
-			"jobs test build=4 test=4",
-			"jobs test build=4 test=4",
-		]);
+		// The build and the test (one step, F186) both see the cap.
+		expect(jobs(capped)).toEqual(["jobs build build=4 test=4", "jobs test build=4 test=4"]);
 
 		const two = fixture();
 		const set = await run(two, ["--", "build"], { PIJ_CARGO_JOBS: "2" });
@@ -200,7 +194,7 @@ describe("just shared-build", () => {
 		// A caller's own RUST_TEST_THREADS wins over the default test cap.
 		const own = fixture();
 		await run(own, ["--", "test"], { PIJ_CARGO_JOBS: "6", RUST_TEST_THREADS: "1" });
-		expect(jobs(own)).toEqual(["jobs test build=6 test=1", "jobs test build=6 test=1"]);
+		expect(jobs(own)).toEqual(["jobs test build=6 test=1"]);
 	});
 
 	it("refuses a PIJ_CARGO_JOBS that is not a positive whole number, before the lock and any cargo", async () => {
@@ -230,14 +224,13 @@ describe("just shared-build", () => {
 		]);
 		expect(result.code).toBe(0);
 		const lines = log(f);
-		// A test compiles (--no-run), then runs: two cargo calls (F63).
+		// One cargo call per command (F186: no --no-run compile step).
 		expect(lines.filter((line) => line.startsWith("start"))).toEqual([
 			`start build target=${f.target} incremental=0`,
 			`start test target=${f.target} incremental=0`,
-			`start test target=${f.target} incremental=0`,
 		]);
 		const owners = lines.filter((line) => line.startsWith("seat="));
-		expect(owners).toHaveLength(3);
+		expect(owners).toHaveLength(2);
 		expect(new Set(owners).size).toBe(1);
 		expect(owners[0]).toMatch(
 			new RegExp(
@@ -276,52 +269,43 @@ describe("just shared-build", () => {
 		);
 	});
 
-	it("compiles under nice 19 and taskpolicy -b, runs tests under nice 19 alone, and skips taskpolicy where it is absent", async () => {
+	it("runs every cargo command under nice 19 alone, as given, never in taskpolicy (F186)", async () => {
 		const f = fixture();
-		const taskpolicy = join(f.root, "fake-taskpolicy");
+		// A taskpolicy to find, on PATH and at the retired seam: nothing may wrap
+		// cargo in it (Jordan's ruling of 2026-11-11 dropped background QoS).
+		const taskpolicy = join(f.root, "bin", "taskpolicy");
 		executable(taskpolicy, 'FAKE_TASKPOLICY="$1"; export FAKE_TASKPOLICY; shift; exec "$@"');
-		const scheduling = async (env: NodeJS.ProcessEnv) => {
-			writeFileSync(f.log, "");
-			expect(
-				(
-					await run(f, ["--", "build", "--then", "test", "-p", "x", "--", "name"], {
-						NICENESS: "1",
-						...env,
-					})
-				).code,
-			).toBe(0);
-			return log(f).filter((line) => line.startsWith("niceness="));
-		};
-		// F63: the test compiles in background QoS, and its binaries run
-		// without it; what follows `--` goes only to the run.
-		expect(await scheduling({ PIJ_SHARED_BUILD_TASKPOLICY: taskpolicy })).toEqual([
-			"niceness=19 taskpolicy=-b args=build",
-			"niceness=19 taskpolicy=-b args=test -p x --no-run",
-			"niceness=19 taskpolicy=none args=test -p x -- name",
-		]);
-		expect(await scheduling({})).toEqual([
-			"niceness=19 taskpolicy=none args=build",
-			"niceness=19 taskpolicy=none args=test -p x --no-run",
-			"niceness=19 taskpolicy=none args=test -p x -- name",
-		]);
-	});
-
-	it("runs a doc-only test in one step under nice 19 alone, never with --no-run", async () => {
-		const f = fixture();
-		const taskpolicy = join(f.root, "fake-taskpolicy");
-		executable(taskpolicy, 'FAKE_TASKPOLICY="$1"; export FAKE_TASKPOLICY; shift; exec "$@"');
-		const result = await run(f, ["--", "test", "-p", "x", "--doc", "--", "name"], {
-			NICENESS: "1",
-			PIJ_SHARED_BUILD_TASKPOLICY: taskpolicy,
-		});
-		// Nothing but the cap line (F126): no cargo refusal.
+		const result = await run(
+			f,
+			[
+				"--",
+				"build",
+				"--then",
+				"test",
+				"-p",
+				"x",
+				"--",
+				"name",
+				"--then",
+				"test",
+				"-p",
+				"x",
+				"--doc",
+				"--",
+				"name",
+			],
+			{ NICENESS: "1", PIJ_SHARED_BUILD_TASKPOLICY: taskpolicy },
+		);
+		// Nothing but the cap line (F126): no cargo refusal of `--doc --no-run`.
 		expect(result.stderr).toBe(
 			"shared-build: cargo jobs: 4 (PIJ_CARGO_JOBS), test threads: 4 (RUST_TEST_THREADS)\n",
 		);
 		expect(result.code).toBe(0);
-		// #144 F001: cargo compiles doctests during the run, so there is no
-		// compile step to put in background QoS.
+		// One step per command: a test is no longer split into a --no-run compile
+		// and a run (F63's split fell away with background QoS).
 		expect(log(f).filter((line) => line.startsWith("niceness="))).toEqual([
+			"niceness=19 taskpolicy=none args=build",
+			"niceness=19 taskpolicy=none args=test -p x -- name",
 			"niceness=19 taskpolicy=none args=test -p x --doc -- name",
 		]);
 		expect(existsSync(f.lock)).toBe(false);

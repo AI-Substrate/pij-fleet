@@ -8,9 +8,9 @@
 # atomic mkdir lock for the whole batch, checks the disk floor, rebuilds the
 # caller's own sources, and always releases.
 #
-# Builds run niced and tests run nice-only (below); a test's wall-clock
-# budgets on real child processes stretch with PIJ_TEST_TIME_SCALE (plan 209,
-# F28; AGENTS.md, resource cost item 5).
+# Every cargo command runs under `nice -n 19` only (below); a test's
+# wall-clock budgets on real child processes stretch with PIJ_TEST_TIME_SCALE
+# (plan 209, F28; AGENTS.md, resource cost item 5).
 #
 #   PIJ_SHARED_TARGET=<absolute target dir> \
 #     just shared-build [--timeout <minutes>|<seconds>s] -- <cargo args> [--then <cargo args>]...
@@ -37,25 +37,20 @@
 # explicit `-- --test-threads N` still wins, as does a RUST_TEST_THREADS the
 # caller set. The cap is printed first.
 #
-# Every cargo command runs under `nice -n 19` and, where it exists (macOS),
-# `taskpolicy -b` (background QoS: efficiency cores, throttled IO), so a build
-# can never starve the seats around it. rustc and linkers inherit both. Each
-# wrapper is skipped if absent. (Fleet cost rule, plan 208.)
+# Every cargo command runs under `nice -n 19` only, which rustc, linkers and
+# test binaries inherit (skipped if absent), and runs as given: one step each.
+# No `taskpolicy -b` (F186, Jordan's ruling of 2026-11-11): background QoS
+# confined cargo to the efficiency cores and throttled its IO, so at fleet load
+# builds starved for 20 to 35 minutes. The lock (one build at a time) and the
+# jobs cap bound what a build takes instead. This supersedes plan 208's
+# background-QoS rule and plan 209's `--no-run` compile step (F63), which only
+# existed to keep tests out of background QoS.
 #
-# A `cargo test` compiles that way (`cargo test ... --no-run`), then runs the
-# same command under `nice -n 19` alone, which finds the test binaries built
-# and runs them: background QoS slows a test's own child processes past its
-# wall-clock budgets (F63, plan 209). The run step is not compile-free: cargo
-# builds doctests as they run, so they compile there, nice-only. It refuses
-# `--doc --no-run`, so `cargo test --doc` skips the compile step and is one
-# nice-only run (#144 F001).
-#
-# Cost: nothing at rest. Builds and test runs are slower but bound the run
-# queue (F126): at most PIJ_CARGO_JOBS rustc jobs and test threads per binary. Waiting: one df, one mkdir and one sleep per poll
-# (20 s) per waiting caller. Holding: one df per cargo command, plus the nice
-# and taskpolicy launches, each of which execs into the next (one or two
-# launches per cargo command, never per poll); a `cargo test` adds one more
-# cargo and nice for its run step (a `cargo test --doc` is one step).
+# Cost: nothing at rest. A build uses the performance cores at nice 19, one at
+# a time, with at most PIJ_CARGO_JOBS rustc jobs and test threads per binary
+# (F126). Waiting: one df, one mkdir and one sleep per poll (20 s) per waiting
+# caller. Holding: one df and one nice launch per cargo command (nice execs
+# into cargo), never per poll.
 
 set -uo pipefail
 
@@ -63,8 +58,7 @@ DF="${PIJ_SHARED_BUILD_DF:-/bin/df}"         # test seam
 MKDIR="${PIJ_SHARED_BUILD_MKDIR:-/bin/mkdir}" # test seam
 POLL="${PIJ_SHARED_BUILD_POLL_SECONDS:-20}"  # test seam
 WHOAMI="${PIJ_SHARED_BUILD_WHOAMI-}"          # test seam; default: pij-rs on PATH
-NICE="${PIJ_SHARED_BUILD_NICE:-/usr/bin/nice}"                   # test seam
-TASKPOLICY="${PIJ_SHARED_BUILD_TASKPOLICY:-/usr/sbin/taskpolicy}" # test seam
+NICE="${PIJ_SHARED_BUILD_NICE:-/usr/bin/nice}" # test seam
 FLOOR_GB="${PIJ_DISK_FLOOR_GB:-25}"
 JOBS="${PIJ_CARGO_JOBS:-4}"
 
@@ -344,24 +338,17 @@ for file in "$worktree"/crates/*/src/lib.rs "$worktree"/crates/*/src/main.rs; do
 done
 [ ${#sources[@]} -eq 0 ] || touch "${sources[@]}"
 
-# Compiling runs niced and in background QoS; running tests runs niced only.
-nice_only=()
-[ -x "$NICE" ] && nice_only+=("$NICE" -n 19)
-wrap=(${nice_only[@]+"${nice_only[@]}"})
-[ -x "$TASKPOLICY" ] && wrap+=("$TASKPOLICY" -b)
+# Every cargo command runs under nice 19 only (F186).
+niced=()
+[ -x "$NICE" ] && niced+=("$NICE" -n 19)
 
-# One cargo command under a wrapper, in its own process group, drained after.
-# In the background under `wait`, so a signal is handled at once rather than
-# after cargo finishes; `set -m` gives the job its own process group.
-run_cargo() { # <wrap|nice_only> <cargo args>...
-	local mode=$1 status
-	shift
+# One cargo command, niced, in its own process group, drained after. In the
+# background under `wait`, so a signal is handled at once rather than after
+# cargo finishes; `set -m` gives the job its own process group.
+run_cargo() { # <cargo args>...
+	local status
 	set -m
-	if [ "$mode" = wrap ]; then
-		${wrap[@]+"${wrap[@]}"} cargo "$@" &
-	else
-		${nice_only[@]+"${nice_only[@]}"} cargo "$@" &
-	fi
+	${niced[@]+"${niced[@]}"} cargo "$@" &
 	child=$!
 	set +m
 	wait "$child"
@@ -372,41 +359,10 @@ run_cargo() { # <wrap|nice_only> <cargo args>...
 	return "$status"
 }
 
-# `cargo test <args> [-- <test args>]` compiles as `cargo test <args> --no-run`:
-# the build options without anything after `--`.
-build_only() {
-	local arg
-	for arg in "$@"; do
-		[ "$arg" = "--" ] && break
-		printf '%s\0' "$arg"
-	done
-	printf '%s\0' --no-run
-}
-
 export CARGO_TARGET_DIR="$target"
 export CARGO_INCREMENTAL=0
 for command in "${commands[@]}"; do
 	check_floor
 	eval "set -- $command"
-	runs_tests=0
-	if [ "${1:-}" = test ]; then
-		runs_tests=1
-		for arg in "$@"; do
-			[ "$arg" = "--" ] && break
-			[ "$arg" = "--no-run" ] && runs_tests=0
-			# Doctests compile while they run; there is no --no-run step.
-			[ "$arg" = "--doc" ] && runs_tests=2
-		done
-	fi
-	if [ "$runs_tests" = 2 ]; then
-		run_cargo nice_only "$@" || exit $?
-	elif [ "$runs_tests" = 1 ]; then
-		compile=()
-		while IFS= read -r -d '' arg; do compile+=("$arg"); done < <(build_only "$@")
-		run_cargo wrap "${compile[@]}" || exit $?
-		check_floor
-		run_cargo nice_only "$@" || exit $?
-	else
-		run_cargo wrap "$@" || exit $?
-	fi
+	run_cargo "$@" || exit $?
 done

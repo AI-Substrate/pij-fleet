@@ -2,9 +2,9 @@
 //!
 //! A test that times real child processes (`ps`, tmux, a shell) against a
 //! wall-clock budget multiplies the budget by `PIJ_TEST_TIME_SCALE` (default 1),
-//! so a loaded, niced or background-QoS machine stretches the budget instead of
-//! failing. Production constants never read it. The TS driver reads the same
-//! variable (`harness/driver/time-scale.ts`).
+//! so a loaded or niced machine stretches the budget instead of failing.
+//! Production constants never read it. The TS driver reads the same variable
+//! (`harness/driver/time-scale.ts`).
 use std::time::Duration;
 
 /// The variable that stretches every real-child test budget.

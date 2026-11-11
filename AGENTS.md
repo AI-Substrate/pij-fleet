@@ -102,7 +102,7 @@ Any plan, PR or feature that adds or changes a **loop, poll, timer, hook, status
 2. **Measure it on the live fleet, before and after**, and keep the receipts: `pij-rs --json ping | jq .data.spawns` (two readings a known number of seconds apart; per call site) and `just spawn-rate --seconds 20` (whole machine). See [`docs/how/macos-defender.md`](docs/how/macos-defender.md) § Measure launches.
 3. **Launch nothing per tick per seat.** Prefer in-process work (read the file, call the syscall), the daemon's persistent tmux control client for tmux reads, or a cache with an explicit lifetime. Launch by **absolute path** (`/bin/ps`), never a bare name, in any repeated path.
 4. **Record every new daemon launch site** with the spawn counter; `crates/testkit/tests/spawn_sites.rs` fails if you don't.
-5. **Build niced; run tests nice-only; time real children honestly (F28, F63).** Compiling on the shared machine runs under `nice -n 19 taskpolicy -b` (macOS; `nice -n 19` elsewhere); running tests runs under `nice -n 19` alone, because background QoS slows a test's own child processes past its wall-clock budgets. `just shared-build` does both for you: a `cargo test` compiles with `--no-run` in background QoS, then runs the same command nice-only. The run step is not compile-free: cargo builds doctests as they run, so they compile nice-only, and `cargo test --doc` (which refuses `--no-run`) is one nice-only step. Write a budget on a real `ps`, tmux or spawn as `pij_testkit::time::scaled(...)` (TS: `scaled()` in `harness/driver/time-scale.ts`); `PIJ_TEST_TIME_SCALE` (default 1) stretches it on a loaded machine, and production constants never read it.
+5. **Build and test nice-only, one build at a time; time real children honestly (F28, F186).** Every pij cargo build and test runs under `nice -n 19` only, one build at a time (shared-build's lock), with 4 jobs (`.cargo/config.toml`). Never `taskpolicy -b`: background QoS confines cargo to the efficiency cores and throttles its IO, so at fleet load builds starved for 20 to 35 minutes (Jordan's ruling of 2026-11-11, which supersedes plan 208's background-QoS rule and plan 209's `--no-run` split). `just shared-build` does all of this for you. Write a budget on a real `ps`, tmux or spawn as `pij_testkit::time::scaled(...)` (TS: `scaled()` in `harness/driver/time-scale.ts`); `PIJ_TEST_TIME_SCALE` (default 1) stretches it on a loaded machine, and production constants never read it.
 
 Reviewers check cost explicitly, the same as correctness: name the loop, its rate, and its per-seat scaling, or say there is none.
 
@@ -182,8 +182,7 @@ citation disputes, all of which resolved as neither party being wrong.)
   target overwrite each other mid-build. The recipe serialises builds with a
   lock, refuses under the disk floor (`PIJ_DISK_FLOOR_GB`, default 25), rebuilds
   your own sources with `CARGO_INCREMENTAL=0`, runs every cargo command under
-  `nice -n 19` and (on macOS) `taskpolicy -b` so no build starves the machine,
-  and always releases. A stale lock is reported with its clear command, never
+  `nice -n 19` only (never `taskpolicy -b`, F186), and always releases. A stale lock is reported with its clear command, never
   cleared for you (plans 198, 208). Parallelism is capped too, because `nice`
   lowers priority but does not shorten the run queue (F126). The repository's
   `.cargo/config.toml` sets `build.jobs = 4` and `RUST_TEST_THREADS = 4` for
