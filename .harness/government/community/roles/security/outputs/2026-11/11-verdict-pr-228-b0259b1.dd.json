@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c7f7-ff23-7e93-9df4-e21600f7e900",
+				"date": "2026-11-11",
+				"head": "b0259b1987d3f829e5494cefa9e366d07404544b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/228#issuecomment-6783162647",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:228",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS\n\nPR #228 at **b0259b1987d3f829e5494cefa9e366d07404544b**, one round under C33/C34. Reviewed the eight-file delta and relevant wrapper/test context against the F186 ruling.\n\n`shared-build.sh:173-186,364-367` preserves arguments through `%q` serialization and quoted `\"$@\"`; exact `--then` separates commands, with empty-command refusal. Dispatch uses a quoted nice array (`342-367`). Removing the taskpolicy seam and automatic no-run split adds no replacement arbitrary-wrapper lookup or new unquoted command construction.\n\nThe route-inventory wrapper uses fixed `/usr/bin/nice -n 19 cargo test ...` rather than interpolated command text (`justfile:254-255`). Job/thread exports, disk floor, private atomic lock, stale-lock handling, draining, `CARGO_INCREMENTAL=0` and per-command floor checks remain (`shared-build.sh:125-126,273-330,357-365`).\n\nThe scheduling test asserts nice-only execution even with the retired taskpolicy seam supplied (`harness/scripts/shared-build.test.ts:272-312`). Its `$*` logging does not separately prove byte-for-byte argv boundaries; those were source-reviewed. No new daemon or recurring-loop behavior was identified in this change.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None identified in scoped changes | - |\n\n**CI proof:** clean detached worktree HEAD and GitHub/remote heads agree; GitHub reports CLEAN and all five checks successful. Run [42929038558](https://github.com/AI-Substrate/pij-fleet/actions/runs/42929038558) checked merge `fe1705af35b856a0927849b85a81b16eb913cfcd`, whose parents are main `5f9727e984c2cb86cb09c34a5ecd758f479f01d0` and this exact head. Node 22 logs show all **19 shared-build tests passed**, with **2,289 passed, 6 skipped** overall.\n\nStatic source review and existing CI only. No local builds/tests, real wrapper execution, config/credential reads, live probes, performance measurements or product mutations.\n"
+		}
+	]
+}
