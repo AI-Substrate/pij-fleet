@@ -69,7 +69,7 @@ F191 is the important one. Today's prime-kept baton put a model in the loop of e
 
 ## 4. Rollout
 
-1. **Now, no code:** C13 lands in the skill and AGENTS.md as a docs PR (pij-fleet `docs-system` role, guan). unimatrix's D60/D60a already match it.
+1. **Now, no code:** the C12 extension and the §2b failure-mode rows land in the skill and AGENTS.md as one docs PR (pij-fleet `docs-system` role). CI is its only build, and the skill-structure check (`harness/scripts/pij-skill-check.sh`) gains a marker for each failure-mode row so it can't silently drop out. unimatrix's D60/D60a already match it.
 2. **Then F191, then F188** (F188 matters less once the slot is daemon-kept, but withdraw is still needed for keeper batons).
 3. **Then F189 and F190** together (one round adds the sample; directory reads it).
 
