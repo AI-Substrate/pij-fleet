@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c80c-7759-79d3-aa08-05c4b5a44064",
+				"date": "2026-11-11",
+				"head": "63a2ba523c2a104ff418f3f1d7baaa37a47cda11",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/229#issuecomment-6783505381",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:229",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"S229-001 HIGH: trusted non-group/world-writable user-owned install ancestry, new0700 directories, exclusive mktemp in destination, then atomic rename; cross-UID traversable/writable-path precondition explicit."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: BLOCK\n\nPR #229 at **63a2ba523c2a104ff418f3f1d7baaa37a47cda11**, round 1 under C33/C34. Reviewed the eight-file delta and relevant installer/launcher paths. PM confirmed the cross-account path-control finding blocks.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| S229-001 | 🟠 HIGH | `harness/scripts/install-pij-rs.sh` | 25-31 | Writable installation ancestors permit cross-account executable replacement or temp-path redirection | 9/10 |\n\n### S229-001: directory-entry control is not protected by file chmod\n\nThe script has no restrictive umask. It runs `mkdir -p` for `$HOME/.local/share/pij/bin`, chooses predictable `.pij-rs.$$.tmp`, copies to it using ordinary `cp`, then chmods the file to 0755 and renames it. Existing ancestry/ownership is not checked; temporary creation is not exclusive.\n\n**Required precondition:** another UID can traverse the preceding ancestors and write an installation ancestor, for example a shared-group home/path with inherited umask 0002 creating 0775 directories, or an already group/world-writable ancestor. Umask 0002 alone is insufficient if a private ancestor prevents traversal. The normal private-home/umask-022 setup described for macOS is not being reported as exposed by default; no deployed permissions were inspected.\n\nUnder that condition, the other UID can replace the installed executable or redirect its directory entry; the next PATH, bounce or login launch executes their code as the victim. The same directory control permits a planted predictable temporary path to redirect `cp`. Chmodding the temporary file does not prevent replacement of directory entries. This crosses C33's user-account boundary; it is not a malicious same-user environment claim.\n\nRequired cheap repair:\n\n- Create new installation-directory components with mode 0700, using `mkdir -m`.\n- Refuse an existing installation directory or ancestor under HOME that is group/world-writable or not owned by the user; do not silently chmod the whole home or unrelated paths.\n- Use exclusive `mktemp` creation inside the verified target directory, then preserve atomic rename and executable file modes.\n\n### Other checks and deployment qualification\n\nQuoted installer operands preserve spaces/newlines as arguments. Same-directory rename replaces the directory entry without rewriting the running executable's inode, provided the hierarchy is trustworthy. Rust bounce passes separate arguments, but its absolute-file check does not validate ownership (`crates/cli/src/bounce/mod.rs:70-80,130-153,267-293`).\n\nInstall/bounce/LaunchAgent paths use the installed copy through the PATH link (`justfile:73-75,688-697,723-732`); the inherited shim uses a separate-argv process call, not interpolated shell text (`harness/scripts/pij-cli.cjs:79-107`). The doctor detects target-resolving and broken PATH entries, not unsafe permissions (`justfile:639-662`). Existing nested shell/XML handling was not independently proven for unusual path characters.\n\n**S229-N001, deployment risk:** the new `~/.local/share/pij/bin/pij-rs` needs the documented Defender process exclusion added by the authorized admin/IT owner. Old exclusions do not automatically migrate; no exclusion or launch-cost deployment verification was performed.\n\n**CI proof:** clean detached worktree HEAD and GitHub/remote heads agree; GitHub reports CLEAN and all five checks successful. Run [42932179293](https://github.com/AI-Substrate/pij-fleet/actions/runs/42932179293) checked merge `f1828b9ead340fa58f376cd0b0a71a855f3503fb`, whose parents are main `5f9727e984c2cb86cb09c34a5ecd758f479f01d0` and this exact head. Linux Rust reports **2,433 passed, 6 skipped**, including `install_copies_the_build_outside_target_and_replaces_it_by_rename` in successful artifact `13816761435`. Node 22 reports **2,290 passed, 6 skipped**. These tests do not establish cross-UID path safety or actual macOS signed-binary replacement.\n\nSource and Linux CI only; macOS-only paths were inspected, not compiled or executed. No local build/test/install, real permission probes, user-config/credential reads or heavy command was run; no machine-build baton was requested.\n"
+		}
+	]
+}
