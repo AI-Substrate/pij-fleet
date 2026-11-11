@@ -20,11 +20,11 @@
 
 The cause is multiplication, not one bad actor: lanes × builds per PR × fresh seats × idle seats, with nothing telling a prime its share until the human couldn't work.
 
-## 2. Skill text: one new shared convention, cited from four routes
+## 2. Skill text: extend C12, cited from the routes, and make it a named failure mode
 
-Add **C13, Build economy and machine share** to `references/00-routing.md` § Shared conventions (every route already pulls conventions from there). Routes cite it and don't restate it.
+`references/00-routing.md` already has **C12, Shared machine: heavy work runs niced and capped**, but it only caps a single run (8 workers, `-j 4`, `timeout 600`, stop above load 40). It says nothing about how many runs, builds per PR or live seats. **Extend C12** (don't add a second convention) to **C12, Shared machine: build economy**, keep its per-run caps, and add the rules below. Routes cite C12 and don't restate it. Jordan, 2026-11-11: a build blow-out is a **failure mode**, so it also gets rows in the routes' Failure modes tables (§2b).
 
-**C13 rules:**
+**C12 additions:**
 1. **One heavy run at a time, machine-wide.** Any heavy run (full build, workspace test, clippy or check, a full vitest/tsc/pnpm build, a docker build) holds the machine build slot (§4, F191), at `nice -n 19` (F186). Ask once per job, return the moment it ends, and never sit queued "just in case".
 2. **One full build per PR: the gate.** The seat that merges (PM or merger) runs the full suite once, on the final head, and records it as evidence (`pij output … --evidence`). CI counts as the gate where it exists. Every other seat consumes that evidence or binary and never builds a second copy.
 3. **Coders build what they touch** (`cargo test -p <crate>`, a package's own tests). The full suite belongs to the gate.
@@ -42,7 +42,19 @@ Add **C13, Build economy and machine share** to `references/00-routing.md` § Sh
 | `community.md` | Reviewer and specialist templates read-only by default, with path triggers. The C28 boundary review gains "close idle seats between lanes". The PM section: the PM's merge gate is the one build. |
 | `pair.md` | Phase 7 review: the reviewer seat does not build; it consumes the coder's targeted proof and the gate's evidence. |
 | `delegate.md` / `peer.md` | Spawn guidance: before spawning, check the machine-share line; close what you're done with. |
-| AGENTS.md (pij repo) | The resource-cost section gains rule 6: build economy (C13), the same as the skill. |
+| AGENTS.md (pij repo) | The resource-cost section gains rule 6: build economy (C12), the same as the skill. |
+
+### 2b. Build blow-out as a named failure mode
+
+Each row goes in the existing `## Failure modes` table of its route, so a seat that hits the signal finds the move without reading C12 first.
+
+| Route | Signal | Move |
+|---|---|---|
+| `prime.md` | Load average over 40 for 5 min, the human says the machine is slow, or a machine-share notice (F189) | **Freeze first**: stop new heavy runs and lane starts in your project. Then close idle seats (memory, close, kill pane, check the process is gone), cut to one build per PR (C12), and report the before and after load. Lift the freeze only when load is under 20. |
+| `community.md` | Several reviewer or specialist seats building the same PR | Stop the extra builds: the gate builds once; the others read its evidence (C12 rule 2). |
+| `community.md` | Lanes in one workstream exceed the cap, or a lane's seats are idle after it closed | Hold new lanes; close the idle seats (C12 rules 6 and 7). |
+| `delegate.md` / `peer.md` | About to spawn while load is over 40 or your project is over its share | Don't spawn; close or reuse a seat first. |
+| `pair.md` | The reviewer is about to build the coder's branch | Don't: read the diff and the coder's targeted proof; ask the gate for a named check if in doubt. |
 
 ## 3. Daemon: signal before the human notices (encode, don't document)
 
