@@ -1523,6 +1523,16 @@
 					"seat": "pij-polite-starfish",
 					"to": "2026-11-10T09:15:27.463Z",
 					"why": "#227 F185 (kestrel), FINAL f91b3ff"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-11T00:17:39.426Z",
+					"harness": "copilot",
+					"harness_session": "6dcf7ce1-3bf1-4828-876b-e6c3aa567005",
+					"instance_key": "228",
+					"machine": "ops.osk.lan",
+					"seat": "pij-polite-starfish",
+					"why": "#228 F186 (salmon), FINAL b0259b1"
 				}
 			]
 		}
