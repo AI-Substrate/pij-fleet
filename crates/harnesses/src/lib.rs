@@ -40,6 +40,6 @@ pub use interaction::{InjectionVerdict, InteractionGate, StagedSubmission};
 pub use models::ModelCatalog;
 pub use spawn::{
     SpawnPlan, SpawnPlanInput, SpawnedChild, build_spawn_plan, observed_launch_command,
-    pane_env_args, validate_executable_override,
+    pane_env_args, usable_observer_executable, validate_executable_override,
 };
 pub use usage_limit::{ClaudeUsageLimits, TAIL_BYTES, local_clock_text};

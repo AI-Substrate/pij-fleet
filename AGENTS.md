@@ -172,9 +172,11 @@ citation disputes, all of which resolved as neither party being wrong.)
   native Copilot extension. `just unlink` removes only pij-owned links and
   pij-managed Claude hooks; real paths, foreign symlinks and foreign hooks are
   never clobbered.
-- **`just rs-install`** builds `pij-rs` (release) and links it next to the
-  `pij` shim in `$(npm prefix -g)/bin`. **`just bounce-rs`** rebuilds and
-  restarts the daemon; **`just rs-autostart`** registers a macOS LaunchAgent.
+- **`just rs-install`** builds `pij-rs` (release), installs a copy at
+  `~/.local/share/pij/bin/pij-rs` and links it next to the `pij` shim in
+  `$(npm prefix -g)/bin`; nothing on PATH points into `target/` (F187).
+  **`just bounce-rs`** rebuilds, installs and restarts the daemon;
+  **`just rs-autostart`** registers a macOS LaunchAgent.
 - **`just shared-build`**: any seat building into a cargo target another
   worktree also uses runs cargo through it, never bare:
   `PIJ_SHARED_TARGET=<abs dir> just shared-build -- <cargo args> [--then <cargo args>]`.

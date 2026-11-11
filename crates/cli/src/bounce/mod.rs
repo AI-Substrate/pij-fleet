@@ -69,11 +69,14 @@ pub fn reproducible_repo(cwd: &Path) -> Result<PathBuf> {
 /// best-effort and are returned as output lines rather than gating the bounce.
 pub async fn run(repo_root: &Path, state_dir: &Path) -> Result<BounceReport> {
     build(repo_root)?;
+    let home = std::env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .ok_or_else(|| failure("HOME is not set, so the built pij-rs has nowhere to install"))?;
+    let artifact = install(repo_root, Path::new(&home))?;
     let old = store::read_runtime(state_dir)?;
     corroborate(old.process).await?;
     let announcements = announce(state_dir, &old).await;
     signal_and_wait(old.process).await?;
-    let artifact = repo_root.join("target/release/pij-rs");
     let child_pid = launch(&artifact, state_dir, &old)?;
     wait_for_unauthenticated_401(old.addr).await?;
 
@@ -116,6 +119,38 @@ fn build(repo_root: &Path) -> Result<()> {
         output.status,
         String::from_utf8_lossy(&output.stderr).trim()
     )))
+}
+
+/// Install the build as the copy outside target/ (F187), through the same
+/// script as `just rs-install` and `just bounce-rs`, and return the copy's
+/// path. The daemon then never runs out of target/, so deleting or cleaning it
+/// can't break the daemon's next launch or the seats it spawns (they run its
+/// own executable). The copy is renamed into place: a running daemon keeps its
+/// file. PATH is not relinked here; `just rs-install` does that.
+fn install(repo_root: &Path, home: &Path) -> Result<PathBuf> {
+    let output = Command::new("/bin/sh")
+        .arg(repo_root.join("harness/scripts/install-pij-rs.sh"))
+        .arg(repo_root.join("target/release/pij-rs"))
+        .env("HOME", home)
+        .current_dir(repo_root)
+        .output()
+        .map_err(|error| failure(format!("could not start the installer: {error}")))?;
+    if !output.status.success() {
+        return Err(failure(format!(
+            "installing the built pij-rs failed ({}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    let printed = String::from_utf8_lossy(&output.stdout);
+    let copy = PathBuf::from(printed.trim());
+    if !copy.is_absolute() || !copy.is_file() {
+        return Err(failure(format!(
+            "the installer named no installed copy (it printed {:?})",
+            printed.trim()
+        )));
+    }
+    Ok(copy)
 }
 
 async fn announce(state_dir: &Path, runtime: &DaemonRuntime) -> Vec<String> {

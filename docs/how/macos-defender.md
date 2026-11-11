@@ -17,11 +17,11 @@ Exclusions usually need admin rights, or your IT department if the device is man
 
 ```sh
 mdatp exclusion folder add --path "$HOME/.pij-rs"
-mdatp exclusion process add --path "$HOME/.npm-global/bin/pij-rs"
+mdatp exclusion process add --path "$HOME/.local/share/pij/bin/pij-rs"
 mdatp exclusion list    # verify
 ```
 
-- **The binary path:** the process exclusion matches one binary path. `just rs-install` links `$(npm prefix -g)/bin/pij-rs` to `target/release/pij-rs` in the main checkout (`readlink -f "$(command -v pij-rs)"`). If your npm prefix or checkout moves, or the scan counts climb again, add the new path, including the resolved `target/release/pij-rs` path.
+- **The binary path:** the process exclusion matches one binary path. `just rs-install` installs pij-rs as a copy at `~/.local/share/pij/bin/pij-rs` and links `$(npm prefix -g)/bin/pij-rs` to it (`readlink -f "$(command -v pij-rs)"`), and the daemon runs that copy. Before F187 the link went into `target/release/pij-rs` in the main checkout, so an exclusion added then names a path the daemon no longer runs from: add the copy's path. If the scan counts climb again, check that the resolved path is the one excluded.
 - **The state directory:** the folder exclusion assumes the default `~/.pij-rs`. If you run the daemon with another `--state-dir`, exclude that directory instead.
 
 ## What pij does about launches (plans 180 and 182)
