@@ -1544,7 +1544,10 @@
 					"harness_session": "6dcf7ce1-3bf1-4828-876b-e6c3aa567005",
 					"instance_key": "229",
 					"machine": "ops.osk.lan",
+					"release_why": "verdict answered (f8bdb51); seat closing per Jordan",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-polite-starfish",
+					"to": "2026-11-11T00:57:00.499Z",
 					"why": "#229 F187 (lemur), FINAL 63a2ba5"
 				}
 			]
