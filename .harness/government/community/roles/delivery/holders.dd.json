@@ -19,7 +19,10 @@
 					"harness": "copilot",
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"machine": "ops.osk.lan",
+					"release_why": "close",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-11T00:42:52.735Z",
 					"why": "record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06)"
 				}
 			]

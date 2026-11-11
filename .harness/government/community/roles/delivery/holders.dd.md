@@ -18,4 +18,4 @@
 
 | id | seat | harness | harness_session | machine | instance_key | from | to | assigned_by | released_by | why | release_why |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | — | 2026-11-05T23:09:43.232Z | — | pij-steady-otter | — | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | — |
+| — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | — | 2026-11-05T23:09:43.232Z | 2026-11-11T00:42:52.735Z | pij-steady-otter | pij-outstanding-silkworm | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | close |
