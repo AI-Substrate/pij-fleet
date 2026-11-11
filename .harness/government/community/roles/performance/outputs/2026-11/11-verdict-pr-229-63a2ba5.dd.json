@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c80c-7796-7d32-8e6f-b89d94afc454",
+				"date": "2026-11-11",
+				"head": "63a2ba523c2a104ff418f3f1d7baaa37a47cda11",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/229#issuecomment-6783580125",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:229",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Deploy dependency: admin adds and verifies Defender process exclusion for the resolved ~/.local/share/pij/bin/pij-rs before production switches to it. Keep confirmation with deploy receipt; old target/npm alias exclusion and unchanged daemon launch counts do not prove unchanged scan/CPU cost. Mac launchd/signing/Defender runtime behavior was not tested locally; no install or heavy run without authorization/machine-build grant."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Performance PASS WITH NOTES: #229 / F187\n\nExact head **`63a2ba523c2a104ff418f3f1d7baaa37a47cda11`**; detached tree clean, GitHub CLEAN, checks green. Read-only source/CI review. No local build, test, install, bounce, doctor probe or Defender change was run, and no machine-build baton was requested.\n\n**The number of daemon starts is unchanged, but maintenance helper launches are not flat.** This is bounded, explicit-use setup work, not new per-tick activity.\n\n| Surface | Cost and launch behavior |\n|---|---|\n| `just rs-install` | One release build as before, then a single installer invocation. On the normal successful shell path, the installer runs `mkdir`, `cp`, `chmod`, `mv`, plus a second `mkdir` and `ln` when relinking PATH. These replace the old two-command mkdir/link setup; the copy introduces fixed one-shot helper work. |\n| `just bounce-rs` | Adds that installer/relink work **before** stopping the old daemon; still one daemon launch and the existing verification. |\n| Native `pij-rs daemon bounce` | Adds one `/bin/sh` installer plus its mkdir/cp/chmod/mv, without PATH relinking; still one `Command::new(installed_copy).spawn()`. Existing stop/health waits are unchanged. |\n| Autostart / LaunchAgent | No new launch loop or process sequence. The existing Apple-signed `/bin/sh -c 'exec ... daemon'`, RunAtLoad and absent KeepAlive remain; the npm-bin link reaches the stable copy **after installation relinks it**. |\n| CJS shim | Its existing executable PATH resolution and single-child native forwarding remain. The refreshed PATH link changes the image location, not the forwarding launch count. |\n| New doctor path check | Explicit doctor use only: walks absolute PATH entries and candidate names, with `realpath` per first selected name, an additional canonicalization on the target-error rendering path, and `readlink` for broken links. It is not a daemon tick or zero-cost in-process check. |\n\nInstaller/helper execs occur outside the daemon, so daemon ping spawn counters alone do not account for them. There is no new scheduled loop, timer, per-seat process or daemon launch site. Existing bounce polling is unchanged.\n\n**I/O and residency:** for a binary of B bytes, this adds a stable B-byte logical copy outside target/ and temporary staging while replacing it; actual copy I/O depends on the filesystem. The old inode can retain disk space while an existing daemon/CLI process still holds it. Do not price this as zero extra disk or claim a measured binary size. Staging and final file share a directory, so rename replaces the pathname rather than rewriting the running file in place. Both bounce paths install before killing the old daemon, keeping copy latency outside the stop/start gap. Copy failure leaves the prior installed file intact.\n\n**Deploy dependency, P229-N001:** the administrator must add the new **resolved** `~/.local/share/pij/bin/pij-rs` process path to Defender exclusions and verify it before switching production to that image. An exclusion for the old target path or merely an older alias is not confirmation. The state-directory exclusion is separate and unchanged. Until the new exclusion is confirmed, unchanged daemon launch counts do **not** establish unchanged Defender scan/CPU cost. No exclusion status or macOS post-switch behavior was measured here.\n\n**Adjacent correctness handoff, P229-N002:** `_pij-bins-path-check` marks a name seen for an existing/link entry, whereas `resolvePijRs` requires a regular executable (`isFile` plus `X_OK`). An earlier non-executable clean file can therefore hide a later executable target link from this diagnostic. This source-only observation was sent to pm-001 for the correctness owner to grade; the performance pass does not clear another role's finding. No local reproduction was run.\n\n**CI proof:** [run 42932179293](https://github.com/AI-Substrate/pij-fleet/actions/runs/42932179293), successful at the requested head. Rust job [130233388499](https://github.com/AI-Substrate/pij-fleet/actions/runs/42932179293/job/130233388499) tests merge **`f1828b9ead340fa58f376cd0b0a71a855f3503fb`**, this head into `5f9727e984c2cb86cb09c34a5ecd758f479f01d0`. Its own upload log pins JUnit artifact **13816761435**. XML contains **2,433 executed cases, zero failures/errors**; nextest reports six skips separately. Executed tests include the native install/hard-link inode preservation case, rs-install surviving target deletion, bounce selecting its fresh copy rather than a stale PATH binary, and doctor target/broken-link/clean-copy cases. Autostart plist-generation cases also run. Node 22/24 and Rust lint are green.\n\nThese are Linux tests. The macOS LaunchAgent path was read by eye; actual launchd signing and Defender integration remain deployment proof, not a Linux-CI claim. Code may pass performance review with the exclusion confirmation explicitly owed; no local heavy validation is required.\n"
+		}
+	]
+}
