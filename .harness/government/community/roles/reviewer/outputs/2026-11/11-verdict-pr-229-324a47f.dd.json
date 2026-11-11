@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c819-a1dc-7281-8b1c-f955b5ce3668",
+				"date": "2026-11-11",
+				"head": "324a47fe0d086c442a7607f0aecd48323acb12ad",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:229",
+				"writer": "pij-polite-starfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Deploy prerequisite, not a merge block: Jordan/admin confirms the Defender exclusion for the installed copy and retains the confirmation with the deploy receipt."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#229 correctness review, round 2: PASS WITH NOTES\n\nExact head: 324a47fe0d086c442a7607f0aecd48323acb12ad.\nScope: 63a2ba523c2a104ff418f3f1d7baaa37a47cda11..324a47fe0d086c442a7607f0aecd48323acb12ad, plus closure of the round-1 finding. This is the final round under C34.\n\nP229-F001 is closed. An identical artifact no longer replaces the installed inode. For a changed/replaced image, the daemon now passes current_exe through usable_observer_executable before constructing the child observer command. An existing literal pathname wins; otherwise the helper removes the terminal Linux \" (deleted)\" suffix only when the resulting installed path names a file. It therefore selects the replacement copy for the failure sequence identified in round 1 without rewriting valid literal filenames.\n\nThe new live-process regression proves the missing lifetime boundary: a copied executable starts, another inode is renamed over its installed path, and the original process obtains its current_exe and successfully execs the repaired observer path. On Linux the test additionally requires that the raw path contains the deleted suffix and cannot be executed. This is stronger than the original hard-link/content fixture and covers the actual blocker. The installer fixture separately asserts that identical reinstalls preserve the inode and changed installs preserve the old hard link while replacing the installed inode.\n\nThe coordinated delta remains consistent: installer-created directories are 0700, ownership and group/world-write checks run on each directory under HOME, and mktemp exclusively creates the same-directory staging file before copy/chmod/rename. Existing directory validation occurs before comparing or replacing the executable. The doctor now selects the first executable regular file, following links and skipping non-executable entries, matching the shim. Broken links are reported only if no executable of that name wins. Its added regression covers both the earlier non-executable shadow and a broken link ahead of a working copy.\n\nProof: clean detached tree at the exact head; just pr-freeze 229 returned FINAL with remote/GitHub head agreement, CLEAN and all latest checks passed. CI run 42934405272 is successful at this head: 2,435 Rust tests passed, six skipped. Successful-job JUnit artifact 13817922147 individually records all six F187 cases executed and passed: install copy/rename/unchanged-inode, unsafe-directory refusal, live running-image reinstall/observer exec, PATH-copy survival, fresh-copy bounce and doctor PATH selection. Both Node jobs and Rust lint also passed.\n\nNo correctness changes owed and no new C34 follow-up. No local build, test, install, bounce, credential read or Defender modification was performed, under the one-build-per-PR ruling. Linux CI is the runtime proof; macOS launchd/signing/Defender production behavior is not independently exercised by this reviewer.\n\nDeploy note, not a merge block: before production switches paths, Jordan/admin must confirm the Defender exclusion for the installed copy and retain that confirmation with the deploy receipt. The PR documents this prerequisite and the remaining one-time PATH relink/production-bounce steps.\n"
+		}
+	]
+}
