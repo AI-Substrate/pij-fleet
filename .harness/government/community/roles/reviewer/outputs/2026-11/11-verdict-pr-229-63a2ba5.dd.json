@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1c80c-771e-7b21-983e-ca71fa644a64",
+				"date": "2026-11-11",
+				"head": "63a2ba523c2a104ff418f3f1d7baaa37a47cda11",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:229",
+				"writer": "pij-polite-starfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"P229-F001: preserve a usable child-observer executable path for a running Linux daemon across atomic reinstall; add the live-process/reinstall/later-exec regression."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#229 correctness review, round 1: BLOCK\n\nExact head: 63a2ba523c2a104ff418f3f1d7baaa37a47cda11.\n\n## F001 / P229-F001: replacing the installed copy breaks later child spawns from a still-running Linux daemon\n\nThe installer unconditionally replaces the installed executable by rename (harness/scripts/install-pij-rs.sh:31), including when rs-install's cargo build was already up to date. This preserves the running daemon's old inode, but it does not preserve a usable filesystem pathname for that inode.\n\nThe daemon obtains std::env::current_exe() anew for each spawn (crates/daemon/src/http/mod.rs:1547-1562), and observed_launch_command passes that string unchanged as the child-observer executable (crates/harnesses/src/spawn.rs:256-290).\n\nOn Linux, replacing the executing inode unlinks its old pathname. /proc/self/exe then reports the installed path with \" (deleted)\" appended. current_exe's result is consequently not the new copy's callable path. A subsequent spawn tries to execute \".../bin/pij-rs (deleted)\", which does not exist, rather than the replacement copy. The daemon remains healthy, but new seats cannot start.\n\nNormal sequence: run the installed daemon; run just rs-install again, even with no source changes or rebuild needed; leave that daemon running; request a child spawn. Before this PR, an up-to-date rs-install merely repointed the target link and did not retire the running executable's inode. The new unconditional copy/rename creates this failure even without a new build.\n\nFix the launch-path lifetime as part of this install change: future child execs must resolve a usable installed executable path, not the old running image's unlinked pathname. Keep the atomic replacement itself. Add a focused Linux regression exercising a live installed process across reinstall and its later wrapper-path/spawn operation. The existing hard-link test proves that old bytes survive, and the CLI-survives-target-deletion test proves a fresh PATH invocation; neither proves the old daemon can subsequently exec its child observer.\n\nThis is a normal-use correctness bug, not per-seat hardening or an additional review round. The Linux pathname behavior is documented independently at https://man7.org/linux/man-pages/man5/proc_pid_exe.5.html; Rust documents platform-dependent executable-path lifetime at https://doc.rust-lang.org/std/env/fn.current_exe.html. This finding is a source/ABI trace, not a reviewer-run live counterexample.\n\n## Other checks and evidence\n\nThe temp copy and final rename are on the same filesystem; the installer does not overwrite the running binary in place. Artifact and destination arguments are quoted, the file is chmod 755, and failure before rename leaves the previous copy. Installation precedes stopping the daemon. The new just rs-install/bounce paths, Rust bounce launch, PATH shim/hook lookup and LaunchAgent indirection point to the installed copy after the documented one-time PATH relink. Rust bounce explicitly does not relink PATH, as disclosed.\n\nThe doctor's ordinary target-link, copied-file and broken-link cases match its source and CI fixtures. Reviewed the shell LaunchAgent and macOS launch implications by source; no new macOS-specific Rust branch was introduced and no macOS runtime proof is claimed.\n\njust pr-freeze 229 returned FINAL at this head: clean detached tree, remote/GitHub head agreement, CLEAN and all latest checks passed. CI run 42932179293 is successful at the exact head: 2,433 Rust tests passed, six skipped. Successful-job JUnit artifact 13816761435 records all four new install/copy/doctor tests and both LaunchAgent idle-nudge controls passing. Those tests do not exercise F001's running-process executable path.\n\nNo local build, test, install, bounce, credential read or Defender change was run, per the machine-build baton ruling. Independent security/performance grading remains with those roles. Defender's exclusion for the new copy path remains an explicit deploy prerequisite; this review does not claim that administrative step is complete.\n"
+		}
+	]
+}
