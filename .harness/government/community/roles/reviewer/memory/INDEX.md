@@ -83,4 +83,5 @@
 - [2026-11-10 Fence context before executable markers](2026-11-10-fence-context-before-executable-markers.dd.md): Before reviewing executable end-of-turn blocks or transcript renderers (review, turn-end, parser, render)
 - [2026-11-10 Related-row queries need a consumer sufficiency proof](2026-11-10-related-row-queries-need-a-consumer.dd.md): When narrowing registration snapshots, checking carried ownership evidence, or changing RelatedSeats (review, registration, related-rows, proof)
 - [2026-11-10 Restart recovery includes credential rotation](2026-11-10-restart-recovery-includes-credential.dd.md): Before reviewing daemon-bounce retries or a long-lived authenticated client (review, retry, auth, proof)
+- [2026-11-11 F186 replaces background QoS with nice-only builds](2026-11-11-f186-replaces-background-qos-with-nice.dd.md): Before reviewing build scheduling or relying on plan 208 or F63 history (review, build, scheduling, f186)
 <!-- /pij:generated -->
