@@ -97,11 +97,8 @@ fn build_fake(root: &Path, word: &str) {
     std::fs::set_permissions(&artifact, permissions).expect("make the build executable");
 }
 
-/// F187: the daemon is launched from a copy outside target/, installed by the
-/// repository's own script, so deleting target/ can't break its next launch.
-#[test]
-fn install_copies_the_build_outside_target_and_replaces_it_by_rename() {
-    let fixture = RepoFixture::new();
+/// The fixture with the repository's own installer in it, and a home.
+fn with_installer(fixture: &RepoFixture) -> PathBuf {
     let scripts = fixture.root.join("harness/scripts");
     std::fs::create_dir_all(&scripts).expect("scripts dir");
     std::fs::copy(
@@ -110,16 +107,56 @@ fn install_copies_the_build_outside_target_and_replaces_it_by_rename() {
     )
     .expect("the installer");
     let home = fixture.root.join("home");
+    std::fs::create_dir_all(&home).expect("home");
+    home
+}
+
+fn mode(path: &Path) -> u32 {
+    std::os::unix::fs::PermissionsExt::mode(
+        &std::fs::metadata(path).expect("metadata").permissions(),
+    ) & 0o777
+}
+
+fn inode(path: &Path) -> u64 {
+    std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(path).expect("metadata"))
+}
+
+/// F187: the daemon is launched from a copy outside target/, installed by the
+/// repository's own script, so deleting target/ can't break its next launch.
+/// An unchanged build leaves the copy alone, and a changed one replaces it by
+/// rename (#229 review, P229-F001); the directories it makes are private
+/// (S229-001).
+#[test]
+fn install_copies_the_build_outside_target_and_replaces_it_by_rename() {
+    let fixture = RepoFixture::new();
+    let home = with_installer(&fixture);
 
     build_fake(&fixture.root, "one");
     let copy = install(&fixture.root, &home).expect("installed");
     assert_eq!(copy, home.join(".local/share/pij/bin/pij-rs"));
+    for dir in [
+        ".local",
+        ".local/share",
+        ".local/share/pij",
+        ".local/share/pij/bin",
+    ] {
+        assert_eq!(mode(&home.join(dir)), 0o700, "{dir} is private");
+    }
     // A daemon running the first copy holds its file.
     let running = fixture.root.join("running");
     std::fs::hard_link(&copy, &running).expect("hold the running file");
 
+    build_fake(&fixture.root, "one");
+    install(&fixture.root, &home).expect("reinstalled unchanged");
+    assert_eq!(
+        inode(&copy),
+        inode(&running),
+        "an unchanged build leaves the running file in place"
+    );
+
     build_fake(&fixture.root, "two");
     assert_eq!(install(&fixture.root, &home).expect("reinstalled"), copy);
+    assert_ne!(inode(&copy), inode(&running), "a new build is a new file");
     assert_eq!(
         std::fs::read_to_string(&running).expect("the running file"),
         "#!/bin/sh\necho one\n",
@@ -137,6 +174,32 @@ fn install_copies_the_build_outside_target_and_replaces_it_by_rename() {
     let error = install(&fixture.root, &home).expect_err("no build to install");
     assert!(error.to_string().contains("no built pij-rs"), "{error}");
     assert!(copy.is_file(), "a failed install leaves the copy alone");
+}
+
+/// #229 review, S229-001: the installer refuses an install directory, existing
+/// or on the way, that someone else can write to, and installs nothing.
+#[test]
+fn install_refuses_a_directory_others_can_write_to() {
+    for (dir, writable) in [(".local/share", 0o775), (".local/share/pij/bin", 0o777)] {
+        let fixture = RepoFixture::new();
+        let home = with_installer(&fixture);
+        build_fake(&fixture.root, "one");
+        let open = home.join(dir);
+        std::fs::create_dir_all(&open).expect("the open directory");
+        let mut permissions = std::fs::metadata(&open).expect("dir").permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, writable);
+        std::fs::set_permissions(&open, permissions).expect("open it up");
+
+        let error = install(&fixture.root, &home).expect_err("refused");
+        assert!(
+            error.to_string().contains("refusing") && error.to_string().contains(dir),
+            "{dir}: {error}"
+        );
+        assert!(
+            !home.join(".local/share/pij/bin/pij-rs").exists(),
+            "{dir}: nothing installed"
+        );
+    }
 }
 
 async fn server(status: StatusCode) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {

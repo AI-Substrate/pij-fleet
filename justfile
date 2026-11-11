@@ -634,29 +634,37 @@ _pij-bin-shape-check global_npm_root pij_bin:
       echo "pij bin: $actual"
 
 # F187: every pij binary on PATH must survive a deleted or cleaned cargo target/.
-# Flags the first `pij` or `pij-*` of each name on PATH (the one that runs) when it
-# resolves into a target/ directory or is a broken link, with its fix. Read-only.
+# What runs is the first `pij` or `pij-*` of each name on an absolute PATH entry that
+# is an executable file, links followed: the rule the pij shim uses for pij-rs
+# (harness/scripts/pij-cli.cjs, resolvePijRs). Flags one that resolves into a target/,
+# and a broken link of a name nothing on PATH runs, with the fix. Read-only.
 _pij-bins-path-check:
     #!/bin/sh
-    bad=0 seen=:
+    fix() { case $1 in pij-rs) echo "run: just rs-install" ;; *) echo "remove it, or point it at a copy outside target/" ;; esac; }
+    bad=0 runs=: broken=
     IFS=:
     for dir in $PATH; do
       case $dir in /*) ;; *) continue ;; esac
       for f in "$dir"/pij "$dir"/pij-*; do
-        [ -L "$f" ] || [ -e "$f" ] || continue
         name=${f##*/}
-        case $seen in *:"$name":*) continue ;; esac
-        seen="$seen$name:"
-        case $name in pij-rs) fix="run: just rs-install" ;; *) fix="remove it, or point it at a copy outside target/" ;; esac
-        if [ ! -e "$f" ]; then
-          echo "❌ $f is a broken link (to $(readlink "$f")): $fix"
-          bad=1
-          continue
+        case $runs in *:"$name":*) continue ;; esac
+        if [ -f "$f" ] && [ -x "$f" ]; then
+          runs="$runs$name:"
+          real=$(realpath "$f")
+          case $real in
+            */target/*) echo "❌ $f resolves into a cargo target/ ($real), so deleting or cleaning it takes $name down: $(fix "$name")"; bad=1 ;;
+          esac
+        elif [ -L "$f" ] && [ ! -e "$f" ]; then
+          broken="$broken$f:"
         fi
-        case $(realpath "$f") in
-          */target/*) echo "❌ $f resolves into a cargo target/ ($(realpath "$f")), so deleting or cleaning it takes $name down: $fix"; bad=1 ;;
-        esac
       done
+    done
+    set -f
+    for f in $broken; do
+      name=${f##*/}
+      case $runs in *:"$name":*) continue ;; esac
+      echo "❌ $f is a broken link (to $(readlink "$f")) and no other $name on PATH runs: $(fix "$name")"
+      bad=1
     done
     [ "$bad" -eq 0 ] && echo "pij bins:   none on PATH resolve into a cargo target/"
     exit "$bad"

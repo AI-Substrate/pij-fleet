@@ -445,8 +445,9 @@ fn path_check(scratch: &Path, dirs: &[PathBuf]) -> (bool, String) {
     )
 }
 
-/// F187: doctor flags a pij binary on PATH that resolves into a target/, or
-/// whose link is broken, with its fix; the installed copy is clean.
+/// F187: doctor flags the pij binary on PATH that runs when it resolves into a
+/// target/, or a broken link when nothing of that name runs, with its fix; the
+/// installed copy is clean.
 #[test]
 fn doctor_flags_a_pij_binary_that_resolves_into_target() {
     let scratch = std::env::temp_dir().join(format!("pij-path-check-{}", std::process::id()));
@@ -487,7 +488,19 @@ fn doctor_flags_a_pij_binary_that_resolves_into_target() {
     let (ok, out) = path_check(&scratch, std::slice::from_ref(&copy));
     assert!(ok, "the installed copy is clean: {out}");
     // Only the first of each name on PATH runs, so only it is judged.
-    let (ok, out) = path_check(&scratch, &[copy, into_target]);
+    let (ok, out) = path_check(&scratch, &[copy.clone(), into_target.clone()]);
     assert!(ok, "a shadowed link is not what runs: {out}");
+    let (ok, out) = path_check(&scratch, &[broken, copy]);
+    assert!(ok, "a broken link before one that runs: {out}");
+    // What runs is the first executable file, as the shim resolves pij-rs
+    // (#229 review): a file that isn't executable hides nothing.
+    let unrunnable = scratch.join("unrunnable");
+    std::fs::create_dir_all(&unrunnable).expect("PATH dir");
+    std::fs::write(unrunnable.join("pij-rs"), "not a program").expect("a plain file");
+    let (ok, out) = path_check(&scratch, &[unrunnable, into_target]);
+    assert!(
+        !ok && out.contains("resolves into a cargo target/"),
+        "the link into target/ is what runs: {out}"
+    );
     let _ = std::fs::remove_dir_all(&scratch);
 }

@@ -41,7 +41,9 @@ just bounce-rs        # start the daemon
    name and renamed into place) and link `pij-rs` in `$(npm prefix -g)/bin`,
    next to the `pij` shim, to that copy. Nothing on PATH points into `target/`,
    so deleting or cleaning it never takes the CLI down (F187); `just doctor`
-   flags any pij binary on PATH that does. `just bounce-rs` and
+   flags any pij binary on PATH that does. An unchanged build leaves the copy
+   as it is. The directories it creates are private (0700), and it refuses one
+   that someone else can write to. `just bounce-rs` and
    `pij-rs daemon bounce` install the same way and launch the copy.
 3. **`just omp-install`** — install OMP from the governed registry when absent,
    then `just link` (refuses linked worktrees; links only `pij` into

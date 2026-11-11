@@ -61,7 +61,9 @@ use pij_core::model::{
 use pij_core::names::memorable_pij_id_candidates;
 use pij_core::ports::Registry;
 use pij_core::wire;
-use pij_harnesses::{SpawnPlanInput, build_spawn_plan, observed_launch_command};
+use pij_harnesses::{
+    SpawnPlanInput, build_spawn_plan, observed_launch_command, usable_observer_executable,
+};
 use serde::{Deserialize, Serialize};
 use tokio_stream::{Stream, StreamExt};
 
@@ -1548,7 +1550,7 @@ async fn launch_seat_locked(
         .ok()
         .and_then(|path| path.into_os_string().into_string().ok())
     {
-        Some(path) => path,
+        Some(path) => usable_observer_executable(&path),
         None => {
             return internal(
                 command_name,

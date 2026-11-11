@@ -248,6 +248,26 @@ pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
     })
 }
 
+/// The child observer's executable, from the daemon's `current_exe()` (#229
+/// review, P229-F001).
+///
+/// On Linux, a running program whose file has since been replaced reads back
+/// as `<path> (deleted)`, and that path can't be executed. The installer
+/// (`harness/scripts/install-pij-rs.sh`) renames the new copy into the same
+/// path, so without the suffix it names the current install: that is used when
+/// it is a file. A path that exists as given, or anything else, is returned
+/// unchanged. Reads file metadata only; launches nothing.
+#[must_use]
+pub fn usable_observer_executable(current: &str) -> String {
+    if Path::new(current).is_file() {
+        return current.to_string();
+    }
+    match current.strip_suffix(" (deleted)") {
+        Some(installed) if Path::new(installed).is_file() => installed.to_string(),
+        _ => current.to_string(),
+    }
+}
+
 /// Wrap one exact harness argv with the shipped `pij-rs` child observer.
 ///
 /// The harness still inherits tmux's PTY directly. The wrapper only records the
@@ -773,5 +793,98 @@ mod tests {
             super::SpawnedChild::path(std::path::Path::new("/t/pij-rs-spawn/s-1.status")),
             std::path::PathBuf::from("/t/pij-rs-spawn/s-1.child")
         );
+    }
+
+    /// #229 review, P229-F001: a running pij-rs whose installed copy is
+    /// replaced (the installer renames a new one into its path) can still
+    /// launch its child observer. On Linux its `current_exe()` then reads
+    /// `<path> (deleted)`, which can't be executed; the usable path can.
+    #[test]
+    fn a_running_install_still_execs_its_observer_after_a_reinstall() {
+        use std::path::Path;
+        use std::process::{Command, Stdio};
+        const CHILD: &str = "PIJ_OBSERVER_REINSTALL_CHILD";
+        const NAME: &str =
+            "spawn::tests::a_running_install_still_execs_its_observer_after_a_reinstall";
+        if let Some(dir) = std::env::var_os(CHILD) {
+            let signal = Path::new(&dir).join("reinstalled");
+            for _ in 0..400 {
+                if signal.exists() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            assert!(signal.exists(), "the parent reinstalled");
+            let current = std::env::current_exe()
+                .expect("current exe")
+                .into_os_string()
+                .into_string()
+                .expect("utf-8");
+            let usable = super::usable_observer_executable(&current);
+            let ran = Command::new(&usable)
+                .arg("--list")
+                .output()
+                .is_ok_and(|output| output.status.success());
+            std::fs::write(
+                Path::new(&dir).join("report"),
+                format!("{current}\n{usable}\n{ran}\n"),
+            )
+            .expect("report");
+            return;
+        }
+        let dir =
+            std::env::temp_dir().join(format!("pij-observer-reinstall-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let installed = dir.join("pij-rs");
+        let test_binary = std::env::current_exe().expect("test binary");
+        // Copied by `cp`, never through a write handle in this process, which
+        // a concurrent fork could carry into the exec below (ETXTBSY).
+        let copy = |to: &Path| {
+            assert!(
+                Command::new("cp")
+                    .arg(&test_binary)
+                    .arg(to)
+                    .status()
+                    .expect("cp")
+                    .success()
+            );
+        };
+        copy(&installed);
+        let mut running = Command::new(&installed)
+            .args([NAME, "--exact"])
+            .env(CHILD, &dir)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("run the installed copy");
+        let fresh = dir.join(".pij-rs.new");
+        copy(&fresh);
+        std::fs::rename(&fresh, &installed).expect("rename the new copy into place");
+        std::fs::write(dir.join("reinstalled"), "").expect("signal");
+        assert!(running.wait().expect("the running copy exits").success());
+
+        let report =
+            std::fs::read_to_string(dir.join("report")).expect("the running copy reported");
+        let lines = report.lines().collect::<Vec<_>>();
+        let [current, usable, ran] = lines[..] else {
+            panic!("{report}");
+        };
+        if cfg!(target_os = "linux") {
+            assert!(
+                current.ends_with(" (deleted)"),
+                "the precondition: {current}"
+            );
+            assert!(
+                Command::new(current).arg("--list").output().is_err(),
+                "the raw path can't be executed: {current}"
+            );
+        }
+        assert_eq!(
+            Path::new(usable).canonicalize().expect("usable path"),
+            installed.canonicalize().expect("installed path")
+        );
+        assert_eq!(ran, "true", "the observer path executes: {report}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
