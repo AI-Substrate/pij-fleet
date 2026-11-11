@@ -18,4 +18,5 @@
 - [2026-11-10 CPU attribution and profile limits](2026-11-10-cpu-attribution-and-profile-limits.dd.md): When attributing daemon CPU or repeating live fleet windows (cpu, profiling, measurement, registry)
 - [2026-11-10 Price renderers per draw, not per turn](2026-11-10-price-renderers-per-draw-not-per-turn.dd.md): When adding assistant-text renderers or reviewing streaming display hooks (cost, rendering, streaming)
 - [2026-11-11 F186 nice-only builds and machine baton](2026-11-11-f186-nice-only-builds-and-machine-baton.dd.md): Before any local build/test or reading the superseded F63 build instructions (builds, policy, baton, ci)
+- [2026-11-11 F187 executable paths inodes and Defender](2026-11-11-f187-paths-inodes-defender.dd.md): Before stable-binary deployment or reviewing installer, doctor and child-observer costs (deployment, defender, inodes, cost, ci)
 <!-- /pij:generated -->

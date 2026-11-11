@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-11",
+				"hook": "Before stable-binary deployment or reviewing installer, doctor and child-observer costs",
+				"tags": [
+					"deployment",
+					"defender",
+					"inodes",
+					"cost",
+					"ci"
+				],
+				"title": "F187 executable paths inodes and Defender"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# F187: executable paths, inode lifetime and Defender\n\nThe final performance review of #229 is **pass-with-notes** at `324a47fe0d086c442a7607f0aecd48323acb12ad`, output **`a6b61f950e4ae41570545f9e4eb1d81560a2abee`**. This records reviewed source/CI, not a claim that the new install or exclusions are already deployed.\n\n## New lessons and current guardrails\n\n- **An executable path is part of the resource contract.** F187 installs a stable regular copy at `~/.local/share/pij/bin/pij-rs`, outside cargo target/, with the PATH entry pointing to it. Moving the daemon's image can re-enable Defender inspection even with exactly the same launch topology. **P229-N001 remains owed to the administrator/prime:** add and verify the resolved copy's process exclusion before production switches. An old target-path/npm-alias exclusion and flat daemon counters do not prove unchanged scan/CPU cost. No exclusion confirmation or post-F187 macOS runtime reading was observed by this seat.\n- **Do not replace an unchanged executable inode.** The final installer compares the built artifact to the current copy and leaves equal bytes/inode alone. A changed build is staged with exclusive mktemp in the same directory and renamed. A process holding the old file keeps its inode; space can remain allocated until holders exit.\n- **Linux exposes replaced executables as `(deleted)`.** A still-running daemon can get that suffix from `current_exe()`, which is not an executable pathname. `usable_observer_executable` first accepts an existing current path, otherwise strips that exact suffix only when the installed path exists as a file. It is called for a requested child observer: one metadata check normally, at most two on fallback, no process launch and no periodic check.\n- **Price maintenance separately from steady state.** Stable installation adds explicit shell/UID/directory probes, cmp and conditional mktemp/copy/chmod/rename work. There are four fixed directory checks, each find at maxdepth zero, not a recursive scan. Comparison can read O(binary size); equality avoids rewriting but does not mean zero work. Doctor is also explicit-use PATH resolution, not daemon tick work. One unchanged daemon-start count is not an unchanged total helper count, and daemon ping counters omit CLI-side installer helpers.\n- **Match the real executable selector in diagnostics.** P229-N002 is closed: doctor now picks the first regular executable file like the shim. A non-executable earlier entry cannot mask a later executable target link; a broken link before a working copy is not falsely selected. The regression covers those orderings.\n\n## Proof and handoff\n\nCI run **42934405272**, successful Rust job **130240790726**, tested merge **`f6fe848c7ec07044a438301417c5116de0c74d8e`** of the final head into `73058adafe368f15ab863e445bb3802d5cef52a9`. The successful uploader pins JUnit artifact **13817922147**: **2,435 executed tests, zero failures/errors**, with six nextest skips separately.\n\nAll six F187 regressions ran: unchanged/changed install inode behavior, unsafe-directory refusal, real Linux running-install observer execution after replacement, target-deletion survival, fresh-copy bounce, and executable-aware doctor checking. The Linux deleted-executable test proves both that the raw old path fails and that the usable installed path executes; it is not merely a string fixture.\n\nLinux CI does not prove macOS launchd signing or Defender integration. The LaunchAgent remains the Apple-signed shell exec path, RunAtLoad only, no KeepAlive loop; installation must refresh its npm-bin link. Security/correctness have their own final verdicts; this performance pass does not clear another role's block.\n\n**Remaining deployment receipt belongs with the administrator/prime**, not an unattended performance action: confirm P229-N001 before switching, and retain any authorized post-switch runtime/path evidence. `pr229-defender-deploy-receipt` is the pending tracker. The review itself is complete. No local build/test/install/bounce/doctor/Defender probe was run; no machine-build baton is held and no capture helper is running. F186 nice-only and the machine-wide heavy-run grant rule remain in memory **`b837d07`**.\n\nPrior at-rest CPU/profile receipts and their sampling limits are in memory **`4502a7f`**. Do not silently use the earlier 9.82% F185 reading as an observed post-F187 cost or assume that a path migration preserved the Defender configuration.\n"
+		}
+	]
+}
