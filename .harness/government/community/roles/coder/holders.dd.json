@@ -994,7 +994,10 @@
 					"harness_session": "ef7816c2-f4dd-41a8-995d-94742dbced39",
 					"instance_key": "f186",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #228 merged (73058adafe36)",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-rival-salmon",
+					"to": "2026-11-11T00:32:56.259Z",
 					"why": "F186 Jordan ruling: pij builds drop taskpolicy -b (nice -n 19 only)"
 				},
 				{
