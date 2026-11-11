@@ -56,7 +56,10 @@
 					"harness": "copilot",
 					"harness_session": "9c0e641d-2dde-450e-9fc8-aa4cd3cbc1bb",
 					"machine": "ops.osk.lan",
+					"release_why": "Jordan closed idle Copilot seats; memory 4efd07c; role stays cold",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-thorough-ocelot",
+					"to": "2026-11-11T01:06:11.419Z",
 					"why": "fresh performance seat after the 07 Nov reboot"
 				}
 			]
