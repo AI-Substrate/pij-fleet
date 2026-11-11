@@ -85,4 +85,5 @@
 - [2026-11-10 Restart recovery includes credential rotation](2026-11-10-restart-recovery-includes-credential.dd.md): Before reviewing daemon-bounce retries or a long-lived authenticated client (review, retry, auth, proof)
 - [2026-11-11 Atomic executable replacement preserves code but not current\_exe path lifetime](2026-11-11-atomic-executable-replacement-preserves.dd.md): When installing over a running daemon binary or deriving future child execs from current\_exe (review, install, linux, executable-lifetime)
 - [2026-11-11 F186 replaces background QoS with nice-only builds](2026-11-11-f186-replaces-background-qos-with-nice.dd.md): Before reviewing build scheduling or relying on plan 208 or F63 history (review, build, scheduling, f186)
+- [2026-11-11 PR 229 executable lifetime repair verified at 324a47f](2026-11-11-pr-229-executable-lifetime-repair.dd.md): When resuming PR 229 or reading the earlier deleted-current\_exe blocker note (review, install, linux, repair)
 <!-- /pij:generated -->
