@@ -68,7 +68,10 @@
 					"harness": "copilot",
 					"harness_session": "6130e575-5ad1-4cf8-aad9-c4d34e5357c4",
 					"machine": "ops.osk.lan",
+					"release_why": "Jordan closed idle Copilot seats; memory 1476592; role stays cold",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-annual-squirrel",
+					"to": "2026-11-11T01:05:34.112Z",
 					"why": "second security seat while herring's queue drains (prime 22:22)"
 				}
 			]
