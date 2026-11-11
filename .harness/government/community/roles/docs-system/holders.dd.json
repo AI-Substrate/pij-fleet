@@ -42,7 +42,10 @@
 					"harness": "copilot",
 					"harness_session": "b6ef39e5-e920-4bd3-a1b9-ec37b766e537",
 					"machine": "ops.osk.lan",
+					"release_why": "Jordan closed idle Copilot seats (2026-11-11 10:55); memory current per badger's sweep; role stays cold",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-leading-guan",
+					"to": "2026-11-11T00:43:18.994Z",
 					"why": "fresh docs-system holder: #136 route wording (ac-0007), then plan 210"
 				}
 			]
