@@ -1007,7 +1007,10 @@
 					"harness_session": "a400e300-fa07-43e7-8444-52c45ecf15d5",
 					"instance_key": "f187",
 					"machine": "ops.osk.lan",
+					"release_why": "PR #229 merged (301f6bc10464)",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-doubtful-lemur",
+					"to": "2026-11-11T01:02:40.258Z",
 					"why": "F187 rs-install copies pij-rs outside target/; doctor flags links into target"
 				}
 			]
