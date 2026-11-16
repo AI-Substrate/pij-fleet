@@ -150,7 +150,7 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 	registerHooks({
 		resolve(specifier, context, next) {
 			const source =
-				specifier === "@github/copilot-sdk/extension"
+				specifier === "@microsoft/copilot-sdk/extension"
 					? sdk
 					: specifier === "node:child_process"
 						? processApi

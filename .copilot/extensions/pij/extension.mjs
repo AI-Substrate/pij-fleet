@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
-import { joinSession } from "@github/copilot-sdk/extension";
+import { joinSession } from "@microsoft/copilot-sdk/extension";
 import {
 	chooseRegistration,
 	createNativeReporter,

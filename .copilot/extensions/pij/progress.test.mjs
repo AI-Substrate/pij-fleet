@@ -324,7 +324,7 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 	registerHooks({
 		resolve(specifier, context, next) {
 			const source =
-				specifier === "@github/copilot-sdk/extension"
+				specifier === "@microsoft/copilot-sdk/extension"
 					? sdkSource
 					: specifier === "./store.mjs" && context.parentURL?.endsWith("/extension.mjs")
 						? storeSource
