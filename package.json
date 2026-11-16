@@ -30,11 +30,11 @@
 		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
 		"@earendil-works/pi-tui": "*",
-		"@github/copilot-sdk": "*",
+		"@microsoft/copilot-sdk": "*",
 		"typebox": "*"
 	},
 	"peerDependenciesMeta": {
-		"@github/copilot-sdk": {
+		"@microsoft/copilot-sdk": {
 			"optional": true
 		}
 	},
