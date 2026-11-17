@@ -1568,7 +1568,10 @@
 					"harness": "copilot",
 					"harness_session": "43abdc72-a373-4b7b-be54-033ea2635ca4",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "merged #234",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-strong-quail",
+					"to": "2026-11-17T01:41:10.591Z",
 					"why": "PR #234 fleet-map follow-up"
 				}
 			]
