@@ -33,14 +33,14 @@ _Empty._
 
 ## Tasks
 
-| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Page template: copy the POC page into skills/pij/tools/fleet-map/templates/index.html; generic title and empty-state hint; out-of-order track and train at the first open stop | — | ph-5354 | [ ] unchecked | — | — | — | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) |
-| tk-0002 | Tool: generate.mjs (init, generate, open; governance and main-checkout defaults; skill-folder refusal; pij-first sources, comment fallback, gh optional; header; copy not link) and templates/structure.example.json | — | ph-5354 | [ ] unchecked | — | — | — | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) |
-| tk-0003 | Shim: pij-cli.cjs runs the tool for `fleet-map` before pij-rs or tsx; one usage line in `pij --help` | — | ph-5354 | [ ] unchecked | — | — | — | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) |
-| tk-0004 | Tests and fixtures: harness/scripts/fleet-map.test.ts, harness/fixtures/fleet-map/ (structure, golden data, fake pij and gh) | — | ph-5354 | [ ] unchecked | — | — | — | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) |
-| tk-0005 | Docs: tool README, one SKILL.md line, ops route Fleet map section | — | ph-5354 | [ ] unchecked | — | — | — | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) |
-| tk-0006 | Smoke and ship: pij-fleet structure in governance, screenshot; harness checks --quick; PR; just pr-freeze | — | ph-5354 | [ ] unchecked | — | — | — | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria) |
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | Page template: copy the POC page into skills/pij/tools/fleet-map/templates/index.html; generic title and empty-state hint; out-of-order track and train at the first open stop | — | ph-5354 | [x] checked | — | — | — | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Tool: generate.mjs (init, generate, open; governance and main-checkout defaults; skill-folder refusal; pij-first sources, comment fallback, gh optional; header; copy not link) and templates/structure.example.json | — | ph-5354 | [x] checked | — | — | — | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Shim: pij-cli.cjs runs the tool for `fleet-map` before pij-rs or tsx; one usage line in `pij --help` | — | ph-5354 | [x] checked | — | — | — | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Tests and fixtures: harness/scripts/fleet-map.test.ts, harness/fixtures/fleet-map/ (structure, golden data, fake pij and gh) | — | ph-5354 | [x] checked | — | — | — | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Docs: tool README, one SKILL.md line, ops route Fleet map section | — | ph-5354 | [x] checked | — | — | — | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | Smoke and ship: pij-fleet structure in governance, screenshot; harness checks --quick; PR; just pr-freeze | — | ph-5354 | [ ] unchecked | — | — | — | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 

@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "Page template: copy the POC page into skills/pij/tools/fleet-map/templates/index.html; generic title and empty-state hint; out-of-order track and train at the first open stop",
           "phase": "ph-5354",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0004"
           ]
@@ -32,7 +32,7 @@
           "id": "tk-0002",
           "title": "Tool: generate.mjs (init, generate, open; governance and main-checkout defaults; skill-folder refusal; pij-first sources, comment fallback, gh optional; header; copy not link) and templates/structure.example.json",
           "phase": "ph-5354",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001",
             "../../../plan.dd.json#acceptance_criteria/ac-0002",
@@ -44,7 +44,7 @@
           "id": "tk-0003",
           "title": "Shim: pij-cli.cjs runs the tool for `fleet-map` before pij-rs or tsx; one usage line in `pij --help`",
           "phase": "ph-5354",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ]
@@ -53,7 +53,7 @@
           "id": "tk-0004",
           "title": "Tests and fixtures: harness/scripts/fleet-map.test.ts, harness/fixtures/fleet-map/ (structure, golden data, fake pij and gh)",
           "phase": "ph-5354",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001",
             "../../../plan.dd.json#acceptance_criteria/ac-0002",
@@ -65,7 +65,7 @@
           "id": "tk-0005",
           "title": "Docs: tool README, one SKILL.md line, ops route Fleet map section",
           "phase": "ph-5354",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0007"
           ]
@@ -158,6 +158,5 @@
       "name": "execution_guardrails",
       "value": []
     }
-  ],
-  "references": []
+  ]
 }
