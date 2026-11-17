@@ -8,6 +8,7 @@ import {
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
@@ -283,6 +284,26 @@ describe("pij first, gh optional", () => {
 			],
 		},
 	});
+	const HEAD22 = "def5678abc1234def5678abc1234def5678abc12";
+	const comments22 = [
+		{ body: "Reviewer verdict: PASS at def5678", createdAt: "2026-11-16T03:00:00Z" },
+	];
+	// pij's pr:22 is the project's own PR 22, not example-org/code#22: it must not be shown
+	const foreignOutputs = JSON.stringify({
+		ok: true,
+		data: {
+			outputs: [
+				{
+					kind: "verdict",
+					role: "reviewer",
+					result: "block",
+					head: HEAD22,
+					at: 1794358808113,
+					path: "x",
+				},
+			],
+		},
+	});
 	const comments = [
 		{ body: "Reviewer verdict: BLOCKED at abc1234", createdAt: "2026-11-16T01:00:00Z" },
 		{ body: "Security verdict: PASS WITH NOTES at abc1234", createdAt: "2026-11-16T02:00:00Z" },
@@ -301,6 +322,7 @@ describe("pij first, gh optional", () => {
 					`"list --json") printf '%s' ${q(list)} ;;`,
 					`"directory --json") printf '%s' ${q(directory)} ;;`,
 					`"outputs --subject pr:13 --json") printf '%s' ${q(outputs)} ;;`,
+					`"outputs --subject pr:22 --json") printf '%s' ${q(foreignOutputs)} ;;`,
 					`"outputs --subject"*) printf '%s' '{"ok":true,"data":{"outputs":[]}}' ;;`,
 				].join("\n"),
 			),
@@ -312,6 +334,7 @@ describe("pij first, gh optional", () => {
 				script(
 					[
 						`"pr view 13 "*) printf '%s' ${q(pr(13, HEAD, comments))} ;;`,
+						`"pr view 22 -R example-org/code --json "*) printf '%s' ${q(pr(22, HEAD22, comments22))} ;;`,
 						`"pr view "*) exit 1 ;;`,
 					].join("\n"),
 				),
@@ -382,6 +405,32 @@ describe("pij first, gh optional", () => {
 			state: "released",
 		});
 		expect(dataOf(out).warnings).toContain("gh pr view 11 failed");
+		// a stop's repo overrides its line's, and reaches gh as its own argv words
+		expect(dataOf(out).warnings).toContain("gh pr view 24 -R example-org/other.repo failed");
+	});
+
+	it("a PR in another repo is read with gh -R and takes comment verdicts, never pij's pr:<n>", () => {
+		const out = join(scratch(), "out");
+		const structure = join(FIXTURES, "structure.json");
+		const r = run(["generate", "--at", AT, "--structure", structure, "--out", out], {
+			path: fakes(true),
+		});
+		expect(r.status, r.stderr).toBe(0);
+		const lines = dataOf(out).lines as { stops: Record<string, unknown>[] }[];
+		const stop = lines[1]?.stops.find((s) => s.pr === 22);
+		expect(stop?.repo).toBe("example-org/code");
+		expect(stop?.title).toBe("PR 22");
+		expect(stop?.verdicts).toEqual([
+			{
+				role: "reviewer",
+				verdict: "PASS",
+				at: "def5678",
+				atHead: true,
+				on: "2026-11-16",
+				source: "comment",
+			},
+		]);
+		expect(dataOf(out).warnings).toContain('line 400: repo "-R evil" is not owner/name');
 	});
 
 	it("without gh it warns in the data, exits 0 and still shows pij's verdicts", () => {
@@ -433,7 +482,17 @@ describe("project defaults, through the pij shim", () => {
 	it("init writes into governance once; generate writes the main checkout's scratch/fleet-map/", () => {
 		const { repo, gov } = project(true);
 		const structure = join(gov, ".harness", "government", "fleet-map", "fleet-map.structure.json");
-		expect(shim(["init"], repo).status).toBe(0);
+		const init = shim(["init"], repo);
+		expect(init.status).toBe(0);
+		// the printed next step is a command that works as printed
+		const folder = join(realpathSync(gov), ".harness", "government", "fleet-map");
+		const add = `git -C ${folder} add fleet-map.structure.json`;
+		expect(init.stdout).toContain(`new file: run \`${add}\` before committing`);
+		expect(spawnSync("sh", ["-c", add]).status).toBe(0);
+		const staged = spawnSync("git", ["-C", gov, "diff", "--cached", "--name-only"], {
+			encoding: "utf8",
+		});
+		expect(staged.stdout.trim()).toBe(".harness/government/fleet-map/fleet-map.structure.json");
 		expect(existsSync(structure)).toBe(true);
 		const again = shim(["init"], repo);
 		expect(again.status).toBe(2);
