@@ -1556,7 +1556,10 @@
 					"harness": "copilot",
 					"harness_session": "5d613e05-fb0a-4812-859c-bfaf7d389c09",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "merged #233",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-chemical-deer",
+					"to": "2026-11-17T01:02:17.200Z",
 					"why": "PR #233 plan 227 review"
 				}
 			]
