@@ -1189,6 +1189,15 @@ function seatHtml(owner, state) {
   const word = state ? (state === 'absent' ? 'no live seat' : state) : '';
   return `<span class="seat"><i class="${cls}"></i>${esc(owner)}${word ? ` <em style="font-style:normal;color:var(--muted)">${esc(word)}</em>` : ''}</span>`;
 }
+// One verdict on a stop's card. atHead is true at the PR's head, false at an older head, and null
+// when the head is unknown (no gh, or gh failed): then show the sha and claim neither.
+function verdictHtml(v) {
+  const at = !v.at ? ''
+    : v.atHead === true ? '<em>at head</em>'
+    : v.atHead === false ? `<em class="stale">at ${esc(v.at)}, an older head</em>`
+    : `<em>at ${esc(v.at)}</em>`;
+  return `<span><b>${esc(v.verdict)}</b> ${esc(v.role)} ${at}</span>`;
+}
 function cardHtml(item) {
   if (item.kind === 'stop') {
     const { b, s } = item;
@@ -1202,10 +1211,7 @@ function cardHtml(item) {
     if (s.pr) h += `<dt>PR</dt><dd>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">#${s.pr}</a>` : '#' + s.pr}${s.head ? ` at <b>${esc(s.head)}</b>` : ''}${s.base && s.base !== 'main' ? `<br><em style="font-style:normal;color:var(--muted)">stacked on ${esc(s.base)}</em>` : ''}</dd>`;
     if (s.owner) h += `<dt>Owner</dt><dd>${seatHtml(s.owner, s.ownerState)}</dd>`;
     if (s.verdicts && s.verdicts.length) {
-      h += '<dt>Verdicts</dt><dd class="verdicts">' + s.verdicts.map((v) => {
-        const at = v.at ? (v.atHead ? '<em>at head</em>' : `<em class="stale">at ${esc(v.at)}, an older head</em>`) : '';
-        return `<span><b>${esc(v.verdict)}</b> ${esc(v.role)} ${at}</span>`;
-      }).join('') + '</dd>';
+      h += '<dt>Verdicts</dt><dd class="verdicts">' + s.verdicts.map(verdictHtml).join('') + '</dd>';
     } else if (s.pr && s.state !== 'merged') h += '<dt>Verdicts</dt><dd style="color:var(--muted)">none yet</dd>';
     if (s.junction) {
       const subs = L.branches.filter((x) => x.parent === b && x.at === s.id).map((x) => x.kind === 'stack' ? 'stack: ' + x.stops.map((c) => c.pr ? '#' + c.pr : c.name).join(', ') : x.name);

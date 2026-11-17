@@ -63,7 +63,7 @@ role with no `seat` or `seats` shows the directory's live holders. `templates/st
   - PR comment verdicts (the old comment shapes) fill in only for roles pij has no verdict for. Where both exist,
     pij wins.
 - **`gh pr view`** adds state, head, base, title and URL. If gh is missing or fails, that becomes a warning in the
-  data, never an error.
+  data, never an error, and each verdict shows its sha without claiming it is current or older.
 - **`--offline`** skips every live source.
 
 ## Determinism

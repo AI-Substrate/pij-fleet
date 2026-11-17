@@ -42,6 +42,32 @@ function run(
 	return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
+const TEMPLATE = readFileSync(join(TOOL_DIR, "templates", "index.html"), "utf8");
+
+/** A top-level declaration from the page's script, from its first line to the next column-0 `}`. */
+function pageSource(start: string, oneLine = false): string {
+	const at = TEMPLATE.indexOf(`\n${start}`);
+	if (at < 0) throw new Error(`the page template has no ${start}`);
+	const end = TEMPLATE.indexOf(oneLine ? "\n" : "\n}\n", at + 1);
+	return TEMPLATE.slice(at + 1, oneLine ? end : end + 2);
+}
+
+interface Verdict {
+	readonly role: string;
+	readonly verdict: string;
+	readonly at: string | null;
+	readonly atHead: boolean | null;
+}
+type Span = [number, number];
+
+// The page's own pure functions, evaluated alone: no browser.
+const verdictHtml = new Function(
+	`${pageSource("const esc =", true)}\n${pageSource("function verdictHtml(")}\nreturn verdictHtml;`,
+)() as (v: Verdict) => string;
+const builtSpans = new Function(`${pageSource("function builtSpans(")}\nreturn builtSpans;`)() as (
+	stops: readonly { state: string; x: number }[],
+) => Span[];
+
 function scratch(): string {
 	return mkdtempSync(join(tmpdir(), "pij-fleet-map-"));
 }
@@ -116,6 +142,28 @@ describe("determinism", () => {
 		expect(readFileSync(join(out, "fleet-map.data.js"), "utf8").startsWith(`// ${HEADER}\n`)).toBe(
 			true,
 		);
+	});
+});
+
+describe("track geometry (AC4)", () => {
+	const line = (...states: string[]) => states.map((state, i) => ({ state, x: i * 156 }));
+
+	it("a stop merged out of order has built track around it; the gap stays at the open stops", () => {
+		// merged, open, merged, open: solid to the first stop, then around the third
+		expect(builtSpans(line("merged", "building", "merged", "waiting"))).toEqual([
+			[-1e6, 0],
+			[234, 390],
+		]);
+		// a merged last stop builds through to the spine; adjacent merged stops join
+		expect(builtSpans(line("merged", "review", "merged"))).toEqual([
+			[-1e6, 0],
+			[234, 1e6],
+		]);
+		expect(builtSpans(line("review", "merged", "merged", "next"))).toEqual([[78, 390]]);
+		// in order: the one cut at the last merged stop, as the POC drew it
+		expect(builtSpans(line("merged", "merged", "review", "next"))).toEqual([[-1e6, 156]]);
+		expect(builtSpans(line("merged", "merged"))).toEqual([[-1e6, 1e6]]);
+		expect(builtSpans(line("review", "next"))).toEqual([]);
 	});
 });
 
@@ -315,6 +363,9 @@ describe("pij first, gh optional", () => {
 				source: "comment",
 			},
 		]);
+		const html = (stop.verdicts as Verdict[]).map(verdictHtml);
+		expect(html[0]).toContain('<em class="stale">at 000111222, an older head</em>');
+		expect(html[1]).toContain("<em>at head</em>");
 		expect(stop.ownerState).toBe("working");
 		const crew = (dataOf(out).lines as { community: Record<string, unknown>[] }[])[0]?.community;
 		expect(crew).toContainEqual({
@@ -363,6 +414,13 @@ describe("pij first, gh optional", () => {
 				source: "pij",
 			},
 		]);
+		// an unknown head is neither current nor older: the card shows the sha and claims neither
+		for (const v of stop.verdicts as Verdict[]) {
+			const html = verdictHtml(v);
+			expect(html).toContain(`<em>at ${v.at}</em>`);
+			expect(html).not.toContain("older head");
+			expect(html).not.toContain("at head");
+		}
 	});
 });
 
