@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-17",
+				"head": "6db7169adcf7cff1df6631d5e323db46d7162080",
+				"kind": "verdict",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:234",
+				"writer": "pij-comfortable-zebra",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #234 security verdict: PASS\n\nHead: `6db7169adcf7cff1df6631d5e323db46d7162080`\n\n**Blocking findings: 0. No vulnerabilities found.**\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None found | - |\n\n`just pr-freeze 234 --worktree` reported FINAL at this exact head. Review and targeted tests used the clean detached review worktree. Scope was the follow-up diff against `origin/main`, applying C33 and C34.\n\nBoundary evidence:\n\n- `skills/pij/tools/fleet-map/generate.mjs:256-262` validates a strict `owner/name`; neither component may begin with `-` or `.`.\n- `skills/pij/tools/fleet-map/generate.mjs:222-228,292-296` uses shell-free `execFileSync`, with `-R` and the validated repository as separate argv words.\n- `skills/pij/tools/fleet-map/generate.mjs:269-278,446` excludes invalid repositories before PR collection or lookup. Lines 310-312 prevent foreign repositories from querying local verdict subjects.\n- `skills/pij/tools/fleet-map/templates/index.html:1182,1211-1212` escapes repository text before rendering `owner/name#N`, for both linked and unlinked cards.\n- `skills/pij/tools/fleet-map/generate.mjs:151,568-570` quotes the init hint's directory and only prints the suggested command.\n\nNo introduced public secrets or dependency-source changes were found.\n\nTargeted validation: 12/12 existing fleet-map tests passed using the canonical checkout's Vitest with a session-only, fileless ESM resolution hook; 4/4 additional inline Node tests passed for rejected repository values, invalid-repository no-lookups, argv/no-shell execution and inheritance, and linked/unlinked card escaping. No dependencies were installed or symlinked, and temporary test fixtures were removed.\n\nThe passing Vitest invocation used `run harness/scripts/fleet-map.test.ts --root <frozen-worktree> --configLoader native --maxWorkers 1 --no-cache`, with the executable addressed by its canonical absolute path. Its wrapper set `TMPDIR` to session scratch, `NODE_PATH` to canonical dependencies, and a `NODE_OPTIONS=--import=data:text/javascript,...` hook using `registerHooks` and `createRequire` to resolve only `vitest` and `vitest/*` imports from canonical dependencies. The initial `--configLoader runner` attempt failed to resolve `vitest/config`; the native-loader retry exited 0 with 12 tests passed. The additional inline test invocation was `node --input-type=module`, using `node:test`; it exited 0 with 4 passed and 0 failed.\n\nProof limits: GitHub execution used mocks/fakes; rendering was exercised without a browser. `harness boot` reported advisory `ready: false` because this detached worktree has no Vitest dependency link, before attempting typecheck or smoke. Full harness checks were not run for this read-only review, as requested.\n\nHarness feedback was persisted through `pij directory memory add security` as `2026-11-17-dependency-free-review-readiness-gap` (commit `db73126`).\n"
+		}
+	]
+}
