@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-17",
+				"head": "1bf90e115eea0721f42fd7fd3d076f995afe75ed",
+				"kind": "verdict",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:233",
+				"writer": "pij-keen-landfowl",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS\nSubject: pr:233 (plan 227, fleet-map)\nHead: 1bf90e115eea0721f42fd7fd3d076f995afe75ed\nBlocking findings: 0\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No security vulnerabilities found | - |\n\nScope and boundary\n\nReviewed all 21 changed files only in the detached review worktree created by\n`just pr-freeze 233 --worktree`. Freeze returned FINAL, exit 0, at the head above.\nC33 applies: external GitHub content is untrusted; malicious same-user processes,\nlocal configuration attacks and same-user filesystem races are outside scope.\nC34 applies: no speculative hardening or optional proof gap is a blocking finding.\n\nReviewed controls (these are evidence locations, not findings)\n\n1. Path confinement: `skills/pij/tools/fleet-map/generate.mjs:121-153` resolves\n   real paths through the nearest existing ancestor and rejects the tool subtree,\n   including symlink aliases, normalized traversal and missing descendants.\n   The controls cover --out, --dir and --structure. Fresh writes unlink the\n   destination link and create with exclusive wx (`:151-153`).\n\n2. Colour/output writes: `skills/pij/tools/fleet-map/generate.mjs:552` writes\n   missing colours only to the selected, guarded structure file. Generated page\n   and data filenames stay under the selected output directory (`:558-560`).\n   No unintended-file clobber was identified within the stated trust boundary.\n   These guards are one-directional safety interlocks (brakes): removing them\n   permits more write targets; they are not retention or ownership policies.\n\n3. Process injection: `skills/pij/tools/fleet-map/generate.mjs:160,219` invokes\n   Git/live collectors without a shell and with explicit argument arrays.\n   `harness/scripts/pij-cli.cjs:116` forwards an argument array to Node.\n   PR titles, comments and seat fields do not become shell command text.\n\n4. Rendering: `skills/pij/tools/fleet-map/templates/index.html:1182-1230`\n   escapes dynamic hover-card HTML, including titles, URLs, seats and verdicts;\n   the innerHTML sink at `:1274` receives cardHtml output. External JavaScript\n   serialization, SVG textContent/fixed-name attributes and selector escaping\n   were also traced. No external-input HTML/JavaScript injection was found.\n\nValidation\n\n- `just pr-freeze 233 --worktree`: PASS / FINAL at the full head above.\n- Targeted `vitest run harness/scripts/fleet-map.test.ts`: PASS, 10/10 tests,\n  exit 0. Executed in the frozen worktree under nice -n 19 using the canonical\n  checkout's runner by absolute path, as explicitly authorized; no dependency\n  symlink was created. This includes path-guard and structure-write regressions.\n- Eight successful adversarial probe groups exercised real filesystem path\n  metadata, mocked write refusals/link replacement, selected colour writeback,\n  dangling structure links, generated-JS/HTML hostile strings, collector argv,\n  deterministic golden output and shim argv preservation. The first inline\n  probe invocation had one probe-fixture error (missing STOP_LABEL); the\n  corrected invocation passed. These were not browser or live integration tests.\n- `nice -n 19 node --check skills/pij/tools/fleet-map/generate.mjs`: PASS.\n- `nice -n 19 node --check harness/scripts/pij-cli.cjs`: PASS.\n- Changed-file secret-pattern check: no tested private-key, GitHub-token or\n  AWS-access-key patterns found. No credential files read. No manifest or\n  lockfile changes.\n- Exact-head GitHub checks: check (22), check (24), delivers, rust-lint and\n  rust-test all SUCCESS. Runs 43987909514 and 43987909403.\n- `harness boot`: advisory NOT-READY because the detached tree lacks local\n  Vitest dependencies. The targeted test above subsequently passed through the\n  authorized external runner. Full `harness checks` was stopped on the prime's\n  explicit instruction; no full local gate pass is claimed.\n\nProof limits and cost boundary\n\nMutation probes used mocked writes/subprocesses, not real-disk end-to-end write\ntests. No browser smoke or real GitHub/pij integration was run. No product files\nwere modified. The reviewed worktree remained at the requested head.\n\nNo recurring process poll was added. Source-derived direct-launch shape is\n2 + 2P collector calls per invocation for P distinct PRs, up to four additional\nGit calls for successful in-repository generation, and one Node child through\nthe shim; no per-seat launch and zero process launches between invocations.\nLive/transitive cost measurement belongs to the performance verdict, not this\nsecurity result.\n\nHarness feedback (non-blocking)\n\nDifficulty: general development boot cannot express a dependency-free,\nread-only frozen-head review, and its broad checks can start irrelevant Rust\nand smoke work.\nmagicWand: a scoped review recipe that runs the fleet-map selector through an\nexplicitly selected runner and prints exact-head CI versus local proof as\nseparate receipts. Keep this as harness feedback, not a security blocker.\n"
+		}
+	]
+}
