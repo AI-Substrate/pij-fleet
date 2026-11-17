@@ -1,0 +1,42 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-17",
+				"head": "1bf90e115eea0721f42fd7fd3d076f995afe75ed",
+				"kind": "verdict",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:233",
+				"writer": "pij-chemical-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "nice -n 19 just test harness/scripts/fleet-map.test.ts",
+					"exit_code": 0
+				},
+				{
+					"command": "nice -n 19 harness checks",
+					"exit_code": 1
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: BLOCK\n\nPR #233, round 1, exact head `1bf90e115eea0721f42fd7fd3d076f995afe75ed`.\n\n## Findings\n\n1. **P2 — blocking — unknown head is falsely reported as an older head.**\n   `skills/pij/tools/fleet-map/templates/index.html:1206`\n   In the supported no-`gh` path, `buildData()` retains pij verdicts with\n   `atHead: null` because the PR's current head is unknown. The card tests that\n   value for truthiness, so every retained verdict is rendered in red as\n   `at <sha>, an older head`, including a verdict that may still be current.\n   The same happens when `gh pr view` fails for a PR. This invents a staleness\n   result rather than degrading to unknown, violating AC3 and the retained\n   at-head/older-head display requirement. Render stale only when\n   `atHead === false`; for null, show the verdict SHA without claiming it is\n   current or old. Add a card/render assertion to the existing no-gh case.\n   Reproduced through the real `buildData()` and template `cardHtml()`:\n   `atHead: null` renders `<em class=\"stale\">at abc1234de, an older head</em>`.\n\n2. **P3 — nonblocking proof gap — the old track bug survives the suite.**\n   `harness/scripts/fleet-map.test.ts:91`\n   Replacing `builtSpans()` in an isolated template copy with the POC's old\n   last-merged-stop cutoff still passes all 10 tests. The golden fixture covers\n   generated data, and the page test compares the copied page to its current\n   template, so neither asserts track geometry. The actual implementation passes\n   the independent geometry probes below; this is not a second functional\n   blocker. A lightweight assertion around the existing pure geometry function\n   would encode AC4 without adding browser machinery.\n\n## Scope and proof\n\n- `just pr-freeze 233 --worktree`: FINAL at the exact head above; reviewed only\n  the clean detached worktree. No implementation files changed.\n- `nice -n 19 just test harness/scripts/fleet-map.test.ts`: **10/10 pass**.\n  The first attempt failed because this worktree lacked vitest; dependencies\n  were then installed locally through the locked recipe, without symlinks.\n- OSK, unimatrix and pij-fleet: the tool's real `projectLayout()` resolves the\n  same available governance roots as `government-root.sh`; output defaults\n  point at each repository's canonical checkout, including from the detached\n  review tree.\n- Compared the template against the POC: the retained requirements' code is\n  preserved apart from generic labels/title and the intended track change.\n- Independent computational probes: **6/6 track cases pass**, including\n  in-order parity, isolated and adjacent out-of-order merges, terminal merged\n  stop, no merged stops and all merged stops. Newest-per-role selection and\n  exact-head preference also pass.\n- Mutation runs reuse the original test file against isolated copies, serially\n  under nice with one worker. Baseline: **10 pass**. Disabling the skill-folder\n  guard: **the refusal test fails, 9 pass**. Allowing a conflicting comment:\n  **the precedence test fails, 9 pass**. Adding process-dependent data:\n  **the golden test fails, 9 pass**. Restoring the old track cutoff:\n  **10 pass**, establishing finding 2. Reviewed source remained unchanged.\n- `nice -n 19 harness checks`: **not green**. All 12 other sensors pass,\n  including lint, typecheck, route inventory, the complete Rust gate and smoke.\n  The sole failing sensor is `test`: unchanged\n  `harness/scripts/shared-build.test.ts:306` expects niceness 19 but observes\n  20 because the inner nice stacks on the required outer nice. This matches the\n  existing limitation documented in the PR, not a fleet-map regression.\n- Skill text is short and matches the implemented verbs and paths.\n- Cost: the new path is a manually invoked one-shot, with zero steady-state\n  launches and no per-seat repeated work. Per live generation it reads seats\n  and directory once, then outputs and optional gh once per distinct PR.\n  No new daemon launch site, poll, loop, timer or hook.\n\n## Harness feedback\n\nThe smallest useful improvement is a rendered-card assertion for the nullable\nhead state: the existing no-gh test correctly asserts null in the data but\ndoes not check what the user sees. A setup-friction observation was captured\nwith `harness observe` rather than modifying the reviewed worktree.\n"
+		}
+	]
+}
