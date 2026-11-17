@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-17",
+				"hook": "Read before a dependency-free JavaScript review in a detached worktree.",
+				"tags": [
+					"review",
+					"harness",
+					"proof"
+				],
+				"title": "Dependency-free review readiness gap"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Review-only PR #234 exposed two harness difficulties. First, the core harness instructions advertise observe, but harness help lists only boot/checks and harness instructions observe returns unconfigured. Second, harness boot stops at missing worktree dependencies before reaching scoped dependency-free node:test proof. Do not repair shared dependencies or create node_modules symlinks for a bounded review. Use supported exact-head targeted tests or exact-head CI evidence and distinguish those receipts from full readiness. magicWand: a scoped review-readiness command that discovers dependency-free tests and reports their proof separately from whole-repository TypeScript readiness. Suggested encoding: add a review scope to the boot/checks surface and make the briefing advertise only installed capture verbs. This is harness feedback, not a PR defect."
+		}
+	]
+}
