@@ -80,7 +80,10 @@
 					"harness": "copilot",
 					"harness_session": "3854485d-038c-41c3-bec0-6138e08eb679",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "merged #233",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-keen-landfowl",
+					"to": "2026-11-17T01:02:19.181Z",
 					"why": "PR #233 plan 227 security"
 				}
 			]
