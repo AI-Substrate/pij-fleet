@@ -1208,7 +1208,8 @@ function cardHtml(item) {
     if (s.title) h += `<p class="sub">${esc(s.title)}</p>`;
     h += '<dl>';
     h += `<dt>Status</dt><dd><span class="pill" style="color:${STATE_COLOUR[s.state] || 'var(--ink)'}">${esc(STOP_LABEL[s.state] || s.state)}</span></dd>`;
-    if (s.pr) h += `<dt>PR</dt><dd>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">#${s.pr}</a>` : '#' + s.pr}${s.head ? ` at <b>${esc(s.head)}</b>` : ''}${s.base && s.base !== 'main' ? `<br><em style="font-style:normal;color:var(--muted)">stacked on ${esc(s.base)}</em>` : ''}</dd>`;
+    const prName = (s.repo ? esc(s.repo) : '') + '#' + s.pr;
+    if (s.pr) h += `<dt>PR</dt><dd>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${prName}</a>` : prName}${s.head ? ` at <b>${esc(s.head)}</b>` : ''}${s.base && s.base !== 'main' ? `<br><em style="font-style:normal;color:var(--muted)">stacked on ${esc(s.base)}</em>` : ''}</dd>`;
     if (s.owner) h += `<dt>Owner</dt><dd>${seatHtml(s.owner, s.ownerState)}</dd>`;
     if (s.verdicts && s.verdicts.length) {
       h += '<dt>Verdicts</dt><dd class="verdicts">' + s.verdicts.map(verdictHtml).join('') + '</dd>';

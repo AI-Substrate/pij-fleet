@@ -27,6 +27,7 @@
       "id": "200",
       "name": "Out of order",
       "colour": "#0E7FD6",
+      "repo": "example-org/code",
       "joins": "beta",
       "state": "now",
       "stops": [
@@ -39,7 +40,7 @@
           "owner": "pij-fixture-b",
           "stops": [{ "id": "b2s", "name": "Stacked on it", "pr": 23, "state": "blocked", "waitingOn": "b2" }]
         },
-        { "id": "b3", "name": "Merged ahead", "pr": 24, "state": "merged" },
+        { "id": "b3", "name": "Merged ahead", "pr": 24, "state": "merged", "repo": "example-org/other.repo" },
         { "id": "b4", "name": "Waiting on you", "state": "waiting", "waitingOn": "A decision" }
       ]
     },
@@ -56,6 +57,7 @@
       "id": "400",
       "name": "Later work",
       "colour": "#7A3FD1",
+      "repo": "-R evil",
       "joins": "delta",
       "state": "later",
       "stops": [{ "id": "d1", "name": "Someday", "state": "later" }]

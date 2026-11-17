@@ -39,6 +39,7 @@ one `gh pr view` and one `pij outputs`.
     "id": "001", "name": "Core", "colour": "#E5194B", "state": "now",
     "joins": "first-release",           // a spine station; or "joinsLine": "<line id>", "at": "<stop id>"
     "roadmap": "001-core",
+    "repo": "owner/name",               // optional: its PRs live in another repo; a stop's "repo" overrides
     "roles": [{ "role": "pm" }, { "role": "coder", "seats": ["pij-…"] }],   // the line's Pij Community
     "stops": [{
       "id": "api", "name": "API", "pr": 42, "owner": "pij-…", "waitingOn": "Reviewer verdict", "note": "…",
@@ -52,7 +53,9 @@ one `gh pr view` and one `pij outputs`.
 ```
 
 A stop with `pr` takes its state, head, title and verdicts from live sources; `state` covers what they don't know. A
-role with no `seat` or `seats` shows the directory's live holders. `templates/structure.example.json` is the starter.
+`repo` (`owner/name`, on a line or a stop; stacked stops inherit it) sends that PR's lookup to `gh pr view <n> -R
+owner/name`. A value that isn't `owner/name` is a warning, and its PRs aren't looked up. A role with no `seat` or
+`seats` shows the directory's live holders. `templates/structure.example.json` is the starter.
 
 ## Live data: pij first
 
@@ -62,6 +65,8 @@ role with no `seat` or `seats` shows the directory's live holders. `templates/st
   one at the PR's head, and flags a verdict given at an older head.
   - PR comment verdicts (the old comment shapes) fill in only for roles pij has no verdict for. Where both exist,
     pij wins.
+  - A PR in another repo (a `repo` set) takes its verdicts from its PR comments only. pij output subjects
+    (`pr:<n>`) name the project's own PRs, so `pr:7` would be the wrong PR.
 - **`gh pr view`** adds state, head, base, title and URL. If gh is missing or fails, that becomes a warning in the
   data, never an error, and each verdict shows its sha without claiming it is current or older.
 - **`--offline`** skips every live source.

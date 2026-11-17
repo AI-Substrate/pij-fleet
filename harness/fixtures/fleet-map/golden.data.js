@@ -86,6 +86,7 @@ window.FLEET_MAP = {
           "id": "b1",
           "name": "Merged first",
           "pr": 21,
+          "repo": "example-org/code",
           "state": "merged"
         },
         {
@@ -93,12 +94,14 @@ window.FLEET_MAP = {
           "name": "Still open",
           "owner": "pij-fixture-b",
           "pr": 22,
+          "repo": "example-org/code",
           "state": "building",
           "stops": [
             {
               "id": "b2s",
               "name": "Stacked on it",
               "pr": 23,
+              "repo": "example-org/code",
               "state": "blocked",
               "waitingOn": "b2"
             }
@@ -108,6 +111,7 @@ window.FLEET_MAP = {
           "id": "b3",
           "name": "Merged ahead",
           "pr": 24,
+          "repo": "example-org/other.repo",
           "state": "merged"
         },
         {
@@ -190,5 +194,7 @@ window.FLEET_MAP = {
     }
   ],
   "title": "Fixture fleet",
-  "warnings": []
+  "warnings": [
+    "line 400: repo \"-R evil\" is not owner/name"
+  ]
 };

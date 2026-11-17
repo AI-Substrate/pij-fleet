@@ -147,6 +147,9 @@ function guard(flag, p) {
 	return resolve(p);
 }
 
+/** A path as one shell word. */
+const shq = (p) => (/^[A-Za-z0-9_./-]+$/.test(p) ? p : `'${p.replaceAll("'", "'\\''")}'`);
+
 /** Writes a fresh regular file: a link at the target is removed, never written through. */
 function writeFresh(path, text) {
 	rmSync(path, { force: true });
@@ -249,18 +252,33 @@ function pijData(argv, cwd, warnings) {
 	}
 }
 
-export function allStops(stops, out = []) {
-	for (const s of stops || []) {
-		out.push(s);
-		allStops(s.stops, out);
-	}
-	return out;
+// GitHub's owner/name: no leading `-` or `.`, so the value can never read as a flag or a path step.
+const REPO_RE = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
+
+/** A line's or stop's repo: its own `repo`, else the one it inherits. undefined is the project's
+ * own repo; false is an invalid value, whose PRs are never looked up. */
+export function repoOf(item, inherited) {
+	if (item.repo === undefined) return inherited;
+	return typeof item.repo === "string" && REPO_RE.test(item.repo) ? item.repo : false;
 }
 
-function prNumbers(structure) {
-	const lines = [...(structure.lines || []), ...(structure.sidings || [])];
-	const prs = lines.flatMap((l) => allStops(l.stops)).map((s) => s.pr);
-	return [...new Set(prs.filter(Boolean))].sort((a, b) => a - b);
+const prKey = (repo, n) => (repo ? `${repo}#${n}` : String(n));
+
+/** Every distinct PR the structure names, with the repo it lives in, in a stable order. */
+function prRefs(structure) {
+	const refs = new Map();
+	const walk = (stops, inherited) => {
+		for (const s of stops || []) {
+			const repo = repoOf(s, inherited);
+			if (s.pr && repo !== false) refs.set(prKey(repo, s.pr), { repo, n: s.pr });
+			walk(s.stops, repo);
+		}
+	};
+	for (const l of [...(structure.lines || []), ...(structure.sidings || [])])
+		walk(l.stops, repoOf(l, undefined));
+	return [...refs.entries()]
+		.map(([key, ref]) => ({ key, ...ref }))
+		.sort((a, b) => cmp(a.repo ?? "", b.repo ?? "") || a.n - b.n);
 }
 
 /** One `pij list`, one `pij directory`, and per PR one `gh pr view` and one `pij outputs`. */
@@ -270,23 +288,28 @@ export function collect(structure, { cwd, project }) {
 	const sources = { prs: {}, outputs: {}, warnings, gh: true };
 	sources.seats = pijData(["list", "--json"], cwd, warnings)?.seats ?? null;
 	sources.roles = pijData(["directory", "--json", ...proj], cwd, warnings)?.roles ?? null;
-	for (const n of prNumbers(structure)) {
+	for (const { key, repo, n } of prRefs(structure)) {
+		const where = repo ? ["-R", repo] : [];
+		const label = ["gh pr view", n, ...where].join(" ");
 		if (sources.gh) {
 			const fields = "number,state,headRefOid,baseRefName,title,url,comments";
-			const r = exec("gh", ["pr", "view", String(n), "--json", fields], cwd);
+			const r = exec("gh", ["pr", "view", String(n), ...where, "--json", fields], cwd);
 			if (r.ok) {
 				try {
-					sources.prs[n] = JSON.parse(r.out);
+					sources.prs[key] = JSON.parse(r.out);
 				} catch {
-					warnings.push(`gh pr view ${n} was not parseable`);
+					warnings.push(`${label} was not parseable`);
 				}
 			} else if (r.missing) {
 				sources.gh = false;
 				warnings.push("gh is not on PATH: PR state, head and title are not shown");
-			} else warnings.push(`gh pr view ${n} failed`);
+			} else warnings.push(`${label} failed`);
 		}
+		// pij output subjects (pr:<n>) name the project's own PRs; another repo's PR takes
+		// its verdicts from PR comments only.
+		if (repo) continue;
 		const subject = ["outputs", "--subject", `pr:${n}`, "--json", ...proj];
-		sources.outputs[n] = pijData(subject, cwd, warnings)?.outputs ?? null;
+		sources.outputs[key] = pijData(subject, cwd, warnings)?.outputs ?? null;
 	}
 	return sources;
 }
@@ -371,18 +394,18 @@ export function buildData(structure, sources, { offline, generatedAt }) {
 	const roleDir = {};
 	for (const r of sources?.roles ?? []) roleDir[r.id] = r;
 	const prs = {};
-	for (const [n, p] of Object.entries(sources?.prs ?? {})) {
-		prs[n] = {
+	for (const [key, p] of Object.entries(sources?.prs ?? {})) {
+		prs[key] = {
 			state: p.state,
 			head: p.headRefOid.slice(0, 9),
 			base: p.baseRefName,
 			title: p.title,
 			url: p.url,
-			verdicts: verdictsFor(sources.outputs?.[n], p.comments, p.headRefOid),
+			verdicts: verdictsFor(sources.outputs?.[key], p.comments, p.headRefOid),
 		};
 	}
-	for (const [n, outputs] of Object.entries(sources?.outputs ?? {})) {
-		if (!prs[n] && outputs?.length) prs[n] = { verdicts: verdictsFor(outputs, [], null) };
+	for (const [key, outputs] of Object.entries(sources?.outputs ?? {})) {
+		if (!prs[key] && outputs?.length) prs[key] = { verdicts: verdictsFor(outputs, [], null) };
 	}
 
 	// One entry per (role, seat). A seat the structure names but the directory doesn't list live
@@ -416,8 +439,11 @@ export function buildData(structure, sources, { offline, generatedAt }) {
 		return out.sort((a, b) => cmp(a.role, b.role) || cmp(a.seat || "", b.seat || ""));
 	}
 
-	function stopOut(s, lineState) {
-		const live = s.pr && prs[s.pr];
+	function stopOut(s, lineState, inherited) {
+		const repo = repoOf(s, inherited);
+		if (repo === false && s.repo !== undefined)
+			warnings.push(`stop ${s.id}: repo ${JSON.stringify(s.repo)} is not owner/name`);
+		const live = s.pr && repo !== false && prs[prKey(repo, s.pr)];
 		let state = s.state || (s.pr ? "review" : lineState === "later" ? "later" : "next");
 		if (live?.state) {
 			if (live.state === "MERGED") state = "merged";
@@ -427,6 +453,7 @@ export function buildData(structure, sources, { offline, generatedAt }) {
 		if (!STOP_STATES.includes(state)) warnings.push(`stop ${s.id}: unknown state ${state}`);
 		const o = { id: s.id, name: s.name, state };
 		if (s.pr) o.pr = s.pr;
+		if (s.pr && repo) o.repo = repo;
 		if (live) {
 			o.title = live.title;
 			o.url = live.url;
@@ -440,13 +467,16 @@ export function buildData(structure, sources, { offline, generatedAt }) {
 		}
 		if (s.waitingOn && state !== "merged") o.waitingOn = s.waitingOn;
 		if (s.note) o.note = s.note;
-		if (s.stops?.length) o.stops = s.stops.map((c) => stopOut(c, lineState));
+		if (s.stops?.length) o.stops = s.stops.map((c) => stopOut(c, lineState, repo));
 		return o;
 	}
 
 	function lineOut(l) {
 		if (!PHASES.includes(l.state)) warnings.push(`line ${l.id}: unknown state ${l.state}`);
-		const stops = (l.stops || []).map((s) => stopOut(s, l.state));
+		const repo = repoOf(l, undefined);
+		if (repo === false)
+			warnings.push(`line ${l.id}: repo ${JSON.stringify(l.repo)} is not owner/name`);
+		const stops = (l.stops || []).map((s) => stopOut(s, l.state, repo));
 		const o = { id: l.id, name: l.name, colour: l.colour, state: l.state, stops };
 		if (l.joins) o.joins = l.joins;
 		if (l.joinsLine) {
@@ -535,7 +565,9 @@ function init(flags, layout, log) {
 		throw new Refusal(`${target} already exists; init never overwrites a structure`);
 	mkdirSync(dir, { recursive: true });
 	writeFresh(target, readFileSync(join(TEMPLATES, "structure.example.json"), "utf8"));
-	log(`wrote ${target}\nedit it (spine, lines, stops), then run: pij fleet-map generate`);
+	log(
+		`wrote ${target}\nnew file: run \`git -C ${shq(dir)} add ${STRUCTURE_FILE}\` before committing\nedit it (spine, lines, stops), then run: pij fleet-map generate`,
+	);
 }
 
 function generate(flags, layout, log, warn) {
