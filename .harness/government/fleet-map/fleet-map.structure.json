@@ -1,0 +1,85 @@
+{
+  "title": "pij fleet",
+  "focus": "cost",
+  "spine": [
+    { "id": "rs", "name": "Rust daemon", "state": "done", "note": "pij-rs is the one control plane; the TS daemon is retired." },
+    { "id": "community", "name": "Pij Emergent Communities", "state": "done", "note": "Workstream 001: roles, directory, outputs, memory, claims (s01-s14)." },
+    { "id": "cost", "name": "Cost and harness hardening", "state": "now", "note": "Process cost, builds and installs (F182-F187), and the fleet's own tools." },
+    { "id": "base", "name": "pij base", "state": "next", "note": "Workstream 002: the base register (PRD 002)." },
+    { "id": "permissions", "name": "Seat permissions", "state": "later", "note": "Workstream 003: who may message, set and reset whom." }
+  ],
+  "lines": [
+    {
+      "id": "001",
+      "name": "Pij Emergent Communities",
+      "colour": "#0E7FD6",
+      "joins": "community",
+      "state": "done",
+      "roadmap": "001-pij-community",
+      "stops": [
+        { "id": "s04", "name": "Assign, release and the directory", "state": "merged", "note": "s04" },
+        { "id": "s06", "name": "Outputs and notification", "state": "merged", "note": "s06" },
+        { "id": "s11", "name": "Number claims and delivery", "state": "merged", "note": "s11" },
+        { "id": "s10", "name": "Community skill route", "state": "merged", "note": "s10" }
+      ]
+    },
+    {
+      "id": "cost",
+      "name": "Cost hardening",
+      "colour": "#E5194B",
+      "joins": "cost",
+      "state": "now",
+      "roles": [{ "role": "coder" }, { "role": "reviewer" }, { "role": "performance" }],
+      "stops": [
+        { "id": "f182", "name": "Daemon's hottest idle paths", "pr": 225, "note": "F182" },
+        { "id": "f185", "name": "At-rest roster reads", "pr": 227, "note": "F185" },
+        { "id": "f186", "name": "Builds run nice only", "pr": 228, "note": "F186" },
+        { "id": "f187", "name": "pij-rs installed as a copy", "pr": 229, "note": "F187" },
+        { "id": "map", "name": "Fleet metro map", "pr": 233, "owner": "pij-previous-firefly", "note": "Plan 227: pij fleet-map" }
+      ]
+    },
+    {
+      "id": "002",
+      "name": "pij base",
+      "colour": "#0F9D7A",
+      "joins": "base",
+      "state": "next",
+      "roadmap": "002-pij-base",
+      "roles": [{ "role": "pm-001" }],
+      "stops": [
+        { "id": "b01", "name": "Typecheck covers test files", "state": "next", "note": "s01" },
+        { "id": "b02", "name": "Known sender on every message", "state": "next", "note": "s02" },
+        { "id": "b03", "name": "Queue visibility", "state": "next", "note": "s03" },
+        { "id": "b04", "name": "Spawn and revive: first task", "state": "next", "note": "s04" }
+      ]
+    },
+    {
+      "id": "003",
+      "name": "Seat permissions",
+      "colour": "#7A3FD1",
+      "joins": "permissions",
+      "state": "later",
+      "roadmap": "003-seat-permissions",
+      "stops": [
+        { "id": "p02", "name": "Only the prime sets or resets", "state": "later", "note": "s02" },
+        { "id": "p03", "name": "A seat's messaging policy", "state": "later", "note": "s03" },
+        { "id": "p04", "name": "The daemon enforces it", "state": "later", "note": "s04" }
+      ]
+    }
+  ],
+  "sidings": [
+    {
+      "id": "harness-config",
+      "name": "Harness config",
+      "colour": "#F08A24",
+      "joins": "cost",
+      "state": "now",
+      "stops": [
+        { "id": "omp-ctx", "name": "Opus 5.5 at 1M on OMP", "pr": 224 },
+        { "id": "copilot-sdk", "name": "Copilot SDK rename", "pr": 232 },
+        { "id": "omp-mcp", "name": "Drop the perplexity MCP", "pr": 230 }
+      ]
+    }
+  ],
+  "depot": { "name": "Depot", "roles": [{ "role": "pa" }, { "role": "security" }, { "role": "delivery" }, { "role": "docs-system" }] }
+}
