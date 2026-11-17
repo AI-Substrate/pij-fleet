@@ -85,6 +85,15 @@
 					"seat": "pij-keen-landfowl",
 					"to": "2026-11-17T01:02:19.181Z",
 					"why": "PR #233 plan 227 security"
+				},
+				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-17T01:15:01.667Z",
+					"harness": "copilot",
+					"harness_session": "1915ad70-6925-44b9-9ff2-c1485d0ac7fd",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-comfortable-zebra",
+					"why": "PR #234 fleet-map follow-up"
 				}
 			]
 		}
