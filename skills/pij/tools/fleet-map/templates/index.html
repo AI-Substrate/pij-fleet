@@ -1,0 +1,1375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fleet map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #EDF1F0;
+  --paper-2: #E2E8E7;
+  --surface: #FBFCFB;
+  --ink: #142030;
+  --ink-2: #3A4757;
+  --muted: #66737F;
+  --rule: #C5CFD1;
+  --dot: #CBD4D5;
+  --later: #A9B3B8;
+  --alert: #D42A2F;
+  --go: #12A150;
+  --you: #FFB21A;
+  --halo: #EDF1F0;
+  --shadow: 0 1px 0 rgba(20,32,48,.04), 0 10px 30px -8px rgba(20,32,48,.28);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0D151E; --paper-2: #121C27; --surface: #172330; --ink: #E7EDF1; --ink-2: #C3CDD5; --muted: #8D9AA6;
+    --rule: #2A3846; --dot: #1C2834; --later: #4B5966; --alert: #F0484D; --go: #34D27B; --you: #FFB21A; --halo: #0D151E;
+    --shadow: 0 1px 0 rgba(0,0,0,.3), 0 14px 34px -10px rgba(0,0,0,.7); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0D151E; --paper-2: #121C27; --surface: #172330; --ink: #E7EDF1; --ink-2: #C3CDD5; --muted: #8D9AA6;
+  --rule: #2A3846; --dot: #1C2834; --later: #4B5966; --alert: #F0484D; --go: #34D27B; --you: #FFB21A; --halo: #0D151E;
+  --shadow: 0 1px 0 rgba(0,0,0,.3), 0 14px 34px -10px rgba(0,0,0,.7); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--paper); color: var(--ink);
+  font-family: Overpass, "Helvetica Neue", Arial, sans-serif; font-size: 15px; line-height: 1.4;
+  display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid #0E7FD6; outline-offset: 2px; }
+
+/* ---------- header ---------- */
+header {
+  display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap;
+  padding: 12px 16px 10px; border-bottom: 1px solid var(--rule); background: var(--paper);
+  position: relative; z-index: 3;
+}
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.roundel { width: 34px; height: 34px; flex: none; }
+.brand h1 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: -.01em; line-height: 1; }
+.brand p { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
+.tally { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.tally > span:not(.yourmove) {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 3px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--rule); font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+}
+.tally b { font-weight: 800; color: var(--ink); }
+.tally i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+/* ---------- map viewport ---------- */
+main { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+#viewport { position: absolute; inset: 0; overflow: hidden; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+#viewport.dragging { cursor: grabbing; }
+#map { display: block; width: 100%; height: 100%; }
+
+.lbl { font-family: Overpass, sans-serif; fill: var(--ink); paint-order: stroke; stroke: var(--halo); stroke-width: 4px; stroke-linejoin: round; }
+.lbl-stop { font-size: 13px; font-weight: 600; }
+.lbl-pr { font-size: 11.5px; font-weight: 800; }
+.lbl-station { font-size: 16px; font-weight: 800; letter-spacing: -.005em; }
+.lbl-phase { font-size: 11px; font-weight: 700; fill: var(--muted); }
+.lbl-line { font-size: 12px; font-weight: 800; fill: #fff; stroke: none; }
+.history .lbl-stop { font-size: 10.5px; font-weight: 600; fill: var(--muted); }
+.history .lbl-pr { font-size: 10px; }
+.history .lbl-crew-title, .history .lbl-chip { font-size: 10px; }
+.history .lbl-line { font-size: 11px; }
+g.history { opacity: .78; }
+.lbl-chip { font-size: 11.5px; font-weight: 700; stroke: none; fill: var(--ink-2); }
+.lbl-crew-title { font-size: 11px; font-weight: 800; fill: var(--muted); }
+.lbl-depot { font-size: 15px; font-weight: 800; stroke: none; }
+.awake-only > g > g.asleep { opacity: .14; transition: opacity .18s; }
+.toggle { display: inline-flex; align-items: center; gap: 7px; padding: 4px 12px 3px; min-height: 32px; border-radius: 999px; border: 1px solid var(--rule); background: var(--surface); font-weight: 700; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+.toggle i { width: 8px; height: 8px; border-radius: 50%; background: var(--go); }
+.toggle[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.crew { display: grid; gap: 8px; margin: 10px 16px 0; }
+.crew .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 13px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
+.crew .row:last-child { border-bottom: 0; padding-bottom: 0; }
+.crew .role { font-weight: 800; }
+.crew .ctx { color: var(--muted); font-size: 12px; text-align: right; }
+.crew .out { grid-column: 1 / -1; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.spine-later { stroke: var(--later); }
+.st-later .lbl-station { fill: var(--muted); }
+.later-line { filter: saturate(.28); opacity: .5; }
+.later-line .lbl { fill: var(--ink-2); }
+.stop-later { opacity: .55; }
+.hit { cursor: pointer; }
+.hit:focus { outline: none; }
+.hit:focus-visible .mark-focus { stroke: #0E7FD6; stroke-width: 3; opacity: 1; }
+.mark-focus { fill: none; opacity: 0; }
+[data-key].hover .mark-focus { opacity: 1; stroke: var(--ink); stroke-width: 2; }
+.dim-others [data-line]:not(.lit) { opacity: .22; transition: opacity .18s; }
+.dim-yours > g > g:not(.yours) { opacity: .16; transition: opacity .18s; }
+.yours-ring { fill: none; stroke: var(--you); stroke-width: 3; opacity: 0; }
+.dim-yours .yours-ring { opacity: 1; }
+.yourmove { display: inline-flex; align-items: stretch; border-radius: 999px; overflow: hidden; background: var(--you); color: #1B1300; font-weight: 800; font-size: 13px; box-shadow: 0 0 0 1px rgba(0,0,0,.12); }
+.yourmove button { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 5px 12px 4px; font-weight: 800; display: inline-flex; align-items: center; gap: 7px; min-height: 32px; }
+.yourmove button:hover { background: rgba(0,0,0,.08); }
+.yourmove .step { display: none; padding: 5px 10px 4px; font-size: 16px; }
+.yourmove.on .step { display: inline-flex; }
+.yourmove .dia { width: 10px; height: 10px; transform: rotate(45deg); border: 2px solid #1B1300; border-radius: 1px; }
+.yourmove.on #ym-main { background: rgba(0,0,0,.1); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .halo { animation: halo 2.6s cubic-bezier(.2,.6,.3,1) infinite; transform-box: fill-box; transform-origin: center; }
+  .halo.h2 { animation-delay: 1.3s; }
+  @keyframes halo { 0% { transform: scale(.55); opacity: .55; } 100% { transform: scale(1.6); opacity: 0; } }
+  .pulse { animation: pulse 2.4s cubic-bezier(.2,.6,.3,1) infinite; transform-box: fill-box; transform-origin: center; }
+  @keyframes pulse { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(1.9); opacity: 0; } }
+  .flow { animation: flow 1.6s linear infinite; }
+  @keyframes flow { to { stroke-dashoffset: -26; } }
+  .spin { animation: spin 6s linear infinite; transform-box: fill-box; transform-origin: center; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+}
+
+/* ---------- controls ---------- */
+.controls {
+  position: absolute; right: 16px; top: 16px; z-index: 2; display: flex; flex-direction: column; gap: 8px;
+}
+.group { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+.group button {
+  width: 44px; height: 44px; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center;
+  font-size: 20px; font-weight: 700; color: var(--ink);
+}
+.group button + button { border-top: 1px solid var(--rule); }
+.group button:hover { background: var(--paper-2); }
+.group svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- legend ---------- */
+.legend {
+  position: absolute; left: 16px; bottom: 16px; z-index: 2; width: min(320px, calc(100% - 32px));
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--shadow);
+  max-height: calc(100% - 32px); display: flex; flex-direction: column;
+}
+.legend summary {
+  list-style: none; cursor: pointer; padding: 10px 14px 9px; font-weight: 800; font-size: 14px;
+  display: flex; align-items: center; gap: 10px;
+}
+.legend summary::-webkit-details-marker { display: none; }
+.legend summary .chev { margin-left: auto; transition: transform .15s; width: 14px; height: 14px; stroke: var(--muted); fill: none; stroke-width: 2.4; }
+.legend[open] summary .chev { transform: rotate(180deg); }
+.legend .body { padding: 2px 14px 14px; overflow: auto; }
+.legend h3 { margin: 10px 0 5px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.legend ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.legend li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; line-height: 1.2; }
+.legend li svg { flex: none; }
+.legend li small { color: var(--muted); font-size: 11px; display: block; }
+.legend .two { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 10px; }
+.legend li > span { min-width: 0; overflow-wrap: anywhere; }
+.legend .body { overflow-x: hidden; }
+
+/* ---------- minimap ---------- */
+.minimap {
+  position: absolute; right: 16px; bottom: 16px; z-index: 2; width: 220px;
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; cursor: pointer;
+}
+.minimap svg { display: block; width: 100%; height: auto; }
+.minimap .lbl { display: none; }
+#mm-view { fill: rgba(14,127,214,.10); stroke: #0E7FD6; stroke-width: 18; vector-effect: non-scaling-stroke; }
+#mm-view { stroke-width: 1.5; }
+
+/* ---------- hover card ---------- */
+.card {
+  position: absolute; z-index: 4; width: min(340px, calc(100vw - 32px)); pointer-events: none;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--shadow);
+  padding: 0 0 12px; opacity: 0; transform: translateY(4px); transition: opacity .12s, transform .12s; overflow: hidden;
+}
+.card.on { opacity: 1; transform: none; }
+.card.pinned { pointer-events: auto; }
+.card .band { height: 6px; }
+.card .top { padding: 11px 16px 0; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.card h4, .card .sub, .card .wait { overflow-wrap: anywhere; }
+.card .top .sw { width: 22px; height: 6px; border-radius: 3px; flex: none; }
+.card h4 { margin: 4px 16px 0; font-size: 18px; line-height: 1.2; font-weight: 800; letter-spacing: -.01em; }
+.card .sub { margin: 3px 16px 0; font-size: 13px; color: var(--ink-2); }
+.card dl { margin: 10px 16px 0; display: grid; grid-template-columns: 82px 1fr; gap: 5px 10px; font-size: 13px; }
+.card dt { color: var(--muted); font-weight: 600; }
+.card dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px 1px; border-radius: 999px; font-size: 12px; font-weight: 800; border: 1.5px solid currentColor; }
+.seat { display: inline-flex; align-items: center; gap: 6px; }
+.seat i { width: 8px; height: 8px; border-radius: 50%; background: var(--later); display: inline-block; }
+.seat i.working { background: #19A974; box-shadow: 0 0 0 3px rgba(25,169,116,.2); }
+.seat i.idle { background: var(--later); }
+.verdicts { display: grid; gap: 3px; }
+.verdicts span { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.verdicts b { font-weight: 800; }
+.verdicts em { font-style: normal; color: var(--muted); font-size: 12px; }
+.verdicts .stale { color: var(--alert); }
+.card .wait { margin: 10px 16px 0; padding: 8px 10px 7px; border-radius: 10px; background: var(--paper-2); font-size: 13px; }
+.card .wait b { display: block; font-size: 11.5px; color: var(--muted); font-weight: 700; }
+.card .hint { margin: 10px 16px 0; font-size: 11.5px; color: var(--muted); }
+.card a { color: inherit; }
+
+footer {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 10px; z-index: 1; font-size: 11.5px; color: var(--muted);
+  pointer-events: none; white-space: nowrap;
+}
+.empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--ink-2); }
+
+@media (max-width: 720px) {
+  header { padding: 10px 16px 8px; }
+  .brand h1 { font-size: 18px; }
+  .tally { margin-left: 0; }
+  .minimap, footer { display: none; }
+  .controls { top: 12px; right: 12px; }
+  .legend { left: 12px; bottom: 12px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <svg class="roundel" viewBox="0 0 34 34" aria-hidden="true">
+      <circle cx="17" cy="17" r="13" fill="none" stroke="#E5194B" stroke-width="6"/>
+      <rect x="1" y="13" width="32" height="8" rx="2" fill="var(--ink)"/>
+    </svg>
+    <div>
+      <h1 id="title">Fleet</h1>
+      <p id="stamp">Loading the map data…</p>
+    </div>
+  </div>
+  <div class="tally" id="tally">
+    <span class="yourmove" id="yourmove" hidden>
+      <button class="step" id="ym-prev" aria-label="Previous item waiting on Jordan">&#8249;</button>
+      <button id="ym-main" aria-pressed="false"><i class="dia"></i><span id="ym-text">Your move</span></button>
+      <button class="step" id="ym-next" aria-label="Next item waiting on Jordan">&#8250;</button>
+    </span>
+    <button class="toggle" id="awake" aria-pressed="false" title="Dim every stop whose owner seat isn't working"><i></i>Who's awake</button>
+  </div>
+</header>
+<main>
+  <div id="viewport" aria-label="Fleet map. Drag to pan, scroll or pinch to zoom."><svg id="map" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <div class="controls">
+    <div class="group">
+      <button id="zin" title="Zoom in (+)" aria-label="Zoom in">+</button>
+      <button id="zout" title="Zoom out (-)" aria-label="Zoom out">&minus;</button>
+    </div>
+    <div class="group">
+      <button id="fit" title="Fit to screen (0)" aria-label="Fit to screen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      <button id="now" title="Jump to now (N)" aria-label="Jump to now"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="8"/></svg></button>
+      <button id="theme" title="Switch theme" aria-label="Switch light or dark theme"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></button>
+    </div>
+  </div>
+  <details class="legend" id="legend">
+    <summary>Key<svg class="chev" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></summary>
+    <div class="body" id="legend-body"></div>
+  </details>
+  <div class="minimap" id="minimap" aria-hidden="true"><svg id="mm"></svg></div>
+  <footer id="foot"></footer>
+  <div class="card" id="card" role="tooltip"></div>
+</main>
+
+<script src="fleet-map.data.js"></script>
+<script>
+(function () {
+'use strict';
+const D = window.FLEET_MAP;
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('map');
+const viewport = document.getElementById('viewport');
+if (!D) {
+  viewport.innerHTML = '<div class="empty"><div><b>No map data.</b><br>Run <code>pij fleet-map generate</code> to write fleet-map.data.js next to this page.</div></div>';
+  return;
+}
+
+// ======================================================================
+// Layout: a pure function of the data. Fixed pitches, fixed lane rule,
+// character-count label wrapping (no font measurement), stable order.
+// ======================================================================
+const G = {
+  P: 156,          // pitch between stops on a line
+  LEAD: 150,       // from the last stop to the bend toward its junction
+  LANE0: 128,      // depth of the first lane from the spine
+  LP: 96,          // lane pitch
+  SG: 310,         // minimum gap between spine stations
+  F: 20,           // fan offset between lines entering one interchange
+  CAPH: 30,        // interchange height
+  BAND: 58,        // label band on a lane's outer side
+  M: 26,           // clearance margin
+  R: 26,           // bend radius
+  WRAP: 19,        // characters per stop-label line
+  SWRAP: 15,       // characters per station-label line
+};
+
+function wrap(text, n, maxLines) {
+  const words = String(text).split(/\s+/);
+  const out = [];
+  let cur = '';
+  for (const w of words) {
+    if (!cur) cur = w;
+    else if ((cur + ' ' + w).length <= n) cur += ' ' + w;
+    else { out.push(cur); cur = w; }
+  }
+  if (cur) out.push(cur);
+  if (out.length > maxLines) {
+    const kept = out.slice(0, maxLines);
+    let last = kept[maxLines - 1];
+    if (last.length > n - 1) last = last.slice(0, n - 1);
+    kept[maxLines - 1] = last + '…';
+    return kept;
+  }
+  return out.map((l) => (l.length > n ? l.slice(0, n - 1) + '…' : l));
+}
+
+// ---- Pij Community helpers (character-count widths, so layout stays font-independent) ----
+function crewGroups(list) {
+  const by = new Map();
+  for (const c of list || []) { if (!by.has(c.role)) by.set(c.role, []); by.get(c.role).push(c); }
+  return [...by.keys()].sort().map((role) => {
+    const xs = by.get(role);
+    const live = xs.filter((c) => c.state !== 'released' && c.seat);
+    const dot = xs.some((c) => c.state === 'working') ? 'working' : live.length ? 'idle' : null;
+    const n = live.length || xs.length;
+    return { role, n, label: n > 1 ? `${n} ${role}s` : role, dot, members: xs };
+  });
+}
+const chipW = (g) => g.label.length * 6.7 + (g.dot ? 24 : 14);
+function crewRowW(list) {
+  const gs = crewGroups(list);
+  if (!gs.length) return 0;
+  return Math.max(gs.reduce((a, g) => a + chipW(g), 0) + 5 * (gs.length - 1), 13 * 6.6);
+}
+
+function layout(D) {
+  const spine = D.spine.map((s, i) => ({ ...s, i, x: 0, above: [], below: [] }));
+  const byId = new Map(spine.map((s) => [s.id, s]));
+  const nowLines = new Set();
+
+  // Every branch: real lines, sidings, then nested stops as stacked sub-lines.
+  const branches = [];
+  function addBranch(src, kind, parent) {
+    const b = {
+      id: src.id, name: src.name, colour: src.colour, state: src.state, roadmap: src.roadmap, kind,
+      joins: src.joins || null, joinsLine: src.joinsLine || null, at: src.at || null, community: src.community || [],
+      stops: src.stops.map((s) => ({ ...s, line: src.id })), subs: [], parent: parent || null,
+    };
+    branches.push(b);
+    return b;
+  }
+  for (const l of D.lines) addBranch(l, 'line');
+  for (const l of D.sidings || []) addBranch(l, 'siding');
+  // nested stops -> stacked sub-lines (one level), in data order
+  for (const b of branches.slice()) {
+    for (const s of b.stops) {
+      if (s.stops && s.stops.length) {
+        const sub = addBranch({ id: b.id + '/' + s.id, name: s.name + ' stack', colour: b.colour, state: b.state, roadmap: b.roadmap,
+          joinsLine: b.id, at: s.id, stops: s.stops }, 'stack');
+        sub.realLine = b.id;
+      }
+    }
+  }
+  const branchById = new Map(branches.map((b) => [b.id, b]));
+  for (const b of branches) {
+    b.realLine = b.realLine || b.id;
+    if (b.joinsLine) {
+      const p = branchById.get(b.joinsLine);
+      if (p) { p.subs.push(b); b.parent = p; }
+    }
+  }
+  // inherit "realLine" so stacked sub-lines of a sub-line report the right owner line
+  for (const b of branches) if (b.kind === 'stack') b.realLine = branchById.get(b.joinsLine).realLine;
+
+  // occupancy per side: lane -> [[a, b], ...]
+  const occ = { up: new Map(), down: new Map() };
+  const depth = (k) => G.LANE0 + (k - 1) * G.LP;
+  const free = (side, k, a, b) => !(occ[side].get(k) || []).some(([x, y]) => a < y && b > x);
+  const take = (side, k, a, b) => { if (!occ[side].has(k)) occ[side].set(k, []); occ[side].get(k).push([a, b]); };
+
+  // width a line's name tag needs at its dead end (character count, not font metrics)
+  const tagText = (b) => (b.roadmap && /^\d/.test(b.id) ? b.id + '  ' : '') + b.name;
+  const tagW = (b) => (b.kind === 'stack' ? 0 : Math.max(Math.min(tagText(b).length, 34) * 7.1 + 18, crewRowW(b.community)) + 14);
+  const tailX = (b) => (b.kind === 'siding' ? 30 : 16);
+  function spineClaims(b, side, k, xe) {
+    const d = depth(k);
+    const n = b.stops.length;
+    const xBend = xe - d;
+    const xLast = xBend - G.LEAD;
+    const xFirst = xLast - (n - 1) * G.P;
+    const claims = [[k, xFirst - G.M - tailX(b) - tagW(b), xBend + G.M]];
+    for (let j = 1; j < k; j++) claims.push([j, xe - (depth(j) + G.BAND) - G.M, xe - depth(j) + 10 + G.M]);
+    return { claims, xFirst, xLast, xBend };
+  }
+  function subClaims(b, side, k, pk, xp) {
+    const n = b.stops.length;
+    const xLast = xp - G.LEAD;
+    const xFirst = xLast - (n - 1) * G.P;
+    const claims = [[k, xFirst - G.M - tailX(b) - tagW(b), xp + G.M]];
+    for (let j = pk + 1; j < k; j++) claims.push([j, xp - G.M, xp + G.M]);
+    // the riser also crosses the parent's own label band at xp: parent labels start at xp+12, so nothing to claim
+    return { claims, xFirst, xLast };
+  }
+  const fits = (side, claims) => claims.every(([k, a, b]) => free(side, k, a, b));
+
+  function placeSubs(p) {
+    // left to right by junction, so a longer sub-line further right goes outside the shorter ones' risers
+    const idx = (s) => { const i = p.stops.findIndex((x) => x.id === s.at); return i < 0 ? p.stops.length : i; };
+    const ordered = p.subs.slice().sort((a, b) => idx(a) - idx(b) || p.subs.indexOf(a) - p.subs.indexOf(b));
+    for (const s of ordered) {
+      const at = p.stops.findIndex((x) => x.id === s.at);
+      const js = p.stops[at] || p.stops[p.stops.length - 1];
+      const xp = js.x;
+      let k = p.lane + 1;
+      let c;
+      // a riser can't move sideways: if an inner lane blocks it, stop at the cap and take the lane anyway
+      while (!fits(p.side, (c = subClaims(s, p.side, k, p.lane, xp)).claims) && k < p.lane + 12) k++;
+      c.claims.forEach(([kk, a, b]) => take(p.side, kk, a, b));
+      Object.assign(s, { side: p.side, lane: k, y: (p.side === 'up' ? -1 : 1) * depth(k), xp, yp: p.y, junctionStop: js, xFirst: c.xFirst });
+      js.junction = true;
+      s.stops.forEach((st, i) => { st.x = c.xFirst + i * G.P; st.y = s.y; });
+      placeSubs(s);
+    }
+  }
+
+  // stations left to right; lines joining each station in data order
+  let prevX = 0;
+  for (const st of spine) {
+    const joining = branches.filter((b) => b.joins === st.id);
+    let x = st.i === 0 ? 0 : prevX + G.SG;
+    // push the station right so its branches start right of the spine's head
+    for (const b of joining) {
+      const need = -60 + depth(1) + G.LEAD + (b.stops.length - 1) * G.P + G.M + G.F * 2;
+      if (x < need) x = need;
+    }
+    // Try to seat every line at this station within KMAX lanes a side; if a diagonal
+    // would cross an occupied lane, move the station right a fixed step and try again.
+    const KMAX = 6;
+    for (let attempt = 0; ; attempt++) {
+      const snapshot = { up: new Map([...occ.up].map(([k, v]) => [k, v.slice()])), down: new Map([...occ.down].map(([k, v]) => [k, v.slice()])) };
+      const seats = [];
+      let ok = true;
+      joining.forEach((b, idx) => {
+        if (!ok) return;
+        const pref = idx % 2 === 0 ? ['up', 'down'] : ['down', 'up'];
+        for (let k = 1; k <= KMAX; k++) {
+          for (const side of pref) {
+            const c = spineClaims(b, side, k, x);
+            if (fits(side, c.claims)) {
+              c.claims.forEach(([kk, a, bb]) => take(side, kk, a, bb));
+              seats.push([b, side, k]);
+              return;
+            }
+          }
+        }
+        ok = false;
+      });
+      if (ok || attempt > 200) {
+        st.above.length = 0; st.below.length = 0;
+        for (const [b, side, k] of seats) {
+          Object.assign(b, { side, lane: k, y: (side === 'up' ? -1 : 1) * depth(k), station: st });
+          (side === 'up' ? st.above : st.below).push(b);
+        }
+        break;
+      }
+      occ.up = snapshot.up; occ.down = snapshot.down;
+      x += 40;
+    }
+    st.x = x;
+    prevX = x;
+    // fan: shallower lanes enter further left so diagonals never cross runs
+    for (const list of [st.above, st.below]) {
+      list.sort((a, b) => a.lane - b.lane || branches.indexOf(a) - branches.indexOf(b));
+    }
+    const nFan = Math.max(st.above.length, st.below.length, 1);
+    st.capW = nFan > 1 ? (nFan - 1) * G.F + G.CAPH : G.CAPH;
+    for (const list of [st.above, st.below]) {
+      list.forEach((b, j) => {
+        b.xe = x - ((list.length - 1) * G.F) / 2 + j * G.F;
+        const d = Math.abs(b.y);
+        b.xBend = b.xe - (d - G.CAPH / 2);
+        b.xLast = b.xBend - G.LEAD;
+        b.xFirst = b.xLast - (b.stops.length - 1) * G.P;
+        b.stops.forEach((s, i) => { s.x = b.xFirst + i * G.P; s.y = b.y; });
+        if (st.state === 'now') nowLines.add(b.id);
+      });
+    }
+    for (const b of [...st.above, ...st.below]) placeSubs(b);
+  }
+  for (const b of branches) if (b.parent && nowLines.has(b.realLine)) nowLines.add(b.id);
+
+  // bounds
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  const grow = (a, b, c, d) => { x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d); };
+  grow(spine[0].x - 90, -60, spine[spine.length - 1].x + 260, 80);
+  if (D.depot && D.depot.community.length) {
+    const gs = crewGroups(D.depot.community);
+    const w = Math.max(150, ...gs.map(chipW)) + 28;
+    const h = 52 + gs.length * 24;
+    depotBox = { x: spine[0].x - 80 - 46 - w, y: -h / 2, w, h };
+    grow(depotBox.x - 10, depotBox.y - 10, depotBox.x + depotBox.w, depotBox.y + depotBox.h + 10);
+  }
+  for (const b of branches) {
+    if (b.y === undefined) continue;
+    const sgn = b.y < 0 ? -1 : 1;
+    for (const s of b.stops) grow(s.x - 40, Math.min(s.y, s.y + sgn * (G.BAND + 6)), s.x + G.P - 10, Math.max(s.y, s.y + sgn * (G.BAND + 6)));
+  }
+  const pad = 70;
+  // history: lines (with their sub-lines) whose every stop is merged; drawn quieter, left of the focus
+  const history = new Set();
+  for (const b of branches) if (!b.parent && b.kind !== 'siding') {
+    const fam = branches.filter((x) => x.realLine === b.id);
+    if (fam.every((x) => x.stops.length && x.stops.every((s) => s.state === 'merged'))) history.add(b.id);
+  }
+  return { history, tagText, spine, branches, nowLines, bounds: { x: x0 - pad, y: y0 - pad, w: x1 - x0 + pad * 2, h: y1 - y0 + pad * 2 } };
+}
+
+// ======================================================================
+// Drawing
+// ======================================================================
+let depotBox = null;
+const L = layout(D);
+const el = (name, attrs, parent) => {
+  const n = document.createElementNS(NS, name);
+  for (const k in attrs) if (attrs[k] !== undefined && attrs[k] !== null) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+};
+const fmt = (n) => Math.round(n * 10) / 10;
+
+// path for a spine branch: run, rounded 45-degree bend, diagonal into the interchange
+function branchPath(b, extraLeft) {
+  const sgn = b.y < 0 ? -1 : 1;
+  const yEdge = sgn * (G.CAPH / 2);
+  const t = G.R * 0.4142;
+  const xs = b.xFirst - (extraLeft || 0);
+  const k = t * Math.SQRT1_2;
+  return `M${fmt(xs)} ${fmt(b.y)} L${fmt(b.xBend - t)} ${fmt(b.y)} Q${fmt(b.xBend)} ${fmt(b.y)} ${fmt(b.xBend + k)} ${fmt(b.y - sgn * k)} L${fmt(b.xe)} ${fmt(yEdge)}`;
+}
+// path for a sub-line: run, rounded 90-degree corner, riser into the junction stop
+function subPath(s, extraLeft) {
+  const sgn = s.y < 0 ? -1 : 1;
+  const r = G.R;
+  const xs = s.xFirst - (extraLeft || 0);
+  return `M${fmt(xs)} ${fmt(s.y)} L${fmt(s.xp - r)} ${fmt(s.y)} Q${fmt(s.xp)} ${fmt(s.y)} ${fmt(s.xp)} ${fmt(s.y - sgn * r)} L${fmt(s.xp)} ${fmt(s.yp)}`;
+}
+
+const STOP_LABEL = {
+  merged: 'Merged', review: 'In review', building: 'Building', blocked: 'Blocked', held: 'Held',
+  waiting: 'Waiting on Jordan', next: 'Next', later: 'Later', closed: 'Closed',
+};
+const PHASE_LABEL = { done: 'Done', now: 'Now', next: 'Next', later: 'Later' };
+
+// in review: a magnifying glass; building: a spanner (drawn in ink inside the hollow node)
+function glyphMagnifier(g, k) {
+  const t = el('g', { transform: `scale(${fmt(k)})` }, g);
+  el('circle', { cx: -0.9, cy: -0.9, r: 2.7, fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.7 }, t);
+  el('path', { d: 'M1.1 1.1 L3.7 3.7', stroke: 'var(--ink)', 'stroke-width': 2.1, 'stroke-linecap': 'round' }, t);
+}
+function glyphSpanner(g, k) {
+  const t = el('g', { transform: `scale(${fmt(k)})` }, g);
+  el('path', { d: 'M-3.5 3.5 L0.6 -0.6', stroke: 'var(--ink)', 'stroke-width': 2.2, 'stroke-linecap': 'round' }, t);
+  el('circle', { cx: 1.7, cy: -1.7, r: 2.6, fill: 'var(--ink)' }, t);
+  el('rect', { x: -1.1, y: -1.1, width: 2.2, height: 2.2, fill: 'var(--paper)', transform: 'translate(3 -3) rotate(45)' }, t);
+}
+function stopMarker(g, s, colour, small) {
+  const r = small ? 7 : 8.5;
+  const st = s.state;
+  if (s.junction) el('circle', { r: r + 6.5, fill: 'var(--paper)', stroke: 'var(--ink)', 'stroke-width': 3.2 }, g);
+  if (st === 'merged') {
+    el('circle', { r: r + 0.5, fill: colour, stroke: 'var(--paper)', 'stroke-width': 2.5 }, g);
+    el('path', { d: 'M-3.6 0.2 L-1.1 2.8 L3.8 -2.6', fill: 'none', stroke: '#fff', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g);
+  } else if (st === 'blocked') {
+    el('circle', { r: r + 1, fill: 'var(--alert)', stroke: 'var(--paper)', 'stroke-width': 2 }, g);
+    el('rect', { x: -4.6, y: -1.4, width: 9.2, height: 2.8, rx: 1.2, fill: '#fff' }, g);
+  } else if (st === 'building') {
+    // active: a dashed green ring (being built)
+    el('circle', { r: r + 5, fill: 'none', stroke: 'var(--go)', 'stroke-width': 2.6, class: 'pulse' }, g);
+    el('circle', { r, fill: 'var(--paper)', stroke: colour, 'stroke-width': 3.4 }, g);
+    el('circle', { r: r + 5, fill: 'none', stroke: 'var(--go)', 'stroke-width': 3, 'stroke-dasharray': '4 3.2', class: 'spin' }, g);
+    glyphSpanner(g, r / 8.5);
+  } else if (st === 'review') {
+    // active: a solid green ring (in review)
+    el('circle', { r: r + 5, fill: 'none', stroke: 'var(--go)', 'stroke-width': 2.6, class: 'pulse' }, g);
+    el('circle', { r, fill: 'var(--paper)', stroke: colour, 'stroke-width': 3.4 }, g);
+    el('circle', { r: r + 5, fill: 'none', stroke: 'var(--go)', 'stroke-width': 3 }, g);
+    glyphMagnifier(g, r / 8.5);
+  } else if (st === 'held') {
+    el('circle', { r, fill: 'var(--paper)', stroke: colour, 'stroke-width': 3.4 }, g);
+    el('rect', { x: -3.2, y: -3.4, width: 2.2, height: 6.8, rx: .8, fill: 'var(--ink)' }, g);
+    el('rect', { x: 1, y: -3.4, width: 2.2, height: 6.8, rx: .8, fill: 'var(--ink)' }, g);
+  } else if (st === 'waiting') {
+    // waiting on Jordan: an amber diamond, unlike every other (round) stop
+    const q = r + 4.5;
+    el('path', { d: `M0 ${-q} L${q} 0 L0 ${q} L${-q} 0 Z`, fill: 'var(--you)', stroke: '#1B1300', 'stroke-width': 2.6, 'stroke-linejoin': 'round' }, g);
+    el('path', { d: 'M1.6 -4.6 V1.4 A2.6 2.6 0 0 1 -3.6 1.4', fill: 'none', stroke: '#1B1300', 'stroke-width': 2.3, 'stroke-linecap': 'round' }, g);
+  } else if (st === 'closed') {
+    el('circle', { r, fill: 'var(--paper)', stroke: 'var(--later)', 'stroke-width': 3 }, g);
+    el('path', { d: 'M-3.5 -3.5 L3.5 3.5 M3.5 -3.5 L-3.5 3.5', stroke: 'var(--muted)', 'stroke-width': 2, 'stroke-linecap': 'round' }, g);
+  } else if (st === 'next' || st === 'later') {
+    el('circle', { r: r - 1.5, fill: 'var(--paper)', stroke: colour, 'stroke-width': 2.6, 'stroke-dasharray': st === 'later' ? '2.5 2.5' : null }, g);
+  } else {
+    el('circle', { r, fill: 'var(--paper)', stroke: colour, 'stroke-width': 3.4 }, g);
+  }
+  el('circle', { r: r + (s.junction ? 10 : 9), class: 'mark-focus' }, g);
+}
+
+function drawLabelLines(g, x, y, sgn, lines) {
+  // lines: [{text, cls, fill}] top-down; anchored on the lane's outer side
+  const LH = 15;
+  lines.forEach((ln, i) => {
+    const by = sgn < 0 ? y - 17 - (lines.length - 1 - i) * LH : y + 27 + i * LH;
+    const t = el('text', { x: fmt(x), y: fmt(by), class: 'lbl ' + ln.cls }, g);
+    if (ln.fill) t.setAttribute('fill', ln.fill);
+    t.textContent = ln.text;
+  });
+}
+
+const B = L.bounds;
+svg.setAttribute('viewBox', `${B.x} ${B.y} ${B.w} ${B.h}`);
+const defs = el('defs', {}, svg);
+const pat = el('pattern', { id: 'grid', width: 26, height: 26, patternUnits: 'userSpaceOnUse' }, defs);
+el('circle', { cx: 1.5, cy: 1.5, r: 1.3, fill: 'var(--dot)' }, pat);
+const cam = el('g', { id: 'cam' }, svg);
+el('rect', { x: B.x - 4000, y: B.y - 4000, width: B.w + 8000, height: B.h + 8000, fill: 'url(#grid)' }, cam);
+const world = el('g', { id: 'world' }, cam);
+const gLines = el('g', {}, world);
+const gSpine = el('g', {}, world);
+const gStops = el('g', {}, world);
+const gPlates = el('g', {}, world);
+const gStations = el('g', {}, world);
+const keyed = new Map();
+function hitAttrs(key, label, focusable) {
+  return { 'data-key': key, class: 'hit', tabindex: focusable ? 0 : null, role: focusable ? 'button' : null, 'aria-label': label };
+}
+
+// A line's track: the built part solid; the part still under construction drawn as a cased
+// rail (outline, paper core, faint sleepers), the way transit maps show lines being built.
+const ACTIVE = new Set(['review', 'building']);
+const STILL = new Set(['blocked', 'held', 'waiting']);
+function drawTrack(g, d, colour, w, spans, uid, cap) {
+  const mk = (id, xs) => {
+    const cp = el('clipPath', { id, clipPathUnits: 'userSpaceOnUse' }, defs);
+    for (const [x0, x1] of xs) el('rect', { x: fmt(x0), y: -1e5, width: fmt(x1 - x0), height: 2e5 }, cp);
+    return `url(#${id})`;
+  };
+  const gaps = [];
+  let at = -1e6;
+  for (const [x0, x1] of spans) { if (x0 > at) gaps.push([at, x0]); at = x1; }
+  if (at < 1e6) gaps.push([at, 1e6]);
+  const built = mk('cb-' + uid, spans);
+  const open = mk('co-' + uid, gaps);
+  const common = { d, fill: 'none', 'stroke-linecap': cap, 'stroke-linejoin': 'round' };
+  el('path', { ...common, stroke: 'var(--paper)', 'stroke-width': w + 6 }, g);
+  el('path', { ...common, stroke: colour, 'stroke-width': w, 'clip-path': built }, g);
+  const og = el('g', { 'clip-path': open }, g);
+  el('path', { ...common, stroke: colour, 'stroke-width': w }, og);
+  el('path', { ...common, stroke: 'var(--paper)', 'stroke-width': Math.max(w - 4.6, 2) }, og);
+  el('path', { ...common, stroke: colour, 'stroke-width': Math.max(w - 4.6, 2), 'stroke-dasharray': '1.6 7', 'stroke-linecap': 'butt', opacity: .45 }, og);
+}
+// Built track, as sorted [x0, x1] spans: solid up to the first stop not merged (the frontier);
+// past it, each merged stop is solid out to the midpoints with its neighbours (to the spine
+// when it's the last stop), so a stop merged out of order has built track around it and the
+// gap stays at the open stops. A line merged in order gives the one span it always had.
+function builtSpans(stops) {
+  const f = stops.findIndex((s) => s.state !== 'merged');
+  if (f < 0) return [[-1e6, 1e6]];
+  const spans = f > 0 ? [[-1e6, stops[f - 1].x]] : [];
+  for (let i = f + 1; i < stops.length; i++) {
+    if (stops[i].state !== 'merged') continue;
+    const lo = (stops[i - 1].x + stops[i].x) / 2;
+    const hi = i === stops.length - 1 ? 1e6 : (stops[i].x + stops[i + 1].x) / 2;
+    const last = spans[spans.length - 1];
+    if (last && last[1] >= lo) last[1] = hi;
+    else spans.push([lo, hi]);
+  }
+  return spans;
+}
+// Moving dots: from each stop being worked (in review, building) toward the spine, stopping at
+// the first blocked, held or waiting stop. White on built track, line colour on open track.
+function drawFlow(g, d, b, colour, uid) {
+  const spans = [];
+  b.stops.forEach((s, i) => {
+    if (!ACTIVE.has(s.state)) return;
+    const stop = b.stops.slice(i + 1).find((t) => STILL.has(t.state));
+    spans.push([s.x, stop ? stop.x : 1e6]);
+  });
+  if (!spans.length) return;
+  const cp = el('clipPath', { id: 'cf-' + uid, clipPathUnits: 'userSpaceOnUse' }, defs);
+  for (const [a, z] of spans) el('rect', { x: fmt(a), y: -1e5, width: fmt(z - a), height: 2e5 }, cp);
+  const fg = el('g', { 'clip-path': `url(#cf-${uid})` }, g);
+  const common = { d, fill: 'none', 'stroke-width': 2.6, 'stroke-linecap': 'round', 'stroke-dasharray': '1 25', class: 'flow' };
+  el('path', { ...common, stroke: '#fff', 'stroke-opacity': .9, 'clip-path': `url(#cb-${uid})` }, fg);
+  el('path', { ...common, stroke: colour, 'clip-path': `url(#co-${uid})` }, fg);
+}
+function drawChips(g, gs, x0, cy) {
+  let x = x0;
+  for (const c of gs) {
+    const w = chipW(c);
+    const cg = el('g', { transform: `translate(${fmt(x)} ${fmt(cy)})` }, g);
+    el('rect', { x: 0, y: -9.5, width: fmt(w), height: 19, rx: 9.5, fill: 'var(--surface)', stroke: 'var(--rule)', 'stroke-width': 1.2 }, cg);
+    let tx = 8;
+    if (c.dot) {
+      el('circle', { cx: 11, cy: 0, r: 3.6, fill: c.dot === 'working' ? 'var(--go)' : 'var(--later)' }, cg);
+      tx = 19;
+    }
+    const t = el('text', { x: tx, y: 3.9, class: 'lbl lbl-chip' }, cg);
+    t.textContent = c.label;
+    x += w + 5;
+  }
+}
+function drawTrain(g, x, y, colour, small) {
+  const k = small ? 0.8 : 1;
+  const t = el('g', { transform: `translate(${fmt(x)} ${fmt(y)}) scale(${k})` }, g);
+  el('rect', { x: -17, y: -8.5, width: 34, height: 17, rx: 8.5, fill: 'var(--paper)' }, t);
+  el('path', { d: 'M-14 -6 H7 A6 6 0 0 1 13 0 A6 6 0 0 1 7 6 H-14 A2 2 0 0 1 -16 4 V-4 A2 2 0 0 1 -14 -6 Z', fill: 'var(--ink)', stroke: colour, 'stroke-width': 2.2 }, t);
+  el('rect', { x: -11, y: -2.2, width: 5, height: 4.4, rx: 1, fill: 'var(--paper)' }, t);
+  el('rect', { x: -4, y: -2.2, width: 5, height: 4.4, rx: 1, fill: 'var(--paper)' }, t);
+  el('path', { d: 'M5 -2.2 H7.5 A2.4 2.4 0 0 1 9.6 0 A2.4 2.4 0 0 1 7.5 2.2 H5 Z', fill: colour }, t);
+  return t;
+}
+
+// ---- branches (drawn in data order; sub-lines after parents) ----
+for (const b of L.branches) {
+  if (b.y === undefined) continue;
+  const isSub = !!b.parent;
+  const later = b.state === 'later';
+  const realColour = b.colour;
+  const g = el('g', { 'data-line': b.realLine, class: later ? 'later-line' : null }, gLines);
+  const history = L.history.has(b.realLine);
+  if (history) g.classList.add('history');
+  const w = b.kind === 'siding' ? 6 : b.kind === 'stack' ? 7 : 9.5;
+  const extra = b.kind === 'siding' ? 30 : 16;
+  const d = isSub ? subPath(b, extra) : branchPath(b, extra);
+  // progress: every path runs left to right in x; the frontier is the first stop not merged
+  const frontier = b.stops.findIndex((s) => s.state !== 'merged');
+  drawTrack(g, d, realColour, w, builtSpans(b.stops), 'b' + L.branches.indexOf(b), b.kind === 'siding' ? 'butt' : 'round');
+  drawFlow(g, d, b, realColour, 'b' + L.branches.indexOf(b));
+  if (b.kind === 'siding') {
+    // buffer stop at the dead end
+    const xs = b.xFirst - extra;
+    el('path', { d: `M${fmt(xs)} ${fmt(b.y - 11)} L${fmt(xs)} ${fmt(b.y + 11)}`, stroke: 'var(--ink)', 'stroke-width': 5, 'stroke-linecap': 'round' }, g);
+    el('path', { d: `M${fmt(xs - 7)} ${fmt(b.y - 11)} L${fmt(xs - 7)} ${fmt(b.y + 11)}`, stroke: 'var(--ink)', 'stroke-width': 2, 'stroke-linecap': 'round', opacity: .5 }, g);
+  }
+  // the train: where this line's work has got to (between the frontier and the stop before it)
+  if (frontier > 0 && b.kind !== 'siding') {
+    const tx = b.stops[frontier - 1].x + G.P / 2;
+    drawTrain(g, tx, b.y, realColour, b.kind === 'stack');
+  }
+  // hit path for the line
+  const key = 'line:' + b.id;
+  keyed.set(key, { kind: 'line', b });
+  el('path', { d, fill: 'none', stroke: 'transparent', 'stroke-width': 22, ...hitAttrs(key, b.name, false) }, g);
+
+  // line name tag at the dead end (not for stacks)
+  if (b.kind !== 'stack') {
+    const tagText = L.tagText(b);
+    const tw = Math.min(tagText.length, 34) * 7.1 + 18;
+    const tx = b.xFirst - extra - 14 - tw;
+    const plate = b.community && b.community.length
+      ? el('g', { 'data-line': b.realLine, ...hitAttrs('crew:' + b.id, `${b.name}: Pij Community`, true), class: 'hit' + (later ? ' later-line' : '') + (history ? ' history' : '') }, gPlates)
+      : g;
+    if (plate !== g) {
+      keyed.set('crew:' + b.id, { kind: 'crew', b, community: b.community, title: b.name, colour: realColour });
+      // chips sit on the lane's outer side, right-aligned to the tag's end
+      const sgn = b.y < 0 ? -1 : 1;
+      const right = tx + tw;
+      const gs = crewGroups(b.community);
+      const rowW = crewRowW(b.community);
+      const chipY = b.y + sgn * (sgn < 0 ? 27 : 47);
+      const titleY = sgn < 0 ? b.y - 44 : b.y + 30;
+      el('rect', { x: fmt(Math.min(tx, right - rowW) - 6), y: fmt(Math.min(titleY - 12, chipY - 10) - 2), width: fmt(Math.max(tw, rowW) + 12), height: fmt(Math.abs(chipY - titleY) + 26), fill: 'transparent' }, plate);
+      const tt = el('text', { x: fmt(right), y: fmt(titleY), 'text-anchor': 'end', class: 'lbl lbl-crew-title' }, plate);
+      tt.textContent = 'Pij Community';
+      drawChips(plate, gs, right - rowW, chipY);
+    }
+    const tg = el('g', { transform: `translate(${fmt(tx)} ${fmt(b.y)})` }, plate);
+    el('rect', { x: 0, y: -12, width: fmt(tw), height: 24, rx: 12, fill: b.kind === 'siding' ? 'var(--muted)' : realColour }, tg);
+    const t = el('text', { x: 9, y: 4.5, class: 'lbl lbl-line' }, tg);
+    t.textContent = tagText.length > 34 ? tagText.slice(0, 33) + '…' : tagText;
+    // account for the tag in bounds by widening the viewBox if needed
+    if (tx - 20 < B.x) { B.w += B.x - (tx - 20); B.x = tx - 20; }
+  }
+
+  // stops
+  const sgn = b.y < 0 ? -1 : 1;
+  for (const s of b.stops) {
+    const sk = 'stop:' + b.id + ':' + s.id;
+    keyed.set(sk, { kind: 'stop', b, s });
+    const sg = el('g', { 'data-line': b.realLine, class: (history ? 'history ' : '') + (later && s.state !== 'waiting' ? 'later-line ' : '') + (s.state === 'later' ? 'stop-later ' : '') + (s.state === 'waiting' ? 'yours ' : '') + (s.ownerState === 'working' ? '' : 'asleep') }, gStops);
+    if (s.state === 'waiting') el('circle', { cx: fmt(s.x), cy: fmt(s.y), r: 22, class: 'yours-ring' }, sg);
+    const lines = [];
+    if (s.pr) lines.push({ text: '#' + s.pr, cls: 'lbl-pr', fill: realColour });
+    for (const t of wrap(s.name, G.WRAP, 2)) lines.push({ text: t, cls: 'lbl-stop' });
+    drawLabelLines(sg, s.x + 12, s.y, sgn, lines);
+    const mg = el('g', { transform: `translate(${fmt(s.x)} ${fmt(s.y)})`, ...hitAttrs(sk, `${s.name}${s.pr ? ', PR ' + s.pr : ''}: ${STOP_LABEL[s.state] || s.state}`, true) }, sg);
+    el('circle', { r: 16, fill: 'transparent' }, mg);
+    stopMarker(mg, s, realColour, b.kind !== 'line');
+  }
+}
+viewportBox();
+function viewportBox() { svg.setAttribute('viewBox', `${B.x} ${B.y} ${B.w} ${B.h}`); }
+
+// ---- spine ----
+const S = L.spine;
+for (let i = 0; i < S.length; i++) {
+  const a = i === 0 ? S[0].x - 80 : S[i - 1].x;
+  const st = S[i];
+  const ph = st.state;
+  const stroke = ph === 'later' ? 'var(--later)' : 'var(--ink)';
+  const sw = ph === 'later' ? 11 : 15;
+  const seg = `M${fmt(a)} 0 L${fmt(st.x)} 0`;
+  el('path', { d: seg, stroke, 'stroke-width': sw, 'stroke-linecap': 'round' }, gSpine);
+  if (ph === 'next' || ph === 'later') {
+    // not yet built: a cased rail with sleepers
+    el('path', { d: seg, stroke: 'var(--paper)', 'stroke-width': sw - 6, 'stroke-linecap': 'round' }, gSpine);
+    el('path', { d: seg, stroke, 'stroke-width': sw - 6, 'stroke-dasharray': '2 9', opacity: .5 }, gSpine);
+  }
+}
+// terminus stub past Launch
+el('path', { d: `M${fmt(S[S.length - 1].x)} 0 L${fmt(S[S.length - 1].x + 70)} 0`, stroke: 'var(--later)', 'stroke-width': 6, 'stroke-linecap': 'round', 'stroke-dasharray': '0.1 14' }, gSpine);
+for (const st of S) {
+  const g = el('g', { class: 'st-' + st.state }, gStations);
+  const key = 'station:' + st.id;
+  keyed.set(key, { kind: 'station', st });
+  const w = st.capW, h = G.CAPH;
+  const later = st.state === 'later';
+  const hg = el('g', { transform: `translate(${fmt(st.x)} 0)`, ...hitAttrs(key, `${st.name}: ${PHASE_LABEL[st.state]}`, true) }, g);
+  if (st.state === 'now') {
+    el('rect', { x: -w / 2 - 6, y: -h / 2 - 6, width: w + 12, height: h + 12, rx: (h + 12) / 2, fill: 'none', stroke: 'var(--go)', 'stroke-width': 3, class: 'halo' }, hg);
+    el('rect', { x: -w / 2 - 6, y: -h / 2 - 6, width: w + 12, height: h + 12, rx: (h + 12) / 2, fill: 'none', stroke: 'var(--go)', 'stroke-width': 3, class: 'halo h2' }, hg);
+    el('rect', { x: -w / 2 - 6.5, y: -h / 2 - 6.5, width: w + 13, height: h + 13, rx: (h + 13) / 2, fill: 'none', stroke: 'var(--go)', 'stroke-width': 3.5 }, hg);
+  }
+  el('rect', { x: -w / 2 - 14, y: -h / 2 - 14, width: w + 28, height: h + 28, rx: 20, fill: 'transparent' }, hg);
+  el('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: h / 2, fill: st.state === 'done' ? 'var(--ink)' : 'var(--paper)', stroke: later ? 'var(--later)' : 'var(--ink)', 'stroke-width': 4.5 }, hg);
+  if (st.state === 'done') el('rect', { x: -w / 2 + 6, y: -h / 2 + 6, width: w - 12, height: h - 12, rx: (h - 12) / 2, fill: 'var(--paper)' }, hg);
+  if (st.state === 'now') el('circle', { r: 6, fill: 'var(--go)' }, hg);
+  el('rect', { x: -w / 2 - 7, y: -h / 2 - 7, width: w + 14, height: h + 14, rx: (h + 14) / 2, class: 'mark-focus' }, hg);
+  const lx = st.x + w / 2 + 12;
+  const nameLines = wrap(st.name, G.SWRAP, 2);
+  nameLines.forEach((t, i) => { const tx = el('text', { x: fmt(lx), y: 36 + i * 18, class: 'lbl lbl-station' }, g); tx.textContent = t; });
+  const ph = el('text', { x: fmt(lx), y: 36 + nameLines.length * 18, class: 'lbl lbl-phase' }, g);
+  ph.textContent = PHASE_LABEL[st.state];
+}
+
+// ---- depot: shared roles, drawn once beside the spine's head ----
+if (depotBox) {
+  const db = depotBox;
+  if (db.x - 20 < B.x) { B.w += B.x - (db.x - 20); B.x = db.x - 20; }
+  const head = S[0].x - 80;
+  el('path', { d: `M${fmt(db.x + db.w)} 0 L${fmt(head)} 0`, stroke: 'var(--ink)', 'stroke-width': 5, 'stroke-dasharray': '2 6', 'stroke-linecap': 'round' }, gSpine);
+  keyed.set('crew:depot', { kind: 'crew', b: null, community: D.depot.community, title: D.depot.name, colour: 'var(--ink)', depot: true });
+  const dg = el('g', hitAttrs('crew:depot', `${D.depot.name}: shared roles`, true), gStations);
+  el('rect', { x: fmt(db.x), y: fmt(db.y), width: fmt(db.w), height: fmt(db.h), rx: 14, fill: 'var(--surface)', stroke: 'var(--ink)', 'stroke-width': 2.5 }, dg);
+  el('rect', { x: fmt(db.x), y: fmt(db.y), width: fmt(db.w), height: 8, rx: 4, fill: 'var(--ink)' }, dg);
+  const t1 = el('text', { x: fmt(db.x + 14), y: fmt(db.y + 30), class: 'lbl lbl-depot', fill: 'var(--ink)' }, dg);
+  t1.textContent = D.depot.name;
+  const t2 = el('text', { x: fmt(db.x + 14), y: fmt(db.y + 45), class: 'lbl lbl-crew-title' }, dg);
+  t2.textContent = 'Pij Community, shared roles';
+  crewGroups(D.depot.community).forEach((g, i) => drawChips(dg, [g], db.x + 14, db.y + 64 + i * 24));
+  el('rect', { x: fmt(db.x - 5), y: fmt(db.y - 5), width: fmt(db.w + 10), height: fmt(db.h + 10), rx: 18, class: 'mark-focus' }, dg);
+}
+viewportBox();
+
+// ======================================================================
+// Header, tally, legend, footer
+// ======================================================================
+document.getElementById('title').textContent = D.title || 'Fleet';
+document.title = (D.title || 'Fleet') + ' map';
+const when = new Date(D.generatedAt);
+const stampText = isNaN(when) ? D.generatedAt : when.toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+document.getElementById('stamp').textContent = `Updated ${stampText}. Order, not time.`;
+document.getElementById('foot').textContent = `Generated ${D.generatedAt} from ${D.source}`;
+
+const allStops = [];
+for (const b of L.branches) if (b.y !== undefined) for (const s of b.stops) allStops.push({ b, s });
+const count = (st) => allStops.filter((x) => x.s.state === st && x.b.state !== 'later' || (x.s.state === st && st === 'waiting')).length;
+const tally = document.getElementById('tally');
+const tallyItems = [['review', 'in review', 'var(--go)'], ['building', 'building', 'var(--go)'], ['blocked', 'blocked', 'var(--alert)'], ['merged', 'merged', 'var(--muted)']];
+for (const [st, label, c] of tallyItems) {
+  const n = count(st);
+  if (!n) continue;
+  const sp = document.createElement('span');
+  sp.innerHTML = `<i style="background:${c}"></i><b>${n}</b> ${label}`;
+  tally.appendChild(sp);
+}
+
+function legendSwatch(kind, colour) {
+  const s = document.createElementNS(NS, 'svg');
+  s.setAttribute('width', 36); s.setAttribute('height', 22); s.setAttribute('viewBox', '-18 -11 36 22');
+  return s;
+}
+const lb = document.getElementById('legend-body');
+function section(title, cls) {
+  const h = document.createElement('h3'); h.textContent = title; lb.appendChild(h);
+  const ul = document.createElement('ul'); if (cls) ul.className = cls; lb.appendChild(ul); return ul;
+}
+function item(ul, draw, text, sub) {
+  const li = document.createElement('li');
+  const s = legendSwatch();
+  draw(s);
+  li.appendChild(s);
+  const span = document.createElement('span');
+  span.textContent = text;
+  if (sub) { const sm = document.createElement('small'); sm.textContent = sub; span.appendChild(sm); }
+  li.appendChild(span);
+  ul.appendChild(li);
+  return li;
+}
+function shortRoadmap(r) {
+  const nums = String(r).match(/\b\d{3}\b/g);
+  return nums ? (nums.length > 1 ? 'Roadmaps ' : 'Roadmap ') + nums.join(', ') : String(r);
+}
+const ulLines = section('Lines');
+for (const b of L.branches.filter((b) => b.kind !== 'stack')) {
+  const li = item(ulLines, (s) => {
+    const g = el('g', { class: b.state === 'later' ? 'later-line' : null }, s);
+    el('path', { d: 'M-16 0 L16 0', stroke: b.kind === 'siding' ? 'var(--muted)' : b.colour, 'stroke-width': b.kind === 'siding' ? 5 : 8, 'stroke-linecap': 'round' }, g);
+  }, b.name, [b.roadmap ? shortRoadmap(b.roadmap) : null, b.state === 'later' ? 'later' : null, b.kind === 'siding' ? 'siding' : null].filter(Boolean).join(', ') || null);
+  li.style.cursor = 'pointer';
+  li.addEventListener('mouseenter', () => highlightLine(b.realLine));
+  li.addEventListener('mouseleave', () => highlightLine(null));
+  li.addEventListener('click', () => focusBox(lineBox(b.realLine)));
+}
+const ulSt = section('Spine stations', 'two');
+for (const ph of ['done', 'now', 'next', 'later']) {
+  item(ulSt, (s) => {
+    const later = ph === 'later';
+    const c = later ? 'var(--later)' : 'var(--ink)';
+    el('path', { d: 'M-18 0 L18 0', stroke: c, 'stroke-width': 9 }, s);
+    if (ph === 'next' || later) el('path', { d: 'M-18 0 L18 0', stroke: 'var(--paper)', 'stroke-width': 4 }, s);
+    if (ph === 'now') el('rect', { x: -12.5, y: -11, width: 25, height: 22, rx: 11, fill: 'none', stroke: 'var(--go)', 'stroke-width': 2.6 }, s);
+    el('rect', { x: -9, y: -8, width: 18, height: 16, rx: 8, fill: ph === 'done' ? 'var(--ink)' : 'var(--paper)', stroke: c, 'stroke-width': 3 }, s);
+    if (ph === 'done') el('rect', { x: -5, y: -4, width: 10, height: 8, rx: 4, fill: 'var(--paper)' }, s);
+    if (ph === 'now') el('circle', { r: 3.2, fill: 'var(--go)' }, s);
+  }, PHASE_LABEL[ph]);
+}
+const ulTrack = section('Track');
+item(ulTrack, (s) => { el('path', { d: 'M-17 0 L17 0', stroke: '#7C8794', 'stroke-width': 8, 'stroke-linecap': 'round' }, s); }, 'Built', 'merged work');
+item(ulTrack, (s) => {
+  el('path', { d: 'M-17 0 L17 0', stroke: '#7C8794', 'stroke-width': 8, 'stroke-linecap': 'round' }, s);
+  el('path', { d: 'M-17 0 L17 0', stroke: 'var(--paper)', 'stroke-width': 3.6, 'stroke-linecap': 'round' }, s);
+  el('path', { d: 'M-17 0 L17 0', stroke: '#7C8794', 'stroke-width': 3.6, 'stroke-dasharray': '1.6 7', opacity: .45 }, s);
+}, 'Under construction', 'work not merged yet');
+item(ulTrack, (s) => {
+  el('path', { d: 'M-18 0 L0 0', stroke: '#7C8794', 'stroke-width': 6 }, s);
+  el('path', { d: 'M0 0 L18 0', stroke: '#7C8794', 'stroke-width': 6 }, s);
+  el('path', { d: 'M0 0 L18 0', stroke: 'var(--paper)', 'stroke-width': 2 }, s);
+  drawTrain(s, 0, 0, '#7C8794', true);
+}, 'Train', 'how far the line has got');
+item(ulTrack, (s) => {
+  el('path', { d: 'M-17 0 L17 0', stroke: '#7C8794', 'stroke-width': 8, 'stroke-linecap': 'round' }, s);
+  el('path', { d: 'M-17 0 L17 0', stroke: 'var(--paper)', 'stroke-width': 3.6, 'stroke-linecap': 'round' }, s);
+  el('path', { d: 'M-17 0 L17 0', stroke: '#7C8794', 'stroke-width': 2.6, 'stroke-dasharray': '1 9', 'stroke-linecap': 'round', class: 'flow' }, s);
+}, 'Moving dots', 'work flowing toward the main line');
+const ulStops = section('Stops', 'two');
+for (const st of ['merged', 'review', 'building', 'blocked', 'held', 'waiting', 'next', 'later']) {
+  item(ulStops, (s) => {
+    el('path', { d: 'M-18 0 L18 0', stroke: '#7C8794', 'stroke-width': 6 }, s);
+    const g = el('g', {}, s);
+    stopMarker(g, { state: st }, '#7C8794', true);
+  }, STOP_LABEL[st], st === 'review' ? 'active: green ring, magnifier' : st === 'building' ? 'active: dashed ring, spanner' : st === 'merged' ? 'done' : st === 'waiting' ? 'your move' : null);
+}
+const ulCrew = section('Pij Community');
+item(ulCrew, (s) => { drawChips(s, [{ label: 'pa', dot: 'working' }], -18.5, 0); }, 'Working', 'a seat on this role is busy');
+item(ulCrew, (s) => { drawChips(s, [{ label: 'pa', dot: 'idle' }], -18.5, 0); }, 'Idle', 'holding the role, not busy');
+item(ulCrew, (s) => { drawChips(s, [{ label: 'pa', dot: null }], -13.5, 0); }, 'Released', 'no live holder');
+item(ulCrew, (s) => {
+  el('rect', { x: -15, y: -9, width: 30, height: 18, rx: 5, fill: 'var(--surface)', stroke: 'var(--ink)', 'stroke-width': 2 }, s);
+  el('rect', { x: -15, y: -9, width: 30, height: 4, rx: 2, fill: 'var(--ink)' }, s);
+}, 'Depot', 'shared roles, beside the spine');
+const ulSym = section('Symbols');
+item(ulSym, (s) => {
+  el('path', { d: 'M-18 0 L18 0', stroke: 'var(--ink)', 'stroke-width': 6 }, s);
+  el('path', { d: 'M-12 -11 L-2 -1', stroke: '#E5194B', 'stroke-width': 4 }, s);
+  el('path', { d: 'M2 -11 L12 -1', stroke: '#0E7FD6', 'stroke-width': 4 }, s);
+  el('rect', { x: -13, y: -6, width: 26, height: 12, rx: 6, fill: 'var(--paper)', stroke: 'var(--ink)', 'stroke-width': 2.5 }, s);
+}, 'Interchange', 'lines fan into a spine station');
+item(ulSym, (s) => {
+  el('path', { d: 'M-18 6 L18 6 M6 6 L6 -11', stroke: '#E5194B', 'stroke-width': 4, fill: 'none' }, s);
+  const g = el('g', { transform: 'translate(6 6)' }, s);
+  el('circle', { r: 7, fill: 'var(--paper)', stroke: 'var(--ink)', 'stroke-width': 2.4 }, g);
+  el('circle', { r: 3.4, fill: 'var(--paper)', stroke: '#E5194B', 'stroke-width': 2 }, g);
+}, 'Junction', 'a stack or sub-stream off a line');
+item(ulSym, (s) => {
+  el('path', { d: 'M-10 0 L18 0', stroke: 'var(--muted)', 'stroke-width': 5 }, s);
+  el('path', { d: 'M-10 -8 L-10 8', stroke: 'var(--ink)', 'stroke-width': 4, 'stroke-linecap': 'round' }, s);
+}, 'Siding', 'side work, a dead end');
+item(ulSym, (s) => {
+  const g = el('g', { class: 'later-line' }, s);
+  el('path', { d: 'M-16 0 L16 0', stroke: '#E5194B', 'stroke-width': 8, 'stroke-linecap': 'round' }, g);
+}, 'Greyed', 'later work keeps a tint of its colour');
+const legend = document.getElementById('legend');
+if (window.matchMedia('(min-width: 721px) and (min-height: 640px)').matches) legend.open = true;
+legend.addEventListener('toggle', () => { try { localStorage.setItem('fleet-map-legend', legend.open ? '1' : '0'); } catch (e) {} });
+try { const v = localStorage.getItem('fleet-map-legend'); if (v === '0') legend.open = false; if (v === '1') legend.open = true; } catch (e) {}
+
+// ======================================================================
+// Pan and zoom (viewBox camera). Drag, wheel/trackpad, pinch, buttons, keys.
+// ======================================================================
+const view = { x: 0, y: 0, k: 1 };     // screen = (world - [x,y]) * k
+const K_MIN = 0.12, K_MAX = 2.6;
+function vpSize() { const r = viewport.getBoundingClientRect(); return { w: r.width, h: r.height, l: r.left, t: r.top }; }
+function apply() {
+  const { w, h } = vpSize();
+  svg.setAttribute('viewBox', `${view.x} ${view.y} ${w / view.k} ${h / view.k}`);
+  mmView.setAttribute('x', view.x); mmView.setAttribute('y', view.y);
+  mmView.setAttribute('width', w / view.k); mmView.setAttribute('height', h / view.k);
+  hideCard(true);
+}
+function clampK(k) { return Math.min(K_MAX, Math.max(K_MIN, k)); }
+function zoomAt(k, sx, sy) {
+  k = clampK(k);
+  const wx = view.x + sx / view.k, wy = view.y + sy / view.k;
+  view.k = k; view.x = wx - sx / k; view.y = wy - sy / k;
+  apply();
+}
+function focusBox(bx, maxK) {
+  const { w, h } = vpSize();
+  // keep the framed box clear of the pinned key when it is open on a wide screen
+  const lg = document.getElementById('legend');
+  const legendW = lg.open && w > 720 ? lg.getBoundingClientRect().width + 24 : 0;
+  const insetL = 16 + legendW, insetR = w > 720 ? 76 : 64, insetT = 16, insetB = 16;
+  const aw = w - insetL - insetR, ah = h - insetT - insetB;
+  const k = clampK(Math.min(aw / bx.w, ah / bx.h, maxK || K_MAX));
+  view.k = k;
+  view.x = bx.x - (insetL + (aw - bx.w * k) / 2) / k;
+  view.y = bx.y - (insetT + (ah - bx.h * k) / 2) / k;
+  apply();
+}
+function boxOf(items) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [a, b, c, d] of items) { x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d); }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+function lineBox(id) {
+  const items = [];
+  for (const b of L.branches) if (b.realLine === id && b.y !== undefined) {
+    items.push([b.xFirst - 260, Math.min(b.y, 0) - 70, (b.xe || b.xp) + 140, Math.max(b.y, 0) + 70]);
+  }
+  return boxOf(items);
+}
+function nowBox() {
+  const st = S.find((s) => s.state === 'now') || S[0];
+  const items = [[st.x - 200, -100, st.x + 260, 100]];
+  for (const b of L.branches) if (L.nowLines.has(b.id) && b.y !== undefined) items.push([b.xFirst - 240, Math.min(b.y, 0) - 70, (b.xe || b.xp) + 160, Math.max(b.y, 0) + 70]);
+  return boxOf(items);
+}
+const fitAll = () => focusBox(B);
+// The page always opens on the focus station at a readable zoom: history stays to the left, off-screen
+// if it must, and the focus is never past the right edge.
+function toFocus() {
+  const st = S.find((s) => s.id === D.focus) || S.find((s) => s.state === 'now') || S[0];
+  const { w, h } = vpSize();
+  const lg = document.getElementById('legend');
+  const legendW = lg.open && w > 720 ? lg.getBoundingClientRect().width + 24 : 0;
+  view.k = w > 720 ? 0.85 : 0.62;
+  // put the station a little right of the free area's centre: its incoming lines run in from the left
+  const freeL = 16 + legendW, freeR = w - (w > 720 ? 76 : 64);
+  const sx = freeL + (freeR - freeL) * (w > 720 ? 0.58 : 0.6);
+  view.x = st.x - sx / view.k;
+  view.y = -90 - h / view.k / 2;
+  apply();
+}
+function toNow() {
+  focusBox(nowBox(), 1.1);
+  if (view.k < 0.62) {
+    // small screens: keep labels readable and centre on the now station's approach instead
+    const st = S.find((s) => s.state === 'now') || S[0];
+    const { w, h } = vpSize();
+    view.k = 0.62;
+    view.x = st.x - 120 - w / view.k / 2;
+    view.y = -140 - h / view.k / 2;
+    apply();
+  }
+}
+
+// minimap
+const mm = document.getElementById('mm');
+mm.setAttribute('viewBox', `${B.x} ${B.y} ${B.w} ${B.h}`);
+el('use', { href: '#world' }, mm);
+const mmView = el('rect', { id: 'mm-view', rx: 20 }, mm);
+document.getElementById('minimap').addEventListener('click', (e) => {
+  const r = mm.getBoundingClientRect();
+  const wx = B.x + ((e.clientX - r.left) / r.width) * B.w;
+  const wy = B.y + ((e.clientY - r.top) / r.height) * B.h;
+  const { w, h } = vpSize();
+  view.x = wx - w / view.k / 2; view.y = wy - h / view.k / 2; apply();
+});
+
+// pointers
+const ptrs = new Map();
+let dragMoved = 0, pinch = null;
+viewport.addEventListener('pointerdown', (e) => {
+  viewport.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  dragMoved = 0;
+  if (ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()];
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: view.k };
+  }
+});
+viewport.addEventListener('pointermove', (e) => {
+  const p = ptrs.get(e.pointerId);
+  if (!p) return onHoverMove(e);
+  const dx = e.clientX - p.x, dy = e.clientY - p.y;
+  p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1) {
+    dragMoved += Math.abs(dx) + Math.abs(dy);
+    if (dragMoved > 4) viewport.classList.add('dragging');
+    view.x -= dx / view.k; view.y -= dy / view.k; apply();
+  } else if (ptrs.size === 2 && pinch) {
+    dragMoved = 99;
+    const [a, b] = [...ptrs.values()];
+    const { l, t } = vpSize();
+    zoomAt(pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, (a.x + b.x) / 2 - l, (a.y + b.y) / 2 - t);
+  }
+});
+function endPtr(e) {
+  const wasTap = ptrs.size === 1 && dragMoved <= 4;
+  ptrs.delete(e.pointerId);
+  if (ptrs.size < 2) pinch = null;
+  viewport.classList.remove('dragging');
+  if (wasTap && e.type === 'pointerup') onTap(e);
+}
+viewport.addEventListener('pointerup', endPtr);
+viewport.addEventListener('pointercancel', endPtr);
+viewport.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const { l, t } = vpSize();
+  const isMouseWheel = e.deltaMode === 1 || (e.deltaX === 0 && Math.abs(e.deltaY) >= 50 && Number.isInteger(e.deltaY));
+  if (e.ctrlKey || isMouseWheel) {
+    const f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0018) * (e.deltaMode === 1 ? 16 : 1));
+    zoomAt(view.k * f, e.clientX - l, e.clientY - t);
+  } else {
+    view.x += e.deltaX / view.k; view.y += e.deltaY / view.k; apply();
+  }
+}, { passive: false });
+document.getElementById('zin').onclick = () => { const { w, h } = vpSize(); zoomAt(view.k * 1.3, w / 2, h / 2); };
+document.getElementById('zout').onclick = () => { const { w, h } = vpSize(); zoomAt(view.k / 1.3, w / 2, h / 2); };
+document.getElementById('fit').onclick = fitAll;
+document.getElementById('now').onclick = toNow;
+window.addEventListener('keydown', (e) => {
+  if (e.target.closest && e.target.closest('input, textarea')) return;
+  const { w, h } = vpSize();
+  if (e.key === '+' || e.key === '=') zoomAt(view.k * 1.3, w / 2, h / 2);
+  else if (e.key === '-' || e.key === '_') zoomAt(view.k / 1.3, w / 2, h / 2);
+  else if (e.key === '0') fitAll();
+  else if (e.key === 'n' || e.key === 'N') toNow();
+  else if (e.key === 'Escape') hideCard();
+  else if (e.key.startsWith('Arrow') && !(e.target.closest && e.target.closest('[data-key]'))) {
+    const s = 80 / view.k;
+    if (e.key === 'ArrowLeft') view.x -= s; if (e.key === 'ArrowRight') view.x += s;
+    if (e.key === 'ArrowUp') view.y -= s; if (e.key === 'ArrowDown') view.y += s;
+    apply();
+  } else return;
+  e.preventDefault();
+});
+let resizeT;
+window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(apply, 60); });
+
+// theme
+const root = document.documentElement;
+try { const t = localStorage.getItem('fleet-map-theme'); if (t === 'light' || t === 'dark') root.dataset.theme = t; } catch (e) {}
+document.getElementById('theme').onclick = () => {
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+  try { localStorage.setItem('fleet-map-theme', root.dataset.theme); } catch (e) {}
+};
+
+// ======================================================================
+// Hover cards
+// ======================================================================
+const card = document.getElementById('card');
+const main = document.querySelector('main');
+let cardKey = null, pinned = false, lastHoverEl = null;
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const lineName = (id) => { const b = L.branches.find((x) => x.id === id); return b ? b.name : id; };
+const STATE_COLOUR = { merged: 'var(--muted)', review: 'var(--go)', building: 'var(--go)', blocked: 'var(--alert)', held: 'var(--ink-2)', waiting: 'var(--ink)', next: 'var(--muted)', later: 'var(--muted)', closed: 'var(--muted)' };
+
+function seatHtml(owner, state) {
+  if (!owner) return '';
+  const cls = state === 'working' ? 'working' : state === 'idle' ? 'idle' : '';
+  const word = state ? (state === 'absent' ? 'no live seat' : state) : '';
+  return `<span class="seat"><i class="${cls}"></i>${esc(owner)}${word ? ` <em style="font-style:normal;color:var(--muted)">${esc(word)}</em>` : ''}</span>`;
+}
+function cardHtml(item) {
+  if (item.kind === 'stop') {
+    const { b, s } = item;
+    const real = L.branches.find((x) => x.id === b.realLine) || b;
+    let h = `<div class="band" style="background:${real.colour}"></div>`;
+    h += `<div class="top"><span class="sw" style="background:${real.colour}"></span>${esc(real.name)}${real.roadmap ? ', ' + esc(shortRoadmap(real.roadmap)) : ''}</div>`;
+    h += `<h4>${esc(s.name)}</h4>`;
+    if (s.title) h += `<p class="sub">${esc(s.title)}</p>`;
+    h += '<dl>';
+    h += `<dt>Status</dt><dd><span class="pill" style="color:${STATE_COLOUR[s.state] || 'var(--ink)'}">${esc(STOP_LABEL[s.state] || s.state)}</span></dd>`;
+    if (s.pr) h += `<dt>PR</dt><dd>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">#${s.pr}</a>` : '#' + s.pr}${s.head ? ` at <b>${esc(s.head)}</b>` : ''}${s.base && s.base !== 'main' ? `<br><em style="font-style:normal;color:var(--muted)">stacked on ${esc(s.base)}</em>` : ''}</dd>`;
+    if (s.owner) h += `<dt>Owner</dt><dd>${seatHtml(s.owner, s.ownerState)}</dd>`;
+    if (s.verdicts && s.verdicts.length) {
+      h += '<dt>Verdicts</dt><dd class="verdicts">' + s.verdicts.map((v) => {
+        const at = v.at ? (v.atHead ? '<em>at head</em>' : `<em class="stale">at ${esc(v.at)}, an older head</em>`) : '';
+        return `<span><b>${esc(v.verdict)}</b> ${esc(v.role)} ${at}</span>`;
+      }).join('') + '</dd>';
+    } else if (s.pr && s.state !== 'merged') h += '<dt>Verdicts</dt><dd style="color:var(--muted)">none yet</dd>';
+    if (s.junction) {
+      const subs = L.branches.filter((x) => x.parent === b && x.at === s.id).map((x) => x.kind === 'stack' ? 'stack: ' + x.stops.map((c) => c.pr ? '#' + c.pr : c.name).join(', ') : x.name);
+      h += `<dt>Junction</dt><dd>${esc(subs.join('; '))}</dd>`;
+    }
+    h += '</dl>';
+    if (s.waitingOn) h += `<div class="wait"><b>Waiting on</b>${esc(s.waitingOn)}</div>`;
+    if (s.note) h += `<p class="sub" style="margin-top:8px">${esc(s.note)}</p>`;
+    return h;
+  }
+  if (item.kind === 'crew') {
+    const STATE_WORD = { working: 'working', idle: 'idle', absent: 'no live seat', released: 'released', unknown: 'unknown' };
+    let h = `<div class="band" style="background:${item.colour}"></div>`;
+    h += `<div class="top">Pij Community${item.depot ? ', shared roles' : ''}</div><h4>${esc(item.title)}</h4>`;
+    h += '<div class="crew">' + item.community.map((c) => {
+      const cls = c.state === 'working' ? 'working' : c.state === 'idle' ? 'idle' : '';
+      const out = c.lastOutput ? `Last output: ${esc(c.lastOutput.kind || 'output')}${c.lastOutput.subject ? ' on ' + esc(c.lastOutput.subject) : ''}${c.lastOutput.result ? ' (' + esc(c.lastOutput.result) + ')' : ''}, ${esc(c.lastOutput.at.slice(0, 10))}` : 'No output from this seat on file';
+      return `<div class="row"><span><span class="role">${esc(c.title)}</span><br><span class="seat"><i class="${cls}"></i>${c.seat ? esc(c.seat) : 'no holder'} <em style="font-style:normal;color:var(--muted)">${esc(STATE_WORD[c.state] || c.state)}</em></span></span>`
+        + `<span class="ctx">${c.contextK !== undefined ? esc(c.contextK) + 'k context' : ''}</span><span class="out">${out}</span></div>`;
+    }).join('') + '</div>';
+    return h;
+  }
+  if (item.kind === 'station') {
+    const { st } = item;
+    const joining = [...st.above, ...st.below].map((b) => b.name);
+    let h = `<div class="band" style="background:${st.state === 'later' ? 'var(--later)' : 'var(--ink)'}"></div>`;
+    h += `<div class="top">Spine station ${st.i + 1} of ${S.length}</div><h4>${esc(st.name)}</h4>`;
+    h += '<dl>';
+    h += `<dt>Status</dt><dd><span class="pill" style="color:${st.state === 'now' ? 'var(--go)' : 'var(--ink-2)'}">${esc(PHASE_LABEL[st.state])}</span></dd>`;
+    if (joining.length) h += `<dt>Fed by</dt><dd>${esc(joining.join(', '))}</dd>`;
+    h += '</dl>';
+    if (st.note) h += `<p class="sub" style="margin-top:8px">${esc(st.note)}</p>`;
+    return h;
+  }
+  const { b } = item;
+  const real = L.branches.find((x) => x.id === b.realLine) || b;
+  const stops = L.branches.filter((x) => x.realLine === real.id).flatMap((x) => x.stops);
+  const counts = {};
+  for (const s of stops) counts[s.state] = (counts[s.state] || 0) + 1;
+  let h = `<div class="band" style="background:${real.colour}"></div>`;
+  h += `<div class="top"><span class="sw" style="background:${real.colour}"></span>${real.kind === 'siding' ? 'Siding' : 'Line'}${real.roadmap ? ', ' + esc(shortRoadmap(real.roadmap)) : ''}</div><h4>${esc(real.name)}</h4>`;
+  h += '<dl>';
+  h += `<dt>Status</dt><dd><span class="pill" style="color:var(--ink-2)">${esc(PHASE_LABEL[real.state] || real.state)}</span></dd>`;
+  const where = real.joins ? (S.find((s) => s.id === real.joins) || {}).name : real.joinsLine ? lineName(real.joinsLine) + ' (junction)' : '';
+  if (where) h += `<dt>Joins</dt><dd>${esc(where)}</dd>`;
+  h += `<dt>Stops</dt><dd>${Object.entries(counts).map(([k, v]) => `${v} ${esc((STOP_LABEL[k] || k).toLowerCase())}`).join(', ')}</dd>`;
+  h += '</dl>';
+  return h;
+}
+function placeCard(cx, cy) {
+  const mr = main.getBoundingClientRect();
+  const cw = card.offsetWidth, ch = card.offsetHeight;
+  let x = cx - mr.left + 18, y = cy - mr.top + 18;
+  if (x + cw > mr.width - 12) x = cx - mr.left - cw - 18;
+  if (x < 12) x = Math.max(12, (mr.width - cw) / 2);
+  if (y + ch > mr.height - 12) y = cy - mr.top - ch - 18;
+  if (y < 12) y = 12;
+  // never leave the map area, whatever the anchor
+  x = Math.min(Math.max(12, x), Math.max(12, mr.width - cw - 12));
+  y = Math.min(Math.max(12, y), Math.max(12, mr.height - ch - 12));
+  card.style.left = x + 'px'; card.style.top = y + 'px';
+}
+function showCard(key, cx, cy) {
+  const item = keyed.get(key);
+  if (!item) return;
+  if (cardKey !== key) { card.innerHTML = cardHtml(item); cardKey = key; }
+  card.classList.add('on');
+  placeCard(cx, cy);
+  if (lastHoverEl) lastHoverEl.classList.remove('hover');
+  lastHoverEl = svg.querySelector(`[data-key="${CSS.escape(key)}"]`);
+  if (lastHoverEl) lastHoverEl.classList.add('hover');
+  const lid = item.kind === 'station' || !item.b ? null : item.b.realLine;
+  highlightLine(lid);
+}
+function hideCard(force) {
+  if (pinned && !force) return;
+  pinned = false; card.classList.remove('on', 'pinned'); cardKey = null;
+  if (lastHoverEl) lastHoverEl.classList.remove('hover');
+  lastHoverEl = null;
+  highlightLine(null);
+}
+function highlightLine(id) {
+  world.classList.toggle('dim-others', !!id);
+  world.querySelectorAll('.lit').forEach((n) => n.classList.remove('lit'));
+  if (id) world.querySelectorAll(`[data-line="${CSS.escape(id)}"]`).forEach((n) => n.classList.add('lit'));
+}
+function onHoverMove(e) {
+  if (e.pointerType === 'touch' || pinned) return;
+  const t = e.target.closest && e.target.closest('[data-key]');
+  if (t) showCard(t.getAttribute('data-key'), e.clientX, e.clientY);
+  else if (cardKey) hideCard();
+}
+viewport.addEventListener('pointerleave', () => { if (!pinned) hideCard(); });
+function onTap(e) {
+  const t = e.target.closest && e.target.closest('[data-key]');
+  if (t) { pinned = false; showCard(t.getAttribute('data-key'), e.clientX, e.clientY); pinned = true; card.classList.add('pinned'); }
+  else hideCard(true);
+}
+svg.addEventListener('focusin', (e) => {
+  const t = e.target.closest('[data-key]');
+  if (!t) return;
+  let r = t.getBoundingClientRect();
+  const vr = viewport.getBoundingClientRect();
+  if (r.right < vr.left || r.left > vr.right || r.bottom < vr.top || r.top > vr.bottom) {
+    // keyboard focus moved off-screen: bring it into view first
+    view.x += (r.left + r.width / 2 - (vr.left + vr.width / 2)) / view.k;
+    view.y += (r.top + r.height / 2 - (vr.top + vr.height / 2)) / view.k;
+    apply();
+    r = t.getBoundingClientRect();
+  }
+  pinned = false;
+  showCard(t.getAttribute('data-key'), r.right, r.bottom);
+});
+svg.addEventListener('focusout', () => hideCard(true));
+
+// "Your move": everything waiting on Jordan, in map order (lines, then stops, as drawn)
+const yours = allStops.filter((x) => x.s.state === 'waiting');
+const ym = document.getElementById('yourmove');
+let ymOn = false, ymIdx = 0;
+if (yours.length) {
+  ym.hidden = false;
+  const txt = document.getElementById('ym-text');
+  const label = () => { txt.textContent = ymOn ? `Your move: ${ymIdx + 1} of ${yours.length}` : `Your move: ${yours.length}`; };
+  label();
+  const go = (i) => {
+    ymIdx = (i + yours.length) % yours.length;
+    label();
+    const { b, s } = yours[ymIdx];
+    const { w, h } = vpSize();
+    view.k = Math.max(view.k, 0.9);
+    view.x = s.x - w / view.k / 2; view.y = s.y - h / view.k / 2;
+    apply();
+    const key = 'stop:' + b.id + ':' + s.id;
+    const elx = svg.querySelector(`[data-key="${CSS.escape(key)}"]`);
+    const r = elx.getBoundingClientRect();
+    pinned = false; showCard(key, r.right, r.bottom); pinned = true; card.classList.add('pinned');
+    world.classList.add('dim-yours'); world.classList.remove('dim-others');
+  };
+  document.getElementById('ym-main').onclick = () => {
+    ymOn = !ymOn;
+    ym.classList.toggle('on', ymOn);
+    document.getElementById('ym-main').setAttribute('aria-pressed', String(ymOn));
+    if (ymOn) go(0); else { world.classList.remove('dim-yours'); hideCard(true); label(); }
+  };
+  document.getElementById('ym-prev').onclick = () => go(ymIdx - 1);
+  document.getElementById('ym-next').onclick = () => go(ymIdx + 1);
+}
+
+// "Who's awake": dim every stop whose owner seat isn't working right now
+const awakeBtn = document.getElementById('awake');
+awakeBtn.onclick = () => {
+  const on = awakeBtn.getAttribute('aria-pressed') !== 'true';
+  awakeBtn.setAttribute('aria-pressed', String(on));
+  world.classList.toggle('awake-only', on);
+};
+{
+  const awakeN = allStops.filter((x) => x.s.ownerState === 'working').length;
+  awakeBtn.lastChild.textContent = `Who's awake: ${awakeN}`;
+  awakeBtn.title = awakeN ? `Dim every stop whose owner seat isn't working (${awakeN} working now)` : 'No stop owner is working right now; turning this on dims every stop';
+}
+
+// first view: always the focus station (D.focus), every load
+requestAnimationFrame(toFocus);
+})();
+</script>
+</body>
+</html>

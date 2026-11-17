@@ -1,0 +1,75 @@
+{
+  "title": "Fixture fleet",
+  "focus": "beta",
+  "spine": [
+    { "id": "alpha", "name": "Alpha", "state": "done", "note": "Built." },
+    { "id": "beta", "name": "Beta", "state": "now", "note": "The focus." },
+    { "id": "gamma", "name": "Gamma", "state": "next" },
+    { "id": "delta", "name": "Delta", "state": "later" }
+  ],
+  "lines": [
+    {
+      "id": "100",
+      "name": "In order",
+      "colour": "#E5194B",
+      "joins": "beta",
+      "state": "now",
+      "roadmap": "100-in-order",
+      "roles": [{ "role": "pm-100", "seat": "pij-fixture-pm" }, { "role": "coder", "seats": ["pij-fixture-a", "pij-fixture-b"] }],
+      "stops": [
+        { "id": "a1", "name": "First merged", "pr": 11, "state": "merged" },
+        { "id": "a2", "name": "Second merged", "pr": 12, "state": "merged" },
+        { "id": "a3", "name": "In review", "pr": 13, "owner": "pij-fixture-a", "waitingOn": "Reviewer verdict" },
+        { "id": "a4", "name": "Not started", "state": "next" }
+      ]
+    },
+    {
+      "id": "200",
+      "name": "Out of order",
+      "colour": "#0E7FD6",
+      "joins": "beta",
+      "state": "now",
+      "stops": [
+        { "id": "b1", "name": "Merged first", "pr": 21, "state": "merged" },
+        {
+          "id": "b2",
+          "name": "Still open",
+          "pr": 22,
+          "state": "building",
+          "owner": "pij-fixture-b",
+          "stops": [{ "id": "b2s", "name": "Stacked on it", "pr": 23, "state": "blocked", "waitingOn": "b2" }]
+        },
+        { "id": "b3", "name": "Merged ahead", "pr": 24, "state": "merged" },
+        { "id": "b4", "name": "Waiting on you", "state": "waiting", "waitingOn": "A decision" }
+      ]
+    },
+    {
+      "id": "300",
+      "name": "Sub-line",
+      "colour": "#F08A24",
+      "joinsLine": "100",
+      "at": "a3",
+      "state": "next",
+      "stops": [{ "id": "c1", "name": "Branches off", "state": "next" }]
+    },
+    {
+      "id": "400",
+      "name": "Later work",
+      "colour": "#7A3FD1",
+      "joins": "delta",
+      "state": "later",
+      "stops": [{ "id": "d1", "name": "Someday", "state": "later" }]
+    }
+  ],
+  "sidings": [
+    {
+      "id": "500",
+      "name": "Side work",
+      "colour": "#0F9D7A",
+      "joins": "alpha",
+      "state": "done",
+      "stops": [{ "id": "e1", "name": "Tidy", "state": "merged" }]
+    }
+  ],
+  "depot": { "name": "Depot", "roles": [{ "role": "pa" }, { "role": "reviewer" }] }
+}
