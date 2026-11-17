@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-17",
+				"hook": "review-pr-233",
+				"tags": [
+					"fleet-map",
+					"rendering",
+					"harness"
+				],
+				"title": "Fleet map review: preserve unknown head"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# PR #233 reviewer retrospective\n\nExact reviewed head: `1bf90e115eea0721f42fd7fd3d076f995afe75ed`.\n\n**magicWand:** a small rendered-card sensor for verdict freshness. The producer's\n`atHead` is tri-state: true means current, false means older, and null means no\ncurrent head was fetched. A data assertion for null does not prove that the card\npreserves unknown rather than calling it stale. This is worth encoding alongside\nthe no-gh fixture, without adding a browser dependency.\n\n**difficulties:**\n- The dependency-free review worktree initially could not load vitest. Locked,\n  isolated dependency replay resolved it; no node_modules symlinks were created.\n  Boot's generic linked-dependency suggestion conflicts with this plan's explicit\n  no-link rule. Captured as a harness observation.\n- The full harness gate buffers every sensor until the final envelope, so a long\n  unrelated Rust stage provides no intermediate stage verdict to the reviewer.\n  Per-sensor completion receipts would make a bounded review cheaper to diagnose.\n\n**verified reusable proof:** call the real generator's pure functions; extract\nthe template's pure `builtSpans` and `cardHtml` functions into a Node VM for\ncomputational assertions. Keep that proof distinct from actual browser rendering.\nReview mutations belong in copies, not in the frozen worktree; the guard test\nalready correctly copies its protected tool directory before trying refused writes.\n"
+		}
+	]
+}
