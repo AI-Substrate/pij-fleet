@@ -73,6 +73,15 @@
 					"seat": "pij-annual-squirrel",
 					"to": "2026-11-11T01:05:34.112Z",
 					"why": "second security seat while herring's queue drains (prime 22:22)"
+				},
+				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-17T00:33:30.591Z",
+					"harness": "copilot",
+					"harness_session": "3854485d-038c-41c3-bec0-6138e08eb679",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-keen-landfowl",
+					"why": "PR #233 plan 227 security"
 				}
 			]
 		}
