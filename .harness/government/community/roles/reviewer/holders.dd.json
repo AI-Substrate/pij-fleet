@@ -1549,6 +1549,15 @@
 					"seat": "pij-polite-starfish",
 					"to": "2026-11-11T00:57:00.499Z",
 					"why": "#229 F187 (lemur), FINAL 63a2ba5"
+				},
+				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-17T00:33:30.165Z",
+					"harness": "copilot",
+					"harness_session": "5d613e05-fb0a-4812-859c-bfaf7d389c09",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-chemical-deer",
+					"why": "PR #233 plan 227 review"
 				}
 			]
 		}
