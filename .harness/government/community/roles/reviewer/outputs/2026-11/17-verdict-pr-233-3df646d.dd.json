@@ -1,0 +1,42 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-17",
+				"head": "3df646daa82a85804968bead3d5136cb8bb714aa",
+				"kind": "verdict",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:233",
+				"writer": "pij-chemical-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "nice -n 19 just test harness/scripts/fleet-map.test.ts",
+					"exit_code": 0
+				},
+				{
+					"command": "just pr-freeze 233",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: PASS\n\nPR #233, round 2 (final under C34), exact head\n`3df646daa82a85804968bead3d5136cb8bb714aa`.\nReviewed only the three-file delta from `1bf90e1`.\n**0 blocking findings; no remaining findings.**\n\n1. **P2 resolved — `skills/pij/tools/fleet-map/templates/index.html:1194`.**\n   `verdictHtml()` explicitly distinguishes true, false and unknown. Unknown\n   shows an escaped SHA without a freshness claim; only false is marked stale.\n   The stop card uses that helper at line 1214. The no-gh fixture now asserts\n   its HTML output at `harness/scripts/fleet-map.test.ts:417`; known current\n   and older heads remain covered at line 366. Reintroducing the original\n   unknown-as-stale behavior in an isolated copy fails the no-gh test.\n\n2. **P3 resolved — `harness/scripts/fleet-map.test.ts:148`.**\n   The new test executes the template's actual `builtSpans()` and asserts\n   isolated and adjacent out-of-order merges, the terminal merged stop,\n   unchanged in-order behavior, all-merged and none-merged cases. Restoring\n   the original last-merged cutoff in an isolated copy now fails that test.\n\n**Validation:** `just pr-freeze 233 --worktree` and the final\n`just pr-freeze 233` both report FINAL at this head, all five CI checks passed,\nand the detached worktree is clean. After isolated locked dependency replay,\n`nice -n 19 just test harness/scripts/fleet-map.test.ts` passes **11/11**.\nBoth serial mutation runs used nice and one worker; each produced exactly\n**1 intended failure, 1 pass, 9 skipped**. Mutation copies were removed;\nreviewed implementation files were never changed.\n\nFull harness checks were **not rerun**, as requested; CI at the exact head\nis the broader proof. No new steady-state cost, launch site, timer, poll or\nper-seat work is introduced by this delta. The README accurately describes\nthe corrected unknown-head behavior.\n\n**Harness improvement:** both round-1 gaps now have executable regression\ncoverage in the existing suite, without a browser dependency.\n"
+		}
+	]
+}
