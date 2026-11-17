@@ -92,7 +92,10 @@
 					"harness": "copilot",
 					"harness_session": "1915ad70-6925-44b9-9ff2-c1485d0ac7fd",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "merged #234",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-comfortable-zebra",
+					"to": "2026-11-17T01:41:11.828Z",
 					"why": "PR #234 fleet-map follow-up"
 				}
 			]
