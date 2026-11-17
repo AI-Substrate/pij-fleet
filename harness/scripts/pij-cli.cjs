@@ -98,7 +98,30 @@ function exitCode(result) {
 	return signal === undefined ? 1 : 128 + signal;
 }
 
-if (forwardsToPijRs(args, process.env, require("./pij-native-verbs.json"))) {
+const native = require("./pij-native-verbs.json");
+
+/** Plan 227: `pij fleet-map` is a skill tool that node runs before pij-rs or tsx load; no daemon. */
+const found = findVerb(args, native);
+if (found !== undefined && found.verb === "fleet-map") {
+	const tool = path.resolve(
+		__dirname,
+		"..",
+		"..",
+		"skills",
+		"pij",
+		"tools",
+		"fleet-map",
+		"generate.mjs",
+	);
+	const result = spawnSync(process.execPath, [tool, ...found.rest], { stdio: "inherit" });
+	if (result.error) {
+		console.error(`pij: cannot run ${tool}: ${result.error.message}`);
+		process.exit(127);
+	}
+	process.exit(exitCode(result));
+}
+
+if (forwardsToPijRs(args, process.env, native)) {
 	const pijRs = resolvePijRs(process.env);
 	if (pijRs === undefined) {
 		console.error("pij: cannot run pij-rs: it is not on PATH (run `just rs-install`)");

@@ -62,6 +62,8 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 
 `pij generation [verb]` is a shim-local, read-only routing diagnostic, not an rs route.
 
+`pij fleet-map init|generate|open` is a shim-local skill tool (`tools/fleet-map/`, node, no daemon): the project as a metro map, structure in `<government-root>/fleet-map/`, page and data copied into the main checkout's git-ignored `scratch/fleet-map/` (edits there are overwritten; change the template in the pij repo). Ops route § Fleet map.
+
 The shim hands `directory`, `claim`, `claims`, `delivered` and `requests`, and a `send` to `role:<id>`, with `--to` or `--help`, to `pij-rs` unchanged: the same output, help and exit code ([shim forwarding](../../docs/how/pij-rs-api.md#shim-forwarding-plan-213), plan 213).
 
 `/pij prime` selects the skill route; `pij orchestration prime` invokes its CLI
