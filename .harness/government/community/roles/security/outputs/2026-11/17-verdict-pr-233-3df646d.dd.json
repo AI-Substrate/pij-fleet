@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-17",
+				"head": "3df646daa82a85804968bead3d5136cb8bb714aa",
+				"kind": "verdict",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:233",
+				"writer": "pij-keen-landfowl",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS\nSubject: pr:233 (plan 227, round 2 / final under C34)\nHead: 3df646daa82a85804968bead3d5136cb8bb714aa\nPrevious reviewed head: 1bf90e115eea0721f42fd7fd3d076f995afe75ed\nBlocking findings: 0\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No security vulnerabilities found | - |\n\nFreeze and scope\n\n`just pr-freeze 233 --worktree` returned FINAL, exit 0, at the exact head above:\nmatching GitHub/ls-remote heads, main base, CLEAN, not draft, all five checks\npassed, detached clean checkout. Local Delivers parsing was unavailable;\nfreeze explicitly used the successful CI delivers check.\n\nReviewed only the complete delta\n`git diff 1bf90e115eea0721f42fd7fd3d076f995afe75ed..3df646daa82a85804968bead3d5136cb8bb714aa`\nand immediate context: 3 files, 69 insertions, 5 deletions:\n- harness/scripts/fleet-map.test.ts\n- skills/pij/tools/fleet-map/README.md\n- skills/pij/tools/fleet-map/templates/index.html\n\nFix verification and security evidence (not findings)\n\n1. `skills/pij/tools/fleet-map/templates/index.html:1182,1194-1200`:\n   extracted verdictHtml preserves HTML escaping for verdict, role and both\n   displayed-SHA branches. Only atHead === true claims current; only\n   atHead === false marks stale. Unknown shows the escaped SHA without either\n   claim. The fixed helper feeds cardHtml and the existing innerHTML sink\n   (`:1214,1280`); no new external-input execution path was found.\n\n2. `harness/scripts/fleet-map.test.ts:366-368,417-423`:\n   current/stale and no-gh unknown assertions exercise the actual template\n   rendering helper. An independent in-memory probe passed hostile HTML\n   payloads through true, false, null and undefined head states, plus an\n   absent-SHA case. This proves generated strings, not browser execution.\n\n3. `harness/scripts/fleet-map.test.ts:45-69,147-170`:\n   Function evaluates declarations extracted from the checked-in template,\n   not external verdict data. Added builtSpans coverage checks out-of-order,\n   adjacent, final-stop and fully merged/unmerged geometry. Production\n   geometry did not change.\n\n4. No production argv construction, shell execution, URL fetching, path\n   resolution, filesystem writes, permissions, dependencies or authentication\n   controls changed. Round 1's security result is not reopened. C33's\n   user-account trust boundary and C34's final-round scope apply.\n\nValidation\n\n- Freeze and final detached/clean/head checks: PASS at the full head above.\n- Targeted `vitest run harness/scripts/fleet-map.test.ts`: PASS, 11/11, exit 0,\n  under nice -n 19, using the canonical runner and byte-identical canonical\n  config with an explicit frozen-worktree --root. No dependencies installed\n  or symlinked.\n- The initial runner-only attempt failed at startup because the dependency-free\n  checkout could not resolve vitest/config. The successful invocation supplied\n  --config from the canonical checkout after verifying config identity:\n  frozen HEAD and canonical config Git blob both\n  16b9f0d6317567254ef2e435cc1deea14d93e317.\n- In-memory verdictHtml adversarial probe: PASS, five cases, exit 0, under\n  nice -n 19; no files written.\n- Exact-head GitHub checks: check (22), check (24), delivers, rust-lint and\n  rust-test all SUCCESS. Runs 43991221035 and 43991221004.\n- No full harness checks, Rust builds or smoke runs were performed.\n- Review worktree remained clean. No product files modified.\n\nNo new or changed recurring loop, poll, timer, hook or process-launch behavior\nis present in this delta. No live cost measurement is claimed.\n\nHarness feedback (non-blocking): the runner-only review recipe needs an\nexplicit config-resolution step. magicWand: encode the proven config-identity\ncheck and explicit review-root invocation in a scoped frozen-review command,\nwithout dependency links or unrelated broad gates.\n"
+		}
+	]
+}
