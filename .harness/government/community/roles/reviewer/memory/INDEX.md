@@ -87,4 +87,5 @@
 - [2026-11-11 F186 replaces background QoS with nice-only builds](2026-11-11-f186-replaces-background-qos-with-nice.dd.md): Before reviewing build scheduling or relying on plan 208 or F63 history (review, build, scheduling, f186)
 - [2026-11-11 PR 229 executable lifetime repair verified at 324a47f](2026-11-11-pr-229-executable-lifetime-repair.dd.md): When resuming PR 229 or reading the earlier deleted-current\_exe blocker note (review, install, linux, repair)
 - [2026-11-17 Fleet map review: preserve unknown head](2026-11-17-fleet-map-review-preserve-unknown-head.dd.md): review-pr-233 (fleet-map, rendering, harness)
+- [2026-11-17 Fleet map round 2 closes both findings](2026-11-17-fleet-map-round-2-closes-both-findings.dd.md): review-pr-233-r2 (fleet-map, proof)
 <!-- /pij:generated -->
