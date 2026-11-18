@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ec54-4584-7ca2-ac59-a8e4c0f2bc60",
+				"date": "2026-11-18",
+				"head": "81f4a89974383caf7dd5bf727f3f468c0d389ed2",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44217294613/job/134510197257",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:237",
+				"writer": "pij-uneven-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 237",
+					"exit_code": 1,
+					"log": "Rechecked: unchanged exact head and clean worktree; NOT FINAL because merge BLOCKED, check22 audit failure, check24 cancelled."
+				},
+				{
+					"command": "gh run view 44217294613 --job 134510197257 --log",
+					"exit_code": 0,
+					"log": "2438 Rust tests passed, 6 skipped. All five PR-named Rust tests passed in exact JUnit artifact 14388744100."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security review: BLOCK (round 1)\nPR: #237\nHead: 81f4a89974383caf7dd5bf727f3f468c0d389ed2\nRequest: 01a1ec54-4584-7ca2-ac59-a8e4c0f2bc60\n\nS237-001 | MEDIUM | confidence 9/10\ncrates/daemon/src/http/identity.rs:616-624\n\nExplicit takeover bypasses the live-holder refusal. After the pane-own-process\nauthorization at identity.rs:578-585, takeover tombstones the other matching\nrecords without checking their process liveness. The filter's is_live means\nnot already tombstoned, not that the recorded process is dead or unknown.\nThe compare-and-swap guards against a changed record, not an unchanged holder\nwhose process is still running.\n\nRetirement drops pending FYIs (crates/store/src/registry.rs:80-90) and releases\nopen number claims (lines 91-94); released numbers remain burned.\n\nNormal-use case: while an omp -p child still runs in its parent's pane, the\nparent's authorized adopt --take-over can retire that child's live seat.\nThis violates the requested live-holder guard even under C33's same-user\ntrust boundary; no hostile local caller or per-seat isolation is assumed.\n\nReject confirmed-live foreign holders before any takeover retirement, preserve\nthe explicit unknown-holder recovery path, and add a focused regression for\nan authorized non-prime caller against a process-live foreign holder.\nAssert that the holder and its pending work remain unchanged on refusal.\nThe existing takeover test at identity_tests.rs:1927 supplies dead/unbound\nholders; the active-holder refusal coverage tests automatic registration,\nnot the explicit takeover path.\n\nS237-002 | MEDIUM | confidence 9/10\ncrates/daemon/src/http/identity.rs:567-579\n\nThe prime bypass uses a self-asserted seat role, not authoritative project or\norchestration designation. A resolved caller with stored role \"prime\" is\nauthorized before the target-pane process-ancestry check. An ordinary seat\nmay assign that role to itself (http/role.rs:180-202,528-545); \"prime\" is valid\n(crates/core/src/orchestration/governance.rs:160-172). RoleService reads\nseat_roles, not a prime designation (http/role.rs:238-243;\ncrates/store/src/orchestration.rs:311-319).\n\nConsequently, a non-designated seat can self-assign the display/assertion role\nand then take over an unrelated pane. The new test self-assigns that role and\nexpects unrelated-pane takeover success (identity_tests.rs:2004-2016), so it\npins the wrong authority. This conflicts with the role/designation distinction\nin skills/pij/references/routes/node.md:18 and the packet's requirement that an\nunrelated seat cannot reach the prime path without being the prime.\n\nThe predicate is inherited from --reclaim, but the capability is broader:\nreclaim additionally requires matching harness and refuses active holders and\nlive rows without process evidence (identity.rs:506-548); takeover's retirement\nat lines 616-624 lacks those restrictions. The new destructive scope is not\nproved safe merely by reusing the old authority predicate.\n\nUse the applicable authoritative prime designation for the bypass, retaining\ncaller derivation and contradictory-claim refusals. Add a focused regression\nshowing that a self-asserted, non-designated prime cannot take over an unrelated\npane, while the actual designated prime can. This is a cheap authority/correctness\nguard under C33, not a claim that same-user processes require OS or per-seat\nsecurity isolation.\n\nEvidence and limits:\n- Exact checkout and GitHub head agree; worktree is clean.\n- No prior outputs or GitHub reviews were present for this PR: first round.\n- CI run 44217294613 is for this exact head.\n- Successful rust-test job 134510197257: 2438 passed, 6 skipped.\n- Exact JUnit artifact 14388744100 was selected from that successful job's\n  upload log. All five Rust tests named in the PR body passed.\n- Node 22 job 134510197705: native tests 355 passed, 0 failed, including\n  the F196 typed-refusal/banner regression. Its sole failed step is the\n  audit gate reporting GHSA-fc5q-39xc-vjpf (picomatch).\n- Node 24 job 134510197496: npm test passed; native-test step was cancelled.\n- rust-lint and delivers passed.\n- just pr-freeze 237 exited 1: NOT FINAL because merge is BLOCKED and the\n  failed/cancelled checks are not green. The source-security block above is\n  independent of that CI status. #236 is still open and addresses the audit\n  exception separately; this review does not certify it.\n- Read-only source/CI review only. No local cargo build/test, dependency\n  installation, mutation run, harness boot or harness checks was performed,\n  per the review packet. CI is Linux; macOS behavior has static proof only.\n- This is the completed round-1 source review of the same requested head, not\n  a review of fixes or a new round-2 finding.\n\nPolicy/brake: automatic supersession's confirmed-dead/recycled decision is\npolicy; uncertain probes are a brake and must not automatically retire rows.\nThe finding concerns explicit takeover's missing live-holder brake.\n\nOther source coverage: automatic unknown handling refuses missing/invalid\nprocess tuples, remote holders and failed probes (registration.rs:676-686);\nownership is rechecked under lock (registration.rs:853,875-887,1728-1736).\nExplicit takeover uses transactional descriptor CAS (registry.rs:61-75).\nThe macOS lsof endpoint correlation and /bin/ps ancestry were read by eye\n(identity.rs:647-700). The banner validates pane/holder fields and rebuilds\nthe command rather than using remote command text\n(.copilot/extensions/pij/store.mjs:721-730,773-774). Tombstoning records actor\nand reason without signalling/killing a process (identity.rs:619-624).\n\nNon-blocking command-help note, not another security vulnerability:\nregistration.rs:51 and store.mjs:774 print an unquoted --why <reason>\nplaceholder. This does not inject remote text, but it is not shell-runnable;\nquote the example reason as requested. Added tests cover missing/remote holders,\nnot an actual failed-probe result; that extra fixture is optional hardening.\n\nHarness feedback: the successful takeover test lacks a process-live foreign\nholder and its prime test uses assertion instead of designation. Encode these\nnormal-use guards as regressions so successful authorization cannot be mistaken\nfor proof of safe retirement.\n"
+		}
+	]
+}
