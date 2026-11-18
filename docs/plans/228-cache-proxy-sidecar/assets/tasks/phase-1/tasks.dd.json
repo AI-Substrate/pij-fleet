@@ -1,0 +1,306 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Sidecar crate, verb, config, LaunchAgent and live proof",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": "One phase, nine tasks, one coder (pij-charming-crane)."
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Workspace wiring: crates/cache-proxy skeleton (pij-core only internal edge), workspace member and path table, arch-allowlist rows (pij-cache-proxy; pij-cli gains it), spawn_sites DAEMON_CRATES += cache-proxy, crates/README.md crate table (cache-proxy plus the missing sidecars and unisphere)",
+          "phase": "ph-1f3e",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0009",
+            "../../../plan.dd.json#acceptance_criteria/ac-000b"
+          ]
+        },
+        {
+          "id": "tk-0002",
+          "title": "rewrite.rs: port set_ttl and initiator, add the -1m base-id mapping and the request-rewrite entry point, with unit tests",
+          "phase": "ph-1f3e",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ]
+        },
+        {
+          "id": "tk-0003",
+          "title": "token.rs and readiness.rs: gh resolution (PIJ_GH or PATH, absolute), recorded gh launch, generation-tagged token with single-flight refresh and failure latch, copilot_internal/user and /models parse with the quota rule and 10-min cache; accounts.rs dscl parser and recorded launch",
+          "phase": "ph-1f3e",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0007",
+            "../../../plan.dd.json#acceptance_criteria/ac-0009"
+          ]
+        },
+        {
+          "id": "tk-0004",
+          "title": "config.rs, status.rs, serve.rs: config load/save (0600, atomic), state machine and exact status JSON, router with Origin/Host guard, forward with one retry on 401 and 402 handling, reload, hyper-util server loop bound to 127.0.0.1",
+          "phase": "ph-1f3e",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0004",
+            "../../../plan.dd.json#acceptance_criteria/ac-0005",
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "tk-0005",
+          "title": "tests/proxy.rs: fake upstream and fake gh; single-flight 5→1, failed-refresh latch and reload, 402 → quota_exhausted, Origin/Host 403, 503 without a token",
+          "phase": "ph-1f3e",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ]
+        },
+        {
+          "id": "tk-0006",
+          "title": "CLI verb: crates/cli/src/cache_proxy.rs and Command::CacheProxy (run as an early branch beside daemon; status, account, off, on; --port), SKILL.md native-only row",
+          "phase": "ph-1f3e",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006",
+            "../../../plan.dd.json#acceptance_criteria/ac-000b"
+          ]
+        },
+        {
+          "id": "tk-0007",
+          "title": "justfile cache-proxy-autostart / -off, install calls it; docs/how/cache-proxy.md",
+          "phase": "ph-1f3e",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0008",
+            "../../../plan.dd.json#acceptance_criteria/ac-000b"
+          ]
+        },
+        {
+          "id": "tk-0008",
+          "title": "Gates: scoped rust-check through shared-build, just lint, local-path-check, lockfile-allowlist, ddocs-check, harness checks --quick",
+          "phase": "ph-1f3e",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-000b"
+          ]
+        },
+        {
+          "id": "tk-0009",
+          "title": "Live proof on plain copilot processes (tmux ws004-s02-test, test port): rows 2, 9, 10, 11, 14, 15, 16, 17, 22 plus the token grep; receipts in the PR body; PR against main",
+          "phase": "ph-1f3e",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0009",
+            "../../../plan.dd.json#acceptance_criteria/ac-000a"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "arch_drift and spawn_sites pass with the new crate",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-000c"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "rewrite unit tests pass: nested ttl, explicit ttl kept, initiator cases, -1m mapping, non-JSON untouched",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "parse and dscl unit tests pass",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+          },
+          {
+            "id": "dw-0004",
+            "assertion": "dscl parser test shows the warning for two human accounts",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-000a"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0005",
+            "assertion": "status golden test pins keys and state names",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0007"
+          },
+          {
+            "id": "dw-0006",
+            "assertion": "config unit tests pass",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0009"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0007",
+            "assertion": "integration tests pass",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          },
+          {
+            "id": "dw-0008",
+            "assertion": "Origin/Host refusal test passes",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0008"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0009",
+            "assertion": "skill_verb_coverage passes; verbs work against a test-port sidecar",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0009"
+          }
+        ],
+        "tk-0007": [
+          {
+            "id": "dw-000a",
+            "assertion": "plutil -lint passes on the rendered plist at a temp path",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-000b"
+          }
+        ],
+        "tk-0008": [
+          {
+            "id": "dw-000b",
+            "assertion": "every gate exits 0",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-000e"
+          }
+        ],
+        "tk-0009": [
+          {
+            "id": "dw-000c",
+            "assertion": "rows 2, 15, 16, 22 receipted",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          },
+          {
+            "id": "dw-000d",
+            "assertion": "rows 9, 10, 11, 17 receipted",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          },
+          {
+            "id": "dw-000e",
+            "assertion": "row 14 receipted",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+          },
+          {
+            "id": "dw-000f",
+            "assertion": "no token in log, config or argv",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-000d"
+          }
+        ]
+      }
+    },
+    {
+      "name": "goals",
+      "value": []
+    },
+    {
+      "name": "non_goals",
+      "value": []
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": []
+    },
+    {
+      "name": "phases",
+      "value": []
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": []
+    },
+    {
+      "name": "execution_guardrails",
+      "value": []
+    }
+  ]
+}

@@ -1,0 +1,164 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 228 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Proven"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1 rewrite: ttl, initiator, -1m mapping; a missed block or a wrong initiator costs cache or a premium request",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD→RUN: unit tests in crates/cache-proxy/src/rewrite.rs (ttl added only where missing and nested, initiator for tool-result-only vs mixed vs assistant last, -1m stripped, non-JSON untouched); then `PIJ_SHARED_TARGET=<pi-hacking>/target-ws004 just shared-build -- test -p pij-cache-proxy`",
+          "state": "checked",
+          "probe": "crates/cache-proxy (new); POC tests in spike main.rs"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC1 live: 1h cache after 6+ min idle (row 2), +1 premium for a 5-tool turn (row 15), tool-heavy + image parity (row 16), both model names (row 22)",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "human-judgement",
+          "proof": "BUILD→RUN: plain `copilot` processes in tmux session ws004-s02-test with COPILOT_PROVIDER_TYPE=anthropic, COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:<test port>, COPILOT_PROVIDER_MODEL_ID/MAX_PROMPT_TOKENS hand-set; usage from the sidecar log; premium counts from copilot_internal/user remaining before/after",
+          "state": "checked",
+          "probe": "spike REPORT.md row 2 / addendum method"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC2 token holder: single-flight 401 refresh, one retry, failed refresh latches (no loop)",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD→RUN: crates/cache-proxy/tests/proxy.rs with a fake upstream (axum, ephemeral port) and a fake gh script counting launches: 5 concurrent requests on a stale token → exactly 1 refresh launch and 5×200; gh failing → state no_token once, a second 401 burst launches nothing, reload clears the latch; then `PIJ_SHARED_TARGET=<pi-hacking>/target-ws004 just shared-build -- test -p pij-cache-proxy`",
+          "state": "checked",
+          "probe": "spike measured 5→1 live only"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC2 live: rows 9, 10, 11, 17 on the real endpoint",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "human-judgement",
+          "proof": "BUILD→RUN: PIJ_CACHE_PROXY_TEST_STALE_TOKEN=1 sidecar on a test port; 3 concurrent copilot turns (row 9), one turn (row 10); a PIJ_GH wrapper that fails after its first run (row 11, never `gh auth logout` on a shared account); 10 concurrent clients (row 17); counters from /__pij/status",
+          "state": "checked",
+          "probe": "spike REPORT.md row 10"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC3 readiness: quota rule, endpoint, models parse, 10-min cache, 402 marks exhausted",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD→RUN: unit tests on the parse functions (unlimited / remaining>0 / overage / exhausted with reset date / no endpoints.api; models keeps claude ids, drops -1m and non-claude); integration test: 402 from the fake upstream flips state to quota_exhausted and re-runs the check; then `PIJ_SHARED_TARGET=<pi-hacking>/target-ws004 just shared-build -- test -p pij-cache-proxy`",
+          "state": "checked",
+          "probe": "new"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC3 live: enterprise host for jorkni_microsoft, individual host and quota refusal for jakkaj (row 14, row 5)",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "human-judgement",
+          "proof": "BUILD→RUN: `pij-rs cache-proxy account <login>` against a test-port sidecar, then `pij-rs cache-proxy status` and the sidecar log host line",
+          "state": "checked",
+          "probe": "spike REPORT.md quota table"
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC4 status route contract exact (shared with s03)",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD→RUN: a golden test serialising each state and asserting the exact key set, nested keys and the 7 state names; then `PIJ_SHARED_TARGET=<pi-hacking>/target-ws004 just shared-build -- test -p pij-cache-proxy`",
+          "state": "checked",
+          "probe": "blueprint 003 c-status-route"
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC5 loopback only, Origin/Host refusal, 503 with no token",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD→RUN: integration test: Origin header → 403 and upstream untouched; Host evil.example → 403; no account → 503 naming the state; then `PIJ_SHARED_TARGET=<pi-hacking>/target-ws004 just shared-build -- test -p pij-cache-proxy`; live `lsof -iTCP:<port> -sTCP:LISTEN` shows 127.0.0.1",
+          "state": "checked",
+          "probe": "new"
+        },
+        {
+          "id": "bp-0009",
+          "criterion": "AC6 verb and config: run, status, account, off, on; config file semantics",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD→RUN: unit tests of config load/save (missing file, no account, enabled=false, 0600, atomic) and state mapping; live: each verb against a test-port sidecar with PIJ_RS_STATE_DIR in a temp dir; then `PIJ_SHARED_TARGET=… just shared-build -- test -p pij-cache-proxy -p pij-cli`",
+          "state": "checked",
+          "probe": "crates/cli/src/main.rs Command, lib.rs default_state_dir"
+        },
+        {
+          "id": "bp-000a",
+          "criterion": "AC7 second human account parser (row 19)",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD→RUN: unit test of the dscl parser with fixtures for one and two human accounts; then `PIJ_SHARED_TARGET=<pi-hacking>/target-ws004 just shared-build -- test -p pij-cache-proxy`",
+          "state": "checked",
+          "probe": "new"
+        },
+        {
+          "id": "bp-000b",
+          "criterion": "AC8 LaunchAgent plist",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD→RUN: render the recipe's plist to a temp path (`PIJ_CACHE_PROXY_PLIST=<tmp>` dry write, no launchctl) and `plutil -lint <tmp>`; inspect KeepAlive, ThrottleInterval 10",
+          "state": "checked",
+          "probe": "justfile rs-autostart"
+        },
+        {
+          "id": "bp-000c",
+          "criterion": "AC9 cost: no launch per request, spawn sites covered",
+          "phase": "ph-1f3e",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND→RUN: add \"cache-proxy\" to DAEMON_CRATES in crates/testkit/tests/spawn_sites.rs; then `PIJ_SHARED_TARGET=… just shared-build -- test -p pij-testkit --test spawn_sites`; live: counters.gh_launches and requests before/after 10 concurrent clients",
+          "state": "checked",
+          "probe": "crates/testkit/tests/spawn_sites.rs"
+        },
+        {
+          "id": "bp-000d",
+          "criterion": "AC10 no token in log, config, argv",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "human-judgement",
+          "proof": "BUILD→RUN: during live rows, `grep -c gho_` on the sidecar log and config file, and `ps -axww -o args` for pij-rs and copilot processes, expect 0",
+          "state": "checked",
+          "probe": "new"
+        },
+        {
+          "id": "bp-000e",
+          "criterion": "AC11 workspace wiring, docs, gates",
+          "phase": "ph-1f3e",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "RUN: scoped `just rust-check` through shared-build (fmt, clippy -D warnings, tests incl. arch_drift and skill_verb_coverage), `just lint`, `just local-path-check`, `just lockfile-allowlist`, `just ddocs-check`, `harness checks --quick`",
+          "state": "checked",
+          "probe": "justfile, crates/testkit/tests/arch_drift.rs, crates/cli/tests/skill_verb_coverage.rs"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

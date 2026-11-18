@@ -9,11 +9,13 @@
 //! or calls a builder defined in the same file (a `fn ... -> Command`, like the
 //! tmux adapters' `command()`). The builder itself is not a site: its callers
 //! record. The CLI crate is not scanned: its launches happen in short-lived CLI
-//! processes, not the daemon.
+//! processes, not the daemon. The cache-proxy sidecar (plan 228) is a second
+//! long-running process with the same cost rule, so its crate is scanned too.
 
 use std::path::{Path, PathBuf};
 
-const DAEMON_CRATES: [&str; 8] = [
+const DAEMON_CRATES: [&str; 9] = [
+    "cache-proxy",
     "core",
     "daemon",
     "harnesses",

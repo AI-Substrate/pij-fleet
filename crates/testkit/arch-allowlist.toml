@@ -119,6 +119,17 @@ internal = ["pij-core", "pij-store@dev", "pij-testkit@dev"]
 external = ["async-trait@dev", "axum@dev", "nix", "reqwest", "serde", "serde_json", "sha2", "tokio"]
 why = "Queue consumers over the seven frozen ports plus concrete Telegram HTTP, process-group, and shell/file adapters; sha2 content-addresses staged Telegram documents and re-verifies them before upload; store, testkit, async-trait, and axum remain dev-only proof dependencies."
 
+[crates.pij-cache-proxy]
+# The Copilot cache-proxy sidecar (plan 228, blueprint 003): a loopback HTTP
+# proxy, so `axum` plus the `hyper-util` accept loop (idle keep-alive timeout,
+# as the daemon's) serve it and `reqwest` streams upstream; `tokio` is its
+# reactor and awaits the one `gh` launch; `tokio-stream` maps the response
+# stream to log cache usage; `toml` reads and writes cache-proxy.toml; `time`
+# stamps log lines. pij-core only, for the spawn counter and PATH resolver.
+internal = ["pij-core"]
+external = ["axum", "hyper-util", "reqwest", "serde", "serde_json", "time", "tokio", "tokio-stream", "toml"]
+why = "The cache-proxy sidecar: holds one account's token in memory, rewrites the prompt-cache TTL and serves the status route the daemon's spawn gate reads; pi-free and daemon-free so a daemon bounce never touches it."
+
 [crates.pij-daemon]
 # The widest row in the workspace, and deliberately so: a composition root is the
 # ONE place allowed to know every adapter. `pij-testkit` is a SHIPPED edge here,
@@ -155,7 +166,7 @@ why = "Composition root #1: wires Arc<dyn Port> from config, serves HTTP, runs t
 # `pij-store` and `pij-unisphere` are shipped for `fleet-report` (plan 162): the
 # report reads seats read-only from the store and folds transcripts in-process,
 # with no daemon round trip, so it works with the daemon down and never writes.
-internal = ["pij-core", "pij-daemon", "pij-harnesses", "pij-store", "pij-testkit@dev", "pij-unisphere"]
+internal = ["pij-cache-proxy", "pij-core", "pij-daemon", "pij-harnesses", "pij-store", "pij-testkit@dev", "pij-unisphere"]
 external = ["axum@dev", "clap", "nix", "reqwest", "serde", "serde_json", "time", "tokio", "uuid"]
 why = "Composition root #2 and the workspace's only binary (pij-rs). Ships the daemon in the same artifact so CLI and daemon versions cannot skew; reuses the exact-pid liveness adapter so bounce never signals a recycled pid; nix safely redirects daemon output at the descriptor boundary and time formats RFC3339 log prefixes; dev-only axum proves the shipped CLI through the authenticated router; the store (read-only) and unisphere edges serve fleet-report, which reads facts without a daemon."
 

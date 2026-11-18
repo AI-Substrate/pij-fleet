@@ -75,6 +75,7 @@ primitive. `baton` is the other orchestration subcommand.
 |---|---|
 | `ping` | daemon health (`pij-rs ping --json`; ops route) |
 | `peers` (`check`/`new-key`) | machine pairing for federation; then `pij-rs send --to <seat>@<machine>` ([federation](../../docs/how/pij-federation.md)) |
+| `cache-proxy` (`status`/`account <login>`/`off`/`on`) | the Copilot cache-proxy sidecar on 127.0.0.1:7471 (plan 228): bare runs it (its LaunchAgent, `just cache-proxy-autostart`, does this); `status` shows state, account, upstream, quota, models and counters; the others write `~/.pij-rs/cache-proxy.toml` and reload it ([cache proxy](../../docs/how/cache-proxy.md)) |
 | `doctor` (`claude-inbound`/`claude-hook`/`claude-statusline`/`claude-hooks`) | read-only audit of every Claude home's pij wiring (ops route); `claude-hooks` reports every pij-managed hook missing or stale with its fix, and `just doctor` runs it |
 | `claude-hooks` (`--remove`) | takes every pij-managed hook out of every Claude home and leaves other settings alone; `just unlink` runs it, and a daemon that starts again puts them back |
 | `fyi-read` | read in full the FYIs one claim delivered: `pij-rs fyi-read --seat <s> --claimed-at <ms>`, the command an FYI digest names |

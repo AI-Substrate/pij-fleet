@@ -83,6 +83,16 @@ enum Command {
         #[arg(long)]
         insecure_bind: bool,
     },
+    /// The Copilot cache-proxy sidecar (plan 228): no action runs it in the
+    /// foreground; `status`, `account <login>`, `off` and `on` show or change it.
+    CacheProxy {
+        #[command(subcommand)]
+        action: Option<CacheProxyAction>,
+        /// Loopback port. Resolution is `--port`, then `PIJ_CACHE_PROXY_PORT`,
+        /// then 7471.
+        #[arg(long, global = true)]
+        port: Option<u16>,
+    },
     /// Check or mint machine pairings (<state-dir>/peers.toml).
     Peers {
         #[command(subcommand)]
@@ -989,6 +999,22 @@ enum PeersAction {
 }
 
 #[derive(Clone, Debug, Subcommand)]
+enum CacheProxyAction {
+    /// Show its state, account, upstream host, quota, models and counters,
+    /// or that nothing listens; warns about a second human account.
+    Status,
+    /// Name the gh account whose token it holds, then reload it.
+    Account {
+        /// The gh login.
+        login: String,
+    },
+    /// New spawns run plain; live proxied seats keep being served.
+    Off,
+    /// Switch it back on and re-run its checks.
+    On,
+}
+
+#[derive(Clone, Debug, Subcommand)]
 enum HookAction {
     /// Claude's Stop hook when the reply holds a pij fence (plan 226): reads the
     /// Stop input on stdin, runs a closing pij block, publishes idle unless the
@@ -1178,6 +1204,43 @@ async fn run(cli: Cli) -> ExitCode {
                 ExitCode::from(exit_code(&report))
             }
         };
+    }
+    // Plan 228: the cache-proxy sidecar and its verbs need no daemon; with no
+    // action it is a long-running server, like `daemon`.
+    if let Command::CacheProxy { action, port } = &cli.command {
+        let port = match pij_cli::cache_proxy::resolve_port(
+            *port,
+            std::env::var_os(pij_cli::cache_proxy::PORT_ENV),
+        ) {
+            Ok(port) => port,
+            Err(message) => return emit_config_error(&cli, message),
+        };
+        let change = match action {
+            None => {
+                return match pij_cli::cache_proxy::run(&state_dir, port).await {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(message) => {
+                        eprintln!("pij-rs cache-proxy: {message}");
+                        ExitCode::FAILURE
+                    }
+                };
+            }
+            Some(CacheProxyAction::Status) => None,
+            Some(CacheProxyAction::Account { login }) => {
+                Some(pij_cli::cache_proxy::Change::Account(login.clone()))
+            }
+            Some(CacheProxyAction::Off) => Some(pij_cli::cache_proxy::Change::Off),
+            Some(CacheProxyAction::On) => Some(pij_cli::cache_proxy::Change::On),
+        };
+        let report = match change {
+            None => pij_cli::cache_proxy::status(port).await,
+            Some(change) => pij_cli::cache_proxy::change(&state_dir, port, change).await,
+        };
+        if cli.json {
+            return emit(&report, true);
+        }
+        println!("{}", pij_cli::cache_proxy::render(&report));
+        return ExitCode::from(exit_code(&report));
     }
     if let Command::Daemon {
         action: None,
@@ -1404,6 +1467,9 @@ async fn run(cli: Cli) -> ExitCode {
             unreachable!("claude-hooks returned before client construction")
         }
         Command::Peers { .. } => unreachable!("peers returned before client construction"),
+        Command::CacheProxy { .. } => {
+            unreachable!("cache-proxy returned before client construction")
+        }
         Command::FleetReport { .. } => {
             unreachable!("fleet-report returned before client construction")
         }
@@ -4594,6 +4660,7 @@ impl Command {
             Command::ClaudeHooks { .. } => "pij claude-hooks",
             Command::Hook { .. } => "pij hook",
             Command::Peers { .. } => "pij peers",
+            Command::CacheProxy { .. } => "pij cache-proxy",
             Command::SpawnChild { .. } => "pij spawn child",
             Command::Ping => "pij ping",
             Command::Sidecar { .. } => "pij sidecar",
@@ -5631,8 +5698,9 @@ PEC notice";
                 // that fails this test first — which is exactly what it did for
                 // `report` (u-report), adopt/whoami/phonehome (u-identity) and
                 // `state` (u-readback), `doctor` (plan 126) and `fleet-report` (plan 162),
-                // `claude-hooks` and `hook` (plan 226).
+                // `claude-hooks` and `hook` (plan 226), `cache-proxy` (plan 228).
                 "daemon",
+                "cache-proxy",
                 "peers",
                 "ping",
                 "doctor",
