@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f114-abd0-73e3-abab-8d7bf8b0c80c",
+				"date": "2026-11-19",
+				"head": "d43be5c79bc58cfbec035a4ba7cbdd8ab24a2615",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44423420352",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:245",
+				"writer": "pij-integrated-opossum",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 245",
+					"exit_code": 0,
+					"log": "FINAL at d43be5c79bc58cfbec035a4ba7cbdd8ab24a2615; CLEAN; all five latest checks pass"
+				},
+				{
+					"command": "gh run view 44423420352 --repo AI-Substrate/pij-fleet --attempt 2",
+					"exit_code": 0,
+					"log": "Successful rerun associated with requested head; rust-test job 135223863727; successful artifact 14483955866: 2507 passed, nextest six skipped; memory_turn_http 22/22"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "READY / security PASS - final round under C34\n\nPR #245 at d43be5c79bc58cfbec035a4ba7cbdd8ab24a2615.\nReviewed delta only:\n6a52a0950d2be8f5e05908384b258144d5976e64..d43be5c79bc58cfbec035a4ba7cbdd8ab24a2615.\nAnswers role:security/245 request 01a1f114-abd0-73e3-abab-8d7bf8b0c80c.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No security vulnerabilities found | - |\n\nThe earlier pending lookup grants no new authority. Close still checks initial\nownership before pending_answer (crates/daemon/src/http/lifecycle.rs:496-514);\ncompact retains its existing target/identity/process/command validation before\nthe lookup (crates/daemon/src/http/mod.rs:2612-2675). The lookup reads/clones\npending metadata; it neither changes the original actor nor replaces the\nheld action.\n\nPendingTurn retains the original closer, process identity and pane. A pending\nclose is acknowledged only for the same action, closer and incarnation\n(crates/daemon/src/http/memory_turn.rs:429-448). Other requests are explicitly\nrefused rather than attached to an action that cannot execute them.\nThe refusal says the request will not run, tells the caller to ask again\nafter the turn and includes its deadline (:450-473).\n\nThe new why values are closed literals: another-action, another-closer,\nanother-incarnation. Structured details use the seat identity, action and\ndaemon deadline, not memory-note titles, close reasons or external message\nbodies. Process identity and pane are compared, not exposed. The existing\ncaller derivation and original held-action authority/incarnation brakes remain.\nNo new secret, unsafe shell/path operation, or external-input exposure found.\n\nPending admission keeps the second comparison in hold for the race\n(memory_turn.rs:305-307). The guard is dropped after proceed regardless of\nclosed/skipped/failed result (:335-349), and Drop removes the entry (:380-385).\nThe correctness role separately published PASS at this exact head and marked\nR245-001 closed. No new C34 follow-up is required by this security delta review.\n\nCost: one additional request-driven in-process map lookup for close/compact;\nno new recurring loop, timer, poll or process launch. The existing bounded\nclose retry remains at most five total attempts including current, pane_now\nand CAS/receipt work. No live cost measurement is claimed.\n\nValidation: just pr-freeze 245 passed twice at the full requested head:\nFINAL, CLEAN, both remote heads agree, all five latest checks pass.\nSuccessful CI run 44423420352 attempt 2, rust-test job 135223863727,\nuploaded artifact 14483955866: 2,507 test cases passed, zero failures/errors;\nnextest separately reported six skipped. memory_turn_http passed 22/22.\nThe successful upload log identifies this artifact; the earlier same-named\nartifact 14482758276 was not substituted.\n\nAll three new combined HTTP regressions passed:\n- a_new_owners_close_during_a_held_close_is_refused_by_name_then_lands\n  (crates/daemon/tests/memory_turn_http.rs:1225)\n- a_close_of_a_revived_seat_during_a_held_close_is_refused_by_name_then_lands\n  (:1262)\n- a_note_written_while_a_turn_is_pending_never_skips_past_it (:1293)\n\nRust lint, both Node jobs and delivers also passed. The original rust-test\njob 135221985856 reported 2,506 passed and one failed:\ncompaction_wake::tests::a_dropped_caller_never_leaves_a_compact_admitted_untracked.\nThat test passed in the successful artifact at the same requested PR head;\nthis review verifies fail-to-pass, not the flake's root cause.\nCI ran synthetic merge e8b93221c23b1cc70ced2a9d9e3ce69df552d78d associated\nwith this head; API comparison found twelve documentation-only differences\nand no code/test differences versus the requested head.\n\nLimits: source and exact-head Linux CI only. No local build/test, full harness\nchecks, mutation run, macOS execution, or live fleet measurement was performed.\nProduct source and tracked review-worktree files were not changed.\n\nHarness improvement: the original lost-close scenario and its revived-seat\nvariant are now combined HTTP regressions; the added note/pending composition\ntest prevents an earlier note shortcut from bypassing the pending guard.\n"
+		}
+	]
+}
