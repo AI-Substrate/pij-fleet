@@ -1031,6 +1031,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-charming-crane",
 					"why": "pm-004: workstream 004 s02 (plan 228, cache-proxy sidecar)"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-18T01:57:16.119Z",
+					"harness": "omp",
+					"harness_session": "01a1ec5f-4d98-7254-a12e-9448e9c57590",
+					"instance_key": "229",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-yielding-newt",
+					"why": "pm-004: workstream 004 s03 (plan 229, daemon gate)"
 				}
 			]
 		}
