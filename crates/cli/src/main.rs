@@ -205,6 +205,13 @@ enum Command {
         /// Operator reclaim of a dead seat onto this pane (parent or prime only).
         #[arg(long)]
         reclaim: Option<String>,
+        /// Retire this pane's other records whose process is gone or cannot be
+        /// checked (F196): from the pane's own process or the designated prime.
+        #[arg(long, requires = "why")]
+        take_over: bool,
+        /// The reason a `--take-over` records.
+        #[arg(long, requires = "take_over")]
+        why: Option<String>,
     },
     /// Render a harness status line from the payload on stdin (plan 180).
     ///
@@ -1473,6 +1480,8 @@ async fn run(cli: Cli) -> ExitCode {
             extension_path,
             harness_session,
             reclaim,
+            take_over,
+            why,
         } => {
             warn_caller_claude_home(&harness);
             let mut argv = adopt_argv(
@@ -1486,10 +1495,14 @@ async fn run(cli: Cli) -> ExitCode {
             for (flag, value) in [
                 ("--harness-session", harness_session),
                 ("--reclaim", reclaim),
+                ("--why", why),
             ] {
                 if let Some(value) = value {
                     argv.extend([flag.to_string(), value]);
                 }
+            }
+            if take_over {
+                argv.push("--take-over".to_string());
             }
             let request = IdentityRequest {
                 argv,

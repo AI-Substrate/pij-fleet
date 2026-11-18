@@ -1778,21 +1778,6 @@ test("manual identity requests daemon allocation; exact process rollover superse
 	assert.equal(rolled.supersedes, registration.id);
 	assert.notEqual(rolled.id, registration.id);
 	assert.throws(
-		() =>
-			chooseRegistration({
-				...input,
-				seats: [
-					{
-						...descriptor,
-						session: "different-native-session",
-						native_extension_delivery: false,
-						proc: { ...descriptor.proc, pid: 999 },
-					},
-				],
-			}),
-		/identity|pane|process/i,
-	);
-	assert.throws(
 		() => chooseRegistration({ ...input, seats: [], env: { PIJ_SESSION_ID: "unproven" } }),
 		/prebind|identity|corroborat/i,
 	);
@@ -1946,7 +1931,7 @@ test("same-session nomination leaves missing historical process verification to 
 	assert.equal(selected.supersedes, undefined);
 });
 
-test("foreign harness cannot nominate a native session or yield its occupied pane", () => {
+test("foreign harness cannot nominate a native session; its pane is the daemon's call (F196)", () => {
 	const input = {
 		sessionId: descriptor.session,
 		host: { ...descriptor.proc, pid: 999 },
@@ -1955,10 +1940,11 @@ test("foreign harness cannot nominate a native session or yield its occupied pan
 		seats: [{ ...descriptor, harness: "pi" }],
 	};
 	assert.equal(chooseRegistration(input).id, "");
-	assert.throws(
-		() => chooseRegistration({ ...input, host: { ...input.host, pane: descriptor.pane } }),
-		/Pane belongs/,
-	);
+	// The roster carries no liveness, so a dead holder on this pane must reach
+	// the daemon, which retires it, rather than be refused here.
+	const onPane = chooseRegistration({ ...input, host: { ...input.host, pane: descriptor.pane } });
+	assert.equal(onPane.id, "");
+	assert.equal(onPane.pane, descriptor.pane);
 });
 
 test("plan 211: a fresh native address is allocated as explicit, or as a lease retry after a standby", async () => {
@@ -2748,6 +2734,60 @@ test("plan 211: only a typed E-RS-SEAT-RETIRED registration refusal marks the se
 			return true;
 		});
 	}
+});
+
+test("F196: a typed E-RS-PANE-HELD refusal prints the take-over command, and only validated fields", async () => {
+	const held = {
+		ok: false,
+		v: 2,
+		command: "pij register",
+		error: "refused",
+		details: {
+			code: "E-RS-PANE-HELD",
+			holder: "pij-selected-alpaca",
+			pane: "%135",
+			take_over: "SECRET_REMOTE_TEXT",
+		},
+		meta: "SECRET_REMOTE_TEXT",
+	};
+	const banner = async (envelope, status = 400) => {
+		const client = new DaemonClient({
+			addr: "127.0.0.1:13700",
+			stateDir: "/isolated",
+			readKey: async () => "fixture-key",
+			fetch: async () => new Response(JSON.stringify(envelope), { status }),
+		});
+		const error = await client.request("/v1/register", registration).then(
+			() => assert.fail("refused"),
+			(error) => error,
+		);
+		assert.equal(error.retryable, false);
+		const logs = [];
+		await createNativeReporter({ log: async (line) => logs.push(line), capture: () => {} })({
+			kind: "extension-unavailable",
+			safeDiagnostic: error.safeDiagnostic,
+			takeOver: error.takeOver,
+		});
+		assert.doesNotMatch(logs[0], /SECRET_REMOTE_TEXT/);
+		return logs[0];
+	};
+	const typed = await banner(held);
+	assert.match(typed, /pane %135 is recorded for seat pij-selected-alpaca/);
+	assert.match(
+		typed,
+		/take the pane over with `pij-rs adopt %135 --harness copilot --take-over --why <reason>`/,
+	);
+	assert.doesNotMatch(typed, /restart the Copilot CLI/);
+	for (const details of [
+		{ ...held.details, pane: "%135; rm -rf ~" },
+		{ ...held.details, holder: "pij-x `whoami`" },
+		{ ...held.details, code: "E-RS-OTHER" },
+	]) {
+		const untyped = await banner({ ...held, details });
+		assert.doesNotMatch(untyped, /take-over|rm -rf|whoami/);
+		assert.match(untyped, /native registration failed: Pij HTTP 400/);
+	}
+	assert.doesNotMatch(await banner(held, 409), /take-over/);
 });
 
 test("plan 211: a retired address stops the heartbeat instead of re-registering every few seconds", async (t) => {
