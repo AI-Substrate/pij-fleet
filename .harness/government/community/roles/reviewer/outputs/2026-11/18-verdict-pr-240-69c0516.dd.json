@@ -1,0 +1,55 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1eca5-a092-7853-a921-e6792392eea4",
+				"date": "2026-11-18",
+				"head": "69c0516d8879793b1776753e6d75839931608ce0",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44228256498",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:240",
+				"writer": "pij-mere-lizard",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After merge, reinstall and daemon bounce: repeat per-site ping counters over a known interval, just spawn-rate --seconds 20, and daemon CPU/RSS; retain the after-deploy receipt against this baseline.",
+				"After deployment: smoke second-server unregistered identity, registered own identity, and lapsed native receiver state/list labels clearing after renewal."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 240",
+					"exit_code": 0,
+					"log": "FINAL at 69c0516d8879793b1776753e6d75839931608ce0; clean detached worktree; all five checks pass"
+				},
+				{
+					"command": "gh run view 44228256498; successful rust-test job 134546668452; JUnit artifact 14394216170",
+					"exit_code": 0,
+					"log": "Exact-head successful CI: 2441 Rust tests passed; named changed regressions and spawn guards verified in successful upload artifact. Node 22/24 checks pass."
+				},
+				{
+					"command": "pij-rs --json ping | jq .data.spawns (twice); just spawn-rate --seconds 20",
+					"exit_code": 0,
+					"log": "2026-11-18 03:14:46Z to 03:15:06Z: 793 -> 793, all by_op counters unchanged; machine 167.1 new processes/s; daemon PID 46800 CPU 12.1%, RSS 143136 KiB. Full counters embedded in body."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PR #240 correctness review\nHead: 69c0516d8879793b1776753e6d75839931608ce0\nResult: pass-with-notes\nRequest: 01a1eca5-a092-7853-a921-e6792392eea4\n\nNo blocking correctness finding in the scoped F198/F195 changes. Source review\ncovered all 18 changed files and the relevant registration, identity, lease,\nrendering and launch-counter call paths. No local Cargo build or test ran.\n\nF198: invocation and identity\n\n- The managed shell script ends in exec pij-rs statusline copilot. A wrapper\n  shell between that command and Copilot remains on the ancestry chain, so it\n  does not prevent matching the registered host. main.rs passes the statusline\n  process's actual PID, not an inherited seat id, into runs_under.\n- runs_under checks self and up to 63 ancestors, with at most 64 parent reads\n  on a miss. A match also requires that PID's observed local process start to\n  equal the recorded start. There is no immediate-parent-only assumption.\n  The exact bound is 64 examined PIDs, not acceptance at a 64th parent edge;\n  ordinary wrappers fit comfortably within it.\n- The native extension records a Copilot host ancestor, and registration\n  verifies that process against the same local lstart identity used here.\n  The local/UTC pair from observed_start is deliberately reduced to local.\n- macOS parent_pid reuses parent_and_name: ProcBSDShortInfo verifies pbsi_pid\n  before returning pbsi_ppid. observed_start uses ProcBSDInfo, verifies pbi_pid,\n  and converts pbi_start_tvsec using the start instant's local timezone.\n  Linux reads PPID field 4 after the last ')' in /proc/PID/stat. These new\n  reads call neither Command::new nor the ps fallback in ProcLiveness.\n- A foreign PID, a recycled start, missing process evidence or a remote\n  descriptor suppresses the identity before rendering. Refusals no longer\n  extract or render a seat name from their message. Pane resolution still\n  clears inherited PIJ_SESSION_ID; paneless resolution also checks ancestry.\n- This is a display brake: removing it can expose more names; it does not\n  register, retire, refuse delivery to, or kill a seat. It is not a new\n  retention or identity-authority policy. C33 remains the trust boundary.\n\nF195: lease calculation and rendering\n\n- Both additions reuse DeliveryService's existing in-memory lease authority.\n  Lease expiry and age use tokio::time::Instant, not wall-clock milliseconds.\n  The matching native incarnation's renewal instant supplies the age.\n  A missing/incarnation-mismatched renewal does not fabricate a timestamp:\n  the card says it has not renewed since daemon start and the list omits age.\n- receiver_live's existing boot grace and strict expiry threshold are retained.\n  A renewed receiver is excluded on the next read; nothing in this PR latches\n  a lapse. The state line is gated by a fresh native_receiver_reason read.\n  If expiry occurs between its two reads, the state line can omit \"since\"\n  rather than inventing an age; this is handled explicitly.\n- Only native Copilot receivers qualify. The list further gates the suffix to\n  local rows and excludes tombstones. Remote rows do not acquire a local\n  receiver label. State's reason is likewise restricted to native Copilot.\n- The newly generated display values contain fixed text, a numeric duration,\n  and one of active/dead/recycled/unbound. They introduce no remote text,\n  shell execution, path lookup or unescaped user-controlled field. Both\n  roster renderers preserve the existing dialog state and append the suffix.\n\nEvidence and limits\n\n- just pr-freeze 240: FINAL, exact remote/gh head agreement, main base, CLEAN,\n  all five checks passed, not draft, no migrations, clean detached checkout.\n- CI run 44228256498 is a successful pull_request run for this exact head.\n  rust-test: 2441 passed, 6 skipped by nextest's summary. Successful job\n  134546668452 uploaded artifact 14394216170; its JUnit has 2441 cases and\n  zero failures/errors.\n- The artifact explicitly records PASS for the F198 foreign-seat regression,\n  real ancestry regression, Linux PPID parser, F195 HTTP lapse regression,\n  CLI state rendering regression, statusline golden parity, real-daemon\n  statusline integration, and all three spawn-site/path guards.\n- Node 22 CI records PASS for generation-routing.test.ts (55 tests) and\n  roster-table.test.ts (3 tests); the shared list-sized golden pins the Rust\n  and TS roster renderers. Node 22 and 24 typecheck/lint/test jobs are green.\n- macOS-only code was inspected by eye, NOT independently compiled or tested\n  here. Linux CI is not evidence that the macOS cfg was compiled.\n- harness boot --json returned advisory ready:false at worktree-deps because\n  this review checkout has no vitest. No dependency installation or symlink\n  was made. Local harness checks was not run: it would invoke Cargo/tests\n  contrary to the review packet. CI, not a local full-gate claim, is the proof.\n\nNon-blocking notes\n\n- Coverage follow-up, not a merge gate: add to the existing regressions a\n  multi-wrapper success case, unavailable ancestor/start reads, the depth\n  boundary, never-renewed state/list output, and absence of both labels after\n  renewal. The existing renewal assertion checks heartbeat state \"live\", not\n  subsequent card/list output. The TS state test does not yet assert the new\n  nativeReceiverLine. The current HTTP test checks prefixes, not an exact\n  controlled-clock age. Source supports these paths, but do not claim that\n  each is independently pinned by this PR's tests.\n- Cost precision: the lease snapshot is O(N), but the added list projection\n  finds each local row in a Vec of L lapsed receivers: O(N + N_local * L),\n  worst-case quadratic comparisons in memory, not strictly O(N) overall.\n  This adds no process launches and is not a demonstrated fleet cost breach.\n\nCost review and live baseline\n\n- Statusline: every render, configured refresh 10 seconds per visible\n  Copilot session. For N rendering sessions this is N/10 existing whoami\n  requests per second, with ZERO additional daemon requests per render.\n  Added work is at most 64 in-process parent reads plus one start read on a\n  matching PID; normally one parent read plus one start read. ZERO added\n  launches per render. The existing statusline process and pre-existing git\n  fallback are not being counted as zero total OS launches.\n- State: one added in-memory lease read for the requested seat per call.\n  The shared seat_card also applies this per card in /v1/cards. List: one\n  added in-memory lease snapshot per call, then the projection noted above.\n  No new poll, timer, renewal-loop change, store read or launch site.\n- crates/testkit/tests/spawn_sites.rs scans harnesses and daemon production\n  code, but not CLI. Its CI pass corroborates the daemon launch inventory;\n  direct source inspection establishes zero launches on the new CLI path.\n- Measured BEFORE deployment, 2026-11-18 03:14:46Z to 03:15:06Z:\n  pij-rs --json ping | jq .data.spawns returned total 793 at both endpoints.\n  Every by_op counter was unchanged: 0 launches/20 seconds, 0.0 launches/s.\n  Snapshot at both endpoints:\n  ddocs.community=68; gh.delivered=1; git.community=241;\n  git.pa-watchdog-common-dir=31; ps.registration-native-process=152;\n  ps.sidecar-process-group=1; ps.tmux-harness-process-tree=14;\n  sh.background-job=3; tmux.atomically reserve staged submit=1;\n  tmux.authorize staged submit commit=1; tmux.control-client=1;\n  tmux.load submit buffer=3; tmux.new-window=11;\n  tmux.paste owned submit buffer=3; tmux.pipe-pane attach=121;\n  tmux.pipe-pane detach=2; tmux.rename-window=16;\n  tmux.restore pane input and release ownership=1;\n  tmux.set-options tap owner=121; tmux.submit authorized staged body=1.\n- just spawn-rate --seconds 20 succeeded: 167.1 whole-machine new processes/s,\n  156.0 sampled/s; daemon children lower-bound attribution empty, statusline\n  runs observed 0.0/s. This observational sample does not prove a future\n  render rate or attribute the machine-wide rate to this PR.\n  Daemon PID 46800: ps reported 12.1% CPU and RSS 143136 KiB.\n\nOwed after merge/reinstall/bounce\n\nRepeat both cost instruments over a known interval on the deployed head,\nincluding daemon CPU/RSS. Confirm a second-server unregistered Copilot never\nshows the main-server seat, a registered Copilot still shows itself, and an\nexpired native receiver is visible in both state and list and clears after\nrenewal. The baseline above is not after-deploy evidence.\n\nHarness feedback\n\nmagicWand: extend the existing display regressions with the wrapper and\nlease-lifecycle cases so future reviewers do not re-infer these edges.\ndifficulties: Linux-only CI leaves macOS cfg proof to source review; current\nregressions do not assert all requested display transitions. Captured through\nharness observe as pij-mere-lizard/DL-001. No review-source changes made.\n"
+		}
+	]
+}
