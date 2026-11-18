@@ -1605,7 +1605,10 @@
 					"harness": "copilot",
 					"harness_session": "f47ae70c-799e-4bf1-a9c6-94c578740c92",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-legal-chickadee",
+					"to": "2026-11-18T03:46:15.979Z",
 					"why": "pm-004: verdict on #239 (ws004 s02)"
 				},
 				{
