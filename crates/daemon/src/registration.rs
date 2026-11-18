@@ -1843,6 +1843,18 @@ fn check_native_roster(
                 && seat.harness_session.as_deref() == Some(session))
             || (claim.pane.is_some() && seat.pane == claim.pane)
         {
+            // F196, a brake: a pane holder whose process cannot be checked is
+            // never retired here, and is never waited on as a resuming
+            // session either: the refusal names the explicit take-over.
+            if let Some(pane) = claim.pane.as_ref()
+                && holders.unknown.contains(&seat.id)
+            {
+                return Err(RegistrationError::PaneHeld {
+                    holder: seat.id.clone(),
+                    pane: pane.clone(),
+                    harness: claim.harness.clone(),
+                });
+            }
             if unknown_session
                 && claim.pane.is_some()
                 && seat.pane == claim.pane
@@ -1862,17 +1874,6 @@ fn check_native_roster(
                 // Finish the scan so a separate ownership refusal wins.
                 held_owner = Some(&seat.id);
                 continue;
-            }
-            // F196, a brake: a pane holder whose process cannot be checked is
-            // never retired here; the refusal names the explicit take-over.
-            if let Some(pane) = claim.pane.as_ref()
-                && holders.unknown.contains(&seat.id)
-            {
-                return Err(RegistrationError::PaneHeld {
-                    holder: seat.id.clone(),
-                    pane: pane.clone(),
-                    harness: claim.harness.clone(),
-                });
             }
             return Err(native_refusal(format!(
                 "process, native session, or pane already belongs to seat `{}`",
@@ -2687,6 +2688,40 @@ mod tests {
             );
             assert_eq!(registry.get(&unknown.id).await.unwrap(), Some(unknown));
         }
+
+        // Review of #237: a different native Copilot session on the pane whose
+        // probe fails is unknown too. It refuses with the take-over, never the
+        // resumed-session hold, and the incumbent is left as it was.
+        struct FailsFor(u32, Arc<dyn LivenessPort>);
+        #[async_trait::async_trait]
+        impl LivenessPort for FailsFor {
+            async fn proc_start(&self, pid: u32) -> pij_core::error::Result<Option<u64>> {
+                if pid == self.0 {
+                    return Err(pij_core::error::PijError::Adapter {
+                        adapter: "test/liveness".into(),
+                        message: "probe failed".into(),
+                    });
+                }
+                self.1.proc_start(pid).await
+            }
+        }
+        let mut incumbent = native_seat("pij-other-native-session");
+        incumbent.proc = Some(gone);
+        incumbent.harness_session = Some("other-native-session".into());
+        let (service, registry) = native_service(
+            vec![incumbent.clone()],
+            Arc::new(FailsFor(gone.pid, native_liveness())),
+        )
+        .await;
+        let result = attest(&service, native_claim(""), Some(SESSION), &native_tmux()).await;
+        assert!(
+            matches!(
+                &result,
+                Err(RegistrationError::PaneHeld { holder, .. }) if *holder == incumbent.id
+            ),
+            "{result:?}"
+        );
+        assert_eq!(registry.get(&incumbent.id).await.unwrap(), Some(incumbent));
     }
 
     /// F196: the ordinary path (an OMP or Claude seat registering in its pane)

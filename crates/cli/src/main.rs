@@ -205,8 +205,8 @@ enum Command {
         /// Operator reclaim of a dead seat onto this pane (parent or prime only).
         #[arg(long)]
         reclaim: Option<String>,
-        /// Retire every other record on this pane first (F196): run from the
-        /// pane's own process or by the prime. Needs `--why`.
+        /// Retire this pane's other records whose process is gone or cannot be
+        /// checked (F196): from the pane's own process or the designated prime.
         #[arg(long, requires = "why")]
         take_over: bool,
         /// The reason a `--take-over` records.

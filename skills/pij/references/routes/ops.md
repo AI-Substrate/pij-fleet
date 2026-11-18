@@ -60,7 +60,7 @@ Re-derive every process/pane observation; old numbers belong to the previous boo
 
 A refusal is not permission to copy an archived TS descriptor into rs, guess a prime, or start a fresh session wearing an old identity. Folder-based prime revival remains a named gap; human choice of successor/launch is still required where ownership or identity cannot be established.
 
-**A pane held by another seat (F196).** Registration supersedes a pane holder whose process is confirmed gone by itself. A holder whose liveness pij cannot check refuses with `E-RS-PANE-HELD`, and the refusal (and the Copilot banner) names `pij-rs adopt <pane> --harness <h> --take-over --why <reason>`. Run it from that pane's own process or as the prime: it retires every other record on the pane, never a process ([pij-rs-api § Pane takeover](../../../../docs/how/pij-rs-api.md#pane-takeover-f196)). A Copilot pane then needs `/restart`.
+**A pane held by another seat (F196).** Registration supersedes a pane holder whose process is confirmed gone by itself. A holder whose liveness pij cannot check refuses with `E-RS-PANE-HELD`, and the refusal (and the Copilot banner) names `pij-rs adopt <pane> --harness <h> --take-over --why <reason>`. Run it from that pane's own process or as the designated prime: it retires the pane's other records whose process is gone or unknown, never a process, and refuses if any of them is still running ([pij-rs-api § Pane takeover](../../../../docs/how/pij-rs-api.md#pane-takeover-f196)). A Copilot pane then needs `/restart`.
 
 ## Tmux and control hygiene
 

@@ -552,10 +552,11 @@ async fn reclaim_target(
     Ok((actor, seat))
 }
 
-/// F196: who may take `pane` over. The prime (resolved from the caller's own
-/// pane or id, as `--reclaim` resolves it), or the pane's own live process:
-/// the caller's connection observed descending from `host`. Returns the
-/// actor the tombstone reason names, or the refusal to send.
+/// F196: who may take `pane` over. The project's current designated prime
+/// (C24: the designation is the only prime authority; an asserted role is
+/// not), resolved from the caller's own pane or id, or the pane's own live
+/// process: the caller's connection observed descending from `host`.
+/// Returns the actor the tombstone reason names, or the refusal to send.
 #[allow(clippy::result_large_err)]
 async fn take_over_actor(
     state: &AppState,
@@ -567,8 +568,11 @@ async fn take_over_actor(
     if let Resolved::Seat(actor, _) =
         resolve_seat(state, ADOPT, caller.session_id.clone(), caller.pane.clone()).await
     {
-        match state.services.roles.read_role(&actor.id).await {
-            Ok(role) if role.as_deref() == Some("prime") => {
+        match state.services.directory.store().prime().await {
+            Ok(Some(designation))
+                if designation.state == pij_core::orchestration::PrimeState::Current
+                    && designation.seat == actor.id =>
+            {
                 return Ok(format!("the prime `{}`", actor.id));
             }
             Ok(_) => {}
@@ -594,8 +598,11 @@ async fn take_over_actor(
 }
 
 /// F196: retire every live record on `pane` not bound to `host`, the process
-/// running there now. Records only: no process is signalled. Each tombstone
-/// names the actor and the reason, and is written only if the row is unchanged.
+/// running there now, whose own process is gone or cannot be checked. A
+/// holder whose process is observed running refuses the whole take-over
+/// before any write (a brake: removing it only retires more). Records only:
+/// no process is signalled. Each tombstone names the actor and the reason,
+/// and is written only if the row is unchanged.
 #[allow(clippy::result_large_err)]
 async fn take_over_pane(
     state: &AppState,
@@ -613,9 +620,28 @@ async fn take_over_pane(
         Ok(seats) => seats,
         Err(error) => return Err(internal(ADOPT, error)),
     };
+    let mut retire = Vec::new();
     for seat in seats.into_iter().filter(|seat| {
         is_live(seat) && seat.pane.as_deref() == Some(pane) && seat.proc != Some(host)
     }) {
+        if let Some(proc) = seat.proc.filter(|_| seat.machine.is_none())
+            && matches!(
+                pij_core::liveness::alive(proc, state.services.liveness.as_ref()).await,
+                Ok(Liveness::Active)
+            )
+        {
+            return Err(refused(
+                ADOPT,
+                format!(
+                    "seat `{}` on pane `{pane}` is running (pid {}): a take-over retires only \
+                     records whose process is gone or cannot be checked — nothing was written",
+                    seat.id, proc.pid
+                ),
+            ));
+        }
+        retire.push(seat);
+    }
+    for seat in retire {
         let id = seat.id.clone();
         match state
             .services
