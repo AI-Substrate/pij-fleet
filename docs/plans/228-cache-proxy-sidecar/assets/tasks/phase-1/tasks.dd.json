@@ -123,6 +123,18 @@
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-000c"
           ]
+        },
+        {
+          "id": "tk-000b",
+          "title": "Round-2 fixes for #239: F001 refresh install guard and reload lock, F002 402 latch with three clears, PERF-239-01 move the body, upstream redirects off, N001 note, dscl low-uid fixture; regressions, mutation receipts, rows 5, 9, 10, 11, 23 re-receipted",
+          "phase": "ph-1f3e",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0005",
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
         }
       ]
     },
@@ -243,6 +255,14 @@
             "assertion": "req-14 tests pass and row 23 shows main 1h and subagent 5m writes",
             "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-000f"
+          }
+        ],
+        "tk-000b": [
+          {
+            "id": "dw-0011",
+            "assertion": "F001, F002 and redirect regressions pass and fail under their mutations",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
           }
         ]
       }

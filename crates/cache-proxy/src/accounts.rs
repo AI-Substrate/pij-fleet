@@ -67,6 +67,7 @@ mod tests {
     const ONE_HUMAN: &str = "_amavisd                 83\n\
         _analyticsd              263\n\
         daemon                   1\n\
+        printservice             500\n\
         alice                    501\n\
         nobody                   -2\n\
         root                     0\n";

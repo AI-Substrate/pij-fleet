@@ -105,7 +105,9 @@ pub fn rewrite(raw: &[u8], client: Option<&'static str>, agent: Agent) -> Rewrit
         Agent::Subagent => 0,
     };
     // Nothing changed: forward the client's own bytes. Serialising a `Value`
-    // that was just parsed cannot fail.
+    // that was just parsed cannot fail. Note (#239 N001): a changed body is
+    // re-serialised with object keys sorted (serde_json without `preserve_order`,
+    // which stays off workspace-wide): JSON-equivalent, deterministic, not byte-equal.
     let body = if mapped.is_some() || ttl_rewrites > 0 {
         serde_json::to_vec(&json).ok()
     } else {

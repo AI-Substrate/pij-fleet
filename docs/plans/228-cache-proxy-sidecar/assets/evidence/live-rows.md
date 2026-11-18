@@ -37,3 +37,26 @@ was never bound, no LaunchAgent was installed. 2026-11-18, UTC times from the si
 | subagent gets the 1h ttl | 101 | `a_subagent_request_keeps_the_5_minute_default`, `the_rewrite_reaches_upstream` |
 | client X-Initiator ignored | 101 | `the_clients_own_initiator_wins_over_inference`, `the_rewrite_reaches_upstream` |
 | Origin guard removed (Host check kept) | 101 | `a_browser_origin_or_foreign_host_is_refused_before_forwarding` |
+
+## Round 2 (#239 fixes; binary sha256 `f392d76d…a14880`, built from the round-2 tree)
+
+| row | observed |
+|---|---|
+| 9 | 3 concurrent clients on a stale token: 3× `401: retrying once with the refreshed token`, 1× `token refreshed after a 401 (gh launches 2)`, 3× `agent=main … status=200`, 3/3 exit 0; counters `requests 3, refreshes 1, gh_launches 2, upstream_401 3` |
+| 10 | 1 client on a stale token: 401 → refresh (gh launches 2) → 200, exit 0 |
+| 11 | `PIJ_GH` wrapper failing after its first run: gh-once launched 2×; one `ready -> no_token`; 9 requests → 9× `401: no newer token …; not retried`; counters `requests 9, refreshes 1, gh_launches 2, upstream_401 9` |
+| 5 (+ F002 live) | `account jakkaj` → `quota_exhausted … until 2026-12-01`; one `copilot -p` → upstream `status=402`; two status reads after it: `quota_exhausted`, reason `upstream answered 402: premium quota exhausted for jakkaj`, `quota.usable false`, `upstream_402 1`; `account jorkni_microsoft` (reload) → `ready` |
+| 23 | one explore subagent: `agent=main initiator=user 1h=12379 5m=0`; 3× `agent=subagent initiator=agent ttl_rewrites=0` with `1h=0 5m=369`, `5m=204`, `5m=195`; 2× `agent=main initiator=agent` `1h=320`, `1h=216`, `5m=0`; all 200, exit 0 |
+
+### Round-2 mutation receipts (same method; baseline after: 20 + 10 passed)
+
+| mutation | exit | tests that failed |
+|---|---|---|
+| F001: refresh installs into whatever holder is current | 101 | `an_old_accounts_refresh_never_replaces_the_new_accounts_token` |
+| F001: run_check installs facts read with a replaced token | 0 (survives) | none: `check_lock` is FIFO, so a reload's own forced check always runs after any check already in flight and overwrites its facts; the guard is defensive and its window is not observable through the routes |
+| F002: derive ignores the 402 latch | 101 | `a_402_latches_until_a_2xx_the_reset_date_or_a_reload` |
+| F002: a usable snapshot clears the latch | 101 | `a_402_latches_until_a_2xx_the_reset_date_or_a_reload` |
+| F002 (a): a 2xx doesn't clear | 101 | `a_402_latches_until_a_2xx_the_reset_date_or_a_reload` |
+| F002 (c): a reload doesn't clear | 101 | `a_402_latches_until_a_2xx_the_reset_date_or_a_reload` |
+| redirects followed (`Policy::none()` removed) | 101 | `an_upstream_redirect_is_not_followed` |
+| dscl: `uid >= 501` removed | 101 | `one_human_account_gives_no_warning`, `a_second_human_account_gives_the_warning` (new `printservice 500` fixture) |

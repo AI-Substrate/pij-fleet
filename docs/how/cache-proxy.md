@@ -79,13 +79,20 @@ never `-1m`. `POST /__pij/reload` takes no body. Neither route carries a token.
   with no newer token to try is returned to the seat, not retried.
 - Readiness (`copilot_internal/user` plus `<endpoints.api>/models`) is cached per account
   for 10 minutes (60 s after a failed check) and re-run on the next status read once it
-  ages out, after a refresh, and after a 402. A 402 marks the quota exhausted at once.
+  ages out, after a refresh, and after a 402. Facts read with a token that a reload or a
+  refresh has since replaced are dropped, and a refresh started for one account never
+  lands after a switch to another.
+- A 402 from upstream latches `quota_exhausted`. The quota snapshot lags, so a snapshot
+  that still says usable never clears it; only a 2xx from `/v1/messages`, the snapshot's
+  `quota_reset_date` passing, or a reload (`on`, `account`) does.
 
 ## Safety
 
 - Binds `127.0.0.1` only. Any request with an `Origin` header, or a `Host` other than
   `127.0.0.1:<port>` or `localhost:<port>`, gets 403 before anything is forwarded, so a
   web page or a rebound DNS name can't spend the account.
+- The upstream client follows no redirect, so a redirect can't carry the bearer token to
+  another host; a 3xx is returned to the seat as is.
 - With no token held, requests get 503 with the state and its fix.
 
 ## Cost

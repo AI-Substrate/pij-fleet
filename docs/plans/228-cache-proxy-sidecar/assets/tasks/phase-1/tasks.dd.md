@@ -45,6 +45,7 @@ _Empty._
 | tk-0008 | Gates: scoped rust-check through shared-build, just lint, local-path-check, lockfile-allowlist, ddocs-check, harness checks --quick | — | ph-1f3e | [x] checked | — | — | — | — | — | [ac-000b](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0009 | Live proof on plain copilot processes (tmux ws004-s02-test, test port): rows 2, 9, 10, 11, 14, 15, 16, 17, 22 plus the token grep; receipts in the PR body; PR against main | — | ph-1f3e | [x] checked | — | — | — | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0009](../../../plan.dd.md#acceptance-criteria), [ac-000a](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-000a | req-14 (pm-004, after the PR opened): subagent requests keep the 5m cache, the client's X-Initiator is forwarded, agent=main\|subagent logged; unit and integration tests; row 23 live; mutation receipts for rewrite, single-flight, latch, dscl, subagent, initiator and Origin guard | — | ph-1f3e | [x] checked | — | — | — | — | — | [ac-000c](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-000b | Round-2 fixes for #239: F001 refresh install guard and reload lock, F002 402 latch with three clears, PERF-239-01 move the body, upstream redirects off, N001 note, dscl low-uid fixture; regressions, mutation receipts, rows 5, 9, 10, 11, 23 re-receipted | — | ph-1f3e | [x] checked | — | — | — | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -115,6 +116,12 @@ _Empty._
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
 | dw-0010 | req-14 tests pass and row 23 shows main 1h and subagent 5m writes | [x] checked | [bp-000f](../../backpressure.dd.md#rows) |
+
+### tk-000b
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0011 | F001, F002 and redirect regressions pass and fail under their mutations | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

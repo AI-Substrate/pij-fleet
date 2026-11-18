@@ -17,42 +17,78 @@ use pij_cache_proxy::{Proxy, Settings, State, Status, router, serve};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
-const GOOD: &str = "gho_good_test_token";
-
-#[derive(Default)]
-struct Upstream {
-    base: Mutex<String>,
-    answer_402: AtomicBool,
-    messages: AtomicU64,
-    seen: Mutex<Option<(String, Value)>>,
+/// Each account's fixture token is `gho_tok_<account>`, so a test can tell
+/// which account's token reached upstream (#239 F001).
+fn token_for(account: &str) -> String {
+    format!("gho_tok_{account}")
 }
 
-fn bearer_ok(headers: &HeaderMap) -> bool {
+struct Upstream {
+    base: Mutex<String>,
+    /// `copilot_internal/user` reports the quota used up.
+    user_exhausted: AtomicBool,
+    /// `/v1/messages` answers 402, independently of the user snapshot (#239 F002).
+    messages_402: AtomicBool,
+    /// `/v1/messages` answers 302 to this URL.
+    messages_redirect: Mutex<Option<String>>,
+    reset_date: Mutex<String>,
+    messages: AtomicU64,
+    seen: Mutex<Option<(String, Value)>>,
+    /// The bearer each endpoint last saw.
+    user_bearer: Mutex<String>,
+    messages_bearer: Mutex<String>,
+}
+
+impl Default for Upstream {
+    fn default() -> Self {
+        Self {
+            base: Mutex::default(),
+            user_exhausted: AtomicBool::new(false),
+            messages_402: AtomicBool::new(false),
+            messages_redirect: Mutex::default(),
+            reset_date: Mutex::new("2999-12-01".into()),
+            messages: AtomicU64::new(0),
+            seen: Mutex::default(),
+            user_bearer: Mutex::default(),
+            messages_bearer: Mutex::default(),
+        }
+    }
+}
+
+fn bearer(headers: &HeaderMap) -> String {
     headers
         .get("authorization")
         .and_then(|value| value.to_str().ok())
-        == Some(&format!("Bearer {GOOD}"))
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn bearer_ok(bearer: &str) -> bool {
+    bearer.starts_with("Bearer gho_tok_")
 }
 
 async fn user(AxumState(up): AxumState<Arc<Upstream>>, headers: HeaderMap) -> impl IntoResponse {
-    if !bearer_ok(&headers) {
+    let bearer = bearer(&headers);
+    *up.user_bearer.lock().unwrap() = bearer.clone();
+    if !bearer_ok(&bearer) {
         return (StatusCode::UNAUTHORIZED, axum::Json(json!({}))).into_response();
     }
-    let exhausted = up.answer_402.load(Ordering::SeqCst);
+    let exhausted = up.user_exhausted.load(Ordering::SeqCst);
     let base = up.base.lock().unwrap().clone();
+    let reset = up.reset_date.lock().unwrap().clone();
     axum::Json(json!({
         "endpoints": {"api": base},
         "quota_snapshots": {"premium_interactions": {
             "remaining": if exhausted { 0 } else { 100 },
             "overage_permitted": false
         }},
-        "quota_reset_date": "2026-12-01"
+        "quota_reset_date": reset
     }))
     .into_response()
 }
 
 async fn models(headers: HeaderMap) -> impl IntoResponse {
-    if !bearer_ok(&headers) {
+    if !bearer_ok(&bearer(&headers)) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
     axum::Json(json!({"data": [
@@ -68,10 +104,15 @@ async fn messages(
     body: String,
 ) -> impl IntoResponse {
     up.messages.fetch_add(1, Ordering::SeqCst);
-    if !bearer_ok(&headers) {
+    let bearer = bearer(&headers);
+    *up.messages_bearer.lock().unwrap() = bearer.clone();
+    if !bearer_ok(&bearer) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    if up.answer_402.load(Ordering::SeqCst) {
+    if let Some(location) = up.messages_redirect.lock().unwrap().clone() {
+        return (StatusCode::FOUND, [("location", location)]).into_response();
+    }
+    if up.messages_402.load(Ordering::SeqCst) {
         return StatusCode::PAYMENT_REQUIRED.into_response();
     }
     let initiator = headers
@@ -129,12 +170,18 @@ impl Rig {
     }
 }
 
+/// A fake gh: logs each launch, fails while `fail` exists, prints the account's
+/// fixture token, and parks at a barrier while `hold-<account>` exists (writing
+/// `parked-<account>`) until `release-<account>` appears.
 fn fake_gh(dir: &Path) -> PathBuf {
     let gh = dir.join("gh");
     std::fs::write(
         &gh,
         format!(
-            "#!/bin/sh\necho \"$*\" >> '{dir}/launches'\n[ -f '{dir}/fail' ] && {{ echo 'no oauth token found' >&2; exit 1; }}\necho {GOOD}\n",
+            "#!/bin/sh\nd='{dir}'\necho \"$*\" >> \"$d/launches\"\n\
+             if [ -f \"$d/hold-$4\" ]; then touch \"$d/parked-$4\"; while [ ! -f \"$d/release-$4\" ]; do sleep 0.02; done; fi\n\
+             [ -f \"$d/fail\" ] && {{ echo 'no oauth token found' >&2; exit 1; }}\n\
+             echo gho_tok_$4\n",
             dir = dir.display()
         ),
     )
@@ -334,17 +381,141 @@ async fn the_rewrite_reaches_upstream() {
     );
 }
 
+/// #239 F002: a 402 latches `quota_exhausted` even while the user snapshot
+/// (which lags) still says usable; only a 2xx, the reset date passing or a
+/// reload clears it.
 #[tokio::test]
-async fn a_402_marks_the_quota_exhausted_with_its_reset_date() {
+async fn a_402_latches_until_a_2xx_the_reset_date_or_a_reload() {
     let rig = rig("quota", Some("tester"), false).await;
-    rig.upstream.answer_402.store(true, Ordering::SeqCst);
+    let exhausted = |status: &Status| {
+        status.state == State::QuotaExhausted && !status.ready && !status.quota.usable
+    };
+
+    // The snapshot says usable (remaining 100); /v1/messages refuses.
+    rig.upstream.messages_402.store(true, Ordering::SeqCst);
+    assert_eq!(rig.message(&hello()).await, StatusCode::PAYMENT_REQUIRED);
+    for read in 0..2 {
+        let status = rig.status().await;
+        assert!(exhausted(&status), "read {read}: {status:?}");
+        assert!(status.reason.contains("402"), "{}", status.reason);
+        assert_eq!(status.quota.reset.as_deref(), Some("2999-12-01"));
+        assert!(status.fix.contains("quota reset"), "{}", status.fix);
+    }
+    assert_eq!(rig.status().await.counters.upstream_402, 1);
+
+    // (a) A 2xx from /v1/messages clears it.
+    rig.upstream.messages_402.store(false, Ordering::SeqCst);
+    assert_eq!(rig.message(&hello()).await, StatusCode::OK);
+    let status = rig.status().await;
+    assert_eq!(status.state, State::Ready, "(a) {status:?}");
+    assert!(status.quota.usable);
+
+    // (c) A reload clears it.
+    rig.upstream.messages_402.store(true, Ordering::SeqCst);
+    assert_eq!(rig.message(&hello()).await, StatusCode::PAYMENT_REQUIRED);
+    assert!(exhausted(&rig.status().await));
+    let status = rig.proxy.reload().await;
+    assert_eq!(status.state, State::Ready, "(c) {status:?}");
+
+    // (b) The snapshot's reset date passing clears it.
+    assert_eq!(rig.message(&hello()).await, StatusCode::PAYMENT_REQUIRED);
+    assert!(exhausted(&rig.status().await));
+    "2000-01-01".clone_into(&mut rig.upstream.reset_date.lock().unwrap());
+    rig.upstream.messages_402.store(true, Ordering::SeqCst);
     assert_eq!(rig.message(&hello()).await, StatusCode::PAYMENT_REQUIRED);
     let status = rig.status().await;
-    assert_eq!(status.state, State::QuotaExhausted, "{status:?}");
-    assert!(!status.quota.usable);
-    assert_eq!(status.quota.reset.as_deref(), Some("2026-12-01"));
-    assert_eq!(status.counters.upstream_402, 1);
-    assert!(status.fix.contains("quota reset"), "{}", status.fix);
+    assert_eq!(status.state, State::Ready, "(b) {status:?}");
+
+    // A snapshot that itself says exhausted still refuses, with its reset date.
+    rig.upstream.messages_402.store(false, Ordering::SeqCst);
+    rig.upstream.user_exhausted.store(true, Ordering::SeqCst);
+    "2999-12-01".clone_into(&mut rig.upstream.reset_date.lock().unwrap());
+    let status = rig.proxy.reload().await;
+    assert!(exhausted(&status), "{status:?}");
+    assert_eq!(
+        status.reason,
+        "premium quota exhausted for tester until 2999-12-01"
+    );
+}
+
+/// #239 F001: a refresh started for account A must not land after a reload has
+/// switched to account B. A's refresh is parked at a barrier in the fake gh
+/// while B's reload completes, then released.
+#[tokio::test]
+async fn an_old_accounts_refresh_never_replaces_the_new_accounts_token() {
+    let rig = Arc::new(rig("account-race", Some("acct_a"), true).await);
+    std::fs::write(rig.dir.join("hold-acct_a"), "").unwrap();
+    let in_flight = {
+        let rig = rig.clone();
+        tokio::spawn(async move { rig.message(&hello()).await })
+    };
+    // Wait for A's refresh to reach the barrier (its request got the 401).
+    let parked = rig.dir.join("parked-acct_a");
+    for _ in 0..500 {
+        if parked.exists() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(parked.exists(), "A's refresh never reached the barrier");
+
+    config::save(
+        &rig.dir,
+        &ProxyConfig {
+            account: Some("acct_b".into()),
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let status = rig.proxy.reload().await;
+    assert_eq!(status.account.as_deref(), Some("acct_b"));
+    assert_eq!(status.state, State::Ready, "{status:?}");
+    assert_eq!(
+        *rig.upstream.user_bearer.lock().unwrap(),
+        format!("Bearer {}", token_for("acct_b"))
+    );
+
+    std::fs::write(rig.dir.join("release-acct_a"), "").unwrap();
+    assert_eq!(in_flight.await.unwrap(), StatusCode::OK);
+    let b = format!("Bearer {}", token_for("acct_b"));
+    assert_eq!(
+        *rig.upstream.messages_bearer.lock().unwrap(),
+        b,
+        "the retry used A's token"
+    );
+
+    assert_eq!(rig.message(&hello()).await, StatusCode::OK);
+    assert_eq!(*rig.upstream.messages_bearer.lock().unwrap(), b);
+    let status = rig.status().await;
+    assert_eq!(status.account.as_deref(), Some("acct_b"));
+    assert_eq!(status.state, State::Ready);
+    assert_eq!(
+        *rig.upstream.user_bearer.lock().unwrap(),
+        b,
+        "readiness read with A's token"
+    );
+}
+
+/// Security note on #239: the upstream client follows no redirect, so the
+/// bearer token can't be carried to another host.
+#[tokio::test]
+async fn an_upstream_redirect_is_not_followed() {
+    let rig = rig("redirect", Some("tester"), false).await;
+    let hits = Arc::new(AtomicU64::new(0));
+    let elsewhere = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let elsewhere_url = format!("http://{}/steal", elsewhere.local_addr().unwrap());
+    let counter = hits.clone();
+    let app = Router::new().fallback(move || {
+        let counter = counter.clone();
+        async move {
+            counter.fetch_add(1, Ordering::SeqCst);
+            StatusCode::OK
+        }
+    });
+    tokio::spawn(async move { axum::serve(elsewhere, app).await.unwrap() });
+    *rig.upstream.messages_redirect.lock().unwrap() = Some(elsewhere_url);
+    assert_eq!(rig.message(&hello()).await, StatusCode::FOUND);
+    assert_eq!(hits.load(Ordering::SeqCst), 0, "the redirect was followed");
 }
 
 #[tokio::test]
