@@ -97,11 +97,11 @@
 				{
 					"id": "s04",
 					"title": "Live-seat acceptance: all 23 matrix rows",
-					"state": "planned",
+					"state": "in-progress",
 					"depends_on": ["#steps/s02", "#steps/s03"],
 					"needs": ["role:model-cost"],
 					"done_when": "Every row of handover/cache-proxy-test-matrix.md has a receipt from real pij seats (command, observed value, seat ids) in this workstream's proof, before the prime merges the last lane's state flip.",
-					"note": "Run by model-cost (takin) with pm-004. Rows a lane already proved on live seats are re-receipted, not re-argued."
+					"note": "\"Run by model-cost (takin) with pm-004. Receipts: docs/plans/004-acceptance/receipts.md (22 of 23 rows pass or are lane-proven). Row 12 FAILs (F205: an in-flight 402 after switching back latches quota_exhausted); its re-run follows s05 (plan 230), and s04 completes then.\""
 				}
 			]
 		},
@@ -132,6 +132,11 @@
 					"date": "2026-11-18",
 					"by": "coder/229 (pij-yielding-newt) for pm-004",
 					"change": "s02 complete, delivered by #239 (step notes carry the PR; steps have no delivered_by). req-01 added to s03's delivers and kept under s02: its done_when needs a pij-spawned seat, so it ships with s03's gate. s03 complete."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "model-cost (pij-amazing-takin) for pm-004",
+					"change": "s04 in progress: 22 of 23 matrix rows receipted on the prod daemon and pij seats (rows 9-11 lane-proven via s02); row 12 FAIL (F205), to be re-run after s05 (plan 230)."
 				}
 			]
 		}
