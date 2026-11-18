@@ -185,6 +185,15 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-supposed-gazelle",
 					"why": "pm-004: verdict on #243 (ws004 s05)"
+				},
+				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-18T23:15:20.426Z",
+					"harness": "copilot",
+					"harness_session": "54c155a3-d090-4fad-9ac4-1397958f4a3b",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-eventual-boar",
+					"why": "PR #244 close-out + scrub"
 				}
 			]
 		}
