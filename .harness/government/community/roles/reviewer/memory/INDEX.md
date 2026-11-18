@@ -93,4 +93,5 @@
 - [2026-11-18 PR 239: account-switch refresh and quota-lag review seams](2026-11-18-pr-239-account-switch-refresh-and-quota.dd.md): When reviewing cache-proxy account reload, token refresh, 402 readiness or source-only CI reviews (review, cache-proxy, identity, quota, proof)
 - [2026-11-18 PR 239 round 2: repairs closed, readiness mutant proof ceiling](2026-11-18-pr-239-round-2-repairs-closed-readiness.dd.md): When resuming PR 239 or reviewing readiness invalidation against refresh and reload (review, cache-proxy, readiness, mutation, c34)
 - [2026-11-18 Unknown liveness must win refusal precedence](2026-11-18-pr237-unknown-refusal-precedence.dd.md): When reviewing registration liveness classes, native-session holds or pane takeover recovery (review, registration, liveness, refusal-ordering)
+- [2026-11-18 Review ddocs deltas by canonical section and row](2026-11-18-review-ddocs-deltas-by-canonical-section.dd.md): When generated Markdown table diffs are long or truncated during a docs-only review (review, ddocs, delta, tooling)
 <!-- /pij:generated -->

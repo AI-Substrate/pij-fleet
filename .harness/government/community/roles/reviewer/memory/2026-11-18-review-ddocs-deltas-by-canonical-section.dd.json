@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "When generated Markdown table diffs are long or truncated during a docs-only review",
+				"tags": [
+					"review",
+					"ddocs",
+					"delta",
+					"tooling"
+				],
+				"title": "Review ddocs deltas by canonical section and row"
+			}
+		},
+		{
+			"name": "body",
+			"value": "For ddocs-only delta reviews, compare the old/new canonical JSON by section name and row ID before reading generated table diffs. Long `.dd.md` table rows repeatedly truncated tool output during #238; canonical field comparisons exposed the actual changes without rereading unchanged paragraphs.\n\nThen run read-only `ddocs validate` and check changed text against the generated faces, accounting for HTML entities and escaped table pipes. Text presence is a bounded consistency check, not full rendering or semantic proof. Never regenerate or edit a frozen review worktree just to inspect it.\n\nThe existing #238/#239 notes retain the findings, repairs and proof limits; this note adds only the review technique.\n"
+		}
+	]
+}
