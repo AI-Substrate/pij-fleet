@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "When reviewing launch-environment stamps, native session rollover, revive or cache-proxy acceptance states",
+				"tags": [
+					"review",
+					"cache-proxy",
+					"registration",
+					"rollover",
+					"proof"
+				],
+				"title": "PR 241 final: cache route follows the verified launch process"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #241 round 2 at d3ea172cf60b9c18ab463651006555e6ba8cb4f7 passes; F241-001, F241-002 and N241-001 are closed.\n\nPublished with the writer at community/roles/reviewer/outputs/2026-11/18-verdict-pr-241-d3ea172.dd.json, commit 578287e265992d02964b133dbcdea405293f151b (writer_holds_role true); PR comment 6968835333. The exact-head output listing confirms the reviewer pass is persisted.\n\nA per-seat launch-environment stamp is not merely a durable seat field. Native Copilot /new allocates a fresh seat in the same process: registration must inherit cache_proxy from the already-verified same-process predecessor. First correlated binding and same-process re-registration preserve the route; different-process reclaim/outside relaunch clears stale route state. Spawn/revive own fresh gate decisions, and revive reads a stored opt-out before rerunning the gate. The --resume prebind and inferred bootstrap-predecessor cases were source-surveyed separately. The amended native HTTP/store rollover test asserts both proxied and opted-out successors and passes in CI.\n\nReq-01 and req-09 remain in-progress until s04's six-minute cache-read and row-7 live receipts. req-09 now names pij-rs revive; Copilot's own /restart behavior remains explicitly for s04 to observe. Do not equate implemented lane completion with every requirement's live done_when.\n\nN241-001 closed with ready=true/state=off in addition to the inverse disagreement. Author reports six killed mutants in plan 229 proof.md (rollover copy, first-read, prime dedup, ready-state, off wording, no redirects). These are author receipts, not reviewer-run Rust mutants. The status client also forbids redirects and fails plain explicitly on construction/non-2xx/malformed-status failures.\n\nExact-head CI run 44235226491 passed all four jobs; latest delivers run 44235228571 passed. Nextest reports 2494 passed, 6 skipped. Successful rust-test job 134569619430 uploaded JUnit artifact 14396524204; numeric-ID download confirms 2494 passing cases with no failures/errors, including every repaired regression. just pr-freeze 241 returned FINAL at the reviewed head, clean merge and clean detached tree. Both canonical ddocs validations had 0 errors/0 warnings; both generated faces were current. CI ddocs explicitly remains UNAVAILABLE.\n\nLocal harness checks --quick was dependency-limited: missing locked tsx/vitest and an incompatible ambient Biome, while pij-skill and copilot-native passed. No dependency repair/linking, local Rust build/test/mutation, live daemon operation, credential read, commit or push was done by the reviewer. Round 1 independently executed the actual migrations/upsert SQL in memory, checked ?24 owner-close versus new ?25 route binding, and killed an owner-close guard SQL mutant.\n\nmagicWand: a dependency-free read-only review preflight that combines exact-head CI/freeze/JUnit proof instead of suggesting forbidden node_modules links. Captured as SUGG-001 in the old detached review worktree; preserve the distinction between local UNAVAILABLE proof and real PR failures. Suggested encoding is a dedicated review mode for harness boot/checks, outside this read-only PR.\n\ndifficulties: initial freeze found an append-only ledger conflict and no CI; range-diff, not a raw old-head/new-head diff, separated the #240 rebase from repairs. ddocs address walks must run with cwd in the review repository, or valid sibling links falsely appear outside the repository. No code change was made to work around either.\n"
+		}
+	]
+}
