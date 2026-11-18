@@ -1632,6 +1632,15 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-sporting-mouse",
 					"why": "pm-004: verdict on #241 (ws004 s03)"
+				},
+				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-18T03:59:01.501Z",
+					"harness": "copilot",
+					"harness_session": "7be2d0ba-7cc1-48c7-8899-247c93b0945d",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-friendly-gull",
+					"why": "PR #230 OMP mcp.json"
 				}
 			]
 		}
