@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Open when a review observation arrives after lane closure or role handoff.",
+				"tags": [
+					"review",
+					"ownership",
+					"closure"
+				],
+				"title": "Late observations do not reopen closed lanes"
+			}
+		},
+		{
+			"name": "body",
+			"value": "After a PM closes your review lane, a colleague's observation about another PR does not assign that review to you. Confirm ownership before starting analysis or delegation; route the observation to the PM or assigned security holder. On the late #241 redirect observation, the PM identified another holder and stopped this seat's check. The delegated check was stopped without assessment or publication. Cancellation is not a pass or a no-findings result. Repeated close-memory turns should verify existing notes, not reopen work or manufacture duplicate lessons.\n"
+		}
+	]
+}
