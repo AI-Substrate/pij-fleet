@@ -1,0 +1,39 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"head": "fe6811f6bc18be5c46690cfdbf4c8b951a9dc83c",
+				"kind": "verdict",
+				"result": "pass",
+				"role": "performance",
+				"subject": "pr:239",
+				"writer": "pij-sole-lizard",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44227387171/job/134543783951"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "performance: pass (head fe6811f6bc18be5c46690cfdbf4c8b951a9dc83c)\n\nRound 2, final round. Reviewed only the delta from 91e7d311e29f577235f4c859d19e0e888955b95c and my round-1 finding. **No remaining performance findings.**\n\n**PERF-239-01 (P2): resolved.** `crates/cache-proxy/src/proxy.rs:666-678` destructures `Rewritten` and moves its vector through `body.map_or(raw, Bytes::from)`. The redundant complete serialized-prompt clone is gone, and only metadata remains alongside the outgoing body. The retry at line 738 still uses the cheap shared `Bytes::clone()`. This removes the specific O(body bytes x active rewritten requests) duplicate storage identified in round 1 without a streaming-parser redesign.\n\n**Req-14: no added launch, network, timer, parse or large-body-copy cost.** `rewrite.rs:37-63` classifies two fixed headers using borrowed bytes and returns enum/static-string values; `proxy.rs:790-794` adds an enum field to the existing request log, not another log record. The existing JSON parse is reused. A supplied valid initiator also skips the inference walk (`rewrite.rs:92`). Subagents skip the recursive TTL walk (`rewrite.rs:103-106`) and, absent a model mapping, return `body: None`, forwarding the original bytes. Mapping a subagent's `-1m` model uses the existing serialization path. There is small fixed header/enum/log-formatting work, not literally zero CPU instructions; no additional work proportional to prompt size was introduced.\n\n**Other delta cost:** reload serialization and account/generation guards add in-process synchronization/comparisons, not a poll or process. The 402 recovery path adds a short in-process latch check on a successful Messages response; it does not fetch readiness there. Reset-date handling runs inside the existing lazy readiness check. Redirect refusal cannot add an upstream attempt. Production listener, token launcher, readiness interval, launch-site scanner and LaunchAgent recipe are unchanged in this delta. The existing per-request JSON buffer/parse cost remains; this review does not claim the entire path is streaming or O(1).\n\nThe round-1 rate inventory still applies: zero normal per-request launches; one gh fetch for a configured start/account change or recovery reload, at most one refresh per same-generation 401 burst and none after a failed refresh until reload; readiness is lazy at 600 s healthy / 60 s failed-cache lifetime plus existing invalidations, independent of seat count; one dscl per manual CLI status. No new production loop, poll, timer or launch site. The new barrier polling in the account-race fixture is test-only, not a serving-path cost.\n\n**Surviving F001 readiness-snapshot mutant:** acceptable as a disclosed proof limit for this performance verdict. The production guard remains present, the live-token refresh mutation is caught, and the survivor demonstrates no resource-cost failure. I do not convert the author's FIFO explanation into a correctness/security clearance; those roles own F001's semantic acceptance. Additional mutation fixtures are optional under C34, not a new final-round gate.\n\n**Proof:** `just pr-freeze 239` returned FINAL at the full head above, with CLEAN merge state and all five latest checks passing. CI run **44227387171** reports that exact SHA and success. Its `cargo clippy --locked --workspace --all-targets -- -D warnings` and `cargo nextest run --locked --workspace --profile ci` passed; nextest reports **2,469 passed, six skipped**. Downloaded successful-job JUnit artifact **14393906188 by ID**: all **30 sidecar tests and six spawn_sites tests passed**, including both req-14 unit tests, `the_rewrite_reaches_upstream`, single-flight refresh, failed-refresh latch and the account-switch regression.\n\nThe revised author receipts in `docs/plans/228-cache-proxy-sidecar/assets/evidence/live-rows.md` also record renewed rows 9/10/11 and row 23: three stale-token clients share one refresh; a failed refresh remains at two total gh launches over nine 401s; subagent requests have zero TTL rewrites. No model-spend or feature-on CPU/RSS result is inferred from those receipts.\n\nNo local build, test compilation, full `harness checks`, deployment, restart or sidecar startup. Reused exact-head CI as requested. The large-prompt RSS/latency receipt proposed in round 1 remains an optional harness improvement, not another acceptance condition. Performance pass only; other roles' verdicts remain independent.\n"
+		}
+	]
+}
