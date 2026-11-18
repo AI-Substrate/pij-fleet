@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Open before closing any reviewer or coder seat at a lane boundary",
+				"tags": [
+					"close",
+					"f194",
+					"seats",
+					"procedure"
+				],
+				"title": "Closing role-holding seats while F194 is open"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Prime's standing procedure (far-jackal, 2026-11-18) until F194 is fixed:\n1. Confirm the seat's memory note exists: `pij directory memory <role> --project pij-fleet`.\n2. `pij close <seat>`. It answers held=memory-turn (\"runs when its turn ends, or after 300s\").\n3. Watch `pij-rs list` until the seat is gone. Lizard and chickadee closed this way; crane also closed, but only on the second close.\n4. If it's still listed after its memory turn, the close loops (F194). Releasing the role first did NOT help for echidna. Then:\n   - check that the pane's processes carry PIJ_SESSION_ID=<that seat> (`/bin/ps -wwwE`);\n   - `tmux kill-pane -t <pane>`;\n   - check `/bin/ps -g <pane_pid>` is empty.\n   The death sweep retires the record, and you can ignore its death notice.\nTraps:\n- Never kill a pane before step 3 or step 4 is satisfied.\n- `pij state` can still say \"active\" after a seat has left `pij list`; `pij list` is the test.\n- Polling loops on `pij-rs --json list` can return 0 on a failed fetch; re-check by hand before killing.\n"
+		}
+	]
+}
