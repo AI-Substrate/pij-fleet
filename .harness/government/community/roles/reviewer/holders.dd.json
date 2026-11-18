@@ -1590,7 +1590,10 @@
 					"harness": "copilot",
 					"harness_session": "eed34d92-826a-4794-9070-8f3e6d3bfbfa",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "merged #236",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-chemical-piranha",
+					"to": "2026-11-18T02:18:46.756Z",
 					"why": "PR #236 audit gate"
 				}
 			]
