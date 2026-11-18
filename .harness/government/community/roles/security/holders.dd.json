@@ -106,6 +106,15 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-uneven-bobcat",
 					"why": "F196 #237 security verdict (gpt-6.1-sol)"
+				},
+				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-18T02:07:14.032Z",
+					"harness": "copilot",
+					"harness_session": "25b8774c-ac2f-4f93-9906-8bcf4ca69ab9",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-interesting-squid",
+					"why": "PR #236 audit gate"
 				}
 			]
 		}
