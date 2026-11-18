@@ -286,6 +286,7 @@ async function startExtension() {
 			await nativeReport({
 				kind: "extension-unavailable",
 				safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : undefined,
+				takeOver: error instanceof NativeError ? error.takeOver : undefined,
 			});
 		else
 			console.error(

@@ -39,6 +39,7 @@ struct World {
     addr: SocketAddr,
     registry: Arc<FakeRegistry>,
     spine: Arc<FakeSpine>,
+    roles: Arc<super::role::RoleService>,
     server: tokio::task::JoinHandle<()>,
 }
 
@@ -103,11 +104,13 @@ async fn world_on(
         PANE,
         "codex-native",
     )]));
+    let roles = services.roles.clone();
     let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
     World {
         addr,
         registry,
         spine,
+        roles,
         server,
     }
 }
@@ -1908,5 +1911,156 @@ async fn reclaim_is_guarded_by_caller_harness_and_death_then_audited() {
         "{:?}",
         refusal.meta
     );
+    world.server.abort();
+}
+
+/// F196: `adopt <pane> --take-over --why` retires every other record on the
+/// pane (records only), and only the prime or the pane's own process may.
+#[tokio::test]
+async fn take_over_is_for_the_prime_or_the_panes_own_process_and_retires_only_other_records() {
+    let seat = |id: &str, pane: &str, proc: Option<ProcIdentity>| {
+        let mut seat = SeatDescriptor::new(id, pij_core::model::Harness::Claude, FOLDER);
+        seat.pane = Some(pane.into());
+        seat.proc = proc;
+        seat
+    };
+    let holders = || {
+        [
+            seat(
+                "pij-selected-alpaca",
+                PANE,
+                Some(ProcIdentity {
+                    pid: 4272,
+                    proc_start: 20_261_112_000_000,
+                }),
+            ),
+            seat("pij-unbound-holder", PANE, None),
+        ]
+    };
+    let take_over = |addr: SocketAddr, caller_pane: &'static str, why: Option<&'static str>| {
+        let mut argv = vec!["adopt", PANE, "--harness", "claude", "--take-over"];
+        argv.extend(why.map(|why| ["--why", why]).into_iter().flatten());
+        reqwest::Client::new()
+            .post(format!("http://{addr}/v1/adopt"))
+            .bearer_auth("key")
+            .json(&serde_json::json!({ "argv": argv, "caller": { "TMUX_PANE": caller_pane } }))
+            .send()
+    };
+    async fn live(registry: &FakeRegistry, id: &str) -> bool {
+        registry
+            .get(&id.into())
+            .await
+            .unwrap()
+            .unwrap()
+            .tombstoned_at
+            .is_none()
+    }
+
+    // The prime, from its own pane.
+    let registry = Arc::new(FakeRegistry::new());
+    registry
+        .put(seat("pij-far-jackal", "%9", None))
+        .await
+        .unwrap();
+    registry
+        .put(seat("pij-stranger", "%8", None))
+        .await
+        .unwrap();
+    for holder in holders() {
+        registry.put(holder).await.unwrap();
+    }
+    let own = ProcIdentity {
+        pid: PID,
+        proc_start: PROC_START,
+    };
+    registry
+        .put(seat("pij-pane-own", PANE, Some(own)))
+        .await
+        .unwrap();
+    let world = world(registry.clone(), true).await;
+
+    let unreasoned = refusal_envelope(take_over(world.addr, "%9", None).await.unwrap()).await;
+    assert!(unreasoned.meta.unwrap_or_default().contains("--why"));
+    let stranger =
+        refusal_envelope(take_over(world.addr, "%8", Some("not mine")).await.unwrap()).await;
+    assert!(
+        stranger
+            .meta
+            .as_deref()
+            .unwrap_or_default()
+            .contains("allowed only from that pane's own process"),
+        "{:?}",
+        stranger.meta
+    );
+    assert!(
+        live(&registry, "pij-selected-alpaca").await,
+        "a refusal writes nothing"
+    );
+    assert!(
+        live(&registry, "pij-unbound-holder").await,
+        "a refusal writes nothing"
+    );
+
+    world
+        .roles
+        .assert_role(
+            &"pij-far-jackal".into(),
+            &"pij-far-jackal".into(),
+            Some("prime".into()),
+        )
+        .await
+        .unwrap();
+    let response = take_over(world.addr, "%9", Some("dead omp -p canary"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    for retired in ["pij-selected-alpaca", "pij-unbound-holder"] {
+        let row = registry.get(&retired.into()).await.unwrap().unwrap();
+        assert_eq!(
+            row.tombstone_reason.as_deref(),
+            Some("taken over: pane %77 by the prime `pij-far-jackal`: dead omp -p canary"),
+            "{retired}"
+        );
+    }
+    let adopted = live_seats(&registry).await;
+    assert!(
+        adopted.iter().any(|seat| seat.id.as_str() == "pij-pane-own"
+            && seat.pane.as_deref() == Some(PANE)
+            && seat.proc == Some(own)),
+        "the pane's own record survives and is adopted into: {adopted:?}"
+    );
+    world.server.abort();
+
+    // The pane's own process: this test process is the pane process, so the
+    // caller's connection descends from it.
+    let registry = Arc::new(FakeRegistry::new());
+    for holder in holders() {
+        registry.put(holder).await.unwrap();
+    }
+    let me = ProcIdentity {
+        pid: std::process::id(),
+        proc_start: PROC_START,
+    };
+    let world = world_on(registry.clone(), true, me, Vec::new()).await;
+    let response = take_over(world.addr, PANE, Some("my own pane"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let row = registry
+        .get(&"pij-selected-alpaca".into())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        row.tombstone_reason.as_deref(),
+        Some(
+            format!(
+                "taken over: pane %77 by its own process (pid {}): my own pane",
+                me.pid
+            )
+            .as_str()
+        )
+    );
+    assert!(!live(&registry, "pij-unbound-holder").await);
     world.server.abort();
 }

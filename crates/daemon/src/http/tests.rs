@@ -2729,7 +2729,9 @@ async fn registration_corroborates_process_and_refuses_shared_process_aliases() 
     let accepted = accepted.data.expect("descriptor");
     assert_eq!(accepted.proc, Some(identity));
     assert_eq!(accepted.harness_session.as_deref(), Some("omp-native-42"));
-    assert_eq!(registry.calls(), ["list", "put:pij-parent"]);
+    // Two narrow reads (F185), never the whole roster: the claimed pane's live
+    // rows, judged before the lock (F196), then the claim's related rows.
+    assert_eq!(registry.calls(), ["list", "list", "put:pij-parent"]);
 
     let self_declaration = Registration {
         spawn_id: Some("self-declared-spawn".to_string()),
@@ -2757,7 +2759,14 @@ async fn registration_corroborates_process_and_refuses_shared_process_aliases() 
     assert_eq!(accepted.harness_session.as_deref(), Some("omp-native-42"));
     assert_eq!(
         registry.calls(),
-        ["list", "put:pij-parent", "list", "put:pij-parent"]
+        [
+            "list",
+            "list",
+            "put:pij-parent",
+            "list",
+            "list",
+            "put:pij-parent"
+        ]
     );
 
     let alias = Registration {
@@ -2779,7 +2788,16 @@ async fn registration_corroborates_process_and_refuses_shared_process_aliases() 
     );
     assert_eq!(
         registry.calls(),
-        ["list", "put:pij-parent", "list", "put:pij-parent", "list",],
+        [
+            "list",
+            "list",
+            "put:pij-parent",
+            "list",
+            "list",
+            "put:pij-parent",
+            "list",
+            "list",
+        ],
         "a refused alias is never persisted"
     );
 
@@ -3980,7 +3998,7 @@ async fn registration_cannot_adopt_a_spawn_match_that_is_already_bound() {
         Arc::new(FakeSpine::new()),
     )
     .await;
-    services.liveness = Arc::new(FakeLiveness::new().with_proc(squatter));
+    services.liveness = Arc::new(FakeLiveness::new().with_proc(squatter).with_proc(incumbent));
     let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
 
     let response = reqwest::Client::new()

@@ -1225,6 +1225,13 @@ async fn register(
         Err(RegistrationError::Retired { seat, reason }) => {
             retired_seat_refused("pij register", &seat, reason)
         }
+        Err(
+            ref error @ RegistrationError::PaneHeld {
+                ref holder,
+                ref pane,
+                ref harness,
+            },
+        ) => pane_held_refused("pij register", holder, pane, harness, error.to_string()),
         Err(RegistrationError::Retryable(reason)) => {
             let mut answer: Envelope<()> =
                 Envelope::refused("pij register", ErrorKind::Refused, reason);
@@ -4607,6 +4614,26 @@ pub(crate) const SEAT_RETIRED_CODE: &str = "E-RS-SEAT-RETIRED";
 pub(crate) fn retired_seat_refused(command: &str, seat: &SeatId, reason: String) -> Response {
     let mut answer: Envelope<()> = Envelope::refused(command, ErrorKind::Refused, reason);
     answer.details = Some(serde_json::json!({ "code": SEAT_RETIRED_CODE, "seat": seat }));
+    envelope(StatusCode::BAD_REQUEST, &answer)
+}
+
+/// F196: a native claim on a pane recorded for a seat whose process the daemon
+/// cannot check. The details carry the holder, the pane and the take-over
+/// command, so a client prints that command rather than the prose.
+pub(crate) fn pane_held_refused(
+    command: &str,
+    holder: &SeatId,
+    pane: &str,
+    harness: &str,
+    reason: String,
+) -> Response {
+    let mut answer: Envelope<()> = Envelope::refused(command, ErrorKind::Refused, reason);
+    answer.details = Some(serde_json::json!({
+        "code": "E-RS-PANE-HELD",
+        "holder": holder,
+        "pane": pane,
+        "take_over": crate::registration::take_over_command(pane, harness),
+    }));
     envelope(StatusCode::BAD_REQUEST, &answer)
 }
 

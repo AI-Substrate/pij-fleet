@@ -32,7 +32,8 @@ use axum::Extension;
 use axum::extract::{ConnectInfo, Json, Query, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use pij_core::model::{Envelope, ErrorKind, Liveness, SeatDescriptor, SeatId};
+use pij_core::error::PijError;
+use pij_core::model::{Envelope, ErrorKind, Liveness, ProcIdentity, SeatDescriptor, SeatId};
 use pij_core::ports::SeatFilter;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -274,6 +275,9 @@ pub(crate) struct AdoptArgs {
     pub harness_session: Option<String>,
     /// Operator reclaim target (plan 156 AC6).
     pub reclaim: Option<String>,
+    /// F196: retire every other record on the pane before adopting it, with
+    /// the operator's reason. Only the pane's own process or the prime may.
+    pub take_over: Option<String>,
 }
 
 /// Parse the argv the shim forwards.
@@ -285,6 +289,7 @@ pub(crate) struct AdoptArgs {
 pub(crate) fn parse_adopt_argv(argv: &[String]) -> Result<AdoptArgs, String> {
     let mut args = AdoptArgs::default();
     let mut tokens = argv.iter().map(String::as_str).peekable();
+    let (mut take_over, mut why_given) = (false, None);
     match tokens.peek().copied() {
         Some("adopt") => {
             tokens.next();
@@ -341,6 +346,14 @@ pub(crate) fn parse_adopt_argv(argv: &[String]) -> Result<AdoptArgs, String> {
                     .ok_or_else(|| "--reclaim needs a seat id".to_string())?;
                 args.reclaim = Some(target.to_string());
             }
+            "--take-over" => take_over = true,
+            "--why" => {
+                let why = tokens
+                    .next()
+                    .filter(|why| !why.trim().is_empty() && !why.starts_with("--"))
+                    .ok_or_else(|| "--why needs a nonempty reason".to_string())?;
+                why_given = Some(why.to_string());
+            }
             // Output-shape flags. They change how a CLI prints, and this route
             // does not print — accepting them is honest, storing them is not.
             "--json" | "--export" => {}
@@ -363,6 +376,20 @@ pub(crate) fn parse_adopt_argv(argv: &[String]) -> Result<AdoptArgs, String> {
                 return Err(format!("unexpected argument `{positional}`"));
             }
         }
+    }
+    match (take_over, why_given) {
+        (true, None) => {
+            return Err("--take-over needs `--why <reason>`: a take-over records why".to_string());
+        }
+        (false, Some(_)) => {
+            return Err(
+                "--why is the reason for `--take-over` and means nothing alone".to_string(),
+            );
+        }
+        (true, Some(_)) if args.reclaim.is_some() => {
+            return Err("--take-over and --reclaim are separate overrides; use one".to_string());
+        }
+        (_, why) => args.take_over = why,
     }
     Ok(args)
 }
@@ -525,6 +552,93 @@ async fn reclaim_target(
     Ok((actor, seat))
 }
 
+/// F196: who may take `pane` over. The prime (resolved from the caller's own
+/// pane or id, as `--reclaim` resolves it), or the pane's own live process:
+/// the caller's connection observed descending from `host`. Returns the
+/// actor the tombstone reason names, or the refusal to send.
+#[allow(clippy::result_large_err)]
+async fn take_over_actor(
+    state: &AppState,
+    caller: &CallerContext,
+    peer: Option<SocketAddr>,
+    pane: &str,
+    host: u32,
+) -> Result<String, Response> {
+    if let Resolved::Seat(actor, _) =
+        resolve_seat(state, ADOPT, caller.session_id.clone(), caller.pane.clone()).await
+    {
+        match state.services.roles.read_role(&actor.id).await {
+            Ok(role) if role.as_deref() == Some("prime") => {
+                return Ok(format!("the prime `{}`", actor.id));
+            }
+            Ok(_) => {}
+            Err(error) => return Err(internal(ADOPT, error)),
+        }
+    }
+    let descends = match peer {
+        Some(peer) => tokio::task::spawn_blocking(move || caller_descends_from(peer, host))
+            .await
+            .unwrap_or(false),
+        None => false,
+    };
+    if descends {
+        return Ok(format!("its own process (pid {host})"));
+    }
+    Err(refused(
+        ADOPT,
+        format!(
+            "`--take-over` of pane `{pane}` is allowed only from that pane's own process \
+             (pid {host}) or by the prime, and the caller is neither — nothing was written"
+        ),
+    ))
+}
+
+/// F196: retire every live record on `pane` not bound to `host`, the process
+/// running there now. Records only: no process is signalled. Each tombstone
+/// names the actor and the reason, and is written only if the row is unchanged.
+#[allow(clippy::result_large_err)]
+async fn take_over_pane(
+    state: &AppState,
+    pane: &str,
+    host: ProcIdentity,
+    actor: &str,
+    why: &str,
+) -> Result<(), Response> {
+    let on_pane = SeatFilter {
+        pane: Some(pane.to_string()),
+        live_only: true,
+        ..SeatFilter::default()
+    };
+    let seats = match state.services.registry.list(on_pane).await {
+        Ok(seats) => seats,
+        Err(error) => return Err(internal(ADOPT, error)),
+    };
+    for seat in seats.into_iter().filter(|seat| {
+        is_live(seat) && seat.pane.as_deref() == Some(pane) && seat.proc != Some(host)
+    }) {
+        let id = seat.id.clone();
+        match state
+            .services
+            .registry
+            .tombstone_if_unchanged(seat, format!("taken over: pane {pane} by {actor}: {why}"))
+            .await
+        {
+            Ok(_) => {}
+            Err(PijError::GovernanceRefused { code, .. }) if code == "E-RS-INCARNATION-CHANGED" => {
+                return Err(refused(
+                    ADOPT,
+                    format!(
+                        "seat `{id}` on pane `{pane}` changed during the take-over; nothing more \
+                         was written — run the take-over again"
+                    ),
+                ));
+            }
+            Err(error) => return Err(internal(ADOPT, error)),
+        }
+    }
+    Ok(())
+}
+
 /// Does the process on the far end of `peer` descend from (or equal) `host`?
 ///
 /// Both facts are OBSERVED, never claimed: `lsof` names the process owning the
@@ -613,6 +727,7 @@ pub(crate) async fn adopt(
         );
     }
     let caller = request.caller.unwrap_or_default();
+    let peer = connection.map(|Extension(ConnectInfo(peer))| peer);
     let args = match parse_adopt_argv(&request.argv) {
         Ok(args) => args,
         Err(reason) => return refused(ADOPT, reason),
@@ -788,8 +903,8 @@ pub(crate) async fn adopt(
             None => None,
             Some(session) => {
                 let host = proc.expect("a paned adopt has a process identity").pid;
-                let descends = match connection {
-                    Some(Extension(ConnectInfo(peer))) => {
+                let descends = match peer {
+                    Some(peer) => {
                         tokio::task::spawn_blocking(move || caller_descends_from(peer, host))
                             .await
                             .unwrap_or(false)
@@ -812,26 +927,6 @@ pub(crate) async fn adopt(
         }
     };
 
-    let seats = match state.services.registry.list(SeatFilter::default()).await {
-        Ok(seats) => seats,
-        Err(error) => return internal(ADOPT, error),
-    };
-    // A seat follows its conversation (plan 156 rule 1): the seat already holding
-    // this session, live or retired, outranks whatever the pane number says.
-    let conversation = derived_session.as_deref().and_then(|session| {
-        seats
-            .iter()
-            .filter(|seat| {
-                Some(seat.harness) == kind && seat.harness_session.as_deref() == Some(session)
-            })
-            .min_by_key(|seat| {
-                (
-                    !is_live(seat),
-                    std::cmp::Reverse(seat.proc.map(|proc| proc.proc_start)),
-                    seat.id.clone(),
-                )
-            })
-    });
     // One conversation cannot be two seats (plan 174): refuse with the stable
     // code, and tell the seat that holds it, through the shared helper revive
     // and pane resolution also use.
@@ -855,6 +950,40 @@ pub(crate) async fn adopt(
             Err(error) => return internal(ADOPT, error),
         }
     }
+    // F196: an explicit take-over retires every other record on this pane
+    // (records only, never a process), after every guard above has passed.
+    if let Some(why) = args.take_over.as_deref() {
+        let pane = pane.as_deref().expect("a paned adopt has a pane");
+        let host = proc.expect("a paned adopt has a process identity");
+        let actor = match take_over_actor(&state, &caller, peer, pane, host.pid).await {
+            Ok(actor) => actor,
+            Err(response) => return response,
+        };
+        if let Err(response) = take_over_pane(&state, pane, host, &actor, why).await {
+            return response;
+        }
+    }
+
+    let seats = match state.services.registry.list(SeatFilter::default()).await {
+        Ok(seats) => seats,
+        Err(error) => return internal(ADOPT, error),
+    };
+    // A seat follows its conversation (plan 156 rule 1): the seat already holding
+    // this session, live or retired, outranks whatever the pane number says.
+    let conversation = derived_session.as_deref().and_then(|session| {
+        seats
+            .iter()
+            .filter(|seat| {
+                Some(seat.harness) == kind && seat.harness_session.as_deref() == Some(session)
+            })
+            .min_by_key(|seat| {
+                (
+                    !is_live(seat),
+                    std::cmp::Reverse(seat.proc.map(|proc| proc.proc_start)),
+                    seat.id.clone(),
+                )
+            })
+    });
     // Adopt INTO the seat that already owns this pane rather than minting a
     // second id for it. The TS route grew this the hard way (its plan-071 defect
     // B): without it, a re-adopt leaves two descriptors for one pane and peers
@@ -1029,6 +1158,11 @@ fn adopt_registration_error(error: RegistrationError) -> Response {
         RegistrationError::Refused(reason) => refused(ADOPT, reason),
         RegistrationError::InvalidSeatId(reason) => super::seat_id_refused(ADOPT, reason),
         RegistrationError::Retired { seat, reason } => retired_seat_refused(ADOPT, &seat, reason),
+        ref error @ RegistrationError::PaneHeld {
+            ref holder,
+            ref pane,
+            ref harness,
+        } => super::pane_held_refused(ADOPT, holder, pane, harness, error.to_string()),
         RegistrationError::Retryable(reason) => {
             let mut answer: Envelope<()> = Envelope::refused(ADOPT, ErrorKind::Refused, reason);
             answer.details = Some(json!({ "retryable": true }));

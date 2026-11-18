@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pij_core::error::PijError;
-use pij_core::model::{Event, Harness, ProcIdentity, SeatDescriptor, SeatId};
+use pij_core::model::{Event, Harness, Liveness, ProcIdentity, SeatDescriptor, SeatId};
 use pij_core::names::memorable_pij_id_candidates;
 use pij_core::ports::{LivenessPort, PutBinding, Registry, RelatedSeats, SeatFilter, TmuxPort};
 use pij_core::wire;
@@ -35,7 +35,20 @@ pub(crate) enum RegistrationError {
     NativeSessionHold(SeatId),
     /// A same-process session with newer native history holds the seat (plan 168).
     NativeHolderCurrent(SeatId),
+    /// F196: the claimed pane is recorded for `holder`, whose process the
+    /// daemon cannot check. A brake: refused, naming the explicit take-over.
+    PaneHeld {
+        holder: SeatId,
+        pane: String,
+        harness: String,
+    },
     Runtime(PijError),
+}
+
+/// The command that takes `pane` over for `harness` (F196): the operator's
+/// explicit answer to a pane held by a seat whose liveness is unknown.
+pub(crate) fn take_over_command(pane: &str, harness: &str) -> String {
+    format!("pij-rs adopt {pane} --harness {harness} --take-over --why <reason>")
 }
 
 impl std::fmt::Display for RegistrationError {
@@ -52,6 +65,17 @@ impl std::fmt::Display for RegistrationError {
             Self::NativeHolderCurrent(holder) => write!(
                 f,
                 "native Copilot registration held: this process's seat belongs to `{holder}`, a live session with newer activity; standing by until this session is used or the holder's receiver lease lapses"
+            ),
+            Self::PaneHeld {
+                holder,
+                pane,
+                harness,
+            } => write!(
+                f,
+                "E-RS-PANE-HELD pane {pane} is recorded for seat `{}`, whose process pij cannot check; \
+                 take the pane over with `{}`, run from that pane's own process or by the prime",
+                pij_core::render::seat(holder.as_str()),
+                take_over_command(pane, harness),
             ),
             Self::Runtime(error) => error.fmt(f),
         }
@@ -73,9 +97,20 @@ pub(crate) struct RegistrationService {
     attempts: Arc<attempts::Attempts>,
 }
 
+/// What a native claim carries into the locked registration: a verified
+/// spawn prebind, if one exists.
 struct NativeHandoff {
-    dead: Vec<SeatDescriptor>,
     prebind: Option<SeatDescriptor>,
+}
+
+/// F196: the other live rows recorded on a claimed pane, judged by their own
+/// process outside global exclusion. `dead` rows are bound to unchanged
+/// ownership at commit and superseded; `unknown` ones (no recorded process, a
+/// remote machine, a failed probe) only ever refuse.
+#[derive(Default)]
+struct PaneHolders {
+    dead: Vec<SeatDescriptor>,
+    unknown: Vec<SeatId>,
 }
 
 enum RegistrationMode<'a> {
@@ -201,9 +236,9 @@ impl RegistrationService {
             ),
             Err(error) => (
                 match error {
-                    RegistrationError::Refused(_) | RegistrationError::InvalidSeatId(_) => {
-                        Outcome::Refused
-                    }
+                    RegistrationError::Refused(_)
+                    | RegistrationError::InvalidSeatId(_)
+                    | RegistrationError::PaneHeld { .. } => Outcome::Refused,
                     RegistrationError::Retired { .. } => Outcome::Retired,
                     RegistrationError::Retryable(_) => Outcome::Retryable,
                     RegistrationError::NativeSessionHold(_) => Outcome::SessionHold,
@@ -213,7 +248,8 @@ impl RegistrationService {
                 match error {
                     RegistrationError::Retired { seat, .. }
                     | RegistrationError::NativeSessionHold(seat)
-                    | RegistrationError::NativeHolderCurrent(seat) => seat.to_string(),
+                    | RegistrationError::NativeHolderCurrent(seat)
+                    | RegistrationError::PaneHeld { holder: seat, .. } => seat.to_string(),
                     _ => claimed.to_string(),
                 },
                 matches!(
@@ -221,6 +257,7 @@ impl RegistrationService {
                     RegistrationError::Retired { .. }
                         | RegistrationError::NativeSessionHold(_)
                         | RegistrationError::NativeHolderCurrent(_)
+                        | RegistrationError::PaneHeld { .. }
                 ),
             ),
         };
@@ -560,32 +597,29 @@ impl RegistrationService {
                 HOST_OBSERVATION_TIMEOUT.as_millis(),
             ))
         })??;
-        let dead_native = self
-            .observe_dead_native_owners(
+        let handoff = self
+            .observe_native_prebind(
                 &claim,
                 harness_session
                     .as_deref()
                     .expect("validated native session"),
-                identity,
             )
             .await?;
         self.register_inner(
             claim,
             harness_session,
-            RegistrationMode::NativeExtension(&dead_native),
+            RegistrationMode::NativeExtension(&handoff),
         )
         .await
     }
 
-    /// A dead exact incarnation cannot come back to life. Collect that witness
-    /// outside global exclusion, then bind it to unchanged ownership at commit.
-    async fn observe_dead_native_owners(
+    /// A verified spawn's prebind for this native session, if one exists.
+    async fn observe_native_prebind(
         &self,
         claim: &Registration,
         session: &str,
-        identity: ProcIdentity,
     ) -> std::result::Result<NativeHandoff, RegistrationError> {
-        // Both uses below read only Copilot seats (F182: not the whole roster).
+        // Only Copilot seats can be a native prebind (F182: not the whole roster).
         let copilot = SeatFilter {
             harness: Some(Harness::Copilot),
             ..SeatFilter::default()
@@ -595,43 +629,64 @@ impl RegistrationService {
             .list(copilot)
             .await
             .map_err(RegistrationError::Runtime)?;
-        let prebind = native_prebind(claim, session, &seats).cloned();
-        let mut dead = Vec::new();
+        Ok(NativeHandoff {
+            prebind: native_prebind(claim, session, &seats).cloned(),
+        })
+    }
+
+    /// F196: judge every other live row recorded on the claimed pane by its own
+    /// process. A dead exact incarnation cannot come back to life, so collect
+    /// that witness outside global exclusion and bind it to unchanged ownership
+    /// at commit. The claim's own conversation, its named predecessor and its
+    /// own process are never holders: the locked checks decide those.
+    ///
+    /// Only `dead` can retire a row, and only a `Dead` or `Recycled` verdict
+    /// puts one there. A failed probe, a row with no process and a remote row
+    /// are `unknown`, which can only refuse (a brake).
+    async fn observe_pane_holders(
+        &self,
+        claim: &Registration,
+        session: Option<&str>,
+        identity: Option<ProcIdentity>,
+    ) -> std::result::Result<PaneHolders, RegistrationError> {
+        let mut holders = PaneHolders::default();
+        let (Some(pane), Some(identity)) = (claim.pane.as_ref(), identity) else {
+            return Ok(holders);
+        };
+        let on_pane = SeatFilter {
+            pane: Some(pane.clone()),
+            live_only: true,
+            ..SeatFilter::default()
+        };
+        let seats = self
+            .registry
+            .list(on_pane)
+            .await
+            .map_err(RegistrationError::Runtime)?;
         for seat in seats {
-            if seat.harness != Harness::Copilot
-                || !seat.native_extension_delivery
-                || seat.tombstoned_at.is_some()
-                || seat.relay
-                || seat.harness_session.as_deref() == Some(session)
+            if seat.tombstoned_at.is_some()
+                || seat.pane.as_ref() != Some(pane)
+                || seat.id.as_str() == claim.id
+                || claim.supersedes.as_ref() == Some(&seat.id)
+                || seat.proc == Some(identity)
+                || session.is_some_and(|session| seat.harness_session.as_deref() == Some(session))
             {
                 continue;
             }
-            let Some(previous) = seat.proc.filter(|proc| proc.pid > 0 && proc.proc_start > 0)
+            let Some(previous) = seat
+                .proc
+                .filter(|proc| proc.pid > 0 && proc.proc_start > 0 && seat.machine.is_none())
             else {
+                holders.unknown.push(seat.id);
                 continue;
             };
-            if previous == identity {
-                continue;
-            }
-            let stale_pane_owner = seat.id.as_str() != claim.id
-                && claim.pane.is_some()
-                && seat.pane == claim.pane
-                && seat
-                    .harness_session
-                    .as_deref()
-                    .is_some_and(|old| !old.is_empty() && old != session);
-            if stale_pane_owner
-                && self
-                    .liveness
-                    .proc_start(previous.pid)
-                    .await
-                    .map_err(RegistrationError::Runtime)?
-                    != Some(previous.proc_start)
-            {
-                dead.push(seat);
+            match pij_core::liveness::alive(previous, self.liveness.as_ref()).await {
+                Ok(Liveness::Active) => {}
+                Ok(Liveness::Dead { .. } | Liveness::Recycled { .. }) => holders.dead.push(seat),
+                Err(_) => holders.unknown.push(seat.id),
             }
         }
-        Ok(NativeHandoff { dead, prebind })
+        Ok(holders)
     }
 
     async fn verify_native_host<F, Fut>(
@@ -765,7 +820,6 @@ impl RegistrationService {
             RegistrationMode::NativeExtension(proof) => (true, None, Some(proof)),
             RegistrationMode::Paneless(ancestry) => (false, Some(ancestry), None),
         };
-        let dead_native = handoff.map_or(&[][..], |proof| proof.dead.as_slice());
         let harness_session = harness_session.filter(|session| !session.trim().is_empty());
         let proc = match (claim.pid, claim.proc_start) {
             (Some(pid), Some(proc_start)) => {
@@ -788,6 +842,10 @@ impl RegistrationService {
                 ));
             }
         };
+        let holders = self
+            .observe_pane_holders(&claim, harness_session.as_deref(), proc)
+            .await?;
+        let dead_holders = holders.dead.as_slice();
 
         // Process/ancestry evidence is collected without excluding inbox readers.
         // Re-read the entire roster under shared mutation exclusion: two different
@@ -807,14 +865,14 @@ impl RegistrationService {
                 &claim,
                 harness_session.as_deref(),
                 proc,
-                dead_native
+                dead_holders
                     .iter()
                     .chain(handoff.and_then(|proof| proof.prebind.as_ref()))
                     .map(|seat| seat.id.clone()),
             ))
             .await
             .map_err(RegistrationError::Runtime)?;
-        if dead_native
+        if dead_holders
             .iter()
             .chain(handoff.and_then(|proof| proof.prebind.as_ref()))
             .any(|observed| {
@@ -825,7 +883,7 @@ impl RegistrationService {
             })
         {
             return Err(RegistrationError::Retryable(
-                "native owner changed during death observation; retry registration".into(),
+                "pane holder changed during death observation; retry registration".into(),
             ));
         }
         if native {
@@ -943,7 +1001,7 @@ impl RegistrationService {
                 proc,
                 &seats,
                 existing,
-                dead_native,
+                &holders,
                 spawn_predecessor,
             ) {
                 Ok(()) => {}
@@ -1216,7 +1274,7 @@ impl RegistrationService {
         // Retirement authority is either an observed dead resource owner or
         // explicit verified spawn intent for this same native conversation.
         // The filters are brakes: removing them can only broaden retirement.
-        for observed in dead_native
+        for observed in dead_holders
             .iter()
             .chain(spawn_predecessor)
             .filter(|seat| seat.id != descriptor.id)
@@ -1224,36 +1282,59 @@ impl RegistrationService {
             let mut retired = seats
                 .iter()
                 .find(|seat| seat.id == observed.id)
-                .expect("revalidated native owner")
+                .expect("revalidated pane holder")
                 .clone();
+            let prebind = spawn_predecessor.is_some_and(|previous| previous.id == observed.id);
+            let pane = descriptor.pane.as_deref().unwrap_or("none");
             retired.tombstoned_at = Some(system_time_ms()?);
-            retired.tombstone_reason = Some(format!(
-                "native registration released its previous binding to `{}`; queued work retains its original address",
-                descriptor.id
-            ));
+            retired.tombstone_reason = Some(if prebind {
+                format!(
+                    "native registration released its previous binding to `{}`; queued work retains its original address",
+                    descriptor.id
+                )
+            } else {
+                // F196: the holder's recorded process was observed gone.
+                format!(
+                    "superseded: pane {pane} taken by `{}`; its recorded process is gone; queued work retains its original address",
+                    descriptor.id
+                )
+            });
             retired.native_extension_delivery = false;
             self.registry
                 .put_reporting_keeping_parent(retired)
                 .await
                 .map_err(RegistrationError::Runtime)?;
-            if spawn_predecessor.is_some_and(|previous| previous.id == observed.id) {
-                self.event_bus
-                    .publish(Event {
-                        seq: None,
-                        v: wire::EVENT_VERSION,
-                        at: system_time_ms()?,
-                        kind: "seat.native-superseded".into(),
-                        seat: Some(observed.id.clone()),
-                        payload: serde_json::json!({
-                            "successor": descriptor.id,
-                            "spawn_id": descriptor.spawn_id,
-                            "reason": "native-spawn-prebind",
-                        })
-                        .to_string(),
-                    })
-                    .await
-                    .map_err(RegistrationError::Runtime)?;
-            }
+            let payload = if prebind {
+                serde_json::json!({
+                    "successor": descriptor.id,
+                    "spawn_id": descriptor.spawn_id,
+                    "reason": "native-spawn-prebind",
+                })
+            } else {
+                serde_json::json!({
+                    "successor": descriptor.id,
+                    "pane": pane,
+                    "old_proc": observed.proc,
+                    "new_proc": descriptor.proc,
+                    "reason": "pane-holder-process-gone",
+                })
+            };
+            self.event_bus
+                .publish(Event {
+                    seq: None,
+                    v: wire::EVENT_VERSION,
+                    at: system_time_ms()?,
+                    kind: if prebind {
+                        "seat.native-superseded"
+                    } else {
+                        "seat.pane-superseded"
+                    }
+                    .into(),
+                    seat: Some(observed.id.clone()),
+                    payload: payload.to_string(),
+                })
+                .await
+                .map_err(RegistrationError::Runtime)?;
         }
 
         if let Some(mut previous) = predecessor
@@ -1661,7 +1742,7 @@ fn check_native_roster(
     identity: Option<ProcIdentity>,
     seats: &[SeatDescriptor],
     existing: Option<&SeatDescriptor>,
-    dead_native: &[SeatDescriptor],
+    holders: &PaneHolders,
     spawn_predecessor: Option<&SeatDescriptor>,
 ) -> std::result::Result<(), RegistrationError> {
     let session = session.ok_or_else(|| native_refusal("requires a runtime native session"))?;
@@ -1752,7 +1833,7 @@ fn check_native_roster(
     for seat in seats.iter().filter(|seat| seat.tombstoned_at.is_none()) {
         if existing.is_some_and(|existing| existing.id == seat.id)
             || predecessor.is_some_and(|previous| previous.id == seat.id)
-            || dead_native.iter().any(|observed| observed.id == seat.id)
+            || holders.dead.iter().any(|observed| observed.id == seat.id)
             || spawn_predecessor.is_some_and(|previous| previous.id == seat.id)
         {
             continue;
@@ -1781,6 +1862,17 @@ fn check_native_roster(
                 // Finish the scan so a separate ownership refusal wins.
                 held_owner = Some(&seat.id);
                 continue;
+            }
+            // F196, a brake: a pane holder whose process cannot be checked is
+            // never retired here; the refusal names the explicit take-over.
+            if let Some(pane) = claim.pane.as_ref()
+                && holders.unknown.contains(&seat.id)
+            {
+                return Err(RegistrationError::PaneHeld {
+                    holder: seat.id.clone(),
+                    pane: pane.clone(),
+                    harness: claim.harness.clone(),
+                });
             }
             return Err(native_refusal(format!(
                 "process, native session, or pane already belongs to seat `{}`",
@@ -2511,10 +2603,121 @@ mod tests {
                 result,
                 Err(RegistrationError::Refused(_)
                     | RegistrationError::InvalidSeatId(_)
-                    | RegistrationError::Retired { .. })
+                    | RegistrationError::Retired { .. }
+                    | RegistrationError::PaneHeld { .. })
             ),
             "{result:?}"
         );
+    }
+
+    /// F196: another harness's row on the claimed pane (an `omp -p` canary run
+    /// inside the pane, then gone). Only a confirmed-dead holder is superseded,
+    /// with a reason and a spine event; a live one still refuses; one whose
+    /// liveness is unknown refuses naming the explicit take-over.
+    #[tokio::test]
+    async fn native_claim_supersedes_only_a_confirmed_dead_pane_holder() {
+        let holder = |proc: Option<ProcIdentity>| {
+            let mut seat =
+                SeatDescriptor::new("pij-selected-alpaca", Harness::Omp, "/private/tmp/canary");
+            seat.pane = Some("%137".into());
+            seat.proc = proc;
+            seat
+        };
+        let gone = ProcIdentity {
+            pid: 4272,
+            proc_start: 90,
+        };
+        let recycled = ProcIdentity {
+            pid: OTHER_HOST.pid,
+            proc_start: OTHER_HOST.proc_start - 1,
+        };
+        for previous in [gone, recycled] {
+            let (service, registry) =
+                native_service(vec![holder(Some(previous))], native_liveness()).await;
+            let seat = attest(&service, native_claim(""), Some(SESSION), &native_tmux())
+                .await
+                .expect("a confirmed-dead holder never blocks the pane");
+            let old = registry
+                .get(&"pij-selected-alpaca".into())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(old.tombstoned_at.is_some(), "{previous:?}");
+            assert_eq!(
+                old.tombstone_reason,
+                Some(format!(
+                    "superseded: pane %137 taken by `{}`; its recorded process is gone; queued work retains its original address",
+                    seat.id
+                ))
+            );
+            let event = service
+                .event_bus
+                .latest_matching(&old.id, &["seat.pane-superseded"])
+                .await
+                .unwrap()
+                .expect("the supersede is on the spine");
+            let payload: serde_json::Value = serde_json::from_str(&event.payload).unwrap();
+            assert_eq!(payload["successor"], seat.id.as_str());
+            assert_eq!(payload["old_proc"]["pid"], previous.pid);
+        }
+
+        let live = holder(Some(OTHER_HOST));
+        let (service, registry) = native_service(vec![live.clone()], native_liveness()).await;
+        let result = attest(&service, native_claim(""), Some(SESSION), &native_tmux()).await;
+        assert!(
+            matches!(result, Err(RegistrationError::Refused(_))),
+            "a live holder refuses, without a take-over hint: {result:?}"
+        );
+        assert_eq!(registry.get(&live.id).await.unwrap(), Some(live));
+
+        let mut remote = holder(Some(gone));
+        remote.machine = Some("other-mac".into());
+        for unknown in [holder(None), remote] {
+            let (service, registry) =
+                native_service(vec![unknown.clone()], native_liveness()).await;
+            let result = attest(&service, native_claim(""), Some(SESSION), &native_tmux()).await;
+            let Err(error @ RegistrationError::PaneHeld { .. }) = result else {
+                panic!("an unknown holder refuses with the take-over: {result:?}");
+            };
+            assert!(
+                error
+                    .to_string()
+                    .contains("pij-rs adopt %137 --harness copilot --take-over --why <reason>"),
+                "{error}"
+            );
+            assert_eq!(registry.get(&unknown.id).await.unwrap(), Some(unknown));
+        }
+    }
+
+    /// F196: the ordinary path (an OMP or Claude seat registering in its pane)
+    /// supersedes a confirmed-dead holder too, and leaves a live one alone.
+    #[tokio::test]
+    async fn ordinary_registration_supersedes_a_dead_pane_holder_and_keeps_a_live_one() {
+        let mut dead = SeatDescriptor::new("pij-dead-holder", Harness::Omp, "/isolated");
+        dead.pane = Some("%137".into());
+        dead.proc = Some(ProcIdentity {
+            pid: 4272,
+            proc_start: 90,
+        });
+        let mut live = dead.clone();
+        live.id = "pij-live-holder".into();
+        live.proc = Some(OTHER_HOST);
+        let (service, registry) =
+            native_service(vec![dead.clone(), live.clone()], native_liveness()).await;
+        let mut claim = native_claim("pij-omp-in-pane");
+        claim.harness = "omp".into();
+        service
+            .register_inner(claim, None, super::RegistrationMode::Ordinary)
+            .await
+            .expect("ordinary registration");
+        let retired = registry.get(&dead.id).await.unwrap().unwrap();
+        assert!(
+            retired
+                .tombstone_reason
+                .unwrap()
+                .starts_with("superseded: pane %137 taken by `pij-omp-in-pane`")
+        );
+        assert_eq!(registry.get(&live.id).await.unwrap(), Some(live));
     }
 
     #[tokio::test]
@@ -3471,7 +3674,7 @@ mod tests {
                 Some(HOST),
                 &[owner],
                 None,
-                &[],
+                &super::PaneHolders::default(),
                 None,
             ));
         }
