@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Read before changing status background-check TTLs, quota-response attribution or claiming generation-only test proof.",
+				"tags": [
+					"cache-proxy",
+					"quota",
+					"proof",
+					"closure"
+				],
+				"title": "Cache-proxy F205 review closure and TTL proof limits"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #243 security at ed6462dbe3ce24e453ebeb47ad6ce8503721611d: pass-with-notes; no vulnerability established. Source inspection covered all 19 changed files against 48437352. The status background checker rechecks freshness under its single-flight lock and records failures/completion: 600-second success TTL, 60-second failure TTL. Explicit reload/token/quota rechecks are intentional exceptions, not a global upstream rate cap (crates/cache-proxy/src/proxy.rs:438-547; readiness.rs:157-222).\n\nF205: both the 402 latch and Messages-success clear must retain captured account AND token generation through actual attempts and compare under the token read guard plus inner mutex (proxy.rs:639-700,754-767,853-861). CI independently passed both old-account regressions and concurrent status regressions. Keep the proof limit honest: neither same-account generation-only replacement nor failure-TTL request counts after malformed upstream responses was independently isolated; the S3 author mutant removes the whole stale-answer guard, not generation alone.\n\nCount-only notice regression passes; explicit operator seat-list diagnostics remain intentional. All 13 changed docs were scanned through scanText; the operational filter excluded 13/13. Five home-path references were pij layout, not unrelated machine paths under C21. Public-pattern scans are not comprehensive secret detection.\n\nParent-verified proof: just pr-freeze 243 FINAL; CI run 44246537074 source head above, tested synthetic merge 3dbfb858df1260ee6f39791b2db584ee09fb5936. Successful job 134606837050 uploaded artifact 14402062142: JUnit has 2502 cases, zero failures/errors/skips; nextest separately reports six excluded/skipped. No local builds/tests, credential reads, prod operations or source changes. Author mutation/live receipts were not reproduced.\n\nmagicWand: a read-only review-proof command should collect finality, source and synthetic merge SHAs, successful-job-selected JUnit and local-gate exclusions without rebuilding. Existing role notes already describe this backlog; observation SUGG-001 captures this run's recurrence.\n\ndifficulties: delegated review initially returned a verdict-only sentence despite a request for evidence. One same-task retained-evidence follow-up recovered the complete file inventory, checklist line receipts, scan results and proof limits without a second review. Keep the existing evidence-required delegation lesson; do not treat an unsupported PASS sentence as a completed review.\n"
+		}
+	]
+}
