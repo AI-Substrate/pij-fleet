@@ -1,0 +1,179 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Sidecar status off the upstream path, stale-answer rule, watch debounce, gate retry",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Sidecar: status() answers from cache and spawns one background check via check_lock try_lock; reload keeps the inline check; `checked_at_ms` in Status (serde default) and Inner; contract test",
+          "phase": "ph-c230",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ]
+        },
+        {
+          "id": "tk-0002",
+          "title": "Sidecar: forward() captures (account, generation) per attempt; quota_refused/quota_served apply only when they still match the holder; a stale one is logged with its account",
+          "phase": "ph-c230",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        },
+        {
+          "id": "tk-0003",
+          "title": "Sidecar tests: stalling fake upstream (status <100 ms, one check for concurrent reads) and the stale-402 account-switch regression; F001/F002 regressions green",
+          "phase": "ph-c230",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        },
+        {
+          "id": "tk-0004",
+          "title": "Daemon: Reading splits refused / timed out / unreadable; watch declares down at once on refusal, else on the 2nd consecutive failed read; HealthView.slow {count, last_at}; ProxyStatus.checked_at_ms",
+          "phase": "ph-c230",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ]
+        },
+        {
+          "id": "tk-0005",
+          "title": "Daemon: gate retries a timed-out read once; plain reasons for refusal and two timeouts",
+          "phase": "ph-c230",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ]
+        },
+        {
+          "id": "tk-0006",
+          "title": "Daemon: notices give a proxied-seat count and `just doctor`, never ids (notice noise, F192 class); tests for the four watch sequences, gate retry and notice text",
+          "phase": "ph-c230",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0009"
+          ]
+        },
+        {
+          "id": "tk-0007",
+          "title": "Doctor `cache seats:` line shows slow reads; docs/how/pij-rs-api.md; blueprint 003 c-status-route, c-readiness, c-proxy-watch, c-spawn-gate; workstream 004 s05 with changelog",
+          "phase": "ph-c230",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004",
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        },
+        {
+          "id": "tk-0008",
+          "title": "Mutation checks, live proof on a private daemon and test-port sidecar with a stalling fake upstream, spawn readings; gates; PR",
+          "phase": "ph-c230",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006",
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "goals",
+      "value": []
+    },
+    {
+      "name": "non_goals",
+      "value": []
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": []
+    },
+    {
+      "name": "phases",
+      "value": []
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": []
+    },
+    {
+      "name": "execution_guardrails",
+      "value": []
+    }
+  ]
+}
