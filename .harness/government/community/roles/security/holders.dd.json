@@ -118,6 +118,15 @@
 					"seat": "pij-interesting-squid",
 					"to": "2026-11-18T02:18:47.439Z",
 					"why": "PR #236 audit gate"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-18T02:43:17.202Z",
+					"harness": "copilot",
+					"harness_session": "d316b36d-5dd1-448f-b122-993a84411f54",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-colorful-echidna",
+					"why": "pm-004: verdict on #239 (ws004 s02)"
 				}
 			]
 		}
