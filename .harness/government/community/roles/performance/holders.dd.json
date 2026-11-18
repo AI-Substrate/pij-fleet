@@ -61,6 +61,15 @@
 					"seat": "pij-thorough-ocelot",
 					"to": "2026-11-11T01:06:11.419Z",
 					"why": "fresh performance seat after the 07 Nov reboot"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-18T02:43:17.618Z",
+					"harness": "copilot",
+					"harness_session": "0c33b02b-8c79-4279-b7e5-9b8458e239a0",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-sole-lizard",
+					"why": "pm-004: cost verdict on #239 (ws004 s02)"
 				}
 			]
 		}
