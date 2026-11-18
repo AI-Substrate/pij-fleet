@@ -98,6 +98,15 @@
 					"seat": "pij-net-iguana",
 					"to": "2026-11-18T03:50:11.990Z",
 					"why": "F198+F195 #240 cost (gpt-6.1-sol)"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-18T03:50:20.278Z",
+					"harness": "copilot",
+					"harness_session": "e0dba0e8-34fc-4608-be5e-c4d52e5387ac",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-random-crayfish",
+					"why": "pm-004: cost verdict on #241 (ws004 s03)"
 				}
 			]
 		}
