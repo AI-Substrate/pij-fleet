@@ -25,10 +25,11 @@
 					"name": "Proxy core (rewrite and pass-through)",
 					"kind": "module",
 					"where": "crates/cache-proxy/src/{rewrite,serve}.rs",
-					"responsibility": "Ports the POC: sets `ttl: \"1h\"` on every `cache_control` block, sets `X-Initiator: agent` when the last message is a tool result, and otherwise streams requests and responses through unchanged (SSE, tool use, images, 1M context). Binds 127.0.0.1 only. Logs the upstream host, status and cache usage counts, never a header value.",
+					"responsibility": "Ports the POC: sets `ttl: \"1h\"` on every `cache_control` block, sets `X-Initiator: agent` when the last message is a tool result, maps a `*-1m` `model` to its base id (Copilot's API rejects `-1m` with 400 `model_not_supported`; the base id serves 1M), and otherwise streams requests and responses through unchanged (SSE, tool use, images, 1M context). Binds 127.0.0.1 only. Logs the upstream host, status, model (`base (from x-1m)`) and cache usage counts, never a header value.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-01",
-						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-07"
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-07",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-13"
 					],
 					"state": "planned"
 				},
@@ -50,10 +51,11 @@
 					"name": "Readiness check",
 					"kind": "module",
 					"where": "crates/cache-proxy/src/readiness.rs",
-					"responsibility": "GETs `api.github.com/copilot_internal/user` with the token: takes `endpoints.api` as the upstream, and `quota_snapshots.premium_interactions` as the quota (usable if `unlimited`, `remaining > 0` or `overage_permitted`; otherwise the reset date). Cached per account for 10 minutes, and re-run after a refresh or a 402. A 402 from upstream marks the quota exhausted at once.",
+					"responsibility": "GETs `api.github.com/copilot_internal/user` with the token: takes `endpoints.api` as the upstream, and `quota_snapshots.premium_interactions` as the quota (usable if `unlimited`, `remaining > 0` or `overage_permitted`; otherwise the reset date). GETs `<endpoints.api>/models` for each Claude model's `max_prompt_tokens`. Both are cached per account for 10 minutes, and re-run after a refresh or a 402. A 402 from upstream marks the quota exhausted at once.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
-						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-06"
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-06",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-13"
 					],
 					"state": "planned"
 				},
@@ -62,7 +64,7 @@
 					"name": "Status route",
 					"kind": "endpoint",
 					"where": "crates/cache-proxy/src/status.rs",
-					"responsibility": "`GET /__pij/status` on the proxy's port returns `{ready, state, reason, fix, account, upstream_host, quota: {usable, reset}, counters: {requests, refreshes, gh_launches, upstream_401, upstream_402}, pid, since}`. `state` is one of `ready`, `off`, `no_account`, `gh_missing`, `no_token`, `quota_exhausted`, `upstream_unreachable`. `POST /__pij/reload` re-reads the config file and refetches the token if the account changed. It carries no token and no secret.",
+					"responsibility": "`GET /__pij/status` on the proxy's port returns `{ready, state, reason, fix, account, upstream_host, quota: {usable, reset}, models: {\"<base id>\": {max_prompt_tokens}}, counters: {requests, refreshes, gh_launches, upstream_401, upstream_402}, pid, since}`. `models` lists only Claude ids, keyed by base id (never `-1m`). `state` is one of `ready`, `off`, `no_account`, `gh_missing`, `no_token`, `quota_exhausted`, `upstream_unreachable`. `POST /__pij/reload` re-reads the config file and refetches the token if the account changed. It carries no token and no secret.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-09"
@@ -110,11 +112,12 @@
 					"name": "Spawn gate and env",
 					"kind": "module",
 					"where": "crates/daemon/src/cache_proxy.rs (called from launch_seat_locked in crates/daemon/src/http/mod.rs); env added in build_spawn_plan, crates/harnesses/src/spawn.rs",
-					"responsibility": "For a Copilot seat only: plain if `--no-cache-proxy`, if the model isn't Claude, or if the status route isn't `ready` (one loopback GET, 1 s timeout). Otherwise `SpawnPlanInput` carries the proxy URL and `build_spawn_plan` adds `COPILOT_PROVIDER_TYPE=anthropic` and `COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:7471`. OMP, Claude and Codex seats are never touched.",
+					"responsibility": "For a Copilot seat only: plain if `--no-cache-proxy`, if the model isn't Claude, if the status route isn't `ready` (one loopback GET, 1 s timeout), or if the model's base id (with `-1m` stripped) is missing from the status `models`. Otherwise `SpawnPlanInput` carries the proxy URL, base id and limit, and `build_spawn_plan` adds `COPILOT_PROVIDER_TYPE=anthropic`, `COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:7471`, `COPILOT_PROVIDER_MODEL_ID=<base id>` and `COPILOT_PROVIDER_MAX_PROMPT_TOKENS=<max_prompt_tokens>`. OMP, Claude and Codex seats are never touched.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-05",
-						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-12"
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-12",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-13"
 					],
 					"state": "planned"
 				},
@@ -226,7 +229,7 @@
 				{
 					"id": "k-3",
 					"what": "Readiness check.",
-					"rate": "1 GET to `copilot_internal/user` per 10 min per account while asked, plus 1 after each refresh or 402; 0 launches",
+					"rate": "1 GET to `copilot_internal/user` and 1 to `/models` per 10 min per account while asked, plus 1 of each after a refresh or 402; 0 launches",
 					"scaling": "with accounts (1), not with seats",
 					"component": ["#components/c-readiness"]
 				},
@@ -260,6 +263,11 @@
 					"date": "2026-11-18",
 					"by": "pm-004 (pij-outstanding-silkworm)",
 					"change": "First draft, after the step 1 spike (takin) and the prime's ruling 5 (sidecar)."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "req-13 (takin's spike addendum): c-proxy-core maps `-1m` to the base id; c-readiness reads `/models`; the status route gains `models`; c-spawn-gate sets the model id and max prompt tokens."
 				}
 			]
 		}

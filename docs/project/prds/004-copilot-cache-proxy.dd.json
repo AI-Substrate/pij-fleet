@@ -193,6 +193,16 @@
 					"state": "planned",
 					"done_when": "Test matrix row 20: an OMP seat's turn is unchanged and its env has no proxy settings.",
 					"source": "handover/cache-proxy-test-matrix.md"
+				},
+				{
+					"id": "req-13",
+					"title": "Right model id and full context",
+					"statement": "A proxied seat reaches Copilot with a model id the API serves, and with its full context window. Copilot's API rejects OMP-style `-1m` selectors (`claude-opus-5.5-1m` gives 400 `model_not_supported`), while the base id already serves 1M. So the proxy maps any `*-1m` model to its base id before forwarding. The spawn sets `COPILOT_PROVIDER_MODEL_ID` to the base id and `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` to that model's `max_prompt_tokens` from the account's `/models`. A Claude model the account's `/models` doesn't list launches plain, with the reason.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "Test matrix row 22: seats spawned as `claude-opus-5.5` and as `claude-opus-5.5-1m` both get 200s, their status bars show a 1.0M window, the proxy log shows the base id, and only 1-hour cache writes appear.",
+					"source": "spike REPORT.md addendum (takin, spike/004-cache-proxy 6566e91f)"
 				}
 			]
 		},
@@ -239,6 +249,11 @@
 					"date": "2026-11-18",
 					"by": "pm-004 (pij-outstanding-silkworm)",
 					"change": "q-02 answered with the prime's ruling 5 (sidecar), and req-08 restated for it. q-03 answered (own config file and `pij-rs cache-proxy` verbs, blueprint 003 d-5); req-02 and req-05 reworded to match."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "Added req-13 (map `-1m` to the base id; set the model id and max prompt tokens at spawn) from takin's spike addendum."
 				}
 			]
 		}
