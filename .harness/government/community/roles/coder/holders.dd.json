@@ -1021,6 +1021,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-cultural-falcon",
 					"why": "F196 pane takeover"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-18T01:57:15.682Z",
+					"harness": "omp",
+					"harness_session": "01a1ec5f-48bf-7797-ae2d-61aa84a8201e",
+					"instance_key": "228",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-charming-crane",
+					"why": "pm-004: workstream 004 s02 (plan 228, cache-proxy sidecar)"
 				}
 			]
 		}
