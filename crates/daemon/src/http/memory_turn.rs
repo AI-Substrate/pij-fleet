@@ -35,7 +35,7 @@ use axum::response::Response;
 
 use pij_core::events::EventFilter;
 use pij_core::model::{
-    DeliveryOutcome, Envelope, ErrorKind, Event, Msg, Receipt, SeatDescriptor, SeatId,
+    DeliveryOutcome, Envelope, ErrorKind, Event, Msg, ProcIdentity, Receipt, SeatDescriptor, SeatId,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -98,12 +98,18 @@ const ACTIVITY: &str = "seat.activity";
 /// end-of-turn writes land in that window.
 const CLOSE_ATTEMPTS: usize = 5;
 
-/// One seat's pending memory turn (F194): what it holds back and when its
-/// bound passes, so a repeat request can say so instead of starting another.
-#[derive(Clone, Copy, Debug)]
+/// One seat's pending memory turn (F194): what it holds back, for whom, and
+/// when its bound passes, so a repeat request is answered by it only when the
+/// held action will do exactly what that request asks (R245-001).
+#[derive(Clone, Debug)]
 pub struct PendingTurn {
     action: Action,
     deadline_ms: u64,
+    /// A held close's closer; `None` for a compact.
+    by: Option<SeatId>,
+    /// The incarnation it was held for: the action skips any other.
+    proc: Option<ProcIdentity>,
+    pane: Option<String>,
 }
 
 /// What the memory turn holds back.
@@ -282,35 +288,23 @@ pub(crate) fn hold(
 ) -> Result<Value, Box<Response>> {
     let bound = state.services.memory_turn_bound;
     let action = then.action();
-    let deadline_ms = now_ms().saturating_add(millis(bound));
-    // One pending memory turn per seat: never a second turn or a second
-    // action. A repeat close is answered with the pending one (F194); any
-    // other repeat is refused by name, with when the pending one runs.
-    let pending = match Pending::take(
-        &state.services.memory_turns,
-        &seat.id,
-        PendingTurn {
-            action,
-            deadline_ms,
+    let request = PendingTurn {
+        action,
+        deadline_ms: now_ms().saturating_add(millis(bound)),
+        by: match &then {
+            Then::Compact(_) => None,
+            Then::Close { actor, .. } => Some(actor.clone()),
         },
-    ) {
+        proc: seat.proc,
+        pane: seat.pane.clone(),
+    };
+    let deadline_ms = request.deadline_ms;
+    // One pending memory turn per seat: never a second turn or a second
+    // action. The callers ask `pending_answer` first; this covers the race
+    // between that and here.
+    let pending = match Pending::take(&state.services.memory_turns, &seat.id, request.clone()) {
         Ok(pending) => pending,
-        Err(existing) if existing.action == Action::Close && action == Action::Close => {
-            return Ok(json!({
-                "seat": seat.id,
-                "held": HELD,
-                "memory_turn": {
-                    "action": Action::Close,
-                    "pending": true,
-                    "deadline_ms": existing.deadline_ms,
-                    "note": format!(
-                        "a close of {} is already held for its memory turn; it runs when that turn ends, or by {} ms since the epoch at the latest. Nothing new was asked",
-                        seat.id, existing.deadline_ms
-                    ),
-                },
-            }));
-        }
-        Err(existing) => return Err(Box::new(pending_refusal(command, &seat.id, existing))),
+        Err(existing) => return answer_pending(command, &seat.id, &request, &existing),
     };
     // The bound runs from the hold, not from the prompt's admission.
     let held_at = Instant::now();
@@ -373,7 +367,7 @@ impl Pending {
     ) -> Result<Self, PendingTurn> {
         let mut held = turns.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(existing) = held.get(seat.as_str()) {
-            return Err(*existing);
+            return Err(existing.clone());
         }
         held.insert(seat.to_string(), turn);
         Ok(Self {
@@ -392,22 +386,91 @@ impl Drop for Pending {
     }
 }
 
-fn pending_refusal(command: &str, seat: &SeatId, pending: PendingTurn) -> Response {
+/// How a request for `seat` is answered while a memory turn is pending for it,
+/// if one is. Callers ask this before `turn_for`, so the one-turn rule holds
+/// whatever the seat's holdings or notes say meanwhile (#245 review).
+pub(crate) fn pending_answer(
+    state: &AppState,
+    command: &str,
+    seat: &SeatDescriptor,
+    action: Action,
+    by: Option<&SeatId>,
+) -> Option<Result<Value, Box<Response>>> {
+    let existing = state
+        .services
+        .memory_turns
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(seat.id.as_str())
+        .cloned()?;
+    let request = PendingTurn {
+        action,
+        deadline_ms: existing.deadline_ms,
+        by: by.cloned(),
+        proc: seat.proc,
+        pane: seat.pane.clone(),
+    };
+    Some(answer_pending(command, &seat.id, &request, &existing))
+}
+
+/// A repeat close is answered by the pending one only when that close will do
+/// exactly what this one asks: the same closer, so the authority this request
+/// just passed is the one the held close rechecks, and the same incarnation,
+/// so the held close does not skip it as revived. Anything else is refused by
+/// name, with why and when the pending turn ends, never acknowledged and then
+/// lost (R245-001). A refusal, not a replacement: the held action keeps every
+/// brake it was held with, and the caller asks again once it ends.
+fn answer_pending(
+    command: &str,
+    seat: &SeatId,
+    request: &PendingTurn,
+    existing: &PendingTurn,
+) -> Result<Value, Box<Response>> {
+    let why = if existing.action != Action::Close || request.action != Action::Close {
+        "another-action"
+    } else if existing.by != request.by {
+        "another-closer"
+    } else if existing.proc != request.proc || existing.pane != request.pane {
+        "another-incarnation"
+    } else {
+        return Ok(json!({
+            "seat": seat,
+            "held": HELD,
+            "memory_turn": {
+                "action": Action::Close,
+                "pending": true,
+                "deadline_ms": existing.deadline_ms,
+                "note": format!(
+                    "your close of {seat} is already held for its memory turn; it runs when that turn ends, or by {} ms since the epoch at the latest. Nothing new was asked",
+                    existing.deadline_ms
+                ),
+            },
+        }));
+    };
+    let held = match (why, &existing.by) {
+        ("another-closer", Some(by)) => format!("a close by {by}"),
+        ("another-incarnation", _) => {
+            "a close of the incarnation before its revive or rebind".to_string()
+        }
+        _ => format!("a {}", verb(existing.action)),
+    };
     let mut answer: Envelope<Value> = Envelope::refused(
         command,
         ErrorKind::Refused,
         format!(
-            "{E_PENDING}: {seat} already has a memory turn pending for a {}; it runs when that turn ends, so this request was not taken",
-            verb(pending.action)
+            "{E_PENDING}: {seat} already has a memory turn pending for {held}, so this {} was not taken and will not run. Ask again once that turn ends, by {} ms since the epoch at the latest",
+            verb(request.action),
+            existing.deadline_ms
         ),
     );
     answer.details = Some(json!({
         "code": E_PENDING,
         "seat": seat,
-        "pending": pending.action,
-        "deadline_ms": pending.deadline_ms,
+        "pending": existing.action,
+        "why": why,
+        "deadline_ms": existing.deadline_ms,
     }));
-    super::envelope(StatusCode::CONFLICT, &answer)
+    Err(Box::new(super::envelope(StatusCode::CONFLICT, &answer)))
 }
 
 /// Run the held action against the seat it was held for, and only that one:

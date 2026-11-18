@@ -2662,21 +2662,29 @@ pub(crate) async fn send_control(
         in_reply_to: request.in_reply_to,
     };
     // Plan 201: a role holder writes its memory before it is compacted, and
-    // so does a seat that released one in this context (F130).
-    if msg.command.as_deref() == Some("compact")
-        && let Some(turn) =
-            memory_turn::turn_for(state, &target.id, memory_turn::Action::Compact).await
-    {
-        return match memory_turn::hold(
-            state,
-            name,
-            target.clone(),
-            turn,
-            memory_turn::Then::Compact(msg),
-        ) {
+    // so does a seat that released one in this context (F130). A turn already
+    // pending refuses first, whatever the seat's holdings say (#245 review).
+    if msg.command.as_deref() == Some("compact") {
+        let answer = |held: Result<serde_json::Value, Box<Response>>| match held {
             Ok(held) => envelope(StatusCode::OK, &Envelope::ok(name, held)),
             Err(refusal) => *refusal,
         };
+        if let Some(held) =
+            memory_turn::pending_answer(state, name, target, memory_turn::Action::Compact, None)
+        {
+            return answer(held);
+        }
+        if let Some(turn) =
+            memory_turn::turn_for(state, &target.id, memory_turn::Action::Compact).await
+        {
+            return answer(memory_turn::hold(
+                state,
+                name,
+                target.clone(),
+                turn,
+                memory_turn::Then::Compact(msg),
+            ));
+        }
     }
     match admit_control(state, msg).await {
         Ok(receipt) => envelope(StatusCode::OK, &Envelope::ok(name, receipt)),

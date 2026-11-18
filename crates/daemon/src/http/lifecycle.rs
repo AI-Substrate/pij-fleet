@@ -497,14 +497,37 @@ async fn handle(
                 return ownership_failure(command, &actor.id, &target, expected.parent.as_ref());
             }
             // Plan 201: a role holder writes its memory before it is closed,
-            // and so does a seat that released one in this context (F130).
-            let turn = if expected.tombstoned_at.is_none() {
-                memory_turn::turn_for(&state, &target, memory_turn::Action::Close).await
-            } else {
-                None
+            // and so does a seat that released one in this context (F130). A
+            // turn already pending answers first, whatever the seat's notes
+            // say meanwhile (F194, #245 review).
+            let live = expected.tombstoned_at.is_none();
+            let pending = live
+                .then(|| {
+                    memory_turn::pending_answer(
+                        &state,
+                        command,
+                        &expected,
+                        memory_turn::Action::Close,
+                        Some(&actor.id),
+                    )
+                })
+                .flatten();
+            let turn = match &pending {
+                None if live => {
+                    memory_turn::turn_for(&state, &target, memory_turn::Action::Close).await
+                }
+                _ => None,
             };
-            let Some(turn) = turn else {
-                return match close_seat(
+            // A held answer says the close leaves the process running.
+            let respond = |held: Result<Value, Box<Response>>, note: String| match held {
+                Ok(mut data) => {
+                    data["process"] = note.into();
+                    envelope(StatusCode::OK, &Envelope::ok(command, data))
+                }
+                Err(refusal) => *refusal,
+            };
+            match (pending, turn) {
+                (None, None) => match close_seat(
                     &state,
                     command,
                     &actor.id,
@@ -516,25 +539,27 @@ async fn handle(
                 {
                     Ok(data) => envelope(StatusCode::OK, &Envelope::ok(command, data)),
                     Err(refused) => refused.into_response(),
-                };
-            };
-            let note = process_note(expected.pane.as_deref(), &pane_now(&state, &expected).await);
-            match memory_turn::hold(
-                &state,
-                command,
-                expected,
-                turn,
-                memory_turn::Then::Close {
-                    actor: actor.id,
-                    reason: call.reason,
                 },
-            ) {
-                Ok(held) => {
-                    let mut data = serde_json::to_value(&held).unwrap_or(Value::Null);
-                    data["process"] = note.into();
-                    envelope(StatusCode::OK, &Envelope::ok(command, data))
+                (Some(held), _) => {
+                    let note =
+                        process_note(expected.pane.as_deref(), &pane_now(&state, &expected).await);
+                    respond(held, note)
                 }
-                Err(refusal) => *refusal,
+                (None, Some(turn)) => {
+                    let note =
+                        process_note(expected.pane.as_deref(), &pane_now(&state, &expected).await);
+                    let held = memory_turn::hold(
+                        &state,
+                        command,
+                        expected,
+                        turn,
+                        memory_turn::Then::Close {
+                            actor: actor.id,
+                            reason: call.reason,
+                        },
+                    );
+                    respond(held, note)
+                }
             }
         }
     }

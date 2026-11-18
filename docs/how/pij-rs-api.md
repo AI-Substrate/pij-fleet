@@ -1810,14 +1810,27 @@ context, or end your turn"), and `data.memory_turn` and the event carry
 never block or skip the action, so a seat whose context is full is never
 stranded by a store error.
 
-A seat has at most one memory turn pending. A second close for it while a close
-is held answers `ok` with the pending close (`data.held: "memory-turn"`,
-`data.memory_turn` `{action, pending: true, deadline_ms, note}`), and starts no
-second turn and no second action. Any other request while a turn is held (a
-compact, or a close while a compact is held) is refused with
-`E-RS-MEMORY-TURN-PENDING` (HTTP 409). Its `details` carry `code`, `seat`,
-`pending` (the held action) and `deadline_ms`. Every held answer carries `memory_turn.deadline_ms`,
-the time (Unix ms) the bound ends the turn.
+A seat has at most one memory turn pending, and the rule holds whatever the
+seat's holdings or notes say meanwhile: the daemon checks for a pending turn
+before it reads them. A close of the seat answers `ok` with the pending close
+(`data.held: "memory-turn"`, `data.memory_turn`
+`{action, pending: true, deadline_ms, note}`), with no second turn and no second
+action, only when the held close will do exactly what it asks: the same closer
+and the same incarnation (process and pane). Any other request while a turn is
+held is refused with `E-RS-MEMORY-TURN-PENDING` (HTTP 409) and is not run later.
+Its `details` carry `code`, `seat`, `pending` (the held action), `deadline_ms`, and
+`why`:
+
+- `another-action`: a compact, or a close while a compact is held.
+- `another-closer`: another seat's close, for instance a new parent's after a
+  reparent. The held close rechecks its own closer and skips.
+- `another-incarnation`: the seat was revived or rebound since the close was
+  held, which then skips it.
+
+The caller asks again once the turn ends (R245-001). It is a refusal, not a
+replacement, so the held action keeps every brake it was held with. Every held
+answer carries `memory_turn.deadline_ms`, the time (Unix ms) the bound ends the
+turn.
 
 Every turn records one `memory.turn` spine event on the seat: `action`,
 `holdings`, `prompt` (the prompt's msg_id), `ended` (`turn-end`, `bound`, or
@@ -1841,9 +1854,13 @@ Cost: one live subscription per pending memory turn (only for seats that
 held a role in this context, being compacted or closed), one delivery, one
 spine event and one deadline; no poll and no launch. Anyone else pays the two
 bounded, indexed holdings reads. A close of a holder adds one indexed spine read
-(the seat's newest `memory.note`), a memory add adds one spine append, and a
-close that raced the seat's own writes adds one registry read per retry, 5 at
-most. None of them launches anything.
+(the seat's newest `memory.note`), and a memory add adds one spine append. A held
+close is at most 5 attempts. Each attempt is one registry read (`current`), the
+close path's existing `pane_now` (one read on the daemon's live tmux control
+client, in-process process-start checks, and, when that path reaches it, one
+registry list over the fleet), and the tombstone compare-and-set with its
+receipt reads. Attempts after the first happen only when the seat's own writes
+raced the one before. None of them launches anything.
 
 ## Number claims and delivery at merge (plan 196)
 
