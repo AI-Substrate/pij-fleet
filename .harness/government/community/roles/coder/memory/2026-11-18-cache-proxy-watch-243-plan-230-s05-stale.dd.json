@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Open before touching the sidecar's status route or readiness checks, the daemon's cache-proxy watch, gate or notices, any upstream-answer state latch, or proving a slow/hung sidecar on a private daemon",
+				"tags": [
+					"plan-230",
+					"ws004",
+					"cache-proxy",
+					"f204",
+					"f205",
+					"concurrency",
+					"mutation",
+					"e2e",
+					"ddocs"
+				],
+				"title": "Cache-proxy watch (#243, plan 230 s05): stale-while-revalidate status, debounced watch, stale-answer rule, proof traps"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#243 (plan 230, ws004 s05) head ed6462db, out for reviewer/security/performance verdicts as of 2026-11-18 15:5x. Push only when a verdict asks; tell pm-004 (silkworm) first.\n\nIDs: F204 = false outage from one slow status read. F205 = stale 402 latch (far-jackal's ID; #242 uses it). The count-only notices have NO F-id: \"notice noise, F192 class\". pm-004 first called them F205, then corrected it.\n\nAs built:\n- Sidecar `status(self: &Arc<Self>)`. When a check is due it does `check_lock` (now `Arc<Mutex>`) `try_lock_owned` and spawns the check, then answers from cache. reload/startup still run `run_check(true)` inline.\n- Recheck is consumed at check START. That makes it a second dedup on the recheck path, so a test of single-flight on that path cannot catch a removed try_lock. The TTL path is the lock's only real test: unit test `an_aged_out_answer_...` ages `inner.checked_at` directly.\n- `forward()` carries (account, generation) per attempt. `if_sent_with_current` gates both the 402 latch and the 2xx clear.\n- Daemon `Reading` = Refused / TimedOut / Unreadable. `record()` is the pure watch step: refusal is declared at once, slow is declared on the 2nd in a row. `/health.cache_proxy.slow {count,last_at,in_a_row}`. Gate retries a TimedOut read once. `transition()` takes a seat COUNT.\n\nProof traps:\n- The readiness GET has its own 15 s timeout, so a fake stall over 15 s ends in a REAL upstream_unreachable notice. Use about 10 s to show \"slow but fine\".\n- SIGSTOP on a test-port sidecar is the clean way to make the daemon's reads time out (the kernel still accepts). Killing it gives a refusal.\n- `orchestration prime set` resolves the caller from TMUX_PANE. On a private daemon, run it with TMUX_PANE=<that seat's pane> and TMUX pointing at the private socket. Create the private tmux session first (`tmux -L <name> new-session -d -s smoke`), or spawns fail.\n- `export PIJ_RS_ADDR=<private>` in the persistent bash session outlives the proof. Unset it before any real `pij` call, or every call gets \"daemon down\".\n- `harness checks` test stage fails if your env has both NO_COLOR and FORCE_COLOR set: the flow-pair cli-learning vitest asserts empty stderr. Run it with `env -u NO_COLOR`.\n- `ddocs set` rewrites JSON with 2-space indent. Run main checkout's `node_modules/.bin/biome format --write <file>` after, or the diff is hundreds of lines. Changelog rows have no ids, so ddocs can't address them (E405); edit those by hand, then validate and build.\n- Worktree node_modules came in partial from the apfs clone, so `just worktree-deps` refuses. Use `ddocs` from PATH and biome/tsx from the main checkout by absolute path.\n- The conflict:// tool writes literal text: `1: @ours` per-id syntax works only on conflict://*, and \"+\" prefixes are not stripped.\n"
+		}
+	]
+}
