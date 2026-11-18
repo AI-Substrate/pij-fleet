@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Read before changing pane takeover, batch tombstoning or recovery overrides.",
+				"tags": [
+					"pane-takeover",
+					"lifecycle",
+					"preflight",
+					"regressions"
+				],
+				"title": "Preflight the whole pane retirement set"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Preflight the entire retirement set before the first tombstone. Permission to\noperate on a pane does not establish that its other recorded processes are gone.\nA parent harness and its running print-mode child can share a pane but have\ndifferent process tuples: excluding the parent's exact tuple still leaves the\nlive child eligible. One observed-running foreign holder must refuse the whole\ntakeover before any other holder is changed.\n\nThis matters beyond seat availability: registry tombstoning drops pending FYIs\nand releases open number claims (the numbers remain burned). Descriptor CAS\nprotects against snapshot drift; it does not prove a stable holder is safe to\nretire. The useful negative regression uses an authorized pane-own-process\ncaller, a running foreign child, another eligible holder and queued work, then\nasserts every record and the queued job are unchanged on refusal.\n\nKeep unknown separate from dead: missing PID, remote ownership and probe failure\ncannot justify automatic supersession. Explicit unknown-holder recovery is a\nseparately authorized operation. An unknown native holder should produce the\npane-recovery refusal, not be masked by a session-resumption hold.\n\nEvidence: #237 reviewed at f62e59ba315e02351a34055dfe5b635782d17481.\ncrates/daemon/src/http/identity.rs:623-649 implements the all-holder preflight;\nhttp/identity_tests.rs:2106-2163 pins unchanged holders and queued work.\nregistration.rs:2692-2724 pins failed-probe refusal ordering.\nFor prime authority, reuse the existing \"Request mutations need bound and\nscoped authority\" note rather than treating self-role assertions as permission;\n#237's designation regression is in http/identity_tests.rs:2013-2072.\n"
+		}
+	]
+}
