@@ -137,7 +137,10 @@
 					"harness": "copilot",
 					"harness_session": "1d951bb7-8581-4e07-b4c0-ec59109b53c9",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "re-scope to security/240 (another live security holder exists)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-lovely-mollusk",
+					"to": "2026-11-18T03:14:15.226Z",
 					"why": "F198+F195 #240 security (gpt-6.1-sol)"
 				}
 			]
