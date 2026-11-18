@@ -369,13 +369,27 @@ pub fn parent_and_host_name(pid: u32) -> Option<(u32, String)> {
     {
         let parent = linux_ppid(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)?;
         let exe = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
-        Some((parent, exe.file_name()?.to_str()?.to_string()))
+        Some((parent, linux_exe_name(exe.to_str()?)?))
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = pid;
         None
     }
+}
+
+/// The file name of a `/proc/<pid>/exe` target. A binary replaced on disk (an
+/// in-place upgrade) reads `<path> (deleted)`; the suffix is stripped once, as
+/// registration does, so an upgraded `copilot` is still a host.
+#[cfg(any(target_os = "linux", test))]
+fn linux_exe_name(target: &str) -> Option<String> {
+    let path = target.strip_suffix(" (deleted)").unwrap_or(target);
+    Some(
+        std::path::Path::new(path)
+            .file_name()?
+            .to_str()?
+            .to_string(),
+    )
 }
 
 /// Field 4 of `/proc/<pid>/stat`, counted from the LAST `)` like [`linux_start`].
@@ -695,6 +709,20 @@ mod tests {
         let stat = "4242 (a) (b c) S 77 4242 4242 0 -1";
         assert_eq!(super::linux_ppid(stat), Some(77));
         assert_eq!(super::linux_ppid("4242 (a) S"), None);
+    }
+
+    /// An upgraded Copilot's exe reads `… (deleted)` and must still name a host,
+    /// or the status line's walk climbs past it to an outer registered seat.
+    #[test]
+    fn linux_exe_name_strips_a_replaced_binarys_deleted_suffix() {
+        assert_eq!(
+            super::linux_exe_name("/opt/copilot/copilot (deleted)").as_deref(),
+            Some("copilot")
+        );
+        assert_eq!(
+            super::linux_exe_name("/usr/bin/node").as_deref(),
+            Some("node")
+        );
     }
 
     /// The offset is the one in force at the START instant. Using the current
