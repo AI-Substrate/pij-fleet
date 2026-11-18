@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Integration test (crates/cache-proxy/tests/proxy.rs) with a fake upstream that stalls `copilot_internal/user` 5 s: after a recheck is owed, a status read returns within 100 ms with the cached ready state; two concurrent reads plus a third while the check is in flight start exactly one upstream check. F001/F002 regressions (latch, account race) stay green. Mutation: drop the try-lock (await the lock inline) and the test fails.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/cache-proxy/tests/proxy.rs"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "status.rs contract test lists `checked_at_ms`; integration test shows it set after start and advanced by a background check; the daemon test body parses with and without it.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/cache-proxy/src/status.rs"
         },
         {
@@ -41,7 +41,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Daemon watch tests over the observe path: one timeout 0 notices; two in a row 1; a refusal 1 at once; timeout, ready, timeout 0; recovery 1; first-read rule kept. Mutations: threshold 2 → 1, and refusal counted as slow, each fail a test.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/daemon/src/cache_proxy_tests.rs"
         },
         {
@@ -51,7 +51,7 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "Unit test on `/health` slow count and last time; `just doctor` against the private daemon prints `slow reads:`.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "justfile doctor"
         },
         {
@@ -61,7 +61,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Gate test against a stub whose first read hangs past 1 s and second answers ready: the seat is proxied; two hangs give plain `proxy did not answer within 1 s, twice`. Mutation: drop the retry and it fails.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/daemon/src/cache_proxy_tests.rs"
         },
         {
@@ -71,7 +71,7 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "spawn_sites.rs unchanged and passing; private daemon `pij-rs --json ping | jq .data.spawns` twice a known time apart with the sidecar up: no new op; no new timer or launch in the diff.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "pij-rs --json ping | jq .data.spawns"
         },
         {
@@ -81,7 +81,7 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "Live receipts in assets/proof.md (slow upstream: 0 notices, spawn proxied; killed sidecar: 1 notice); `just ddocs-check`; CI on the exact head; reviewer, security and performance verdicts.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "docs/plans/230-cache-proxy-watch/assets/proof.md"
         },
         {
@@ -91,7 +91,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Integration test: account A with 402s, a request parked in flight at the fake upstream, switch to usable B, release the stale 402: status stays ready for B, no latch, the log names A. Mutation: drop the generation check and it fails.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/cache-proxy/tests/proxy.rs"
         },
         {
@@ -101,7 +101,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "transition() tests: each notice kind carries `Proxied seats: <n>` and the listing pointer, and no seat id from the input appears.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/daemon/src/cache_proxy_tests.rs"
         }
       ]
