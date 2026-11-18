@@ -1,0 +1,58 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1eca5-e2a2-7c11-9342-3591a81a1be4",
+				"date": "2026-11-18",
+				"head": "69c0516d8879793b1776753e6d75839931608ce0",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:240",
+				"writer": "pij-net-iguana",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After merge, install and daemon bounce: repeat same-PID timed spawn-counter readings, just spawn-rate --seconds 20, and daemon CPU/RSS; compare rates, not counters across restarted PIDs."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 240",
+					"exit_code": 0,
+					"log": "FINAL at 69c0516d8879793b1776753e6d75839931608ce0; CLEAN; all five checks pass"
+				},
+				{
+					"command": "pij-rs --json ping (two readings, 20.184645 seconds apart)",
+					"exit_code": 0,
+					"log": "2026-11-18T03:15:32.321241Z to 03:15:52.506222Z; same PID 46800; total 793 -> 793; every by_op unchanged; 0.000 daemon launches/s"
+				},
+				{
+					"command": "just spawn-rate --seconds 20 --json",
+					"exit_code": 0,
+					"log": "20.0 seconds; machine 111.9 launches/s; no daemon children observed; attribution is a lower bound"
+				},
+				{
+					"command": "gh run view 44228256498; successful rust-test job 134546668452 artifact 14394216170",
+					"exit_code": 0,
+					"log": "Exact-head Linux CI SUCCESS; inspected 2441-case JUnit; focused statusline/native/roster tests and four spawn-site guards PASS; no local builds"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES -- performance review of #240\nHead: 69c0516d8879793b1776753e6d75839931608ce0\nAnswers: 01a1eca5-e2a2-7c11-9342-3591a81a1be4\n\nNo performance blocker found. No local cargo build or test was run, no\ndependencies were installed or linked, and no tracked product files changed.\nThis is the performance verdict; the separately assigned correctness and\nsecurity reviewers retain their scopes.\n\nCost by execution boundary\n\n* Copilot status line: the existing managed refresh interval is 10 seconds\n  per rendering Copilot session, PLUS event-triggered renders, not a hard\n  one-render-per-10-seconds cap (claude_settings.rs:181-205). With C rendering\n  sessions, the scheduled component is C/10 renders and whoami requests/s.\n  The current roster has 119 rows, including 62 Copilot rows; that is not\n  evidence that all 62 are live renderers.\n* Per render: the same ONE whoami request as before, ZERO added daemon\n  requests and ZERO added process launches. The pre-existing script execs\n  pij-rs in its process; this does not mean the whole hook has zero process\n  creation. The existing git fallback may still launch git for detached or\n  ambiguous HEADs; this PR does not add or change that fallback.\n* The added ownership check follows at most 64 parent reads and makes at\n  most one start read, only if a candidate pid matches. The ordinary direct\n  parent case is one parent read plus one start read. Wrapper shells add\n  parent reads, not subprocesses or requests. macOS uses ProcBSDShortInfo\n  for parents and ProcBSDInfo for the matching start; Linux reads /proc.\n  observed_start is called directly, NOT ProcLiveness::proc_start, so this\n  path cannot fall through to PsRunner. local/UTC packing is in-process.\n  The functions fail closed if the kernel cannot answer. Sources:\n  main.rs:2492-2515,2607-2616; statusline.rs:331-390;\n  proc.rs:163-185,264-273,347-381.\n* POST /v1/state: one additional native_receivers mutex acquisition and\n  one-seat in-memory lease scan per card. No added store read, file read,\n  launch or timer. The pre-existing native_receiver_reason read remains.\n  GET /v1/cards also inherits this addition: one extra lease read per local\n  card, O(N) total per bulk call, with the existing four-card concurrency\n  bound. This shared call site should be included in the cost description.\n* GET/POST /v1/seats: one additional mutex acquisition and O(N) lease scan\n  per request, including requests made by extension registration paths,\n  not just human list commands. Only local rows get the rendered suffix.\n  IMPORTANT COST CORRECTION: projecting each local row then searches the\n  lapsed vector with iter().find, so the complete addition is\n  O(N + N_local * L), worst-case quadratic, not simply O(N). L is the\n  number of eligible lapsed native Copilot rows returned by the scan.\n  This is in-memory string comparison, after the lease lock is released;\n  there is no per-row SQL, filesystem access or launch. At this fleet's\n  size it is not evidence of a normal-use cost breach and does not block.\n  Sources: http/mod.rs:3470-3501,3617-3648,4098-4129;\n  delivery/mod.rs:536-578.\n* No new poll, timer, renewal loop or daemon launch site. Lease renewal and\n  expiry policy are unchanged. Lease age uses monotonic Instant::elapsed,\n  not a wall clock; text construction adds only age formatting and strings.\n  The ownership guard is display-only, a brake on naming a seat, not new\n  seat-retirement or delivery policy.\n\nLive BEFORE baseline -- deployed daemon, NOT this PR's execution\n\n2026-11-18 03:15:32.321241Z to 03:15:52.506222Z.\nSame daemon PID 46800 in both ping responses and listening-socket checks.\nCounter interval: 20.184645 seconds. spawns.total: 793 -> 793.\nEvery by_op counter was unchanged: ddocs.community=68, gh.delivered=1,\ngit.community=241, git.pa-watchdog-common-dir=31,\nps.registration-native-process=152, ps.sidecar-process-group=1,\nps.tmux-harness-process-tree=14, sh.background-job=3,\ntmux.atomically reserve staged submit=1,\ntmux.authorize staged submit commit=1, tmux.control-client=1,\ntmux.load submit buffer=3, tmux.new-window=11,\ntmux.paste owned submit buffer=3, tmux.pipe-pane attach=121,\ntmux.pipe-pane detach=2, tmux.rename-window=16,\ntmux.restore pane input and release ownership=1,\ntmux.set-options tap owner=121, tmux.submit authorized staged body=1.\nThus daemon launches: exactly 0.000/s over this window.\n\njust spawn-rate --seconds 20 --json: 20.0 seconds, machine 111.9 new\nprocesses/s, 109.7 sampled/s, no daemon children observed. Per-parent\nattribution and statusline detections are lower bounds, not complete\naccounting or evidence of the true statusline cadence. This shared-machine\nwindow includes observer/reviewer activity and cannot attribute machine\nload to this PR.\n\nExact-pid /bin/ps snapshots bracketing the window: %CPU 9.0 -> 10.4,\ncumulative CPU 11:23.49 -> 11:26.38 (+2.89 CPU seconds), RSS 142768 ->\n142256 KiB (139.42 -> 138.92 MiB). These are baseline observations,\nnot before/after improvement claims.\n\nProof\n\njust pr-freeze 240: FINAL twice in this review, including immediately before\nthis verdict: exact head, main base, CLEAN, ready, all five CI checks green.\nCI run 44228256498 is SUCCESS at the exact head. Its successful rust-test\njob 134546668452 uploaded artifact ID 14394216170; I inspected that exact\nartifact, not a name-only download. The 2441-case JUnit file records PASS\nfor the foreign-seat and real-ancestry regressions, Linux ppid parser,\nnative lease expiry diagnostic, human/JSON state rendering, sized roster\ngolden, statusline golden and statusline_e2e. All four spawn_sites tests\npassed: launch accounting, absolute ps/date, resolved git/tmux, retired\nlaunches. Both Node CI jobs passed typecheck, lint, npm test and native\ncontracts. CI is Ubuntu-only; macOS cfg paths were source-reviewed, not\nlocally compiled by this reviewer.\n\nspawn_sites.rs explicitly excludes the CLI crate. Its passing result\nprotects daemon launch accounting, not the CLI hook's launch-free claim;\nthe new hook path was checked by tracing its actual callees.\n\nharness boot --json: advisory ready=false at worktree-deps because vitest\nis absent. It stopped before typecheck or smoke. Full harness checks was\nnot run: this dependency-free read-only review uses exact-head CI and\nmust not trigger another cargo build/test.\n\nNotes / owed proof\n\n1. AFTER DEPLOYMENT IS OWED, explicitly: following merge, binary install\n   and daemon bounce, repeat two same-PID ping spawn readings across a\n   known interval, just spawn-rate --seconds 20, and exact-pid CPU/RSS on\n   the comparable live fleet. The counter resets on bounce: compare\n   within-window rates, never pre/post absolute totals across daemon PIDs.\n   Include own-seat and foreign-pane statusline observations and name\n   event-render activity. This verdict does not claim that future proof.\n2. The cost narrative needs the O(N + N_local*L) list join and /v1/cards\n   addition stated above. No speculative indexing refactor is required\n   to merge this small display fix.\n3. C34 follow-up / magicWand: a focused CLI identity-cost contract should\n   pin the injected parent/start read bounds and protect the launch-free\n   call path. The current source establishes the bound, but the\n   daemon-only launch sensor does not preserve it for this renderer.\n   This is an optional harness improvement, not another review gate.\n"
+		}
+	]
+}
