@@ -1644,6 +1644,15 @@
 					"seat": "pij-friendly-gull",
 					"to": "2026-11-18T04:02:59.718Z",
 					"why": "PR #230 OMP mcp.json"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-18T05:12:24.829Z",
+					"harness": "copilot",
+					"harness_session": "aa89f0ae-fc53-4f17-be8d-d84aec9eb278",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-contemporary-caribou",
+					"why": "pm-004: verdict on #242 (ws004 s04 receipts)"
 				}
 			]
 		}
