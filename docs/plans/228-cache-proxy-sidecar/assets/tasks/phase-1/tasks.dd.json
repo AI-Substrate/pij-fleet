@@ -114,6 +114,15 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0009",
             "../../../plan.dd.json#acceptance_criteria/ac-000a"
           ]
+        },
+        {
+          "id": "tk-000a",
+          "title": "req-14 (pm-004, after the PR opened): subagent requests keep the 5m cache, the client's X-Initiator is forwarded, agent=main|subagent logged; unit and integration tests; row 23 live; mutation receipts for rewrite, single-flight, latch, dscl, subagent, initiator and Origin guard",
+          "phase": "ph-1f3e",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-000c"
+          ]
         }
       ]
     },
@@ -226,6 +235,14 @@
             "assertion": "no token in log, config or argv",
             "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-000d"
+          }
+        ],
+        "tk-000a": [
+          {
+            "id": "dw-0010",
+            "assertion": "req-14 tests pass and row 23 shows main 1h and subagent 5m writes",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-000f"
           }
         ]
       }

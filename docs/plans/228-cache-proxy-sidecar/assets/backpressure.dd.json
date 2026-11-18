@@ -153,6 +153,16 @@
           "proof": "RUN: scoped `just rust-check` through shared-build (fmt, clippy -D warnings, tests incl. arch_drift and skill_verb_coverage), `just lint`, `just local-path-check`, `just lockfile-allowlist`, `just ddocs-check`, `harness checks --quick`",
           "state": "checked",
           "probe": "justfile, crates/testkit/tests/arch_drift.rs, crates/cli/tests/skill_verb_coverage.rs"
+        },
+        {
+          "id": "bp-000f",
+          "criterion": "AC req-14: subagent 5m, client X-Initiator forwarded",
+          "phase": "ph-1f3e",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD→RUN: rewrite unit tests a_subagent_request_keeps_the_5_minute_default and the_clients_own_initiator_wins_over_inference, integration the_rewrite_reaches_upstream (subagent header → no ttl upstream, client initiator kept); then `PIJ_SHARED_TARGET=<pi-hacking>/target-ws004 just shared-build -- test -p pij-cache-proxy`; live row 23 on a plain copilot running a subagent",
+          "state": "checked",
+          "probe": "crates/cache-proxy/src/rewrite.rs; spike cfecd15b"
         }
       ]
     },

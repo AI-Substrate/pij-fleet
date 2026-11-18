@@ -1,10 +1,14 @@
 //! The request rewrite (blueprint 003 c-proxy-core): the only changes the proxy
 //! makes to what a seat sends.
 //!
-//! - every ephemeral `cache_control` without a `ttl` gets `ttl: "1h"`, so an
-//!   idle seat reads its context from cache instead of rebuilding it (req-01);
-//! - `X-Initiator` is `agent` when the last message only returns tool results,
-//!   so a tool continuation is not billed as a new user request (req-07);
+//! - every ephemeral `cache_control` without a `ttl` gets `ttl: "1h"` on a
+//!   main-agent request, so an idle seat reads its context from cache instead of
+//!   rebuilding it (req-01); a subagent request (`x-interaction-type:
+//!   conversation-subagent`) stays on the 5-minute default, because a short
+//!   burst would pay the 2x 1-hour write for nothing (req-14);
+//! - `X-Initiator` is the client's own `agent`/`user` when it sends one, else
+//!   `agent` when the last message only returns tool results, so a tool
+//!   continuation is not billed as a new user request (req-07, req-14);
 //! - a `*-1m` model selector becomes its base id, because Copilot's API refuses
 //!   `-1m` (400 `model_not_supported`) and serves 1M on the base id (req-13).
 //!
@@ -14,6 +18,50 @@ use serde_json::Value;
 
 /// The TTL written into every ephemeral `cache_control` that has none.
 pub const CACHE_TTL: &str = "1h";
+
+/// The `x-interaction-type` value Copilot sends on a subagent's requests.
+pub const SUBAGENT_INTERACTION: &[u8] = b"conversation-subagent";
+
+/// Whose request it is. Logged as this enum only, never the header's value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Agent {
+    /// The seat's own agent: gets the 1-hour cache.
+    Main,
+    /// A subagent: keeps the 5-minute default.
+    Subagent,
+}
+
+impl Agent {
+    /// From the request's `x-interaction-type` header, if any.
+    #[must_use]
+    pub fn from_interaction_type(value: Option<&[u8]>) -> Self {
+        if value == Some(SUBAGENT_INTERACTION) {
+            Agent::Subagent
+        } else {
+            Agent::Main
+        }
+    }
+
+    /// The log word.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Agent::Main => "main",
+            Agent::Subagent => "subagent",
+        }
+    }
+}
+
+/// The client's own `X-Initiator`, when it is one of the two values Copilot
+/// bills by; anything else is ignored and the proxy infers it.
+#[must_use]
+pub fn client_initiator(value: Option<&[u8]>) -> Option<&'static str> {
+    match value {
+        Some(b"agent") => Some("agent"),
+        Some(b"user") => Some("user"),
+        _ => None,
+    }
+}
 
 /// What [`rewrite`] did to one `/v1/messages` body.
 #[derive(Debug, PartialEq, Eq)]
@@ -28,19 +76,20 @@ pub struct Rewritten {
     pub ttl_rewrites: usize,
 }
 
-/// Rewrite a Messages request body. A body that does not parse as JSON is
-/// forwarded byte-for-byte with the `user` initiator.
+/// Rewrite a Messages request body for `agent`, keeping `client` (from
+/// [`client_initiator`]) as the initiator when the client sent one. A body that
+/// does not parse as JSON is forwarded byte-for-byte.
 #[must_use]
-pub fn rewrite(raw: &[u8]) -> Rewritten {
+pub fn rewrite(raw: &[u8], client: Option<&'static str>, agent: Agent) -> Rewritten {
     let Ok(mut json) = serde_json::from_slice::<Value>(raw) else {
         return Rewritten {
             body: None,
-            initiator: "user",
+            initiator: client.unwrap_or("user"),
             model: String::new(),
             ttl_rewrites: 0,
         };
     };
-    let initiator = initiator(&json);
+    let initiator = client.unwrap_or_else(|| initiator(&json));
     let mut model = json
         .get("model")
         .and_then(Value::as_str)
@@ -51,7 +100,10 @@ pub fn rewrite(raw: &[u8]) -> Rewritten {
         json["model"] = Value::String(base.clone());
         model = format!("{base} (from {model})");
     }
-    let ttl_rewrites = set_ttl(&mut json, CACHE_TTL);
+    let ttl_rewrites = match agent {
+        Agent::Main => set_ttl(&mut json, CACHE_TTL),
+        Agent::Subagent => 0,
+    };
     // Nothing changed: forward the client's own bytes. Serialising a `Value`
     // that was just parsed cannot fail.
     let body = if mapped.is_some() || ttl_rewrites > 0 {
@@ -176,14 +228,14 @@ mod tests {
     fn a_1m_selector_is_forwarded_as_its_base_id() {
         let raw =
             serde_json::to_vec(&json!({"model": "claude-opus-5.5-1m", "messages": []})).unwrap();
-        let out = rewrite(&raw);
+        let out = rewrite(&raw, None, Agent::Main);
         let body: Value = serde_json::from_slice(&out.body.unwrap()).unwrap();
         assert_eq!(body["model"], "claude-opus-5.5");
         assert_eq!(out.model, "claude-opus-5.5 (from claude-opus-5.5-1m)");
 
         // Nothing to change: the client's own bytes go upstream.
         let raw = serde_json::to_vec(&json!({"model": "claude-opus-5.5", "messages": []})).unwrap();
-        let out = rewrite(&raw);
+        let out = rewrite(&raw, None, Agent::Main);
         assert_eq!(out.body, None);
         assert_eq!(out.model, "claude-opus-5.5");
         assert_eq!(base_model("-1m"), None);
@@ -191,9 +243,78 @@ mod tests {
 
     #[test]
     fn a_body_that_is_not_json_is_forwarded_untouched() {
-        let out = rewrite(b"not json {");
+        let out = rewrite(b"not json {", None, Agent::Main);
         assert_eq!(out.body, None);
         assert_eq!(out.initiator, "user");
         assert_eq!(out.ttl_rewrites, 0);
+        assert_eq!(
+            rewrite(b"not json {", Some("agent"), Agent::Main).initiator,
+            "agent"
+        );
+    }
+
+    fn cached_body() -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "model": "claude-opus-5.5",
+            "system": [{"type": "text", "text": "s", "cache_control": {"type": "ephemeral"}}],
+            "messages": [{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "1"}]}]
+        }))
+        .unwrap()
+    }
+
+    /// req-14 rule 1: only main-agent requests get the 1-hour TTL.
+    #[test]
+    fn a_subagent_request_keeps_the_5_minute_default() {
+        assert_eq!(
+            Agent::from_interaction_type(Some(b"conversation-subagent")),
+            Agent::Subagent
+        );
+        assert_eq!(
+            Agent::from_interaction_type(Some(b"conversation-agent")),
+            Agent::Main
+        );
+        assert_eq!(Agent::from_interaction_type(None), Agent::Main);
+
+        let sub = rewrite(&cached_body(), None, Agent::Subagent);
+        assert_eq!(sub.ttl_rewrites, 0);
+        assert_eq!(sub.body, None, "a subagent's body goes upstream untouched");
+
+        let main = rewrite(&cached_body(), None, Agent::Main);
+        assert_eq!(main.ttl_rewrites, 1);
+        let body: Value = serde_json::from_slice(&main.body.unwrap()).unwrap();
+        assert_eq!(body["system"][0]["cache_control"]["ttl"], "1h");
+
+        // A subagent's -1m model is still mapped.
+        let raw =
+            serde_json::to_vec(&json!({"model": "claude-opus-5.5-1m", "messages": []})).unwrap();
+        let sub = rewrite(&raw, None, Agent::Subagent);
+        let body: Value = serde_json::from_slice(&sub.body.unwrap()).unwrap();
+        assert_eq!(body["model"], "claude-opus-5.5");
+    }
+
+    /// req-14 rule 2: the client's own X-Initiator wins; inference is the fallback.
+    #[test]
+    fn the_clients_own_initiator_wins_over_inference() {
+        assert_eq!(client_initiator(Some(b"agent")), Some("agent"));
+        assert_eq!(client_initiator(Some(b"user")), Some("user"));
+        assert_eq!(client_initiator(Some(b"Agent")), None);
+        assert_eq!(client_initiator(Some(b"robot")), None);
+        assert_eq!(client_initiator(None), None);
+        // The body says continuation (tool results last); the client says user.
+        assert_eq!(
+            rewrite(&cached_body(), Some("user"), Agent::Main).initiator,
+            "user"
+        );
+        assert_eq!(
+            rewrite(&cached_body(), None, Agent::Main).initiator,
+            "agent"
+        );
+        let fresh =
+            serde_json::to_vec(&json!({"messages": [{"role": "user", "content": "hi"}]})).unwrap();
+        assert_eq!(
+            rewrite(&fresh, Some("agent"), Agent::Main).initiator,
+            "agent"
+        );
+        assert_eq!(rewrite(&fresh, None, Agent::Main).initiator, "user");
     }
 }

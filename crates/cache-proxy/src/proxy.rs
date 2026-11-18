@@ -571,11 +571,17 @@ impl Proxy {
                 ),
             );
         };
+        // req-14: the client's own X-Initiator wins; a subagent keeps the 5m cache.
+        let client =
+            rewrite::client_initiator(headers.get("x-initiator").map(HeaderValue::as_bytes));
+        let agent = rewrite::Agent::from_interaction_type(
+            headers.get("x-interaction-type").map(HeaderValue::as_bytes),
+        );
         let rewritten = (method == Method::POST && path.starts_with("/v1/messages"))
-            .then(|| rewrite::rewrite(&raw));
+            .then(|| rewrite::rewrite(&raw, client, agent));
         let initiator = rewritten
             .as_ref()
-            .map_or("user", |rewritten| rewritten.initiator);
+            .map_or(client.unwrap_or("user"), |rewritten| rewritten.initiator);
         let body = match rewritten
             .as_ref()
             .and_then(|rewritten| rewritten.body.clone())
@@ -684,7 +690,8 @@ impl Proxy {
             (rewritten.model.clone(), rewritten.ttl_rewrites)
         });
         log(&format!(
-            "-> {method} {path} host={host} model={model} initiator={initiator} ttl_rewrites={ttl_rewrites} status={}",
+            "-> {method} {path} host={host} model={model} agent={} initiator={initiator} ttl_rewrites={ttl_rewrites} status={}",
+            agent.as_str(),
             status.as_u16()
         ));
         let mut builder = Response::builder().status(status);

@@ -1,4 +1,4 @@
-# Plan 228 live receipts (matrix rows 2, 9, 10, 11, 14, 15, 16, 17, 22; AC10)
+# Plan 228 live receipts (matrix rows 2, 9, 10, 11, 14, 15, 16, 17, 22, 23; AC10; mutations)
 
 Plain `copilot` 1.0.114 processes in tmux session `ws004-s02-test` (own socket `-L ws004-s02`), each with
 `COPILOT_PROVIDER_TYPE=anthropic COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:<port>
@@ -24,3 +24,16 @@ was never bound, no LaunchAgent was installed. 2026-11-18, UTC times from the si
 | AC10 | `gh auth token --user <acct> \| grep -c -F -f - <logs, configs, outputs>` for both accounts; `grep -c gho_`; same against `ps -axww -o args` with a proxied copilot live | 0, 0, 0, 0 |
 | plist | `just cache-proxy-autostart <tmp>/dev.pij.cache-proxy.plist` | `plutil -lint`: OK; KeepAlive true, ThrottleInterval 10, RunAtLoad true, `/bin/sh -c exec "<npm-prefix>/bin/pij-rs" cache-proxy`, logs `~/.pij-rs/cache-proxy.log`; no agent in `~/Library/LaunchAgents` |
 | 19 | `cargo test -p pij-cache-proxy accounts` | two human accounts warn, one does not; live `status` on this Mac printed no warning |
+| 23 (req-14) | binary with req-14 (sha256 `1b252720…42be88`) on 7481; `copilot -p` asked to run one explore subagent that counts lines in two files | 4 requests: `agent=main initiator=user` `1h=12377 5m=0`; `agent=subagent initiator=agent ttl_rewrites=0` `1h=0 5m=311`, then `1h=0 5m=147`; `agent=main initiator=agent` `1h=253 5m=0`; all 200, turn answered. The log carries `agent=` and `initiator=` enums only |
+
+## Mutation receipts (each applied alone, `just shared-build -- test --locked -p pij-cache-proxy --no-fail-fast`, then reverted; baseline after: 20 + 8 passed)
+
+| mutation | exit | tests that failed |
+|---|---|---|
+| rewrite: never add a ttl (`!contains_key("ttl")` → `false`) | 101 | `a_ttl_is_added_at_every_depth_and_an_explicit_one_is_kept`, `a_subagent_request_keeps_the_5_minute_default`, `the_rewrite_reaches_upstream` |
+| single-flight: refresh ignores the generation | 101 | `five_concurrent_401s_share_one_refresh_and_all_succeed` |
+| latch: refresh again after a failed refresh | 101 | `a_failed_refresh_latches_until_a_reload_and_never_loops` |
+| dscl: uid 501 not human (`>=` → `>`) | 101 | `one_human_account_gives_no_warning`, `a_second_human_account_gives_the_warning` |
+| subagent gets the 1h ttl | 101 | `a_subagent_request_keeps_the_5_minute_default`, `the_rewrite_reaches_upstream` |
+| client X-Initiator ignored | 101 | `the_clients_own_initiator_wins_over_inference`, `the_rewrite_reaches_upstream` |
+| Origin guard removed (Host check kept) | 101 | `a_browser_origin_or_foreign_host_is_refused_before_forwarding` |

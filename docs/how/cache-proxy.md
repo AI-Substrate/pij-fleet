@@ -12,11 +12,14 @@ spawn gate is plan 229.
 - **One account, token in memory.** It runs `gh auth token --user <account>` (gh found
   once at start: `PIJ_GH`, else PATH) and keeps the token in memory only. It is never
   logged, written to disk or passed in an argument list.
-- **The rewrite.** On `POST /v1/messages` it adds `ttl: "1h"` to every ephemeral
-  `cache_control` without one, sends `X-Initiator: agent` when the last message only
-  returns tool results (so a tool continuation isn't billed as a user request), and
-  forwards a `*-1m` model as its base id (Copilot refuses `-1m`; the base id serves 1M).
-  Everything else, including the streamed response, passes through unchanged.
+- **The rewrite.** On `POST /v1/messages` from the seat's main agent it adds `ttl: "1h"`
+  to every ephemeral `cache_control` without one. A subagent's request
+  (`x-interaction-type: conversation-subagent`) keeps the 5-minute default: it is a short
+  burst, and a 1-hour write costs twice a 5-minute one. It forwards the client's own
+  `X-Initiator` (`agent` or `user`) and, only when there is none, sends `agent` when the
+  last message only returns tool results (so a tool continuation isn't billed as a user
+  request). It forwards a `*-1m` model as its base id (Copilot refuses `-1m`; the base id
+  serves 1M). Everything else, including the streamed response, passes through unchanged.
 - **The endpoint comes from the token.** `copilot_internal/user` names `endpoints.api`,
   so individual, business and managed enterprise accounts need no setting.
 

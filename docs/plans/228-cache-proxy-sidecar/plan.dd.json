@@ -107,6 +107,12 @@
           "claim": "Docs and gates. The workspace (members, path table), `crates/testkit/arch-allowlist.toml`, `crates/README.md` crate table, `skills/pij/SKILL.md` native-only verb row and a short operator page `docs/how/cache-proxy.md` (run, status, account/off/on, LaunchAgent, env knobs, status contract) are updated. Scoped `just rust-check` through shared-build, `just lint`, `just local-path-check`, `just lockfile-allowlist`, `just ddocs-check` and `harness checks --quick` pass.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-000e"
+        },
+        {
+          "id": "ac-000c",
+          "claim": "Subagents keep the 5-minute cache (req-14). A request carrying `x-interaction-type: conversation-subagent` gets no TTL rewrite (its `-1m` model is still mapped); only main-agent requests get `ttl: \"1h\"`. The client's own `X-Initiator` (`agent` or `user`, exact) is forwarded; the proxy infers it from the last message only when the client sends none or another value. The log names `agent=main|subagent` and the initiator, never another header value. Receipt: matrix row 23.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-000f"
         }
       ]
     },

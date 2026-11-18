@@ -311,6 +311,27 @@ async fn the_rewrite_reaches_upstream() {
     assert_eq!(initiator, "agent");
     assert_eq!(seen["model"], "claude-opus-5.5");
     assert_eq!(seen["system"][0]["cache_control"]["ttl"], "1h");
+
+    // req-14: a subagent's request keeps the 5m default, and the client's own
+    // X-Initiator reaches upstream even though the body reads as a continuation.
+    let response = rig
+        .http
+        .post(rig.url("/v1/messages"))
+        .header("content-type", "application/json")
+        .header("x-interaction-type", "conversation-subagent")
+        .header("x-initiator", "user")
+        .body(body.to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let (initiator, seen) = rig.upstream.seen.lock().unwrap().clone().unwrap();
+    assert_eq!(initiator, "user");
+    assert_eq!(seen["model"], "claude-opus-5.5");
+    assert!(
+        seen["system"][0]["cache_control"].get("ttl").is_none(),
+        "{seen}"
+    );
 }
 
 #[tokio::test]
