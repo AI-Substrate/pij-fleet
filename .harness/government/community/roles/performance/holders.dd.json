@@ -70,6 +70,15 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-sole-lizard",
 					"why": "pm-004: cost verdict on #239 (ws004 s02)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-18T03:13:59.655Z",
+					"harness": "copilot",
+					"harness_session": "c9a3d075-2b11-49a1-b7b9-38c8c3dc5bd1",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-net-iguana",
+					"why": "F198+F195 #240 cost: status line + state/list (gpt-6.1-sol)"
 				}
 			]
 		}
