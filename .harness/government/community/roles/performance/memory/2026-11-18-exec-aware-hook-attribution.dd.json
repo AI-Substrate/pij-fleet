@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Before trusting script-marker statusline rates or sampled process names",
+				"tags": [
+					"cost",
+					"hooks",
+					"measurement",
+					"exec"
+				],
+				"title": "Hook attribution across exec"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Hook attribution must survive exec, not just recognize a script name.\n\nThe existing spawn-rate sampler has a specific blind spot for the managed\nCopilot statusline. It increments statusline_runs_seen_per_s only when a\nnewly observed PID's argv contains copilot-statusline-pij. The managed\nscript then execs pij-rs statusline copilot, so that marker disappears.\nMoreover, the sampler inspects cur - seen: a PID first observed as a shell\nis not inspected again when the same PID execs into pij-rs. Adding the\nexec'd argv spelling alone therefore does not remove every miss.\nThe low reported rate is a sampling lower bound, not a render count,\neven though that field's name lacks the lower_bound suffix.\n\nSource: harness/scripts/spawn-rate.py:109-147 and\nharness/scripts/copilot-statusline-pij.sh. During #240's live host\nobservation, the same child PIDs changed from shell names to pij-rs while\nretaining the registered Copilot as their direct parent. These are exec\nphases, not one process allocation per observed name. Conversely, do not\ninfer recursive daemon CLI launches from a transient sampled child comm:\nthe per-operation daemon counters describe what the launcher requested,\nwhile the process sampler describes the name it caught at one instant.\n\nKeep the evidence surfaces separate: daemon spawn counters exclude the\nCopilot-owned statusline process; script-marker sampling can miss its exec\nphase; exact-host parent-link observations can establish the observed\ntopology without collecting argv or environments, but names alone do not\nidentify every command or prove every CLI distribution's launch contract.\n\nmagicWand: add an exec-transition fixture to the existing sampler, recognize\nboth the managed-script and pij-rs statusline copilot forms, and explicitly\nlabel the resulting statusline reading as a lower bound. If attribution\nrevisits newly seen PIDs, give that reclassification an explicit lifetime;\ndo not turn this into an unbounded per-process poll or claim sampling is an\nexact invocation counter. This is a follow-up, not a retroactive merge gate.\n\nEvidence: #240, merge 2d5b1a9c19c0c771a43a4ef46f87a54398e2608c,\nPR comment 6968528883 and AFTER output\ndfc13d5526ed0db92bf1f58a96b050d9791faeae. The comment holds the measured\nbefore/after receipts and their attribution limits. This note adds the\nexec-specific sensor gap; it does not replace the role's existing\n\"Price renderers per draw, not per turn\" or \"CPU attribution and profile\nlimits\" guidance.\n"
+		}
+	]
+}
