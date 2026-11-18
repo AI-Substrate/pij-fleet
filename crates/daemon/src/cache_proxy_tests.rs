@@ -117,16 +117,18 @@ fn decide_is_proxied_only_when_ready_and_the_base_id_is_served() {
     );
 }
 
-/// A ready flag disagreeing with its state is not ready.
+/// A ready flag disagreeing with its state is not ready, either way round.
 #[test]
 fn decide_needs_both_ready_and_the_ready_state() {
-    let mut odd = body("ready");
-    odd["ready"] = json!(false);
-    let reading = Reading::Status(Box::new(serde_json::from_value(odd).expect("contract")));
-    assert_eq!(
-        decide(&reading, "claude-opus-5.5", URL).0.state,
-        CacheProxyRoute::Plain
-    );
+    let mut not_ready = body("ready");
+    not_ready["ready"] = json!(false);
+    let mut off = body("ready");
+    off["state"] = json!("off");
+    for odd in [not_ready, off] {
+        let reading = Reading::Status(Box::new(serde_json::from_value(odd).expect("contract")));
+        let (seat, wiring) = decide(&reading, "claude-opus-5.5", URL);
+        assert_eq!((seat.state, wiring), (CacheProxyRoute::Plain, None));
+    }
 }
 
 fn seats() -> Vec<String> {
@@ -268,6 +270,50 @@ async fn gate_reads_the_status_route_and_fails_safe() {
     let reading = CacheProxy::new(hung).read().await;
     assert!(matches!(reading, Reading::Unreachable(_)), "{reading:?}");
     assert!(started.elapsed() < Duration::from_secs(3), "bounded at 1 s");
+}
+
+/// A status route that redirects is not followed: the target never sees a
+/// request, and the seat runs plain with the reason.
+#[tokio::test]
+async fn a_redirecting_status_route_is_not_followed() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let hits = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&hits);
+    let elsewhere = stub(Router::new().route(
+        super::STATUS_PATH,
+        get(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+            async { axum::Json(body("ready")) }
+        }),
+    ))
+    .await;
+    let location = format!("{elsewhere}{}", super::STATUS_PATH);
+    let redirecting = stub(Router::new().route(
+        super::STATUS_PATH,
+        get(move || {
+            let location = location.clone();
+            async move {
+                (
+                    axum::http::StatusCode::FOUND,
+                    [(axum::http::header::LOCATION, location)],
+                )
+            }
+        }),
+    ))
+    .await;
+    let (seat, wiring) = CacheProxy::new(redirecting)
+        .gate(Harness::Copilot, Some("claude-opus-5.5"), false)
+        .await;
+    let seat = seat.expect("a Copilot seat's route");
+    assert_eq!((seat.state, wiring), (CacheProxyRoute::Plain, None));
+    assert!(seat.reason.contains("302"), "{}", seat.reason);
+    assert_eq!(
+        hits.load(Ordering::SeqCst),
+        0,
+        "the redirect target is never read"
+    );
 }
 
 /// The watch records what `/health` shows and counts its notices.

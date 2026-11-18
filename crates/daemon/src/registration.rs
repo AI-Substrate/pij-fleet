@@ -1151,6 +1151,20 @@ impl RegistrationService {
                 .as_deref()
                 .zip(claim.spawn_id.as_deref())
                 .is_some_and(|(launched, claimed)| !launched.is_empty() && launched == claimed);
+        // Plan 229: a seat's cache-proxy route describes the launch that set
+        // its environment, so it holds only for that launch's process (the
+        // spawned incarnation binding, or the same process re-registering).
+        // A `/new` successor runs in its verified same-process predecessor's
+        // process and inherits its route; any other new process (a reclaim, a
+        // relaunch outside pij) has an environment the gate never saw.
+        let same_launch =
+            binds_spawned_incarnation || descriptor.proc.is_some_and(|old| Some(old) == proc);
+        if !same_launch {
+            descriptor.cache_proxy = predecessor
+                .as_ref()
+                .filter(|previous| previous.proc.is_some() && previous.proc == proc)
+                .and_then(|previous| previous.cache_proxy.clone());
+        }
         let requested_model = descriptor.model.clone();
         let model_matches = requested_model_matches(
             requested_model.as_deref(),

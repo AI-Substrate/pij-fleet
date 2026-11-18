@@ -30,3 +30,16 @@ Seen on Copilot 1.0.114 with the provider env, recorded for s04: the `-1m` seat 
 ## Doctor rows
 
 With the private binary first on `PATH`, `PIJ_CACHE_PROXY_PORT=17571` and the private daemon's address: `cache-proxy: ready on 127.0.0.1:17571 … account: jorkni_microsoft … upstream: api.enterprise.githubcopilot.com …` (s02's `status`), then `cache seats: proxied: pij-colorful-llama, pij-complex-snail, pij-formal-tiger, pij-mass-echidna; plain: pij-constant-toucan, pij-fascinating-angelfish, pij-genuine-earwig, pij-increasing-buzzard, pij-lovely-owl, pij-mass-whitefish, pij-selective-kingfisher`.
+
+## Mutation receipts
+
+Each guard mutated on the review-round head, its test run through `just shared-build -- test -p pij-daemon --lib <filter>`, the source restored after: every mutant failed its test (exit 101, `1 failed`).
+
+| Mutant | Change | Test that failed |
+|---|---|---|
+| M1 rollover copy | `if !same_launch {` → `if false {` (registration) | `native_sqlite_http_new_session_supersedes_seat_without_stranding_new_work` |
+| M2 first-read rule | `None if state == "ready" \|\| proxied.is_empty() => return None` → `None => return None` | `first_read_reports_only_a_problem_under_proxied_seats` |
+| M3 prime dedup | `primes.dedup();` removed | `a_tick_tells_each_live_prime_once_and_then_nothing` |
+| M4 ready-state check | `!status.ready \|\| status.state != "ready"` → `!status.ready` | `decide_needs_both_ready_and_the_ready_state` |
+| M5 off wording | the `off` arm never matches | `off_is_told_as_new_spawns_plain_existing_seats_unaffected` |
+| M6 no redirects | `.redirect(Policy::none())` removed | `a_redirecting_status_route_is_not_followed` |

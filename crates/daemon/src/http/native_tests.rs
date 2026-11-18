@@ -3221,6 +3221,15 @@ async fn native_sqlite_http_new_session_supersedes_seat_without_stranding_new_wo
         "first native registration: {registered}"
     );
     assert_eq!(registry.get(&first.id).await.unwrap(), Some(first.clone()));
+    // Plan 229: the spawn gate stamped S1's launch proxied.
+    let proxied = pij_core::model::SeatCacheProxy {
+        state: pij_core::model::CacheProxyRoute::Proxied,
+        reason: "1-hour cache through http://127.0.0.1:7471 as claude-opus-5.5".into(),
+        fix: None,
+    };
+    let mut stamped = registry.get(&first.id).await.unwrap().unwrap();
+    stamped.cache_proxy = Some(proxied.clone());
+    registry.put(stamped).await.unwrap();
 
     let sent: Value = client
         .post(format!("http://{addr}/v1/send"))
@@ -3278,6 +3287,11 @@ async fn native_sqlite_http_new_session_supersedes_seat_without_stranding_new_wo
     assert_eq!(successor.harness_session, next_identity.native_session);
     assert!(successor.native_extension_delivery);
     assert!(successor.tombstoned_at.is_none());
+    assert_eq!(
+        successor.cache_proxy,
+        Some(proxied),
+        "a /new successor runs in its predecessor's process, so it keeps its route"
+    );
     let retired = registry.get(&first.id).await.unwrap().unwrap();
     assert!(retired.tombstoned_at.is_some());
     assert!(
@@ -3413,6 +3427,39 @@ async fn native_sqlite_http_new_session_supersedes_seat_without_stranding_new_wo
         && !call.starts_with("stage")
         && !call.starts_with("commit")
         && !call.starts_with("send_keys")));
+
+    // Plan 229: an opted-out host's next /new successor stays opted out, so a
+    // later revive keeps it plain.
+    let mut opted = registry.get(&next_id).await.unwrap().unwrap();
+    opted.cache_proxy = Some(pij_core::model::SeatCacheProxy::plain(
+        pij_core::model::CACHE_PROXY_OPTED_OUT,
+        None,
+    ));
+    registry.put(opted).await.unwrap();
+    let third_id = SeatId::from("pij-copilot-rollover-third");
+    registration["id"] = json!(third_id);
+    registration["harness_session"] = json!("user-created-third-native-session");
+    registration["supersedes"] = json!(next_id);
+    let registered: Value = client
+        .post(format!("http://{addr}/v1/register"))
+        .bearer_auth("native-key")
+        .json(&registration)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(registered["ok"], true, "second /new: {registered}");
+    let third = registry.get(&third_id).await.unwrap().unwrap();
+    assert!(
+        third
+            .cache_proxy
+            .as_ref()
+            .is_some_and(pij_core::model::SeatCacheProxy::opted_out),
+        "{:?}",
+        third.cache_proxy
+    );
     server.abort();
 }
 

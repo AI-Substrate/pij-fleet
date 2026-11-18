@@ -119,16 +119,20 @@ pub struct Counters {
 pub enum Reading {
     /// The sidecar answered.
     Status(Box<ProxyStatus>),
-    /// No usable answer: refused, timed out, not 2xx or not the contract.
+    /// No answer: refused or timed out.
     Unreachable(String),
+    /// An answer that is not the contract: not 2xx (a redirect is never
+    /// followed), or not the status body.
+    Unreadable(String),
 }
 
 impl Reading {
-    /// The state the watch compares: the status's own, or [`NOT_LISTENING`].
+    /// The state the watch compares: the status's own, or [`NOT_LISTENING`]
+    /// for any reading the gate can't use.
     pub fn state(&self) -> &str {
         match self {
             Self::Status(status) => &status.state,
-            Self::Unreachable(_) => NOT_LISTENING,
+            Self::Unreachable(_) | Self::Unreadable(_) => NOT_LISTENING,
         }
     }
 }
@@ -190,6 +194,17 @@ pub fn decide(
         Reading::Unreachable(_) => {
             return (
                 SeatCacheProxy::plain("proxy not listening", Some(start_fix())),
+                None,
+            );
+        }
+        Reading::Unreadable(detail) => {
+            return (
+                SeatCacheProxy::plain(
+                    format!("proxy status unreadable: {detail}"),
+                    Some(format!(
+                        "check that `pij-rs cache-proxy` serves {STATUS_PATH}: `pij-rs cache-proxy status`"
+                    )),
+                ),
                 None,
             );
         }
@@ -286,7 +301,7 @@ pub fn transition(
     };
     let revive = "revive a seat to re-run the gate: `pij-rs revive <seat>`";
     Some(match reading {
-        Reading::Unreachable(detail) => format!(
+        Reading::Unreachable(detail) | Reading::Unreadable(detail) => format!(
             "pij cache proxy is not listening at {url}{was}: {detail}. Proxied seats' model calls fail: {seats}. Fix: {}; then {revive}, and it comes up proxied or plain.",
             start_fix()
         ),
@@ -342,7 +357,7 @@ pub struct HealthView {
 #[derive(Debug)]
 pub struct CacheProxy {
     url: String,
-    http: reqwest::Client,
+    http: Result<reqwest::Client, String>,
     watch: Mutex<HealthView>,
 }
 
@@ -366,12 +381,16 @@ impl CacheProxy {
 
     /// For a known base URL.
     pub fn new(url: String) -> Self {
+        // A redirect is never followed: the status route is loopback, and a
+        // redirect could point the gate anywhere. A client that can't be
+        // built reads every status as unreadable, so every seat runs plain.
         let http = reqwest::Client::builder()
             .timeout(GATE_TIMEOUT)
             .connect_timeout(GATE_TIMEOUT)
             .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
             .build()
-            .unwrap_or_default();
+            .map_err(|error| error.to_string());
         let watch = Mutex::new(HealthView {
             url: url.clone(),
             ..HealthView::default()
@@ -386,12 +405,11 @@ impl CacheProxy {
 
     /// One read of the status route, bounded by [`GATE_TIMEOUT`].
     pub async fn read(&self) -> Reading {
-        let response = match self
-            .http
-            .get(format!("{}{STATUS_PATH}", self.url))
-            .send()
-            .await
-        {
+        let http = match &self.http {
+            Ok(http) => http,
+            Err(error) => return Reading::Unreadable(format!("no HTTP client: {error}")),
+        };
+        let response = match http.get(format!("{}{STATUS_PATH}", self.url)).send().await {
             Ok(response) => response,
             Err(error) if error.is_timeout() => {
                 return Reading::Unreachable("no answer within 1 s".to_string());
@@ -399,11 +417,11 @@ impl CacheProxy {
             Err(_) => return Reading::Unreachable("connection refused".to_string()),
         };
         if !response.status().is_success() {
-            return Reading::Unreachable(format!("status route answered {}", response.status()));
+            return Reading::Unreadable(format!("status route answered {}", response.status()));
         }
         match response.json::<ProxyStatus>().await {
             Ok(status) => Reading::Status(Box::new(status)),
-            Err(error) => Reading::Unreachable(format!("unreadable status: {error}")),
+            Err(error) => Reading::Unreadable(format!("unreadable status: {error}")),
         }
     }
 
@@ -445,7 +463,7 @@ impl CacheProxy {
                 watch.status = Some(*status);
                 watch.error = None;
             }
-            Reading::Unreachable(detail) => {
+            Reading::Unreachable(detail) | Reading::Unreadable(detail) => {
                 watch.reachable = Some(false);
                 watch.status = None;
                 watch.error = Some(detail);
