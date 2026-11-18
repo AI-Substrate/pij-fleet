@@ -9,14 +9,20 @@
 //!
 //! - **Spawn gate** ([`CacheProxy::gate`]): a Copilot seat on a Claude model is
 //!   wired to the proxy only when the status says `ready` and serves the
-//!   model's base id. Anything else, including no answer within
-//!   [`GATE_TIMEOUT`], launches plain with the reason and fix (d-6).
+//!   model's base id. A read that times out is retried once (plan 230); anything
+//!   else, including a second timeout, launches plain with the reason and fix
+//!   (d-6).
 //! - **Watch** ([`CacheProxy::tick`]): one status read every
-//!   [`WATCH_INTERVAL`] (d-7). Each change of state is one notice to each live
-//!   prime, never a repeat (F192); [`transition`] decides.
+//!   [`WATCH_INTERVAL`] (d-7). A refused connection is declared
+//!   [`NOT_LISTENING`] at once; a timed-out or unreadable read is only slow
+//!   until [`DOWN_AFTER`] of them come in a row (F204). Each change of the
+//!   declared state is one notice to each live prime, never a repeat (F192);
+//!   [`transition`] decides. A notice gives the number of proxied seats, never
+//!   their ids (F205).
 //!
-//! Cost (blueprint k-4, k-5): one loopback GET per Copilot spawn and one per
-//! watch tick plus one in-process registry read; no process is launched.
+//! Cost (blueprint k-4, k-5): one loopback GET per Copilot spawn (two after a
+//! timeout) and one per watch tick plus one in-process registry read; no
+//! process is launched.
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -39,8 +45,14 @@ pub const STATUS_PATH: &str = "/__pij/status";
 pub const GATE_TIMEOUT: Duration = Duration::from_secs(1);
 /// How often the watch reads the status route (d-7, k-5).
 pub const WATCH_INTERVAL: Duration = Duration::from_secs(30);
-/// The state the watch records when the status route does not answer.
+/// The state the watch declares when the sidecar refuses the connection, or
+/// has not answered usably on [`DOWN_AFTER`] reads in a row.
 pub const NOT_LISTENING: &str = "not_listening";
+/// Failed reads (timed out or unreadable) in a row before the watch declares
+/// the sidecar down: 2 reads, [`WATCH_INTERVAL`] apart (F204).
+pub const DOWN_AFTER: u32 = 2;
+/// Where a notice sends the reader for the proxied seats' ids (F205).
+pub const SEATS_LISTED_BY: &str = "`just doctor` lists them";
 
 /// The sidecar's status route body (c-status-route). Every field but `ready`
 /// and `state` defaults, so a sidecar that adds or omits one is still read.
@@ -78,6 +90,10 @@ pub struct ProxyStatus {
     /// Epoch milliseconds of the sidecar's last state change.
     #[serde(default)]
     pub since: Option<u64>,
+    /// Epoch milliseconds of the sidecar's last completed readiness check
+    /// (plan 230; absent from an older sidecar).
+    #[serde(default)]
+    pub checked_at_ms: Option<u64>,
 }
 
 /// `quota` in the status route.
@@ -119,10 +135,12 @@ pub struct Counters {
 pub enum Reading {
     /// The sidecar answered.
     Status(Box<ProxyStatus>),
-    /// No answer: refused or timed out.
-    Unreachable(String),
+    /// Nothing listens: the connection was refused.
+    Refused(String),
+    /// Connected, but no answer within [`GATE_TIMEOUT`].
+    TimedOut(String),
     /// An answer that is not the contract: not 2xx (a redirect is never
-    /// followed), or not the status body.
+    /// followed), not the status body, or cut off.
     Unreadable(String),
 }
 
@@ -132,8 +150,14 @@ impl Reading {
     pub fn state(&self) -> &str {
         match self {
             Self::Status(status) => &status.state,
-            Self::Unreachable(_) | Self::Unreadable(_) => NOT_LISTENING,
+            Self::Refused(_) | Self::TimedOut(_) | Self::Unreadable(_) => NOT_LISTENING,
         }
+    }
+
+    /// A read that failed without proving nothing listens: the watch counts
+    /// these and declares down only on [`DOWN_AFTER`] in a row.
+    pub fn is_slow(&self) -> bool {
+        matches!(self, Self::TimedOut(_) | Self::Unreadable(_))
     }
 }
 
@@ -191,9 +215,20 @@ pub fn decide(
     base_url: &str,
 ) -> (SeatCacheProxy, Option<CopilotProviderWiring>) {
     let status = match reading {
-        Reading::Unreachable(_) => {
+        Reading::Refused(_) => {
             return (
                 SeatCacheProxy::plain("proxy not listening", Some(start_fix())),
+                None,
+            );
+        }
+        Reading::TimedOut(detail) => {
+            return (
+                SeatCacheProxy::plain(
+                    format!("proxy did not answer: {detail}"),
+                    Some(format!(
+                        "`pij-rs cache-proxy status` shows whether it answers; if it hangs, restart it (`just cache-proxy-autostart`); then {REVIVE}"
+                    )),
+                ),
                 None,
             );
         }
@@ -249,6 +284,8 @@ fn start_fix() -> String {
         .to_string()
 }
 
+const REVIVE: &str = "revive a seat to re-run the gate: `pij-rs revive <seat>`";
+
 /// Live Copilot seats split by their recorded route (row 18: nothing
 /// recorded reads as plain).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -274,49 +311,51 @@ impl SeatSplit {
     }
 }
 
-/// The watch's decision for one reading (d-7, F192): the notice to send, if
-/// any. `previous` is the last state seen, `None` on the daemon's first read.
+/// The watch's decision for one declared reading (d-7, F192): the notice to
+/// send, if any. `previous` is the last declared state, `None` before the
+/// first; `proxied` is how many live seats are proxied, the only seat fact a
+/// notice carries (F205).
 ///
-/// The first read is silent when the proxy is `ready`, or when no live seat is
-/// proxied; otherwise it reports, so a sidecar that died while the daemon was
-/// down is still told (pm-004 ruling, 2026-11-18). Later reads report only a
-/// change of state.
+/// The first declared state is silent when the proxy is `ready`, or when no
+/// live seat is proxied; otherwise it reports, so a sidecar that died while
+/// the daemon was down is still told (pm-004 ruling, 2026-11-18). Later
+/// readings report only a change of state.
 pub fn transition(
     previous: Option<&str>,
     reading: &Reading,
     url: &str,
-    proxied: &[String],
+    proxied: usize,
 ) -> Option<String> {
     let state = reading.state();
     match previous {
-        None if state == "ready" || proxied.is_empty() => return None,
+        None if state == "ready" || proxied == 0 => return None,
         Some(previous) if previous == state => return None,
         _ => {}
     }
     let was = previous.map_or_else(String::new, |previous| format!(" (was {previous})"));
-    let seats = if proxied.is_empty() {
-        "none".to_string()
-    } else {
-        proxied.join(", ")
-    };
-    let revive = "revive a seat to re-run the gate: `pij-rs revive <seat>`";
+    let seats = format!("Proxied seats: {proxied} ({SEATS_LISTED_BY})");
+    let revive = REVIVE;
     Some(match reading {
-        Reading::Unreachable(detail) | Reading::Unreadable(detail) => format!(
-            "pij cache proxy is not listening at {url}{was}: {detail}. Proxied seats' model calls fail: {seats}. Fix: {}; then {revive}, and it comes up proxied or plain.",
+        Reading::Refused(detail) => format!(
+            "pij cache proxy is not listening at {url}{was}: {detail}. Proxied seats' model calls fail. {seats}. Fix: {}; then {revive}, and it comes up proxied or plain.",
             start_fix()
         ),
+        Reading::TimedOut(detail) | Reading::Unreadable(detail) => format!(
+            "pij cache proxy is not answering at {url}{was}: {detail}, on {DOWN_AFTER} reads in a row {} s apart. Proxied seats' model calls may fail. {seats}. Fix: `pij-rs cache-proxy status` shows whether it answers; if it hangs, restart it (`just cache-proxy-autostart`); then {revive}.",
+            WATCH_INTERVAL.as_secs()
+        ),
         Reading::Status(status) if status.state == "ready" => format!(
-            "pij cache proxy is ready{was}{}: new Copilot Claude spawns are proxied. Proxied seats: {seats}. Plain seats stay plain until revived; {revive}.",
+            "pij cache proxy is ready{was}{}: new Copilot Claude spawns are proxied. {seats}. Plain seats stay plain until revived; {revive}.",
             status
                 .account
                 .as_deref()
                 .map_or_else(String::new, |account| format!(" for {account}"))
         ),
         Reading::Status(status) if status.state == "off" => format!(
-            "pij cache proxy is off{was}: new Copilot spawns run plain. Seats already proxied keep being served, unaffected: {seats}."
+            "pij cache proxy is off{was}: new Copilot spawns run plain. Seats already proxied keep being served, unaffected. {seats}."
         ),
         Reading::Status(status) => format!(
-            "pij cache proxy is {}{was}: {}. New Copilot spawns run plain. Proxied seats: {seats}.{}",
+            "pij cache proxy is {}{was}: {}. New Copilot spawns run plain. {seats}.{}",
             status.state,
             if status.reason.is_empty() {
                 "no reason given"
@@ -337,13 +376,15 @@ pub fn transition(
 pub struct HealthView {
     /// The status route's base URL.
     pub url: String,
-    /// The last state seen, or `None` before the first read.
+    /// The declared state, or `None` before the first. A single slow read
+    /// leaves it as it was (F204).
     pub state: Option<String>,
     /// Whether the last read got an answer.
     pub reachable: Option<bool>,
-    /// The last status body, counters included.
+    /// The last status body, counters included. A slow read keeps it; a
+    /// declared outage clears it.
     pub status: Option<ProxyStatus>,
-    /// Why the last read got no answer.
+    /// Why the last read got no usable answer.
     pub error: Option<String>,
     /// Epoch milliseconds of the last read.
     pub checked_at: Option<u64>,
@@ -351,6 +392,20 @@ pub struct HealthView {
     pub notices: u64,
     /// Live Copilot seats at the last read.
     pub seats: SeatSplit,
+    /// Failed reads that did not prove the sidecar down on their own.
+    pub slow: SlowReads,
+}
+
+/// Timed-out or unreadable status reads seen by the watch (F204), shown apart
+/// from outages in `/health` and `just doctor`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct SlowReads {
+    /// Since the daemon started.
+    pub count: u64,
+    /// Epoch milliseconds of the last one.
+    pub last_at: Option<u64>,
+    /// How many came in a row up to the last read; [`DOWN_AFTER`] declares down.
+    pub in_a_row: u32,
 }
 
 /// The status client and the watch's memory, one per daemon.
@@ -412,9 +467,14 @@ impl CacheProxy {
         let response = match http.get(format!("{}{STATUS_PATH}", self.url)).send().await {
             Ok(response) => response,
             Err(error) if error.is_timeout() => {
-                return Reading::Unreachable("no answer within 1 s".to_string());
+                return Reading::TimedOut("no answer within 1 s".to_string());
             }
-            Err(_) => return Reading::Unreachable("connection refused".to_string()),
+            Err(error) if error.is_connect() => {
+                return Reading::Refused("connection refused".to_string());
+            }
+            Err(error) => {
+                return Reading::Unreadable(format!("status read failed: {}", error.without_url()));
+            }
         };
         if !response.status().is_success() {
             return Reading::Unreadable(format!("status route answered {}", response.status()));
@@ -438,7 +498,17 @@ impl CacheProxy {
             Precheck::NotCopilot => (None, None),
             Precheck::Plain(plain) => (Some(plain), None),
             Precheck::Ask { base_id } => {
-                let reading = self.read().await;
+                // One slow read is not an outage (F204): a timeout is read once
+                // more, still bounded, before the seat goes plain.
+                let reading = match self.read().await {
+                    Reading::TimedOut(_) => match self.read().await {
+                        Reading::TimedOut(_) => {
+                            Reading::TimedOut("no answer within 1 s, twice".to_string())
+                        }
+                        reading => reading,
+                    },
+                    reading => reading,
+                };
                 let (seat, wiring) = decide(&reading, &base_id, &self.url);
                 (Some(seat), wiring)
             }
@@ -448,13 +518,45 @@ impl CacheProxy {
     /// One watch tick: read, record, and return the notice to send, if any.
     pub async fn observe(&self, seats: &[SeatDescriptor], now_ms: u64) -> Option<String> {
         let reading = self.read().await;
+        self.record(reading, seats, now_ms)
+    }
+
+    /// Record one reading and return the notice to send, if any. A status or
+    /// a refusal is declared at once; a slow read (timed out or unreadable) is
+    /// declared only as the [`DOWN_AFTER`]th in a row, and until then holds the
+    /// declared state and its last status (F204).
+    pub fn record(
+        &self,
+        reading: Reading,
+        seats: &[SeatDescriptor],
+        now_ms: u64,
+    ) -> Option<String> {
         let split = SeatSplit::of(seats);
         let mut watch = self
             .watch
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        let notice = transition(watch.state.as_deref(), &reading, &self.url, &split.proxied);
-        watch.state = Some(reading.state().to_string());
+        let declared = if reading.is_slow() {
+            watch.slow.count += 1;
+            watch.slow.last_at = Some(now_ms);
+            watch.slow.in_a_row = watch.slow.in_a_row.saturating_add(1);
+            watch.slow.in_a_row >= DOWN_AFTER
+        } else {
+            watch.slow.in_a_row = 0;
+            true
+        };
+        let notice = if declared {
+            let notice = transition(
+                watch.state.as_deref(),
+                &reading,
+                &self.url,
+                split.proxied.len(),
+            );
+            watch.state = Some(reading.state().to_string());
+            notice
+        } else {
+            None
+        };
         watch.checked_at = Some(now_ms);
         watch.seats = split;
         match reading {
@@ -463,9 +565,11 @@ impl CacheProxy {
                 watch.status = Some(*status);
                 watch.error = None;
             }
-            Reading::Unreachable(detail) | Reading::Unreadable(detail) => {
+            Reading::Refused(detail) | Reading::TimedOut(detail) | Reading::Unreadable(detail) => {
                 watch.reachable = Some(false);
-                watch.status = None;
+                if declared {
+                    watch.status = None;
+                }
                 watch.error = Some(detail);
             }
         }

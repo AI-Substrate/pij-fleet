@@ -11,6 +11,14 @@ use serde_json::{Value, json};
 use super::{CacheProxy, NOT_LISTENING, Precheck, ProxyStatus, Reading, SeatSplit};
 use super::{base_id, decide, precheck, transition};
 
+fn refused() -> Reading {
+    Reading::Refused("connection refused".into())
+}
+
+fn timed_out() -> Reading {
+    Reading::TimedOut("no answer within 1 s".into())
+}
+
 const URL: &str = "http://127.0.0.1:7471";
 
 /// The status route body exactly as s02 serves it (types from crane via
@@ -78,11 +86,7 @@ fn precheck_settles_harness_opt_out_and_model_without_a_read() {
 /// Rows 1, 4, 5, 6, 13 (off), 22: the decision from one reading.
 #[test]
 fn decide_is_proxied_only_when_ready_and_the_base_id_is_served() {
-    let (seat, wiring) = decide(
-        &Reading::Unreachable("connection refused".into()),
-        "claude-opus-5.5",
-        URL,
-    );
+    let (seat, wiring) = decide(&refused(), "claude-opus-5.5", URL);
     assert_eq!(
         (seat.state, seat.reason.as_str(), wiring),
         (CacheProxyRoute::Plain, "proxy not listening", None)
@@ -131,46 +135,60 @@ fn decide_needs_both_ready_and_the_ready_state() {
     }
 }
 
-fn seats() -> Vec<String> {
-    vec!["pij-a".to_string(), "pij-b".to_string()]
+/// Two live proxied Copilot seats, `pij-a` and `pij-b`.
+fn proxied_seats() -> Vec<SeatDescriptor> {
+    ["pij-a", "pij-b"]
+        .into_iter()
+        .map(|id| {
+            let mut seat = SeatDescriptor::new(id, Harness::Copilot, "/w");
+            seat.cache_proxy = Some(pij_core::model::SeatCacheProxy {
+                state: CacheProxyRoute::Proxied,
+                reason: "through".into(),
+                fix: None,
+            });
+            seat
+        })
+        .collect()
+}
+
+/// Feed `readings` to a fresh watch with two proxied seats, one tick each.
+fn notices_for(readings: Vec<Reading>) -> (CacheProxy, Vec<String>) {
+    let proxy = CacheProxy::new(URL.to_string());
+    let notices = readings
+        .into_iter()
+        .zip(1..)
+        .filter_map(|(reading, tick)| proxy.record(reading, &proxied_seats(), tick))
+        .collect();
+    (proxy, notices)
 }
 
 /// pm-004 ruling: the first read is silent when ready or when nothing is
 /// proxied; not ready with live proxied seats is reported.
 #[test]
 fn first_read_reports_only_a_problem_under_proxied_seats() {
-    assert_eq!(transition(None, &status("ready"), URL, &seats()), None);
-    assert_eq!(
-        transition(None, &Reading::Unreachable("refused".into()), URL, &[]),
-        None
-    );
-    let notice = transition(None, &Reading::Unreachable("refused".into()), URL, &seats())
+    assert_eq!(transition(None, &status("ready"), URL, 2), None);
+    assert_eq!(transition(None, &refused(), URL, 0), None);
+    let notice = transition(None, &refused(), URL, 2)
         .expect("a dead sidecar under proxied seats is told at once");
-    assert!(notice.contains("pij-a, pij-b"), "{notice}");
+    assert!(notice.contains("Proxied seats: 2"), "{notice}");
     assert!(notice.contains("pij-rs revive"), "{notice}");
     assert!(!notice.contains("(was"), "{notice}");
 }
 
-/// Rows 7 and 21 (F192): one notice per change, none while unchanged.
+/// Rows 7 and 21 (F192): one notice per change of the declared state, none
+/// while unchanged.
 #[test]
 fn each_change_is_one_notice_and_an_unchanged_state_is_none() {
-    let readings = [
+    let (_, notices) = notices_for(vec![
         status("ready"),
         status("ready"),
-        Reading::Unreachable("refused".into()),
-        Reading::Unreachable("refused".into()),
-        Reading::Unreachable("no answer within 1 s".into()),
+        refused(),
+        refused(),
+        timed_out(),
+        timed_out(),
         status("ready"),
         status("ready"),
-    ];
-    let mut previous: Option<String> = None;
-    let mut notices = Vec::new();
-    for reading in &readings {
-        if let Some(notice) = transition(previous.as_deref(), reading, URL, &seats()) {
-            notices.push(notice);
-        }
-        previous = Some(reading.state().to_string());
-    }
+    ]);
     assert_eq!(notices.len(), 2, "{notices:#?}");
     assert!(notices[0].contains("not listening") && notices[0].contains("(was ready)"));
     assert!(
@@ -178,11 +196,92 @@ fn each_change_is_one_notice_and_an_unchanged_state_is_none() {
     );
 }
 
+/// F204: one slow read is not an outage. A refusal is told at once; a timed-out
+/// or unreadable read only as the 2nd in a row; a good read in between resets
+/// the count. Each sequence starts from a silent ready baseline.
+#[test]
+fn the_watch_declares_down_on_a_refusal_or_two_failed_reads_in_a_row() {
+    let unreadable = || Reading::Unreadable("status route answered 500".into());
+    let cases: [(&str, Vec<Reading>, usize); 6] = [
+        ("one timeout", vec![timed_out()], 0),
+        ("two timeouts in a row", vec![timed_out(), timed_out()], 1),
+        ("a refusal", vec![refused()], 1),
+        (
+            "timeout, ready, timeout",
+            vec![timed_out(), status("ready"), timed_out()],
+            0,
+        ),
+        ("unreadable twice", vec![unreadable(), timed_out()], 1),
+        (
+            "down, then back",
+            vec![timed_out(), timed_out(), timed_out(), status("ready")],
+            2,
+        ),
+    ];
+    for (name, readings, expected) in cases {
+        let mut all = vec![status("ready")];
+        all.extend(readings);
+        let (_, notices) = notices_for(all);
+        assert_eq!(notices.len(), expected, "{name}: {notices:#?}");
+    }
+    let (_, notices) = notices_for(vec![status("ready"), timed_out(), timed_out()]);
+    assert!(
+        notices[0].contains("not answering") && notices[0].contains("2 reads in a row"),
+        "{}",
+        notices[0]
+    );
+}
+
+/// `/health` shows slow reads apart from the declared state: one slow read
+/// keeps `ready` and its last status, and counts.
+#[test]
+fn a_slow_read_is_counted_apart_and_keeps_the_declared_state() {
+    let (proxy, _) = notices_for(vec![status("ready"), timed_out()]);
+    let health = proxy.health();
+    assert_eq!(health.state.as_deref(), Some("ready"));
+    assert_eq!(health.reachable, Some(false));
+    assert!(health.status.is_some(), "the last good status stays");
+    assert_eq!(health.error.as_deref(), Some("no answer within 1 s"));
+    assert_eq!(
+        (health.slow.count, health.slow.last_at, health.slow.in_a_row),
+        (1, Some(2), 1)
+    );
+    proxy.record(status("ready"), &[], 3);
+    let health = proxy.health();
+    assert_eq!((health.slow.count, health.slow.in_a_row), (1, 0));
+}
+
+/// F205: every notice gives the proxied-seat count and where to list them,
+/// never a seat id.
+#[test]
+fn notices_give_a_seat_count_and_never_a_seat_id() {
+    let (_, notices) = notices_for(vec![
+        status("ready"),
+        refused(),
+        status("ready"),
+        status("off"),
+        status("quota_exhausted"),
+        timed_out(),
+        timed_out(),
+    ]);
+    assert_eq!(notices.len(), 5, "{notices:#?}");
+    for notice in &notices {
+        assert!(
+            notice.contains("Proxied seats: 2 (`just doctor` lists them)"),
+            "{notice}"
+        );
+        assert!(
+            !notice.contains("pij-a") && !notice.contains("pij-b"),
+            "{notice}"
+        );
+    }
+}
+
 /// Crane's contract: `off` keeps serving existing seats, so its notice is
 /// not a failure.
 #[test]
 fn off_is_told_as_new_spawns_plain_existing_seats_unaffected() {
-    let notice = transition(Some("ready"), &status("off"), URL, &seats()).expect("a change");
+    let notice = transition(Some("ready"), &status("off"), URL, 2).expect("a change");
     assert!(notice.contains("new Copilot spawns run plain"), "{notice}");
     assert!(notice.contains("unaffected"), "{notice}");
     assert!(!notice.contains("fail"), "{notice}");
@@ -268,8 +367,60 @@ async fn gate_reads_the_status_route_and_fails_safe() {
     .await;
     let started = std::time::Instant::now();
     let reading = CacheProxy::new(hung).read().await;
-    assert!(matches!(reading, Reading::Unreachable(_)), "{reading:?}");
+    assert!(matches!(reading, Reading::TimedOut(_)), "{reading:?}");
     assert!(started.elapsed() < Duration::from_secs(3), "bounded at 1 s");
+}
+
+/// F204: a gate read that times out is retried once, so a spawn during one slow
+/// read still comes up proxied; two timeouts give plain with the reason.
+#[tokio::test]
+async fn the_gate_retries_a_timed_out_read_once() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let slow_first = |hangs: usize| {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&calls);
+        let router = Router::new().route(
+            super::STATUS_PATH,
+            get(move || {
+                let call = counted.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if call < hangs {
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                    axum::Json(body("ready"))
+                }
+            }),
+        );
+        (calls, router)
+    };
+
+    let (calls, router) = slow_first(1);
+    let (seat, wiring) = CacheProxy::new(stub(router).await)
+        .gate(Harness::Copilot, Some("claude-opus-5.5"), false)
+        .await;
+    assert_eq!(seat.map(|seat| seat.state), Some(CacheProxyRoute::Proxied));
+    assert!(wiring.is_some());
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+
+    let (calls, router) = slow_first(2);
+    let started = std::time::Instant::now();
+    let (seat, wiring) = CacheProxy::new(stub(router).await)
+        .gate(Harness::Copilot, Some("claude-opus-5.5"), false)
+        .await;
+    let seat = seat.expect("a Copilot seat's route");
+    assert_eq!((seat.state, wiring), (CacheProxyRoute::Plain, None));
+    assert_eq!(
+        seat.reason,
+        "proxy did not answer: no answer within 1 s, twice"
+    );
+    assert!(seat.fix.is_some());
+    assert_eq!(calls.load(Ordering::SeqCst), 2, "retried once, not more");
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "each read bounded"
+    );
 }
 
 /// A status route that redirects is not followed: the target never sees a

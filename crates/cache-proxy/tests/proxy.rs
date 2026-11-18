@@ -483,7 +483,9 @@ async fn a_402_latches_until_a_2xx_the_reset_date_or_a_reload() {
     "2000-01-01".clone_into(&mut rig.upstream.reset_date.lock().unwrap());
     rig.upstream.messages_402.store(true, Ordering::SeqCst);
     assert_eq!(rig.message(&hello()).await, StatusCode::PAYMENT_REQUIRED);
-    let status = rig.status_until(|status| status.state == State::Ready).await;
+    let status = rig
+        .status_until(|status| status.state == State::Ready)
+        .await;
     assert!(status.quota.usable, "(b) {status:?}");
 
     // A snapshot that itself says exhausted still refuses, with its reset date.
@@ -683,7 +685,11 @@ async fn until(what: &str, done: impl Fn() -> bool) {
 async fn a_status_read_never_waits_on_a_stalled_readiness_check() {
     let rig = Arc::new(rig("stalled-check", Some("tester"), true).await);
     let checked_at = rig.status().await.checked_at_ms.expect("start ran a check");
-    assert_eq!(rig.message(&hello()).await, StatusCode::OK, "401, refresh, retry");
+    assert_eq!(
+        rig.message(&hello()).await,
+        StatusCode::OK,
+        "401, refresh, retry"
+    );
     let before = rig.upstream.user_reads.load(Ordering::SeqCst);
     rig.upstream.user_stall_ms.store(5_000, Ordering::SeqCst);
 
