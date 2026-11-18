@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ec54-4584-7ca2-ac59-a8e4c0f2bc60",
+				"date": "2026-11-18",
+				"head": "81f4a89974383caf7dd5bf727f3f468c0d389ed2",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44217294613/job/134510197257",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:237",
+				"writer": "pij-uneven-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 237",
+					"exit_code": 1,
+					"log": "Exact head verified; NOT FINAL: merge BLOCKED, check22 audit failure, check24 cancelled."
+				},
+				{
+					"command": "gh run view 44217294613 --job 134510197257 --log",
+					"exit_code": 0,
+					"log": "2438 Rust tests passed, 6 skipped. All five PR-named Rust tests passed in exact JUnit artifact 14388744100."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security review: BLOCK (round 1)\nPR: #237\nHead: 81f4a89974383caf7dd5bf727f3f468c0d389ed2\nRequest: 01a1ec54-4584-7ca2-ac59-a8e4c0f2bc60\n\nS237-001 | MEDIUM | confidence 9/10\ncrates/daemon/src/http/identity.rs:616-624\n\nExplicit takeover bypasses the live-holder refusal. After the pane-own-process\nauthorization at identity.rs:578-585, takeover tombstones the other matching\nrecords without checking their process liveness. The filter's is_live means\nnot already tombstoned, not that the recorded process is dead or unknown.\nThe compare-and-swap guards against a changed record, not an unchanged holder\nwhose process is still running.\n\nNormal-use case: while an omp -p child still runs in its parent's pane, the\nparent's authorized adopt --take-over can retire that child's live seat.\nThis violates the requested live-holder guard even under C33's same-user\ntrust boundary; no hostile local caller or per-seat isolation is assumed.\n\nReject confirmed-live foreign holders before any takeover retirement, preserve\nthe explicit unknown-holder recovery path, and add a focused regression for\nan authorized non-prime caller against a process-live foreign holder.\nAssert that the holder and its pending work remain unchanged on refusal.\nThe existing takeover test at identity_tests.rs:1927 supplies dead/unbound\nholders; the active-holder refusal coverage tests automatic registration,\nnot the explicit takeover path.\n\nEvidence and limits:\n- Exact checkout and GitHub head agree; worktree is clean.\n- No prior outputs or GitHub reviews were present for this PR: first round.\n- CI run 44217294613 is for this exact head.\n- Successful rust-test job 134510197257: 2438 passed, 6 skipped.\n- Exact JUnit artifact 14388744100 was selected from that successful job's\n  upload log. All five Rust tests named in the PR body passed.\n- Node 22 job 134510197705: native tests 355 passed, 0 failed, including\n  the F196 typed-refusal/banner regression. Its sole failed step is the\n  audit gate reporting GHSA-fc5q-39xc-vjpf (picomatch).\n- Node 24 job 134510197496: npm test passed; native-test step was cancelled.\n- rust-lint and delivers passed.\n- just pr-freeze 237 exited 1: NOT FINAL because merge is BLOCKED and the\n  failed/cancelled checks are not green. The source-security block above is\n  independent of that CI status. #236 is still open and addresses the audit\n  exception separately; this review does not certify it.\n- Read-only source/CI review only. No local cargo build/test, dependency\n  installation, mutation run, harness boot or harness checks was performed,\n  per the review packet. CI is Linux; macOS behavior has static proof only.\n\nPolicy/brake: automatic supersession's confirmed-dead/recycled decision is\npolicy; uncertain probes are a brake and must not automatically retire rows.\nThe finding concerns explicit takeover's missing live-holder brake.\n\nHarness feedback: the successful takeover test lacks a process-live foreign\nholder. Encode that normal-use case as a regression so the authority check\ncannot be mistaken for proof of safe retirement.\n"
+		}
+	]
+}
