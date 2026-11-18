@@ -1680,6 +1680,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-agreed-barnacle",
 					"why": "PR #244 close-out + scrub"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-18T23:30:28.244Z",
+					"harness": "copilot",
+					"harness_session": "b28d0d0d-410f-4a5c-9415-a757ff4e0cd6",
+					"instance_key": "245",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-academic-wallaby",
+					"why": "F194 #245 correctness (gpt-6.1-sol)"
 				}
 			]
 		}
