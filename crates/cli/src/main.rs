@@ -351,6 +351,10 @@ enum Command {
         /// Maximum seconds to wait for the spawned seat to register.
         #[arg(long, default_value_t = 30)]
         wait_seconds: u64,
+        /// Launch a Copilot seat as plain Copilot, never through the pij
+        /// cache proxy (plan 229). Revive keeps the seat opted out.
+        #[arg(long)]
+        no_cache_proxy: bool,
     },
     /// Relaunch a tombstoned or observed-dead seat with its prior launch intent.
     Revive {
@@ -3611,7 +3615,7 @@ fn render_directory_at(
             .map(|holder| {
                 let instance = holder["instance"].as_str().filter(|key| !key.is_empty());
                 format!(
-                    "{}{} since {} on {}{}{}",
+                    "{}{} since {} on {}{}{}{}",
                     shown(&holder["seat"], render::seat),
                     instance
                         .map(|key| format!(" ({})", render::name(key)))
@@ -3627,6 +3631,14 @@ fn render_directory_at(
                         ", end pending"
                     } else {
                         ""
+                    },
+                    match holder["cache_proxy"]["state"].as_str() {
+                        Some("proxied") => ", cache proxied".to_string(),
+                        Some(_) => format!(
+                            ", cache plain ({})",
+                            shown(&holder["cache_proxy"]["reason"], render::line)
+                        ),
+                        None => String::new(),
                     }
                 )
             })
@@ -4368,6 +4380,7 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
         no_accept_inbound,
         no_wait,
         wait_seconds,
+        no_cache_proxy,
     } = command
     else {
         return Ok(None);
@@ -4437,6 +4450,7 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
         resume: None,
         role: role.clone(),
         caller: role.is_some().then(caller_context),
+        no_cache_proxy: *no_cache_proxy,
     }))
 }
 

@@ -59,6 +59,23 @@ pub struct SpawnPlanInput {
     pub accept_inbound: bool,
     /// Harness-native conversation to resume (plan 156 revive); `None` is blank.
     pub resume: Option<String>,
+    /// Plan 229: route a Copilot seat through the pij cache proxy. Only the
+    /// daemon's spawn gate sets it, and only for Copilot; any other harness
+    /// refuses it.
+    pub copilot_provider: Option<CopilotProviderWiring>,
+}
+
+/// Plan 229 (blueprint 003 c-spawn-gate): the provider settings that send a
+/// Copilot seat's model calls to the cache proxy. Carries no secret: the
+/// proxy holds the token.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CopilotProviderWiring {
+    /// The proxy's base URL, e.g. `http://127.0.0.1:7471`.
+    pub base_url: String,
+    /// The model id the Copilot API serves (an OMP-style `-1m` stripped).
+    pub model_id: String,
+    /// That model's `max_prompt_tokens`, so the seat keeps its full window.
+    pub max_prompt_tokens: u64,
 }
 
 /// Validate `--bin` without allowing it to change the selected harness.
@@ -132,6 +149,15 @@ pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
             ),
         });
     }
+    if input.copilot_provider.is_some() && input.harness != Harness::Copilot {
+        return Err(PijError::Adapter {
+            adapter: "spawn".to_string(),
+            message: format!(
+                "the cache proxy applies only to copilot, not {}",
+                input.harness
+            ),
+        });
+    }
 
     if input
         .resume
@@ -149,8 +175,19 @@ pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
     let mut args = vec![
         format!("{PIJ_SESSION_ID}={}", input.seat_id),
         format!("{PIJ_SPAWN_ID}={}", input.spawn_id),
-        harness_executable,
     ];
+    if let Some(wiring) = &input.copilot_provider {
+        args.extend([
+            "COPILOT_PROVIDER_TYPE=anthropic".to_string(),
+            format!("COPILOT_PROVIDER_BASE_URL={}", wiring.base_url),
+            format!("COPILOT_PROVIDER_MODEL_ID={}", wiring.model_id),
+            format!(
+                "COPILOT_PROVIDER_MAX_PROMPT_TOKENS={}",
+                wiring.max_prompt_tokens
+            ),
+        ]);
+    }
+    args.push(harness_executable);
     // Each CLI's own resume spelling, first, so a subcommand (codex) parses.
     if let Some(session) = &input.resume {
         match input.harness {
@@ -385,7 +422,8 @@ fn push_option(args: &mut Vec<String>, flag: &str, value: Option<&str>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        CLAUDE_ACCEPT_SETTINGS, PIJ_SESSION_ID, PIJ_SPAWN_ID, SpawnPlanInput, build_spawn_plan,
+        CLAUDE_ACCEPT_SETTINGS, CopilotProviderWiring, PIJ_SESSION_ID, PIJ_SPAWN_ID,
+        SpawnPlanInput, build_spawn_plan,
     };
     use pij_core::model::{Harness, SeatId};
 
@@ -400,6 +438,7 @@ mod tests {
             effort: Some("high".to_string()),
             accept_inbound: false,
             resume: None,
+            copilot_provider: None,
         }
     }
 
@@ -533,6 +572,54 @@ mod tests {
         }
     }
 
+    fn wiring() -> CopilotProviderWiring {
+        CopilotProviderWiring {
+            base_url: "http://127.0.0.1:7471".to_string(),
+            model_id: "claude-opus-5.5".to_string(),
+            max_prompt_tokens: 936_000,
+        }
+    }
+
+    /// Plan 229 (row 22): a proxied Copilot seat gets exactly the four
+    /// provider settings, ahead of the harness executable, and its model
+    /// argv is unchanged; a plain one gets none.
+    #[test]
+    fn copilot_provider_wiring_sets_the_four_env_settings() {
+        let mut proxied = input(Harness::Copilot);
+        proxied.model = Some("claude-opus-5.5-1m".to_string());
+        proxied.copilot_provider = Some(wiring());
+        let args = build_spawn_plan(proxied).expect("proxied plan").args;
+        assert_eq!(
+            &args[..7],
+            [
+                "PIJ_SESSION_ID=pij-assigned",
+                "PIJ_SPAWN_ID=spawn-assigned",
+                "COPILOT_PROVIDER_TYPE=anthropic",
+                "COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:7471",
+                "COPILOT_PROVIDER_MODEL_ID=claude-opus-5.5",
+                "COPILOT_PROVIDER_MAX_PROMPT_TOKENS=936000",
+                "copilot",
+            ]
+        );
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--model", "claude-opus-5.5-1m"])
+        );
+        let plain = build_spawn_plan(input(Harness::Copilot)).expect("plain plan");
+        assert!(!plain.args.iter().any(|arg| arg.starts_with("COPILOT_")));
+    }
+
+    /// Row 20: no other harness can be wired to the proxy.
+    #[test]
+    fn copilot_provider_wiring_refuses_every_other_harness() {
+        for harness in [Harness::Omp, Harness::Claude, Harness::Codex, Harness::Pi] {
+            let mut other = input(harness);
+            other.copilot_provider = Some(wiring());
+            let refused = build_spawn_plan(other).expect_err("only copilot");
+            assert!(refused.to_string().contains("only to copilot"), "{refused}");
+        }
+    }
+
     #[test]
     fn accept_stamp_is_true_only_when_exact_setting_is_emitted() {
         let without = build_spawn_plan(input(Harness::Claude)).expect("closed plan");
@@ -652,6 +739,7 @@ mod tests {
             effort: None,
             accept_inbound: false,
             resume: None,
+            copilot_provider: None,
         })
         .expect("build plan");
 

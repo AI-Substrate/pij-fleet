@@ -11,6 +11,7 @@ pub mod admission;
 pub mod auth;
 pub mod background;
 pub mod bg_routing;
+pub mod cache_proxy;
 pub mod cheap_return;
 mod claude_bind;
 pub mod codex_bind;
@@ -227,6 +228,9 @@ pub struct Services {
     pub memory_turns: Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
     /// Whether this daemon is running entirely on fakes.
     pub offline: bool,
+    /// The cache-proxy status client and watch memory (plan 229); its URL is
+    /// read once at daemon start.
+    pub cache_proxy: Arc<cache_proxy::CacheProxy>,
 }
 
 impl Services {
@@ -269,6 +273,8 @@ pub struct Daemon {
     background_loop: lifecycle::TickLoop,
     death_sweep_loop: lifecycle::TickLoop,
     pa_watchdog_loop: lifecycle::TickLoop,
+    /// The cache-proxy watch (plan 229): one status read every 30 s.
+    cache_proxy_loop: lifecycle::TickLoop,
     /// Owned so no tap outlives the daemon that attached it: `shutdown` joins an
     /// in-flight observation and DETACHES every pane. A tap left open is a
     /// `pipe-pane` writing into a sink nobody drains.
@@ -322,6 +328,7 @@ impl Daemon {
             background,
             deaths,
             watchdog,
+            proxy_watch,
             (),
             governance,
         ) = tokio::join!(
@@ -338,6 +345,7 @@ impl Daemon {
             self.background_loop.shutdown(),
             self.death_sweep_loop.shutdown(),
             self.pa_watchdog_loop.shutdown(),
+            self.cache_proxy_loop.shutdown(),
             self.sidecars.shutdown(),
             async {
                 self.governance_observer
@@ -384,6 +392,7 @@ impl Daemon {
         background?;
         deaths?;
         watchdog?;
+        proxy_watch?;
         forwarded
     }
 }
@@ -688,6 +697,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         },
         memory_turns: Arc::default(),
         offline: config.is_fully_offline(),
+        cache_proxy: Arc::new(cache_proxy::CacheProxy::from_env()),
     };
     role_queue.bind(services.clone());
     Ok(services)
@@ -1165,6 +1175,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         pa_watchdog_tick,
     );
     let park_notices = tokio::spawn(park_notice::follow(services.clone()));
+    let cache_proxy_loop = cache_proxy::start(Arc::new(services.clone()));
     let session_warmup = session_warmup::start(
         Arc::clone(&services.registry),
         Arc::clone(&services.session_status),
@@ -1222,6 +1233,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         background_loop,
         death_sweep_loop,
         pa_watchdog_loop,
+        cache_proxy_loop,
         pane_observer,
         sidecars,
         governance_shutdown,

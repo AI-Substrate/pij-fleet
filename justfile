@@ -77,8 +77,8 @@ rs-install:
     echo "✓ $bin/pij-rs → $copy (copied from $(pwd)/target/release/pij-rs)"
 
 # Read-only audit of the installed surfaces: CLI shim, pij-rs, OMP policy,
-# skill link, pij-managed Claude hooks, the Copilot extension and daemon health.
-# Each one missing or stale prints its fix.
+# skill link, pij-managed Claude hooks, the Copilot extension, daemon health
+# and the Copilot cache proxy. Each one missing or stale prints its fix.
 doctor:
     @global_npm_root="$(npm root -g)"; \
       pij_bin="$(command -v pij)"; \
@@ -92,6 +92,8 @@ doctor:
     @printf 'daemon:     '; pij-rs ping 2>/dev/null || echo '(not running — run: just bounce-rs)'
     @printf 'ddocs:      '; pij-rs --json ping 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { let d; try { d = JSON.parse(s).data; } catch { return console.log("(unknown: daemon not running)"); } console.log(d.ddocs === undefined ? "(unknown: this daemon predates the ddocs field)" : (d.ddocs ?? "(missing: install ddocs or set PIJ_DDOCS, then run: just bounce-rs)")); })'
     @printf 'gh:         '; pij-rs --json ping 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { let d; try { d = JSON.parse(s).data; } catch { return console.log("(unknown: daemon not running)"); } console.log(d.gh === undefined ? "(unknown: this daemon predates the gh field)" : (d.gh ?? "(missing: install gh or set PIJ_GH, then run: just bounce-rs)")); })'
+    @printf 'cache-proxy: '; if pij-rs cache-proxy --help >/dev/null 2>&1; then pij-rs cache-proxy status || true; else echo '(unknown: pij-rs predates the cache proxy — run: just rs-install)'; fi
+    @printf 'cache seats: '; pij-rs --json ping 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { let d; try { d = JSON.parse(s).data; } catch { return console.log("(unknown: daemon not running)"); } const c = d.cache_proxy; if (c === undefined) return console.log("(unknown: this daemon predates the cache proxy — run: just bounce-rs)"); if (!c.checked_at) return console.log("(not read yet: the daemon reads the proxy within 30 s of starting)"); const list = (seats) => (seats.length ? seats.join(", ") : "none"); console.log(`proxied: ${list(c.seats.proxied)}; plain: ${list(c.seats.plain)}`); })'
 
 # Link this worktree's packages from the canonical checkout without npm resolution.
 # --check is read-only; missing JS tooling never prevents Rust-only work.

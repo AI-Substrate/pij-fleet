@@ -220,33 +220,24 @@ async fn try_notify_prime(
     commit: &str,
     change: &Change,
 ) -> Result<Value, Refusal> {
-    let store = services.directory.store();
-    let own = store
+    let projects = services
+        .directory
+        .store()
         .list_projects()
         .await
-        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+    let own = projects
         .into_iter()
         .find(|known| known.slug == project)
         .and_then(|known| known.prime_id);
     let prime = match own {
         Some(prime) => Some(prime),
-        None => store
-            .prime()
-            .await
-            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
-            .filter(|designation| designation.state == PrimeState::Current)
-            .map(|designation| designation.seat),
+        None => designated_prime(services).await?,
     };
     let Some(prime) = prime else {
         return Ok(json!({"sent": false, "reason": "the project has no prime"}));
     };
-    let live = services
-        .registry
-        .get(&prime)
-        .await
-        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
-        .is_some_and(|seat| seat.tombstoned_at.is_none());
-    if !live {
+    if !seat_live(services, &prime).await? {
         return Ok(json!({"sent": false, "prime": prime, "reason": "the prime is not live"}));
     }
     let msg_id = hold(
@@ -257,6 +248,63 @@ async fn try_notify_prime(
     )
     .await?;
     Ok(json!({"sent": "fyi", "prime": prime, "msg_id": msg_id}))
+}
+
+/// Plan 229 (c-proxy-watch): hold one FYI with `body` for each live prime on
+/// this machine, once each: every project's own prime and the designated
+/// prime. Never fails; a store error is logged and sends nothing.
+pub(crate) async fn notify_primes(services: &Services, body: String) -> Value {
+    match try_notify_primes(services, body).await {
+        Ok(outcome) => outcome,
+        Err(refusal) => {
+            eprintln!("pij-rs could not tell the primes about the cache proxy: {refusal}");
+            json!({"sent": false, "reason": refusal.to_string()})
+        }
+    }
+}
+
+async fn try_notify_primes(services: &Services, body: String) -> Result<Value, Refusal> {
+    let mut primes: Vec<SeatId> = services
+        .directory
+        .store()
+        .list_projects()
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .into_iter()
+        .filter_map(|known| known.prime_id)
+        .collect();
+    primes.extend(designated_prime(services).await?);
+    primes.sort();
+    primes.dedup();
+    let mut sent = Vec::new();
+    for prime in primes {
+        if seat_live(services, &prime).await? {
+            hold(services, &prime, body.clone(), None).await?;
+            sent.push(prime);
+        }
+    }
+    Ok(json!({"sent": sent}))
+}
+
+/// The machine's current designated prime, if any.
+async fn designated_prime(services: &Services) -> Result<Option<SeatId>, Refusal> {
+    Ok(services
+        .directory
+        .store()
+        .prime()
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .filter(|designation| designation.state == PrimeState::Current)
+        .map(|designation| designation.seat))
+}
+
+async fn seat_live(services: &Services, seat: &SeatId) -> Result<bool, Refusal> {
+    Ok(services
+        .registry
+        .get(seat)
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .is_some_and(|seat| seat.tombstoned_at.is_none()))
 }
 
 async fn hold(

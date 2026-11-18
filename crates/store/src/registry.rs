@@ -200,6 +200,16 @@ pub(crate) fn row_to_descriptor(row: &sqlx::sqlite::SqliteRow) -> Result<SeatDes
         }
     };
     let harness_session: Option<String> = row.try_get("harness_session").map_err(adapter_error)?;
+    let cache_proxy = row
+        .try_get::<Option<String>, _>("cache_proxy")
+        .map_err(adapter_error)?
+        .map(|text| {
+            serde_json::from_str(&text).map_err(|error| PijError::Adapter {
+                adapter: "store/registry".to_string(),
+                message: format!("unreadable cache_proxy in the seats table: {error}"),
+            })
+        })
+        .transpose()?;
     let tombstoned_at: Option<i64> = row.try_get("tombstoned_at").map_err(adapter_error)?;
     if native_extension_delivery
         && (harness != Harness::Copilot
@@ -247,6 +257,7 @@ pub(crate) fn row_to_descriptor(row: &sqlx::sqlite::SqliteRow) -> Result<SeatDes
             .map_err(adapter_error)?
             .map(|flag| flag != 0),
         native_extension_delivery,
+        cache_proxy,
     })
 }
 
@@ -581,13 +592,22 @@ pub(crate) async fn upsert_seat(
     seq: Seq,
     lift_owner_close: bool,
 ) -> Result<()> {
+    let cache_proxy_text = descriptor
+        .cache_proxy
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|error| PijError::Adapter {
+            adapter: "store/registry".to_string(),
+            message: format!("cannot encode cache_proxy: {error}"),
+        })?;
     let written = sqlx::query(&format!(
         "INSERT INTO seats (id, harness, harness_session, pane, pid, proc_start, folder, state, \
          semantic_state, role, parent, relay, tombstoned_at, tombstone_reason, seq, \
          spawn_id, model, provider, effort, cross_session_inbound_accept, native_extension_delivery, \
-         extension_build, extension_path) \
+         extension_build, extension_path, cache_proxy) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-         ?17, ?18, ?19, ?20, ?21, ?22, ?23) \
+         ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?25) \
          ON CONFLICT(id) DO UPDATE SET \
          harness=excluded.harness, harness_session=excluded.harness_session, \
          pane=excluded.pane, pid=excluded.pid, proc_start=excluded.proc_start, \
@@ -600,7 +620,8 @@ pub(crate) async fn upsert_seat(
          provider=excluded.provider, effort=excluded.effort, \
          cross_session_inbound_accept=excluded.cross_session_inbound_accept, \
          native_extension_delivery=excluded.native_extension_delivery, \
-         extension_build=excluded.extension_build, extension_path=excluded.extension_path\
+         extension_build=excluded.extension_build, extension_path=excluded.extension_path, \
+         cache_proxy=excluded.cache_proxy\
          {KEEPS_OWNER_CLOSE}"
     ))
     .bind(descriptor.id.as_str())
@@ -627,6 +648,7 @@ pub(crate) async fn upsert_seat(
     .bind(descriptor.extension_build.as_deref())
     .bind(descriptor.extension_path.as_deref())
     .bind(lift_owner_close)
+    .bind(cache_proxy_text)
     .execute(connection)
     .await
     .map_err(adapter_error)?
