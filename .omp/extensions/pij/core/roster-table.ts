@@ -34,13 +34,16 @@ export function renderRosterTable(payload: unknown): string {
 		const machine = str(seat.machine);
 		const column = (index: number): string => str(columns?.[index]) ?? "-";
 		// Plan 219: a seat on its harness's own dialog reads working; say so.
+		// F195: a lapsed native receiver is appended, since the process runs on.
 		const key = str(record(seat.dialog).key);
+		const state = key !== undefined ? `blocked on a dialog (${key})` : (str(seat.state) ?? "-");
+		const lapse = str(seat.nativeReceiver);
 		return {
 			cold: columns?.[3] === "❄",
 			cells: [
 				machine !== undefined && columns === undefined ? `${id}@${machine}` : id,
 				str(seat.harness) ?? "-",
-				key !== undefined ? `blocked on a dialog (${key})` : (str(seat.state) ?? "-"),
+				lapse === undefined ? state : `${state}, ${lapse}`,
 				column(0),
 				column(1),
 				column(2),

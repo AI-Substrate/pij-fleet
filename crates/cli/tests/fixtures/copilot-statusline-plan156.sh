@@ -49,7 +49,10 @@ BRANCH_FMT=""
 
 # pij identity, display only: the Copilot extension owns registration. Honest by
 # construction (plan 156 rule 5): the pane is asked, never an inherited
-# PIJ_SESSION_ID, so a dead or missing seat shows as such, not as a stale id.
+# PIJ_SESSION_ID, so a missing seat shows as such, not as a stale id. F198: a
+# refusal never names the seat it mentions (it is not this session's, live or
+# dead); `pij-rs statusline copilot` also hides an ok answer whose seat records
+# another process, before this rendering step.
 PIJ_FMT=""
 if [ -n "${TMUX_PANE:-}" ] && command -v pij-rs >/dev/null 2>&1; then
   RS=$(env -u PIJ_SESSION_ID pij-rs --json whoami --pane "$TMUX_PANE" 2>/dev/null)
@@ -62,9 +65,6 @@ if [ -n "${TMUX_PANE:-}" ] && command -v pij-rs >/dev/null 2>&1; then
       if [ "${FYIS:-0}" -gt 0 ] 2>/dev/null; then
         PIJ_FMT="$PIJ_FMT$(printf ' \033[33m✉%s\033[0m' "$FYIS")"
       fi ;;
-    *'seat `'*)
-      DEAD=${RS#*'seat `'}; DEAD=${DEAD%%'`'*}
-      PIJ_FMT=$(printf ' \033[31m⛓ %s dead\033[0m' "$DEAD") ;;
     *'"ok":false'*) PIJ_FMT=$(printf ' \033[2m⛓ unregistered\033[0m') ;;
     *) PIJ_FMT=$(printf ' \033[2m⛓ daemon down\033[0m') ;;
   esac

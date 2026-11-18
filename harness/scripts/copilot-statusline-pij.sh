@@ -7,6 +7,6 @@
 # fork). The plan-156 bash version launched ~20 processes per refresh, and
 # Defender's EDR inspects every launch. The output bytes are the same: golden tests
 # run the preserved plan-156 script (crates/cli/tests/fixtures/) on the same inputs.
-# The pane is asked on every render, so a dead seat shows dead on the next refresh.
+# The pane is asked on every render, and only this session's own seat is named (F198).
 command -v pij-rs >/dev/null 2>&1 || { printf '\033[2m⛓ pij-rs not on PATH\033[0m'; exit 0; }
 exec pij-rs statusline copilot
