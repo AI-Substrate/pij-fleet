@@ -68,7 +68,10 @@
 					"harness": "copilot",
 					"harness_session": "0c33b02b-8c79-4279-b7e5-9b8458e239a0",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-sole-lizard",
+					"to": "2026-11-18T03:24:43.254Z",
 					"why": "pm-004: cost verdict on #239 (ws004 s02)"
 				},
 				{
