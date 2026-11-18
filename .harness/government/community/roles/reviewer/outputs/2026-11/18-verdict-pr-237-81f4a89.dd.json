@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ec54-4541-75a2-b9c8-eac26f805be1",
+				"date": "2026-11-18",
+				"head": "81f4a89974383caf7dd5bf727f3f468c0d389ed2",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:237",
+				"writer": "pij-applicable-wildcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh run view 44217294613 --json jobs",
+					"exit_code": 0,
+					"log": "Exact head 81f4a89974383caf7dd5bf727f3f468c0d389ed2: rust-lint passed; 2438 Rust tests passed/6 skipped; Node22 2301 Vitest and 355 native tests passed before audit failure; Node24 cancelled."
+				},
+				{
+					"command": "just pr-freeze 237",
+					"exit_code": 1,
+					"log": "NOT FINAL: merge BLOCKED and failed/cancelled checks; head, base, draft, migrations and Delivers agreed."
+				},
+				{
+					"command": "git diff --check origin/main...HEAD",
+					"exit_code": 0,
+					"log": "Passed. Read-only review; no local Cargo builds or tests."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR 237 correctness review\n\nHead: `81f4a89974383caf7dd5bf727f3f468c0d389ed2`\nRequest: `01a1ec54-4541-75a2-b9c8-eac26f805be1`\nReviewer: `pij-applicable-wildcat`\nRound: 1\n\n## Verdict: BLOCK\n\nTwo P2 findings in the scoped behavior; the inherited CI blockers are separate.\n\n## Blocking findings\n\n**P2 — A self-asserted prime role grants cross-pane takeover authority.**\n`crates/daemon/src/http/identity.rs:570-572`\n\nThe new takeover gate accepts the caller's `role == \"prime\"` instead of the\ncurrent prime designation. A registered unrelated seat can assert that role\nfor itself (`http/role.rs:180-203`) and then bypass the pane-process descent\ncheck. The new takeover test actually authorizes the prime case with only a\nrole assertion (`http/identity_tests.rs:2001-2016`), not a designation. This\nturns a self-assignable/display role into authority to tombstone another\npane's records, contrary to the requested gate and C24's designation-only\nprime authority.\n\nResolve the current prime designation for this gate and add a refusal case\nfor a caller with an asserted prime role but no current designation.\nThe existing lookup in `http/output.rs:487-498` uses\n`state.services.directory.store().prime()` and `PrimeState::Current`.\n\nThis affects normal prime rotation too: retiring the old designation leaves\nits role/live seat intact (`store/src/governance.rs:728-758`), so the former\nprime can still pass this gate after a successor is designated. It requires\nno caller spoofing or per-seat credentials and is not C33 hardening. Although\nthe role check is copied from reclaim, reclaim refuses live processes,\nfailed probes and live process-less records (`http/identity.rs:528-548`);\nthe newly added takeover does not. This PR therefore expands destructive\nauthority beyond that existing route.\n\n**P2 — Failed-probe native Copilot holders bypass the takeover refusal.**\n`crates/daemon/src/registration.rs:1860-1868`\n\nFor a fresh native session on a pane recorded to a different native Copilot\nsession, a failed liveness probe correctly adds the incumbent to\n`holders.unknown` (`registration.rs:688-691`). However, when that row has its\nnormal native-delivery flag, local machine, nonzero process tuple and old\nsession, the earlier `unknown_session` branch sets `held_owner` and continues.\nIt never reaches the `holders.unknown` check, so the result is\n`NativeSessionHold`, not the promised `E-RS-PANE-HELD` with takeover details.\nAn unverifiable stale native row therefore still leaves its replacement\nwaiting without the explicit recovery command this PR is meant to provide.\n\nCheck unknown liveness before selecting the native session hold (or exclude\nunknown holders from that branch). Extend\n`native_claim_supersedes_only_a_confirmed_dead_pane_holder` with an adapter\nerror for a different native Copilot session and assert `PaneHeld` plus an\nunchanged incumbent. Its current unknown cases only cover an OMP row with no\nPID and a remote OMP row (`registration.rs:2673-2689`); neither enters the\nnative-holder branch.\n\n## Correctness evidence\n\nAutomatic supersession is **policy**: only confirmed `Dead` or `Recycled`\nobservations populate the retirement list. Missing process identities, remote\nrecords and probe errors do not authorize retirement. The claim's ID, named\npredecessor, own process and same conversation are excluded before probing.\nThe locked reread compares the observed ownership tuple with\n`same_native_owner` before using a death witness\n(`registration.rs:646-695,846-886,1277-1340,1728-1738`).\n\nThe existing drift regression covers changed incumbent/prebind ownership;\nthe same-session fast-restart regression pins not probing the claim's own\nconversation. Ordinary registration also reaches the shared observation and\nretirement path. The finding above concerns recovery/refusal selection, not\nautomatic retirement of an unknown process.\n\n## CI and proof limits\n\nCI run `44217294613`, attempt 1, names this exact head.\n\n- `cargo clippy --locked --workspace --all-targets -- -D warnings`: passed\n  (`rust-lint`).\n- `cargo nextest run --locked --workspace --profile ci`: 2,438 passed,\n  6 skipped (`rust-test`); doctests also passed.\n- Successful Rust job `134510197257` uploaded JUnit artifact `14388744100`.\n  The artifact confirms that the new native dead/recycled-holder test, ordinary\n  registration test, explicit takeover test, SQLite/HTTP legacy-holder test,\n  and existing ownership-drift regression each ran and passed.\n- Node 22: typecheck and lint passed; `npm test` had 2,301 passed and\n  6 skipped; `just copilot-native-test` had 355 passed, 0 failed.\n  The only failing step was `node harness/scripts/audit-gate.mjs`, reporting\n  `GHSA-fc5q-39xc-vjpf` for picomatch. PR 236 is the separate audit-allowlist\n  change; this PR does not change dependencies.\n- Node 24: typecheck, lint and Vitest passed; the job was cancelled during\n  `just copilot-native-test`. It is not a completed native-suite pass.\n- `just pr-freeze 237`: **NOT FINAL**, because merge is BLOCKED and the\n  failed/cancelled checks are not green. Exact head, main base, non-draft,\n  migrations and Delivers checks agreed.\n- `git diff --check origin/main...HEAD`: passed.\n\nNo local Cargo build or test was run, as requested. `harness boot` reported\ndependency readiness false before running TypeScript or smoke. Full\n`harness checks` was not run because it would invoke the prohibited local\nbuild/test gates. CI is Linux-only; macOS behavior cannot be called tested\nby these receipts. The post-deploy F196 live reproduction is still owed.\n\n## Resource cost\n\nNo new periodic loop, poll, timer or launch site: the added pane-filtered\nregistry read and holder process observations occur per registration, scaling\nwith other live records on the claimed pane. The existing caller-descent\nlaunches are reused only on an explicit takeover command. No live-fleet\nbefore/after measurement or deployment was performed by this read-only review.\n\n## Security review and platform limits\n\nThe independent read-only security review found the prime-role laundering\nabove. It found no target-process signal/kill path: takeover performs guarded\nrecord tombstones. Explicit authorized takeover has no liveness guard and\nretires every other process's live row on that pane, even if its process is\nalive; \"live holder still refuses\" describes automatic registration only.\nThis makes the authority check materially important. Tombstoning also drops\npending FYIs and releases number claims (`store/src/registry.rs:79-102`).\n\nThe extension validates pane/holder fields and rebuilds the suggested command,\nignoring remote command text (`.copilot/extensions/pij/store.mjs:721-774`).\n`--why <reason>` is an unquoted placeholder, not a fully copy-runnable command.\nThe macOS connection check was source-inspected, not executed; the own-process\ntest covers PID equality rather than a nontrivial descendant chain.\n\n## Harness feedback\n\nmagicWand: add the failed-probe native-holder regression described above;\nit would have caught the refusal-ordering bug despite the green suites.\nThe review also had to distinguish passing behavior tests from an audit-only\njob failure and a cancelled matrix leg manually. Preserve those distinctions\nin a future exact-head CI evidence summary.\n"
+		}
+	]
+}
