@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "When resuming PR 238 or reconciling cache-proxy canonical docs with the sidecar contract",
+				"tags": [
+					"review",
+					"docs",
+					"cache-proxy",
+					"contracts",
+					"closure"
+				],
+				"title": "PR 238 round 2: canonical contract reconciliation closed"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #238 final docs round at 45f31504b2736e4a08c029c255dcf2b5a88b1299 closes F238-001 and N238-001. Delta only: six files, 38 insertions/20 deletions. The canonical blueprint now records status types/nullability/epoch-ms since, failure mapping, reload refetch, account+generation install rule, failed-refresh latch, independent 402 latch and recovery, lazy 10-minute/60-second caches, main-only TTL with explicit TTLs preserved, valid client initiator precedence, no redirects and matching k-3 rate. PRD/workstream/overview/count fixes also landed.\n\nPrior requirement/component joins and sequencing are unchanged. Credential/listener rules remain unchanged; security may skip this docs-only PR per packet. All three ddocs validations independently return 0 errors/0 warnings; all 10 changed scalar fields appear in generated faces. No local build or product edits.\n\nExact-head CI run 44229103527 passed all four jobs; latest delivers run 44229136992 passed at the same head. just pr-freeze 238 returned FINAL with five latest checks green and a clean detached tree. Final-round reviewer result: pass; no remaining findings.\n\nPublished writer output community/roles/reviewer/outputs/2026-11/18-verdict-pr-238-45f3150.dd.json (commit 4f3441e906da39849fafef9df9b872d4e9cbe0b1), PR comment 6967992837. The earlier block remains tied only to the old head.\n\nmagicWand: the shared status/readiness contract should be reconciled in the canonical blueprint at the same handoff as its implementation clarification. This round delivered that reconciliation rather than adding new machinery.\n\ndifficulties: none new. Structural validation and semantic alignment are distinct proof; the repair now has both and keeps the generated faces aligned with their sources.\n"
+		}
+	]
+}
