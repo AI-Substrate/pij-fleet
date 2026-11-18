@@ -411,6 +411,10 @@
           "kind": null
         },
         {
+          "name": "pij-cache-proxy",
+          "kind": null
+        },
+        {
           "name": "pij-core",
           "kind": null
         },
@@ -467,6 +471,52 @@
           "kind": "dev"
         }
       ]
+    },
+    {
+      "name": "pij-cache-proxy",
+      "id": "path+file:///workspace/pij/crates/cache-proxy#pij-cache-proxy@0.1.0",
+      "dependencies": [
+        {
+          "name": "axum",
+          "kind": null
+        },
+        {
+          "name": "hyper-util",
+          "kind": null
+        },
+        {
+          "name": "pij-core",
+          "kind": null
+        },
+        {
+          "name": "reqwest",
+          "kind": null
+        },
+        {
+          "name": "serde",
+          "kind": null
+        },
+        {
+          "name": "serde_json",
+          "kind": null
+        },
+        {
+          "name": "time",
+          "kind": null
+        },
+        {
+          "name": "tokio",
+          "kind": null
+        },
+        {
+          "name": "tokio-stream",
+          "kind": null
+        },
+        {
+          "name": "toml",
+          "kind": null
+        }
+      ]
     }
   ],
   "workspace_members": [
@@ -479,7 +529,8 @@
     "path+file:///workspace/pij/crates/sidecars#pij-sidecars@0.1.0",
     "path+file:///workspace/pij/crates/daemon#pij-daemon@0.1.0",
     "path+file:///workspace/pij/crates/unisphere#pij-unisphere@0.1.0",
-    "path+file:///workspace/pij/crates/cli#pij-cli@0.1.0"
+    "path+file:///workspace/pij/crates/cli#pij-cli@0.1.0",
+    "path+file:///workspace/pij/crates/cache-proxy#pij-cache-proxy@0.1.0"
   ],
   "version": 1
 }

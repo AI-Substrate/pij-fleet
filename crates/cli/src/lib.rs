@@ -10,6 +10,7 @@
 #![deny(missing_docs)]
 pub mod anomalies;
 pub mod bounce;
+pub mod cache_proxy;
 pub mod claude_display;
 pub mod claude_hooks;
 pub mod claude_stop;

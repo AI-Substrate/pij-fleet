@@ -47,6 +47,8 @@ install:
     @echo "=== 4/5 link the pij skill and CLI ==="
     just pij-skill-link-global
     npm link
+    @echo "(cache proxy, plan 228: its LaunchAgent; name an account with: pij-rs cache-proxy account <login>)"
+    just cache-proxy-autostart
     @echo
     @echo "=== 5/5 doctor ==="
     just doctor
@@ -758,3 +760,55 @@ rs-autostart-off:
     launchctl bootout "gui/$(id -u)/dev.pij.rs-daemon" 2>/dev/null || true
     rm -f "$HOME/Library/LaunchAgents/dev.pij.rs-daemon.plist"
     @echo "rs-autostart: removed"
+
+# Run the Copilot cache-proxy sidecar (plan 228) at login and keep it running:
+# `pij-rs cache-proxy` on 127.0.0.1:7471, its own LaunchAgent, so a daemon bounce
+# never touches it. Same shape as rs-autostart (Apple-signed /bin/sh execs npm's
+# bin/pij-rs, PATH captured here so the sidecar finds gh), plus KeepAlive with
+# ThrottleInterval 10: unlike the daemon nothing relaunches it by port, so launchd
+# restarts it after a crash, at most every 10 s. `just cache-proxy-autostart <path>`
+# only writes and lints the plist at <path> (no launchctl), for proof on a machine
+# that must not install it.
+cache-proxy-autostart out="":
+    #!/usr/bin/env sh
+    set -eu
+    label=dev.pij.cache-proxy
+    bin="$(npm prefix -g)/bin/pij-rs"
+    plist="{{out}}"
+    if [ -z "$plist" ]; then
+      plist="$HOME/Library/LaunchAgents/$label.plist"
+      mkdir -p "$HOME/Library/LaunchAgents"
+    fi
+    cat > "$plist" <<PLIST
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0"><dict>
+      <key>Label</key><string>$label</string>
+      <key>ProgramArguments</key><array><string>/bin/sh</string><string>-c</string><string>exec "$bin" cache-proxy</string></array>
+      <key>EnvironmentVariables</key><dict>
+        <key>PATH</key><string>$PATH</string>
+      </dict>
+      <key>RunAtLoad</key><true/>
+      <key>KeepAlive</key><true/>
+      <key>ThrottleInterval</key><integer>10</integer>
+      <key>StandardOutPath</key><string>$HOME/.pij-rs/cache-proxy.log</string>
+      <key>StandardErrorPath</key><string>$HOME/.pij-rs/cache-proxy.log</string>
+    </dict></plist>
+    PLIST
+    plutil -lint "$plist"
+    if [ -n "{{out}}" ]; then
+      echo "cache-proxy-autostart: wrote $plist only (no launchctl)"
+      exit 0
+    fi
+    launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+    if lsof -nP -iTCP:7471 -sTCP:LISTEN -t >/dev/null; then
+      echo "cache-proxy-autostart: installed $plist (something already listens on 7471; takes effect at next login)"
+    else
+      launchctl bootstrap "gui/$(id -u)" "$plist" && echo "cache-proxy-autostart: installed and started $label"
+    fi
+
+# Remove the cache-proxy LaunchAgent; booting it out also stops the sidecar.
+cache-proxy-autostart-off:
+    launchctl bootout "gui/$(id -u)/dev.pij.cache-proxy" 2>/dev/null || true
+    rm -f "$HOME/Library/LaunchAgents/dev.pij.cache-proxy.plist"
+    @echo "cache-proxy-autostart: removed"
