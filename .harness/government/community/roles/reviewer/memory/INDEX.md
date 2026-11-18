@@ -88,5 +88,6 @@
 - [2026-11-11 PR 229 executable lifetime repair verified at 324a47f](2026-11-11-pr-229-executable-lifetime-repair.dd.md): When resuming PR 229 or reading the earlier deleted-current\_exe blocker note (review, install, linux, repair)
 - [2026-11-17 Fleet map review: preserve unknown head](2026-11-17-fleet-map-review-preserve-unknown-head.dd.md): review-pr-233 (fleet-map, rendering, harness)
 - [2026-11-17 Fleet map round 2 closes both findings](2026-11-17-fleet-map-round-2-closes-both-findings.dd.md): review-pr-233-r2 (fleet-map, proof)
+- [2026-11-18 PR 239: account-switch refresh and quota-lag review seams](2026-11-18-pr-239-account-switch-refresh-and-quota.dd.md): When reviewing cache-proxy account reload, token refresh, 402 readiness or source-only CI reviews (review, cache-proxy, identity, quota, proof)
 - [2026-11-18 Unknown liveness must win refusal precedence](2026-11-18-pr237-unknown-refusal-precedence.dd.md): When reviewing registration liveness classes, native-session holds or pane takeover recovery (review, registration, liveness, refusal-ordering)
 <!-- /pij:generated -->
