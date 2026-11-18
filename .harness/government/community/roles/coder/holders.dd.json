@@ -1029,7 +1029,10 @@
 					"harness_session": "01a1ec5f-48bf-7797-ae2d-61aa84a8201e",
 					"instance_key": "228",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #239 merged (d391915212a1)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-charming-crane",
+					"to": "2026-11-18T03:22:03.974Z",
 					"why": "pm-004: workstream 004 s02 (plan 228, cache-proxy sidecar)"
 				},
 				{
