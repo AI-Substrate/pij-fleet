@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "When resuming PR 239 or reviewing readiness invalidation against refresh and reload",
+				"tags": [
+					"review",
+					"cache-proxy",
+					"readiness",
+					"mutation",
+					"c34"
+				],
+				"title": "PR 239 round 2: repairs closed, readiness mutant proof ceiling"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #239 round 2 at fe6811f6bc18be5c46690cfdbf4c8b951a9dc83c closes reviewer F001/F002 and documents N001; req-14 is correct in the reviewed delta. F001 compares refresh account+generation before accepting a result, serializes reloads and rejects superseded readiness facts; the test uses per-account tokens and a fake-gh barrier. F002 has an independent 402 latch, with separate message/quota fixture controls and explicit PM-ruled recovery by message 2xx, reset date or reload. Req-14 skips TTL edits for conversation-subagent, preserves client agent/user initiator with inference fallback, and retains -1m mapping.\n\nN002, nonblocking C34 follow-up: the reported readiness-snapshot mutant survives. FIFO check_lock explains eventual reload ordering, not every route-observable interleaving: same-account 401 refresh bypasses that mutex. Keep the production guard; an optional future test can hold an old-token readiness response, refresh successfully, then release it and verify refreshed readiness is not overwritten. Do not convert an un-killed defensive mutant into either a correctness block or a claim that the guard is redundant.\n\nExact-head CI run 44227387171 and latest delivers run 44227430039 succeeded. Rust log: 2469 passed, 6 skipped. Successful rust-test job 134543783951 uploaded artifact 14393906188; downloaded JUnit has 0 failures/errors and all 30 sidecar tests passing, including F001/F002/req-14 and prior guards. just pr-freeze 239 returned FINAL at the reviewed head with a clean detached tree. CI ddocs remains explicitly UNAVAILABLE. Reviewer result: pass-with-notes, final round.\n\nPublished through writer commit e9d295e8f4c7c8e25ab7e3435bbdad21353e7a72 at community/roles/reviewer/outputs/2026-11/18-verdict-pr-239-fe6811f.dd.json, with PR comment 6967780765. This supersedes the earlier-head reviewer block only for the new exact head.\n\nmagicWand: deterministic control of independent upstream facts and token fetch ordering. This round delivered the previous review's main harness request: per-account tokens, refresh barrier, split user quota/message refusal, and the low-UID dscl fixture. Remaining work is the narrow readiness-versus-refresh test above, not a broader audit.\n\ndifficulties: reported mutation survival was explained by one lock ordering but initially generalized to all readiness invalidation paths. Scope the explanation to the actual covered interleaving, and attribute author-run receipts separately from CI and reviewer execution. No local builds, tests, mutations, live sidecars or credentials were used.\n"
+		}
+	]
+}
