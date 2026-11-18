@@ -27,5 +27,6 @@ Seats whose model is not Claude still run plain.
 | 19 | Second human account on the Mac | Doctor warns: the loopback port is reachable cross-account | Simulated via doctor's account check (unit test) |
 | 20 | OMP seats | Unaffected; they keep their own 1h config | An OMP seat's turn is unchanged; it never sees the proxy |
 | 21 | Proxy state changes (on to off to on) | One notice per change to each prime; no repeats (F192) | Toggle twice: exactly 2 notices per prime |
+| 22 | Model names: `claude-opus-5.5` and OMP-style `claude-opus-5.5-1m` | The proxy maps `-1m` to the base id (the API rejects `-1m` with 400 `model_not_supported`); the spawn sets `COPILOT_PROVIDER_MODEL_ID=<base>` and `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` from `/models`; a Claude id `/models` doesn't list runs plain with the reason | Spawn one seat on each name: both get 200s, their status bars show a 1.0M window, the proxy log shows `claude-opus-5.5 (from claude-opus-5.5-1m)`, and only 1h writes appear (spike addendum: `ephemeral_1h` 36,533 and 36,538, `5m` 0) |
 
 Receipts for each row go into the workstream's proof: the command, the observed value and the seat ids.
