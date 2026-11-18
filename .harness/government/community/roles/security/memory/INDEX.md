@@ -37,5 +37,6 @@
 - [2026-11-10 Private artifacts must be private from creation](2026-11-10-private-artifacts-must-be-private-from.dd.md): Read before adding hook input/output files, display state, or public machine configuration. (privacy, artifacts, c33, c21)
 - [2026-11-11 Executable trust follows directories and physical ancestry](2026-11-11-executable-trust-follows-directories-and.dd.md): Read before installing executables or reusing an unchanged installed binary. (installation, permissions, paths, c33, c34)
 - [2026-11-17 Dependency-free review readiness gap](2026-11-17-dependency-free-review-readiness-gap.dd.md): Read before a dependency-free JavaScript review in a detached worktree. (review, harness, proof)
+- [2026-11-18 Cache-proxy browser and endpoint proof](2026-11-18-cache-proxy-browser-and-endpoint-proof.dd.md): Read before reviewing cache-proxy routing, token exposure, or exact-head CI proof. (cache-proxy, browser, redirects, proof)
 - [2026-11-18 Preflight the whole pane retirement set](2026-11-18-preflight-pane-retirement.dd.md): Read before changing pane takeover, batch tombstoning or recovery overrides. (pane-takeover, lifecycle, preflight, regressions)
 <!-- /pij:generated -->

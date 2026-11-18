@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Read before reviewing cache-proxy routing, token exposure, or exact-head CI proof.",
+				"tags": [
+					"cache-proxy",
+					"browser",
+					"redirects",
+					"proof"
+				],
+				"title": "Cache-proxy browser and endpoint proof"
+			}
+		},
+		{
+			"name": "body",
+			"value": "For the cache-proxy, distinguish trusted same-user processes from external browser input. The reviewed implementation binds 127.0.0.1 and applies an any-Origin rejection plus an exact Host allowlist before all routes (crates/cache-proxy/src/serve.rs:40-77,182-184 at 91e7d311e29f577235f4c859d19e0e888955b95c). Trailing-dot and attacker-domain Host strings are refused. URL canonicalization is a useful network-free probe, not proof from a live browser or Rust listener. Authenticated HTTPS endpoint discovery and allowlisted forwarded headers do not establish redirect pinning: default upstream redirects remain enabled. Do not infer token scrubbing of arbitrary upstream bodies or replacement-gh stderr from the absence of held-token interpolation in application logs. PR #239 was accepted with these proof qualifications, not a universal no-leak guarantee. For CI-only reviews, bind the source head to the successful run, separately name the synthetic merge actually tested, and select JUnit by the successful job upload artifact ID. Report local harness checks as not run when the packet prohibits rebuilding. A review packet that still requests handwritten verdicts is stale; use the output writer, post the public comment, and explicitly send the generated path. Captured process improvement: a read-only review-proof command could bundle finality, exact-head CI and upload-selected artifact receipts without rebuilding."
+		}
+	]
+}
