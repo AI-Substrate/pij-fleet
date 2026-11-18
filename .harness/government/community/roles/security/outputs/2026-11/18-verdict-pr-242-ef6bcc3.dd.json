@@ -1,0 +1,40 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"head": "ef6bcc313b284f02c881e00f8e091229a309cb69",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/242",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:242",
+				"writer": "pij-renewed-possum",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 242",
+					"exit_code": 1,
+					"log": "Exact head matches remote and GitHub; clean frozen worktree. NOT FINAL: rust-test pending and merge BLOCKED. Security verdict is static public-data review only."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "security: pass (head ef6bcc313b284f02c881e00f8e091229a309cb69)\n\nNo public-exposure vulnerabilities found in the five changed documents.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | All five changed files | - | None found | - |\n\nReviewed in full:\n- `docs/plans/004-acceptance/receipts.md`\n- `docs/project/prds/004-copilot-cache-proxy.dd.json`\n- `docs/project/prds/004-copilot-cache-proxy.dd.md`\n- `docs/project/workstreams/004-copilot-cache-proxy.dd.json`\n- `docs/project/workstreams/004-copilot-cache-proxy.dd.md`\n\nEvidence:\n- The delegated security inspection read all five files (645 lines) and the original diff. Full-file scans found no credential values, Authorization header values, bearer/basic values, private keys, JWTs, credential-bearing URLs, user-specific home paths or session UUIDs. Long-string candidates were document paths or descriptive test names. Bare `gho_` examples in the PRD are token prefixes, not tokens.\n- `receipts.md:16,30,45`: configuration references stay within pij's portable layout; temporary test paths are generic. All five documents are outside the operational local-path checker's default scope, so its `scanText` function was also applied directly to each document: zero home-path findings. The repository-wide recipe and its tests were not run.\n- `receipts.md:30-31,36-37,46,49-52`: session environment-variable names have no values; synthetic seat names, PIDs, timestamps and usage counters contain no authentication capability or private transcript.\n- `receipts.md:34,41,43-44`: public account handles and the generic enterprise service host are not credentials or tenant-specific routing. Existing public association was confirmed against merged `docs/plans/228-cache-proxy-sidecar/assets/evidence/live-rows.md:19-20,48`; new timing, switching and quota telemetry was independently assessed, not accepted merely because related material was already public.\n- Incremental comparisons verified the wording changes at `receipts.md:37,45` and count correction at `:20`; the other four documents remained byte-identical. Git blob comparisons matched all five files to the exact reviewed head. The final worktree is clean.\n\nProof limits: static public-data review only; the author's live acceptance claims were not reproduced. No builds, installs, credential/configuration/session-file reads, or production changes were performed. Local `harness boot` stopped at missing worktree dependencies; full `harness checks` was not run under the no-build review scope.\n\nFinality is separate from this security PASS: the pre-publication `just pr-freeze 242` matched GitHub and the remote at the head above but returned NOT FINAL because `rust-test` was still running and GitHub reported BLOCKED. The other four checks had passed. This verdict does not declare the PR merge-ready.\n"
+		}
+	]
+}
