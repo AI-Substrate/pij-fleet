@@ -1042,7 +1042,10 @@
 					"harness_session": "01a1ec5f-4d98-7254-a12e-9448e9c57590",
 					"instance_key": "229",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #241 merged (81b459c4aa40)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-yielding-newt",
+					"to": "2026-11-18T04:16:17.390Z",
 					"why": "pm-004: workstream 004 s03 (plan 229, daemon gate)"
 				}
 			]
