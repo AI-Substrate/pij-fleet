@@ -1,0 +1,3 @@
+# Original ask
+
+From pm-004 (pij-outstanding-silkworm), 2026-11-18: coder/229 holds workstream 004 s03, the daemon side of the Copilot cache proxy (spawn gate, receipt, notices, directory, doctor). Packet: governance `community/roles/pm-004/outputs/2026-11/004-s03-coder-229-packet.md`. Build against blueprint 003 c-status-route with an own struct and a stub server; s02 (plan 228) merges first. Same day: req-13 contract change (status `models` keyed by base id; strip `-1m`; plain with "model not served by Copilot API"; env adds COPILOT_PROVIDER_MODEL_ID and COPILOT_PROVIDER_MAX_PROMPT_TOKENS; proof adds matrix row 22).

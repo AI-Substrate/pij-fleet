@@ -1,0 +1,113 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 229 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-9f3c",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Unit tests on the gate's pure decision (crates/daemon/src/cache_proxy.rs): each plain case (opt-out, no model, non-Claude, unreachable, timeout, each non-ready state, base id missing) returns its reason and fix; `-1m` maps to the base id. build_spawn_plan tests: proxied Copilot gets the four env assignments; every other harness and plain Copilot get none. A daemon spawn test against an axum stub status route on an ephemeral port drives ready, not-ready and refused through FakeTmux and checks the launched command.",
+          "state": "unchecked",
+          "probe": "crates/daemon/src/cache_proxy.rs"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-9f3c",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Store test: cache_proxy round-trips through upsert/read and a row without it reads None; migration applies on a copy of an existing schema. Spawn-route test: the receipt JSON carries cache_proxy; a revive of an opted-out seat stays plain. Live: private-daemon spawn receipts for rows 1, 3, 4, 6, 13, 22.",
+          "state": "unchecked",
+          "probe": "crates/store/src/registry.rs"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-9f3c",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Directory view test: Copilot holder rows carry cache_proxy (proxied, plain with reason, missing \u2192 plain); render golden for the holder line. Live: `pij directory` on the private daemon for rows 18.",
+          "state": "unchecked",
+          "probe": "crates/daemon/src/community/directory.rs"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-9f3c",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Watch unit tests on the pure transition function: baseline sends nothing; ready\u2192unreachable\u2192ready gives exactly 2 notices; unchanged state over many ticks gives 0; the body names the live proxied seats and the fix; primes deduplicated. Live: kill the s02 sidecar under 2 proxied seats (row 7), toggle off/on (row 21), bounce the private daemon (row 8): count FYIs held per prime.",
+          "state": "unchecked",
+          "probe": "crates/daemon/src/cache_proxy.rs"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5",
+          "phase": "ph-9f3c",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "`just doctor` run against the private daemon with s02's sidecar up and down; the row prints status or its fix line, and the seat lists match ping. Row 19's account check is s02's parser test, shown through this row.",
+          "state": "unchecked",
+          "probe": "justfile"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6: cost",
+          "phase": "ph-9f3c",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "spawn_sites.rs unchanged and passing; private daemon `pij-rs --json ping | jq .data.spawns` twice 60 s apart with the sidecar up, before and after this change, and across 3 Copilot spawns: no new op.",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping"
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC7: proof and docs",
+          "phase": "ph-9f3c",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Matrix receipts in the PR body; `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/how/pij-rs-api.md"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks --quick",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "pij-rs --json ping | jq .data.spawns",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}
