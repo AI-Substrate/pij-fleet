@@ -1,0 +1,42 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f0ff-6664-7c32-bf2f-6636fbd907b7",
+				"date": "2026-11-19",
+				"head": "6a52a0950d2be8f5e05908384b258144d5976e64",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44420460614",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:245",
+				"writer": "pij-integrated-opossum",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 245",
+					"exit_code": 0,
+					"log": "FINAL at 6a52a0950d2be8f5e05908384b258144d5976e64; CLEAN; all five latest checks pass"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "READY / security PASS\n\nPR #245 at 6a52a0950d2be8f5e05908384b258144d5976e64.\nAnswers role:security/245 request 01a1f0ff-6664-7c32-bf2f-6636fbd907b7.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No security vulnerabilities found | - |\n\nAuthority: an unauthorized initial close returns before scheduling\n(crates/daemon/src/http/lifecycle.rs:496-498). Each changed-row retry rereads\nthe target, checks incarnation and tombstone state, and rechecks the caller's\nauthority; an authority refusal terminates rather than retrying. Only Changed\nretries (crates/daemon/src/http/memory_turn.rs:444-478). The descriptor CAS\ncompares the complete row within its write transaction\n(crates/store/src/registry.rs:61-74). No new permission laundering found.\n\nMemory-note attribution: the directory handler derives the caller and rejects\ncontradictory actor claims (crates/daemon/src/http/directory.rs:560-578);\nmemory.note is appended on that actor (1874-1890), not a selectable other seat.\nRecognition queries the closing seat and checks project, held role, and the\nnewest holding-start timestamp (crates/daemon/src/http/memory_turn.rs:588-608).\nGeneric spine append also binds the seat to the resolved actor and cannot\nsupply the required role payload\n(crates/daemon/src/http/governance.rs:1525-1548).\nThis preserves C33's user-account trust boundary, not a per-seat credential\nguarantee.\n\nRendering: new structured fields are JSON-serialized. Memory INDEX titles\nare Markdown-escaped (crates/daemon/src/community/memory.rs:451-492), the git\nmessage is a separate process argument, not shell text\n(crates/daemon/src/community/writer.rs:246-258), and tombstoned delivery\nrefusals fence the complete reason (crates/core/src/error.rs:115-120).\nNo new unsafe shell/path exposure or published secret found in the nine-file\ndiff.\n\nPolicy/brakes: the timeout bound and note-recognition rule are policies;\nper-attempt incarnation, tombstone, and authority rechecks are brakes.\nCost qualification: a new bounded retry loop allows five total attempts,\nnot five retries. There is no new recurring timer, poll, or launch site.\nThe five target refreshes plus one added spine lookup do not count all I/O:\nexisting CAS, optional liveness checks, and successful receipt lookup remain.\nThis is source evidence, not a live fleet cost measurement.\n\nValidation: just pr-freeze 245 passed twice, including immediately before\npublication: remote heads agree, main base, CLEAN, all five latest checks pass.\nExact-head CI run 44420460614: check (22), check (24), rust-lint and rust-test\nSUCCESS; run 44420460637: delivers SUCCESS. Rust summary: 2,504 passed,\nsix skipped. JUnit artifact 14482580728 confirms memory-turn 19/19,\ndirectory 111/111 and lifecycle 6/6, including retry, reparenting, revive,\npending-close, note recognition and title escaping witnesses.\n\nLimits: source plus Linux CI only. No local cargo build/test, full harness\nchecks, mutation run, macOS execution, or live fleet measurement was performed.\nThe correctness role separately owns the broader lifecycle verdict.\n\nHarness feedback, non-blocking: difficulties - the local done gate rebuilds\nRust while this review requires CI-only build proof; named test receipts need\nmanual JUnit correlation. magicWand - a read-only pr-freeze review receipt\nthat includes head-bound CI job IDs and named JUnit witnesses. No product\nsource or tracked review-worktree files were changed.\n"
+		}
+	]
+}
