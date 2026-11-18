@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Open when delegating a security review or receiving a verdict-only review response.",
+				"tags": [
+					"review",
+					"evidence",
+					"delegation"
+				],
+				"title": "Require evidence in delegated review reports"
+			}
+		},
+		{
+			"name": "body",
+			"value": "A delegated \"no vulnerabilities found\" sentence is not enough to support publication. Require the exact head, repo-relative file:line receipts for each requested check, actual probes performed, and explicit proof limits in the returned report. On #239 the first response omitted those receipts; one same-task follow-up recovered the reviewer's retained evidence without a second review or duplicated parent source reads. Keep CI/finality verification and publication with the role holder, and distinguish author-supplied mutation/live receipts from independently observed results. Product-specific lessons are already in the two cache-proxy notes; do not duplicate them at closure.\n"
+		}
+	]
+}

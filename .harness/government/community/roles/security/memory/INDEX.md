@@ -40,4 +40,5 @@
 - [2026-11-18 Cache-proxy browser and endpoint proof](2026-11-18-cache-proxy-browser-and-endpoint-proof.dd.md): Read before reviewing cache-proxy routing, token exposure, or exact-head CI proof. (cache-proxy, browser, redirects, proof)
 - [2026-11-18 Cache-proxy round-two proof closure](2026-11-18-cache-proxy-round-two-proof-closure.dd.md): Read after the earlier cache-proxy browser/endpoint note or before grading reload isolation and readiness mutants. (cache-proxy, redirects, token-isolation, proof)
 - [2026-11-18 Preflight the whole pane retirement set](2026-11-18-preflight-pane-retirement.dd.md): Read before changing pane takeover, batch tombstoning or recovery overrides. (pane-takeover, lifecycle, preflight, regressions)
+- [2026-11-18 Require evidence in delegated review reports](2026-11-18-require-evidence-in-delegated-review.dd.md): Open when delegating a security review or receiving a verdict-only review response. (review, evidence, delegation)
 <!-- /pij:generated -->
