@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Open before sending to takin, or when picking up s02/s03 of workstream 004",
+				"tags": [
+					"ws004",
+					"takin",
+					"delivery",
+					"lanes"
+				],
+				"title": "takin is reachable directly again (F196 live); lanes and contract owners"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- Supersedes the 'TAKIN TRAP' bullet in the 2026-11-18 start note: F196 is live, so send to pij-amazing-takin directly. Don't relay through the prime.\n- Lanes: s02 sidecar = pij-charming-crane (coder/228, worktree fleet-228-cache-proxy-sidecar). s03 daemon gate = pij-yielding-newt (coder/229, fleet-229-cache-proxy-gate, migration 0047 claimed by pm-004). Both build only into PIJ_SHARED_TARGET=/Users/jordanknight/pi-hacking/target-ws004 via just shared-build.\n- The status-route contract is blueprint 003 c-status-route, plus crane's type rules (since in epoch ms; null account/host; reason/fix \"\" when ready; the failure-to-state mapping; `off` keeps serving existing seats). pm-004 owns changes to it and must tell both lanes.\n- req-13 (-1m → base id; MODEL_ID and MAX_PROMPT_TOKENS env) is split: the proxy half in s02, the spawn half in s03.\n- Docs PR #238 (PRD 004, blueprint 003, workstream 004) is the prime's to merge. Reviewers per PR are Copilot gpt-6.1-sol seats, two rounds at most.\n"
+		}
+	]
+}
