@@ -87,11 +87,11 @@
 				{
 					"id": "req-02",
 					"title": "One named account, token in memory only",
-					"statement": "pij config names one account (`copilot.account`). The proxy gets that account's token with `gh auth token --user <account>`, keeps it in memory only, and never writes, logs or passes it in a command line. Changing the account takes effect at the next refresh and spawn.",
+					"statement": "pij names one account (`pij-rs cache-proxy account <login>`, stored as `account` in `~/.pij-rs/cache-proxy.toml`; q-03). The proxy gets that account's token with `gh auth token --user <account>`, keeps it in memory only, and never writes, logs or passes it in a command line. Changing the account takes effect at once for new requests and spawns.",
 					"actor": "operator",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "Test matrix row 12: after `copilot.account` is switched, the next spawn reaches the new account's endpoint and doctor names it. A grep of the proxy's logs, the spawn argv and the seat's tmux start command finds no token.",
+					"done_when": "Test matrix row 12: after the account is switched, the next spawn reaches the new account's endpoint and doctor names it. A grep of the proxy's logs, the spawn argv and the seat's tmux start command finds no token.",
 					"source": "Jordan 2026-11-18 re-ruling (pm-001 LOG, RE-RULES); handover/ruling-2026-11-18-copilot-cache-proxy.md ruling 3"
 				},
 				{
@@ -117,7 +117,7 @@
 				{
 					"id": "req-05",
 					"title": "Opt out per spawn and machine-wide",
-					"statement": "`--no-cache-proxy` on a spawn, or a machine-wide off switch in pij config, launches seats plain.",
+					"statement": "`--no-cache-proxy` on a spawn, or the machine-wide `pij-rs cache-proxy off`, launches seats plain.",
 					"actor": "operator",
 					"priority": "must",
 					"state": "planned",
@@ -147,12 +147,12 @@
 				{
 					"id": "req-08",
 					"title": "Survives a daemon bounce",
-					"statement": "A daemon bounce never fails a proxied seat's in-flight turn. Copilot CLI retries a refused connection for only about 20 to 23 s (spike q-02: a 3 s outage recovers, a 30 s one loses the turn, a mid-stream reset recovers), so the proxy runs where a bounce can't close its port for that long (q-02).",
+					"statement": "A daemon bounce never fails a proxied seat's in-flight turn. The proxy runs as a same-binary sidecar (`pij-rs cache-proxy`, its own LaunchAgent and loopback port; q-02), so a daemon bounce never touches its listener or its streams. Copilot's ~20 s retry for a refused connection covers the sidecar's own rare restarts.",
 					"actor": "seat",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "Test matrix row 8: a bounce mid-turn on 2 seats; both turns finish.",
-					"source": "Jordan 2026-11-18 re-ruling (ruling 5)"
+					"done_when": "Test matrix row 8: `just bounce-rs` mid-stream on 2 proxied seats; both turns finish with no retry, the sidecar's pid is unchanged, and the daemon reports its health again after the bounce.",
+					"source": "Jordan 2026-11-18 re-ruling (ruling 5); prime ruling 2026-11-18: sidecar"
 				},
 				{
 					"id": "req-09",
@@ -210,15 +210,15 @@
 					"id": "q-02",
 					"question": "Inside the daemon, or a same-binary sidecar?",
 					"default": "Sidecar unless the bounce test shows Copilot retries a refused connection and finishes the turn.",
-					"status": "open",
-					"answer": "Evidence (spike REPORT.md): Copilot retries a refused connection for about 20 to 23 s; 3 s survives, 30 s loses the turn. The bounce gap is unmeasured: the daemon logs its bind but not its exit. `just bounce-rs` waits only 0.5 s after `kill` before starting the new daemon; the log shows one start (2026-11-18 01:07:31Z) refused because a daemon still held the port, and the next bind at 01:09:27Z (whether that was a bounce is unrecorded). `pij daemon bounce` drains for up to 15 s. pm-004 recommends a same-binary sidecar (`pij-rs cache-proxy`, its own LaunchAgent and port), because its uptime doesn't depend on any of that; awaiting the prime's ruling."
+					"status": "answered",
+					"answer": "A same-binary sidecar: `pij-rs cache-proxy`, with its own LaunchAgent and its own loopback port, holding the token in its own memory. Ruled by the prime (far-jackal, 2026-11-18). A measured `just bounce-rs` closed the daemon's listener for 567 ms, well inside Copilot's ~20 s retry for a refused connection (spike q-02). But a bounce still cuts in-flight streams, which run for minutes, and the daemon drains for at most 15 s and bounces several times a day. A sidecar never bounces with the daemon. The daemon and doctor report its health and counters."
 				},
 				{
 					"id": "q-03",
 					"question": "Port and config keys.",
 					"default": "127.0.0.1:7471; `copilot.account`; a machine-wide `copilot.cache_proxy = off` switch.",
-					"status": "open",
-					"answer": ""
+					"status": "answered",
+					"answer": "Port 127.0.0.1:7471. pij has no generic config store, so the proxy has its own file, `~/.pij-rs/cache-proxy.toml` (`account`, `enabled`), written only by `pij-rs cache-proxy account <login>` and `pij-rs cache-proxy off|on` (blueprint 003, d-5)."
 				}
 			]
 		},
@@ -234,6 +234,11 @@
 					"date": "2026-11-18",
 					"by": "pm-004 (pij-outstanding-silkworm)",
 					"change": "Folded in the step 1 spike (model-cost, takin): q-01 answered (no-expiry `gho_` token; refresh on 401 only), the gate's quota check moved to `copilot_internal/user`, the cost bound restated per proxy start, and q-02 evidence recorded with a sidecar recommendation."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "q-02 answered with the prime's ruling 5 (sidecar), and req-08 restated for it. q-03 answered (own config file and `pij-rs cache-proxy` verbs, blueprint 003 d-5); req-02 and req-05 reworded to match."
 				}
 			]
 		}
