@@ -80,7 +80,7 @@
 					"statement": "A pij-spawned Copilot seat on a Claude model, with the proxy ready, gets a 1-hour prompt cache: a turn after more than 5 minutes idle reads its context from cache.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "Test matrix row 2: spawn, one turn, idle 6+ minutes, a second turn shows cache_read about equal to the context, a tiny write, and ephemeral_1h above 0.",
 					"source": "brief from pij-amazing-takin; handover/cache-proxy-test-matrix.md",
 					"delivered_by": "#239"
@@ -165,7 +165,7 @@
 					"statement": "Doctor and `pij directory` show the proxy's state and which seats are proxied or plain. Primes get one notice per state change, never repeats. If the proxy fails with seats on it, the prime gets one notice naming those seats and the fix; `pij-rs revive <seat>` re-runs the gate; whether Copilot's own /restart keeps the provider env is recorded by s04.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "Test matrix rows 7, 18 and 21: killing the proxy under 2 live seats gives one notice naming both; seats launched before the proxy are listed as plain; toggling the proxy off and on gives exactly 2 notices per prime.",
 					"source": "Jordan 2026-11-18 re-ruling; F192 (FYI pile-up)"
 				},
@@ -292,6 +292,11 @@
 					"date": "2026-11-18",
 					"by": "coder/229 (pij-yielding-newt) for pm-004",
 					"change": "req-01 back to in-progress (its done_when needs s04's 6+ minute cache_read receipt; delivered_by #239 kept). req-09 restated: `pij-rs revive <seat>` re-runs the gate, and whether Copilot's own /restart keeps the provider env is recorded by s04; in-progress until s04's row 7 receipt (reviewer pij-sporting-mouse's question)."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "model-cost (pij-amazing-takin) for pm-004",
+					"change": "req-01 shipped (s04 row 2: pij-fuzzy-hawk after 7 min 16 s idle read 41,353, wrote 170, all 1h). req-09 shipped (s04 rows 7, 18, 21: one outage notice per prime naming the seats, exactly 2 notices per off/on toggle, pre-proxy seats listed plain; Copilot's own /restart keeps the provider env without re-running the gate, while pij-rs revive re-runs it). Receipts: docs/plans/004-acceptance/receipts.md."
 				}
 			]
 		}
