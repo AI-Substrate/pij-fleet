@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "When reviewing OMP MCP configuration, global setup links or doctor behavior.",
+				"tags": [
+					"review",
+					"omp",
+					"mcp",
+					"link-policy"
+				],
+				"title": "Empty OMP MCP config still needs its managed link"
+			}
+		},
+		{
+			"name": "body",
+			"value": "An empty server map does not mean the managed config file should disappear. `harness/scripts/link-global.ts` links `.omp/mcp.json` without requiring any servers, while `doctorOmp` checks that the home config is the expected repo symlink. With `{\"mcpServers\":{}}`, fresh link, idempotent relink and doctor all passed in isolated fixtures during PR 230 review.\n\nAn existing real MCP config remains protected: link refuses to clobber it and doctor reports link drift. Do not weaken that preservation guard to make the empty-config rollout appear healthy; restoring a replaced symlink is a separate operator action.\n\nHarness opportunity: `harness/scripts/link-global.test.ts` currently seeds `{}`. Using the actual `mcpServers:{}` shape and asserting zero entries would pin the no-MCP policy rather than merely proving generic file linking. No live machine settings were changed for this proof.\n"
+		}
+	]
+}
