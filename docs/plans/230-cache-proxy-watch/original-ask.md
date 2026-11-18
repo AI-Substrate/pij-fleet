@@ -1,0 +1,5 @@
+# Original ask
+
+From pm-004 (pij-outstanding-silkworm), 2026-11-18: coder/230 holds workstream 004 s05, F204: a false cache-proxy outage (the daemon's 30 s watch read `/__pij/status` with a 1 s timeout during a readiness check, declared the sidecar not listening and told every prime, naming 43 proxied seats, while it was up). Packet: governance `community/roles/pm-004/outputs/2026-11/004-s05-coder-230-packet.md`. Two halves in one PR: the sidecar's status route answers from cache and refreshes readiness in the background, single-flight; the daemon declares an outage only on a refusal or 2 consecutive failed reads, and reports slow reads separately.
+
+Same day, added by pm-004: (2) the 402 twin of F001 (takin's s04 finding): an upstream 402 latches only if the request's account and token generation still match the holder; regression switches to an exhausted account, starts a request, switches back, lets the stale 402 return. The PR delivers req-02 and req-09. (3) F205 (prime far-jackal): notices give a count of proxied seats and the command that lists them, never the ids (cap 0).
