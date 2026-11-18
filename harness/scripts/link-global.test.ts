@@ -17,7 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { type OmpConfigPort, runLinkGlobal } from "./link-global.js";
+import { type OmpConfigPort, type OmpSettingValue, runLinkGlobal } from "./link-global.js";
 
 const scratch: string[] = [];
 
@@ -208,17 +208,23 @@ describe("link-global", () => {
 	});
 });
 
+/** OMP's defaults for the settings pij manages. */
+const OMP_DEFAULTS: Readonly<Record<string, OmpSettingValue>> = {
+	"extensionRenderers.assistantText": false,
+	"providers.cacheRetention": "auto",
+};
+
 /** OMP's settings as `omp config` would hold them; `undefined` means no omp. */
 function fakeOmpConfig(installed = true): OmpConfigPort & {
-	values: Map<string, boolean>;
+	values: Map<string, OmpSettingValue>;
 	writes: string[];
 } {
-	const values = new Map<string, boolean>();
+	const values = new Map<string, OmpSettingValue>();
 	const writes: string[] = [];
 	return {
 		values,
 		writes,
-		get: (key) => (installed ? (values.get(key) ?? false) : undefined),
+		get: (key) => (installed ? (values.get(key) ?? OMP_DEFAULTS[key] ?? null) : undefined),
 		set: (key, value) => {
 			writes.push(`set ${key} ${value}`);
 			values.set(key, value);
@@ -232,6 +238,9 @@ function fakeOmpConfig(installed = true): OmpConfigPort & {
 
 describe("OMP managed settings (plan 226)", () => {
 	const KEY = "extensionRenderers.assistantText";
+	const CACHE = "providers.cacheRetention";
+	const CACHE_WHY =
+		"a 1-hour prompt cache on Copilot's Claude models (docs/how/prompt-cache-cost.md)";
 
 	it("link turns the renderer setting on once, through omp config, and unlink resets it", () => {
 		const root = checkout();
@@ -247,7 +256,34 @@ describe("OMP managed settings (plan 226)", () => {
 			`= omp/config ${KEY} (already on)`,
 		);
 		expect(run(root, home, ["--remove"], undefined, omp).stdout).toContain(`✗ omp/config ${KEY}`);
-		expect(omp.writes).toEqual([`set ${KEY} true`, `reset ${KEY}`]);
+		expect(omp.writes).toEqual([
+			`set ${KEY} true`,
+			`set ${CACHE} long`,
+			`reset ${KEY}`,
+			`reset ${CACHE}`,
+		]);
+	});
+
+	it("link sets the 1-hour cache retention once, and unlink resets only pij's value", () => {
+		const root = checkout();
+		const home = tempDir("pij-link-home-");
+		const omp = fakeOmpConfig();
+
+		expect(run(root, home, [], undefined, omp).stdout).toContain(
+			`→ omp/config ${CACHE} = long, for ${CACHE_WHY}`,
+		);
+		expect(omp.values.get(CACHE)).toBe("long");
+		expect(run(root, home, [], undefined, omp).stdout).toContain(
+			`= omp/config ${CACHE} (already long)`,
+		);
+
+		// A value the user chose is not pij's to remove.
+		omp.values.set(CACHE, "none");
+		omp.writes.length = 0;
+		const unlinked = run(root, home, ["--remove"], undefined, omp);
+		expect(unlinked.stdout).not.toContain(`✗ omp/config ${CACHE}`);
+		expect(omp.writes).toEqual([`reset ${KEY}`]);
+		expect(omp.values.get(CACHE)).toBe("none");
 	});
 
 	it("doctor names the off setting and its fix, and passes once it is on", () => {
@@ -260,10 +296,16 @@ describe("OMP managed settings (plan 226)", () => {
 		expect(off.code).toBe(1);
 		expect(off.stderr).toEqual([
 			`OMP setting ${KEY} is off; it is needed for hiding end-of-turn pij blocks on screen (plan 226). Fix: just link`,
+			`OMP setting ${CACHE} is auto, not long; it is needed for ${CACHE_WHY}. Fix: just link`,
 		]);
 		expect(omp.writes).toEqual([]);
 
+		// Each setting is checked on its own: one fixed still leaves the other named.
 		omp.values.set(KEY, true);
+		expect(run(root, home, ["--doctor-omp"], undefined, omp).stderr).toEqual([
+			`OMP setting ${CACHE} is auto, not long; it is needed for ${CACHE_WHY}. Fix: just link`,
+		]);
+		omp.values.set(CACHE, "long");
 		expect(run(root, home, ["--doctor-omp"], undefined, omp)).toMatchObject({
 			code: 0,
 			stderr: [],
@@ -277,6 +319,7 @@ describe("OMP managed settings (plan 226)", () => {
 		expect(result.code).toBe(0);
 		expect(result.stderr).toEqual([
 			`skip omp/config ${KEY}: omp could not be run (install it: just omp-install)`,
+			`skip omp/config ${CACHE}: omp could not be run (install it: just omp-install)`,
 		]);
 	});
 });

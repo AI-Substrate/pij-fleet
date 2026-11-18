@@ -4,9 +4,9 @@
 // `just link` links only the `pij` extension into OMP, plus pij's curated OMP
 // MCP and model configuration, and the native Copilot extension. OMP deliberately
 // loads no other local extensions. `--check-only` exposes the linked-worktree
-// guard without mutating any home. It also turns on the OMP settings pij's
-// extension needs (OMP_MANAGED_SETTINGS) through OMP's own `omp config` writer,
-// which keeps the rest of the user's config.yml.
+// guard without mutating any home. It also sets the OMP settings pij needs
+// (OMP_MANAGED_SETTINGS) through OMP's own `omp config` writer, which keeps the
+// rest of the user's config.yml.
 
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -32,20 +32,39 @@ import { pathToFileURL } from "node:url";
 
 type Verdict = "linked" | "already" | "removed" | "missing" | "skipped";
 
-/** OMP settings pij's extension needs, each with what breaks without it. */
-export const OMP_MANAGED_SETTINGS = [
+/** A value `omp config` holds for a setting. */
+export type OmpSettingValue = boolean | string;
+
+/** OMP settings pij needs, each with pij's value and what breaks without it. */
+export const OMP_MANAGED_SETTINGS: readonly {
+	readonly key: string;
+	readonly value: OmpSettingValue;
+	readonly why: string;
+}[] = [
 	{
 		key: "extensionRenderers.assistantText",
+		value: true,
 		why: "hiding end-of-turn pij blocks on screen (plan 226)",
 	},
-] as const;
+	{
+		key: "providers.cacheRetention",
+		value: "long",
+		why: "a 1-hour prompt cache on Copilot's Claude models (docs/how/prompt-cache-cost.md)",
+	},
+];
 
 /** OMP's settings, through its own CLI writer. */
 export interface OmpConfigPort {
-	/** The effective value, or undefined when omp cannot be run. */
-	get(key: string): boolean | undefined;
-	set(key: string, value: boolean): void;
+	/** The effective value; null when it is neither a boolean nor a string; undefined when omp
+	 * cannot be run. */
+	get(key: string): OmpSettingValue | null | undefined;
+	set(key: string, value: OmpSettingValue): void;
 	reset(key: string): void;
+}
+
+/** How a setting's value reads in a line: `on` and `off` for booleans. */
+function shown(value: OmpSettingValue | null): string {
+	return value === true ? "on" : value === false ? "off" : value === null ? "unset" : value;
 }
 
 /** The real port: `omp config get|set|reset`, against `home`. */
@@ -58,13 +77,13 @@ export function ompConfigCli(home: string): OmpConfigPort {
 		});
 	return {
 		get(key) {
+			let value: unknown;
 			try {
-				return (
-					(JSON.parse(run(["get", key, "--json"])) as { readonly value?: unknown }).value === true
-				);
+				value = (JSON.parse(run(["get", key, "--json"])) as { readonly value?: unknown }).value;
 			} catch {
 				return undefined;
 			}
+			return typeof value === "boolean" || typeof value === "string" ? value : null;
 		},
 		set(key, value) {
 			run(["set", key, String(value)]);
@@ -304,22 +323,23 @@ function manageOmpSettings(
 	stderr: (line: string) => void,
 ): { changed: number; skipped: number } {
 	let changed = 0;
-	for (const { key, why } of OMP_MANAGED_SETTINGS) {
+	for (const { key, value: wanted, why } of OMP_MANAGED_SETTINGS) {
 		const value = port.get(key);
 		if (value === undefined) {
 			stderr(`skip omp/config ${key}: omp could not be run (install it: just omp-install)`);
 			continue;
 		}
 		if (removeMode) {
-			if (!value) continue;
+			// Only pij's own value is pij's to reset; any other value is the user's.
+			if (value !== wanted) continue;
 			port.reset(key);
 			stdout(`✗ omp/config ${key}`);
 			changed++;
-		} else if (value) {
-			stdout(`= omp/config ${key} (already on)`);
+		} else if (value === wanted) {
+			stdout(`= omp/config ${key} (already ${shown(value)})`);
 		} else {
-			port.set(key, true);
-			stdout(`→ omp/config ${key} = true, for ${why}`);
+			port.set(key, wanted);
+			stdout(`→ omp/config ${key} = ${String(wanted)}, for ${why}`);
 			changed++;
 		}
 	}
@@ -368,15 +388,22 @@ function doctorOmp(options: RunLinkGlobalOptions, sourceRoot: string): number {
 		options.stderr(`OMP models link mismatch: expected ${expectedModels}`);
 		return 1;
 	}
-	for (const { key, why } of options.ompConfig === undefined ? [] : OMP_MANAGED_SETTINGS) {
+	let unset = 0;
+	for (const { key, value: wanted, why } of options.ompConfig === undefined
+		? []
+		: OMP_MANAGED_SETTINGS) {
 		const value = options.ompConfig?.get(key);
-		if (value !== true) {
-			options.stderr(
-				`OMP setting ${key} is ${value === undefined ? "unreadable (omp could not be run)" : "off"}; it is needed for ${why}. Fix: just link`,
-			);
-			return 1;
-		}
+		if (value === wanted) continue;
+		const state =
+			value === undefined
+				? "unreadable (omp could not be run)"
+				: typeof wanted === "boolean"
+					? shown(value)
+					: `${shown(value)}, not ${wanted}`;
+		options.stderr(`OMP setting ${key} is ${state}; it is needed for ${why}. Fix: just link`);
+		unset++;
 	}
+	if (unset > 0) return 1;
 	options.stdout("✓ OMP policy: pij-only extension + curated MCP, model and settings config");
 	return 0;
 }

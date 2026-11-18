@@ -85,8 +85,10 @@ these as an "adaptive Anthropic prompt-cache policy" experiment.
 OMP sends `cache_control: {type: "ephemeral", ttl: "1h"}` on Anthropic Messages requests only when **both** of
 these are set:
 
-1. **Retention:** `providers.cacheRetention: long` in `~/.omp/agent/config.yml`, which is machine-local. The
-   env var `PI_CACHE_RETENTION=long` works too.
+1. **Retention:** `providers.cacheRetention: long` in `~/.omp/agent/config.yml`. This is set by `just link`, one of
+   pij's managed OMP settings. `just omp-doctor` (and `just doctor`) report it missing or stale, and `just unlink`
+   resets it only while it still holds pij's value. OMP's own default is `auto`. The env var
+   `PI_CACHE_RETENTION=long` works too.
 2. **The model's compat flag:** `compat.supportsLongCacheRetention: true` on the model in `.omp/models.yml`. The
    repo sets it for Copilot's claude-sonnet-5.5, claude-opus-5 and claude-opus-5.5.
 
