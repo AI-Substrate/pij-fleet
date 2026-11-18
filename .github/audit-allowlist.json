@@ -2,7 +2,7 @@
 	{
 		"id": "GHSA-fc5q-39xc-vjpf",
 		"package": "picomatch",
-		"reason": "dev-only (vitest > vite / tinyglobby / fdir); matches repo-authored test globs only, never untrusted input; no patched release as of 2026-11-18 (range <=4.0.7, latest 4.0.7; GitHub advisory API patched: null); bump and delete this entry once a fix clears the 7-day npm quarantine",
-		"expires": "2026-12-18T00:00:00Z"
+		"reason": "stopgap: dev-only (vitest > vite / tinyglobby / fdir), matches repo-authored test globs only; no patched release as of 2026-11-18 (latest 4.0.7, advisory patched: null); upstream fixes micromatch/picomatch#262-#266 are open. Plan: once the fixed release clears the 7-day npm quarantine, a PR adds package.json overrides {\"picomatch\": \"^4.0.8\"}, re-locks, shows npm audit clean and deletes this entry. The expiry is the forcing function.",
+		"expires": "2026-12-02T00:00:00Z"
 	}
 ]
