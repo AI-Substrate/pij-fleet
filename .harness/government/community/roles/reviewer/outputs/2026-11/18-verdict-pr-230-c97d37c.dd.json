@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"head": "c97d37c509be2e99d29f60f844b78229e0574c28",
+				"kind": "verdict",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:230",
+				"writer": "pij-friendly-gull",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR 230 correctness review\n\nHead: c97d37c509be2e99d29f60f844b78229e0574c28\nResult: pass-with-notes\n\nThe config change is correct: `.omp/mcp.json` is valid JSON containing exactly\n`{\"mcpServers\": {}}`. There are no remaining tracked Perplexity references in\n`.omp`, `harness`, `skills`, or `docs`; an additional `rg --hidden` search of those\npaths also returned no matches.\n\n`just link` delegates to `runLinkGlobal`; `just doctor` reaches its\n`--doctor-omp` path through `just omp-doctor`. Shared-file linking and doctor\nvalidate the managed symlink, not a nonempty server list. A dependency-free Node\nfixture imported the reviewed implementation and used the exact reviewed config\nin isolated checkout/home directories. Fresh link, idempotent relink, and doctor\npassed. Existing real files remain protected, doctor still reports their link\ndrift, and the linked-worktree guard refuses before touching the supplied home.\nNo machine-global links or settings were changed.\n\nThe PR body explains the per-seat process/memory and startup-timeout reason, and\nwhy retaining the old repo config would reintroduce the server during setup.\n\nN230-001: Scrub the machine-local investigation pointer outside pij's layout from\nthe public PR body (C21). Keep the rationale; a local pathname is unnecessary.\nThis is a body-only hygiene note, not a configuration correctness defect.\n\nCost: no new loop, poll, timer, hook, or launch. The removed definition eliminates\nthe npx wrapper/server startup per OMP seat; this review makes no measured fleet\nbefore/after claim.\n\nEvidence:\n- `just pr-freeze 230 --worktree`: passed; exact remote/API head agreement,\n  clean merge, ready status, passing latest checks, and valid Delivers.\n- `git grep -n -i -e perplexity HEAD -- .omp harness skills docs`: exit 1,\n  expected for zero matches.\n- `node --experimental-strip-types --disable-warning=ExperimentalWarning pr230-link-check.mjs`:\n  passed all isolated link/doctor/preservation/guard assertions.\n- `gh pr checks 230 --repo AI-Substrate/pij-fleet`: all five checks passed.\n- `harness boot --json`: advisory `ready:false` because this detached worktree\n  has no node_modules; no dependency links were created or borrowed. Vitest was\n  not run locally; exact-head CI supplies suite evidence. Full harness checks\n  were not run, as requested.\n\nHarness feedback: the existing link-global test already exercises an empty JSON\nconfig. A small optional improvement is to use the actual `mcpServers:{}` shape\nand assert zero server entries, pinning the no-MCP ruling. No source changes\nwere made during this read-only review.\n"
+		}
+	]
+}
