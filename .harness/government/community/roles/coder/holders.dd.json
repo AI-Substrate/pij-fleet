@@ -1055,7 +1055,10 @@
 					"harness_session": "01a1ed05-768a-700c-97ba-889cc22ced76",
 					"instance_key": "230",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #243 merged (ea5e9c49aa63)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-fair-firefly",
+					"to": "2026-11-18T05:56:43.670Z",
 					"why": "pm-004: workstream 004 s05 (plan 230, F204 false outage)"
 				}
 			]
