@@ -1639,7 +1639,10 @@
 					"harness": "copilot",
 					"harness_session": "7be2d0ba-7cc1-48c7-8899-247c93b0945d",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "merged #230",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-friendly-gull",
+					"to": "2026-11-18T04:02:59.718Z",
 					"why": "PR #230 OMP mcp.json"
 				}
 			]
