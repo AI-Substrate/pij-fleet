@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Before reviewing cache-proxy rewrites, prompt-body copies or per-request cost claims",
+				"tags": [
+					"cost",
+					"memory",
+					"cache-proxy",
+					"review"
+				],
+				"title": "Shared proxies: payload ownership beyond launch counts"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Shared proxies: audit payload ownership, not only launches\n\nPR #238 supplied the cache-proxy design sources; my performance review was of #239, not an independent #238 review.\n\nThe reusable lesson from PERF-239-01: audit full-payload ownership across an upstream await. `Rewritten.body` was `Option<Vec<u8>>`; cloning it retained a second serialized prompt while forwarding. On a shared sidecar, that avoidable memory scales with body size times active requests. A per-request 64 MiB limit is not a fleet-wide memory bound. Destructure the rewrite, move its vector into `Bytes::from`, and keep only metadata. The retry's `Bytes::clone()` intentionally shares the payload and should remain. Inspect ownership directly: ordinary response/content tests do not prove an allocation was removed.\n\nReq-14 reuses the existing JSON parse. Borrowed-header classification returns enums/static strings; an explicit initiator avoids inference; subagents skip the TTL walk and, without model mapping, serialization. Describe this precisely as no extra launch, network call, timer, parse or prompt-sized copy, not literally zero CPU instructions. The shape field extends an existing log record rather than adding one.\n\nA surviving mutation is a proof limit, not automatically a new blocker. The readiness-snapshot guard remained present; performance acceptance did not clear F001 for correctness or security. C34 makes extra mutation fixtures optional.\n\nMagic wand: extend the existing fake-upstream cost scenario with large prompts and concurrent clients, recording peak RSS and latency alongside launch counters. No new benchmark framework is needed. A response that streams and a flat process counter can still hide substantial prompt-buffer amplification.\n\nEvidence: `crates/cache-proxy/src/proxy.rs` (body move and shared retry), `crates/cache-proxy/src/rewrite.rs` (subagent path), plan 228 `assets/evidence/live-rows.md`, and performance outputs `18-verdict-pr-239-91e7d31` / `18-verdict-pr-239-fe6811f`.\n"
+		}
+	]
+}
