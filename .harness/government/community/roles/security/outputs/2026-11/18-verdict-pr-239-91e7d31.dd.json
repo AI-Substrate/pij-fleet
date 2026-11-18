@@ -1,0 +1,45 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"head": "91e7d311e29f577235f4c859d19e0e888955b95c",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44225036106",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:239",
+				"writer": "pij-colorful-echidna",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 239",
+					"exit_code": 0,
+					"log": "FINAL at 91e7d311e29f577235f4c859d19e0e888955b95c; CLEAN; all five checks pass"
+				},
+				{
+					"command": "gh run view 44225036106 --log",
+					"exit_code": 0,
+					"log": "Successful CI; rust-test job 134536017451; upload-selected JUnit artifact 14391968226; cache-proxy 26 passed, spawn-sites 6 passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "security: pass-with-notes (head 91e7d311e29f577235f4c859d19e0e888955b95c)\n\nNo exploitable security vulnerability established in the reviewed changes. Reviewed all 33 changed files, including fixtures, documentation, launch recipes and evidence. This is a security verdict, not a correctness or performance verdict.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No exploitable vulnerabilities established | - |\n\nSecurity checklist:\n\n- **Token handling:** `crates/cache-proxy/src/token.rs:78-104` launches gh without a shell or token argument and retains token stdout in memory. Reviewed log/error paths in `proxy.rs:269-280,298-325,365-405,495-534,639-745` do not interpolate the held token; authorization is marked sensitive at `:610`. Status omits it (`:465-489`), and persisted configuration is account/enabled only (`config.rs:16-25,72-95`). The committed live token-grep receipt at `docs/plans/228-cache-proxy-sidecar/assets/evidence/live-rows.md:24` is author-supplied, not independently reproduced.\n- **Startup-only controls:** `proxy.rs:75-99` snapshots executable resolution, GitHub-API override and stale-token controls. Request and reload handlers do not accept those overrides.\n- **Browser and rebinding boundary:** `serve.rs:40-77` rejects any Origin header and any Host outside its exact loopback allowlist before dispatch, including on status/reload; `:182-184` binds only `127.0.0.1`. Trailing-dot `localhost.` and attacker-domain Host values fail the exact comparison (`:55-61`). Network-free URL canonicalization of eleven Host variants and five concatenated-path cases found no destination-authority escape; this is not a live browser/server replay.\n- **Upstream authority:** authenticated discovery supplies the endpoint, with HTTPS required outside the startup test override (`readiness.rs:71-95,199-214`; `proxy.rs:438-449,586-587`). Reload ignores request bodies (`serve.rs:84-87`). Request/response headers are allowlisted and upstream authorization is constructed internally (`proxy.rs:592-627,690-699`).\n- **Launch and public-repo hygiene:** gh resolves to an absolute executable and receives separate arguments (`token.rs:27-69,80-81`); account validation rejects flag-shaped/metacharacter-bearing values (`config.rs:103-109`). No secret candidates, new notes-push path or seat-authority-laundering path were found in the diff. npm lockfile/quarantine files are unchanged; parsed npm sources remain registry.npmjs.org. Cargo.lock adds only the internal crate/package edge.\n\nNonblocking qualifications:\n\n- **Redirects remain enabled.** The discovered HTTPS endpoint is not a redirect-pinning guarantee. No attacker-controlled redirect source was established. Do not describe this verdict as proving all subsequent redirect destinations are pinned.\n- Token-free conclusions cover reviewed construction/logging paths, not arbitrary behavior of a replacement gh or compromised upstream. gh's first stderr line may be reported, and upstream response bodies pass through without secret scrubbing.\n- Unauthenticated loopback access is the accepted single-human deployment limit. No live browser/Rust HTTP replay, duplicate-header, cross-UID or installation exercise was performed.\n\nValidation receipts:\n\n- `just pr-freeze 239`: **passed**, FINAL at the full head above, clean detached review worktree, merge state CLEAN.\n- `gh pr checks 239`: **passed**, all five checks: check (22), check (24), rust-lint, rust-test and delivers.\n- `gh run view 44225036106 --log`: **read**, successful CI run associated with source head `91e7d311e29f577235f4c859d19e0e888955b95c`. CI checked out GitHub's synthetic merge `47018f3f235d4d97e18e40637e6beb2fc169e31f`; source head and tested merge are distinct.\n- Successful rust-test job `134536017451`, its upload-selected JUnit artifact `14391968226`: **18/18 cache-proxy unit tests, 8/8 proxy integration tests and 6/6 spawn-site tests passed**, no skips in those suites. Browser-Origin/foreign-Host rejection is among the passing integration tests. Workspace total: 2465 passed, 6 skipped.\n- Both Node checks: lockfile allowlist **passed**, 223 sources; audit gate **passed with the existing time-bounded picomatch waiver**, not a claim of zero advisories.\n- No local builds, test-suite runs, sidecar launches, credential-file reads, production probes or code changes. Local `harness checks` was not run because it would rebuild; exact-head CI is the packet's build/test proof.\n"
+		}
+	]
+}
