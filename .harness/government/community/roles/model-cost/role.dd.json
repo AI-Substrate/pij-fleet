@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/role"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"holders": "one",
+				"id": "model-cost",
+				"kind": "specialist",
+				"lifecycle": "long-lived",
+				"title": "Model cost and prompt-cache economics"
+			}
+		},
+		{
+			"name": "scope",
+			"value": {
+				"paths": [
+					"docs/how/prompt-cache-cost.md",
+					"crates/cli/src/fleet_report*"
+				],
+				"rules": [
+					"Price every token class separately (fresh input, cache read, 5m/1h cache write, output); never assume a TTL the transcript does not record",
+					"Measure idle gaps per model; Copilot nano calls hide Opus cold wakes",
+					"Every cost claim carries a receipt: command, value, seat ids"
+				]
+			}
+		},
+		{
+			"name": "standing_packet",
+			"value": {
+				"source": "inline",
+				"text": "You hold model-cost for pij-fleet. Read this role memory INDEX and docs/how/prompt-cache-cost.md first. Do the job in your request; publish results with pij output; write a memory note before compact or close."
+			}
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"by": "pij-amazing-takin",
+					"date": "2026-11-18T01:25:40.548Z",
+					"why": "same finding twice: prompt-cache cold-wake cost found by bolvar (Sep) and takin (Nov); knowledge worth remembering (prime ruling 2026-11-18)"
+				}
+			]
+		}
+	]
+}
