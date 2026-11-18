@@ -1607,6 +1607,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-legal-chickadee",
 					"why": "pm-004: verdict on #239 (ws004 s02)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-18T03:13:58.908Z",
+					"harness": "copilot",
+					"harness_session": "8eb77c6e-db0c-4c8c-ab7a-4245a6cf22fc",
+					"instance_key": "240",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-mere-lizard",
+					"why": "F198+F195 #240 correctness (gpt-6.1-sol)"
 				}
 			]
 		}
