@@ -176,6 +176,15 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-renewed-possum",
 					"why": "pm-004: secrets check on #242 (public live receipts)"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-18T05:46:54.709Z",
+					"harness": "copilot",
+					"harness_session": "570f725f-c47b-45c3-86fc-4e00b4a731b8",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-supposed-gazelle",
+					"why": "pm-004: verdict on #243 (ws004 s05)"
 				}
 			]
 		}
