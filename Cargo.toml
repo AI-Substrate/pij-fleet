@@ -23,6 +23,7 @@ members = [
   "crates/cli",
   "crates/testkit",
   "crates/unisphere",
+  "crates/cache-proxy",
 ]
 
 [workspace.package]
@@ -44,6 +45,7 @@ pij-daemon = { path = "crates/daemon" }
 pij-cli = { path = "crates/cli" }
 pij-testkit = { path = "crates/testkit" }
 pij-unisphere = { path = "crates/unisphere" }
+pij-cache-proxy = { path = "crates/cache-proxy" }
 
 # External versions are pinned in ONE place so two crates can never resolve
 # different majors of the same dependency. Membership here is not permission:

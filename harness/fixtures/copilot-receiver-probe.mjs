@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { joinSession } from "@github/copilot-sdk/extension";
+import { joinSession } from "@microsoft/copilot-sdk/extension";
 
 async function startProbe() {
 	const session = await joinSession();

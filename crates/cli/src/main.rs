@@ -20,7 +20,9 @@ use pij_cli::{
     setup_refusal,
 };
 use pij_core::error::PijError;
-use pij_core::model::{Envelope, ErrorKind, Event, Harness, SeatDescriptor, SeatId, SemanticState};
+use pij_core::model::{
+    Envelope, ErrorKind, Event, Harness, ProcIdentity, SeatDescriptor, SeatId, SemanticState,
+};
 use pij_core::wire;
 use pij_harnesses::{
     claude_homes, copilot_home, ensure_claude_inbound_accept, ensure_claude_message_display_hook,
@@ -82,6 +84,16 @@ enum Command {
         /// network in clear. Never needed for loopback or a Tailscale address.
         #[arg(long)]
         insecure_bind: bool,
+    },
+    /// The Copilot cache-proxy sidecar (plan 228): no action runs it in the
+    /// foreground; `status`, `account <login>`, `off` and `on` show or change it.
+    CacheProxy {
+        #[command(subcommand)]
+        action: Option<CacheProxyAction>,
+        /// Loopback port. Resolution is `--port`, then `PIJ_CACHE_PROXY_PORT`,
+        /// then 7471.
+        #[arg(long, global = true)]
+        port: Option<u16>,
     },
     /// Check or mint machine pairings (<state-dir>/peers.toml).
     Peers {
@@ -205,6 +217,13 @@ enum Command {
         /// Operator reclaim of a dead seat onto this pane (parent or prime only).
         #[arg(long)]
         reclaim: Option<String>,
+        /// Retire this pane's other records whose process is gone or cannot be
+        /// checked (F196): from the pane's own process or the designated prime.
+        #[arg(long, requires = "why")]
+        take_over: bool,
+        /// The reason a `--take-over` records.
+        #[arg(long, requires = "take_over")]
+        why: Option<String>,
     },
     /// Render a harness status line from the payload on stdin (plan 180).
     ///
@@ -989,6 +1008,22 @@ enum PeersAction {
 }
 
 #[derive(Clone, Debug, Subcommand)]
+enum CacheProxyAction {
+    /// Show its state, account, upstream host, quota, models and counters,
+    /// or that nothing listens; warns about a second human account.
+    Status,
+    /// Name the gh account whose token it holds, then reload it.
+    Account {
+        /// The gh login.
+        login: String,
+    },
+    /// New spawns run plain; live proxied seats keep being served.
+    Off,
+    /// Switch it back on and re-run its checks.
+    On,
+}
+
+#[derive(Clone, Debug, Subcommand)]
 enum HookAction {
     /// Claude's Stop hook when the reply holds a pij fence (plan 226): reads the
     /// Stop input on stdin, runs a closing pij block, publishes idle unless the
@@ -1178,6 +1213,43 @@ async fn run(cli: Cli) -> ExitCode {
                 ExitCode::from(exit_code(&report))
             }
         };
+    }
+    // Plan 228: the cache-proxy sidecar and its verbs need no daemon; with no
+    // action it is a long-running server, like `daemon`.
+    if let Command::CacheProxy { action, port } = &cli.command {
+        let port = match pij_cli::cache_proxy::resolve_port(
+            *port,
+            std::env::var_os(pij_cli::cache_proxy::PORT_ENV),
+        ) {
+            Ok(port) => port,
+            Err(message) => return emit_config_error(&cli, message),
+        };
+        let change = match action {
+            None => {
+                return match pij_cli::cache_proxy::run(&state_dir, port).await {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(message) => {
+                        eprintln!("pij-rs cache-proxy: {message}");
+                        ExitCode::FAILURE
+                    }
+                };
+            }
+            Some(CacheProxyAction::Status) => None,
+            Some(CacheProxyAction::Account { login }) => {
+                Some(pij_cli::cache_proxy::Change::Account(login.clone()))
+            }
+            Some(CacheProxyAction::Off) => Some(pij_cli::cache_proxy::Change::Off),
+            Some(CacheProxyAction::On) => Some(pij_cli::cache_proxy::Change::On),
+        };
+        let report = match change {
+            None => pij_cli::cache_proxy::status(port).await,
+            Some(change) => pij_cli::cache_proxy::change(&state_dir, port, change).await,
+        };
+        if cli.json {
+            return emit(&report, true);
+        }
+        println!("{}", pij_cli::cache_proxy::render(&report));
+        return ExitCode::from(exit_code(&report));
     }
     if let Command::Daemon {
         action: None,
@@ -1404,6 +1476,9 @@ async fn run(cli: Cli) -> ExitCode {
             unreachable!("claude-hooks returned before client construction")
         }
         Command::Peers { .. } => unreachable!("peers returned before client construction"),
+        Command::CacheProxy { .. } => {
+            unreachable!("cache-proxy returned before client construction")
+        }
         Command::FleetReport { .. } => {
             unreachable!("fleet-report returned before client construction")
         }
@@ -1473,6 +1548,8 @@ async fn run(cli: Cli) -> ExitCode {
             extension_path,
             harness_session,
             reclaim,
+            take_over,
+            why,
         } => {
             warn_caller_claude_home(&harness);
             let mut argv = adopt_argv(
@@ -1486,10 +1563,14 @@ async fn run(cli: Cli) -> ExitCode {
             for (flag, value) in [
                 ("--harness-session", harness_session),
                 ("--reclaim", reclaim),
+                ("--why", why),
             ] {
                 if let Some(value) = value {
                     argv.extend([flag.to_string(), value]);
                 }
+            }
+            if take_over {
+                argv.push("--take-over".to_string());
             }
             let request = IdentityRequest {
                 argv,
@@ -2481,7 +2562,10 @@ async fn statusline_copilot(cli: &Cli) -> ExitCode {
         .ok()
         .filter(|pane| !pane.is_empty())
     {
-        Some(pane) => pij_cli::statusline::Whoami::Pane(statusline_whoami_text(cli, &pane).await),
+        Some(pane) => pij_cli::statusline::pane_whoami(
+            statusline_whoami_text(cli, &pane).await,
+            &statusline_owns,
+        ),
         None => pij_cli::statusline::Whoami::Plain(statusline_plain_id(cli).await),
     };
     let context = pij_cli::statusline::Context {
@@ -2572,7 +2656,8 @@ fn statusline_identity(pane: &str, mut caller: CallerContext) -> IdentityRequest
     }
 }
 
-/// Outside tmux the script asked `pij whoami --json | jq -r '.data.id // .id // empty'`.
+/// Outside tmux the script asked `pij whoami --json | jq -r '.data.id // .id // empty'`;
+/// the id now shows only when its seat is this session's (F198).
 async fn statusline_plain_id(cli: &Cli) -> Option<String> {
     let client = statusline_client(cli).ok()?;
     let response = client.whoami(&identity_request(None, None)).await;
@@ -2580,12 +2665,18 @@ async fn statusline_plain_id(cli: &Cli) -> Option<String> {
         .raw_json
         .clone()
         .unwrap_or_else(|| render(&response, true));
-    let value: Value = serde_json::from_str(&text).ok()?;
-    value["data"]["id"]
-        .as_str()
-        .or_else(|| value["id"].as_str())
-        .filter(|id| !id.is_empty())
-        .map(str::to_string)
+    pij_cli::statusline::plain_id(&text, &statusline_owns)
+}
+
+/// Whether `seat` is the nearest harness host above this status line (F198,
+/// S240-001), read in-process: no launch per render.
+fn statusline_owns(seat: ProcIdentity) -> bool {
+    pij_cli::statusline::runs_under(
+        seat,
+        std::process::id(),
+        &pij_harnesses::proc::parent_and_host_name,
+        &|pid| pij_harnesses::proc::observed_start(pid).map(|start| start.local),
+    )
 }
 
 /// bash's `$PWD`: the inherited value when it still names this directory.
@@ -4083,8 +4174,16 @@ fn render_state(envelope: &Envelope<pij_daemon::http::StateCard>, json: bool) ->
                 deferred.reason, deferred.count, deferred.since_ms,
             );
         }
-        if let Some(reason) = &card.native_receiver_reason {
-            let _ = write!(output, "\nnative receiver: {reason}");
+        // F195: the daemon's line says the receiver lapsed, since when, and
+        // that the process may still run; an older daemon sends only the reason.
+        match (&card.native_receiver_line, &card.native_receiver_reason) {
+            (Some(line), _) => {
+                let _ = write!(output, "\n{line}");
+            }
+            (None, Some(reason)) => {
+                let _ = write!(output, "\nnative receiver: {reason}");
+            }
+            (None, None) => {}
         }
         if card.pending_fyis > 0 {
             let _ = write!(output, "\nFYIs held: {}", card.pending_fyis);
@@ -4594,6 +4693,7 @@ impl Command {
             Command::ClaudeHooks { .. } => "pij claude-hooks",
             Command::Hook { .. } => "pij hook",
             Command::Peers { .. } => "pij peers",
+            Command::CacheProxy { .. } => "pij cache-proxy",
             Command::SpawnChild { .. } => "pij spawn child",
             Command::Ping => "pij ping",
             Command::Sidecar { .. } => "pij sidecar",
@@ -5549,6 +5649,21 @@ PEC notice";
             "native-extension-unavailable"
         );
         assert_eq!(json["data"]["liveness"], "active");
+        // F195: the daemon's line is printed on its own, in place of the reason.
+        let line = "native receiver: lapsed, last renewed 39m ago. The process is active, but sends to this seat are refused until its extension registers again.";
+        let card = serde_json::from_value::<pij_daemon::http::StateCard>(serde_json::json!({
+            "id":"pij-native", "state":"idle", "liveness":"active", "cwd":"/abs/tree",
+            "harness":"copilot", "unsupported":[],
+            "native_receiver_reason":"native-extension-unavailable",
+            "nativeReceiverLine": line,
+        }))
+        .unwrap();
+        let human = super::render_state(&pij_core::model::Envelope::ok("pij state", card), false);
+        assert!(human.lines().any(|row| row == line), "{human}");
+        assert!(
+            !human.contains("\nnative receiver: native-extension"),
+            "{human}"
+        );
     }
 
     #[test]
@@ -5631,8 +5746,9 @@ PEC notice";
                 // that fails this test first — which is exactly what it did for
                 // `report` (u-report), adopt/whoami/phonehome (u-identity) and
                 // `state` (u-readback), `doctor` (plan 126) and `fleet-report` (plan 162),
-                // `claude-hooks` and `hook` (plan 226).
+                // `claude-hooks` and `hook` (plan 226), `cache-proxy` (plan 228).
                 "daemon",
+                "cache-proxy",
                 "peers",
                 "ping",
                 "doctor",

@@ -71,6 +71,9 @@ transcript of all of this is in
 | `daemon` | composition root #1 — HTTP, tick loop, workers |
 | `cli` | composition root #2 and the only binary, `pij-rs` |
 | `testkit` | fakes, contract suites, the fixture corpus, `FreshStore`, the gate binaries |
+| `sidecars` | queue-backed Telegram, background-command and chore consumers |
+| `unisphere` | session facts (`SessionStatusPort`) over the in-process Unisphere SDK |
+| `cache-proxy` | the Copilot cache-proxy sidecar, `pij-rs cache-proxy` (plan 228): token in memory, 1-hour cache rewrite, status route; depends on `core` only |
 
 `docs/plans/108-rust-port/assets/architecture.md` explains why, and what a later
 unit is expected to copy.

@@ -354,6 +354,51 @@ pub fn parent_and_name(pid: u32) -> Option<(u32, String)> {
     Some((info.pbsi_ppid.0, name))
 }
 
+/// F198: a process's parent pid and the name it runs as, read in-process for
+/// the Copilot status line's walk to its own host. macOS: [`parent_and_name`]
+/// (kernel `p_comm`). Linux: field 4 of `/proc/<pid>/stat` and the file name of
+/// `/proc/<pid>/exe`, since comm is a mutable task name there (Copilot reports
+/// `MainThread`). It launches nothing. `None` when the kernel will not say.
+#[must_use]
+pub fn parent_and_host_name(pid: u32) -> Option<(u32, String)> {
+    #[cfg(target_os = "macos")]
+    {
+        parent_and_name(pid)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let parent = linux_ppid(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)?;
+        let exe = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
+        Some((parent, linux_exe_name(exe.to_str()?)?))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
+/// The file name of a `/proc/<pid>/exe` target. A binary replaced on disk (an
+/// in-place upgrade) reads `<path> (deleted)`; the suffix is stripped once, as
+/// registration does, so an upgraded `copilot` is still a host.
+#[cfg(any(target_os = "linux", test))]
+fn linux_exe_name(target: &str) -> Option<String> {
+    let path = target.strip_suffix(" (deleted)").unwrap_or(target);
+    Some(
+        std::path::Path::new(path)
+            .file_name()?
+            .to_str()?
+            .to_string(),
+    )
+}
+
+/// Field 4 of `/proc/<pid>/stat`, counted from the LAST `)` like [`linux_start`].
+#[cfg(any(target_os = "linux", test))]
+fn linux_ppid(stat: &str) -> Option<u32> {
+    let (_, rest) = stat.rsplit_once(')')?;
+    rest.split_whitespace().nth(1)?.parse().ok()
+}
+
 /// Read the host's current UTC offset in minutes, in-process.
 ///
 /// Spawn binding uses this only for a fresh process, so the current offset is
@@ -657,6 +702,27 @@ mod tests {
         assert_eq!(super::linux_start(stat, boot), Some(1_782_864_000 + 1234));
         assert_eq!(super::linux_start("4242 (a) S", boot), None);
         assert_eq!(super::linux_start(stat, "cpu 1\n"), None);
+    }
+
+    #[test]
+    fn linux_ppid_is_field_4_after_the_last_paren() {
+        let stat = "4242 (a) (b c) S 77 4242 4242 0 -1";
+        assert_eq!(super::linux_ppid(stat), Some(77));
+        assert_eq!(super::linux_ppid("4242 (a) S"), None);
+    }
+
+    /// An upgraded Copilot's exe reads `… (deleted)` and must still name a host,
+    /// or the status line's walk climbs past it to an outer registered seat.
+    #[test]
+    fn linux_exe_name_strips_a_replaced_binarys_deleted_suffix() {
+        assert_eq!(
+            super::linux_exe_name("/opt/copilot/copilot (deleted)").as_deref(),
+            Some("copilot")
+        );
+        assert_eq!(
+            super::linux_exe_name("/usr/bin/node").as_deref(),
+            Some("node")
+        );
     }
 
     /// The offset is the one in force at the START instant. Using the current

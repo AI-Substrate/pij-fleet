@@ -63,13 +63,6 @@ const positiveInteger = (value) => Number.isSafeInteger(value) && value > 0;
 const sameProcess = (seat, host) =>
 	seat.proc?.pid === host.pid && seat.proc?.proc_start === host.proc_start;
 const samePane = (seat, host) => (seat.pane ?? undefined) === (host.pane ?? undefined);
-const nativeSession = (seat) =>
-	seat.harness === "copilot" &&
-	nonempty(seat.session) &&
-	positiveInteger(seat.proc?.pid) &&
-	positiveInteger(seat.proc?.proc_start);
-const nativeAttested = (seat) =>
-	nativeSession(seat) && seat.native_extension_delivery === true && seat.tombstoned_at == null;
 
 export class NativeError extends Error {
 	constructor(message, retryable = false, safeDiagnostic = message, holdKind = undefined) {
@@ -413,18 +406,10 @@ export function chooseRegistration({ sessionId, host, folder, seats, env, extens
 		)
 	)
 		throw new NativeError("Native process identity has conflicting seats or pane");
-	if (
-		host.pane &&
-		live.some(
-			(seat) =>
-				seat !== prebind &&
-				seat !== candidates[0] &&
-				seat.pane === host.pane &&
-				!sameProcess(seat, host) &&
-				!nativeAttested(seat),
-		)
-	)
-		throw new NativeError("Pane belongs to a different process identity");
+	// F196: whether the pane's other holders block this claim is the daemon's
+	// call, because only it observes their liveness (the roster carries none).
+	// It refuses every live row on the pane this check did, retires a holder
+	// whose process is confirmed gone, and names a take-over for an unknown one.
 	// A verified spawn allocation owns its id and parent; otherwise the session owns the address.
 	const prior = prebind ?? candidates[0] ?? exact[0];
 	// A same-process session rollover keeps its original launch environment on extension reload.
@@ -731,6 +716,18 @@ export class DaemonClient {
 				envelope?.v === 2 &&
 				envelope.ok === false &&
 				envelope.details?.code === "E-RS-SEAT-RETIRED";
+			// F196: a pane recorded for a seat whose process the daemon cannot check.
+			// Only validated fields are projected; the take-over command is rebuilt here.
+			const paneHeld =
+				path === "/v1/register" &&
+				response.status === 400 &&
+				envelope?.v === 2 &&
+				envelope.ok === false &&
+				envelope.details?.code === "E-RS-PANE-HELD" &&
+				typeof envelope.details.pane === "string" &&
+				/^%\d{1,9}$/.test(envelope.details.pane) &&
+				typeof envelope.details.holder === "string" &&
+				/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(envelope.details.holder);
 			const registrationRetry =
 				path === "/v1/register" &&
 				response.status === 409 &&
@@ -761,7 +758,9 @@ export class DaemonClient {
 					? projected
 					: retired
 						? "this seat address is retired (E-RS-SEAT-RETIRED); stopped re-registering"
-						: `Pij HTTP ${response.status}`,
+						: paneHeld
+							? `pane ${envelope.details.pane} is recorded for seat ${envelope.details.holder}, whose process pij cannot check`
+							: `Pij HTTP ${response.status}`,
 				registrationRetry && ["native-session", "native-holder"].includes(envelope.details.hold)
 					? envelope.details.hold
 					: undefined,
@@ -771,6 +770,8 @@ export class DaemonClient {
 			if (nativeUnavailable) error.revoked = true;
 			if (coldWake) error.coldWake = true;
 			if (retired) error.retired = true;
+			if (paneHeld)
+				error.takeOver = `pij-rs adopt ${envelope.details.pane} --harness copilot --take-over --why <reason>`;
 			throw error;
 		}
 		return envelope;
@@ -2619,7 +2620,10 @@ export function createNativeReporter({ log, capture }) {
 						? "queued work targets another native session; resume that native session or use a new seat and intentionally reissue the message; receiving stopped without acknowledgement; outgoing pij_send remains available"
 						: "receiving held; inspect native history and acceptance before recovery, do not blindly resend or acknowledge"
 					: event.kind === "extension-unavailable"
-						? `native registration failed: ${event.safeDiagnostic ?? "native initialization failed"}; no retry is scheduled — restart the Copilot CLI (/restart or relaunch) to recover; ordinary Copilot remains usable`
+						? event.takeOver
+							? // F196: a restart alone meets the same holder; the take-over clears it.
+								`native registration failed: ${event.safeDiagnostic}; take the pane over with \`${event.takeOver}\` (from this pane, or ask the prime), then /restart; ordinary Copilot remains usable`
+							: `native registration failed: ${event.safeDiagnostic ?? "native initialization failed"}; no retry is scheduled — restart the Copilot CLI (/restart or relaunch) to recover; ordinary Copilot remains usable`
 						: event.kind === "reconnecting" && event.holdKind === "receiver-gap"
 							? "native receiver progress is temporarily lagging behind a live turn; retrying in place, not a Pij daemon issue; ordinary Copilot remains usable"
 							: "check the Pij daemon and PIJ_RS_ADDR/PIJ_RS_STATE_DIR; retrying when available; ordinary Copilot remains usable";

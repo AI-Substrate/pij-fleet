@@ -1,0 +1,285 @@
+{
+	"dd": {
+		"schema": "pij/blueprint"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Blueprint 003: Copilot cache proxy",
+				"status": "draft",
+				"updated": "2026-11-18",
+				"owner": "pm-004",
+				"summary": "How PRD 004 is built: a same-binary sidecar (`pij-rs cache-proxy`) that holds one account's token and rewrites the cache TTL, and a daemon spawn gate that wires a Copilot Claude seat to it only when the sidecar says it is ready."
+			}
+		},
+		{
+			"name": "overview",
+			"value": "A new pi-free crate, `crates/cache-proxy`, carries the proxy: the request rewrite from the POC (`ttl: \"1h\"` on main-agent `cache_control` only, the client's own `X-Initiator` preserved before falling back to inference, `-1m` mapped to the base id), the token holder (`gh auth token --user`, in memory, refreshed only on a 401, single-flight), the readiness check (`copilot_internal/user`: endpoint plus quota; `/models`: limits), and an axum listener on 127.0.0.1:7471 that streams to the discovered endpoint with reqwest and follows no redirects. `pij-rs cache-proxy` runs it under its own LaunchAgent, so a daemon bounce never touches it. It serves a status route that the daemon reads: at spawn, to decide proxied or plain, and on one slow loopback poll, to give the prime one notice per state change. The daemon never holds the token."
+		},
+		{
+			"name": "components",
+			"value": [
+				{
+					"id": "c-proxy-core",
+					"name": "Proxy core (rewrite and pass-through)",
+					"kind": "module",
+					"where": "crates/cache-proxy/src/{rewrite,serve}.rs",
+					"responsibility": "Ports the POC. Adds a missing `ttl: \"1h\"` only to ephemeral `cache_control` blocks of main-agent requests, and preserves explicit TTLs. Requests with `x-interaction-type: conversation-subagent` stay on the 5-minute default (req-14). A client `X-Initiator` of `agent` or `user` wins; if it is absent or any other value, the initiator is inferred from the last message (`agent` when it is all tool results). Maps a `*-1m` `model` to its base id (Copilot's API rejects `-1m` with 400 `model_not_supported`; the base id serves 1M). Otherwise streams requests and responses through unchanged (SSE, tool use, images, 1M context); a rewritten body is re-serialized deterministically, JSON-semantically equal, with object keys sorted (N001). Upstream redirects are not followed. Binds 127.0.0.1 only. Logs the upstream host, status, model (`base (from x-1m)`), main or subagent, and cache usage counts, never a header value other than those enums.",
+					"realises": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-01",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-07",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-13",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-14"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-token-holder",
+					"name": "Token holder",
+					"kind": "module",
+					"where": "crates/cache-proxy/src/token.rs",
+					"responsibility": "Fetches the account's token with `gh auth token --user <account>`, with `gh` resolved once to an absolute path and recorded through `pij_core::spawns::record(\"gh.cache_proxy_token\")`. Keeps it in memory only. On a 401, one single-flight refresh shared by every waiting request, then one retry. A refresh result is installed only if its account and generation still match the current holder (F001). A failed refresh retains the held token, latches `no_token`, and suppresses further refresh launches until a reload. A test-only stale-token knob (`PIJ_CACHE_PROXY_TEST_STALE_TOKEN`) serves rows 9 and 10.",
+					"realises": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-02",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-03",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-10"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-readiness",
+					"name": "Readiness check",
+					"kind": "module",
+					"where": "crates/cache-proxy/src/readiness.rs",
+					"responsibility": "GETs `api.github.com/copilot_internal/user` with the token: takes `endpoints.api` as the upstream, and `quota_snapshots.premium_interactions` as the quota (usable if `unlimited`, `remaining > 0` or `overage_permitted`; otherwise the reset date). GETs `<endpoints.api>/models` for each Claude model's `max_prompt_tokens`. Checks are lazy, run on status reads: a successful check is cached 10 minutes per account, a failed one 60 seconds, and a refresh or a 402 schedules a recheck. An upstream 402 latches `quota_exhausted` with `quota.usable=false`; a lagging usable snapshot cannot clear it. Only a 2xx from a Messages POST, the quota reset date passing, or a reload clears that latch (F002).",
+					"realises": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-06",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-13"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-status-route",
+					"name": "Status route",
+					"kind": "endpoint",
+					"where": "crates/cache-proxy/src/status.rs",
+					"responsibility": "`GET /__pij/status` on the proxy's port returns `{ready, state, reason, fix, account, upstream_host, quota: {usable, reset}, models: {\"<base id>\": {max_prompt_tokens}}, counters: {requests, refreshes, gh_launches, upstream_401, upstream_402}, pid, since}`. `models` lists only Claude ids, keyed by base id (never `-1m`). `state` is one of `ready`, `off`, `no_account`, `gh_missing`, `no_token`, `quota_exhausted`, `upstream_unreachable`. Types: `ready` is boolean and true only when `state=ready`. `reason` and `fix` are strings, empty when ready. `account`, `upstream_host` and `quota.reset` are strings or null; `quota.usable` is boolean. `pid`, counters and `max_prompt_tokens` are integers. `since` is epoch milliseconds of the last state change, not process uptime or the last check time. Failure mapping: missing config or account (or an unreadable config) -> `no_account`; disabled -> `off`; missing gh -> `gh_missing`; token-fetch failure or a readiness 401 -> `no_token`; no entitlement (a user response without `endpoints.api`, or a readiness 403/404) -> `quota_exhausted`; network, timeout or 5xx failures -> `upstream_unreachable`. `POST /__pij/reload` takes no parameters from a request body: it rereads the config file, refetches the token when the account changed, no token is held, or the last fetch or refresh failed, reruns readiness, and returns the status object. Neither route carries a token or a secret.",
+					"realises": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-09"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-proxy-verb",
+					"name": "pij-rs cache-proxy",
+					"kind": "verb",
+					"where": "crates/cli/src/cache_proxy.rs (Command::CacheProxy in crates/cli/src/main.rs, an early long-running branch beside Command::Daemon)",
+					"responsibility": "`pij-rs cache-proxy` (no action) runs the sidecar. `status` prints the status route (or 'not listening' plus the fix). `account <login>` and `off` / `on` write the config file, then POST reload. The second-human-account check (`/usr/bin/dscl . -list /Users UniqueID`, uid 501 and up, minus `nobody`-style system ids) lives here as a pure parser plus one launch, called by `status` and doctor.",
+					"realises": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-02",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-05",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-11"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-config-file",
+					"name": "Cache-proxy config",
+					"kind": "file",
+					"where": "~/.pij-rs/cache-proxy.toml",
+					"responsibility": "`account = \"<login>\"` and `enabled = true|false`. No file, or no account, means off. Written only by `pij-rs cache-proxy account|off|on`; read by the sidecar at start and on reload.",
+					"realises": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-02",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-05"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-launch-agent",
+					"name": "Sidecar LaunchAgent",
+					"kind": "file",
+					"where": "justfile recipes `cache-proxy-autostart` / `cache-proxy-autostart-off` (plist ~/Library/LaunchAgents/dev.pij.cache-proxy.plist); `just install` calls the first",
+					"responsibility": "Same shape as `rs-autostart`: `/bin/sh -c 'exec <npm-prefix>/bin/pij-rs cache-proxy'`, RunAtLoad plus KeepAlive (restart on crash, ThrottleInterval 10 s), so the sidecar outlives every daemon bounce.",
+					"realises": ["../prds/004-copilot-cache-proxy.dd.json#requirements/req-08"],
+					"state": "planned"
+				},
+				{
+					"id": "c-spawn-gate",
+					"name": "Spawn gate and env",
+					"kind": "module",
+					"where": "crates/daemon/src/cache_proxy.rs (called from launch_seat_locked in crates/daemon/src/http/mod.rs); env added in build_spawn_plan, crates/harnesses/src/spawn.rs",
+					"responsibility": "For a Copilot seat only: plain if `--no-cache-proxy`, if the model isn't Claude, if the status route isn't `ready` (one loopback GET, 1 s timeout), or if the model's base id (with `-1m` stripped) is missing from the status `models`. Otherwise `SpawnPlanInput` carries the proxy URL, base id and limit, and `build_spawn_plan` adds `COPILOT_PROVIDER_TYPE=anthropic`, `COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:7471`, `COPILOT_PROVIDER_MODEL_ID=<base id>`, `COPILOT_PROVIDER_MAX_PROMPT_TOKENS=<max_prompt_tokens>` and `COPILOT_PROVIDER_VISION=true`. Copilot CLI treats every BYOK model as text-only without `VISION` and drops images (s02 row 16; every Claude id in `/models` has vision). `MODEL_ID` sets only limits and agent config; the wire model is the seat's `--model`, which the proxy maps from `-1m`. OMP, Claude and Codex seats are never touched.",
+					"realises": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-05",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-12",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-13"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-seat-proxy-state",
+					"name": "Seat proxy state and receipt",
+					"kind": "store",
+					"where": "SeatDescriptor (crates/core) field `cache_proxy: {state: proxied|plain, reason}`; SpawnResponse in crates/daemon/src/http/types.rs; directory holder rows (crates/daemon/src/community/directory.rs, rendered in crates/cli/src/main.rs render_directory)",
+					"responsibility": "Every Copilot spawn records proxied or plain with the reason and fix; the spawn receipt prints it; directory rows show it. A seat with no field (launched before the proxy existed) reads as plain.",
+					"realises": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-09"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-proxy-watch",
+					"name": "Proxy watch and notices",
+					"kind": "module",
+					"where": "crates/daemon/src/cache_proxy.rs; /health gains `cache_proxy` (crates/daemon/src/http/mod.rs health)",
+					"responsibility": "Reads the status route every 30 s (one loopback GET, no launch). On a change of `state` (or on unreachable), it sends one notice per change to each prime through `notify_prime` (crates/daemon/src/http/routes.rs), naming the proxied live seats and the fix, never repeats. Exposes the last status and counters in `/health`, so `pij-rs --json ping` and `just doctor` show them.",
+					"realises": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-08",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-09"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-doctor-row",
+					"name": "Doctor row",
+					"kind": "hook",
+					"where": "justfile `doctor` recipe",
+					"responsibility": "Adds `cache-proxy:` with `pij-rs cache-proxy status` (state, account, upstream host, quota, counters, proxied and plain live seats), and the second-human-account warning.",
+					"realises": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-09",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-11"
+					],
+					"state": "planned"
+				}
+			]
+		},
+		{
+			"name": "decisions",
+			"value": [
+				{
+					"id": "d-1",
+					"decision": "A same-binary sidecar with its own LaunchAgent and port, not a task inside the daemon.",
+					"why": "Prime ruling 5 (2026-11-18): a bounce closes the daemon's listener for only ~567 ms, but it cuts in-flight streams that run for minutes, and the daemon bounces several times a day. Same binary: no new artifact, and the Defender exclusion for ~/.local/share/pij/bin/pij-rs already covers it.",
+					"realises": ["../prds/004-copilot-cache-proxy.dd.json#requirements/req-08"]
+				},
+				{
+					"id": "d-2",
+					"decision": "The token lives only in the sidecar. The daemon reads the status route and never sees the token.",
+					"why": "One holder means one place to audit (security verdict), and the daemon's logs and env, which reach every job it runs, can't leak it.",
+					"realises": ["../prds/004-copilot-cache-proxy.dd.json#requirements/req-02"]
+				},
+				{
+					"id": "d-3",
+					"decision": "Refresh only on a 401, single-flight, one retry. No proactive refresh.",
+					"why": "Spike q-01: the `gho_` token is accepted directly, sends no expiration header, and the v2/token exchange returns 403.",
+					"realises": ["../prds/004-copilot-cache-proxy.dd.json#requirements/req-03"]
+				},
+				{
+					"id": "d-4",
+					"decision": "The quota check is `copilot_internal/user` `quota_snapshots`, not a model probe.",
+					"why": "Spike: `/models` answers 200 with the quota exhausted, `/v1/messages` gives 402; `copilot_internal/user` shows `remaining 0, overage_permitted false` plus the reset date, for a free GET. Prime accepted 2026-11-18.",
+					"realises": ["../prds/004-copilot-cache-proxy.dd.json#requirements/req-04"]
+				},
+				{
+					"id": "d-5",
+					"decision": "A feature-specific config file (`~/.pij-rs/cache-proxy.toml`) set by `pij-rs cache-proxy account|off|on`, not a generic `pij config` store.",
+					"why": "pij has no generic config store (its config is per feature, such as peers.toml); building one for two keys is scope the PRD doesn't ask for. Answers PRD q-03.",
+					"realises": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-02",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-05"
+					]
+				},
+				{
+					"id": "d-6",
+					"decision": "The gate's last word is the sidecar's own `ready`, read at spawn with a 1 s timeout; any failure means plain.",
+					"why": "The sidecar is the only part that knows the token, the endpoint and the quota. A plain launch is always safe; a broken proxied seat never is.",
+					"realises": ["../prds/004-copilot-cache-proxy.dd.json#requirements/req-04"]
+				},
+				{
+					"id": "d-7",
+					"decision": "Proxy-death detection is a 30 s loopback poll from the daemon, not a push from the sidecar.",
+					"why": "A dead sidecar can't push. One GET per 30 s, with no launch and no growth with seats, is the cheapest signal that also catches a hang.",
+					"realises": ["../prds/004-copilot-cache-proxy.dd.json#requirements/req-09"]
+				}
+			]
+		},
+		{
+			"name": "costs",
+			"value": [
+				{
+					"id": "k-1",
+					"what": "Proxied model requests.",
+					"rate": "0 launches per request; one upstream HTTPS request per seat request (the same request the seat would send directly)",
+					"scaling": "with seat requests; adds no process",
+					"component": ["#components/c-proxy-core"]
+				},
+				{
+					"id": "k-2",
+					"what": "Token fetch and refresh.",
+					"rate": "1 `gh` launch (absolute path) per sidecar start, plus at most 1 per 401 burst (single-flight); 0 per request",
+					"scaling": "with sidecar restarts and 401 bursts, not with seats",
+					"component": ["#components/c-token-holder"]
+				},
+				{
+					"id": "k-3",
+					"what": "Readiness check.",
+					"rate": "1 GET to `copilot_internal/user` and 1 to `/models` per 10 min per account while healthy and asked (60 s after a failed check), plus 1 of each after a refresh or 402; 0 launches",
+					"scaling": "with accounts (1), not with seats",
+					"component": ["#components/c-readiness"]
+				},
+				{
+					"id": "k-4",
+					"what": "Spawn gate.",
+					"rate": "1 loopback GET per Copilot spawn; 0 launches",
+					"scaling": "with spawns",
+					"component": ["#components/c-spawn-gate"]
+				},
+				{
+					"id": "k-5",
+					"what": "Daemon's proxy watch.",
+					"rate": "1 loopback GET every 30 s; 0 launches",
+					"scaling": "constant: not per seat, not per pane",
+					"component": ["#components/c-proxy-watch"]
+				},
+				{
+					"id": "k-6",
+					"what": "Second-human-account check.",
+					"rate": "1 `/usr/bin/dscl` launch per `cache-proxy status` or doctor run; never on a timer",
+					"scaling": "with manual runs only",
+					"component": ["#components/c-proxy-verb", "#components/c-doctor-row"]
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "First draft, after the step 1 spike (takin) and the prime's ruling 5 (sidecar)."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "req-13 (takin's spike addendum): c-proxy-core maps `-1m` to the base id; c-readiness reads `/models`; the status route gains `models`; c-spawn-gate sets the model id and max prompt tokens."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "req-14 (takin's subagent spike): c-proxy-core leaves `conversation-subagent` requests on the 5-minute default and forwards the client's own `X-Initiator`."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "#238 review F238-001: brought into line with what #239 built (fe6811f6). Status-route types, failure mapping and reload; the F002 402 latch and the lazy readiness caching (10 min ok, 60 s failed); the F001 refresh install rule and the failed-refresh latch; no upstream redirects; main-agent-only TTL with explicit TTLs preserved; initiator precedence; k-3 rate."
+				}
+			]
+		}
+	],
+	"references": []
+}

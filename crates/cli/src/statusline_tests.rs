@@ -637,10 +637,11 @@ fn every_golden_case_matches_the_plan_156_script_byte_for_byte() {
 }
 
 /// Honest by construction (plan 156 rule 5): the render shows what THIS
-/// render's whoami said. A seat that died between two refreshes shows dead on
-/// the next one; nothing is cached across renders.
+/// render's whoami said, with nothing cached across renders. A seat that died
+/// between two refreshes is not shown on the next one, by name or as dead
+/// (F198): a refusal never names the seat it mentions.
 #[test]
-fn a_seat_that_dies_shows_dead_on_the_very_next_render() {
+fn a_seat_that_dies_is_not_named_on_the_very_next_render() {
     let context = |whoami: &str| Context {
         pwd: std::env::temp_dir(),
         home: None,
@@ -650,11 +651,195 @@ fn a_seat_that_dies_shows_dead_on_the_very_next_render() {
     let alive = render_copilot(b"{}", &context(OK), &none);
     let dead = render_copilot(b"{}", &context(DEAD), &none);
     assert!(alive.contains("⛓ pij-brave-otter"), "{alive}");
-    assert!(dead.contains("⛓ pij-gone-heron dead"), "{dead}");
+    assert!(dead.contains("⛓ unregistered"), "{dead}");
     assert!(
-        !dead.contains("pij-brave-otter"),
-        "no earlier answer leaks: {dead}"
+        !dead.contains("pij-brave-otter") && !dead.contains("pij-gone-heron"),
+        "no seat is named: {dead}"
     );
+}
+
+/// F198: an unregistered Copilot session shares a cwd, a pane id (another tmux
+/// server's `%9`) and an inherited `PIJ_SESSION_ID` with registered seats, live
+/// and dead. Its status line names none of them, and names its own seat only
+/// when the seat records this session's process (pid AND start).
+#[test]
+fn an_unregistered_session_never_shows_another_seats_name() {
+    use pij_core::model::ProcIdentity;
+
+    use super::{pane_whoami, plain_id, runs_under};
+
+    // This status line (pid 500) runs under the Copilot CLI (pid 400), which
+    // the npm loader (node, 300) started.
+    let copilot = ProcIdentity {
+        pid: 400,
+        proc_start: 20_261_118_090_000,
+    };
+    let process = |pid: u32| match pid {
+        500 => Some((400, "pij-rs".to_string())),
+        400 => Some((300, "copilot".to_string())),
+        300 => Some((1, "node".to_string())),
+        _ => None,
+    };
+    let start = |pid: u32| (pid == 400).then_some(copilot.proc_start);
+    let owns = |seat: ProcIdentity| runs_under(seat, 500, &process, &start);
+    let cwd = std::env::temp_dir();
+    let answer = |id: &str, proc: ProcIdentity| {
+        serde_json::json!({
+            "ok": true,
+            "command": "pij whoami",
+            "data": {
+                "id": id,
+                "harness": "copilot",
+                "pane": "%9",
+                "folder": cwd.display().to_string(),
+                "proc": proc,
+                "pending_fyis": 2,
+            },
+        })
+        .to_string()
+    };
+    let render = |whoami: Whoami| {
+        render_copilot(
+            payload(&cwd, "").as_bytes(),
+            &Context {
+                pwd: cwd.clone(),
+                home: None,
+                whoami,
+            },
+            &|_: &Path| None,
+        )
+    };
+
+    // A live seat on the same pane id and cwd, in another process.
+    let porcupine = answer(
+        "pij-possible-porcupine",
+        ProcIdentity {
+            pid: 4242,
+            proc_start: 20_261_117_080_000,
+        },
+    );
+    let held = render(pane_whoami(porcupine.clone(), &owns));
+    assert!(held.contains("⛓ unregistered (pane held)"), "{held}");
+    assert!(!held.contains("porcupine") && !held.contains('✉'), "{held}");
+    // The same seat reached through an inherited (stale) PIJ_SESSION_ID.
+    assert_eq!(plain_id(&porcupine, &owns), None);
+    let plain = render(Whoami::Plain(plain_id(&porcupine, &owns)));
+    assert!(plain.contains("⛓ unregistered") && !plain.contains("porcupine"));
+
+    // A dead seat whose recorded pid is now this session's own Copilot: a
+    // recycled pid is someone else.
+    let recycled = answer(
+        "pij-monthly-nenneke",
+        ProcIdentity {
+            pid: 400,
+            proc_start: 20_261_101_000_000,
+        },
+    );
+    let shown = render(pane_whoami(recycled.clone(), &owns));
+    assert!(!shown.contains("nenneke"), "{shown}");
+    assert_eq!(plain_id(&recycled, &owns), None);
+    // ... or refused as tombstoned: still never named.
+    let tombstoned = r#"{"ok":false,"command":"pij whoami","error":{"kind":"refused","message":"seat `pij-monthly-nenneke` is tombstoned and is not an identity"}}"#;
+    let shown = render(pane_whoami(tombstoned.to_string(), &owns));
+    assert!(shown.contains("⛓ unregistered") && !shown.contains("nenneke"));
+
+    // A seat with no recorded process, or a remote one, cannot be shown either.
+    let unbound = r#"{"ok":true,"data":{"id":"pij-unbound","pane":"%9"}}"#;
+    assert!(matches!(
+        pane_whoami(unbound.to_string(), &owns),
+        Whoami::PaneHeld
+    ));
+    let remote = r#"{"ok":true,"data":{"id":"pij-remote","machine":"mini","proc":{"pid":400,"proc_start":20261118090000}}}"#;
+    assert!(matches!(
+        pane_whoami(remote.to_string(), &owns),
+        Whoami::PaneHeld
+    ));
+
+    // This session's own seat is named, with its held FYIs.
+    let own = answer("pij-own-seat", copilot);
+    let shown = render(pane_whoami(own.clone(), &owns));
+    assert!(
+        shown.contains("⛓ pij-own-seat\u{1b}[0m \u{1b}[33m✉2"),
+        "{shown}"
+    );
+    assert_eq!(plain_id(&own, &owns).as_deref(), Some("pij-own-seat"));
+    // Answers that name no seat pass through unchanged.
+    assert!(matches!(
+        pane_whoami(UNREGISTERED.to_string(), &owns),
+        Whoami::Pane(_)
+    ));
+}
+
+/// S240-001: a second Copilot B started inside registered Copilot A's process
+/// tree (A → B → shell wrapper → status line) is not A's seat, on the pane
+/// path (B shares A's pane) or the paneless one (B inherits A's
+/// `PIJ_SESSION_ID`). Only the NEAREST host counts; wrappers are passed over.
+#[test]
+fn a_copilot_nested_in_a_registered_one_never_shows_its_name() {
+    use pij_core::model::ProcIdentity;
+
+    use super::{pane_whoami, plain_id, runs_under};
+
+    let a = ProcIdentity {
+        pid: 100,
+        proc_start: 20_261_118_080_000,
+    };
+    let b = ProcIdentity {
+        pid: 200,
+        proc_start: 20_261_118_090_000,
+    };
+    // 400: A's own status line. 300: B's, behind a shell wrapper (250).
+    // 350: B's, launched directly.
+    let process = |pid: u32| match pid {
+        400 => Some((100, "pij-rs".to_string())),
+        350 => Some((200, "pij-rs".to_string())),
+        300 => Some((250, "pij-rs".to_string())),
+        250 => Some((200, "sh".to_string())),
+        200 => Some((100, "copilot".to_string())),
+        100 => Some((50, "copilot".to_string())),
+        50 => Some((1, "zsh".to_string())),
+        _ => None,
+    };
+    let start = |pid: u32| match pid {
+        100 => Some(a.proc_start),
+        200 => Some(b.proc_start),
+        _ => None,
+    };
+    let seat = |id: &str, proc: ProcIdentity| {
+        serde_json::json!({"ok": true, "data": {"id": id, "pane": "%9", "proc": proc}}).to_string()
+    };
+    let registered_a = seat("pij-registered-a", a);
+    for status_line in [300, 350] {
+        let owns = |proc: ProcIdentity| runs_under(proc, status_line, &process, &start);
+        // The pane path: B in A's pane is answered with A.
+        match pane_whoami(registered_a.clone(), &owns) {
+            Whoami::PaneHeld => {}
+            other => panic!("B's status line {status_line} named A: {other:?}"),
+        }
+        // The paneless path: B inherited A's PIJ_SESSION_ID.
+        assert_eq!(plain_id(&registered_a, &owns), None);
+        // Once B registers, its own seat shows, wrapper or not.
+        assert_eq!(
+            plain_id(&seat("pij-registered-b", b), &owns).as_deref(),
+            Some("pij-registered-b")
+        );
+    }
+    // A's own status line, a direct child, still shows A.
+    let owns = |proc: ProcIdentity| runs_under(proc, 400, &process, &start);
+    assert_eq!(
+        plain_id(&registered_a, &owns).as_deref(),
+        Some("pij-registered-a")
+    );
+}
+
+/// The in-process reader the walk uses names this test process and its real
+/// parent (macOS `p_comm`, Linux `/proc/<pid>/exe`), launching nothing.
+#[test]
+fn the_host_reader_names_this_process_and_its_real_parent() {
+    let (parent, name) =
+        pij_harnesses::proc::parent_and_host_name(std::process::id()).expect("readable");
+    assert_eq!(parent, std::os::unix::process::parent_id());
+    assert!(name.starts_with("pij_cli"), "{name}");
 }
 
 #[test]

@@ -1705,8 +1705,12 @@ async fn native_sqlite_http_fresh_session_retires_dead_pane_owner_without_retarg
     server.abort();
 }
 
+/// A prebind with no process is never taken over (its liveness is unknown, so
+/// the claim is refused naming the take-over). A dead legacy owner of the pane
+/// is superseded (F196); its queued work keeps its original address either way.
 #[tokio::test]
-async fn native_sqlite_http_dead_legacy_and_uncorrelated_prebind_owners_are_not_taken_over() {
+async fn native_sqlite_http_dead_legacy_owner_is_superseded_and_uncorrelated_prebind_is_not_taken_over()
+ {
     let mut old_host = HostFixture::spawn();
     let old_process = old_host.identity().await;
     let new_host = HostFixture::spawn();
@@ -1767,17 +1771,36 @@ async fn native_sqlite_http_dead_legacy_and_uncorrelated_prebind_owners_are_not_
             } else {
                 Some("different-native-unverified-contender".into())
             };
-            let refused = native_http_response(
+            // F196: a confirmed-dead legacy owner is superseded, not a refusal.
+            let superseded = !prebind && !same_address;
+            let answer = native_http_response(
                 client
                     .post(format!("http://{addr}/v1/register"))
                     .json(&native_registration(&contender)),
-                reqwest::StatusCode::BAD_REQUEST,
+                if superseded {
+                    reqwest::StatusCode::OK
+                } else {
+                    reqwest::StatusCode::BAD_REQUEST
+                },
             )
             .await;
-            assert_eq!(refused["command"], "pij register");
-            assert_eq!(registry.get(&owner.id).await.unwrap(), Some(owner.clone()));
-            if !same_address {
-                assert!(registry.get(&contender.id).await.unwrap().is_none());
+            assert_eq!(answer["command"], "pij register");
+            let row = registry.get(&owner.id).await.unwrap().unwrap();
+            if superseded {
+                assert!(
+                    row.tombstone_reason
+                        .as_deref()
+                        .is_some_and(|reason| reason.starts_with(
+                            "superseded: pane %137-unverified taken by `pij-copilot-unverified-contender`"
+                        )),
+                    "{row:?}"
+                );
+            } else {
+                assert_eq!(row, owner);
+                if !same_address {
+                    assert!(registry.get(&contender.id).await.unwrap().is_none());
+                    assert_eq!(answer["details"]["code"], "E-RS-PANE-HELD", "{answer}");
+                }
             }
             assert_eq!(
                 queue.peek(&[delivery_kind(&owner.id)]).await.unwrap(),
@@ -2575,10 +2598,64 @@ async fn native_lease_expiry_parks_and_tells_each_live_sender_once() {
         state["data"]["native_receiver_reason"],
         "native-extension-unavailable"
     );
-    // A receiver that heartbeats again is live again; nothing is latched.
+    // F195: the card says both: the receiver lapsed, since when, and that the
+    // process (liveness) may still run while sends are refused.
+    let line = state["data"]["nativeReceiverLine"].as_str().unwrap();
+    assert!(
+        line.starts_with("native receiver: lapsed, last renewed ")
+            && line.contains(&format!(
+                " ago. The process is {}, but sends to this seat are refused",
+                state["data"]["liveness"].as_str().unwrap()
+            )),
+        "{line}"
+    );
+    let roster = native_http_response(
+        client.get(format!("http://{addr}/v1/seats?scope=local")),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    let row = |id: &str| {
+        roster["data"]["seats"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == id)
+            .cloned()
+            .unwrap()
+    };
+    assert!(
+        row(seat.id.as_str())["nativeReceiver"]
+            .as_str()
+            .is_some_and(|label| label.starts_with("receiver lapsed ")),
+        "{roster}"
+    );
+    assert!(row(sender.id.as_str()).get("nativeReceiver").is_none());
+    // A receiver that heartbeats again is live again; nothing is latched, and
+    // neither the card nor the roster still says lapsed (F195).
     assert_eq!(
         progress_heartbeat(&client, addr, &request).await["data"]["state"],
         "live"
+    );
+    let state = native_http_response(
+        client
+            .post(format!("http://{addr}/v1/state"))
+            .json(&json!({"id":seat.id})),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    assert!(state["data"].get("nativeReceiverLine").is_none(), "{state}");
+    let roster = native_http_response(
+        client.get(format!("http://{addr}/v1/seats?scope=local")),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    assert!(
+        roster["data"]["seats"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row.get("nativeReceiver").is_none()),
+        "{roster}"
     );
     follower.abort();
     server.abort();
@@ -2800,6 +2877,13 @@ async fn native_receiver_absent_after_boot_grace_remains_visible_after_parking()
     assert_eq!(
         state["data"]["native_receiver_reason"],
         "native-extension-unavailable"
+    );
+    // F195: never renewed by this process since boot, and the process is active.
+    assert_eq!(
+        state["data"]["nativeReceiverLine"],
+        "native receiver: lapsed, not renewed by this process since the daemon started. The \
+         process is active, but sends to this seat are refused until its extension registers \
+         again."
     );
     let peek = native_http_response(
         client

@@ -1225,6 +1225,13 @@ async fn register(
         Err(RegistrationError::Retired { seat, reason }) => {
             retired_seat_refused("pij register", &seat, reason)
         }
+        Err(
+            ref error @ RegistrationError::PaneHeld {
+                ref holder,
+                ref pane,
+                ref harness,
+            },
+        ) => pane_held_refused("pij register", holder, pane, harness, error.to_string()),
         Err(RegistrationError::Retryable(reason)) => {
             let mut answer: Envelope<()> =
                 Envelope::refused("pij register", ErrorKind::Refused, reason);
@@ -3607,6 +3614,14 @@ async fn seat_card(
     let size =
         pij_core::cold_wake::seat_size(seat.state, &session_status, clock, seat.model.as_deref());
     let size_lines = pij_core::cold_wake::size_lines(&session_status, &size);
+    // F195: the receiver lease, read in memory before the seat moves into the card.
+    let lapse = state
+        .services
+        .delivery
+        .lapsed_native_receivers(std::slice::from_ref(&seat))
+        .await
+        .pop()
+        .map(|(_, renewed)| renewed);
     let mut projection = state_card(seat, liveness, &state.machine_alias, card, state_record);
     projection.card.session_status = Some(session_status);
     projection.card.size = size;
@@ -3627,7 +3642,40 @@ async fn seat_card(
         .native_receiver_reason(&id)
         .await?
         .map(str::to_string);
+    if projection.card.native_receiver_reason.is_some() {
+        projection.card.native_receiver_line =
+            Some(receiver_lapse_line(&projection.card.liveness, lapse));
+    }
     Ok(projection)
+}
+
+/// F195: `pij state`'s line for a native Copilot seat whose receiver lease has
+/// lapsed. Its process can still be `liveness` (outbound sends keep working),
+/// so the card says both, and since when. `lapse` is the in-memory read:
+/// `Some(Some(ago))` since this incarnation last renewed, `Some(None)` not
+/// since the daemon started, `None` when that read raced a lapse (no "since").
+fn receiver_lapse_line(liveness: &str, lapse: Option<Option<Duration>>) -> String {
+    let since = match lapse {
+        Some(Some(ago)) => format!(", last renewed {} ago", receiver_age(ago)),
+        Some(None) => ", not renewed by this process since the daemon started".to_string(),
+        None => String::new(),
+    };
+    format!(
+        "native receiver: lapsed{since}. The process is {liveness}, but sends to this seat are \
+         refused until its extension registers again."
+    )
+}
+
+/// F195: `pij list`'s STATE suffix for the same lapse.
+fn receiver_lapse_label(renewed: Option<Duration>) -> String {
+    renewed.map_or_else(
+        || "receiver lapsed".to_string(),
+        |ago| format!("receiver lapsed {}", receiver_age(ago)),
+    )
+}
+
+fn receiver_age(ago: Duration) -> String {
+    pij_core::cold_wake::human_duration(u64::try_from(ago.as_millis()).unwrap_or(u64::MAX))
 }
 
 /// Read one seat's session facts into the `sessionStatus` block.
@@ -3778,6 +3826,7 @@ fn state_card(
             }
             .to_string(),
             native_receiver_reason: None,
+            native_receiver_line: None,
             pid: seat.proc.map(|proc| proc.pid),
             proc_start: seat.proc.map(|proc| proc.proc_start),
             cwd: seat.folder,
@@ -3889,6 +3938,10 @@ struct SeatProjection<'a> {
     /// shows `blocked on a dialog (<key>)` in place of `working`.
     #[serde(skip_serializing_if = "Option::is_none")]
     dialog: Option<pij_core::modal_stall::DialogView>,
+    /// F195: `receiver lapsed <age>` for a native Copilot seat whose receiver
+    /// lease lapsed: `pij list` adds it to STATE, since the process may run on.
+    #[serde(rename = "nativeReceiver", skip_serializing_if = "Option::is_none")]
+    native_receiver: Option<String>,
 }
 
 /// How long `pij list` waits for one seat's session facts (plan 160). The
@@ -4042,6 +4095,12 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
             Vec::new()
         }
     };
+    // F195: one in-memory read of the receiver leases; no store read, no launch.
+    let lapsed = state
+        .services
+        .delivery
+        .lapsed_native_receivers(&roster.seats)
+        .await;
     let projection = FederatedRosterProjection {
         seats: roster
             .seats
@@ -4049,10 +4108,15 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
             .zip(sizes.iter_mut())
             .map(|(seat, sized)| {
                 let (session_status, size) = sized.take().unzip();
-                let dialog = (seat.machine.as_deref() == Some(state.machine_alias.as_str()))
+                let local = seat.machine.as_deref() == Some(state.machine_alias.as_str());
+                let dialog = local
                     .then(|| dialogs.iter().find(|stall| stall.seat == seat.id))
                     .flatten()
                     .map(pij_core::modal_stall::ModalStall::view);
+                let native_receiver = local
+                    .then(|| lapsed.iter().find(|(id, _)| *id == seat.id))
+                    .flatten()
+                    .map(|(_, renewed)| receiver_lapse_label(*renewed));
                 SeatProjection {
                     seat,
                     generation: "rs",
@@ -4062,6 +4126,7 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
                     session_status,
                     size,
                     dialog,
+                    native_receiver,
                 }
             })
             .collect(),
@@ -4607,6 +4672,26 @@ pub(crate) const SEAT_RETIRED_CODE: &str = "E-RS-SEAT-RETIRED";
 pub(crate) fn retired_seat_refused(command: &str, seat: &SeatId, reason: String) -> Response {
     let mut answer: Envelope<()> = Envelope::refused(command, ErrorKind::Refused, reason);
     answer.details = Some(serde_json::json!({ "code": SEAT_RETIRED_CODE, "seat": seat }));
+    envelope(StatusCode::BAD_REQUEST, &answer)
+}
+
+/// F196: a native claim on a pane recorded for a seat whose process the daemon
+/// cannot check. The details carry the holder, the pane and the take-over
+/// command, so a client prints that command rather than the prose.
+pub(crate) fn pane_held_refused(
+    command: &str,
+    holder: &SeatId,
+    pane: &str,
+    harness: &str,
+    reason: String,
+) -> Response {
+    let mut answer: Envelope<()> = Envelope::refused(command, ErrorKind::Refused, reason);
+    answer.details = Some(serde_json::json!({
+        "code": "E-RS-PANE-HELD",
+        "holder": holder,
+        "pane": pane,
+        "take_over": crate::registration::take_over_command(pane, harness),
+    }));
     envelope(StatusCode::BAD_REQUEST, &answer)
 }
 

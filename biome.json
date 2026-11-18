@@ -11,6 +11,8 @@
 			"!docs/plans",
 			"!.dd",
 			"!skills/pij/schemas",
+			"!skills/pij/tools/fleet-map/templates",
+			"!harness/fixtures/fleet-map",
 			"!scratch",
 			"!.harness",
 			"!**/prime-flow.json",

@@ -208,7 +208,13 @@ An owner's close is final for continuity (F149). `pij close` records its reason 
 
 `--reclaim <seat>` is an operator override for continuity that cannot heal by itself. It is allowed only when the caller, resolved from its own pane or id, is the target's recorded parent or holds the `prime` role, the harness matches, and the target's process no longer runs. It refuses by name otherwise, before any write. The target keeps its parent and drops its recorded conversation, because that is exactly the evidence that went stale. The status-line heal then records the true one. It emits `seat.reclaimed` with `caller`, old/new proc and pane, `old_harness_session`, `prior_reason` and the evidence.
 
-Claude heals itself. On every render the managed status line checks `whoami --pane`. On a miss (that legacy does not own) or a seat recording a different `session_id`, it fires one detached adopt per pane per 15 s and shows `⛓ registering…` until it lands. When `whoami` is refused with `E-RS-CONVERSATION-LIVE`, or a heal adopt was refused with it, it shows a red `⚠ double: <seat> in %N` instead and fires no further adopt for that conversation. This adds about 1–2 ms to a healthy render. The SessionStart hook retries in the background for about 30 s when the daemon is not up yet. Both write RFC 3339-stamped lines to `~/.pij-rs/hook.log`. The daemon also installs a pij-managed Copilot status line (`~/.pij-rs/copilot-statusline-pij.sh`, wired through `~/.copilot/settings.json`, with the prior script backed up). It is display-only and shows a dead or missing seat as such.
+Claude heals itself. On every render the managed status line checks `whoami --pane`. On a miss (that legacy does not own) or a seat recording a different `session_id`, it fires one detached adopt per pane per 15 s and shows `⛓ registering…` until it lands. When `whoami` is refused with `E-RS-CONVERSATION-LIVE`, or a heal adopt was refused with it, it shows a red `⚠ double: <seat> in %N` instead and fires no further adopt for that conversation. This adds about 1–2 ms to a healthy render. The SessionStart hook retries in the background for about 30 s when the daemon is not up yet. Both write RFC 3339-stamped lines to `~/.pij-rs/hook.log`. The daemon also installs a pij-managed Copilot status line (`~/.pij-rs/copilot-statusline-pij.sh`, wired through `~/.copilot/settings.json`, with the prior script backed up). It is display-only and names a seat only when that seat records the nearest harness host above the status line, its own Copilot process (pid and start, read in-process; F198). Shell wrappers are passed over, and a registered host further up never counts, so a Copilot started inside a registered one does not wear its name (S240-001): pane ids repeat across tmux servers, and an inherited `PIJ_SESSION_ID` can name a parent's seat. Otherwise it shows `⛓ unregistered`, or `⛓ unregistered (pane held)` when the pane's seat is another process's, and never that seat's name, live or dead.
+
+### Pane takeover (F196)
+
+Every registration with a pane and a verified process (`/v1/register`, native or ordinary, and `/v1/adopt`) first judges the other live rows recorded on that pane by their own process. A row whose process is confirmed gone (no process at its pid, or a different start time there) is **superseded**: tombstoned with the reason "superseded: pane %N taken by <seat>; its recorded process is gone" and one `seat.pane-superseded` spine event (`successor`, `pane`, `old_proc`, `new_proc`). The claim's own conversation, its named predecessor and its own process are never holders. A confirmed-dead verdict is the only input that retires; a row with no recorded process, a remote row or a failed probe is *unknown* and is never retired automatically. A native Copilot claim still refuses a live holder as before, and refuses an unknown one with HTTP 400, `details.code:"E-RS-PANE-HELD"`, `details.holder`, `details.pane` and `details.take_over`, the runnable command below. The Copilot extension prints that command in its banner.
+
+`pij-rs adopt <pane> --harness <h> --take-over --why <reason>` is the explicit answer. It is allowed only from the pane's own process (the caller's connection is observed descending from the pane's harness process) or for the project's current designated prime (the designation, never an asserted `prime` role: C24), resolved from the caller's own pane or id, and refuses before any write otherwise. It retires every live row recorded on the pane whose process is not the one running there now and whose own process is gone or cannot be checked, with `taken over: pane %N by <actor>: <reason>` (a `seat.tombstone` event each, written only if the row is unchanged), then adopts as usual. A row whose process is observed running (a live `omp -p` child in the pane, say) refuses the whole take-over before any write. It never signals a process. `--why` is required with `--take-over` and refused without it; `--take-over` and `--reclaim` are refused together. A Copilot pane then needs `/restart` so the extension registers again.
 
 ## Native Copilot registration
 
@@ -440,9 +446,15 @@ renewal. Turn-state (`working`/`idle`) publication continues during any hold.
 
 Once a lease expires, `pij state` reports
 `native_receiver_reason:"native-extension-unavailable"` separately from host
-liveness; human output names the same reason. `pij inbox` and `--peek` include it
-in `details.native_receiver_reason` and human-readable `meta`. A live host or an
-`idle · active` card alone does not prove that its receiver is renewing.
+liveness, plus `nativeReceiverLine` (F195), which both renderers print as its own
+line: `native receiver: lapsed, last renewed 39m ago. The process is active, but
+sends to this seat are refused until its extension registers again.` (or `not
+renewed by this process since the daemon started`). `pij list` (`/v1/seats`) adds
+`nativeReceiver:"receiver lapsed 39m"` to the row, shown after its STATE. Both
+read the in-memory leases only: no store read, no launch. `pij inbox` and
+`--peek` include the reason in `details.native_receiver_reason` and human-readable
+`meta`. A live host or an `idle · active` card alone does not prove that its
+receiver is renewing.
 
 Expiry parks native bodies with `undelivered:native-receiver-unavailable`,
 publishes sender-addressed `delivery.parked`, and refuses subsequent sends.

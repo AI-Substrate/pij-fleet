@@ -123,6 +123,8 @@ function renderState(payload: unknown): string {
 		const value = text(payload, key);
 		return value === undefined ? [] : [`${key}: ${value}`];
 	});
+	// F195: the daemon's receiver line (lapsed, since when, process still running).
+	const receiver = text(payload, "nativeReceiverLine");
 	const deferrals = field(payload, "deliveryDeferrals");
 	const deferred = Array.isArray(deferrals)
 		? deferrals.map(
@@ -135,7 +137,7 @@ function renderState(payload: unknown): string {
 	const sized = Array.isArray(sizeLines)
 		? sizeLines.filter((line) => typeof line === "string")
 		: [];
-	return `${head}${detail.length === 0 ? "" : `\n  ${detail.join("  ·  ")}`}${deferred.length === 0 ? "" : `\n${deferred.join("\n")}`}${sized.length === 0 ? "" : `\n${sized.join("\n")}`}`;
+	return `${head}${detail.length === 0 ? "" : `\n  ${detail.join("  ·  ")}`}${receiver === undefined ? "" : `\n${receiver}`}${deferred.length === 0 ? "" : `\n${deferred.join("\n")}`}${sized.length === 0 ? "" : `\n${sized.join("\n")}`}`;
 }
 
 function renderShimSend(payload: unknown, argv: readonly string[]): string {

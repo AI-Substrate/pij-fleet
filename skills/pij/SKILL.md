@@ -62,6 +62,8 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 
 `pij generation [verb]` is a shim-local, read-only routing diagnostic, not an rs route.
 
+`pij fleet-map init|generate|open` is a shim-local skill tool (`tools/fleet-map/`, node, no daemon): the project as a metro map, structure in `<government-root>/fleet-map/`, page and data copied into the main checkout's git-ignored `scratch/fleet-map/` (edits there are overwritten; change the template in the pij repo). Ops route § Fleet map.
+
 The shim hands `directory`, `claim`, `claims`, `delivered` and `requests`, and a `send` to `role:<id>`, with `--to` or `--help`, to `pij-rs` unchanged: the same output, help and exit code ([shim forwarding](../../docs/how/pij-rs-api.md#shim-forwarding-plan-213), plan 213).
 
 `/pij prime` selects the skill route; `pij orchestration prime` invokes its CLI
@@ -73,6 +75,7 @@ primitive. `baton` is the other orchestration subcommand.
 |---|---|
 | `ping` | daemon health (`pij-rs ping --json`; ops route) |
 | `peers` (`check`/`new-key`) | machine pairing for federation; then `pij-rs send --to <seat>@<machine>` ([federation](../../docs/how/pij-federation.md)) |
+| `cache-proxy` (`status`/`account <login>`/`off`/`on`) | the Copilot cache-proxy sidecar on 127.0.0.1:7471 (plan 228): bare runs it (its LaunchAgent, `just cache-proxy-autostart`, does this); `status` shows state, account, upstream, quota, models and counters; the others write `~/.pij-rs/cache-proxy.toml` and reload it ([cache proxy](../../docs/how/cache-proxy.md)) |
 | `doctor` (`claude-inbound`/`claude-hook`/`claude-statusline`/`claude-hooks`) | read-only audit of every Claude home's pij wiring (ops route); `claude-hooks` reports every pij-managed hook missing or stale with its fix, and `just doctor` runs it |
 | `claude-hooks` (`--remove`) | takes every pij-managed hook out of every Claude home and leaves other settings alone; `just unlink` runs it, and a daemon that starts again puts them back |
 | `fyi-read` | read in full the FYIs one claim delivered: `pij-rs fyi-read --seat <s> --claimed-at <ms>`, the command an FYI digest names |

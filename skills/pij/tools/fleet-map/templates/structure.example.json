@@ -1,0 +1,50 @@
+{
+  "title": "My project",
+  "focus": "first-release",
+  "spine": [
+    { "id": "foundations", "name": "Foundations", "state": "done", "note": "What is already built." },
+    { "id": "first-release", "name": "First release", "state": "now", "note": "The milestone the fleet is working toward." },
+    { "id": "hardening", "name": "Hardening", "state": "next" },
+    { "id": "launch", "name": "Launch", "state": "later" }
+  ],
+  "lines": [
+    {
+      "id": "001",
+      "name": "Core workstream",
+      "colour": "#E5194B",
+      "joins": "first-release",
+      "state": "now",
+      "roadmap": "001-core",
+      "roles": [{ "role": "pm" }, { "role": "coder" }],
+      "stops": [
+        { "id": "model", "name": "Data model", "state": "merged", "note": "Give a stop \"pr\": <number> to read its live state." },
+        { "id": "api", "name": "API", "state": "review", "waitingOn": "Reviewer verdict" },
+        {
+          "id": "ui",
+          "name": "First screen",
+          "state": "building",
+          "stops": [{ "id": "ui-polish", "name": "Screen polish", "state": "next" }]
+        }
+      ]
+    },
+    {
+      "id": "002",
+      "name": "Docs",
+      "colour": "#0E7FD6",
+      "joins": "hardening",
+      "state": "later",
+      "stops": [{ "id": "guide", "name": "User guide", "state": "later" }]
+    }
+  ],
+  "sidings": [
+    {
+      "id": "tooling",
+      "name": "Tooling",
+      "colour": "#0F9D7A",
+      "joins": "foundations",
+      "state": "done",
+      "stops": [{ "id": "ci", "name": "CI pipeline", "state": "merged" }]
+    }
+  ],
+  "depot": { "name": "Depot", "roles": [{ "role": "pa" }, { "role": "reviewer" }] }
+}

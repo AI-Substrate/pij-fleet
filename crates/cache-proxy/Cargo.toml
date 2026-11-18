@@ -1,0 +1,26 @@
+[package]
+name = "pij-cache-proxy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# The Copilot cache-proxy sidecar (plan 228, blueprint 003): a loopback
+# Anthropic Messages endpoint that holds one account's token and rewrites the
+# prompt-cache TTL. `pij-rs cache-proxy` runs it; the daemon only reads its
+# status route.
+[dependencies]
+axum = { workspace = true }
+hyper-util = { workspace = true }
+pij-core = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true, features = ["formatting"] }
+# `process`: the one `gh auth token` launch per start or 401 burst, awaited
+# with a timeout; `signal`: drain on SIGTERM from launchd.
+tokio = { workspace = true, features = ["process", "signal"] }
+tokio-stream = { workspace = true }
+toml = { workspace = true }
