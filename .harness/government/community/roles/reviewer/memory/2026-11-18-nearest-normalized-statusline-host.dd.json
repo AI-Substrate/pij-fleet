@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "When reviewing process-ancestry identity displays, nested harnesses, or a new executable-name boundary.",
+				"tags": [
+					"review",
+					"statusline",
+					"ancestry",
+					"linux"
+				],
+				"title": "Statusline identity: nearest normalized host"
+			}
+		},
+		{
+			"name": "body",
+			"value": "For identity display, membership anywhere in the ancestor chain is insufficient: an unregistered Copilot B launched inside registered A can inherit both the pane and PIJ_SESSION_ID. Pass ordinary shell wrappers, stop at the nearest harness host, then require its PID and start to equal the recorded seat. The #240 regression a_copilot_nested_in_a_registered_one_never_shows_its_name pins pane/paneless rejection of A and acceptance of B directly and through a wrapper.\n\nA missed host name is not necessarily conservative: skipping the real inner host can accept an outer registered seat. Keep display-reader executable normalization consistent with registration. In #240, registration already stripped the Linux trailing ` (deleted)` marker, but the new display reader did not; a supported in-place upgrade therefore hid its valid seat or crossed the nearest-host boundary. The final parent_and_host_name path calls linux_exe_name before classification, with linux_exe_name_strips_a_replaced_binarys_deleted_suffix covering the repaired input. This adds boundary-classification semantics to the earlier executable-lifetime lesson, rather than a new child-exec issue.\n\nCheck actual launch topology rather than inventing a helper process: the author supplied a pre-exec PID/PPID capture matching registered host PIDs. The observed native shape was node npm-loader -> outer copilot -> registered inner copilot -> statusline, with no intervening Node helper. That receipt supports the observed version, not all future launchers or arbitrary custom Node wrappers. Source: crates/cli/src/statusline.rs, crates/harnesses/src/proc.rs, .copilot/extensions/pij/store.mjs. Final review: c1eab8fd at 520e5d19."
+		}
+	]
+}
