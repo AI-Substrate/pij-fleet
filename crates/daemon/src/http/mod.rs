@@ -26,6 +26,7 @@ mod revive;
 pub mod role;
 mod role_send;
 mod routes;
+pub(crate) use routes::notify_primes;
 mod shim;
 pub mod steer;
 mod turn_end;
@@ -814,6 +815,9 @@ struct Health<'a> {
     /// Registration attempts by path, mode and outcome, with the ancestry
     /// `ps` reads they paid (plan 211).
     registrations: crate::registration::attempts::AttemptCounts,
+    /// The cache proxy as the watch last read it, with the live Copilot seats
+    /// proxied and plain (plan 229).
+    cache_proxy: crate::cache_proxy::HealthView,
 }
 
 #[derive(serde::Serialize)]
@@ -849,6 +853,7 @@ async fn health(State(state): State<AppState>) -> Response {
             .map(|path| path.display().to_string()),
         spawns: pij_core::spawns::snapshot(),
         registrations: state.registration.attempts().snapshot(),
+        cache_proxy: state.services.cache_proxy.health(),
     };
     match checked {
         Ok(()) => envelope(StatusCode::OK, &Envelope::ok("pij ping", data)),
@@ -1506,6 +1511,19 @@ async fn launch_seat_locked(
         None => return refused(command_name, "revive requires an existing seat id"),
     };
 
+    // Plan 229 (c-spawn-gate): a Copilot seat on a Claude model is wired to
+    // the cache proxy only when its status route says ready and serves the
+    // model; a seat spawned with --no-cache-proxy stays out on revive.
+    let opted_out = request.no_cache_proxy
+        || displaced
+            .as_ref()
+            .and_then(|seat| seat.cache_proxy.as_ref())
+            .is_some_and(pij_core::model::SeatCacheProxy::opted_out);
+    let (cache_proxy, copilot_provider) = state
+        .services
+        .cache_proxy
+        .gate(request.harness, request.model.as_deref(), opted_out)
+        .await;
     let plan = match build_spawn_plan(SpawnPlanInput {
         seat_id: seat_id.clone(),
         spawn_id: spawn_id.clone(),
@@ -1516,6 +1534,7 @@ async fn launch_seat_locked(
         effort: request.effort,
         accept_inbound: request.accept_inbound,
         resume: request.resume.clone(),
+        copilot_provider,
     }) {
         Ok(plan) => plan,
         Err(error) => return refused(command_name, error),
@@ -1603,6 +1622,7 @@ async fn launch_seat_locked(
     descriptor.model = plan.model;
     descriptor.provider = plan.provider;
     descriptor.effort = plan.effort;
+    descriptor.cache_proxy = cache_proxy;
     // A resumed launch keeps its conversation key, so no later registration can
     // mistake the relaunch for a different conversation (plan 156 rule 3).
     descriptor.harness_session = request.resume;

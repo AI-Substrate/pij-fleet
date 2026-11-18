@@ -652,6 +652,7 @@ pub(super) async fn revive_seat(
         resume,
         role: None,
         caller: None,
+        no_cache_proxy: false,
     };
     let seat = spawn_request.id.clone();
     let response = launch_seat_locked(

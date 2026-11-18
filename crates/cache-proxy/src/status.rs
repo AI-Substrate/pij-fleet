@@ -5,7 +5,7 @@
 //! `GET /__pij/status` returns `{ready, state, reason, fix, account,
 //! upstream_host, quota: {usable, reset}, models: {<base id>:
 //! {max_prompt_tokens}}, counters: {requests, refreshes, gh_launches,
-//! upstream_401, upstream_402}, pid, since}`. It never carries a token or a
+//! upstream_401, upstream_402}, pid, since, checked_at_ms}`. It never carries a token or a
 //! header value.
 
 use std::collections::BTreeMap;
@@ -115,6 +115,10 @@ pub struct Status {
     pub pid: u32,
     /// Epoch milliseconds when `state` last changed.
     pub since: u64,
+    /// Epoch milliseconds of the last completed readiness check; null before
+    /// the first. Additive (plan 230): absent from an older sidecar.
+    #[serde(default)]
+    pub checked_at_ms: Option<u64>,
 }
 
 #[cfg(test)]
@@ -159,12 +163,14 @@ mod tests {
             counters: Counters::default(),
             pid: 42,
             since: 1_763_430_000_000,
+            checked_at_ms: Some(1_763_430_000_500),
         };
         let value = serde_json::to_value(&status).unwrap();
         assert_eq!(
             keys(&value),
             [
                 "account",
+                "checked_at_ms",
                 "counters",
                 "fix",
                 "models",
@@ -193,6 +199,7 @@ mod tests {
             ["max_prompt_tokens"]
         );
         assert!(value["since"].is_u64() && value["pid"].is_u64());
+        assert!(value["checked_at_ms"].is_u64());
         assert_eq!(value["quota"]["reset"], Value::Null);
 
         let names: Vec<Value> = State::ALL

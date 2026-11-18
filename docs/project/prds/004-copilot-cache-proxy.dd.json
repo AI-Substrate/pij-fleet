@@ -80,9 +80,10 @@
 					"statement": "A pij-spawned Copilot seat on a Claude model, with the proxy ready, gets a 1-hour prompt cache: a turn after more than 5 minutes idle reads its context from cache.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix row 2: spawn, one turn, idle 6+ minutes, a second turn shows cache_read about equal to the context, a tiny write, and ephemeral_1h above 0.",
-					"source": "brief from pij-amazing-takin; handover/cache-proxy-test-matrix.md"
+					"source": "brief from pij-amazing-takin; handover/cache-proxy-test-matrix.md",
+					"delivered_by": "#239"
 				},
 				{
 					"id": "req-02",
@@ -90,9 +91,10 @@
 					"statement": "pij names one account (`pij-rs cache-proxy account <login>`, stored as `account` in `~/.pij-rs/cache-proxy.toml`; q-03). The proxy gets that account's token with `gh auth token --user <account>`, keeps it in memory only, and never writes, logs or passes it in a command line. Changing the account takes effect at once for new requests and spawns.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix row 12: after the account is switched, the next spawn reaches the new account's endpoint and doctor names it. A grep of the proxy's logs, the spawn argv and the seat's tmux start command finds no token.",
-					"source": "Jordan 2026-11-18 re-ruling (pm-001 LOG, RE-RULES); handover/ruling-2026-11-18-copilot-cache-proxy.md ruling 3"
+					"source": "Jordan 2026-11-18 re-ruling (pm-001 LOG, RE-RULES); handover/ruling-2026-11-18-copilot-cache-proxy.md ruling 3",
+					"delivered_by": "#239"
 				},
 				{
 					"id": "req-03",
@@ -100,9 +102,10 @@
 					"statement": "The `gho_` token has no expiry, so there is no proactive refresh. A 401 triggers one refresh, shared by every waiting request (single-flight), and one retry. If a refresh fails, the proxy keeps the current token, gives one notice and keeps serving; seats fail only if the endpoint keeps refusing it.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix rows 9 to 11: 5 concurrent requests on a stale token (test-only knob) cause exactly 1 refresh (1 `gh` launch) and all 5 retries succeed; an injected stale token is retried once and the turn completes; a refresh failure gives one notice, not a loop.",
-					"source": "Jordan 2026-11-18 amendment (pm-001 LOG); spike REPORT.md q-01 (spike/004-cache-proxy 9a397862): the token is accepted directly, has no expiration header, and the v2/token exchange returns 403"
+					"source": "Jordan 2026-11-18 amendment (pm-001 LOG); spike REPORT.md q-01 (spike/004-cache-proxy 9a397862): the token is accepted directly, has no expiration header, and the v2/token exchange returns 403",
+					"delivered_by": "#239"
 				},
 				{
 					"id": "req-04",
@@ -110,7 +113,7 @@
 					"statement": "A spawn wires the seat to the proxy only when the account is set, its token was fetched, the proxy is listening, the model is Claude, and the account's quota is usable according to `copilot_internal/user` `quota_snapshots.premium_interactions` (`unlimited`, or `remaining` above 0, or `overage_permitted`; one free GitHub API GET, cached per account for about 10 minutes, with no model call). `/models` answers 200 even with the quota exhausted, so it can't be the check. Otherwise the seat launches as plain Copilot and the spawn receipt says which check failed and how to fix it, including the quota's reset date. A 402 during a run gives one state-change notice.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix rows 1, 3, 4, 5 and 6: with no account, a GPT model, an account gh lacks, an account with no quota, and the proxy stopped, each spawn runs plain, has no COPILOT_PROVIDER_* in its env, completes a turn, and its receipt names the reason.",
 					"source": "Jordan 2026-11-18 re-ruling; spike REPORT.md quota gate (the exhausted account shows remaining 0, overage false; /models 200, /v1/messages 402)"
 				},
@@ -120,7 +123,7 @@
 					"statement": "`--no-cache-proxy` on a spawn, or the machine-wide `pij-rs cache-proxy off`, launches seats plain.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix row 13: both forms give a seat with no provider env.",
 					"source": "Jordan 2026-11-18 re-ruling"
 				},
@@ -130,9 +133,10 @@
 					"statement": "The proxy forwards to the API endpoint that `copilot_internal/user` names for the token (`endpoints.api`), so individual, business and managed enterprise accounts all work with no endpoint setting.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix row 14: for each available account type, the proxy log (host only) shows the right upstream host.",
-					"source": "brief from pij-amazing-takin"
+					"source": "brief from pij-amazing-takin",
+					"delivered_by": "#239"
 				},
 				{
 					"id": "req-07",
@@ -140,9 +144,10 @@
 					"statement": "Apart from the cache TTL, the `-1m` model mapping and the initiator header, requests and responses pass through unchanged: streaming, tool use, 1M context and images behave as on a plain seat. A client `X-Initiator` of `agent` or `user` is forwarded as sent; only when the client doesn't send one of those does the proxy infer it, marking tool-result continuations `agent` so they aren't billed as user requests.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix rows 15 and 16: a turn with 5 tool calls adds 1 premium request, not 6; a long tool-heavy turn with an image on a proxied seat matches a plain seat's behaviour.",
-					"source": "brief from pij-amazing-takin"
+					"source": "brief from pij-amazing-takin",
+					"delivered_by": "#239"
 				},
 				{
 					"id": "req-08",
@@ -150,17 +155,17 @@
 					"statement": "A daemon bounce never fails a proxied seat's in-flight turn. The proxy runs as a same-binary sidecar (`pij-rs cache-proxy`, its own LaunchAgent and loopback port; q-02), so a daemon bounce never touches its listener or its streams. Copilot's ~20 s retry for a refused connection covers the sidecar's own rare restarts.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix row 8: `just bounce-rs` mid-stream on 2 proxied seats; both turns finish with no retry, the sidecar's pid is unchanged, and the daemon reports its health again after the bounce.",
 					"source": "Jordan 2026-11-18 re-ruling (ruling 5); prime ruling 2026-11-18: sidecar"
 				},
 				{
 					"id": "req-09",
 					"title": "Told once, when it matters",
-					"statement": "Doctor and `pij directory` show the proxy's state and which seats are proxied or plain. Primes get one notice per state change, never repeats. If the proxy fails with seats on it, the prime gets one notice naming those seats and the fix; `/restart` re-runs the gate.",
+					"statement": "Doctor and `pij directory` show the proxy's state and which seats are proxied or plain. Primes get one notice per state change, never repeats. If the proxy fails with seats on it, the prime gets one notice naming those seats and the fix; `pij-rs revive <seat>` re-runs the gate; whether Copilot's own /restart keeps the provider env is recorded by s04.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix rows 7, 18 and 21: killing the proxy under 2 live seats gives one notice naming both; seats launched before the proxy are listed as plain; toggling the proxy off and on gives exactly 2 notices per prime.",
 					"source": "Jordan 2026-11-18 re-ruling; F192 (FYI pile-up)"
 				},
@@ -170,9 +175,10 @@
 					"statement": "The proxy launches no process per request. It runs one `gh` per proxy start per account, plus at most one per 401 burst (single-flight), launched by absolute path and counted at a spawn site.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix row 17: with 10 proxied seats, the spawn counter shows 0 launches per request, 1 `gh` per proxy start, and at most 1 per 401 burst.",
-					"source": "AGENTS.md resource cost; handover/ruling-2026-11-18-copilot-cache-proxy.md"
+					"source": "AGENTS.md resource cost; handover/ruling-2026-11-18-copilot-cache-proxy.md",
+					"delivered_by": "#239"
 				},
 				{
 					"id": "req-11",
@@ -180,7 +186,7 @@
 					"statement": "Doctor warns when a second human account exists on the machine, because the proxy's loopback port is reachable from every account.",
 					"actor": "operator",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix row 19: a unit test of doctor's account check with two human accounts shows the warning.",
 					"source": "Jordan 2026-11-18 re-ruling (security)"
 				},
@@ -190,7 +196,7 @@
 					"statement": "OMP seats never use the proxy and keep their own 1-hour cache setting.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix row 20: an OMP seat's turn is unchanged and its env has no proxy settings.",
 					"source": "handover/cache-proxy-test-matrix.md"
 				},
@@ -200,9 +206,10 @@
 					"statement": "A proxied seat reaches Copilot with a model id the API serves, and with its full context window. Copilot's API rejects OMP-style `-1m` selectors (`claude-opus-5.5-1m` gives 400 `model_not_supported`), while the base id already serves 1M. So the proxy maps any `*-1m` model to its base id before forwarding. The spawn sets `COPILOT_PROVIDER_MODEL_ID` to the base id and `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` to that model's `max_prompt_tokens` from the account's `/models`, and `COPILOT_PROVIDER_VISION=true` preserves image support. A Claude model the account's `/models` doesn't list launches plain, with the reason.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix row 22: seats spawned as `claude-opus-5.5` and as `claude-opus-5.5-1m` both get 200s, their status bars show a 1.0M window, the proxy log shows the base id, and only 1-hour cache writes appear.",
-					"source": "spike REPORT.md addendum (takin, spike/004-cache-proxy 6566e91f)"
+					"source": "spike REPORT.md addendum (takin, spike/004-cache-proxy 6566e91f)",
+					"delivered_by": "#239"
 				},
 				{
 					"id": "req-14",
@@ -210,9 +217,10 @@
 					"statement": "Subagent requests are short bursts, so a 1-hour write (2x the price) is waste for them. The proxy adds `ttl: \"1h\"` only to main-agent requests. A request carrying `x-interaction-type: conversation-subagent` passes through on the 5-minute default. The proxy forwards the client's own `X-Initiator` when it sends one, and infers it only when the client doesn't.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Test matrix row 23: a proxied seat that runs a subagent shows 1-hour writes on its main-agent requests and only 5-minute writes on its subagent requests; the proxy log shows `x-interaction-type` as a name and enum value only.",
-					"source": "Jordan via far-jackal, 2026-11-18; spike REPORT.md 'Subagents and the 1-hour cache' (takin, spike/004-cache-proxy cfecd15b, 23742f29): live main 1h (8791, 227), subagent 5m (273, 73)"
+					"source": "Jordan via far-jackal, 2026-11-18; spike REPORT.md 'Subagents and the 1-hour cache' (takin, spike/004-cache-proxy cfecd15b, 23742f29): live main 1h (8791, 227), subagent 5m (273, 73)",
+					"delivered_by": "#239"
 				}
 			]
 		},
@@ -274,6 +282,21 @@
 					"date": "2026-11-18",
 					"by": "pm-004 (pij-outstanding-silkworm)",
 					"change": "#238 review N238-001: req-07 qualifies initiator inference as the fallback; req-13 names COPILOT_PROVIDER_VISION=true."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "coder/229 (pij-yielding-newt) for pm-004",
+					"change": "delivered_by #239 recorded from pij delivered 239; s02 complete"
+				},
+				{
+					"date": "2026-11-18",
+					"by": "coder/229 (pij-yielding-newt) for pm-004",
+					"change": "req-01 back to in-progress (its done_when needs s04's 6+ minute cache_read receipt; delivered_by #239 kept). req-09 restated: `pij-rs revive <seat>` re-runs the gate, and whether Copilot's own /restart keeps the provider env is recorded by s04; in-progress until s04's row 7 receipt (reviewer pij-sporting-mouse's question)."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "model-cost (pij-amazing-takin) for pm-004",
+					"change": "req-01 shipped (s04 row 2: pij-fuzzy-hawk after 7 min 16 s idle read 41,353, wrote 170, all 1h). req-09 shipped (s04 rows 7, 18, 21: one outage notice per prime naming the seats, exactly 2 notices per off/on toggle, pre-proxy seats listed plain; Copilot's own /restart keeps the provider env without re-running the gate, while pij-rs revive re-runs it). Receipts: docs/plans/004-acceptance/receipts.md."
 				}
 			]
 		}

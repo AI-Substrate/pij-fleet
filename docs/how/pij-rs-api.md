@@ -180,6 +180,33 @@ One budget, `PIJ_SPAWN_REGISTER_TIMEOUT_MS` (default `20000`, read once per exte
 
 A match reports `spawned pij worker <id>`. Otherwise the tool reports `spawned, NOT registered (<diagnosis>)` with the spawn id, the pane, the milliseconds waited and any roster read failure, plus a local `tmux capture-pane` command for inspection. `details.registration` is `{registered:false, waitedMs, diagnosis, rosterError?}`. The diagnosis is fixed: `boot-failed` when the child's own `pij: boot registration failed` notice is visible in its pane, otherwise `no-registration`. Pane text is never forwarded, in `content` or in `details`, because a pane can show credentials. The child's reason reaches the spawner through its own boot-failure message. The tool never claims plain success for a seatless pane, and it neither kills the pane nor retries the spawn.
 
+## Copilot cache proxy gate (plan 229)
+
+Workstream 004 s03 (PRD 004, blueprint 003). A Copilot seat on a Claude model can run through the `pij-rs cache-proxy` sidecar, which gives it a 1-hour prompt cache. The daemon reads only the sidecar's status route, `GET /__pij/status` on `http://127.0.0.1:7471` (`PIJ_CACHE_PROXY_URL` overrides it for tests, read once at daemon start; only a loopback `http://` URL is accepted). It never sees the token.
+
+**At spawn and revive**, for `--harness copilot` only:
+
+| Check | Plain reason |
+|---|---|
+| `pij-rs spawn --no-cache-proxy` (HTTP `"no_cache_proxy":true`) | `opted out with --no-cache-proxy`; a revive keeps it |
+| no `--model` | `no --model given, so the gate can't tell the model is Claude` |
+| model not `claude…` | `model <m> is not Claude` |
+| connection refused | `proxy not listening` |
+| no answer within 1 s, twice (a timed-out read is retried once, plan 230) | `proxy did not answer: no answer within 1 s, twice` |
+| an answer that is not 2xx (a redirect is never followed) or not the status body | `proxy status unreadable: <detail>` |
+| status not `ready` (including machine-wide `off`) | `proxy <state>: <the sidecar's reason>`, with its fix |
+| base id (a trailing `-1m` stripped) not in the status `models` | `model not served by Copilot API` |
+
+Otherwise the launch gains `COPILOT_PROVIDER_TYPE=anthropic`, `COPILOT_PROVIDER_BASE_URL=<proxy url>`, `COPILOT_PROVIDER_MODEL_ID=<base id>`, `COPILOT_PROVIDER_MAX_PROMPT_TOKENS=<max_prompt_tokens>` and `COPILOT_PROVIDER_VISION=true` (without it Copilot treats the model as text-only and drops images), ahead of `copilot` in the `env` launch. The `--model` argv is unchanged, and it is the id Copilot sends on the wire (the sidecar maps `-1m`); the model id setting sets only limits and agent config. OMP, Claude, Codex and Pi spawns read nothing and get none of it. Cost: one loopback GET per Copilot Claude spawn (two after a timeout), under the spawn lock; no launch.
+
+The seat's descriptor records `cache_proxy: {state: "proxied"|"plain", reason, fix?}` (registry column `seats.cache_proxy`, migration 0047), so the spawn receipt and `pij directory` holder rows show it (`cache proxied`, or `cache plain (<reason>)`). The route belongs to the launch that set the process's environment: registration keeps it for that process (the spawned incarnation, or the same process re-registering), a Copilot `/new` successor inherits it from its verified same-process predecessor, and any other new process (a reclaim, a relaunch outside pij) records none. A Copilot seat with nothing recorded reads as plain, `launched before the cache proxy`; revive re-runs the gate (`pij-rs revive <seat>`).
+
+**The watch** reads the status route once at daemon start and every 30 s (one loopback GET and one in-process read of the live Copilot seats; no launch). A refused connection is declared `not_listening` at once. A read that times out or gets an unreadable answer is only slow: the watch declares `not_listening` on the 2nd such read in a row (30 s apart), and a good read in between resets the count, so one slow read never makes an outage notice (F204, plan 230). Each change of the declared state, including going `not_listening` and coming back, holds one FYI from `pij-bg` for each live prime (every project's prime and the designated prime, once each), naming the old and new state, the reason, the fix and the number of live proxied seats with where to list them (``Proxied seats: <n> (`just doctor` lists them)``), never their ids (notice noise, F192 class). An unchanged state sends nothing (F192). The first declared state after a daemon start is silent when the proxy is `ready` or no live seat is proxied; otherwise it reports, so a sidecar that died while the daemon was down is still told. `off` is told as new spawns plain, existing proxied seats unaffected.
+
+`GET /health` adds `data.cache_proxy`: `{url, state, reachable, status, error, checked_at, notices, seats: {proxied, plain}, slow: {count, last_at, in_a_row}}`. `state` is the declared state; `reachable` and `error` describe the last read; `status` is the last status body (counters and the sidecar's `checked_at_ms` included), kept through a slow read and cleared by a declared outage; `slow` counts timed-out or unreadable reads since the daemon started. `just doctor` prints `cache-proxy:` from `pij-rs cache-proxy status` (which carries the second-human-account warning) and `cache seats:` from this field, ending `slow reads: <count>` with the last one's time.
+
+The sidecar's status route never waits on GitHub (plan 230): when its readiness answer has aged out (10 min after a success, 60 s after a failure) or a recheck is owed (after a token refresh or a 402), a status read starts one background check, single-flight, and answers at once from the cached state; `checked_at_ms` in the body is when the last check completed. Startup and `POST /__pij/reload` still wait for their check. An upstream 402 latches `quota_exhausted`, and a 2xx clears that latch, only when the request was sent with the token still held (same account and generation); an answer to a replaced token is logged with its account and changes no state (F205).
+
 ## Registration and tombstone continuity
 
 Native registration bounds each `ps` observation to **1 second** and the complete

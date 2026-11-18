@@ -7,12 +7,17 @@
 //! - `gh` is launched at start, on an account change, on a reload with no
 //!   usable token, and once per 401 burst (single-flight); a failed refresh
 //!   latches until the next reload, so it can never loop;
-//! - readiness is re-run lazily, on a status read once the last answer has
-//!   aged out, and after a refresh or a 402; the sidecar has no timer.
+//! - readiness is re-run lazily: a status read whose last answer has aged out,
+//!   or that follows a refresh or a 402, starts one background check
+//!   (single-flight on `check_lock`) and answers at once from the cached
+//!   state, so a status read never waits on GitHub; the sidecar has no timer;
+//! - an upstream 402 or 2xx moves the quota latch only when the token it was
+//!   sent with is still the one held (same account and generation).
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -116,6 +121,8 @@ struct Inner {
     refresh_failed: Option<String>,
     check_failure: Option<Failure>,
     checked_at: Option<Instant>,
+    /// `checked_at` as epoch milliseconds, for the status body.
+    checked_at_ms: Option<u64>,
     /// Re-run readiness on the next status read (after a refresh, a new token
     /// or a 402) while the last answer still stands, so the state never flaps.
     recheck: bool,
@@ -138,7 +145,9 @@ pub struct Proxy {
     http: reqwest::Client,
     token: RwLock<Option<Held>>,
     refresh_lock: Mutex<()>,
-    check_lock: Mutex<()>,
+    /// One readiness check at a time. An `Arc` so a status read can hand its
+    /// `try_lock_owned` guard to the background check it starts.
+    check_lock: Arc<Mutex<()>>,
     /// One reload at a time, so two account changes can't install out of order.
     reload_lock: Mutex<()>,
     inner: StdMutex<Inner>,
@@ -256,7 +265,7 @@ impl Proxy {
             http,
             token: RwLock::new(None),
             refresh_lock: Mutex::new(()),
-            check_lock: Mutex::new(()),
+            check_lock: Arc::new(Mutex::new(())),
             reload_lock: Mutex::new(()),
             inner: StdMutex::new(Inner {
                 config: None,
@@ -265,6 +274,7 @@ impl Proxy {
                 refresh_failed: None,
                 check_failure: None,
                 checked_at: None,
+                checked_at_ms: None,
                 recheck: false,
                 refused_402: None,
                 upstream: None,
@@ -373,13 +383,13 @@ impl Proxy {
                 inner.token_failure = None;
                 inner.check_failure = None;
                 inner.checked_at = None;
+                inner.checked_at_ms = None;
             }
             Some(account) if must_fetch => self.fetch_token(account).await,
             Some(_) => {}
         }
         self.run_check(true).await;
-        self.settle().await;
-        self.status().await
+        self.snapshot().await
     }
 
     /// Fetch `account`'s token at start, on an account change or on reload.
@@ -424,27 +434,37 @@ impl Proxy {
         }
     }
 
-    /// Run readiness when forced or when the last answer has aged out. One at
-    /// a time; a waiter that finds a fresh answer runs nothing.
+    /// Whether readiness is owed: never run, aged out, or a recheck is owed.
+    fn check_due(&self) -> bool {
+        let inner = self.inner();
+        let ttl = if inner.check_failure.is_some() {
+            FAILED_CHECK_TTL
+        } else {
+            CHECK_TTL
+        };
+        inner.recheck || inner.checked_at.is_none_or(|at| at.elapsed() >= ttl)
+    }
+
+    /// Run readiness now when forced, else only if it is owed. One at a time;
+    /// a waiter that finds a fresh answer runs nothing.
     async fn run_check(&self, force: bool) {
         let _one = self.check_lock.lock().await;
-        let fresh = {
-            let inner = self.inner();
-            let ttl = if inner.check_failure.is_some() {
-                FAILED_CHECK_TTL
-            } else {
-                CHECK_TTL
-            };
-            !inner.recheck && inner.checked_at.is_some_and(|at| at.elapsed() < ttl)
-        };
-        if fresh && !force {
+        self.check_locked(force).await;
+    }
+
+    /// The check itself. The caller holds `check_lock`.
+    async fn check_locked(&self, force: bool) {
+        if !force && !self.check_due() {
             return;
         }
+        // The owed recheck is consumed as the check starts, so one asked for
+        // while it runs (a 402, a refresh) stays owed for the next read.
         let (token, account, generation) = {
             let held = self.token.read().await;
-            let inner = self.inner();
+            let mut inner = self.inner();
             match held.as_ref() {
                 Some(held) if Some(held.account.as_str()) == inner.account() => {
+                    inner.recheck = false;
                     (held.token.clone(), held.account.clone(), held.generation)
                 }
                 _ => return,
@@ -508,12 +528,29 @@ impl Proxy {
         }
         inner.check_failure = facts.failure;
         inner.checked_at = Some(Instant::now());
-        inner.recheck = false;
+        inner.checked_at_ms = Some(now_ms());
     }
 
-    /// The status route's body, re-running readiness first if it aged out.
-    pub async fn status(&self) -> Status {
-        self.run_check(false).await;
+    /// The status route's body, from the cached readiness: it never waits on
+    /// upstream (F204). When readiness is owed it starts one background check,
+    /// unless a check is already running (a reload's included), and answers
+    /// with the current state; the check settles the state when it lands.
+    pub async fn status(self: &Arc<Self>) -> Status {
+        if self.check_due()
+            && let Ok(one) = Arc::clone(&self.check_lock).try_lock_owned()
+        {
+            let proxy = Arc::clone(self);
+            tokio::spawn(async move {
+                proxy.check_locked(false).await;
+                drop(one);
+                proxy.settle().await;
+            });
+        }
+        self.snapshot().await
+    }
+
+    /// The status body as it stands now.
+    async fn snapshot(&self) -> Status {
         self.settle().await;
         let inner = self.inner();
         let account = inner.account().map(str::to_string);
@@ -535,6 +572,7 @@ impl Proxy {
             },
             pid: std::process::id(),
             since: inner.since,
+            checked_at_ms: inner.checked_at_ms,
         }
     }
 
@@ -594,36 +632,68 @@ impl Proxy {
         self.settle().await;
     }
 
-    /// A 402 latches `quota_exhausted` until a 2xx, the reset date or a reload.
-    async fn quota_refused(&self) {
-        {
-            let mut inner = self.inner();
-            inner.quota.usable = false;
-            let account = inner.account().unwrap_or("the account").to_string();
-            inner.refused_402 = Some(format!(
-                "upstream answered 402: premium quota exhausted for {account}"
+    /// Apply `change` to the state only if the token a request was sent with
+    /// (`account` at `generation`) is still the one held for the configured
+    /// account; `None`, changing nothing, for an answer to a replaced token.
+    /// The same rule as a refresh's install (#239 F001), for upstream answers.
+    async fn if_sent_with_current<R>(
+        &self,
+        account: &str,
+        generation: u64,
+        change: impl FnOnce(&mut Inner) -> R,
+    ) -> Option<R> {
+        let held = self.token.read().await;
+        let current = held
+            .as_ref()
+            .is_some_and(|held| held.account == account && held.generation == generation);
+        let mut inner = self.inner();
+        (current && inner.account() == Some(account)).then(|| change(&mut inner))
+    }
+
+    /// A 402 latches `quota_exhausted` until a 2xx, the reset date or a reload,
+    /// if it answered the token still held; a stale one changes nothing.
+    async fn quota_refused(&self, account: &str, generation: u64) {
+        let latched = self
+            .if_sent_with_current(account, generation, |inner| {
+                inner.quota.usable = false;
+                inner.refused_402 = Some(format!(
+                    "upstream answered 402: premium quota exhausted for {account}"
+                ));
+                // Re-read the snapshot for its reset date; it can't clear the latch.
+                inner.recheck = true;
+            })
+            .await;
+        if latched.is_none() {
+            log(&format!(
+                "ignored a 402 for {account}: the token it was sent with has been replaced"
             ));
-            // Re-read the snapshot for its reset date; it can't clear the latch.
-            inner.recheck = true;
+            return;
         }
         self.settle().await;
     }
 
     /// A 2xx from `/v1/messages` proves the quota is usable again (F002
-    /// recovery (a)).
-    async fn quota_served(&self) {
-        let cleared = {
-            let mut inner = self.inner();
-            let cleared = inner.refused_402.take().is_some();
-            if cleared {
-                inner.quota.usable = true;
-                inner.recheck = true;
+    /// recovery (a)), if it answered the token still held.
+    async fn quota_served(&self, account: &str, generation: u64) {
+        let cleared = self
+            .if_sent_with_current(account, generation, |inner| {
+                let cleared = inner.refused_402.take().is_some();
+                if cleared {
+                    inner.quota.usable = true;
+                    inner.recheck = true;
+                }
+                cleared
+            })
+            .await;
+        match cleared {
+            Some(true) => {
+                log("upstream served a request after a 402: clearing it");
+                self.settle().await;
             }
-            cleared
-        };
-        if cleared {
-            log("upstream served a request after a 402: clearing it");
-            self.settle().await;
+            Some(false) => {}
+            None => log(&format!(
+                "a 2xx for {account} clears nothing: the token it was sent with has been replaced"
+            )),
         }
     }
 
@@ -683,10 +753,13 @@ impl Proxy {
 
         let mut retried = false;
         let mut host: String;
-        let response = loop {
-            let (generation, bearer) = match self.token.read().await.as_ref() {
+        // Each attempt's account and token generation travel with its answer,
+        // so a 402 or 2xx is applied only to the token it answered.
+        let (response, sent_account, sent_generation) = loop {
+            let (generation, account, bearer) = match self.token.read().await.as_ref() {
                 Some(held) => (
                     held.generation,
+                    held.account.clone(),
                     HeaderValue::from_str(&format!("Bearer {}", held.token)),
                 ),
                 None => {
@@ -777,15 +850,15 @@ impl Proxy {
                     }
                 }
             }
-            break response;
+            break (response, account, generation);
         };
 
         let status = response.status();
         if status == StatusCode::PAYMENT_REQUIRED {
             self.upstream_402.fetch_add(1, Ordering::Relaxed);
-            self.quota_refused().await;
+            self.quota_refused(&sent_account, sent_generation).await;
         } else if status.is_success() && is_messages {
-            self.quota_served().await;
+            self.quota_served(&sent_account, sent_generation).await;
         }
         log(&format!(
             "-> {method} {path} host={host} model={model} agent={} initiator={initiator} ttl_rewrites={ttl_rewrites} status={}",
@@ -886,5 +959,80 @@ data: {"usage":{"input_tokens":3,"cache_creation_input_tokens":51,"cache_read_in
                 "{state:?}"
             );
         }
+    }
+
+    /// F204's own path: readiness aged out by its TTL (an owed recheck is
+    /// consumed as a check starts; a TTL stays due until the check lands) and
+    /// `copilot_internal/user` stalled. Status reads answer at once, and
+    /// `check_lock`'s try-lock lets only one of them start a check.
+    #[tokio::test]
+    async fn an_aged_out_answer_starts_one_background_check_for_concurrent_reads() {
+        use std::sync::atomic::AtomicBool;
+
+        let reads = Arc::new(AtomicU64::new(0));
+        let stall = Arc::new(AtomicBool::new(false));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let base = format!("http://{}", listener.local_addr().expect("addr"));
+        let user = {
+            let (reads, stall, base) = (reads.clone(), stall.clone(), base.clone());
+            move || {
+                let (reads, stall, base) = (reads.clone(), stall.clone(), base.clone());
+                async move {
+                    reads.fetch_add(1, Ordering::SeqCst);
+                    if stall.load(Ordering::SeqCst) {
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                    axum::Json(json!({
+                        "endpoints": {"api": base},
+                        "quota_snapshots": {"premium_interactions": {"remaining": 100}}
+                    }))
+                }
+            }
+        };
+        let app = axum::Router::new()
+            .route("/copilot_internal/user", axum::routing::get(user))
+            .route(
+                "/models",
+                axum::routing::get(|| async { axum::Json(json!({"data": []})) }),
+            );
+        tokio::spawn(async move { axum::serve(listener, app).await });
+
+        let proxy = Arc::new(Proxy::new(Settings {
+            state_dir: std::env::temp_dir(),
+            port: 0,
+            github_api: base,
+            gh: Err("not launched in this test".into()),
+            stale_token: false,
+        }));
+        proxy.inner().config = Some(ProxyConfig {
+            account: Some("tester".into()),
+            enabled: true,
+        });
+        *proxy.token.write().await = Some(Held {
+            generation: 0,
+            token: "gho_test".into(),
+            account: "tester".into(),
+        });
+        proxy.run_check(true).await;
+        assert_eq!(proxy.status().await.state, State::Ready);
+
+        // Age the answer past its TTL, as ten minutes would.
+        proxy.inner().checked_at = Instant::now().checked_sub(CHECK_TTL + Duration::from_secs(1));
+        stall.store(true, Ordering::SeqCst);
+        let before = reads.load(Ordering::SeqCst);
+        let started = Instant::now();
+        let (first, second) = tokio::join!(proxy.status(), proxy.status());
+        assert!(started.elapsed() < Duration::from_millis(100));
+        assert_eq!((first.state, second.state), (State::Ready, State::Ready));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(proxy.status().await.state, State::Ready, "still in flight");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            reads.load(Ordering::SeqCst) - before,
+            1,
+            "three reads, one check"
+        );
     }
 }

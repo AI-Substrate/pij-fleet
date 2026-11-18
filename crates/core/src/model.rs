@@ -566,6 +566,56 @@ pub struct SeatDescriptor {
     /// "this model has no levels" — the same fold u-models inherited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
+    /// Plan 229: whether this Copilot seat was launched through the pij cache
+    /// proxy, and why not. Stamped by the spawn gate; `None` for every other
+    /// harness, and for a Copilot seat launched before the gate existed, which
+    /// [`SeatDescriptor::cache_proxy_view`] reads as plain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_proxy: Option<SeatCacheProxy>,
+}
+
+/// Plan 229: a Copilot seat's route to its model.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CacheProxyRoute {
+    /// Model calls go through the pij cache proxy (1-hour prompt cache).
+    Proxied,
+    /// Plain Copilot.
+    Plain,
+}
+
+/// Plan 229: what the spawn gate decided for one Copilot seat.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeatCacheProxy {
+    /// Proxied or plain.
+    pub state: CacheProxyRoute,
+    /// Why: for plain, the check that failed; for proxied, the model id served.
+    pub reason: String,
+    /// What to do about a plain seat, when there is something to do.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fix: Option<String>,
+}
+
+/// The reason recorded for a seat spawned with `--no-cache-proxy`. Revive
+/// reads it back to keep the seat opted out.
+pub const CACHE_PROXY_OPTED_OUT: &str = "opted out with --no-cache-proxy";
+/// The reason shown for a Copilot seat with nothing recorded.
+pub const CACHE_PROXY_BEFORE_GATE: &str = "launched before the cache proxy";
+
+impl SeatCacheProxy {
+    /// A plain decision with its reason and fix.
+    pub fn plain(reason: impl Into<String>, fix: Option<String>) -> Self {
+        Self {
+            state: CacheProxyRoute::Plain,
+            reason: reason.into(),
+            fix,
+        }
+    }
+
+    /// True for a seat spawned with `--no-cache-proxy`.
+    pub fn opted_out(&self) -> bool {
+        self.state == CacheProxyRoute::Plain && self.reason == CACHE_PROXY_OPTED_OUT
+    }
 }
 
 /// A seat's status card: what it last said it did, and what it said it would do.
@@ -638,7 +688,23 @@ impl SeatDescriptor {
             model: None,
             provider: None,
             effort: None,
+            cache_proxy: None,
         }
+    }
+
+    /// Plan 229 (matrix row 18): the cache-proxy state to show for this seat.
+    /// A Copilot seat with nothing recorded reads as plain; any other harness
+    /// has none.
+    pub fn cache_proxy_view(&self) -> Option<SeatCacheProxy> {
+        if self.harness != Harness::Copilot {
+            return None;
+        }
+        Some(self.cache_proxy.clone().unwrap_or_else(|| {
+            SeatCacheProxy::plain(
+                CACHE_PROXY_BEFORE_GATE,
+                Some("revive the seat to re-run the gate: pij-rs revive <seat>".to_string()),
+            )
+        }))
     }
 
     /// Is this seat eligible for a watchdog nudge right now?

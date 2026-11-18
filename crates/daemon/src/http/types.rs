@@ -182,6 +182,9 @@ pub struct SpawnRequest {
     /// Caller evidence, resolved by the daemon when `role` is present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caller: Option<super::CallerContext>,
+    /// Launch a Copilot seat plain, never through the cache proxy (plan 229).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_cache_proxy: bool,
 }
 
 /// Additive spawn result: launch dispatch and process binding are separate facts.
