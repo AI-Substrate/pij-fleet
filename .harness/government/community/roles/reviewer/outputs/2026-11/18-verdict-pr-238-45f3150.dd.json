@@ -1,0 +1,45 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"head": "45f31504b2736e4a08c029c255dcf2b5a88b1299",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/238#issuecomment-6967992837",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:238",
+				"writer": "pij-legal-chickadee",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "ddocs validate docs/project/prds/004-copilot-cache-proxy.dd.json; ddocs validate docs/project/blueprints/003-copilot-cache-proxy.dd.json; ddocs validate docs/project/workstreams/004-copilot-cache-proxy.dd.json",
+					"exit_code": 0,
+					"log": "All three: 0 errors, 0 warnings. Ten changed canonical scalar fields also verified in regenerated markdown faces. F238-001 and N238-001 closed."
+				},
+				{
+					"command": "just pr-freeze 238",
+					"exit_code": 0,
+					"log": "FINAL at 45f31504b2736e4a08c029c255dcf2b5a88b1299; matching remote/gh head, five latest checks passed, clean detached tree. Exact-head CI run 44229103527 and latest delivers run 44229136992 succeeded. No local build."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "reviewer: pass (head 45f31504b2736e4a08c029c255dcf2b5a88b1299)\n\nRound 2, final docs review. Reviewed only the six-file delta from `68cc34c29b8f8609b0b3e4db7f659112672f052f`. **F238-001 and N238-001 are closed; no findings remain in this delta.**\n\n| Item | Disposition |\n|---|---|\n| F238-001: status contract | Canonical `c-status-route` now states field types/nullability, empty ready reason/fix, epoch-ms last-state-change `since`, failure-to-state mapping and reload/refetch behavior. |\n| F238-001: readiness/token behavior | `c-readiness` now records lazy 10-minute healthy / 60-second failed caching, the independent 402 latch, and its three explicit recovery boundaries. `c-token-holder` records account/generation matching and the failed-refresh latch until reload. |\n| F238-001: rewrite/redirect/cost alignment | `c-proxy-core` records no upstream redirects, main-agent-only missing ephemeral TTL insertion, explicit TTL preservation, initiator precedence and deterministic sorted-key serialization. `k-3` includes the failed-check rate. |\n| N238-001: summaries and acceptance text | s02 includes rows 22/23; s04 says 23 rows; req-13 includes VISION; req-07 qualifies initiator inference as fallback; the overview is aligned; the PR body now states 14 requirements and 23 rows. |\n\nThe previously verified requirement/component links and dependency graph are unchanged. The credential and listener rules remain unchanged from the accepted rulings and #239: **security may still skip this docs-only PR under the packet**. This does not substitute for #239's security verdict.\n\n## Validation\n\n- `ddocs validate docs/project/prds/004-copilot-cache-proxy.dd.json`: **0 errors, 0 warnings**.\n- `ddocs validate docs/project/blueprints/003-copilot-cache-proxy.dd.json`: **0 errors, 0 warnings**.\n- `ddocs validate docs/project/workstreams/004-copilot-cache-proxy.dd.json`: **0 errors, 0 warnings**.\n- Read-only canonical-to-face comparison: all **10 changed scalar fields** appear in the regenerated `.dd.md` faces.\n- `gh run view 44229103527 --repo AI-Substrate/pij-fleet --json headSha,status,conclusion,jobs`: **success** at the exact reviewed head; `rust-lint`, `rust-test`, `check (22)` and `check (24)` all passed.\n- `gh run view 44229136992 --repo AI-Substrate/pij-fleet --json headSha,status,conclusion`: latest `delivers` run **success**, same exact head.\n- `just pr-freeze 238`: **FINAL**, matching remote/gh head, five latest checks passed, clean detached tree.\n\nNo product edits, local builds, dependency installs, sidecars, credential reads or production changes. Documentation review is complete for this exact head; no further round is requested.\n"
+		}
+	]
+}
