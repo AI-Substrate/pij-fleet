@@ -1573,6 +1573,16 @@
 					"seat": "pij-strong-quail",
 					"to": "2026-11-17T01:41:10.591Z",
 					"why": "PR #234 fleet-map follow-up"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-18T01:44:49.330Z",
+					"harness": "copilot",
+					"harness_session": "867eb06c-1210-40e7-9589-2659bdeedcde",
+					"instance_key": "237",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-applicable-wildcat",
+					"why": "F196 #237 correctness review (gpt-6.1-sol)"
 				}
 			]
 		}

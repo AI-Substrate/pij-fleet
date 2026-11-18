@@ -139,3 +139,4 @@
 | — | pij-polite-starfish | copilot | 6dcf7ce1-3bf1-4828-876b-e6c3aa567005 | ops.osk.lan | 229 | 2026-11-11T00:40:22.231Z | 2026-11-11T00:57:00.499Z | pij-steady-otter | pij-steady-otter | #229 F187 (lemur), FINAL 63a2ba5 | verdict answered (f8bdb51); seat closing per Jordan |
 | — | pij-chemical-deer | copilot | 5d613e05-fb0a-4812-859c-bfaf7d389c09 | JordansacStudio.localdomain | — | 2026-11-17T00:33:30.165Z | 2026-11-17T01:02:17.200Z | pij-far-jackal | pij-far-jackal | PR #233 plan 227 review | merged #233 |
 | — | pij-strong-quail | copilot | 43abdc72-a373-4b7b-be54-033ea2635ca4 | JordansacStudio.localdomain | — | 2026-11-17T01:14:57.655Z | 2026-11-17T01:41:10.591Z | pij-far-jackal | pij-far-jackal | PR #234 fleet-map follow-up | merged #234 |
+| — | pij-applicable-wildcat | copilot | 867eb06c-1210-40e7-9589-2659bdeedcde | JordansacStudio.localdomain | 237 | 2026-11-18T01:44:49.330Z | — | pij-steady-otter | — | F196 #237 correctness review (gpt-6.1-sol) | — |
