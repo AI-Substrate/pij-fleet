@@ -155,6 +155,15 @@
 					"seat": "pij-lovely-mollusk",
 					"to": "2026-11-18T03:50:11.990Z",
 					"why": "F198+F195 #240 security (gpt-6.1-sol)"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-18T03:50:19.930Z",
+					"harness": "copilot",
+					"harness_session": "b92b0286-68d3-4250-a4a4-e173b7544aac",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-overall-mammal",
+					"why": "pm-004: verdict on #241 (ws004 s03)"
 				}
 			]
 		}
