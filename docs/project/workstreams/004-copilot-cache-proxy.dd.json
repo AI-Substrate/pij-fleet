@@ -58,7 +58,7 @@
 							"worktree": "fleet-228-cache-proxy-sidecar"
 						}
 					],
-					"done_when": "With a hand-set `COPILOT_PROVIDER_*` on a plain `copilot` process: matrix rows 2, 9, 10, 11, 14, 15, 16 and 17 pass, `/__pij/status` matches blueprint c-status-route exactly, the spawn-sites test covers the `gh` launch, and no token appears in logs, argv or the config file.",
+					"done_when": "With a hand-set `COPILOT_PROVIDER_*` on a plain `copilot` process: matrix rows 2, 9, 10, 11, 14, 15, 16, 17, 22 and 23 pass, `/__pij/status` matches blueprint c-status-route exactly, the spawn-sites test covers the `gh` launch, and no token appears in logs, argv or the config file.",
 					"plan": "docs/plans/228-cache-proxy-sidecar",
 					"note": "Starts from the spike POC on spike/004-cache-proxy. Merges before s03."
 				},
@@ -92,7 +92,7 @@
 				},
 				{
 					"id": "s04",
-					"title": "Live-seat acceptance: all 21 matrix rows",
+					"title": "Live-seat acceptance: all 23 matrix rows",
 					"state": "planned",
 					"depends_on": ["#steps/s02", "#steps/s03"],
 					"needs": ["role:model-cost"],
@@ -118,6 +118,11 @@
 					"date": "2026-11-18",
 					"by": "pm-004 (pij-outstanding-silkworm)",
 					"change": "req-14 (subagent requests keep the 5-minute cache) goes to s02. It lands in #239's round-2 push, after the first verdicts."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "#238 review N238-001: s02 done_when adds rows 22 and 23; s04 covers all 23 rows."
 				}
 			]
 		}

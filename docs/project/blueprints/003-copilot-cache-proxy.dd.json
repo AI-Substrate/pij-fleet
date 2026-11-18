@@ -15,7 +15,7 @@
 		},
 		{
 			"name": "overview",
-			"value": "A new pi-free crate, `crates/cache-proxy`, carries the proxy: the request rewrite from the POC (`ttl: \"1h\"` on every `cache_control`, `X-Initiator: agent` on tool-result continuations), the token holder (`gh auth token --user`, in memory, refreshed only on a 401, single-flight), the readiness check (`copilot_internal/user`: endpoint plus quota), and an axum listener on 127.0.0.1:7471 that streams to the discovered endpoint with reqwest. `pij-rs cache-proxy` runs it under its own LaunchAgent, so a daemon bounce never touches it. It serves a status route that the daemon reads: at spawn, to decide proxied or plain, and on one slow loopback poll, to give the prime one notice per state change. The daemon never holds the token."
+			"value": "A new pi-free crate, `crates/cache-proxy`, carries the proxy: the request rewrite from the POC (`ttl: \"1h\"` on main-agent `cache_control` only, the client's own `X-Initiator` preserved before falling back to inference, `-1m` mapped to the base id), the token holder (`gh auth token --user`, in memory, refreshed only on a 401, single-flight), the readiness check (`copilot_internal/user`: endpoint plus quota; `/models`: limits), and an axum listener on 127.0.0.1:7471 that streams to the discovered endpoint with reqwest and follows no redirects. `pij-rs cache-proxy` runs it under its own LaunchAgent, so a daemon bounce never touches it. It serves a status route that the daemon reads: at spawn, to decide proxied or plain, and on one slow loopback poll, to give the prime one notice per state change. The daemon never holds the token."
 		},
 		{
 			"name": "components",
@@ -25,7 +25,7 @@
 					"name": "Proxy core (rewrite and pass-through)",
 					"kind": "module",
 					"where": "crates/cache-proxy/src/{rewrite,serve}.rs",
-					"responsibility": "Ports the POC: sets `ttl: \"1h\"` on every `cache_control` block of a main-agent request, but leaves requests with `x-interaction-type: conversation-subagent` on the 5-minute default (req-14). Forwards the client's own `X-Initiator` when it sends one; otherwise sets `agent` when the last message is a tool result. Maps a `*-1m` `model` to its base id (Copilot's API rejects `-1m` with 400 `model_not_supported`; the base id serves 1M). Otherwise streams requests and responses through unchanged (SSE, tool use, images, 1M context). Binds 127.0.0.1 only. Logs the upstream host, status, model (`base (from x-1m)`), main or subagent, and cache usage counts, never a header value other than those enums.",
+					"responsibility": "Ports the POC. Adds a missing `ttl: \"1h\"` only to ephemeral `cache_control` blocks of main-agent requests, and preserves explicit TTLs. Requests with `x-interaction-type: conversation-subagent` stay on the 5-minute default (req-14). A client `X-Initiator` of `agent` or `user` wins; if it is absent or any other value, the initiator is inferred from the last message (`agent` when it is all tool results). Maps a `*-1m` `model` to its base id (Copilot's API rejects `-1m` with 400 `model_not_supported`; the base id serves 1M). Otherwise streams requests and responses through unchanged (SSE, tool use, images, 1M context); a rewritten body is re-serialized deterministically, JSON-semantically equal, with object keys sorted (N001). Upstream redirects are not followed. Binds 127.0.0.1 only. Logs the upstream host, status, model (`base (from x-1m)`), main or subagent, and cache usage counts, never a header value other than those enums.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-01",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-07",
@@ -39,7 +39,7 @@
 					"name": "Token holder",
 					"kind": "module",
 					"where": "crates/cache-proxy/src/token.rs",
-					"responsibility": "Fetches the account's token with `gh auth token --user <account>`, with `gh` resolved once to an absolute path and recorded through `pij_core::spawns::record(\"gh.cache_proxy_token\")`. Keeps it in memory only. On a 401, one single-flight refresh shared by every waiting request, then one retry. A failed refresh keeps the current token and raises one state change. A test-only stale-token knob (`PIJ_CACHE_PROXY_TEST_STALE_TOKEN`) serves rows 9 and 10.",
+					"responsibility": "Fetches the account's token with `gh auth token --user <account>`, with `gh` resolved once to an absolute path and recorded through `pij_core::spawns::record(\"gh.cache_proxy_token\")`. Keeps it in memory only. On a 401, one single-flight refresh shared by every waiting request, then one retry. A refresh result is installed only if its account and generation still match the current holder (F001). A failed refresh retains the held token, latches `no_token`, and suppresses further refresh launches until a reload. A test-only stale-token knob (`PIJ_CACHE_PROXY_TEST_STALE_TOKEN`) serves rows 9 and 10.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-02",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-03",
@@ -52,7 +52,7 @@
 					"name": "Readiness check",
 					"kind": "module",
 					"where": "crates/cache-proxy/src/readiness.rs",
-					"responsibility": "GETs `api.github.com/copilot_internal/user` with the token: takes `endpoints.api` as the upstream, and `quota_snapshots.premium_interactions` as the quota (usable if `unlimited`, `remaining > 0` or `overage_permitted`; otherwise the reset date). GETs `<endpoints.api>/models` for each Claude model's `max_prompt_tokens`. Both are cached per account for 10 minutes, and re-run after a refresh or a 402. A 402 from upstream marks the quota exhausted at once.",
+					"responsibility": "GETs `api.github.com/copilot_internal/user` with the token: takes `endpoints.api` as the upstream, and `quota_snapshots.premium_interactions` as the quota (usable if `unlimited`, `remaining > 0` or `overage_permitted`; otherwise the reset date). GETs `<endpoints.api>/models` for each Claude model's `max_prompt_tokens`. Checks are lazy, run on status reads: a successful check is cached 10 minutes per account, a failed one 60 seconds, and a refresh or a 402 schedules a recheck. An upstream 402 latches `quota_exhausted` with `quota.usable=false`; a lagging usable snapshot cannot clear it. Only a 2xx from a Messages POST, the quota reset date passing, or a reload clears that latch (F002).",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-06",
@@ -65,7 +65,7 @@
 					"name": "Status route",
 					"kind": "endpoint",
 					"where": "crates/cache-proxy/src/status.rs",
-					"responsibility": "`GET /__pij/status` on the proxy's port returns `{ready, state, reason, fix, account, upstream_host, quota: {usable, reset}, models: {\"<base id>\": {max_prompt_tokens}}, counters: {requests, refreshes, gh_launches, upstream_401, upstream_402}, pid, since}`. `models` lists only Claude ids, keyed by base id (never `-1m`). `state` is one of `ready`, `off`, `no_account`, `gh_missing`, `no_token`, `quota_exhausted`, `upstream_unreachable`. `POST /__pij/reload` re-reads the config file and refetches the token if the account changed. It carries no token and no secret.",
+					"responsibility": "`GET /__pij/status` on the proxy's port returns `{ready, state, reason, fix, account, upstream_host, quota: {usable, reset}, models: {\"<base id>\": {max_prompt_tokens}}, counters: {requests, refreshes, gh_launches, upstream_401, upstream_402}, pid, since}`. `models` lists only Claude ids, keyed by base id (never `-1m`). `state` is one of `ready`, `off`, `no_account`, `gh_missing`, `no_token`, `quota_exhausted`, `upstream_unreachable`. Types: `ready` is boolean and true only when `state=ready`. `reason` and `fix` are strings, empty when ready. `account`, `upstream_host` and `quota.reset` are strings or null; `quota.usable` is boolean. `pid`, counters and `max_prompt_tokens` are integers. `since` is epoch milliseconds of the last state change, not process uptime or the last check time. Failure mapping: missing config or account (or an unreadable config) -> `no_account`; disabled -> `off`; missing gh -> `gh_missing`; token-fetch failure or a readiness 401 -> `no_token`; no entitlement (a user response without `endpoints.api`, or a readiness 403/404) -> `quota_exhausted`; network, timeout or 5xx failures -> `upstream_unreachable`. `POST /__pij/reload` takes no parameters from a request body: it rereads the config file, refetches the token when the account changed, no token is held, or the last fetch or refresh failed, reruns readiness, and returns the status object. Neither route carries a token or a secret.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-09"
@@ -228,7 +228,7 @@
 				{
 					"id": "k-3",
 					"what": "Readiness check.",
-					"rate": "1 GET to `copilot_internal/user` and 1 to `/models` per 10 min per account while asked, plus 1 of each after a refresh or 402; 0 launches",
+					"rate": "1 GET to `copilot_internal/user` and 1 to `/models` per 10 min per account while healthy and asked (60 s after a failed check), plus 1 of each after a refresh or 402; 0 launches",
 					"scaling": "with accounts (1), not with seats",
 					"component": ["#components/c-readiness"]
 				},
@@ -272,6 +272,11 @@
 					"date": "2026-11-18",
 					"by": "pm-004 (pij-outstanding-silkworm)",
 					"change": "req-14 (takin's subagent spike): c-proxy-core leaves `conversation-subagent` requests on the 5-minute default and forwards the client's own `X-Initiator`."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "#238 review F238-001: brought into line with what #239 built (fe6811f6). Status-route types, failure mapping and reload; the F002 402 latch and the lazy readiness caching (10 min ok, 60 s failed); the F001 refresh install rule and the failed-refresh latch; no upstream redirects; main-agent-only TTL with explicit TTLs preserved; initiator precedence; k-3 rate."
 				}
 			]
 		}

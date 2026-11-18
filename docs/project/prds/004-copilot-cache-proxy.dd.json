@@ -137,7 +137,7 @@
 				{
 					"id": "req-07",
 					"title": "Faithful pass-through",
-					"statement": "Apart from the cache TTL and the initiator header, requests and responses pass through unchanged: streaming, tool use, 1M context and images behave as on a plain seat. Tool-result continuations carry `X-Initiator: agent`, so they aren't billed as user requests.",
+					"statement": "Apart from the cache TTL, the `-1m` model mapping and the initiator header, requests and responses pass through unchanged: streaming, tool use, 1M context and images behave as on a plain seat. A client `X-Initiator` of `agent` or `user` is forwarded as sent; only when the client doesn't send one of those does the proxy infer it, marking tool-result continuations `agent` so they aren't billed as user requests.",
 					"actor": "seat",
 					"priority": "must",
 					"state": "planned",
@@ -197,7 +197,7 @@
 				{
 					"id": "req-13",
 					"title": "Right model id and full context",
-					"statement": "A proxied seat reaches Copilot with a model id the API serves, and with its full context window. Copilot's API rejects OMP-style `-1m` selectors (`claude-opus-5.5-1m` gives 400 `model_not_supported`), while the base id already serves 1M. So the proxy maps any `*-1m` model to its base id before forwarding. The spawn sets `COPILOT_PROVIDER_MODEL_ID` to the base id and `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` to that model's `max_prompt_tokens` from the account's `/models`. A Claude model the account's `/models` doesn't list launches plain, with the reason.",
+					"statement": "A proxied seat reaches Copilot with a model id the API serves, and with its full context window. Copilot's API rejects OMP-style `-1m` selectors (`claude-opus-5.5-1m` gives 400 `model_not_supported`), while the base id already serves 1M. So the proxy maps any `*-1m` model to its base id before forwarding. The spawn sets `COPILOT_PROVIDER_MODEL_ID` to the base id and `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` to that model's `max_prompt_tokens` from the account's `/models`, and `COPILOT_PROVIDER_VISION=true` preserves image support. A Claude model the account's `/models` doesn't list launches plain, with the reason.",
 					"actor": "seat",
 					"priority": "must",
 					"state": "planned",
@@ -269,6 +269,11 @@
 					"date": "2026-11-18",
 					"by": "pm-004 (pij-outstanding-silkworm)",
 					"change": "Added req-14 (subagent requests keep the 5-minute cache; forward the client's X-Initiator) from takin's subagent spike."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "#238 review N238-001: req-07 qualifies initiator inference as the fallback; req-13 names COPILOT_PROVIDER_VISION=true."
 				}
 			]
 		}
