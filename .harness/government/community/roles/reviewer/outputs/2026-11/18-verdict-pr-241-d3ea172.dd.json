@@ -1,0 +1,45 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"head": "d3ea172cf60b9c18ab463651006555e6ba8cb4f7",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/241",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:241",
+				"writer": "pij-sporting-mouse",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh run view 44235226491 --log",
+					"exit_code": 0,
+					"log": "CI 4/4 passed; successful job 134569619430, artifact 14396524204: 2494 passing JUnit cases"
+				},
+				{
+					"command": "just pr-freeze 241",
+					"exit_code": 0,
+					"log": "FINAL at d3ea172cf60b9c18ab463651006555e6ba8cb4f7"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "reviewer: pass (head d3ea172cf60b9c18ab463651006555e6ba8cb4f7)\n\nRound 2, final correctness review. All round-one findings are closed; no remaining correctness changes are owed.\n\n## Findings\n\n- **F241-001 (P2), closed:** `registration.rs:1153-1167` preserves the spawn-gated route for the bound launch and same-process registration, and otherwise inherits only the already-verified same-process predecessor's route. The amended native HTTP/store rollover regression passed in exact-head CI, asserting a proxied S1-to-S2 transition and an opted-out S2-to-S3 transition. This fixes both the false plain classification and lost opt-out.\n- **F241-002 (P2), closed:** PRD req-01 and req-09 are `in-progress`, not prematurely shipped. req-09 names `pij-rs revive`; s04 retains the six-minute cache-read and row-7 live acceptance work, including observation of Copilot's own `/restart`. The `Delivers:` addresses still match the implementation contribution.\n- **N241-001 (P3), closed:** `decide_needs_both_ready_and_the_ready_state` passed in exact-head CI and now asserts plain/no wiring for both contradictory ready/state combinations, including `ready:true, state:\"off\"`.\n\nNo additional correctness findings.\n\n## Successor-path survey\n\n| Path | Route handling verified in source |\n|---|---|\n| Spawn/revive and first correlated registration | Fresh gate decision survives the unbound prebind's matching spawn correlation. Revive reads the prior opt-out before rerunning the gate. |\n| Same-process repeat registration | Keeps the launch's route. |\n| Native `/new` | Inherits from the checked same-process predecessor; both proxied and opted-out cases are asserted by the amended regression. |\n| `--resume` bootstrap/takeover | Explicit spawn prebind keeps its fresh gate decision; a same-process session takeover can inherit only from the verified predecessor. |\n| Different-process reclaim or relaunch outside pij | Clears a stale route rather than attributing an old process's environment to the new process. |\n\nThe route-specific assertions above are new for `/new` and existing for spawn/revive. The other paths were source-surveyed, not newly runtime-exercised by this reviewer.\n\n## Evidence\n\n- `git range-diff 872fafab~4..872fafab 2d5b1a9c..d3ea172c`: rebased originals retain product code; the only original-series patch difference is the append-only difficulties ledger reconciliation. Two subsequent repair commits match the round-two packet.\n- `ddocs validate docs/project/prds/004-copilot-cache-proxy.dd.json`: passed, 0 errors/0 warnings.\n- `ddocs validate docs/project/workstreams/004-copilot-cache-proxy.dd.json`: passed, 0 errors/0 warnings.\n- `ddocs build docs/project/prds/004-copilot-cache-proxy.dd.json --check`: passed, no generated drift.\n- `ddocs build docs/project/workstreams/004-copilot-cache-proxy.dd.json --check`: passed, no generated drift.\n- `gh run view 44235226491 --log`: exact-head CI passed all four jobs (`check (22)`, `check (24)`, `rust-lint`, `rust-test`). Nextest reports 2,494 passed and 6 skipped. Successful latest `delivers` run: `44235228571`, same head.\n- Successful rust-test job `134569619430` uploaded JUnit artifact `14396524204`; downloaded by that numeric ID, it contains 2,494 passing cases and no failures/errors. I verified the rollover, contradictory ready/state, redirect, first-read, prime-dedup, off-wording, spawn/revive, provider-env and directory-render cases individually. CI's ddocs stage reports UNAVAILABLE, not validated; the independent local ddocs commands above passed.\n- `just pr-freeze 241`: **FINAL** at the full reviewed head; remote/GitHub head agreement, CLEAN merge, all five latest checks, migration numbering, Delivers and the clean detached worktree passed.\n- `harness checks --quick`: not green locally. This dependency-free review worktree lacks the locked TS tools/dependencies; missing tsx/vitest and an incompatible ambient Biome prevent the TS gates. `pij-skill` and `copilot-native` passed; Rust, route-inventory and smoke were skipped by `--quick`. No dependency installation or linking was attempted. This local result is not represented as a PR test failure or a passing full gate.\n- Author-run mutation receipts in `docs/plans/229-cache-proxy-gate/assets/proof.md`: six reported kills for rollover inheritance, first-read behavior, prime deduplication, ready-state comparison, off wording and redirect refusal. I checked the mutations and corresponding test oracles, but did not rerun Rust mutants. Round 1 independently exercised the actual additive migration/source SQL and killed the owner-close SQL guard mutant in an in-memory database.\n\nThe redirect repair also removes the fallback to an unconstrained default HTTP client: client-construction failure and non-2xx/malformed status stay plain. Dedicated security and performance verdicts remain separately owned.\n\nThe repair adds no process launch, timer or per-seat I/O. Original cost remains one bounded loopback read per eligible Copilot spawn and one shared read every 30 seconds; the scheduler serializes ticks. No local Rust build, Rust test/mutation run, production-daemon operation, credential read, commit or push was performed.\n"
+		}
+	]
+}
