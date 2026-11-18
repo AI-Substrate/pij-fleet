@@ -130,6 +130,15 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-colorful-echidna",
 					"why": "pm-004: verdict on #239 (ws004 s02)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-18T03:13:59.301Z",
+					"harness": "copilot",
+					"harness_session": "1d951bb7-8581-4e07-b4c0-ec59109b53c9",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-lovely-mollusk",
+					"why": "F198+F195 #240 security (gpt-6.1-sol)"
 				}
 			]
 		}
