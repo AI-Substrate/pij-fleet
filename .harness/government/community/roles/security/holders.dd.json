@@ -113,7 +113,10 @@
 					"harness": "copilot",
 					"harness_session": "25b8774c-ac2f-4f93-9906-8bcf4ca69ab9",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "merged #236",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-interesting-squid",
+					"to": "2026-11-18T02:18:47.439Z",
 					"why": "PR #236 audit gate"
 				}
 			]
