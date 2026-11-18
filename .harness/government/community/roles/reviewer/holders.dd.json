@@ -1618,7 +1618,10 @@
 					"harness_session": "8eb77c6e-db0c-4c8c-ab7a-4245a6cf22fc",
 					"instance_key": "240",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #240 merged (2d5b1a9c19c0)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-mere-lizard",
+					"to": "2026-11-18T03:50:11.990Z",
 					"why": "F198+F195 #240 correctness (gpt-6.1-sol)"
 				}
 			]

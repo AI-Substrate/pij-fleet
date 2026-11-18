@@ -150,7 +150,10 @@
 					"harness_session": "1d951bb7-8581-4e07-b4c0-ec59109b53c9",
 					"instance_key": "240",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #240 merged (2d5b1a9c19c0)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-lovely-mollusk",
+					"to": "2026-11-18T03:50:11.990Z",
 					"why": "F198+F195 #240 security (gpt-6.1-sol)"
 				}
 			]
