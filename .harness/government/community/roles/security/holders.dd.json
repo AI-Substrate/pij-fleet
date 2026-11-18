@@ -104,7 +104,10 @@
 					"harness": "copilot",
 					"harness_session": "5c974dae-2509-4ed6-9018-c2e8c2c3f695",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "#237 done; closing between lanes",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-uneven-bobcat",
+					"to": "2026-11-18T03:13:21.265Z",
 					"why": "F196 #237 security verdict (gpt-6.1-sol)"
 				},
 				{
