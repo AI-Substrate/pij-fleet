@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Open before adding any pane-ownership check, retiring rows on a pane, writing a prime-authority gate, or editing from a worktree with relative paths (f196, registration, take-over, c24, review)",
+				"tags": [
+					"f196",
+					"registration",
+					"take-over",
+					"c24",
+					"review"
+				],
+				"title": "F196 pane takeover: liveness in the daemon, unknown before hold, take-over spares running holders"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F196 (#237, merged 88d52a7f). A Copilot seat could not register because a dead `omp -p` canary row held its pane.\n\nWhat was built:\n- Pane holders are judged in the daemon, never the extension. The roster (`/v1/seats`, `pij list`) carries no liveness: `liveness: null`. Only `pij state` computes it. So any client-side pane refusal is blind to death. `chooseRegistration` no longer refuses on the pane.\n- `observe_pane_holders` (registration.rs) runs on every path through `register_inner`: native, ordinary and adopt. It lists the claimed pane's live rows (one indexed read) before the lock, probes each with `liveness::alive`, and passes `PaneHolders { dead, unknown }` in. Under the lock, `same_native_owner` revalidates `dead` (it works for any harness). Dead or Recycled rows are superseded with a reason and a `seat.pane-superseded` event. Unknown rows (no proc, a remote `machine`, a probe Err) only refuse, with `RegistrationError::PaneHeld` → HTTP 400 `E-RS-PANE-HELD` plus `details.take_over`.\n- Order matters in `check_native_roster`: check `holders.unknown` BEFORE the unknown_session → NativeSessionHold branch. Otherwise a failed probe on a different native Copilot session becomes a silent hold (review P2).\n- `adopt --take-over --why`:\n  - Authority is the pane's own process (`caller_descends_from(peer, host)`) or the CURRENT prime designation: `directory.store().prime()` with `PrimeState::Current`, matching the actor id. An asserted `prime` role is NOT authority (C24, review P2). `--reclaim` still uses the role and was out of scope.\n  - It must refuse when any foreign holder's process is observed running (S237-001: a parent would retire its live `omp -p` child), and retire only gone or unknown holders.\n\nTraps:\n- Edit and read tools resolve relative paths against the session's workspace root (the canonical checkout), not your worktree. My first edit landed in ~/pi-hacking/pij. Use absolute worktree paths for every edit.\n- Adding a registry read to registration breaks `registration_corroborates_process_and_refuses_shared_process_aliases`, which pins `registry.calls()` (F185). Update the pin and justify it in the cost row.\n- Fixtures that call a seat \"live\" without adding its proc to `FakeLiveness` are dead to any liveness-aware code (`registration_cannot_adopt_a_spawn_match_that_is_already_bound`).\n- In identity_tests, the pane's own-process path is testable: set the pane process pid to `std::process::id()`; lsof plus ps then see the test as its own ancestor. `World` now exposes `queue`, `orchestration` (for `designate_prime`) and `roles`; `world_on` takes extra live procs.\n- CI can fail on a brand-new npm audit advisory unrelated to the diff (picomatch, #236). PR checks build the merge ref, so re-run CI after the fix lands; the head doesn't change.\n\nOpen: F197. An `omp -p` print-mode child inherits TMUX_PANE and registers as a seat on its parent's pane.\n"
+		}
+	]
+}
