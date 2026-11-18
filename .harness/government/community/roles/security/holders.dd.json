@@ -97,6 +97,15 @@
 					"seat": "pij-comfortable-zebra",
 					"to": "2026-11-17T01:41:11.828Z",
 					"why": "PR #234 fleet-map follow-up"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-18T01:44:49.761Z",
+					"harness": "copilot",
+					"harness_session": "5c974dae-2509-4ed6-9018-c2e8c2c3f695",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-uneven-bobcat",
+					"why": "F196 #237 security verdict (gpt-6.1-sol)"
 				}
 			]
 		}
