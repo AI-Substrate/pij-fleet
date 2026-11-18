@@ -102,6 +102,32 @@
 					"needs": ["role:model-cost"],
 					"done_when": "Every row of handover/cache-proxy-test-matrix.md has a receipt from real pij seats (command, observed value, seat ids) in this workstream's proof, before the prime merges the last lane's state flip.",
 					"note": "\"Run by model-cost (takin) with pm-004. Receipts: docs/plans/004-acceptance/receipts.md (22 of 23 rows pass or are lane-proven). Row 12 FAILs (F205: an in-flight 402 after switching back latches quota_exhausted); its re-run follows s05 (plan 230), and s04 completes then.\""
+				},
+				{
+					"id": "s05",
+					"title": "Cache proxy watch: no false outage, stale upstream answers, seat-count notices",
+					"state": "complete",
+					"delivers": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-02",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-09"
+					],
+					"builds": [
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-readiness",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-status-route",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-spawn-gate",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-proxy-watch",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-doctor-row"
+					],
+					"depends_on": ["#steps/s03"],
+					"needs": ["role:coder", "role:reviewer", "role:security", "role:performance"],
+					"lanes": [
+						{
+							"branch": "coder/230-cache-proxy-watch",
+							"worktree": "fleet-230-cache-proxy-watch"
+						}
+					],
+					"done_when": "Plan 230 (docs/plans/230-cache-proxy-watch): a status read never waits on upstream and starts at most one background check; one slow watch read gives no notice, two in a row or a refusal give one; a gate read that times out is retried once; a 402 or 2xx answering a replaced token changes no state; notices give a seat count, never ids. Each guard has a test that fails without it, and the slow-upstream case is shown live on a private daemon and a test-port sidecar.",
+					"note": "F204 (pm-001 LOG 2026-11-18: one slow probe made a false outage notice naming 43 seats), the stale 402 (takin's s04 row 12 finding: a 402 sent before an account switch latched the new account) and F205 (prime far-jackal: notices listed every proxied seat). Matrix row 12 is re-run in s04 after merge."
 				}
 			]
 		},
@@ -137,6 +163,11 @@
 					"date": "2026-11-18",
 					"by": "model-cost (pij-amazing-takin) for pm-004",
 					"change": "s04 in progress: 22 of 23 matrix rows receipted on the prod daemon and pij seats (rows 9-11 lane-proven via s02); row 12 FAIL (F205), to be re-run after s05 (plan 230)."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "coder/230 (pij-fair-firefly) for pm-004",
+					"change": "s05 added and complete (plan 230): F204, F205 (notices give a seat count) and the stale-402 twin of F001 (s04's row 12 failure); delivers req-02 and req-09, builds c-readiness, c-status-route, c-spawn-gate, c-proxy-watch and c-doctor-row. Requirement states unchanged (both shipped); row 12 is re-run in s04."
 				}
 			]
 		}

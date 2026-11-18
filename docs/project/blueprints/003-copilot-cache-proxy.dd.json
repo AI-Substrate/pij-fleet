@@ -52,7 +52,7 @@
 					"name": "Readiness check",
 					"kind": "module",
 					"where": "crates/cache-proxy/src/readiness.rs",
-					"responsibility": "GETs `api.github.com/copilot_internal/user` with the token: takes `endpoints.api` as the upstream, and `quota_snapshots.premium_interactions` as the quota (usable if `unlimited`, `remaining > 0` or `overage_permitted`; otherwise the reset date). GETs `<endpoints.api>/models` for each Claude model's `max_prompt_tokens`. Checks are lazy, run on status reads: a successful check is cached 10 minutes per account, a failed one 60 seconds, and a refresh or a 402 schedules a recheck. An upstream 402 latches `quota_exhausted` with `quota.usable=false`; a lagging usable snapshot cannot clear it. Only a 2xx from a Messages POST, the quota reset date passing, or a reload clears that latch (F002).",
+					"responsibility": "GETs `api.github.com/copilot_internal/user` with the token: takes `endpoints.api` as the upstream, and `quota_snapshots.premium_interactions` as the quota (usable if `unlimited`, `remaining > 0` or `overage_permitted`; otherwise the reset date). GETs `<endpoints.api>/models` for each Claude model's `max_prompt_tokens`. Checks are lazy and never block a status read: a successful check is cached 10 minutes per account, a failed one 60 seconds, and a refresh or a 402 schedules a recheck; a status read that finds a check owed starts one in the background, single-flight on the check lock, and answers from the cached state. Startup and reload run their check inline (F204, plan 230). An upstream 402 latches `quota_exhausted` with `quota.usable=false`; a lagging usable snapshot cannot clear it. Only a 2xx from a Messages POST, the quota reset date passing, or a reload clears that latch (F002). A 402 latches, and a 2xx clears, only when the request was sent with the token still held (same account and generation); an answer to a replaced token is logged with its account and changes no state (the 402 twin of F001, plan 230).",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-06",
@@ -65,7 +65,7 @@
 					"name": "Status route",
 					"kind": "endpoint",
 					"where": "crates/cache-proxy/src/status.rs",
-					"responsibility": "`GET /__pij/status` on the proxy's port returns `{ready, state, reason, fix, account, upstream_host, quota: {usable, reset}, models: {\"<base id>\": {max_prompt_tokens}}, counters: {requests, refreshes, gh_launches, upstream_401, upstream_402}, pid, since}`. `models` lists only Claude ids, keyed by base id (never `-1m`). `state` is one of `ready`, `off`, `no_account`, `gh_missing`, `no_token`, `quota_exhausted`, `upstream_unreachable`. Types: `ready` is boolean and true only when `state=ready`. `reason` and `fix` are strings, empty when ready. `account`, `upstream_host` and `quota.reset` are strings or null; `quota.usable` is boolean. `pid`, counters and `max_prompt_tokens` are integers. `since` is epoch milliseconds of the last state change, not process uptime or the last check time. Failure mapping: missing config or account (or an unreadable config) -> `no_account`; disabled -> `off`; missing gh -> `gh_missing`; token-fetch failure or a readiness 401 -> `no_token`; no entitlement (a user response without `endpoints.api`, or a readiness 403/404) -> `quota_exhausted`; network, timeout or 5xx failures -> `upstream_unreachable`. `POST /__pij/reload` takes no parameters from a request body: it rereads the config file, refetches the token when the account changed, no token is held, or the last fetch or refresh failed, reruns readiness, and returns the status object. Neither route carries a token or a secret.",
+					"responsibility": "`GET /__pij/status` on the proxy's port returns `{ready, state, reason, fix, account, upstream_host, quota: {usable, reset}, models: {\"<base id>\": {max_prompt_tokens}}, counters: {requests, refreshes, gh_launches, upstream_401, upstream_402}, pid, since, checked_at_ms}`. `models` lists only Claude ids, keyed by base id (never `-1m`). `state` is one of `ready`, `off`, `no_account`, `gh_missing`, `no_token`, `quota_exhausted`, `upstream_unreachable`. Types: `ready` is boolean and true only when `state=ready`. `reason` and `fix` are strings, empty when ready. `account`, `upstream_host` and `quota.reset` are strings or null; `quota.usable` is boolean. `pid`, counters and `max_prompt_tokens` are integers. `since` is epoch milliseconds of the last state change, not process uptime or the last check time. `checked_at_ms` (additive, plan 230) is epoch milliseconds of the last completed readiness check, null before the first. The route never waits on upstream: it answers at once from the cached readiness and, when a check is owed, starts one in the background (c-readiness); a status read during that check shows the previous answer. Failure mapping: missing config or account (or an unreadable config) -> `no_account`; disabled -> `off`; missing gh -> `gh_missing`; token-fetch failure or a readiness 401 -> `no_token`; no entitlement (a user response without `endpoints.api`, or a readiness 403/404) -> `quota_exhausted`; network, timeout or 5xx failures -> `upstream_unreachable`. `POST /__pij/reload` takes no parameters from a request body: it rereads the config file, refetches the token when the account changed, no token is held, or the last fetch or refresh failed, reruns readiness, and returns the status object. Neither route carries a token or a secret.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-09"
@@ -111,7 +111,7 @@
 					"name": "Spawn gate and env",
 					"kind": "module",
 					"where": "crates/daemon/src/cache_proxy.rs (called from launch_seat_locked in crates/daemon/src/http/mod.rs); env added in build_spawn_plan, crates/harnesses/src/spawn.rs",
-					"responsibility": "For a Copilot seat only: plain if `--no-cache-proxy`, if the model isn't Claude, if the status route isn't `ready` (one loopback GET, 1 s timeout), or if the model's base id (with `-1m` stripped) is missing from the status `models`. Otherwise `SpawnPlanInput` carries the proxy URL, base id and limit, and `build_spawn_plan` adds `COPILOT_PROVIDER_TYPE=anthropic`, `COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:7471`, `COPILOT_PROVIDER_MODEL_ID=<base id>`, `COPILOT_PROVIDER_MAX_PROMPT_TOKENS=<max_prompt_tokens>` and `COPILOT_PROVIDER_VISION=true`. Copilot CLI treats every BYOK model as text-only without `VISION` and drops images (s02 row 16; every Claude id in `/models` has vision). `MODEL_ID` sets only limits and agent config; the wire model is the seat's `--model`, which the proxy maps from `-1m`. OMP, Claude and Codex seats are never touched.",
+					"responsibility": "For a Copilot seat only: plain if `--no-cache-proxy`, if the model isn't Claude, if the status route isn't `ready` (one loopback GET, 1 s timeout; a timed-out read is retried once, plan 230), or if the model's base id (with `-1m` stripped) is missing from the status `models`. Otherwise `SpawnPlanInput` carries the proxy URL, base id and limit, and `build_spawn_plan` adds `COPILOT_PROVIDER_TYPE=anthropic`, `COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:7471`, `COPILOT_PROVIDER_MODEL_ID=<base id>`, `COPILOT_PROVIDER_MAX_PROMPT_TOKENS=<max_prompt_tokens>` and `COPILOT_PROVIDER_VISION=true`. Copilot CLI treats every BYOK model as text-only without `VISION` and drops images (s02 row 16; every Claude id in `/models` has vision). `MODEL_ID` sets only limits and agent config; the wire model is the seat's `--model`, which the proxy maps from `-1m`. OMP, Claude and Codex seats are never touched.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-05",
@@ -137,7 +137,7 @@
 					"name": "Proxy watch and notices",
 					"kind": "module",
 					"where": "crates/daemon/src/cache_proxy.rs; /health gains `cache_proxy` (crates/daemon/src/http/mod.rs health)",
-					"responsibility": "Reads the status route every 30 s (one loopback GET, no launch). On a change of `state` (or on unreachable), it sends one notice per change to each prime through `notify_prime` (crates/daemon/src/http/routes.rs), naming the proxied live seats and the fix, never repeats. Exposes the last status and counters in `/health`, so `pij-rs --json ping` and `just doctor` show them.",
+					"responsibility": "Reads the status route every 30 s (one loopback GET, no launch). A refused connection is declared `not_listening` at once; a timed-out or unreadable read is slow, and is declared `not_listening` only as the 2nd in a row (F204, plan 230). On each change of the declared state it sends one notice per change to each prime through `notify_prime` (crates/daemon/src/http/routes.rs), giving the number of live proxied seats and where to list them (`just doctor`), never their ids (F205), and the fix; never repeats. Exposes the last status and counters, and slow reads apart (`slow: {count, last_at, in_a_row}`), in `/health`, so `pij-rs --json ping` and `just doctor` show them.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-08",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-09"
@@ -235,7 +235,7 @@
 				{
 					"id": "k-4",
 					"what": "Spawn gate.",
-					"rate": "1 loopback GET per Copilot spawn; 0 launches",
+					"rate": "1 loopback GET per Copilot spawn (2 after a timeout); 0 launches",
 					"scaling": "with spawns",
 					"component": ["#components/c-spawn-gate"]
 				},
@@ -277,9 +277,13 @@
 					"date": "2026-11-18",
 					"by": "pm-004 (pij-outstanding-silkworm)",
 					"change": "#238 review F238-001: brought into line with what #239 built (fe6811f6). Status-route types, failure mapping and reload; the F002 402 latch and the lazy readiness caching (10 min ok, 60 s failed); the F001 refresh install rule and the failed-refresh latch; no upstream redirects; main-agent-only TTL with explicit TTLs preserved; initiator precedence; k-3 rate."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "coder/230 (pij-fair-firefly) for pm-004",
+					"change": "Plan 230 (workstream 004 s05; F204, F205 and the stale 402): c-status-route gains `checked_at_ms` and never waits on upstream; c-readiness checks in the background, single-flight, and applies a 402 or 2xx only to the token still held; c-spawn-gate retries a timed-out read once; c-proxy-watch declares down at once on a refusal or on 2 failed reads in a row, shows slow reads apart, and gives notices a seat count, never ids; k-4 rate."
 				}
 			]
 		}
-	],
-	"references": []
+	]
 }
