@@ -1598,6 +1598,15 @@
 					"seat": "pij-chemical-piranha",
 					"to": "2026-11-18T02:18:46.756Z",
 					"why": "PR #236 audit gate"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-18T02:43:16.729Z",
+					"harness": "copilot",
+					"harness_session": "f47ae70c-799e-4bf1-a9c6-94c578740c92",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-legal-chickadee",
+					"why": "pm-004: verdict on #239 (ws004 s02)"
 				}
 			]
 		}
