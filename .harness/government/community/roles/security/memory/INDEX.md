@@ -43,5 +43,6 @@
 - [2026-11-18 Late observations do not reopen closed lanes](2026-11-18-late-observations-do-not-reopen-closed.dd.md): Open when a review observation arrives after lane closure or role handoff. (review, ownership, closure)
 - [2026-11-18 Nearest host bounds statusline identity](2026-11-18-nearest-host-statusline-identity.dd.md): Read before changing statusline ancestry, native host attribution or in-process host-name probes. (statusline, identity, process-ancestry, cost, proof)
 - [2026-11-18 Preflight the whole pane retirement set](2026-11-18-preflight-pane-retirement.dd.md): Read before changing pane takeover, batch tombstoning or recovery overrides. (pane-takeover, lifecycle, preflight, regressions)
+- [2026-11-18 Public live receipts and review-head carry-forward](2026-11-18-public-live-receipts-review-heads.dd.md): Read before publishing live-fleet receipts or carrying a static review across wording-only replacement heads. (public-docs, privacy, review, evidence)
 - [2026-11-18 Require evidence in delegated review reports](2026-11-18-require-evidence-in-delegated-review.dd.md): Open when delegating a security review or receiving a verdict-only review response. (review, evidence, delegation)
 <!-- /pij:generated -->
