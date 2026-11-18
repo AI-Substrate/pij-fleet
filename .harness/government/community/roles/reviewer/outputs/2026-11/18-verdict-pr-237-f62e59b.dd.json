@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ec65-32e6-7692-9555-1e564b478c55",
+				"date": "2026-11-18",
+				"head": "f62e59ba315e02351a34055dfe5b635782d17481",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:237",
+				"writer": "pij-applicable-wildcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh run view 44219885517 --json headSha,attempt,jobs",
+					"exit_code": 0,
+					"log": "Exact head f62e59ba315e02351a34055dfe5b635782d17481: rust-lint passed; 2438 Rust tests passed/6 skipped; Node22 2301 Vitest and 355 native tests passed before audit failure; Node24 cancelled during Vitest and native suite skipped. JUnit artifact 14390691432 verifies both extended regressions passed."
+				},
+				{
+					"command": "just pr-freeze 237",
+					"exit_code": 1,
+					"log": "NOT FINAL: merge BLOCKED and failed/cancelled checks; head, base, draft, migrations and Delivers accepted. Code-review pass does not claim merge readiness."
+				},
+				{
+					"command": "git diff --check 81f4a89974383caf7dd5bf727f3f468c0d389ed2..f62e59ba315e02351a34055dfe5b635782d17481",
+					"exit_code": 0,
+					"log": "Passed. Delta-only final-round review; no local builds or tests."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR 237 round 2: PASS WITH NOTES\n\nHead: `f62e59ba315e02351a34055dfe5b635782d17481`\nBaseline: `81f4a89974383caf7dd5bf727f3f468c0d389ed2`\nRequest: `01a1ec65-32e6-7692-9555-1e564b478c55`\nReviewer: `pij-applicable-wildcat`\n\nFinal round under C34. Reviewed only the six-file delta between these heads.\nBoth of this reviewer's round-1 P2 findings are fixed. The live-holder\nretirement fix for S237-001 is also correct. No remaining blocker or new\nnormal-use correctness bug was found in the delta. No third round requested.\n\n## Fix verification\n\n| Finding | Disposition | Evidence |\n|---|---|---|\n| Prime-role laundering / S237-002 | Fixed | `crates/daemon/src/http/identity.rs:568-580` reads the orchestration designation, requires `PrimeState::Current` and matches its seat to the resolved caller. An asserted role no longer authorizes takeover. |\n| Failed-probe native holder returns session-hold | Fixed | `crates/daemon/src/registration.rs:1846-1858` checks `holders.unknown` before the native session-hold branch, returning `PaneHeld` without mutation. |\n| S237-001: explicit takeover retires a running foreign holder | Fixed | `crates/daemon/src/http/identity.rs:623-650` checks every other holder first and collects candidates separately. An `Active` result refuses before the tombstone loop begins. Existing guarded tombstones still reject changed snapshots. |\n\nThe extended takeover regression first proves that a self-asserted prime\nwithout designation is refused with holders unchanged, then uses a real\n`designate_prime` for the successful case. Its final block uses an authorized\nown-process caller against a live foreign child and verifies the child row,\nthe other candidate holders and the child's queued job remain unchanged.\n\nThe extended native-holder regression injects a liveness adapter error for a\ndifferent native Copilot session and checks `PaneHeld` names the incumbent\nand leaves its descriptor unchanged. It would fail with the round-1 ordering.\n\nCLI help and the two changed operational documents agree with the narrower\nexplicit takeover behavior. The banner placeholder is unchanged and remains\nthe author's non-blocking choice; it is not reopened here.\n\n## CI evidence\n\nRun `44219885517`, attempt 1, names the exact reviewed head.\n\n- `cargo clippy --locked --workspace --all-targets -- -D warnings`: passed.\n- `cargo nextest run --locked --workspace --profile ci`: 2,438 passed,\n  6 skipped; doctests passed.\n- Successful Rust job `134518842436` uploaded JUnit artifact `14390691432`.\n  Downloaded that exact artifact ID from its upload receipt and verified\n  both extended tests ran and passed:\n  `http::identity_tests::take_over_is_for_the_prime_or_the_panes_own_process_and_retires_only_other_records`\n  and\n  `registration::tests::native_claim_supersedes_only_a_confirmed_dead_pane_holder`.\n- Node 22: typecheck and lint passed; `npm test` had 2,301 passed and\n  6 skipped; `just copilot-native-test` had 355 passed, 0 failed.\n  The only failing step was `node harness/scripts/audit-gate.mjs`, reporting\n  the inherited picomatch advisory `GHSA-fc5q-39xc-vjpf`.\n- Node 24: typecheck and lint passed, but the job was cancelled during\n  `npm test`; `just copilot-native-test` was skipped. Contrary to the packet's\n  shorthand, this matrix leg is not a completed test pass.\n- Latest Delivers run `44219902855` passed at the exact reviewed head.\n- `git diff --check 81f4a89974383caf7dd5bf727f3f468c0d389ed2..f62e59ba315e02351a34055dfe5b635782d17481`:\n  passed.\n- `just pr-freeze 237`: NOT FINAL (exit 1), solely on merge BLOCKED and the\n  failed/cancelled checks. Head agreement, main base, non-draft status,\n  migration numbering and Delivers were accepted.\n\nThis is a passing delta/code-review verdict, not a claim that the merge gate\nis green. The separate audit fix and cancelled matrix leg remain visible\nmerge conditions. The existing post-deploy F196 live proof remains owed.\n\nNo local build or test was run, per the packet. Full `harness checks` was\nnot invoked because it runs local build/test gates. No production source\nwas edited. Linux CI does not establish a fresh macOS runtime witness;\nthe macOS descent implementation is unchanged in this delta.\n\n## Cost and policy\n\nThe added live-holder check is a **brake**: removing it can only retire more\nrecords. The automatic Dead/Recycled retirement policy is unchanged.\nThere is no new steady-state loop, poll, timer or launch site (zero periodic\nlaunches per second). Preflight liveness observations scale with the other\nlive rows on the target pane, once per explicit takeover, not per tick or\nper fleet seat. Existing in-process liveness and its recorded fallback are\nreused. No deployment or live-fleet before/after measurement was performed.\n\n## Harness feedback\n\nThe round-1 magicWand is now encoded: the designation-only and failed-probe\nregressions are committed and verified in exact-head CI. Difficulty:\nthe review packet conflated passed suites with a cancelled matrix leg.\nmagicWand for the packet producer: report completed, cancelled and skipped\ntest stages separately. No new optional product finding or C34 follow-up\nis being used to extend this review.\n"
+		}
+	]
+}
