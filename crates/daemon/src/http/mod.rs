@@ -1274,6 +1274,9 @@ async fn register(
                 ref harness,
             },
         ) => pane_held_refused("pij register", holder, pane, harness, error.to_string()),
+        Err(error @ RegistrationError::PaneHolderChild { .. }) => {
+            pane_holder_child_refused("pij register", &error)
+        }
         Err(RegistrationError::Retryable(reason)) => {
             let mut answer: Envelope<()> =
                 Envelope::refused("pij register", ErrorKind::Refused, reason);
@@ -4991,6 +4994,22 @@ pub(crate) fn pane_held_refused(
         "pane": pane,
         "take_over": crate::registration::take_over_command(pane, harness),
     }));
+    envelope(StatusCode::BAD_REQUEST, &answer)
+}
+
+/// F197: a registration whose process is a child of the pane's live seat,
+/// refused with HTTP 400 and `details.code:"E-RS-PANE-HOLDER-CHILD"`. Not
+/// retryable: the same process stays that seat's child.
+pub(crate) fn pane_holder_child_refused(command: &str, error: &RegistrationError) -> Response {
+    let mut answer: Envelope<()> =
+        Envelope::refused(command, ErrorKind::Refused, error.to_string());
+    if let RegistrationError::PaneHolderChild { holder, pane } = error {
+        answer.details = Some(serde_json::json!({
+            "code": crate::registration::PANE_HOLDER_CHILD_CODE,
+            "holder": holder,
+            "pane": pane,
+        }));
+    }
     envelope(StatusCode::BAD_REQUEST, &answer)
 }
 

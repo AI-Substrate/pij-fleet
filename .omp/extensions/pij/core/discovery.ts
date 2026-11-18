@@ -87,6 +87,15 @@ export function isSubagentChild(
 	);
 }
 
+/** F197: a one-shot, non-interactive run (`omp -p`, `pi -p`, `--mode json`),
+ *  from the runtime's own `ExtensionContext.mode`. It never registers as a
+ *  seat: it inherits TMUX_PANE and the pij env from the shell it runs in, and
+ *  once it exits its row would hold that pane. `rpc` is a long-lived session a
+ *  host program drives, so it is not one-shot; `tui` is interactive. */
+export function isOneShotRun(mode: string | undefined): boolean {
+	return mode === "print" || mode === "json";
+}
+
 /** Descriptors running in a given project folder (spec AC-1, `pij list --here`). */
 export function filterByFolder(
 	descriptors: readonly SessionDescriptor[],

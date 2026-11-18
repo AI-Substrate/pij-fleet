@@ -1189,6 +1189,9 @@ fn adopt_registration_error(error: RegistrationError) -> Response {
             ref pane,
             ref harness,
         } => super::pane_held_refused(ADOPT, holder, pane, harness, error.to_string()),
+        error @ RegistrationError::PaneHolderChild { .. } => {
+            super::pane_holder_child_refused(ADOPT, &error)
+        }
         RegistrationError::Retryable(reason) => {
             let mut answer: Envelope<()> = Envelope::refused(ADOPT, ErrorKind::Refused, reason);
             answer.details = Some(json!({ "retryable": true }));

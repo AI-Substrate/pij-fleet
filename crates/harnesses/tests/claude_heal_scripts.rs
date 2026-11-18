@@ -38,6 +38,7 @@ fn run(root: &Path, name: &str, payload: &str) -> (String, Duration) {
         .env("HOME", root)
         .env("PIJ_RS_STATE_DIR", root.join("state"))
         .env("TMUX_PANE", "%9")
+        .env_remove("CLAUDE_CODE_ENTRYPOINT")
         .env("PIJ_RS_HOOK_RETRIES", "8")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -232,19 +233,35 @@ fn install(root: &Path, name: &str, body: &str) {
 
 /// Run `name` with the fake bin first on PATH; stdout, exit code, elapsed.
 fn hook(root: &Path, name: &str, payload: &str) -> (String, i32, Duration) {
+    hook_as(root, name, payload, None)
+}
+
+/// [`hook`] under a Claude `CLAUDE_CODE_ENTRYPOINT` (`None`: unset).
+fn hook_as(
+    root: &Path,
+    name: &str,
+    payload: &str,
+    entrypoint: Option<&str>,
+) -> (String, i32, Duration) {
     let path = format!(
         "{}:{}",
         root.join("bin").display(),
         std::env::var("PATH").unwrap()
     );
     let started = Instant::now();
-    let mut child = Command::new("sh")
+    let mut command = Command::new("sh");
+    command
         .arg(script(name))
         .env("PATH", path)
         .env("HOME", root)
         .env("PIJ_RS_STATE_DIR", root.join("state"))
         .env("TMUX_PANE", "%9")
         .env("PIJ_RS_HOOK_RETRIES", "1")
+        .env_remove("CLAUDE_CODE_ENTRYPOINT");
+    if let Some(entrypoint) = entrypoint {
+        command.env("CLAUDE_CODE_ENTRYPOINT", entrypoint);
+    }
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -327,6 +344,43 @@ fn session_start_hook_warns_human_and_model_about_a_double_seat() {
         2,
         "both refusals still logged: {log}"
     );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// F197: only an interactive Claude (`CLAUDE_CODE_ENTRYPOINT=cli`, or an older
+/// Claude that sets nothing) adopts its pane. `claude -p` (`sdk-cli`) and the
+/// SDK hosts inherit the pane of the seat that started them and never adopt.
+#[test]
+fn session_start_hook_never_adopts_from_a_one_shot_claude() {
+    let root = pij_testkit::fresh_dir("pij-claude-one-shot");
+    install(
+        &root,
+        "pij-rs",
+        "#!/bin/sh\ndir=$(dirname \"$0\")\ncase \" $* \" in\n  *\" ping \"*) exit 0 ;;\n  *\" adopt \"*) printf '%s\\n' \"$*\" >>\"$dir/adopts\" ;;\nesac\n",
+    );
+    let payload = r#"{"session_id":"S-197"}"#;
+    for entrypoint in ["sdk-cli", "sdk-ts", "sdk-py"] {
+        let (stdout, code, _) = hook_as(
+            &root,
+            "claude-session-start-pij.sh",
+            payload,
+            Some(entrypoint),
+        );
+        assert_eq!((code, stdout.as_str()), (0, ""), "{entrypoint}");
+        assert!(adopts(&root).is_empty(), "{entrypoint} adopted");
+    }
+    let log = std::fs::read_to_string(root.join("state/hook.log")).unwrap();
+    assert_eq!(
+        log.lines()
+            .filter(|line| line.contains("skip:non-interactive"))
+            .count(),
+        3,
+        "{log}"
+    );
+    for entrypoint in [Some("cli"), None] {
+        hook_as(&root, "claude-session-start-pij.sh", payload, entrypoint);
+    }
+    assert_eq!(adopts(&root).len(), 2, "interactive and unset both adopt");
     let _ = std::fs::remove_dir_all(root);
 }
 
