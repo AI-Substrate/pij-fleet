@@ -17,7 +17,7 @@
 
 ## Summary
 
-- **Pass (19):** rows 2–8, 13, 14, 16–23.
+- **Pass (17):** rows 2–8, 13, 14, 16–23.
 - **Pass with a citation:** row 1 (plain, reason and fix live; the "no account" doctor wording is cited from the prod log and newt's private-daemon proof); row 15 (initiator split only; the premium delta can't be isolated on the shared account).
 - **Lane-proven, not repeated on prod to protect the live token:** rows 9–11 (s02).
 - **Fail:** row 12 (F205: a 402 in flight after switching back latches `quota_exhausted`; fixed in s05, plan 230; re-run after it merges).
