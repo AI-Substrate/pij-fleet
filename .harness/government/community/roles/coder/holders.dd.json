@@ -1012,6 +1012,15 @@
 					"seat": "pij-doubtful-lemur",
 					"to": "2026-11-11T01:02:40.258Z",
 					"why": "F187 rs-install copies pij-rs outside target/; doctor flags links into target"
+				},
+				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-18T01:13:36.949Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F196 pane takeover"
 				}
 			]
 		}
