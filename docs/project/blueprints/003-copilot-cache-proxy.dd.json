@@ -137,7 +137,7 @@
 					"name": "Proxy watch and notices",
 					"kind": "module",
 					"where": "crates/daemon/src/cache_proxy.rs; /health gains `cache_proxy` (crates/daemon/src/http/mod.rs health)",
-					"responsibility": "Reads the status route every 30 s (one loopback GET, no launch). A refused connection is declared `not_listening` at once; a timed-out or unreadable read is slow, and is declared `not_listening` only as the 2nd in a row (F204, plan 230). On each change of the declared state it sends one notice per change to each prime through `notify_prime` (crates/daemon/src/http/routes.rs), giving the number of live proxied seats and where to list them (`just doctor`), never their ids (F205), and the fix; never repeats. Exposes the last status and counters, and slow reads apart (`slow: {count, last_at, in_a_row}`), in `/health`, so `pij-rs --json ping` and `just doctor` show them.",
+					"responsibility": "Reads the status route every 30 s (one loopback GET, no launch). A refused connection is declared `not_listening` at once; a timed-out or unreadable read is slow, and is declared `not_listening` only as the 2nd in a row (F204, plan 230). On each change of the declared state it sends one notice per change to each prime through `notify_prime` (crates/daemon/src/http/routes.rs), giving the number of live proxied seats and where to list them (`just doctor`), never their ids (notice noise, F192 class), and the fix; never repeats. Exposes the last status and counters, and slow reads apart (`slow: {count, last_at, in_a_row}`), in `/health`, so `pij-rs --json ping` and `just doctor` show them.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-08",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-09"
@@ -281,7 +281,7 @@
 				{
 					"date": "2026-11-18",
 					"by": "coder/230 (pij-fair-firefly) for pm-004",
-					"change": "Plan 230 (workstream 004 s05; F204, F205 and the stale 402): c-status-route gains `checked_at_ms` and never waits on upstream; c-readiness checks in the background, single-flight, and applies a 402 or 2xx only to the token still held; c-spawn-gate retries a timed-out read once; c-proxy-watch declares down at once on a refusal or on 2 failed reads in a row, shows slow reads apart, and gives notices a seat count, never ids; k-4 rate."
+					"change": "Plan 230 (workstream 004 s05; F204 false outage, F205 stale 402 latch, and count-only notices, F192 class): c-status-route gains `checked_at_ms` and never waits on upstream; c-readiness checks in the background, single-flight, and applies a 402 or 2xx only to the token still held; c-spawn-gate retries a timed-out read once; c-proxy-watch declares down at once on a refusal or on 2 failed reads in a row, shows slow reads apart, and gives notices a seat count, never ids; k-4 rate."
 				}
 			]
 		}

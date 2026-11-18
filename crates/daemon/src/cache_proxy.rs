@@ -18,7 +18,7 @@
 //!   until [`DOWN_AFTER`] of them come in a row (F204). Each change of the
 //!   declared state is one notice to each live prime, never a repeat (F192);
 //!   [`transition`] decides. A notice gives the number of proxied seats, never
-//!   their ids (F205).
+//!   their ids (notice noise, F192 class).
 //!
 //! Cost (blueprint k-4, k-5): one loopback GET per Copilot spawn (two after a
 //! timeout) and one per watch tick plus one in-process registry read; no
@@ -51,7 +51,7 @@ pub const NOT_LISTENING: &str = "not_listening";
 /// Failed reads (timed out or unreadable) in a row before the watch declares
 /// the sidecar down: 2 reads, [`WATCH_INTERVAL`] apart (F204).
 pub const DOWN_AFTER: u32 = 2;
-/// Where a notice sends the reader for the proxied seats' ids (F205).
+/// Where a notice sends the reader for the proxied seats' ids (notice noise, F192 class).
 pub const SEATS_LISTED_BY: &str = "`just doctor` lists them";
 
 /// The sidecar's status route body (c-status-route). Every field but `ready`
@@ -314,7 +314,7 @@ impl SeatSplit {
 /// The watch's decision for one declared reading (d-7, F192): the notice to
 /// send, if any. `previous` is the last declared state, `None` before the
 /// first; `proxied` is how many live seats are proxied, the only seat fact a
-/// notice carries (F205).
+/// notice carries (notice noise, F192 class).
 ///
 /// The first declared state is silent when the proxy is `ready`, or when no
 /// live seat is proxied; otherwise it reports, so a sidecar that died while

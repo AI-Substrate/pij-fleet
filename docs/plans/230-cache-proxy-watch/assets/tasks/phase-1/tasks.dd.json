@@ -69,7 +69,7 @@
         },
         {
           "id": "tk-0006",
-          "title": "Daemon: notices give a proxied-seat count and `just doctor`, never ids (F205); tests for the four watch sequences, gate retry and notice text",
+          "title": "Daemon: notices give a proxied-seat count and `just doctor`, never ids (notice noise, F192 class); tests for the four watch sequences, gate retry and notice text",
           "phase": "ph-c230",
           "state": "checked",
           "satisfies": [

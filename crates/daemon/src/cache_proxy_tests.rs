@@ -251,7 +251,7 @@ fn a_slow_read_is_counted_apart_and_keeps_the_declared_state() {
     assert_eq!((health.slow.count, health.slow.in_a_row), (1, 0));
 }
 
-/// F205: every notice gives the proxied-seat count and where to list them,
+/// Notice noise (F192 class): every notice gives the proxied-seat count and where to list them,
 /// never a seat id.
 #[test]
 fn notices_give_a_seat_count_and_never_a_seat_id() {
