@@ -128,7 +128,10 @@
 					"harness": "copilot",
 					"harness_session": "d316b36d-5dd1-448f-b122-993a84411f54",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "review done; F194 close loop",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-colorful-echidna",
+					"to": "2026-11-18T04:01:25.015Z",
 					"why": "pm-004: verdict on #239 (ws004 s02)"
 				},
 				{
