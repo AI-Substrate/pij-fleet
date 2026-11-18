@@ -1,6 +1,6 @@
 # Plan 229 proof receipts
 
-Rebased on main `d3919152` (s02, #239, merged). Private daemon built from this branch, copied to a private path right after its build (D-229-2), state dir `/tmp/newt229/state2`, port 17561, private tmux server `-L newt229`, `PIJ_CACHE_PROXY_URL=http://127.0.0.1:17571`. Sidecar: the same binary's `pij-rs cache-proxy --port 17571 --state-dir /tmp/newt229/proxy-state` (s02's real sidecar on a test port, its own config file; 7471 and the LaunchAgent untouched), account `jorkni_microsoft`. Live-fleet receipts are s04's.
+Rebased on main `d3919152` (s02, #239, merged). Private daemon built from this branch, copied to a private path right after its build (D-229-2), state dir `/tmp/newt229/state2`, port 17561, private tmux server `-L newt229`, `PIJ_CACHE_PROXY_URL=http://127.0.0.1:17571`. Sidecar: the same binary's `pij-rs cache-proxy --port 17571 --state-dir /tmp/newt229/proxy-state` (s02's real sidecar on a test port, its own config file; 7471 and the LaunchAgent untouched), account A (enterprise). Live-fleet receipts are s04's.
 
 Command shape: `pij-rs --json spawn --harness copilot --session smoke --cwd /tmp/newt229 --no-wait --model <m> [--no-cache-proxy]`; env from `tmux -L newt229 display -p -t <pane> '#{pane_start_command}'`; notices from `pij-rs --json state <prime> | .data.pendingFyis` and the private store's `fyis` table; sidecar lines from its own log. Prime: `pij-selective-kingfisher` (`orchestration prime set`).
 
@@ -13,7 +13,7 @@ Command shape: `pij-rs --json spawn --harness copilot --session smoke --cwd /tmp
 | 6 | sidecar stopped | plain, `proxy not listening`, fix names `just cache-proxy-autostart` | pij-fascinating-angelfish |
 | 7 | sidecar killed under 4 live proxied seats | 1 FYI to the prime naming all four and the fix; next tick 0 more (delta 1 → 1). A turn on pij-colorful-llama then retried and failed: `Could not connect to local model provider at http://127.0.0.1:17571`. Sidecar restarted: 1 FYI `ready (was not_listening)`. Copilot's own `/restart` is s04's | pij-colorful-llama, pij-complex-snail, pij-formal-tiger, pij-mass-echidna |
 | 8 | daemon bounced at 03:28:18 during two proxied turns that began streaming at 03:28:14 | both turns finished (1 to 2500, no error, no retry); sidecar pid 8150 before and after; after the bounce `/health.cache_proxy` `ready`, counters `requests 6`, `notices 0` | pij-colorful-llama, pij-complex-snail; daemon pids 8149 → 20604 → 24363 |
-| 12 | account switched pij-no-such-login-229 → jorkni_microsoft | next spawns proxied; sidecar `upstream for jorkni_microsoft: api.enterprise.githubcopilot.com`; doctor names the account | pij-colorful-llama |
+| 12 | account switched pij-no-such-login-229 → account A (enterprise) | next spawns proxied; sidecar `upstream for <enterprise-login>: api.enterprise.githubcopilot.com`; doctor names the account | pij-colorful-llama |
 | 13 | `--no-cache-proxy`; `cache-proxy off` | plain `opted out with --no-cache-proxy`; plain `proxy off: switched off (pij-rs cache-proxy off)`, fix `pij-rs cache-proxy on`; no provider env | pij-constant-toucan, pij-genuine-earwig |
 | 18 | a Copilot seat's `cache_proxy` set NULL in the store | `/health.cache_proxy.seats.plain` and the doctor `cache seats:` line list it | pij-lovely-owl |
 | 19 | single human account | `cache-proxy status` prints no warning; the two-account warning is s02's parser test | — |
@@ -29,7 +29,7 @@ Seen on Copilot 1.0.114 with the provider env, recorded for s04: the `-1m` seat 
 
 ## Doctor rows
 
-With the private binary first on `PATH`, `PIJ_CACHE_PROXY_PORT=17571` and the private daemon's address: `cache-proxy: ready on 127.0.0.1:17571 … account: jorkni_microsoft … upstream: api.enterprise.githubcopilot.com …` (s02's `status`), then `cache seats: proxied: pij-colorful-llama, pij-complex-snail, pij-formal-tiger, pij-mass-echidna; plain: pij-constant-toucan, pij-fascinating-angelfish, pij-genuine-earwig, pij-increasing-buzzard, pij-lovely-owl, pij-mass-whitefish, pij-selective-kingfisher`.
+With the private binary first on `PATH`, `PIJ_CACHE_PROXY_PORT=17571` and the private daemon's address: `cache-proxy: ready on 127.0.0.1:17571 … account: <enterprise-login> … upstream: api.enterprise.githubcopilot.com …` (s02's `status`), then `cache seats: proxied: pij-colorful-llama, pij-complex-snail, pij-formal-tiger, pij-mass-echidna; plain: pij-constant-toucan, pij-fascinating-angelfish, pij-genuine-earwig, pij-increasing-buzzard, pij-lovely-owl, pij-mass-whitefish, pij-selective-kingfisher`.
 
 ## Mutation receipts
 

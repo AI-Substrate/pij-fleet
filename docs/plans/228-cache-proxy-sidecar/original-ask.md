@@ -59,7 +59,7 @@ The sidecar, blueprint components c-proxy-core, c-token-holder, c-readiness, c-s
 - Proof before the PR: matrix rows 2, 9, 10, 11, 14, 15, 16 and 17.
   - Use **plain `copilot` processes** you start yourself, with `COPILOT_PROVIDER_TYPE=anthropic` and `COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:<test port>`, in a tmux session you own and name `ws004-s02-test`.
   - Use a test port, not 7471, unless no other proxy is running.
-  - Account: `jorkni_microsoft`. `jakkaj` is out of quota; use it only to show the quota refusal.
+  - Account: account A (enterprise). `jakkaj` is out of quota; use it only to show the quota refusal.
   - Record each row as: command, observed value.
   - Do not install the LaunchAgent on this machine. Prove its plist with `plutil -lint` on a temp path.
 - Gates before the PR: scoped `just rust-check` (through shared-build), `just lint` from the main checkout, `just local-path-check`, `just lockfile-allowlist`, `just ddocs-check`. Then `harness checks --quick`.
