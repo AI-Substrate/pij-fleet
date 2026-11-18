@@ -73,6 +73,8 @@ pub struct CopilotProviderWiring {
     /// The proxy's base URL, e.g. `http://127.0.0.1:7471`.
     pub base_url: String,
     /// The model id the Copilot API serves (an OMP-style `-1m` stripped).
+    /// Copilot sends the seat's `--model` on the wire; this sets only its
+    /// limits and agent config.
     pub model_id: String,
     /// That model's `max_prompt_tokens`, so the seat keeps its full window.
     pub max_prompt_tokens: u64,
@@ -185,6 +187,9 @@ pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
                 "COPILOT_PROVIDER_MAX_PROMPT_TOKENS={}",
                 wiring.max_prompt_tokens
             ),
+            // Copilot treats a provider model as text-only without it and
+            // drops images; every Claude model the proxy serves has vision.
+            "COPILOT_PROVIDER_VISION=true".to_string(),
         ]);
     }
     args.push(harness_executable);
@@ -580,17 +585,17 @@ mod tests {
         }
     }
 
-    /// Plan 229 (row 22): a proxied Copilot seat gets exactly the four
-    /// provider settings, ahead of the harness executable, and its model
-    /// argv is unchanged; a plain one gets none.
+    /// Plan 229 (row 22): a proxied Copilot seat gets exactly the five
+    /// provider settings (row 16: vision on), ahead of the harness
+    /// executable, and its model argv is unchanged; a plain one gets none.
     #[test]
-    fn copilot_provider_wiring_sets_the_four_env_settings() {
+    fn copilot_provider_wiring_sets_the_provider_env_settings() {
         let mut proxied = input(Harness::Copilot);
         proxied.model = Some("claude-opus-5.5-1m".to_string());
         proxied.copilot_provider = Some(wiring());
         let args = build_spawn_plan(proxied).expect("proxied plan").args;
         assert_eq!(
-            &args[..7],
+            &args[..8],
             [
                 "PIJ_SESSION_ID=pij-assigned",
                 "PIJ_SPAWN_ID=spawn-assigned",
@@ -598,6 +603,7 @@ mod tests {
                 "COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:7471",
                 "COPILOT_PROVIDER_MODEL_ID=claude-opus-5.5",
                 "COPILOT_PROVIDER_MAX_PROMPT_TOKENS=936000",
+                "COPILOT_PROVIDER_VISION=true",
                 "copilot",
             ]
         );

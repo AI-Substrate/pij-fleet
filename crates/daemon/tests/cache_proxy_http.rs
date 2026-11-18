@@ -169,6 +169,7 @@ async fn ready_proxy_wires_a_copilot_claude_seat_with_the_base_id() {
             "COPILOT_PROVIDER_TYPE=anthropic",
             "COPILOT_PROVIDER_MODEL_ID=claude-opus-5.5",
             "COPILOT_PROVIDER_MAX_PROMPT_TOKENS=936000",
+            "COPILOT_PROVIDER_VISION=true",
         ] {
             assert!(command.contains(setting), "{setting} in {command}");
         }

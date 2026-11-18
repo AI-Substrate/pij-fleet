@@ -195,7 +195,7 @@ Workstream 004 s03 (PRD 004, blueprint 003). A Copilot seat on a Claude model ca
 | status not `ready` (including machine-wide `off`) | `proxy <state>: <the sidecar's reason>`, with its fix |
 | base id (a trailing `-1m` stripped) not in the status `models` | `model not served by Copilot API` |
 
-Otherwise the launch gains `COPILOT_PROVIDER_TYPE=anthropic`, `COPILOT_PROVIDER_BASE_URL=<proxy url>`, `COPILOT_PROVIDER_MODEL_ID=<base id>` and `COPILOT_PROVIDER_MAX_PROMPT_TOKENS=<max_prompt_tokens>`, ahead of `copilot` in the `env` launch; the `--model` argv is unchanged. OMP, Claude, Codex and Pi spawns read nothing and get none of it. Cost: one loopback GET per Copilot Claude spawn, under the spawn lock; no launch.
+Otherwise the launch gains `COPILOT_PROVIDER_TYPE=anthropic`, `COPILOT_PROVIDER_BASE_URL=<proxy url>`, `COPILOT_PROVIDER_MODEL_ID=<base id>`, `COPILOT_PROVIDER_MAX_PROMPT_TOKENS=<max_prompt_tokens>` and `COPILOT_PROVIDER_VISION=true` (without it Copilot treats the model as text-only and drops images), ahead of `copilot` in the `env` launch. The `--model` argv is unchanged, and it is the id Copilot sends on the wire (the sidecar maps `-1m`); the model id setting sets only limits and agent config. OMP, Claude, Codex and Pi spawns read nothing and get none of it. Cost: one loopback GET per Copilot Claude spawn, under the spawn lock; no launch.
 
 The seat's descriptor records `cache_proxy: {state: "proxied"|"plain", reason, fix?}` (registry column `seats.cache_proxy`, migration 0047), so the spawn receipt and `pij directory` holder rows show it (`cache proxied`, or `cache plain (<reason>)`). A Copilot seat with nothing recorded reads as plain, `launched before the cache proxy`; revive re-runs the gate (`pij-rs revive <seat>`).
 

@@ -4797,6 +4797,39 @@ mod tests {
         );
     }
 
+    /// Plan 229 (row 18): a Copilot holder shows proxied, or plain with its
+    /// reason; a holder with no cache_proxy (any other harness) shows nothing.
+    #[test]
+    fn holder_rows_show_the_cache_proxy_route() {
+        let holder = |seat: &str, cache_proxy: serde_json::Value| {
+            serde_json::json!({"seat": seat, "instance": "", "since": 0, "machine": "mac",
+                "seat_live": true, "end_pending": false, "cache_proxy": cache_proxy})
+        };
+        let view = serde_json::json!({
+            "project": "fleet",
+            "pending": [],
+            "roles": [{"id": "coder", "kind": "general", "holders": "many", "live": [
+                holder("pij-a", serde_json::json!({"state": "proxied", "reason": "through"})),
+                holder("pij-b", serde_json::json!({"state": "plain",
+                    "reason": "launched before the cache proxy"})),
+                holder("pij-c", serde_json::Value::Null),
+            ]}],
+        });
+        let text = super::render_directory(&view);
+        let line = |seat: &str| {
+            text.lines()
+                .find(|line| line.contains(seat))
+                .unwrap_or_default()
+                .to_string()
+        };
+        assert!(line("pij-a").ends_with(", cache proxied"), "{text}");
+        assert!(
+            line("pij-b").ends_with(", cache plain (launched before the cache proxy)"),
+            "{text}"
+        );
+        assert!(!line("pij-c").contains("cache"), "{text}");
+    }
+
     /// Plan 206: a merged role reads as retired into its target, and the
     /// target lists what was merged into it.
     #[test]
