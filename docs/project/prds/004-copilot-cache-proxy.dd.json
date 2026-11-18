@@ -203,6 +203,16 @@
 					"state": "planned",
 					"done_when": "Test matrix row 22: seats spawned as `claude-opus-5.5` and as `claude-opus-5.5-1m` both get 200s, their status bars show a 1.0M window, the proxy log shows the base id, and only 1-hour cache writes appear.",
 					"source": "spike REPORT.md addendum (takin, spike/004-cache-proxy 6566e91f)"
+				},
+				{
+					"id": "req-14",
+					"title": "Subagents keep the 5-minute cache",
+					"statement": "Subagent requests are short bursts, so a 1-hour write (2x the price) is waste for them. The proxy adds `ttl: \"1h\"` only to main-agent requests. A request carrying `x-interaction-type: conversation-subagent` passes through on the 5-minute default. The proxy forwards the client's own `X-Initiator` when it sends one, and infers it only when the client doesn't.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "Test matrix row 23: a proxied seat that runs a subagent shows 1-hour writes on its main-agent requests and only 5-minute writes on its subagent requests; the proxy log shows `x-interaction-type` as a name and enum value only.",
+					"source": "Jordan via far-jackal, 2026-11-18; spike REPORT.md 'Subagents and the 1-hour cache' (takin, spike/004-cache-proxy cfecd15b, 23742f29): live main 1h (8791, 227), subagent 5m (273, 73)"
 				}
 			]
 		},
@@ -254,6 +264,11 @@
 					"date": "2026-11-18",
 					"by": "pm-004 (pij-outstanding-silkworm)",
 					"change": "Added req-13 (map `-1m` to the base id; set the model id and max prompt tokens at spawn) from takin's spike addendum."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "Added req-14 (subagent requests keep the 5-minute cache; forward the client's X-Initiator) from takin's subagent spike."
 				}
 			]
 		}

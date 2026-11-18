@@ -38,7 +38,8 @@
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-06",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-07",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-10",
-						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-13"
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-13",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-14"
 					],
 					"builds": [
 						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-proxy-core",
@@ -112,6 +113,11 @@
 					"date": "2026-11-18",
 					"by": "pm-004 (pij-outstanding-silkworm)",
 					"change": "req-13 (`-1m` mapping, model id and max prompt tokens): the proxy side goes to s02, the spawn env to s03."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "req-14 (subagent requests keep the 5-minute cache) goes to s02. It lands in #239's round-2 push, after the first verdicts."
 				}
 			]
 		}

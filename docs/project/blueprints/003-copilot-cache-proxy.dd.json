@@ -25,11 +25,12 @@
 					"name": "Proxy core (rewrite and pass-through)",
 					"kind": "module",
 					"where": "crates/cache-proxy/src/{rewrite,serve}.rs",
-					"responsibility": "Ports the POC: sets `ttl: \"1h\"` on every `cache_control` block, sets `X-Initiator: agent` when the last message is a tool result, maps a `*-1m` `model` to its base id (Copilot's API rejects `-1m` with 400 `model_not_supported`; the base id serves 1M), and otherwise streams requests and responses through unchanged (SSE, tool use, images, 1M context). Binds 127.0.0.1 only. Logs the upstream host, status, model (`base (from x-1m)`) and cache usage counts, never a header value.",
+					"responsibility": "Ports the POC: sets `ttl: \"1h\"` on every `cache_control` block of a main-agent request, but leaves requests with `x-interaction-type: conversation-subagent` on the 5-minute default (req-14). Forwards the client's own `X-Initiator` when it sends one; otherwise sets `agent` when the last message is a tool result. Maps a `*-1m` `model` to its base id (Copilot's API rejects `-1m` with 400 `model_not_supported`; the base id serves 1M). Otherwise streams requests and responses through unchanged (SSE, tool use, images, 1M context). Binds 127.0.0.1 only. Logs the upstream host, status, model (`base (from x-1m)`), main or subagent, and cache usage counts, never a header value other than those enums.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-01",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-07",
-						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-13"
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-13",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-14"
 					],
 					"state": "planned"
 				},
@@ -266,6 +267,11 @@
 					"date": "2026-11-18",
 					"by": "pm-004 (pij-outstanding-silkworm)",
 					"change": "req-13 (takin's spike addendum): c-proxy-core maps `-1m` to the base id; c-readiness reads `/models`; the status route gains `models`; c-spawn-gate sets the model id and max prompt tokens."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "req-14 (takin's subagent spike): c-proxy-core leaves `conversation-subagent` requests on the 5-minute default and forwards the client's own `X-Initiator`."
 				}
 			]
 		}
