@@ -26,7 +26,7 @@
 //! compacted or closed, one live subscription while its turn is pending, one
 //! delivery, one spine event and one deadline. No poll, no launch.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -88,12 +88,28 @@ pub const HELD: &str = "memory-turn";
 
 /// The spine event recording each memory turn and how it ended.
 pub const EVENT_KIND: &str = "memory.turn";
+/// The spine event a `pij directory memory add` records for its author (F194):
+/// what lets a close skip a turn whose note is already written.
+pub const NOTE_EVENT_KIND: &str = "memory.note";
 const ACTIVITY: &str = "seat.activity";
+
+/// How many times a held close re-reads the seat and tries again when the
+/// row changed between its read and its compare-and-set (F194): the seat's own
+/// end-of-turn writes land in that window.
+const CLOSE_ATTEMPTS: usize = 5;
+
+/// One seat's pending memory turn (F194): what it holds back and when its
+/// bound passes, so a repeat request can say so instead of starting another.
+#[derive(Clone, Copy, Debug)]
+pub struct PendingTurn {
+    action: Action,
+    deadline_ms: u64,
+}
 
 /// What the memory turn holds back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum Action {
+pub enum Action {
     /// A compact control.
     Compact,
     /// `pij close`.
@@ -264,11 +280,38 @@ pub(crate) fn hold(
     turn: Turn,
     then: Then,
 ) -> Result<Value, Box<Response>> {
-    // One pending memory turn per seat: a repeat compact or close is refused
-    // by name, never a second turn or a second action.
-    let pending = Pending::take(&state.services.memory_turns, &seat.id)
-        .ok_or_else(|| Box::new(pending_refusal(command, &seat.id)))?;
     let bound = state.services.memory_turn_bound;
+    let action = then.action();
+    let deadline_ms = now_ms().saturating_add(millis(bound));
+    // One pending memory turn per seat: never a second turn or a second
+    // action. A repeat close is answered with the pending one (F194); any
+    // other repeat is refused by name, with when the pending one runs.
+    let pending = match Pending::take(
+        &state.services.memory_turns,
+        &seat.id,
+        PendingTurn {
+            action,
+            deadline_ms,
+        },
+    ) {
+        Ok(pending) => pending,
+        Err(existing) if existing.action == Action::Close && action == Action::Close => {
+            return Ok(json!({
+                "seat": seat.id,
+                "held": HELD,
+                "memory_turn": {
+                    "action": Action::Close,
+                    "pending": true,
+                    "deadline_ms": existing.deadline_ms,
+                    "note": format!(
+                        "a close of {} is already held for its memory turn; it runs when that turn ends, or by {} ms since the epoch at the latest. Nothing new was asked",
+                        seat.id, existing.deadline_ms
+                    ),
+                },
+            }));
+        }
+        Err(existing) => return Err(Box::new(pending_refusal(command, &seat.id, existing))),
+    };
     // The bound runs from the hold, not from the prompt's admission.
     let held_at = Instant::now();
     let now = tokio::time::Instant::now();
@@ -276,7 +319,6 @@ pub(crate) fn hold(
         .checked_add(bound)
         .or_else(|| now.checked_add(BOUND_MAX))
         .unwrap_or(now);
-    let action = then.action();
     // A held compact answers as a control receipt (the clients decode one, and
     // Copilot's checks its msg_id); a held close answers with the seat.
     let mut answer = match &then {
@@ -294,11 +336,12 @@ pub(crate) fn hold(
     };
     answer["held"] = json!(HELD);
     answer["memory_turn"] = held(action, &turn, bound);
+    answer["memory_turn"]["deadline_ms"] = json!(deadline_ms);
     let state = state.clone();
     tokio::spawn(async move {
         let (mut report, late) =
             run(&state, &seat.id, turn, action, bound, held_at, deadline).await;
-        let (then, closed) = proceed(&state, &seat, then).await;
+        let (then, closed) = proceed(&state, &seat, then, report.note.as_deref()).await;
         // Free the seat before the event is visible, so a reader of the event
         // can always take the next turn.
         drop(pending);
@@ -317,17 +360,23 @@ pub(crate) fn hold(
 /// The seats with a memory turn pending, one entry each; the entry goes when
 /// its task ends, however it ends.
 struct Pending {
-    turns: Arc<Mutex<BTreeSet<String>>>,
+    turns: Arc<Mutex<BTreeMap<String, PendingTurn>>>,
     seat: String,
 }
 
 impl Pending {
-    fn take(turns: &Arc<Mutex<BTreeSet<String>>>, seat: &SeatId) -> Option<Self> {
-        let inserted = turns
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(seat.to_string());
-        inserted.then(|| Self {
+    /// The seat's entry, or the turn already pending for it.
+    fn take(
+        turns: &Arc<Mutex<BTreeMap<String, PendingTurn>>>,
+        seat: &SeatId,
+        turn: PendingTurn,
+    ) -> Result<Self, PendingTurn> {
+        let mut held = turns.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(existing) = held.get(seat.as_str()) {
+            return Err(*existing);
+        }
+        held.insert(seat.to_string(), turn);
+        Ok(Self {
             turns: Arc::clone(turns),
             seat: seat.to_string(),
         })
@@ -343,69 +392,113 @@ impl Drop for Pending {
     }
 }
 
-fn pending_refusal(command: &str, seat: &SeatId) -> Response {
+fn pending_refusal(command: &str, seat: &SeatId, pending: PendingTurn) -> Response {
     let mut answer: Envelope<Value> = Envelope::refused(
         command,
         ErrorKind::Refused,
         format!(
-            "{E_PENDING}: {seat} already has a memory turn pending; its held compact or close runs when that turn ends, so this request was not taken"
+            "{E_PENDING}: {seat} already has a memory turn pending for a {}; it runs when that turn ends, so this request was not taken",
+            verb(pending.action)
         ),
     );
-    answer.details = Some(json!({"code": E_PENDING, "seat": seat}));
+    answer.details = Some(json!({
+        "code": E_PENDING,
+        "seat": seat,
+        "pending": pending.action,
+        "deadline_ms": pending.deadline_ms,
+    }));
     super::envelope(StatusCode::CONFLICT, &answer)
 }
 
 /// Run the held action against the seat it was held for, and only that one:
-/// what happened, and a close's receipt data.
-async fn proceed(state: &AppState, held: &SeatDescriptor, then: Then) -> (String, Option<Value>) {
-    // The brake: the action was authorized against the incarnation it was held
-    // for. One read; a close then compares-and-sets against exactly this row,
-    // so ordinary activity changes during the turn are allowed.
-    let now = match state.services.registry.get(&held.id).await {
-        Ok(Some(now)) => now,
-        Ok(None) => return ("skipped: the seat no longer exists".to_string(), None),
-        Err(error) => return (format!("failed: could not read the seat: {error}"), None),
+/// what happened, and a close's receipt data. `missed` says why the turn did
+/// not end, when it did not: a close then records that its note may be missing.
+async fn proceed(
+    state: &AppState,
+    held: &SeatDescriptor,
+    then: Then,
+    missed: Option<&str>,
+) -> (String, Option<Value>) {
+    let (actor, reason) = match then {
+        Then::Compact(msg) => {
+            if let Err(skipped) = current(state, held).await {
+                return (skipped, None);
+            }
+            return match super::admit_control(state, msg).await {
+                Ok(_) => ("compact admitted".to_string(), None),
+                Err(error) => (format!("failed: {error}"), None),
+            };
+        }
+        Then::Close { actor, reason } => (actor, reason),
     };
-    if let Some(skip) = skip_reason(held, &now) {
-        return (skip.to_string(), None);
-    }
-    // Authority is rechecked too, against the row as it is now, with the
-    // close route's own predicate (review of #220, F001): the closer must
-    // still be the seat, its recorded parent, or a designated prime of a dead
-    // parentless seat. A seat reparented during the turn is not closed.
-    if let Then::Close { actor, .. } = &then
-        && !super::lifecycle::may_close(state, actor, &now).await
-    {
-        return (
-            format!(
-                "skipped: {actor} no longer owns the seat (its parent, or what let {actor} close it, changed during the memory turn)"
-            ),
-            None,
-        );
-    }
-    match then {
-        Then::Compact(msg) => match super::admit_control(state, msg).await {
-            Ok(_) => ("compact admitted".to_string(), None),
-            Err(error) => (format!("failed: {error}"), None),
-        },
-        Then::Close { actor, reason } => {
-            let closed = super::lifecycle::close_seat(
-                state,
-                "pij close",
-                &actor,
-                held.id.clone(),
-                reason,
-                Some(now),
-            )
-            .await;
-            match closed {
-                Ok(data) => ("closed".to_string(), Some(data)),
-                Err(refused) => (
+    // F194, a policy: past the bound (or an undelivered prompt) the close runs
+    // without the note, and its recorded reason says the note may be missing.
+    let reason = match missed {
+        Some(missed) => format!("{reason} (memory note may be missing: {missed})"),
+        None => reason,
+    };
+    // F194: the seat's own end-of-turn writes (its idle, its context report)
+    // can land between this read and the close's compare-and-set. A changed
+    // row is read again and every check below repeated, a bounded number of
+    // times; a revive or close in between still skips the close.
+    for _ in 0..CLOSE_ATTEMPTS {
+        let now = match current(state, held).await {
+            Ok(now) => now,
+            Err(skipped) => return (skipped, None),
+        };
+        // Authority is rechecked too, against the row as it is now, with the
+        // close route's own predicate (review of #220, F001): the closer must
+        // still be the seat, its recorded parent, or a designated prime of a
+        // dead parentless seat. A seat reparented during the turn is not closed.
+        if !super::lifecycle::may_close(state, &actor, &now).await {
+            return (
+                format!(
+                    "skipped: {actor} no longer owns the seat (its parent, or what let {actor} close it, changed during the memory turn)"
+                ),
+                None,
+            );
+        }
+        match super::lifecycle::close_seat(
+            state,
+            "pij close",
+            &actor,
+            held.id.clone(),
+            reason.clone(),
+            Some(now),
+        )
+        .await
+        {
+            Ok(data) => return ("closed".to_string(), Some(data)),
+            Err(super::lifecycle::CloseRefused::Changed(_)) => tokio::task::yield_now().await,
+            Err(super::lifecycle::CloseRefused::Other(refused)) => {
+                return (
                     format!("failed: the close answered {}", refused.status()),
                     None,
-                ),
+                );
             }
         }
+    }
+    (
+        format!(
+            "failed: the seat's row changed under each of {CLOSE_ATTEMPTS} close attempts; run `pij close {}` again",
+            held.id
+        ),
+        None,
+    )
+}
+
+/// The seat as it is now, or why the held action must not run against it.
+/// The brake: the action was authorized against the incarnation it was held
+/// for, and ordinary activity changes during the turn are allowed.
+async fn current(state: &AppState, held: &SeatDescriptor) -> Result<SeatDescriptor, String> {
+    let now = match state.services.registry.get(&held.id).await {
+        Ok(Some(now)) => now,
+        Ok(None) => return Err("skipped: the seat no longer exists".to_string()),
+        Err(error) => return Err(format!("failed: could not read the seat: {error}")),
+    };
+    match skip_reason(held, &now) {
+        Some(skip) => Err(skip.to_string()),
+        None => Ok(now),
     }
 }
 
@@ -443,9 +536,10 @@ pub const LOOKUP_BOUND: Duration = Duration::from_secs(2);
 
 /// The memory turn a compact or close of `seat` takes, if any: its holdings
 /// in this context, or the generic turn when the store can't say within
-/// [`LOOKUP_BOUND`] (F130). `None` only when the store says it held nothing
-/// in this context.
-pub(crate) async fn turn_for(state: &AppState, seat: &SeatId) -> Option<Turn> {
+/// [`LOOKUP_BOUND`] (F130). `None` when the store says it held nothing in this
+/// context, or, for a close, when its note is already written (F194, see
+/// [`noted`]).
+pub(crate) async fn turn_for(state: &AppState, seat: &SeatId, action: Action) -> Option<Turn> {
     let lookup = state
         .services
         .directory
@@ -463,6 +557,9 @@ pub(crate) async fn turn_for(state: &AppState, seat: &SeatId) -> Option<Turn> {
     };
     match found {
         Ok(context) => {
+            if action == Action::Close && noted(state, seat, &context.rows).await {
+                return None;
+            }
             let holdings = context_holdings(context.rows);
             (!holdings.is_empty()).then_some(Turn::Holdings {
                 holdings,
@@ -476,6 +573,39 @@ pub(crate) async fn turn_for(state: &AppState, seat: &SeatId) -> Option<Turn> {
             Some(Turn::Unread)
         }
     }
+}
+
+/// F194: whether `seat` already wrote the note a close's memory turn would ask
+/// for: its newest `memory.note` is for a role it held in this context, and
+/// was written at or after the start of its newest holding here.
+///
+/// The anchor is the newest holding's start, not the close request: a note
+/// written during this context's work is what the turn asks for, and asking a
+/// seat that just wrote it again is the loop F194 reported (each close
+/// restarted the turn). A holding taken up after the note moves the anchor
+/// past it, so new work is asked about again. One indexed spine read; a
+/// failed read counts as no note (a brake: it only ever adds a turn).
+async fn noted(state: &AppState, seat: &SeatId, rows: &[pij_store::Assignment]) -> bool {
+    let Some(anchor) = rows
+        .iter()
+        .filter_map(|row| crate::community::holders::parse_time(&row.from))
+        .max()
+    else {
+        return false;
+    };
+    let Ok(Some(note)) = state
+        .services
+        .spine
+        .latest_matching(seat, &[NOTE_EVENT_KIND])
+        .await
+    else {
+        return false;
+    };
+    let payload: Value = serde_json::from_str(&note.payload).unwrap_or(Value::Null);
+    let held_here = rows.iter().any(|row| {
+        payload["project"] == row.project.as_str() && payload["role"] == row.role.as_str()
+    });
+    held_here && i128::from(note.at) * 1_000_000 >= anchor.unix_timestamp_nanos()
 }
 
 /// One holding per role and instance, open ones first: a role released and

@@ -2644,7 +2644,8 @@ pub(crate) async fn send_control(
     // Plan 201: a role holder writes its memory before it is compacted, and
     // so does a seat that released one in this context (F130).
     if msg.command.as_deref() == Some("compact")
-        && let Some(turn) = memory_turn::turn_for(state, &target.id).await
+        && let Some(turn) =
+            memory_turn::turn_for(state, &target.id, memory_turn::Action::Compact).await
     {
         return match memory_turn::hold(
             state,
