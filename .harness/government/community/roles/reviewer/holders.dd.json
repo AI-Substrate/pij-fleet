@@ -1581,7 +1581,10 @@
 					"harness_session": "867eb06c-1210-40e7-9589-2659bdeedcde",
 					"instance_key": "237",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #237 merged (88d52a7f7962)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-applicable-wildcat",
+					"to": "2026-11-18T02:24:59.796Z",
 					"why": "F196 #237 correctness review (gpt-6.1-sol)"
 				},
 				{
