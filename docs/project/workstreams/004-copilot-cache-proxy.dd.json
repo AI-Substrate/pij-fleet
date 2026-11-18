@@ -1,0 +1,130 @@
+{
+	"dd": {
+		"schema": "pij/workstream"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Workstream 004: Copilot cache proxy",
+				"status": "draft",
+				"updated": "2026-11-18",
+				"owner": "pm-004"
+			}
+		},
+		{
+			"name": "goal",
+			"value": "Give pij-spawned Copilot Claude seats a 1-hour prompt cache through the `pij-rs cache-proxy` sidecar (PRD 004, blueprint 003), proven on live seats against every row of the acceptance matrix (governance handover/cache-proxy-test-matrix.md)."
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s01",
+					"title": "Spike: token, quota gate, bounce retry, 1-hour cache",
+					"state": "complete",
+					"needs": ["role:model-cost"],
+					"done_when": "REPORT.md answers PRD q-01 and gives the evidence for q-02, the quota gate and row 2.",
+					"note": "takin (model-cost), branch spike/004-cache-proxy 9a397862, spikes/REPORT.md; no PR. Fed PRD q-01, decision d-3 and d-4, and the prime's ruling 5 (sidecar)."
+				},
+				{
+					"id": "s02",
+					"title": "The sidecar: crates/cache-proxy and `pij-rs cache-proxy`",
+					"state": "planned",
+					"delivers": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-01",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-02",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-03",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-06",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-07",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-10",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-13",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-14"
+					],
+					"builds": [
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-proxy-core",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-token-holder",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-readiness",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-status-route",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-proxy-verb",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-config-file",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-launch-agent"
+					],
+					"depends_on": ["#steps/s01"],
+					"needs": ["role:coder", "role:reviewer", "role:security", "role:performance"],
+					"lanes": [
+						{
+							"branch": "coder/228-cache-proxy-sidecar",
+							"worktree": "fleet-228-cache-proxy-sidecar"
+						}
+					],
+					"done_when": "With a hand-set `COPILOT_PROVIDER_*` on a plain `copilot` process: matrix rows 2, 9, 10, 11, 14, 15, 16, 17, 22 and 23 pass, `/__pij/status` matches blueprint c-status-route exactly, the spawn-sites test covers the `gh` launch, and no token appears in logs, argv or the config file.",
+					"plan": "docs/plans/228-cache-proxy-sidecar",
+					"note": "Starts from the spike POC on spike/004-cache-proxy. Merges before s03."
+				},
+				{
+					"id": "s03",
+					"title": "Daemon side: spawn gate, receipt, notices, directory and doctor",
+					"state": "planned",
+					"delivers": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-05",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-08",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-09",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-11",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-12",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-13"
+					],
+					"builds": [
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-spawn-gate",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-seat-proxy-state",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-proxy-watch",
+						"../blueprints/003-copilot-cache-proxy.dd.json#components/c-doctor-row"
+					],
+					"depends_on": ["#steps/s01"],
+					"needs": ["role:coder", "role:reviewer", "role:security", "role:performance"],
+					"lanes": [
+						{ "branch": "coder/229-cache-proxy-gate", "worktree": "fleet-229-cache-proxy-gate" }
+					],
+					"done_when": "Against a stub status route in tests, and the s02 sidecar once merged: matrix rows 1, 3 to 8, 12, 13 and 18 to 21 pass, with the cost rows k-4 and k-5 measured with `pij-rs --json ping` before and after.",
+					"plan": "docs/plans/229-cache-proxy-gate",
+					"note": "Builds in parallel with s02 against the status route contract in blueprint c-status-route; rebases on s02 and merges after it."
+				},
+				{
+					"id": "s04",
+					"title": "Live-seat acceptance: all 23 matrix rows",
+					"state": "planned",
+					"depends_on": ["#steps/s02", "#steps/s03"],
+					"needs": ["role:model-cost"],
+					"done_when": "Every row of handover/cache-proxy-test-matrix.md has a receipt from real pij seats (command, observed value, seat ids) in this workstream's proof, before the prime merges the last lane's state flip.",
+					"note": "Run by model-cost (takin) with pm-004. Rows a lane already proved on live seats are re-receipted, not re-argued."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "First draft: spike complete, two parallel build lanes (plans 228 and 229), then live-seat acceptance."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "req-13 (`-1m` mapping, model id and max prompt tokens): the proxy side goes to s02, the spawn env to s03."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "req-14 (subagent requests keep the 5-minute cache) goes to s02. It lands in #239's round-2 push, after the first verdicts."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "pm-004 (pij-outstanding-silkworm)",
+					"change": "#238 review N238-001: s02 done_when adds rows 22 and 23; s04 covers all 23 rows."
+				}
+			]
+		}
+	]
+}
