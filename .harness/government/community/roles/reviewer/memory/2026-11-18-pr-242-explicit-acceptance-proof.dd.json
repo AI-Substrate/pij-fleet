@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "When reconciling live acceptance receipts, prior-lane controls or cache-proxy s04 states.",
+				"tags": [
+					"review",
+					"cache-proxy",
+					"acceptance",
+					"receipts"
+				],
+				"title": "PR 242: explicit acceptance proof boundaries"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #242 passes at ef6bcc313b284f02c881e00f8e091229a309cb69. Published by the output writer at community/roles/reviewer/outputs/2026-11/18-verdict-pr-242-ef6bcc3.dd.json, commit 704f4a942705aaf398bdf1ec020b8c2e8acc41dd; writer_holds_role true. PR comment 6969897085.\n\nAll 23 acceptance IDs occur once with complete evidence cells. req-01 closes on row 2's production cache read after 7m16s idle. req-09 closes on rows 7/18/21; Copilot /restart keeps provider env, while pij-rs revive reruns the gate. KeepAlive recovered before the revive, so do not claim the revived seat was plain.\n\nPM explicitly accepted one production stream for row 8's daemon-bounce lifecycle proof and s02's plain image/tool control plus s04's production proxied evidence for row 16. The author recorded both adjustments before approval. Do not silently relax the matrix or describe lane controls as fresh production comparisons. Rows 9-11 remain lane-proven; row 15 proves only the initiator split; row 12 FAIL/F205 keeps s04 in-progress. The subtotal typo was corrected to 17.\n\nBoth canonical docs validate with zero errors/warnings and ddocs build --check reports no drift. Their bytes are unchanged across the three receipt-only amendments. Final-head CI 44243139950 passed all four jobs; latest delivers 44243141993 passed; just pr-freeze 242 returned FINAL with a clean detached tree.\n\nNo local builds, dependency installs/links or fleet mutations. Local harness boot was dependency-NOT-READY; quick checks were dependency-limited, not green. CI supplies TS/Rust proof; direct local ddocs checks cover CI's explicit ddocs-unavailable gap.\n\nmagicWand: encode unique receipt IDs, evidence cells, computed subtotals and explicit lane/partial/accepted-adjustment grades in a dependency-free acceptance checker. Captured SUGG-001 in the original review worktree; recommendation only, no tool added to this docs-only PR.\n\ndifficulties: first-head receipts omitted acceptance adjustments; asking the PM once and recording its concrete ruling resolved them without another production bounce. Frozen dependency-free worktrees require honest separation of local unavailable gates and exact-head CI proof.\n"
+		}
+	]
+}
