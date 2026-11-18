@@ -668,19 +668,20 @@ fn an_unregistered_session_never_shows_another_seats_name() {
 
     use super::{pane_whoami, plain_id, runs_under};
 
-    // This status line (pid 500) runs under the Copilot CLI (pid 400).
+    // This status line (pid 500) runs under the Copilot CLI (pid 400), which
+    // the npm loader (node, 300) started.
     let copilot = ProcIdentity {
         pid: 400,
         proc_start: 20_261_118_090_000,
     };
-    let parent = |pid: u32| match pid {
-        500 => Some(400),
-        400 => Some(300),
-        300 => Some(1),
+    let process = |pid: u32| match pid {
+        500 => Some((400, "pij-rs".to_string())),
+        400 => Some((300, "copilot".to_string())),
+        300 => Some((1, "node".to_string())),
         _ => None,
     };
     let start = |pid: u32| (pid == 400).then_some(copilot.proc_start);
-    let owns = |seat: ProcIdentity| runs_under(seat, 500, &parent, &start);
+    let owns = |seat: ProcIdentity| runs_under(seat, 500, &process, &start);
     let cwd = std::env::temp_dir();
     let answer = |id: &str, proc: ProcIdentity| {
         serde_json::json!({
@@ -769,35 +770,76 @@ fn an_unregistered_session_never_shows_another_seats_name() {
     ));
 }
 
-/// The real ancestry read: this test process runs under its own parent, at the
-/// start the kernel reports, and not under a recycled start or a stranger.
+/// S240-001: a second Copilot B started inside registered Copilot A's process
+/// tree (A → B → shell wrapper → status line) is not A's seat, on the pane
+/// path (B shares A's pane) or the paneless one (B inherits A's
+/// `PIJ_SESSION_ID`). Only the NEAREST host counts; wrappers are passed over.
 #[test]
-fn runs_under_reads_this_process_real_ancestry() {
+fn a_copilot_nested_in_a_registered_one_never_shows_its_name() {
     use pij_core::model::ProcIdentity;
 
-    let parent = pij_harnesses::proc::parent_pid(std::process::id()).expect("parent");
-    let observed = |pid: u32| pij_harnesses::proc::observed_start(pid).map(|start| start.local);
-    let start = observed(parent).expect("parent start");
-    let owns = |seat: ProcIdentity| {
-        super::runs_under(
-            seat,
-            std::process::id(),
-            &pij_harnesses::proc::parent_pid,
-            &observed,
-        )
+    use super::{pane_whoami, plain_id, runs_under};
+
+    let a = ProcIdentity {
+        pid: 100,
+        proc_start: 20_261_118_080_000,
     };
-    assert!(owns(ProcIdentity {
-        pid: parent,
-        proc_start: start,
-    }));
-    assert!(!owns(ProcIdentity {
-        pid: parent,
-        proc_start: start + 1,
-    }));
-    assert!(!owns(ProcIdentity {
-        pid: u32::MAX - 1,
-        proc_start: start,
-    }));
+    let b = ProcIdentity {
+        pid: 200,
+        proc_start: 20_261_118_090_000,
+    };
+    // 400: A's own status line. 300: B's, behind a shell wrapper (250).
+    // 350: B's, launched directly.
+    let process = |pid: u32| match pid {
+        400 => Some((100, "pij-rs".to_string())),
+        350 => Some((200, "pij-rs".to_string())),
+        300 => Some((250, "pij-rs".to_string())),
+        250 => Some((200, "sh".to_string())),
+        200 => Some((100, "copilot".to_string())),
+        100 => Some((50, "copilot".to_string())),
+        50 => Some((1, "zsh".to_string())),
+        _ => None,
+    };
+    let start = |pid: u32| match pid {
+        100 => Some(a.proc_start),
+        200 => Some(b.proc_start),
+        _ => None,
+    };
+    let seat = |id: &str, proc: ProcIdentity| {
+        serde_json::json!({"ok": true, "data": {"id": id, "pane": "%9", "proc": proc}}).to_string()
+    };
+    let registered_a = seat("pij-registered-a", a);
+    for status_line in [300, 350] {
+        let owns = |proc: ProcIdentity| runs_under(proc, status_line, &process, &start);
+        // The pane path: B in A's pane is answered with A.
+        match pane_whoami(registered_a.clone(), &owns) {
+            Whoami::PaneHeld => {}
+            other => panic!("B's status line {status_line} named A: {other:?}"),
+        }
+        // The paneless path: B inherited A's PIJ_SESSION_ID.
+        assert_eq!(plain_id(&registered_a, &owns), None);
+        // Once B registers, its own seat shows, wrapper or not.
+        assert_eq!(
+            plain_id(&seat("pij-registered-b", b), &owns).as_deref(),
+            Some("pij-registered-b")
+        );
+    }
+    // A's own status line, a direct child, still shows A.
+    let owns = |proc: ProcIdentity| runs_under(proc, 400, &process, &start);
+    assert_eq!(
+        plain_id(&registered_a, &owns).as_deref(),
+        Some("pij-registered-a")
+    );
+}
+
+/// The in-process reader the walk uses names this test process and its real
+/// parent (macOS `p_comm`, Linux `/proc/<pid>/exe`), launching nothing.
+#[test]
+fn the_host_reader_names_this_process_and_its_real_parent() {
+    let (parent, name) =
+        pij_harnesses::proc::parent_and_host_name(std::process::id()).expect("readable");
+    assert_eq!(parent, std::os::unix::process::parent_id());
+    assert!(name.starts_with("pij_cli"), "{name}");
 }
 
 #[test]

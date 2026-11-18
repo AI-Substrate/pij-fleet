@@ -2602,13 +2602,13 @@ async fn statusline_plain_id(cli: &Cli) -> Option<String> {
     pij_cli::statusline::plain_id(&text, &statusline_owns)
 }
 
-/// Whether `seat` records a process this status line runs under (F198), read
-/// in-process: no launch per render.
+/// Whether `seat` is the nearest harness host above this status line (F198,
+/// S240-001), read in-process: no launch per render.
 fn statusline_owns(seat: ProcIdentity) -> bool {
     pij_cli::statusline::runs_under(
         seat,
         std::process::id(),
-        &pij_harnesses::proc::parent_pid,
+        &pij_harnesses::proc::parent_and_host_name,
         &|pid| pij_harnesses::proc::observed_start(pid).map(|start| start.local),
     )
 }

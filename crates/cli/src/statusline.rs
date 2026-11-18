@@ -363,27 +363,47 @@ fn seat_proc(raw: &str) -> Option<ProcIdentity> {
     serde_json::from_value(data.get("proc")?.clone()).ok()
 }
 
-/// Whether `seat` is a process this status line runs under: `me` or one of its
-/// ancestors has the seat's pid, and that process started when the seat
-/// recorded (a recycled pid is someone else). Copilot launches its status line
-/// command as a direct child of the CLI process its seat records. Reads at most
-/// 64 parents, through `parent` and `start`, which launch nothing.
+/// The names a harness host runs as (kernel `p_comm` on macOS, the executable's
+/// file name on Linux). Copilot's CLI is `copilot`, or `node` for the npm
+/// `index.js` install; the rest are the other harnesses a Copilot may run in.
+/// A name missing here only lets the walk climb further, never accepts more:
+/// the nearest host must still BE the seat.
+const HOST_NAMES: [&str; 8] = [
+    "copilot", "node", "claude", "codex", "omp", "bun", "bun.exe", "pi",
+];
+
+/// Whether `seat` is this status line's own session (F198): the NEAREST
+/// harness host above `me` is the seat's process, and it started when the seat
+/// recorded (a recycled pid is someone else). Shell wrappers between the two
+/// are passed over; a registered host further up never counts, so a second
+/// Copilot started inside a registered one is not that seat (S240-001).
+/// Copilot launches its status line command as a direct child of the CLI
+/// process its seat records. Reads at most 64 processes, through `process`
+/// (parent pid and name) and `start`, which launch nothing.
 #[must_use]
 pub fn runs_under(
     seat: ProcIdentity,
     me: u32,
-    parent: &dyn Fn(u32) -> Option<u32>,
+    process: &dyn Fn(u32) -> Option<(u32, String)>,
     start: &dyn Fn(u32) -> Option<u64>,
 ) -> bool {
-    let mut pid = me;
+    let Some((mut pid, _)) = process(me) else {
+        return false;
+    };
     for _ in 0..64 {
-        if pid == seat.pid {
-            return start(pid) == Some(seat.proc_start);
+        if pid <= 1 {
+            return false;
         }
-        match parent(pid) {
-            Some(next) if next > 1 && next != pid => pid = next,
-            _ => return false,
+        let Some((parent, name)) = process(pid) else {
+            return false;
+        };
+        if HOST_NAMES.contains(&name.as_str()) {
+            return pid == seat.pid && start(pid) == Some(seat.proc_start);
         }
+        if parent == pid {
+            return false;
+        }
+        pid = parent;
     }
     false
 }

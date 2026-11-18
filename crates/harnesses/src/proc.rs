@@ -354,18 +354,22 @@ pub fn parent_and_name(pid: u32) -> Option<(u32, String)> {
     Some((info.pbsi_ppid.0, name))
 }
 
-/// A process's parent pid, read in-process (F198): macOS from the short BSD
-/// info, Linux from field 4 of `/proc/<pid>/stat`. It launches nothing. `None`
-/// when the kernel has no such process or will not say.
+/// F198: a process's parent pid and the name it runs as, read in-process for
+/// the Copilot status line's walk to its own host. macOS: [`parent_and_name`]
+/// (kernel `p_comm`). Linux: field 4 of `/proc/<pid>/stat` and the file name of
+/// `/proc/<pid>/exe`, since comm is a mutable task name there (Copilot reports
+/// `MainThread`). It launches nothing. `None` when the kernel will not say.
 #[must_use]
-pub fn parent_pid(pid: u32) -> Option<u32> {
+pub fn parent_and_host_name(pid: u32) -> Option<(u32, String)> {
     #[cfg(target_os = "macos")]
     {
-        parent_and_name(pid).map(|(parent, _)| parent)
+        parent_and_name(pid)
     }
     #[cfg(target_os = "linux")]
     {
-        linux_ppid(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)
+        let parent = linux_ppid(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)?;
+        let exe = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
+        Some((parent, exe.file_name()?.to_str()?.to_string()))
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {

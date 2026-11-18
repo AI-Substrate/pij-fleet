@@ -2630,10 +2630,32 @@ async fn native_lease_expiry_parks_and_tells_each_live_sender_once() {
         "{roster}"
     );
     assert!(row(sender.id.as_str()).get("nativeReceiver").is_none());
-    // A receiver that heartbeats again is live again; nothing is latched.
+    // A receiver that heartbeats again is live again; nothing is latched, and
+    // neither the card nor the roster still says lapsed (F195).
     assert_eq!(
         progress_heartbeat(&client, addr, &request).await["data"]["state"],
         "live"
+    );
+    let state = native_http_response(
+        client
+            .post(format!("http://{addr}/v1/state"))
+            .json(&json!({"id":seat.id})),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    assert!(state["data"].get("nativeReceiverLine").is_none(), "{state}");
+    let roster = native_http_response(
+        client.get(format!("http://{addr}/v1/seats?scope=local")),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    assert!(
+        roster["data"]["seats"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row.get("nativeReceiver").is_none()),
+        "{roster}"
     );
     follower.abort();
     server.abort();
@@ -2855,6 +2877,13 @@ async fn native_receiver_absent_after_boot_grace_remains_visible_after_parking()
     assert_eq!(
         state["data"]["native_receiver_reason"],
         "native-extension-unavailable"
+    );
+    // F195: never renewed by this process since boot, and the process is active.
+    assert_eq!(
+        state["data"]["nativeReceiverLine"],
+        "native receiver: lapsed, not renewed by this process since the daemon started. The \
+         process is active, but sends to this seat are refused until its extension registers \
+         again."
     );
     let peek = native_http_response(
         client
