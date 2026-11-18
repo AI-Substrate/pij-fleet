@@ -1,7 +1,9 @@
 //! `pij list`'s human table (plan 160): who is on the roster, how big each
 //! seat's context is, how long since its last call, whether its cache is warm,
 //! and ❄ on a row the cold-wake guard would refuse right now. A seat stalled on
-//! its harness's own dialog shows `blocked on a dialog (<key>)` (plan 219).
+//! its harness's own dialog shows `blocked on a dialog (<key>)` (plan 219); a
+//! native Copilot seat whose receiver lease lapsed adds `receiver lapsed <age>`
+//! to its state (F195).
 //!
 //! The daemon derives and renders the size columns (`sizeColumns`), so this
 //! only lays them out. The TS shim renders the same table from the same JSON;
@@ -35,9 +37,14 @@ pub fn render_table(data: &Value) -> String {
         };
         let cold = seat["sizeColumns"][3].as_str() == Some("❄");
         // Plan 219: a seat on its harness's own dialog reads working; say so.
+        // F195: a lapsed native receiver is appended, since the process runs on.
         let state = match seat["dialog"]["key"].as_str() {
             Some(key) => format!("blocked on a dialog ({key})"),
             None => text("state"),
+        };
+        let state = match seat["nativeReceiver"].as_str() {
+            Some(lapse) => format!("{state}, {lapse}"),
+            None => state,
         };
         rows.push((
             cold,

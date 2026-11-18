@@ -527,6 +527,15 @@ pub struct StateCard {
         skip_serializing_if = "Option::is_none"
     )]
     pub native_receiver_reason: Option<String>,
+    /// F195: `native receiver: lapsed, …` when the reason above is set, saying
+    /// since when and that the process may still be `liveness` while sends are
+    /// refused. Rendered once here so every client prints the same line.
+    #[serde(
+        default,
+        rename = "nativeReceiverLine",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub native_receiver_line: Option<String>,
     /// TS `pid` (cli.ts:3638). `None` for a seat never bound to a process.
     pub pid: Option<u32>,
     /// The recorded process start time — the other half of the identity that

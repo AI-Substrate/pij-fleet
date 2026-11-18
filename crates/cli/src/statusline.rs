@@ -14,15 +14,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use pij_core::model::ProcIdentity;
 use serde_json::Value;
 
 /// What `pij-rs --json whoami` would have said for this render.
 #[derive(Clone, Debug)]
 pub enum Whoami {
-    /// The stdout text of `pij-rs --json whoami --pane $TMUX_PANE`.
+    /// The stdout text of `pij-rs --json whoami --pane $TMUX_PANE`, when it
+    /// names no seat or names this session's own (see [`pane_whoami`]).
     Pane(String),
-    /// The seat id `pij whoami --json` named, when there is no pane.
+    /// The seat id `pij whoami --json` named, when there is no pane: only
+    /// this session's own (see [`plain_id`]).
     Plain(Option<String>),
+    /// The pane's seat belongs to another process (F198). Its name is never
+    /// shown: the status line names only this session's own seat.
+    PaneHeld,
 }
 
 /// Everything a render reads besides stdin and the git probe.
@@ -78,6 +84,7 @@ pub fn render_copilot(
         Whoami::Pane(raw) => pane_identity(trim_newlines(raw)),
         Whoami::Plain(Some(id)) if !id.is_empty() => format!(" {ESC}[34m⛓ {id}{ESC}[0m"),
         Whoami::Plain(_) => format!(" {ESC}[2m⛓ unregistered{ESC}[0m"),
+        Whoami::PaneHeld => format!(" {ESC}[2m⛓ unregistered (pane held){ESC}[0m"),
     };
 
     let effort = effort(context).unwrap_or_else(|| "auto".to_string());
@@ -294,7 +301,8 @@ fn basename(path: &str) -> String {
     trim_newlines(name).to_string()
 }
 
-/// The script's `case "$RS"` over the whoami JSON text.
+/// The script's `case "$RS"` over the whoami JSON text. A refusal never shows
+/// the seat it names (F198): that seat is not this session's, live or dead.
 fn pane_identity(raw: &str) -> String {
     if raw.contains("\"ok\":true") {
         let (id, fyis) = whoami_fields(raw).unwrap_or_default();
@@ -304,14 +312,80 @@ fn pane_identity(raw: &str) -> String {
             text.push_str(&format!(" {ESC}[33m✉{fyis}{ESC}[0m"));
         }
         text
-    } else if let Some((_, rest)) = raw.split_once("seat `") {
-        let dead = rest.split('`').next().unwrap_or(rest);
-        format!(" {ESC}[31m⛓ {dead} dead{ESC}[0m")
     } else if raw.contains("\"ok\":false") {
         format!(" {ESC}[2m⛓ unregistered{ESC}[0m")
     } else {
         format!(" {ESC}[2m⛓ daemon down{ESC}[0m")
     }
+}
+
+/// F198: the pane's whoami answer, shown only when its seat is this session's.
+///
+/// The daemon answers `whoami --pane` with whichever live seat records the
+/// pane id, and pane ids repeat across tmux servers, so an unregistered Copilot
+/// session in another server's `%5` was shown the seat on this server's `%5`.
+/// An answer that names a seat passes only when `owns` accepts the process the
+/// seat records (see [`runs_under`]); otherwise the render says the pane is
+/// held and names no one. Answers that name no seat pass unchanged.
+#[must_use]
+pub fn pane_whoami(raw: String, owns: &dyn Fn(ProcIdentity) -> bool) -> Whoami {
+    if raw.contains("\"ok\":true") && !seat_proc(&raw).is_some_and(owns) {
+        Whoami::PaneHeld
+    } else {
+        Whoami::Pane(raw)
+    }
+}
+
+/// F198: the id `pij whoami --json` named outside tmux, only when its seat is
+/// this session's. That answer follows an inherited `PIJ_SESSION_ID`, so a
+/// Copilot session started from a seat's shell would otherwise wear its name.
+#[must_use]
+pub fn plain_id(raw: &str, owns: &dyn Fn(ProcIdentity) -> bool) -> Option<String> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    let id = value["data"]["id"]
+        .as_str()
+        .or_else(|| value["id"].as_str())
+        .filter(|id| !id.is_empty())?;
+    seat_proc(raw).is_some_and(owns).then(|| id.to_string())
+}
+
+/// The local process an `ok` whoami answer records for its seat. A remote seat
+/// (`machine`) or one with no recorded process has none here.
+fn seat_proc(raw: &str) -> Option<ProcIdentity> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    let data = value.get("data")?;
+    if data
+        .get("machine")
+        .is_some_and(|machine| !machine.is_null())
+    {
+        return None;
+    }
+    serde_json::from_value(data.get("proc")?.clone()).ok()
+}
+
+/// Whether `seat` is a process this status line runs under: `me` or one of its
+/// ancestors has the seat's pid, and that process started when the seat
+/// recorded (a recycled pid is someone else). Copilot launches its status line
+/// command as a direct child of the CLI process its seat records. Reads at most
+/// 64 parents, through `parent` and `start`, which launch nothing.
+#[must_use]
+pub fn runs_under(
+    seat: ProcIdentity,
+    me: u32,
+    parent: &dyn Fn(u32) -> Option<u32>,
+    start: &dyn Fn(u32) -> Option<u64>,
+) -> bool {
+    let mut pid = me;
+    for _ in 0..64 {
+        if pid == seat.pid {
+            return start(pid) == Some(seat.proc_start);
+        }
+        match parent(pid) {
+            Some(next) if next > 1 && next != pid => pid = next,
+            _ => return false,
+        }
+    }
+    false
 }
 
 /// jq `[(.data.id // ""), (.data.pending_fyis // 0 | tostring)] | join("\u001f")`.

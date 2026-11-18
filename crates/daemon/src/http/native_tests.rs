@@ -2598,6 +2598,38 @@ async fn native_lease_expiry_parks_and_tells_each_live_sender_once() {
         state["data"]["native_receiver_reason"],
         "native-extension-unavailable"
     );
+    // F195: the card says both: the receiver lapsed, since when, and that the
+    // process (liveness) may still run while sends are refused.
+    let line = state["data"]["nativeReceiverLine"].as_str().unwrap();
+    assert!(
+        line.starts_with("native receiver: lapsed, last renewed ")
+            && line.contains(&format!(
+                " ago. The process is {}, but sends to this seat are refused",
+                state["data"]["liveness"].as_str().unwrap()
+            )),
+        "{line}"
+    );
+    let roster = native_http_response(
+        client.get(format!("http://{addr}/v1/seats?scope=local")),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    let row = |id: &str| {
+        roster["data"]["seats"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == id)
+            .cloned()
+            .unwrap()
+    };
+    assert!(
+        row(seat.id.as_str())["nativeReceiver"]
+            .as_str()
+            .is_some_and(|label| label.starts_with("receiver lapsed ")),
+        "{roster}"
+    );
+    assert!(row(sender.id.as_str()).get("nativeReceiver").is_none());
     // A receiver that heartbeats again is live again; nothing is latched.
     assert_eq!(
         progress_heartbeat(&client, addr, &request).await["data"]["state"],

@@ -208,7 +208,7 @@ An owner's close is final for continuity (F149). `pij close` records its reason 
 
 `--reclaim <seat>` is an operator override for continuity that cannot heal by itself. It is allowed only when the caller, resolved from its own pane or id, is the target's recorded parent or holds the `prime` role, the harness matches, and the target's process no longer runs. It refuses by name otherwise, before any write. The target keeps its parent and drops its recorded conversation, because that is exactly the evidence that went stale. The status-line heal then records the true one. It emits `seat.reclaimed` with `caller`, old/new proc and pane, `old_harness_session`, `prior_reason` and the evidence.
 
-Claude heals itself. On every render the managed status line checks `whoami --pane`. On a miss (that legacy does not own) or a seat recording a different `session_id`, it fires one detached adopt per pane per 15 s and shows `⛓ registering…` until it lands. When `whoami` is refused with `E-RS-CONVERSATION-LIVE`, or a heal adopt was refused with it, it shows a red `⚠ double: <seat> in %N` instead and fires no further adopt for that conversation. This adds about 1–2 ms to a healthy render. The SessionStart hook retries in the background for about 30 s when the daemon is not up yet. Both write RFC 3339-stamped lines to `~/.pij-rs/hook.log`. The daemon also installs a pij-managed Copilot status line (`~/.pij-rs/copilot-statusline-pij.sh`, wired through `~/.copilot/settings.json`, with the prior script backed up). It is display-only and shows a dead or missing seat as such.
+Claude heals itself. On every render the managed status line checks `whoami --pane`. On a miss (that legacy does not own) or a seat recording a different `session_id`, it fires one detached adopt per pane per 15 s and shows `⛓ registering…` until it lands. When `whoami` is refused with `E-RS-CONVERSATION-LIVE`, or a heal adopt was refused with it, it shows a red `⚠ double: <seat> in %N` instead and fires no further adopt for that conversation. This adds about 1–2 ms to a healthy render. The SessionStart hook retries in the background for about 30 s when the daemon is not up yet. Both write RFC 3339-stamped lines to `~/.pij-rs/hook.log`. The daemon also installs a pij-managed Copilot status line (`~/.pij-rs/copilot-statusline-pij.sh`, wired through `~/.copilot/settings.json`, with the prior script backed up). It is display-only and names a seat only when that seat records the Copilot process the status line runs under (pid and start, read in-process; F198): pane ids repeat across tmux servers, and an inherited `PIJ_SESSION_ID` can name a parent's seat. Otherwise it shows `⛓ unregistered`, or `⛓ unregistered (pane held)` when the pane's seat is another process's, and never that seat's name, live or dead.
 
 ### Pane takeover (F196)
 
@@ -446,9 +446,15 @@ renewal. Turn-state (`working`/`idle`) publication continues during any hold.
 
 Once a lease expires, `pij state` reports
 `native_receiver_reason:"native-extension-unavailable"` separately from host
-liveness; human output names the same reason. `pij inbox` and `--peek` include it
-in `details.native_receiver_reason` and human-readable `meta`. A live host or an
-`idle · active` card alone does not prove that its receiver is renewing.
+liveness, plus `nativeReceiverLine` (F195), which both renderers print as its own
+line: `native receiver: lapsed, last renewed 39m ago. The process is active, but
+sends to this seat are refused until its extension registers again.` (or `not
+renewed by this process since the daemon started`). `pij list` (`/v1/seats`) adds
+`nativeReceiver:"receiver lapsed 39m"` to the row, shown after its STATE. Both
+read the in-memory leases only: no store read, no launch. `pij inbox` and
+`--peek` include the reason in `details.native_receiver_reason` and human-readable
+`meta`. A live host or an `idle · active` card alone does not prove that its
+receiver is renewing.
 
 Expiry parks native bodies with `undelivered:native-receiver-unavailable`,
 publishes sender-addressed `delivery.parked`, and refuses subsequent sends.

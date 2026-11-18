@@ -20,7 +20,9 @@ use pij_cli::{
     setup_refusal,
 };
 use pij_core::error::PijError;
-use pij_core::model::{Envelope, ErrorKind, Event, Harness, SeatDescriptor, SeatId, SemanticState};
+use pij_core::model::{
+    Envelope, ErrorKind, Event, Harness, ProcIdentity, SeatDescriptor, SeatId, SemanticState,
+};
 use pij_core::wire;
 use pij_harnesses::{
     claude_homes, copilot_home, ensure_claude_inbound_accept, ensure_claude_message_display_hook,
@@ -2494,7 +2496,10 @@ async fn statusline_copilot(cli: &Cli) -> ExitCode {
         .ok()
         .filter(|pane| !pane.is_empty())
     {
-        Some(pane) => pij_cli::statusline::Whoami::Pane(statusline_whoami_text(cli, &pane).await),
+        Some(pane) => pij_cli::statusline::pane_whoami(
+            statusline_whoami_text(cli, &pane).await,
+            &statusline_owns,
+        ),
         None => pij_cli::statusline::Whoami::Plain(statusline_plain_id(cli).await),
     };
     let context = pij_cli::statusline::Context {
@@ -2585,7 +2590,8 @@ fn statusline_identity(pane: &str, mut caller: CallerContext) -> IdentityRequest
     }
 }
 
-/// Outside tmux the script asked `pij whoami --json | jq -r '.data.id // .id // empty'`.
+/// Outside tmux the script asked `pij whoami --json | jq -r '.data.id // .id // empty'`;
+/// the id now shows only when its seat is this session's (F198).
 async fn statusline_plain_id(cli: &Cli) -> Option<String> {
     let client = statusline_client(cli).ok()?;
     let response = client.whoami(&identity_request(None, None)).await;
@@ -2593,12 +2599,18 @@ async fn statusline_plain_id(cli: &Cli) -> Option<String> {
         .raw_json
         .clone()
         .unwrap_or_else(|| render(&response, true));
-    let value: Value = serde_json::from_str(&text).ok()?;
-    value["data"]["id"]
-        .as_str()
-        .or_else(|| value["id"].as_str())
-        .filter(|id| !id.is_empty())
-        .map(str::to_string)
+    pij_cli::statusline::plain_id(&text, &statusline_owns)
+}
+
+/// Whether `seat` records a process this status line runs under (F198), read
+/// in-process: no launch per render.
+fn statusline_owns(seat: ProcIdentity) -> bool {
+    pij_cli::statusline::runs_under(
+        seat,
+        std::process::id(),
+        &pij_harnesses::proc::parent_pid,
+        &|pid| pij_harnesses::proc::observed_start(pid).map(|start| start.local),
+    )
 }
 
 /// bash's `$PWD`: the inherited value when it still names this directory.
@@ -4096,8 +4108,16 @@ fn render_state(envelope: &Envelope<pij_daemon::http::StateCard>, json: bool) ->
                 deferred.reason, deferred.count, deferred.since_ms,
             );
         }
-        if let Some(reason) = &card.native_receiver_reason {
-            let _ = write!(output, "\nnative receiver: {reason}");
+        // F195: the daemon's line says the receiver lapsed, since when, and
+        // that the process may still run; an older daemon sends only the reason.
+        match (&card.native_receiver_line, &card.native_receiver_reason) {
+            (Some(line), _) => {
+                let _ = write!(output, "\n{line}");
+            }
+            (None, Some(reason)) => {
+                let _ = write!(output, "\nnative receiver: {reason}");
+            }
+            (None, None) => {}
         }
         if card.pending_fyis > 0 {
             let _ = write!(output, "\nFYIs held: {}", card.pending_fyis);
@@ -5562,6 +5582,21 @@ PEC notice";
             "native-extension-unavailable"
         );
         assert_eq!(json["data"]["liveness"], "active");
+        // F195: the daemon's line is printed on its own, in place of the reason.
+        let line = "native receiver: lapsed, last renewed 39m ago. The process is active, but sends to this seat are refused until its extension registers again.";
+        let card = serde_json::from_value::<pij_daemon::http::StateCard>(serde_json::json!({
+            "id":"pij-native", "state":"idle", "liveness":"active", "cwd":"/abs/tree",
+            "harness":"copilot", "unsupported":[],
+            "native_receiver_reason":"native-extension-unavailable",
+            "nativeReceiverLine": line,
+        }))
+        .unwrap();
+        let human = super::render_state(&pij_core::model::Envelope::ok("pij state", card), false);
+        assert!(human.lines().any(|row| row == line), "{human}");
+        assert!(
+            !human.contains("\nnative receiver: native-extension"),
+            "{human}"
+        );
     }
 
     #[test]

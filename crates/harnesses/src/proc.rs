@@ -354,6 +354,33 @@ pub fn parent_and_name(pid: u32) -> Option<(u32, String)> {
     Some((info.pbsi_ppid.0, name))
 }
 
+/// A process's parent pid, read in-process (F198): macOS from the short BSD
+/// info, Linux from field 4 of `/proc/<pid>/stat`. It launches nothing. `None`
+/// when the kernel has no such process or will not say.
+#[must_use]
+pub fn parent_pid(pid: u32) -> Option<u32> {
+    #[cfg(target_os = "macos")]
+    {
+        parent_and_name(pid).map(|(parent, _)| parent)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux_ppid(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
+/// Field 4 of `/proc/<pid>/stat`, counted from the LAST `)` like [`linux_start`].
+#[cfg(any(target_os = "linux", test))]
+fn linux_ppid(stat: &str) -> Option<u32> {
+    let (_, rest) = stat.rsplit_once(')')?;
+    rest.split_whitespace().nth(1)?.parse().ok()
+}
+
 /// Read the host's current UTC offset in minutes, in-process.
 ///
 /// Spawn binding uses this only for a fresh process, so the current offset is
@@ -657,6 +684,13 @@ mod tests {
         assert_eq!(super::linux_start(stat, boot), Some(1_782_864_000 + 1234));
         assert_eq!(super::linux_start("4242 (a) S", boot), None);
         assert_eq!(super::linux_start(stat, "cpu 1\n"), None);
+    }
+
+    #[test]
+    fn linux_ppid_is_field_4_after_the_last_paren() {
+        let stat = "4242 (a) (b c) S 77 4242 4242 0 -1";
+        assert_eq!(super::linux_ppid(stat), Some(77));
+        assert_eq!(super::linux_ppid("4242 (a) S"), None);
     }
 
     /// The offset is the one in force at the START instant. Using the current
