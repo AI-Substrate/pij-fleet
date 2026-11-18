@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "When reviewing login anonymization in acceptance receipts or generated ddocs",
+				"tags": [
+					"review",
+					"scrub",
+					"receipts",
+					"ddocs"
+				],
+				"title": "Account-only scrubs preserve receipt evidence"
+			}
+		},
+		{
+			"name": "body",
+			"value": "For an account-only scrub, assert that each new file exactly equals its prior content after an enumerated set of account-label/placeholder substitutions and necessary punctuation/backtick adjustments. Merely requiring every changed line to contain the removed login is too weak. Check modes/renames, preserve other accounts and numeric/state/timing evidence, and scan all tracked HEAD files (including hidden and generated files) without printing the removed value.\n\n#244's scrubbed head 9c46a9e869ce47c5ae2975b9e035b5f881bc4ffe passed: all eight scrub-commit files were account-only transformations, with zero residual tracked occurrences. The failed historical row is now preserved modulo anonymization, not literally byte-for-byte. The earlier close-out note retains the acceptance tally and s06 boundaries; do not duplicate or upgrade those claims.\n\nValidate every touched canonical ddoc, including plan/backpressure sources changed only by the scrub, and use ddocs build --check without modifying the frozen tree. All four passed here. Exact-head verdict: outputs/2026-11/19-verdict-pr-244-9c46a9e.dd.json, writer commit 5e8b2a788675e9efec88b43a33607779d07f058d.\n"
+		}
+	]
+}
