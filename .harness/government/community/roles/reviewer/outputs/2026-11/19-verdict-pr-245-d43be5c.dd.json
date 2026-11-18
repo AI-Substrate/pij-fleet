@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f114-ab99-7b71-9aed-6f025a55bdc5",
+				"date": "2026-11-19",
+				"head": "d43be5c79bc58cfbec035a4ba7cbdd8ab24a2615",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:245",
+				"writer": "pij-academic-wallaby",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 245",
+					"exit_code": 0,
+					"log": "FINAL at d43be5c79bc58cfbec035a4ba7cbdd8ab24a2615; CLEAN; all latest checks passed"
+				},
+				{
+					"command": "git diff --check 6a52a0950d2be8f5e05908384b258144d5976e64..d43be5c79bc58cfbec035a4ba7cbdd8ab24a2615",
+					"exit_code": 0,
+					"log": "No whitespace errors in round-two delta"
+				},
+				{
+					"command": "gh run view 44423420352 --repo AI-Substrate/pij-fleet --job 135223863727 --log",
+					"exit_code": 0,
+					"log": "Attempt 2 at exact head: 2507 passed, 6 skipped. Successful-job JUnit artifact 14483955866 confirms memory_turn_http 22/22, directory_http 111/111, lifecycle_http 6/6; all three new regressions passed."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS. R245-001 is closed. No blocking correctness regression found in the round-2 delta.\n\nSubject: pr:245\nHead: d43be5c79bc58cfbec035a4ba7cbdd8ab24a2615\nReviewed delta only: 6a52a0950d2be8f5e05908384b258144d5976e64..d43be5c79bc58cfbec035a4ba7cbdd8ab24a2615.\nFinal round under C34; no new hardening gates or additional review round requested.\n\nR245-001:\n- PendingTurn now retains the held close's original closer, process identity and pane. answer_pending acknowledges a repeat only when both actions are Close and all three match (memory_turn.rs:429-448). A new owner's request is refused with why=another-closer; a replacement incarnation's request is refused with why=another-incarnation. Neither is silently attached to a task that will skip it.\n- The HTTP 409 message explicitly says the request was not taken and will not run, tells the caller to ask again after the pending turn, and supplies its deadline. Typed details include code, seat, pending action, why and deadline_ms (memory_turn.rs:450-473). Refuse rather than replace preserves the original task's authority/incarnation brakes.\n- The two new HTTP regressions reproduce the original combined scenarios, assert the refusal and the old task's skip, then request close again and assert that it lands. This is the regression proof requested in round 1, not merely an isolated test of the comparison helper.\n\nOrdering and normal paths:\n- Close checks initial ownership before pending_answer (lifecycle.rs:496-514). A live pending turn is handled before turn_for, so a newly written note cannot bypass it. A same-closer, same-incarnation repeat still returns the original pending close/deadline without a new prompt.\n- Compact checks pending state before its holdings lookup (http/mod.rs:2667-2693), after the existing identity/process/command gates. The new note-while-pending test covers both repeating a held close and trying close during a held compact.\n- hold repeats the identical comparison after the caller's early lookup, covering competing turn admissions (memory_turn.rs:305-307).\n- With no pending entry the old note/hold/direct-close paths remain. A tombstoned seat deliberately bypasses the pending lookup and uses the existing idempotent close receipt (lifecycle.rs:503-541). The compact target validation remains before the new lookup; compacting an already-closed target retains its existing refusal rather than being trapped behind stale pending state.\n\nPending lifetime:\nThe single successful Pending::take owns the guard; a duplicate lookup/refusal inserts no entry. The outer daemon task calls proceed and then drop(pending) unconditionally, irrespective of its closed/skipped/failed result, before waiting for a late admission or recording the report (memory_turn.rs:335-349). Drop removes the map entry (memory_turn.rs:380-385); cancellation/unwinding also drops this guard. The pre-existing real deadline still bounds admission/event waiting. The delta adds no detached owner or path that retains a completed turn's entry. Ownership and revive regressions demonstrate that a fresh close is admitted after the skipped turn; existing bound and late-admission tests remain passing.\n\nSecurity: no new vulnerability found under C33.\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None found | - |\n\nAuthorization still precedes both early lookups. pending_answer is a synchronous read/clone under a short-lived mutex; it changes no actor, target or held action. New details use literal why values, the action enum and daemon deadline; proc/pane are compared, not exposed. The added human-readable closer text comes from the already-resolved stored actor, not note/reason/external body text. No concrete new external-input path was found.\n\nCost: one request-driven in-process pending-map lookup before close/compact holdings lookup; no added recurring loop, poll, timer or launch. The bounded five-attempt close retry and its existing pane_now/registry-list/CAS costs are unchanged from round 1 and now described accurately in the PR/docs. No live rate measurements are claimed.\n\nValidation:\n- just pr-freeze 245, run in the new detached worktree: FINAL at the full head above, CLEAN, all latest checks passed; no source changes.\n- git diff --check 6a52a0950d2be8f5e05908384b258144d5976e64..d43be5c79bc58cfbec035a4ba7cbdd8ab24a2615: passed.\n- CI run 44423420352, attempt 2, exact head above: success; Linux rust-test job 135223863727 reported 2507 passed, 6 skipped. Rust lint and both JS jobs passed.\n- The successful job's upload log identifies JUnit artifact 14483955866. That exact artifact confirms memory_turn_http 22/22, directory_http 111/111 and lifecycle_http 6/6, with no failures/errors/skips in those suites. All three new named regressions passed, as did the existing same-closer repeat, bound, revive/reparent and late-admission tests.\n- The previously reported compaction_wake::tests::a_dropped_caller_never_leaves_a_compact_admitted_untracked test also passed in this successful artifact; its implementation is outside the reviewed delta.\n- No local cargo build, test, or mutation run. CI is the build/test evidence, per the packet.\n\nHarness improvement: the round-1 magicWand is now executable in the two combined transition regressions, plus the note/pending composition test. Captured WIN-001 in bucket pr245-review-r2. No further C34 follow-up is required for this delta.\n"
+		}
+	]
+}
