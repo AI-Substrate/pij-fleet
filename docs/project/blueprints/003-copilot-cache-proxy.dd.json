@@ -102,9 +102,7 @@
 					"kind": "file",
 					"where": "justfile recipes `cache-proxy-autostart` / `cache-proxy-autostart-off` (plist ~/Library/LaunchAgents/dev.pij.cache-proxy.plist); `just install` calls the first",
 					"responsibility": "Same shape as `rs-autostart`: `/bin/sh -c 'exec <npm-prefix>/bin/pij-rs cache-proxy'`, RunAtLoad plus KeepAlive (restart on crash, ThrottleInterval 10 s), so the sidecar outlives every daemon bounce.",
-					"realises": [
-						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-08"
-					],
+					"realises": ["../prds/004-copilot-cache-proxy.dd.json#requirements/req-08"],
 					"state": "planned"
 				},
 				{
