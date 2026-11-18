@@ -1047,6 +1047,16 @@
 					"seat": "pij-yielding-newt",
 					"to": "2026-11-18T04:16:17.390Z",
 					"why": "pm-004: workstream 004 s03 (plan 229, daemon gate)"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-18T04:58:47.124Z",
+					"harness": "omp",
+					"harness_session": "01a1ed05-768a-700c-97ba-889cc22ced76",
+					"instance_key": "230",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-fair-firefly",
+					"why": "pm-004: workstream 004 s05 (plan 230, F204 false outage)"
 				}
 			]
 		}
