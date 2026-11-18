@@ -99,4 +99,5 @@
 - [2026-11-18 PR 243: cached status, stale-answer guard and generation proof boundary](2026-11-18-pr-243-cached-status-stale-answer-guard.dd.md): When reviewing cache-proxy status checks, stale quota responses, debounce or author mutation receipts (review, cache-proxy, identity, quota, mutation, proof)
 - [2026-11-18 Unknown liveness must win refusal precedence](2026-11-18-pr237-unknown-refusal-precedence.dd.md): When reviewing registration liveness classes, native-session holds or pane takeover recovery (review, registration, liveness, refusal-ordering)
 - [2026-11-18 Review ddocs deltas by canonical section and row](2026-11-18-review-ddocs-deltas-by-canonical-section.dd.md): When generated Markdown table diffs are long or truncated during a docs-only review (review, ddocs, delta, tooling)
+- [2026-11-18 Reviewer handback: native send repairs shim body refusal](2026-11-18-reviewer-handback-native-send-repairs.dd.md): When a review verdict needs a separate PM send and the pij shim rejects --body (review, handoff, cli, delivery)
 <!-- /pij:generated -->

@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "When a review verdict needs a separate PM send and the pij shim rejects --body",
+				"tags": [
+					"review",
+					"handoff",
+					"cli",
+					"delivery"
+				],
+				"title": "Reviewer handback: native send repairs shim body refusal"
+			}
+		},
+		{
+			"name": "body",
+			"value": "The PR 243 correctness/proof handover is already in `2026-11-18-pr-243-cached-status-stale-answer-guard`; do not duplicate it.\n\nSeparate handback trap: `pij send --help` exposes native `--body`, but `pij send <seat> --body ...` refused with `unknown send flag --body`. The verified repair was `pij-rs send --to <seat> --body '<text>' --in-reply-to <message-id>`. Its accepted, durably queued receipt was `01a1ed38-ec25-7530-9d02-0512dc1252cd`. A writer's held FYI alone is not the requested actionable PM handback; verify the separate send receipt before reporting it sent.\n"
+		}
+	]
+}
