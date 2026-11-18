@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"head": "b62fa63de6877b88a2b33f1deca000d2900d05bf",
+				"kind": "verdict",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:244",
+				"writer": "pij-conscious-krill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 244",
+					"exit_code": 0,
+					"log": "FINAL at b62fa63de6877b88a2b33f1deca000d2900d05bf; all five exact-head checks pass; detached worktree clean"
+				},
+				{
+					"command": "ddocs validate docs/project/prds/004-copilot-cache-proxy.dd.json; ddocs validate docs/project/workstreams/004-copilot-cache-proxy.dd.json",
+					"exit_code": 0,
+					"log": "Both canonical documents: 0 errors, 0 warnings"
+				},
+				{
+					"command": "ddocs build docs/project/prds/004-copilot-cache-proxy.dd.json --check; ddocs build docs/project/workstreams/004-copilot-cache-proxy.dd.json --check",
+					"exit_code": 0,
+					"log": "Both generated faces have drift false"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR 244 correctness review\n\n## A) Verdict\n\n**pass** at `b62fa63de6877b88a2b33f1deca000d2900d05bf`. No correctness findings or required fixes.\n\n## B) Summary\n\nReviewed the clean, detached frozen tree and all five changed documentation files (+38/-8). The row 12 rerun closes F205 without erasing the original failure. Requirement and workstream states agree with the recorded acceptance evidence and preserve the previously accepted proof boundaries. No production code, runtime loop, polling interval, timer, hook, sweep or process-launch behavior changes in this PR.\n\n## C) Checklist\n\n- Exact local, GitHub and remote heads agree; `just pr-freeze 244` reports FINAL.\n- All 23 active acceptance IDs occur exactly once; their result cells pass.\n- Summary partitions are 18 pass + 2 citation-qualified + 3 lane-proven + 0 fail = 23.\n- Original failing row 12 is preserved byte-for-byte under History.\n- Both canonical documents validate with zero errors and warnings; both generated faces have no drift.\n- All five exact-head CI checks passed.\n- Added-line credential-pattern scan and manual inspection found no tokens or secrets.\n- No local builds, dependency installs/links, credential-file reads, account switches, daemon restarts or product-tree edits.\n\n## D) Findings\n\nNone.\n\n## E) Evidence and proof boundaries\n\nIndependently inspected only whitelisted fields from the production sidecar log during the recorded 05:57 UTC window. Four stale 402 responses each logged `ignored a 402 for jakkaj: the token it was sent with has been replaced`; the four response statuses were 402. The log records `quota_exhausted -> ready` at 05:57:27.590312Z. A read-only status call still reports ready on pid 87697, the expected account, usable quota, requests 4, refreshes 0, gh launches 3, upstream 401 0 and upstream 402 4. No production acceptance scenario was rerun by this reviewer.\n\nEarlier acceptance qualifications remain explicit: rows 9-11 are lane proof, row 15 proves the initiator split rather than an isolated premium-charge delta, row 8 carries the PM-accepted one-stream adjustment, and row 16 cites its lane plain control. This close-out does not upgrade these to fresh production comparisons.\n\nWorkstream s04 and s05 are complete; s05 is unchanged. Planned s06 depends on both and retains N243-001 (same-account, old-generation stale answers), the post-rollout production CPU/RSS/machine-launch comparison, and N002 from #239 (401 refresh versus an in-flight readiness check). These remain follow-ups, not newly claimed proof.\n\nAll 14 PRD requirement rows were already shipped and are unchanged. `meta.status: accepted` is valid: the document-status enum is draft/review/accepted/retired, separate from requirement lifecycle states. Both documents append close-out changelog rows.\n\nCI run 44247983464 passed check (22), check (24), rust-lint and rust-test at the exact reviewed head. Delivers run 44247983462 passed. CI explicitly reports ddocs UNAVAILABLE, so the direct local ddocs validation and render checks supply that proof; CI green alone does not.\n\n## F) Coverage map\n\n| Requested check | Evidence |\n| --- | --- |\n| Row 12 and history | Current receipt, byte-for-byte baseline comparison, sanitized production log, read-only status |\n| Workstream closure and follow-ups | Canonical step comparison, dependency assertions, #239/#243 reviewer role memory |\n| PRD completion and status | 14 shipped requirement assertions, unchanged-row comparison, schema enum |\n| New-line secrets | Manual added-line review and credential-pattern scan with zero matches |\n| Generated files | Two successful `ddocs build --check` calls |\n\n## G) Commands and results\n\n- `ddocs validate docs/project/prds/004-copilot-cache-proxy.dd.json`: PASS, 0 errors/0 warnings.\n- `ddocs validate docs/project/workstreams/004-copilot-cache-proxy.dd.json`: PASS, 0 errors/0 warnings.\n- `ddocs build docs/project/prds/004-copilot-cache-proxy.dd.json --check`: PASS, drift false.\n- `ddocs build docs/project/workstreams/004-copilot-cache-proxy.dd.json --check`: PASS, drift false.\n- `git diff --check origin/main...HEAD`: PASS.\n- Inline Python assertions for receipt IDs/counts/history, requirement/step deltas and added-line credential patterns: PASS.\n- Whitelisted production-log extraction and `pij-rs cache-proxy status`: corroborated recorded rerun.\n- `harness boot --json`: advisory NOT-READY; missing worktree tools; not a green readiness result.\n- `harness checks --quick --json`: FAILED locally due missing locked TS tools and incompatible ambient Biome; pij-skill and copilot-native passed, heavy stages skipped. Not represented as a green gate. No dependency repair or linking attempted.\n- `gh pr checks 244 --repo AI-Substrate/pij-fleet --watch --interval 30`: PASS, all five checks.\n- `just pr-freeze 244`: PASS, FINAL; agreeing heads, main base, CLEAN, all checks passed, non-draft, no migrations, clean detached tree.\n\n## H) Handover\n\nNo correctness fixes owed for this head. s06 remains planned with all three existing follow-ups. This verdict is for the documentation delta, not a new security or cost verdict.\n\nmagicWand: a dependency-free read-only review preflight joining exact-head freeze/CI and ambient ddocs, with missing locked tooling graded UNAVAILABLE rather than running against ambient substitutes. Captured as SUGG-001 in the frozen worktree's ignored harness buffer; not added to this docs-only PR.\n\ndifficulties: local harness readiness and checks disagree on how to handle absent worktree dependencies. Direct ddocs and exact-head CI provided explicit, separately graded proof.\n"
+		}
+	]
+}
