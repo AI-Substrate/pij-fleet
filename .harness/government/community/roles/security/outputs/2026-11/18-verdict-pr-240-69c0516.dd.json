@@ -1,0 +1,59 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1eca5-e262-7630-a878-ea49e50ee6aa",
+				"date": "2026-11-18",
+				"head": "69c0516d8879793b1776753e6d75839931608ce0",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44228256498",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:240",
+				"writer": "pij-lovely-mollusk",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After repair, merge, install and bounce: verify own/foreign/nested status lines and receiver lapse/recovery; repeat paired same-PID spawn counters, 20-second spawn-rate, and daemon CPU/RSS."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 240",
+					"exit_code": 0,
+					"log": "FINAL at 69c0516d8879793b1776753e6d75839931608ce0; CLEAN; five latest checks passed; one transient merge UNKNOWN was rechecked successfully before publication"
+				},
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci (CI only)",
+					"exit_code": 0,
+					"log": "run 44228256498 job 134546668452: 2441 passed, 6 skipped; successful-job JUnit artifact 14394216170 confirms named regressions"
+				},
+				{
+					"command": "pij-rs --json ping | jq .data.spawns (paired readings)",
+					"exit_code": 0,
+					"log": "2026-11-18T03:15:28Z to 03:15:48Z: same daemon PID 46800; total 793 to 793; all by_op deltas zero"
+				},
+				{
+					"command": "just spawn-rate --seconds 20",
+					"exit_code": 0,
+					"log": "2026-11-18T03:15:28Z baseline: 108.3 machine-wide launches/s; no observed daemon children; candidate not deployed; after-deploy measurement owed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "BLOCK: S240-001, incomplete F198 identity guard.\n\nHead: 69c0516d8879793b1776753e6d75839931608ce0\nRequest: 01a1eca5-e262-7630-a878-ea49e50ee6aa\nScope: all 18 changed-file diffs, related invocation/rendering/process/lease paths, exact-head CI and a live pre-deploy cost baseline. No local builds or tests; no product-source edits.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| S240-001 | 🟠 HIGH | crates/cli/src/statusline.rs | 338-390 | A separate unregistered nested Copilot can display its registered parent's seat identity | 9/10 |\n\nS240-001: With no tmux pane, a separately launched Copilot B can inherit registered Copilot A's PIJ_SESSION_ID. The paneless whoami branch resolves A, then runs_under accepts any matching ancestor PID+start. For the ordinary descendant chain A -> B -> wrapper/statusline, the walk reaches A and prints A's seat name (and its status), despite the status line belonging to B. It checks no intermediate harness/session boundary, so matching the recorded start does not distinguish wrappers under A from another Copilot host under A. This is accidental misattribution within F198's stated contract, not a same-user adversarial isolation requirement or a newly discovered permission-escalation exploit.\n\nSources: crates/cli/src/main.rs:2595-2614; crates/cli/src/statusline.rs:338-390. The new regression's chain is 500 -> 400 -> 300, while its inherited foreign identity uses PID 4242, outside the chain (crates/cli/src/statusline_tests.rs:665-768). It therefore does not pin this case. This finding is a source-derived counterexample, not a live reproduction of the candidate binary. Preserve shell-wrapper support, but distinguish a second Copilot host/session before accepting a more distant registered ancestor; extend the existing regression with that concrete chain.\n\nOther reviewed behavior:\n- Direct-parent and shell-wrapper ancestry is supported: the managed script execs the CLI (harness/scripts/copilot-statusline-pij.sh:11-12). The walk inspects 64 nodes, self plus at most 63 ancestors, and matches PID and start (statusline.rs:373-390). A deeper match is withheld. macOS parent/start reads use PID-checked ProcBSDShortInfo/ProcBSDInfo; Linux reads /proc (crates/harnesses/src/proc.rs:158-168,258-271,345-383). macOS was read by eye, not compiled or executed here.\n- Pane lookup discards inherited session identity; remote, unbound, recycled and unrelated processes fail the new guard. Refusals emit fixed text rather than the named seat or remote response prose (main.rs:2492-2516,2568-2614; statusline.rs:304-390). This does not claim blanket sanitization of unrelated pre-existing statusline fields. The display guard is a brake: removing it can expose more names; it does not retire or kill seats.\n- F195 selects native Copilot delivery, uses monotonic elapsed lease time and saturating numeric formatting, and reevaluates renewal rather than latching a lapse. Local roster projection excludes tombstones. New state/list text consists of fixed prose, numeric age and closed-vocabulary liveness, not arbitrary external text. Sources: crates/daemon/src/delivery/mod.rs:530-596; crates/daemon/src/http/mod.rs:3645-3681,3818-3829,4111-4120; crates/core/src/cold_wake.rs:315-322. State's separate lease reads can race; absent age omits the since clause. Never-renewed and recovered-card field removal lack dedicated new assertions; those proof gaps alone are not gates under C34.\n- No additional changed-code secret, supply-chain, shell/path-injection or external-text-rendering vulnerability was identified. C33 is applied at the user-account boundary.\n\nCost:\n- Copilot statusline: configured every 10 seconds per session, approximately 0.1 renders/s/session. The ownership addition launches zero child processes, adds zero daemon requests, and uses the existing whoami answer plus bounded in-process parent/start reads (main.rs:2568-2614; statusline.rs:373-390). Approximately 50 sessions means approximately 5 renders/s. This is zero NEW launches, not zero total launches: the existing CLI invocation and exceptional git fallback remain (statusline.rs:596-601,687-704).\n- State adds one in-memory lease lookup per call. List adds one in-memory read over the listed seats, O(seats) per call. No renew-loop, poll or timer change.\n- crates/testkit/tests/spawn_sites.rs is unchanged. Its guards cover harness/daemon launch sites, but explicitly exclude CLI processes; the added CLI ownership path was inspected directly (spawn_sites.rs:1-24,202-242,285-353).\n- Baseline, 2026-11-18 03:15:28Z to 03:15:48Z: same daemon PID 46800; spawn total 793 -> 793, all by_op counters unchanged, 0 daemon launches/s over 20 seconds. just spawn-rate --seconds 20 reported 108.3 machine-wide launches/s, sampled 106.1/s, no observed daemon children and 0 observed statusline runs/s. This noisy fleet-wide sample is not empirical proof of the undeployed PR path.\n- Resource samples: ps at 03:16:18Z reported daemon RSS 143040 KiB and 5.9% CPU; a subsequent two-sample top measurement at 03:16:49Z reported 11.0% CPU and 61 MiB physical footprint. These are baseline observations, not before/after improvement claims.\n\nProof:\n- just pr-freeze 240: FINAL at the full head above, CLEAN, all five latest checks passed.\n- CI run 44228256498, rust-test job 134546668452: cargo nextest run --locked --workspace --profile ci passed 2441 tests; 6 excluded tests were reported skipped. Successful-job upload artifact 14394216170, junit-linux, confirms the named statusline identity/real-ancestry/dead-seat/E2E cases, F195 lease-expiry case, human/JSON state rendering, roster golden, Linux parent parsing and spawn-site gates all passed.\n- The same run's Node 22 check passed typecheck, lint and 2306 TS tests; roster-table's 3 tests and generation-routing's 55 tests passed. Node 24, rust-lint and the separate Delivers check passed. Green CI does not mean the pre-existing dependency advisory allowance is absent.\n- Local harness boot/checks and cargo builds/tests were not run under the explicit CI-only review constraint. Linux CI does not compile the macOS paths. No extra local build is requested.\n\nOwed after repair/merge/install/bounce: verify second-server, registered-own-seat and nested-unregistered status lines; verify lapsed state/list and recovery; repeat paired timestamped same-PID spawn counters, just spawn-rate --seconds 20, and daemon CPU/RSS. This post-deploy measurement remains owed, not claimed complete.\n\nHarness feedback: the highest-value behavioral fixture is the nested-host ancestry case, rather than only a foreign PID outside the chain. Review-evidence difficulty DL-001 was also captured in the security seat's ignored harness buffer: successful-job artifact selection and exact-head test receipt extraction are still manual. Magic wand: a read-only PR receipt command binding pr-freeze, successful-job JUnit cases and paired spawn baselines to the exact SHA. These are improvement feedback, not additional blocking review gates.\n"
+		}
+	]
+}
