@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"head": "ef6bcc313b284f02c881e00f8e091229a309cb69",
+				"kind": "verdict",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:242",
+				"writer": "pij-contemporary-caribou",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 242",
+					"exit_code": 0,
+					"log": "FINAL at ef6bcc313b284f02c881e00f8e091229a309cb69; exact head, CLEAN, latest checks passed, clean detached worktree"
+				},
+				{
+					"command": "gh run watch 44243139950 --exit-status --interval 30",
+					"exit_code": 0,
+					"log": "Exact-head CI: all four jobs passed; latest delivers run 44243141993 passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR 242 correctness review\n\nSubject: pr:242  \nHead: ef6bcc313b284f02c881e00f8e091229a309cb69  \nReviewer: pij-contemporary-caribou  \nResult: pass.\n\n## Findings and scope\n\nNo correctness findings remain in the amended documentation.\n\nN242-001 is closed: `docs/plans/004-acceptance/receipts.md:20` now correctly reports **Pass (17)** for rows 2-8, 13, 14, 16-23. The two qualified/citation rows are listed separately. The detailed table has exactly 23 rows and loses no evidence.\n\nThis is a documentation acceptance review, not a claim that every cache-proxy scenario is fully passed or that s04 is complete. Row 12 remains FAIL/F205; row 15 proves the initiator split, not the premium billing delta.\n\n## Acceptance evidence\n\n- All matrix IDs 1-23 occur exactly once, with nonempty command, observed value, seat identity/applicability and result cells. The lane/unit cases explicitly state that there is no pij seat.\n- Row 2 supports req-01: pij-fuzzy-hawk's second turn follows 7 minutes 16 seconds idle, reads 41,353 tokens and writes 170, all 1-hour cache.\n- Rows 7, 18 and 21 support req-09: the outage notice, pre-proxy plain-seat display, and two notices per off/on cycle are recorded. Copilot `/restart` preserves provider env; `pij-rs revive` reruns the gate. The revived row-7 seat was proxied because KeepAlive had already restored readiness; the receipt does not pretend it revived plain during a sustained outage.\n- Row 8 explicitly records pm-004's accepted reduction from two production streams to one: one 108,256 ms, 17,115-token request straddles the daemon bounce, with unchanged sidecar pid and no error or retry.\n- Rows 9-11 match the s02 lane receipts, including their stated process-only rather than pij-seat scope. These are accepted prior-lane proof, not fresh production tests.\n- Row 12 honestly records the stale in-flight 402 account-switch failure and its F205 follow-up.\n- Row 14 explicitly limits account-type proof to available enterprise accounts. Row 15 explicitly limits its verdict to initiator classification, as the PM packet permits.\n- Row 16 now cites s02's proxied/plain image-and-tool control and combines it with the production proxied run, per pm-004's explicit acceptance adjustment.\n- Row 19 identifies the existing CI/unit-test receipt, as the packet permits.\n- Only req-01 and req-09 move to shipped. s04 stays in-progress with row 12/F205 and the future rerun. Both changelogs are present.\n- The final head changes only receipt rows 8 and 16 and the summary subtotal relative to f4892e594dbe02cbe2e7201275ae5d2d63e675bb; both canonical JSON documents and generated Markdown faces are byte-identical to the validated prior head.\n\nPM decisions: message 580a53a9-7aac-4288-af89-029ac115d695; final-head instruction bf7bca72-7086-4020-b08e-7150a55a1e32.\n\nCI run 44243139950 passed all four jobs at this exact head. The latest delivers run 44243141993 passed; superseded run 44243139823 was cancelled. `just pr-freeze 242` returned FINAL with matching remote/gh heads, CLEAN mergeability and a clean detached review worktree.\n\n## Validation\n\nPassed:\n\n- `ddocs validate docs/project/prds/004-copilot-cache-proxy.dd.json`: 0 errors, 0 warnings.\n- `ddocs validate docs/project/workstreams/004-copilot-cache-proxy.dd.json`: 0 errors, 0 warnings.\n- `ddocs build docs/project/prds/004-copilot-cache-proxy.dd.json --check`: no drift.\n- `ddocs build docs/project/workstreams/004-copilot-cache-proxy.dd.json --check`: no drift.\n- Read-only receipt-table check: IDs 1-23 exactly once, all five cells populated; both accepted amendments present.\n- `git diff --check origin/main...HEAD`: passed at the amended head.\n- `gh run watch 44243139950 --exit-status --interval 30`: passed; Node 22/24 checks, rust-lint and rust-test all succeeded at the final head.\n- Latest delivers run 44243141993: passed at the final head.\n- `just pr-freeze 242`: FINAL at ef6bcc313b284f02c881e00f8e091229a309cb69.\n\nLocal harness limits:\n\n- `harness boot`: advisory NOT-READY because the detached worktree lacks locked dependencies.\n- `harness checks --quick`: not green; missing tsx/vitest and an incompatible ambient Biome prevent local TS-dependent sensors. pij-skill and copilot-native passed. Rust, route-inventory and smoke were skipped.\n- No dependencies installed or linked, no local Rust build/test, no live fleet mutation, no commit or push in either frozen worktree. CI remains the TS/Rust proof source; local harness unavailability is not represented as a successful full gate.\n\nRuntime cost: none added or changed. The PR contains only five documentation files; no loop, timer, poll, hook, sweep, status line or launch implementation changes.\n\n## Harness feedback\n\nmagicWand: a dependency-free read-only acceptance checker that computes table IDs/subtotals and makes partial, lane-proven and accepted-adjustment grades explicit.\n\ndifficulties: receipt scope initially needed PM clarification for rows 8 and 16; the amended receipts now preserve those decisions. Detached-worktree TS gates remain unavailable without dependencies; exact-head CI is used without linking another worktree's node_modules.\n\nCaptured as SUGG-001 in the original frozen worktree's ignored harness observation buffer. Do not modify this documentation-only PR to add tooling.\n"
+		}
+	]
+}
