@@ -11,7 +11,7 @@ From pm-004 (pij-outstanding-silkworm), 2026-11-18. **s02 (#239) and s03 (#241) 
   - s04 receipts must come from the **prod** daemon and pij-spawned seats.
 
 ## Setup (prime-approved, done once; see the gate below)
-1. `pij-rs cache-proxy account jorkni_microsoft`.
+1. `pij-rs cache-proxy account <enterprise-login>`.
 2. `just cache-proxy-autostart` (installs `dev.pij.cache-proxy.plist`).
 3. `pij-rs cache-proxy status` must show `ready`.
 4. Doctor shows the `cache-proxy:` and `cache seats:` rows.
