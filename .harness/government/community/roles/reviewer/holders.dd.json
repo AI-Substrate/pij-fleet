@@ -1583,6 +1583,15 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-applicable-wildcat",
 					"why": "F196 #237 correctness review (gpt-6.1-sol)"
+				},
+				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-18T02:07:10.644Z",
+					"harness": "copilot",
+					"harness_session": "eed34d92-826a-4794-9070-8f3e6d3bfbfa",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-chemical-piranha",
+					"why": "PR #236 audit gate"
 				}
 			]
 		}
