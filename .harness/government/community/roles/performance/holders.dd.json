@@ -107,6 +107,15 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-random-crayfish",
 					"why": "pm-004: cost verdict on #241 (ws004 s03)"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-18T05:46:55.037Z",
+					"harness": "copilot",
+					"harness_session": "dd2d8d1d-610d-482c-bccd-70de66231c76",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-back-rooster",
+					"why": "pm-004: cost verdict on #243 (ws004 s05)"
 				}
 			]
 		}
