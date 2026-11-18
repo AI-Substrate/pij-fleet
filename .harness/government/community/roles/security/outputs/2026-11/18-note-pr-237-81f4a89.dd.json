@@ -1,0 +1,32 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"head": "81f4a89974383caf7dd5bf727f3f468c0d389ed2",
+				"kind": "note",
+				"role": "security",
+				"subject": "pr:237",
+				"writer": "pij-uneven-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Round-1 source addendum to security verdict 78ad32d.\nHead: 81f4a89974383caf7dd5bf727f3f468c0d389ed2\nThe S237-001 BLOCK is unchanged.\n\nThe explicit takeover retirement at crates/daemon/src/http/identity.rs:616-624\nhas durable effects beyond making the holder unavailable:\ncrates/store/src/registry.rs:80-90 marks pending FYIs dropped, and lines 91-94\nrelease open number claims. Released numbers remain burned, not reusable.\n\nSource-confirmed normal-use example, not executed: a Copilot parent process P\nand its running omp -p child C share a pane but have different process tuples.\nThe parent's tool-shell connection passes the own-process ancestry gate.\nThe retirement filter excludes rows matching P's exact tuple, not descendants,\nso C is still eligible and is tombstoned without a liveness check\n(identity.rs:578-585,616-624). No unknown holder need be present.\n\nOther requested checks were read:\n- Automatic unknown handling excludes missing/invalid tuples, remote rows and\n  probe failures from retirement (registration.rs:676-686).\n- Automatic under-lock rechecks compare ownership (registration.rs:853,\n  875-887,1728-1736). Explicit takeover uses full-descriptor transactional CAS\n  (crates/store/src/registry.rs:61-75); unchanged does not imply dead.\n- macOS lsof client-endpoint correlation and /bin/ps caller ancestry were\n  reviewed statically (identity.rs:647-700), not executed locally.\n- Banner rendering rebuilds the command from validated pane/holder fields,\n  ignoring a remote command string (.copilot/extensions/pij/store.mjs:721-730,\n  773-774).\n- Takeover stores actor/reason through registry tombstoning, with no process\n  signal or kill in that path (identity.rs:619-624).\n\nNon-blocking command-help note, not another security vulnerability:\nregistration.rs:51 and store.mjs:774 print an unquoted --why <reason>\nplaceholder. This does not inject remote text, but the placeholder is not\nshell-runnable; quote the example reason as requested in the review packet.\n\nTest-proof limit: the added automatic-holder test covers missing/remote rows,\nnot an actual failed-probe result. The takeover test lacks the process-live\nforeign-holder case required to catch S237-001. No optional hardening or\nmutation testing is made a gate.\n\nPrime-path status: caller correlation and contradictory-claim refusal were\nread. Whether the existing stored-role prime gate is authoritative designation\nor an inherited asserted-role gate is under narrow clarification; this note\ndoes not certify it.\n"
+		}
+	]
+}
