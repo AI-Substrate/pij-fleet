@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/holders"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"role": "pm-004"
+			}
+		},
+		{
+			"name": "rows",
+			"value": [
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-18T01:23:38.832Z",
+					"harness": "omp",
+					"harness_session": "01a1c40c-b367-7655-b70e-7979b34df98e",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-outstanding-silkworm",
+					"why": "far-jackal 2026-11-18 (Jordan's GO): silkworm holds pm-004 for the Copilot cache proxy"
+				}
+			]
+		}
+	]
+}
