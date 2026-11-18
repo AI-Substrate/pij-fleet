@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "When reviewing cache-proxy status checks, stale quota responses, debounce or author mutation receipts",
+				"tags": [
+					"review",
+					"cache-proxy",
+					"identity",
+					"quota",
+					"mutation",
+					"proof"
+				],
+				"title": "PR 243: cached status, stale-answer guard and generation proof boundary"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #243 first review at ed6462dbe3ce24e453ebeb47ad6ce8503721611d: reviewer pass-with-notes, no correctness blocks. Writer output community/roles/reviewer/outputs/2026-11/18-verdict-pr-243-ed6462d.dd.json, writer commit ea65379e1fe0f8c69aabf4e4ad59c2dcd8bc5ce9, writer_holds_role true. PR comment 6970412113.\n\nThe status path acquires the owned try-lock before spawning and returns cached state; startup/reload retain inline checks. Consuming recheck at check start preserves rechecks raised during the check. F205 tags the final forwarded attempt with its actual account and token generation, then uses one guarded helper for both 402 latch and Messages 2xx clear. The token read guard remains held through that state mutation. Existing F001 refresh-install and F002 independent-latch behavior remain intact.\n\nWatch debounce is on failed readings, not upstream readiness states: connection refusal declares down immediately, timeout/unreadable need two consecutive readings, a status resets the streak, and one slow reading keeps the declared state and cached body while exposing reachable=false and the slow counter. First-declared-state, off wording, recovery and prime deduplication are preserved. Gate retries once only on timeout; notices carry the count and doctor pointer.\n\nN243-001 is P3 optional proof hardening, not a blocker or another required review round: both new stale-response tests change accounts, and author's S3 disables the whole helper. They do not independently isolate generation equality for a same-account refresh. Optional next fixture: park an old generation's 402/2xx, refresh that same account, then release the response and assert no current-latch mutation; mutate only generation equality. Do not equate aggregate 7/7 killed with every predicate independently distinguished.\n\nExact-head CI 44246537074 passed all four jobs; delivers 44246538099 passed. Rust nextest: 2502 passed, 6 skipped. Successful rust-test job 134606837050 uploaded artifact 14402062142; numeric-ID download confirms 2502 executed testcases, no failures/errors, all 14 selected regressions executed and passing. just pr-freeze 243 was FINAL, clean detached tree and agreeing remote/gh heads.\n\nBoth changed canonical docs validated with zero errors/warnings and current generated faces. CI ddocs remains explicitly UNAVAILABLE. Reviewer executed six fixtures against the actual doctor JavaScript extracted from justfile. Local boot was advisory NOT-READY and quick checks dependency-limited, not green; no dependency repair/linking, local Rust build/test/mutation, live sidecar, credential access, product-tree edit, manual commit or push. The 7/7 mutation and private-runtime receipts are author-run, inspected rather than rerun.\n\nmagicWand: the recurring dependency-free read-only review preflight from the #241/#242 notes, combining exact-head freeze/CI/JUnit with ambient ddocs and clearly separating local UNAVAILABLE from product failures.\n\ndifficulties: local boot still suggests forbidden worktree dependency linking; quick checks cannot supply locked tooling in a frozen tree; harness observe in session scratch returns UNCONFIGURED. Preserve this distinction and route the review-mode improvement outside the reviewed PR, rather than installing dependencies or weakening proof.\n"
+		}
+	]
+}
