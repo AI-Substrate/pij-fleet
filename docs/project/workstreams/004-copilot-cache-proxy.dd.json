@@ -97,11 +97,11 @@
 				{
 					"id": "s04",
 					"title": "Live-seat acceptance: all 23 matrix rows",
-					"state": "in-progress",
+					"state": "complete",
 					"depends_on": ["#steps/s02", "#steps/s03"],
 					"needs": ["role:model-cost"],
 					"done_when": "Every row of handover/cache-proxy-test-matrix.md has a receipt from real pij seats (command, observed value, seat ids) in this workstream's proof, before the prime merges the last lane's state flip.",
-					"note": "Run by model-cost (takin) with pm-004. Receipts: docs/plans/004-acceptance/receipts.md (22 of 23 rows pass or are lane-proven). Row 12 FAILs (F205: an in-flight 402 after switching back latches quota_exhausted); its re-run follows s05 (plan 230), and s04 completes then."
+					"note": "\"Run by model-cost (takin) with pm-004. Receipts: docs/plans/004-acceptance/receipts.md: all 23 rows (18 pass, 2 pass with a citation, 3 lane-proven, 0 fail). Row 12 failed first (F205) and passed when re-run after s05 (#243).\""
 				},
 				{
 					"id": "s05",
@@ -128,6 +128,15 @@
 					],
 					"done_when": "Plan 230 (docs/plans/230-cache-proxy-watch): a status read never waits on upstream and starts at most one background check; one slow watch read gives no notice, two in a row or a refusal give one; a gate read that times out is retried once; a 402 or 2xx answering a replaced token changes no state; notices give a seat count, never ids. Each guard has a test that fails without it, and the slow-upstream case is shown live on a private daemon and a test-port sidecar.",
 					"note": "F204 (pm-001 LOG 2026-11-18: one slow probe made a false outage notice naming 43 seats), F205, the stale 402 latch (takin's s04 row 12 finding: a 402 sent before an account switch latched the new account), and count-only notices, notice noise of the F192 class (prime far-jackal: notices listed every proxied seat). Matrix row 12 is re-run in s04 after merge."
+				},
+				{
+					"id": "s06",
+					"title": "Proof follow-ups",
+					"state": "planned",
+					"depends_on": ["#steps/s04", "#steps/s05"],
+					"needs": ["role:model-cost", "role:coder", "role:performance"],
+					"done_when": "(1) N243-001: a test where a stale 402 or 2xx from the same account but an older token generation changes no state. (2) A production comparison after rollout of daemon CPU/RSS and the machine launch rate against s04's baseline (receipts.md: 7.8% CPU, 189,536 KB RSS; the spawn-rate top commands). (3) N002 from #239: a 401 refresh racing an in-flight readiness check, tested.",
+					"note": "Follow-ups named in the #243 and #239 reviews and in s04's cost row; none blocks the shipped requirements."
 				}
 			]
 		},
@@ -168,6 +177,11 @@
 					"date": "2026-11-18",
 					"by": "coder/230 (pij-fair-firefly) for pm-004",
 					"change": "s05 added and complete (plan 230): F204 (false outage), F205 (stale 402 latch, the 402 twin of F001; s04's row 12 failure), plus count-only notices (F192 class); delivers req-02 and req-09, builds c-readiness, c-status-route, c-spawn-gate, c-proxy-watch and c-doctor-row. s04's note loses its stray escaped quotes. Requirement states unchanged (both shipped); row 12 is re-run in s04."
+				},
+				{
+					"date": "2026-11-18",
+					"by": "model-cost (pij-amazing-takin) for pm-004",
+					"change": "s04 complete: row 12 re-run passed after s05 (#243); all 23 rows receipted. Added s06 (proof follow-ups: N243-001, a production cost comparison, N002 from #239)."
 				}
 			]
 		}

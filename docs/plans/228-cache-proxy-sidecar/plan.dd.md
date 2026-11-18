@@ -180,7 +180,7 @@ _No entries._
 | s03 builds against the status route in parallel and reads type details the blueprint leaves open (since, quota.reset, reason when ready). | Medium | High | AC4 fixes the types; send them to pm-004 with the plan; a golden test pins the key set. No contract change without pm-004. |
 | Row 11 by `gh auth logout` would log the shared account out of every seat's gh. | High | High | Simulate with a PIJ_GH wrapper that succeeds once and then fails; the fake-upstream test covers 'keeps serving with the current token'. |
 | An unauthenticated loopback listener that adds a bearer can be driven by a browser page (no-cors POST) or DNS rebinding. | Low | High | AC5: refuse any Origin header and any non-loopback Host before forwarding. |
-| Live rows spend premium requests and need a 6+ minute idle wait. | High | Low | jorkni_microsoft (overage permitted); jakkaj only for the quota refusal; short prompts. |
+| Live rows spend premium requests and need a 6+ minute idle wait. | High | Low | account A (enterprise) (overage permitted); jakkaj only for the quota refusal; short prompts. |
 | Shared cargo target with coder 229; disk floor. | Medium | Medium | shared-build only, -p scoping, one build per change; stop and tell pm-004 on a disk-floor refusal. |
 | `off` while seats are proxied: cutting them would break live turns. | Medium | Medium | `off` only clears ready (new spawns plain); the held token keeps serving live seats. |
 

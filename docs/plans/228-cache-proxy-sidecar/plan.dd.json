@@ -231,7 +231,7 @@
           "risk": "Live rows spend premium requests and need a 6+ minute idle wait.",
           "likelihood": "High",
           "impact": "Low",
-          "mitigation": "jorkni_microsoft (overage permitted); jakkaj only for the quota refusal; short prompts."
+          "mitigation": "account A (enterprise) (overage permitted); jakkaj only for the quota refusal; short prompts."
         },
         {
           "risk": "Shared cargo target with coder 229; disk floor.",

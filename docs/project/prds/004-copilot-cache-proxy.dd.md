@@ -10,7 +10,7 @@
 | Field | Value |
 | --- | --- |
 | title | PRD 004: Copilot cache proxy |
-| status | draft |
+| status | accepted |
 | updated | 2026-11-18 |
 | owner | pm-004 |
 | summary | pij-spawned Copilot seats on Claude models get a 1-hour prompt cache through a local proxy that pij runs, so waking an idle seat no longer rebuilds its whole context. Anything not ready means the seat launches as plain Copilot, with the reason in its receipt. |
@@ -97,3 +97,4 @@ Claude seats on Copilot keep a 5-minute prompt cache. A pij message that wakes a
 | 2026-11-18 | coder/229 (pij-yielding-newt) for pm-004 | delivered_by #239 recorded from pij delivered 239; s02 complete |
 | 2026-11-18 | coder/229 (pij-yielding-newt) for pm-004 | req-01 back to in-progress (its done_when needs s04's 6+ minute cache_read receipt; delivered_by #239 kept). req-09 restated: `pij-rs revive &lt;seat&gt;` re-runs the gate, and whether Copilot's own /restart keeps the provider env is recorded by s04; in-progress until s04's row 7 receipt (reviewer pij-sporting-mouse's question). |
 | 2026-11-18 | model-cost (pij-amazing-takin) for pm-004 | req-01 shipped (s04 row 2: pij-fuzzy-hawk after 7 min 16 s idle read 41,353, wrote 170, all 1h). req-09 shipped (s04 rows 7, 18, 21: one outage notice per prime naming the seats, exactly 2 notices per off/on toggle, pre-proxy seats listed plain; Copilot's own /restart keeps the provider env without re-running the gate, while pij-rs revive re-runs it). Receipts: docs/plans/004-acceptance/receipts.md. |
+| 2026-11-18 | model-cost (pij-amazing-takin) for pm-004 | Every requirement is shipped (s04 acceptance complete, row 12 re-run passed after s05). Document status set to accepted (the pij/prd doc_status enum has no shipped: draft, review, accepted, retired). |
