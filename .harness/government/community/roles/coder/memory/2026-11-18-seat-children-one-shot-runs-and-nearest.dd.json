@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Open before deciding whether a process is a seat (registration, status line, send identity), handling omp -p / claude -p / copilot -p children, or picking up F197",
+				"tags": [
+					"f197",
+					"f198",
+					"registration",
+					"harness",
+					"ancestry",
+					"statusline"
+				],
+				"title": "Seat children, one-shot runs and nearest-host ownership (F197, F198, #240)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Harness mode signals for \"is this a one-shot run?\", all measured live:\n- OMP/pi: ExtensionContext.mode is tui|rpc|json|print; print and json are one-shot, rpc is a long-lived host-driven root and still registers. hasUI is false in both print and rpc, so it can't tell them apart.\n- Claude: CLAUDE_CODE_ENTRYPOINT is `cli` interactive, `sdk-cli` for `claude -p`. Treat unset as interactive.\n- Copilot -p: NO signal. Env and capabilities match the TUI; only `canvases` differs, and that isn't a documented mode flag. Extensions do load in -p. The daemon brake covers it.\n\nDaemon brake (F197, branch f197-print-mode-no-seat, f6ad1246, parked with no PR yet): refuse a registration whose caller descends from the pane's live registered holder (E-RS-PANE-HOLDER-CHILD, HTTP 400), whatever id or session it claims, so a child can't take the parent's own id either. Parents are read in-process via pij_harnesses::proc::parent_and_host_name, at most 64 hops, and only when other live local rows are on the pane. No launches. Own non-child rows, dead holders (F196) and non-descendant siblings keep their old paths.\n\nSend identity: a one-shot child's in-harness pij_send refuses with E-NOREG and points to shell `pij send`, which resolves to the pane's seat (the parent). Never give the child an identity of its own.\n\nStatus line (F198): name a seat only when the NEAREST harness host above the status process (copilot, node, claude, codex, omp, bun, pi) IS the seat's recorded pid+start. Skip shell wrappers; an outer registered host never counts. On Linux, strip \" (deleted)\" from the /proc exe basename, or upgraded binaries misread.\n\nLive smoke for -p: `omp -p --no-extensions -e <worktree>/.omp/extensions/pij/index.ts --model=github-copilot/claude-haiku-4.5 \"Reply with just: hi\"`. gpt-5-mini and gpt-5.4-mini fail with \"not available for integrator\".\n"
+		}
+	]
+}
