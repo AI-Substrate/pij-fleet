@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/holders"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"role": "model-cost"
+			}
+		},
+		{
+			"name": "rows",
+			"value": [
+				{
+					"assigned_by": "pij-amazing-takin",
+					"from": "2026-11-18T01:25:41.099Z",
+					"harness": "copilot",
+					"harness_session": "b3a977ab-e482-4534-8554-61d23750fe83",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-amazing-takin",
+					"why": "prime ruling 2026-11-18: takin holds model-cost; workstream 004 step 1"
+				}
+			]
+		}
+	]
+}
