@@ -298,6 +298,10 @@ pub(super) async fn test_services(
     let store = services.governance.fixture_store();
     // Hermetic: no test reads the operator's real Claude process records.
     services.claude_homes = Arc::from([]);
+    // Nor the operator's real cache-proxy sidecar (plan 229): a closed port.
+    services.cache_proxy = Arc::new(crate::cache_proxy::CacheProxy::new(
+        "http://127.0.0.1:9".to_string(),
+    ));
     let bus = Arc::new(crate::events::EventBus::new(spine, 16).expect("event bus"));
     services.registry = Arc::new(crate::events::PublishedFakeRegistry::new(
         registry,
@@ -3028,6 +3032,7 @@ async fn spawned_registration_adopts_prebind_row_and_preserves_port() {
             resume: None,
             role: None,
             caller: None,
+            no_cache_proxy: false,
         })
         .send()
         .await
@@ -3478,6 +3483,7 @@ async fn spawn_wait_reports_child_exit_with_log_tail() {
             resume: None,
             role: None,
             caller: None,
+            no_cache_proxy: false,
         })
         .send();
     let report_exit = async {
@@ -3574,6 +3580,7 @@ async fn codex_spawn_timeout_names_the_prompt_on_screen() {
             resume: None,
             role: None,
             caller: None,
+            no_cache_proxy: false,
         })
         .send()
         .await
@@ -3630,6 +3637,7 @@ async fn spawn_wait_returns_bound_process_and_publishes_event() {
             resume: None,
             role: None,
             caller: None,
+            no_cache_proxy: false,
         })
         .send();
     let register = async {
@@ -3744,6 +3752,7 @@ async fn spawn_reports_model_mismatch_without_killing_registered_seat() {
             resume: None,
             role: None,
             caller: None,
+            no_cache_proxy: false,
         })
         .send();
     let register = async {
@@ -4339,6 +4348,7 @@ async fn spawn_into_the_control_session_is_refused_by_name() {
                 resume: None,
                 role: None,
                 caller: None,
+                no_cache_proxy: false,
             })
             .send()
             .await
@@ -4411,6 +4421,7 @@ async fn spawn_stamps_only_the_argv_that_reached_the_observed_launch() {
             resume: None,
             role: None,
             caller: None,
+            no_cache_proxy: false,
         };
 
     for (id, accept, session, pane) in [
@@ -4541,6 +4552,7 @@ async fn direct_http_spawn_carries_no_claude_default_the_cli_owns_it() {
             resume: None,
             role: None,
             caller: None,
+            no_cache_proxy: false,
         })
         .send()
         .await

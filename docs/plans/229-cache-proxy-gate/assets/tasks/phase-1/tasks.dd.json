@@ -1,0 +1,177 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Daemon gate, seat state, watch and doctor",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Status contract and gate decision: crates/daemon/src/cache_proxy.rs (own status struct incl. models, pure gate decision, base-id mapping, 1 s loopback client, URL from PIJ_CACHE_PROXY_URL once at start) with unit tests",
+          "phase": "ph-9f3c",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ]
+        },
+        {
+          "id": "tk-0002",
+          "title": "Spawn plan env: SpawnPlanInput carries the proxy wiring; build_spawn_plan adds the four COPILOT_PROVIDER_* assignments for Copilot only; tests for every harness",
+          "phase": "ph-9f3c",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ]
+        },
+        {
+          "id": "tk-0003",
+          "title": "Seat state: CacheProxy on SeatDescriptor, migration 0047 seats.cache_proxy, registry round-trip, literal sites updated",
+          "phase": "ph-9f3c",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ]
+        },
+        {
+          "id": "tk-0004",
+          "title": "Daemon wiring: --no-cache-proxy flag and SpawnRequest field; gate in launch_seat_locked; revive keeps opt-out; receipt; spawn-route tests against an axum stub",
+          "phase": "ph-9f3c",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ]
+        },
+        {
+          "id": "tk-0005",
+          "title": "Directory holder rows and render_directory show proxied/plain for Copilot seats",
+          "phase": "ph-9f3c",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ]
+        },
+        {
+          "id": "tk-0006",
+          "title": "Watch: 30 s TickLoop, transition function with baseline rule, one notice per distinct live prime, /health.cache_proxy with seat lists; tests",
+          "phase": "ph-9f3c",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004",
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "tk-0007",
+          "title": "Doctor row in the justfile; docs/how/pij-rs-api.md and pij skill spawn guidance",
+          "phase": "ph-9f3c",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005",
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        },
+        {
+          "id": "tk-0008",
+          "title": "Gates and live proof: scoped rust-check via shared-build, lint, local-path-check, lockfile-allowlist, ddocs-check, harness checks --quick; private daemon + s02 sidecar matrix receipts and spawn-counter readings",
+          "phase": "ph-9f3c",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006",
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "goals",
+      "value": []
+    },
+    {
+      "name": "non_goals",
+      "value": []
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": []
+    },
+    {
+      "name": "phases",
+      "value": []
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": []
+    },
+    {
+      "name": "execution_guardrails",
+      "value": []
+    }
+  ]
+}

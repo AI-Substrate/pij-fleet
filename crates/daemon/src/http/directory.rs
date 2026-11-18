@@ -605,11 +605,11 @@ pub(crate) async fn handle(
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
-                    Ok(live) => {
+                    Ok((live, cache_proxy)) => {
                         state
                             .services
                             .directory
-                            .view(&project, &repo, &live, call.suggest)
+                            .view(&project, &repo, &live, &cache_proxy, call.suggest)
                             .await
                     }
                     Err(refusal) => Err(refusal),
@@ -626,18 +626,32 @@ pub(crate) async fn handle(
     }
 }
 
-/// The registered, untombstoned seats: one registry read per view.
-async fn live_seats(state: &AppState) -> Result<std::collections::HashSet<String>, Refusal> {
-    Ok(state
+/// The registered, untombstoned seats, and each live Copilot seat's
+/// cache-proxy route (plan 229): one registry read per view.
+async fn live_seats(
+    state: &AppState,
+) -> Result<
+    (
+        std::collections::HashSet<String>,
+        std::collections::HashMap<String, pij_core::model::SeatCacheProxy>,
+    ),
+    Refusal,
+> {
+    let seats = state
         .services
         .registry
-        .list(pij_core::ports::SeatFilter::default())
+        .list(pij_core::ports::SeatFilter {
+            live_only: true,
+            ..pij_core::ports::SeatFilter::default()
+        })
         .await
-        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
-        .into_iter()
-        .filter(|seat| seat.tombstoned_at.is_none())
-        .map(|seat| seat.id.to_string())
-        .collect())
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+    let cache_proxy = seats
+        .iter()
+        .filter_map(|seat| Some((seat.id.to_string(), seat.cache_proxy_view()?)))
+        .collect();
+    let live = seats.into_iter().map(|seat| seat.id.to_string()).collect();
+    Ok((live, cache_proxy))
 }
 
 async fn add(

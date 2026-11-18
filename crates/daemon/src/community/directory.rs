@@ -350,6 +350,7 @@ impl DirectoryService {
         project: &str,
         repo: &std::path::Path,
         live_seats: &std::collections::HashSet<String>,
+        cache_proxy: &HashMap<String, pij_core::model::SeatCacheProxy>,
         suggest: bool,
     ) -> Result<Value, Refusal> {
         let root = super::root::find(repo)?;
@@ -460,6 +461,7 @@ impl DirectoryService {
                         "seat": row.seat, "instance": row.instance, "since": row.from,
                         "machine": row.machine, "end_pending": row.end_pending,
                         "seat_live": live_seats.contains(&row.seat),
+                        "cache_proxy": cache_proxy.get(&row.seat),
                     })
                 })
                 .collect();
