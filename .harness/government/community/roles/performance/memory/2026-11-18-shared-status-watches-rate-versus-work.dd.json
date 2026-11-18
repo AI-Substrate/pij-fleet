@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Before reviewing shared polling, cached health, or inherited launch metadata",
+				"tags": [
+					"cost",
+					"polling",
+					"cache-proxy",
+					"review"
+				],
+				"title": "Shared status watches: rate versus work"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Shared status watches: separate rate from work\n\nFor a shared status watch, report network requests and process launches separately from in-process/SQL scaling. One HTTP request and one bulk SQLite read per 30 s is constant request count, not constant CPU: live-seat descriptor decoding/splitting, cached-health cloning/serialization and SQL history traversal can still grow with the fleet. A cached health endpoint need not make a status request or per-seat I/O.\n\nReview continuity metadata using data ownership: a same-process successor can copy a route from its already-resolved predecessor without another lookup, status check or process inspection. A shared client built once should retain its timeout/no-redirect policy even on construction failure; an error-preserving client state is cheaper and safer than rebuilding or falling back to defaults.\n\nProof receipts from #241's final review: full head d3ea172cf60b9c18ab463651006555e6ba8cb4f7; CI run 44235226491; successful Rust job 134569619430, artifact 14396524204; 2494 passed, 6 skipped. All selected launch, gate, timeout, rollover and watch regressions passed. The reviewer's timed live baseline was pre-feature only; do not cite it as deployed feature proof or infer a CPU improvement from it.\n\n**magicWand:** have review dispatch consume the full-SHA `just pr-freeze` receipt, so no packet calls a head frozen before it has checks. For a replacement based on newer main, compare `git range-diff` across the old/new patch series rather than treating every base change in a plain endpoint diff as new feature code.\n\n**difficulties:** initial review head was DIRTY and had no CI, so static review and measurement finished before final grading. The PM then supplied the replacement packet; final publication waited for its successful exact-head CI and FINAL freeze. The transient harness observations are COORD-001 and INS-001 in this seat's buffer; no product changes were made by the reviewer.\n"
+		}
+	]
+}
