@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ecb9-ea3f-7bf1-b3f9-60eb81adf1a2",
+				"date": "2026-11-18",
+				"head": "520e5d196305eb61a668bba93257719f0095272f",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:240",
+				"writer": "pij-net-iguana",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After merge, install and daemon bounce: repeat same-PID timed ping spawn-counter readings, just spawn-rate --seconds 20, and daemon CPU/RSS on a comparable fleet; compare rates, not counters across restarted PIDs."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git diff 69c0516d8879793b1776753e6d75839931608ce0..520e5d196305eb61a668bba93257719f0095272f; just pr-freeze 240",
+					"exit_code": 0,
+					"log": "Six-file final-round delta reviewed; FINAL at 520e5d196305eb61a668bba93257719f0095272f; no local builds/tests"
+				},
+				{
+					"command": "gh run view 44231858379; successful rust-test job 134558560135 artifact 14395228809",
+					"exit_code": 0,
+					"log": "Exact-head CI SUCCESS; inspected 2474-case JUnit artifact; nested-host, host-reader, deleted-exe suffix, expiry/recovery, boot-grace and spawn guards PASS"
+				},
+				{
+					"command": "Read-only libproc observation of exact registered host 50552 descendants",
+					"exit_code": 0,
+					"log": "2026-11-18T03:45:36.003720Z..03:46:01.005827Z; 25.001850s; seven pij-rs children directly parented by copilot 50552; recurring 57393 and 58778 observed through shell-to-pij-rs same-PID exec; no intervening node in observed chains; no argv/environment read; deployed-host observation, not PR execution"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES -- #240, round 2 (final under C34)\nHead: 520e5d196305eb61a668bba93257719f0095272f\nAnswers: 01a1ecb9-ea3f-7bf1-b3f9-60eb81adf1a2\nScope: only 69c0516d8879793b1776753e6d75839931608ce0..520e5d196305eb61a668bba93257719f0095272f.\n\nNo performance blocker or demonstrated normal-use false negative found.\nS240-001's nearest-host boundary stops at unregistered nested Copilot B,\nrather than accepting registered ancestor A. Ordinary shell wrappers are\npassed over. The final Linux addition strips one trailing \" (deleted)\"\nbefore taking the executable basename, matching registration's convention;\nthis avoids climbing past an upgraded host. No product files were edited,\nand no local build or test was run.\n\nDelta cost\n\nThe existing cadence is one scheduled render per 10 seconds per rendering\nCopilot session, PLUS event-triggered renders; it is not a hard rate cap.\nThere is no new timer, poll, daemon RPC or process launch. The same one\nwhoami request remains. This means ZERO added launches, not zero total\nprocess creation by the pre-existing shell/CLI hook.\n\nmacOS: the old parent_pid already called parent_and_name, allocating a\nname and then discarding it. parent_and_host_name reuses that same\nProcBSDShortInfo read. The new walk keeps/compares the name and reads the\ncandidate host as well. A direct-child accepted render changes from one\nparent/process observation plus one start read to TWO process observations\nplus one start read: one extra short-BSD-info call and small name String.\nForeign/nested candidates now stop at the nearer host instead of walking\nto an outer seat. Each name comparison checks at most eight short names.\n\nLinux: each observation reads /proc/PID/stat and additionally readlinks\n/proc/PID/exe, then extracts a name. The direct-child case has two such\nobservations instead of one stat-only parent read, plus the same matching\nstart read. linux_exe_name adds only a suffix check, basename extraction\nand String construction; no extra file read or subprocess.\n\nThe exact new ceiling is ONE pre-loop observation of self plus up to\n64 ancestor observations = 65 process-reader calls, and at most one start\nread. The \"at most 64 processes\" wording is off by that initial read.\nOn the common macOS direct-child path the scheduled incremental cost is\napproximately C/10 extra short-BSD-info reads/s for C rendering sessions,\nplus event-triggered work. Wrapper depth scales linearly; no census or\nper-seat daemon work is introduced. main.rs passes observed_start directly,\nso no unreadable-process path falls through to the ps liveness adapter.\nThe existing git fallback is unchanged.\n\nState/list/cards production code, renewal loops and spawn_sites.rs are\nunchanged from round 1. The native diagnostic delta is test assertions\nonly. This verdict does not reopen those unchanged cost paths.\n\nNormal-use launch and identity check\n\nRegistration verifies the actual native host pid/start, not the npm loader\nor extension child (registration.rs:692-773,1969-1987).\nThe extension starts its resolution at process.ppid, selects the Copilot\nancestor, confirms its identity, and records that host\n(.copilot/extensions/pij/extension.mjs:189-194; store.mjs:2512-2548).\nThe daemon also accepts the node + @github/copilot/index.js host form;\nHOST_NAMES includes node. A distinct intervening Node helper would stop\nthis new walk, but no such normal-use launch was established.\n\nI independently observed the running native seat: whoami recorded pid\n50552, start 20261118131332; exact-pid OS metadata reported p_comm=copilot,\nparent 50551, and executable basename copilot. Thus its recorded process\nis the actual native host, not its launcher.\n\nRead-only observation, 2026-11-18 03:45:36.003720Z to 03:46:01.005827Z:\n25.001850 seconds, 4054 polls, only that exact host's descendants, bounded\nto three levels and 64 visited children per poll. Seven pij-rs children\nwere seen, all directly parented by host 50552. In particular pid 57393\nwas seen as sh/bash and then pij-rs at 03:45:43.480794Z, and pid 58778\nmade the same transition at 03:45:53.480633Z. These are same-pid exec\ntransitions, with no intermediate node host. Their ten-second spacing is\nconsistent with the configured statusline refresh and the author's\nearlier direct-parent capture. Only names/parent links were collected,\nnot argv or environments; do not infer a command census or every CLI\ndistribution's behavior from this sample. The managed script execs\npij-rs, so both a direct launch and retained ordinary shell wrappers\nresolve to the observed Copilot host.\n\nAll eight recognized host names fit inside macOS's 15-character p_comm\npayload, so truncation does not truncate these names. The macOS branch\ncontinues to use the existing typed ProcBSDShortInfo reader and pid check.\nNo new macOS-only compile issue was found by source inspection; this\nreview did not locally compile that branch.\n\nProof\n\njust pr-freeze 240: FINAL at the full head above, clean detached worktree,\nmain base, latest delivers and all four CI jobs passing. The earlier\ncancelled delivers run is superseded by a successful latest run.\nCI run 44231858379 is SUCCESS at this exact head. Its successful rust-test\njob 134558560135 uploaded artifact ID 14395228809. I inspected that exact\n2474-case JUnit artifact: PASS for the nested-Copilot boundary, host-reader,\nforeign-seat, Linux deleted-suffix, lease expiry/recovery, and never-renewed\nboot-grace regressions; launch-accounting, absolute ps/date, resolved\ngit/tmux and retired-launch guards also PASS. CI is Linux-only.\nThe synthetic nested-host test covers direct and shell-wrapped B, both\nidentity paths, B's own seat and A's own render. It is not a fixture for\nan arbitrary different Node helper, nor is such a fixture a C34 merge gate.\n\nNotes and owed proof\n\n1. AFTER-BOUNCE performance measurement remains OWED after merge, binary\n   install and daemon bounce: two same-PID ping spawn-counter readings\n   across a known interval, just spawn-rate --seconds 20, and daemon\n   CPU/RSS on a comparable fleet. Compare within-window rates, never\n   absolute counters across restarted daemon PIDs. The prior baseline\n   remains 03:15:32.321241Z..03:15:52.506222Z, PID 46800, total 793 -> 793\n   over 20.184645 seconds (0 daemon launches/s), machine 111.9 launches/s.\n   The host observation above is not a deployment/after measurement.\n2. C34 follow-up: correct the cost-bound wording to self plus 64 ancestors\n   (65 reader calls). This documentation correction and a permanent\n   bound/no-launch CLI contract are non-blocking; no normal-use cost\n   breach was established. A launch-contract receipt for another CLI\n   distribution would be useful if it actually introduces a distinct\n   harness-named helper. Do not broaden acceptance speculatively.\n"
+		}
+	]
+}
