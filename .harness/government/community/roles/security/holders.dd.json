@@ -194,6 +194,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-eventual-boar",
 					"why": "PR #244 close-out + scrub"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-18T23:30:29.001Z",
+					"harness": "copilot",
+					"harness_session": "5e4c9289-4a70-4d9f-87a2-83601dac85fc",
+					"instance_key": "245",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-integrated-opossum",
+					"why": "F194 #245 security (gpt-6.1-sol)"
 				}
 			]
 		}
