@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"hook": "Open when picking up pm-004, dispatching to takin, or before planning cache-proxy lanes",
+				"tags": [
+					"ws004",
+					"cache-proxy",
+					"takin",
+					"delivery"
+				],
+				"title": "Workstream 004 start: where everything lives, and the takin delivery trap"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- Rulings + acceptance live in governance handover/: ruling-2026-11-18-copilot-cache-proxy.md (ruling 3 = credentials, ruling 5 = daemon vs sidecar) and cache-proxy-test-matrix.md (21 rows; acceptance = every row with a live-seat receipt before far-jackal merges the last lane). takin's 4 points folded in at gov 8e419239: refresh mode (401-only vs ~80%) is decided by step 1's token measurement; the spawn gate ends with a 1-token /v1/messages probe because /models answers 200 on an exhausted quota.\n- Step 1 (spike) belongs to takin (model-cost), not a coder: packet /Users/jordanknight/pi-hacking/ws004-spike/spikes/PACKET.md, branch spike/004-cache-proxy, deliverable spikes/REPORT.md, no PR.\n- PRD 004 draft: worktree /Users/jordanknight/pi-hacking/ws004-docs, branch prd/004-copilot-cache-proxy, committed locally, NOT pushed. Waits on the spike to answer q-01 (token) and q-02 (placement). Blueprint 003 and workstream 004 are not written yet.\n- TRAP: until F196 merges, every send to pij-amazing-takin is refused, but pij_send may still report \"queued\" (looks like F195). Never trust it. Write takin's messages to a file and send the path to far-jackal, who types the pointer into takin's pane (Jordan's pane: never type there yourself).\n- Builders: OMP opus-5.5-1m seats. Reviewers: Copilot gpt-6.1-sol (reviewer, security; performance for the cost row). Two rounds max. Report to far-jackal at each lane's FINAL and when the spike answers.\n"
+		}
+	]
+}
