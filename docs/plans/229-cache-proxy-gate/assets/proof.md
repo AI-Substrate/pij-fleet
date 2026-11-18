@@ -1,33 +1,32 @@
-# Plan 229 proof receipts (interim: stub sidecar)
+# Plan 229 proof receipts
 
-Private daemon `pij-rs` built from `coder/229-cache-proxy-gate` (copied to a private path, because the shared target is overwritten by the s02 lane's builds), state dir `/tmp/newt229/state`, port 17561, private tmux server `-L newt229`, `PIJ_CACHE_PROXY_URL=http://127.0.0.1:17571`. The sidecar is a stub serving the c-status-route body exactly as s02 types it (crane via pm-004, 2026-11-18). These rows are re-run against s02's real sidecar after the rebase; live-fleet receipts are s04's.
+Rebased on main `d3919152` (s02, #239, merged). Private daemon built from this branch, copied to a private path right after its build (D-229-2), state dir `/tmp/newt229/state2`, port 17561, private tmux server `-L newt229`, `PIJ_CACHE_PROXY_URL=http://127.0.0.1:17571`. Sidecar: the same binary's `pij-rs cache-proxy --port 17571 --state-dir /tmp/newt229/proxy-state` (s02's real sidecar on a test port, its own config file; 7471 and the LaunchAgent untouched), account `jorkni_microsoft`. Live-fleet receipts are s04's.
 
-Command shape: `pij-rs --json spawn --harness copilot --session smoke --cwd /tmp/newt229 --no-wait --model <m> [--no-cache-proxy]`; env read from `tmux -L newt229 display -p -t <pane> '#{pane_start_command}'`; notices read from the private store's `fyis` table and `pij-rs --json state <prime> | .data.pendingFyis`. Prime: `pij-contemporary-tahr` (designated with `orchestration prime set`).
+Command shape: `pij-rs --json spawn --harness copilot --session smoke --cwd /tmp/newt229 --no-wait --model <m> [--no-cache-proxy]`; env from `tmux -L newt229 display -p -t <pane> '#{pane_start_command}'`; notices from `pij-rs --json state <prime> | .data.pendingFyis` and the private store's `fyis` table; sidecar lines from its own log. Prime: `pij-selective-kingfisher` (`orchestration prime set`).
 
 | Row | Setup | Observed | Seats |
 |---|---|---|---|
-| 1 | stub `no_account` | plain, `proxy no_account: no account is set`, fix `pij-rs cache-proxy account <login>`; no provider env | pij-inner-caribou |
-| 3 | stub ready, `gpt-6.1-sol` | plain, `model gpt-6.1-sol is not Claude`; no provider env | pij-organisational-skink |
-| 5 | stub `quota_exhausted` | plain, `proxy quota_exhausted: quota exhausted until 2026-12-01` | pij-hissing-gopher |
-| 6 | stub stopped | plain, `proxy not listening`, fix names the sidecar start | pij-alternative-chinchilla |
-| 7 | stub stopped under 2 proxied seats | 1 FYI to the prime: "not listening … Proxied seats' model calls fail: pij-evident-opossum, pij-formal-elk. Fix: …"; next tick 0 more (pendingFyis 1 → 1) | pij-evident-opossum, pij-formal-elk, prime pij-contemporary-tahr |
-| 8 | daemon restarted, stub ready | `notices 0`, pendingFyis unchanged (3 → 3); restarted with stub down under proxied seats: 1 notice (pm-004 ruling) | daemon pids 85129, 9890, 17806 |
-| 12 | stub ready, `account` → octo-b | spawn proxied; `/health.cache_proxy.status.account` = octo-b, upstream `api.business.githubcopilot.com` | pij-total-jackal |
-| 13 | `--no-cache-proxy`; stub `off` | plain `opted out with --no-cache-proxy`; plain `proxy off: …` fix `pij-rs cache-proxy on`; no provider env | pij-cloudy-echidna, pij-specific-swift |
-| 18 | a Copilot seat's `cache_proxy` set NULL in the store | `/health.cache_proxy.seats.plain` lists it | pij-organisational-skink |
-| 20 | `--harness omp` on a Claude model | no `cache_proxy` field, no provider env, no status read | pij-overall-hornet |
-| 21 | stub ready → off → ready | exactly 2 FYIs to the prime ("off … unaffected", "ready (was off)"); next tick 0 | pij-contemporary-tahr |
-| 22 | stub ready, `claude-opus-5.5` and `claude-opus-5.5-1m` | both proxied; env `COPILOT_PROVIDER_TYPE=anthropic`, `BASE_URL=http://127.0.0.1:17571`, `MODEL_ID=claude-opus-5.5`, `MAX_PROMPT_TOKENS=936000`, `VISION=true`; `claude-sonnet-9` plain `model not served by Copilot API` | pij-recent-octopus, pij-low-cicada, pij-applicable-nightingale |
+| 1 | no config file | plain, `proxy no_account: no account in /tmp/newt229/proxy-state/cache-proxy.toml`, fix `pij-rs cache-proxy account <login>`; no provider env | pij-increasing-buzzard |
+| 3 | ready, `gpt-6.1-sol` | plain, `model gpt-6.1-sol is not Claude`; no provider env | pij-lovely-owl |
+| 4 | `cache-proxy account pij-no-such-login-229` | sidecar `no_token`; plain, `proxy no_token: gh has no token for pij-no-such-login-229: …`, fix `gh auth login (as pij-no-such-login-229), then pij-rs cache-proxy on` | pij-mass-whitefish |
+| 5 | quota exhausted | not reproducible on this account (quota usable); proven against a stub serving `quota_exhausted`: plain, `proxy quota_exhausted: quota exhausted until 2026-12-01` (`decide_is_proxied_only_when_ready_and_the_base_id_is_served`, first stub run) | — |
+| 6 | sidecar stopped | plain, `proxy not listening`, fix names `just cache-proxy-autostart` | pij-fascinating-angelfish |
+| 7 | sidecar killed under 4 live proxied seats | 1 FYI to the prime naming all four and the fix; next tick 0 more (delta 1 → 1). A turn on pij-colorful-llama then retried and failed: `Could not connect to local model provider at http://127.0.0.1:17571`. Sidecar restarted: 1 FYI `ready (was not_listening)`. Copilot's own `/restart` is s04's | pij-colorful-llama, pij-complex-snail, pij-formal-tiger, pij-mass-echidna |
+| 8 | daemon bounced at 03:28:18 during two proxied turns that began streaming at 03:28:14 | both turns finished (1 to 2500, no error, no retry); sidecar pid 8150 before and after; after the bounce `/health.cache_proxy` `ready`, counters `requests 6`, `notices 0` | pij-colorful-llama, pij-complex-snail; daemon pids 8149 → 20604 → 24363 |
+| 12 | account switched pij-no-such-login-229 → jorkni_microsoft | next spawns proxied; sidecar `upstream for jorkni_microsoft: api.enterprise.githubcopilot.com`; doctor names the account | pij-colorful-llama |
+| 13 | `--no-cache-proxy`; `cache-proxy off` | plain `opted out with --no-cache-proxy`; plain `proxy off: switched off (pij-rs cache-proxy off)`, fix `pij-rs cache-proxy on`; no provider env | pij-constant-toucan, pij-genuine-earwig |
+| 18 | a Copilot seat's `cache_proxy` set NULL in the store | `/health.cache_proxy.seats.plain` and the doctor `cache seats:` line list it | pij-lovely-owl |
+| 19 | single human account | `cache-proxy status` prints no warning; the two-account warning is s02's parser test | — |
+| 20 | `--harness omp` on a Claude model | no `cache_proxy` field, no provider env | pij-imaginative-nightingale |
+| 21 | `cache-proxy off`, then `on` | exactly 2 FYIs to the prime ("off … new Copilot spawns run plain … unaffected", "ready (was off)"); next tick 0 | pij-selective-kingfisher |
+| 22 | `claude-opus-5.5` and `claude-opus-5.5-1m` | both proxied with `COPILOT_PROVIDER_TYPE=anthropic`, `BASE_URL=http://127.0.0.1:17571`, `MODEL_ID=claude-opus-5.5`, `MAX_PROMPT_TOKENS=1000000`, `VISION=true`; both status bars `0/1.0M`; one turn each: sidecar `status=200`, `model=claude-opus-5.5` and `model=claude-opus-5.5 (from claude-opus-5.5-1m)`, `1h=32591` and `1h=12266`, `5m=0`. `claude-sonnet-5.5` and `claude-haiku-5.5` proxied with `MAX_PROMPT_TOKENS=936000` | pij-colorful-llama, pij-complex-snail, pij-formal-tiger, pij-mass-echidna |
+
+Seen on Copilot 1.0.114 with the provider env, recorded for s04: the `-1m` seat shows `Model "claude-opus-5.5-1m" from --model flag is not available. Using "claude-opus-5.5" instead.` yet still sends `claude-opus-5.5-1m` (the sidecar maps it); every proxied seat shows `Provider type "anthropic" typically requires authentication` and works without a key.
 
 ## Cost (k-4, k-5)
 
-`pij-rs --json ping | jq .data.spawns`, daemon pid 65297: before 3 Copilot Claude spawns `total 26`; after `total 33` (`tmux.new-window` +3, `tmux.pipe-pane attach` +2, `tmux.set-options tap owner` +2: the existing per-spawn launches); 64 s and two watch ticks later `total 37` (`tmux.pipe-pane attach` +1, `tmux.set-options tap owner` +1 for the third pane's tap, `git.pa-watchdog-common-dir` +2 from the existing PA watchdog). No op is the cache proxy's: 0 launches per spawn gate, 0 per watch tick.
+`pij-rs --json ping | jq .data.spawns`, daemon pid 24363, sidecar ready: before two Copilot Claude spawns `total 24`; after `total 28` (`tmux.new-window` +2, `tmux.pipe-pane attach` +1, `tmux.set-options tap owner` +1: the existing per-spawn launches); 62 s and two watch ticks later `total 30` (`tmux.pipe-pane attach` +1, `tmux.set-options tap owner` +1, the second pane's tap). No op is the cache proxy's: 0 launches per spawn gate, 0 per watch tick. The sidecar's own `gh launches` stayed at 2 for the whole run (1 per account set).
 
 ## Doctor rows
 
-The two new `just doctor` lines, run with the private binary first on `PATH` and the private daemon's address: `cache-proxy: (unknown: pij-rs predates the cache proxy — run: just rs-install)` (this branch has no `cache-proxy` verb until it rebases on s02) and `cache seats: proxied: pij-evident-opossum, pij-formal-elk, pij-low-cicada, pij-rapid-shark, pij-recent-octopus, pij-total-jackal; plain: pij-alternative-chinchilla, pij-applicable-nightingale, pij-cloudy-echidna, pij-contemporary-tahr, pij-hissing-gopher, pij-inner-caribou, pij-organisational-skink, pij-specific-swift`.
-
-## Not yet proven
-
-- Every row against s02's real sidecar (after the rebase), including the `cache-proxy:` doctor line with the second-human-account warning (row 19 is s02's parser test).
-- Row 7's `/restart`: Copilot's own restart re-execs in place [INFERENCE: it keeps the provider env]; the notice's fix names `pij-rs revive`, which re-runs the gate (`revive_keeps_an_opt_out_and_re_runs_the_gate_otherwise`).
+With the private binary first on `PATH`, `PIJ_CACHE_PROXY_PORT=17571` and the private daemon's address: `cache-proxy: ready on 127.0.0.1:17571 … account: jorkni_microsoft … upstream: api.enterprise.githubcopilot.com …` (s02's `status`), then `cache seats: proxied: pij-colorful-llama, pij-complex-snail, pij-formal-tiger, pij-mass-echidna; plain: pij-constant-toucan, pij-fascinating-angelfish, pij-genuine-earwig, pij-increasing-buzzard, pij-lovely-owl, pij-mass-whitefish, pij-selective-kingfisher`.
