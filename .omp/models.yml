@@ -38,6 +38,11 @@ providers:
         maxTokens: 128000
         compat:
           supportsLongCacheRetention: true
+      # OMP synthesizes this 1M selector from claude-opus-5.5; compat does not
+      # inherit, so it needs its own flag or it stays on the 5-minute cache.
+      claude-opus-5.5-1m:
+        compat:
+          supportsLongCacheRetention: true
       gemini-3.6-flash:
         name: Gemini 3.6 Flash 1M (Copilot)
         reasoning: true
