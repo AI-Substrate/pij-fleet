@@ -37,6 +37,15 @@ struct Upstream {
     /// The bearer each endpoint last saw.
     user_bearer: Mutex<String>,
     messages_bearer: Mutex<String>,
+    /// `copilot_internal/user` reads served, and how long each one stalls.
+    user_reads: AtomicU64,
+    user_stall_ms: AtomicU64,
+    /// `/v1/messages` parks requests carrying this account's token until it
+    /// is cleared, counting each one parked.
+    messages_hold_for: Mutex<Option<String>>,
+    messages_parked: AtomicU64,
+    /// `/v1/messages` answers 402 to this account's token only.
+    messages_402_for: Mutex<Option<String>>,
 }
 
 impl Default for Upstream {
@@ -51,6 +60,11 @@ impl Default for Upstream {
             seen: Mutex::default(),
             user_bearer: Mutex::default(),
             messages_bearer: Mutex::default(),
+            user_reads: AtomicU64::new(0),
+            user_stall_ms: AtomicU64::new(0),
+            messages_hold_for: Mutex::default(),
+            messages_parked: AtomicU64::new(0),
+            messages_402_for: Mutex::default(),
         }
     }
 }
@@ -67,11 +81,21 @@ fn bearer_ok(bearer: &str) -> bool {
     bearer.starts_with("Bearer gho_tok_")
 }
 
+/// Whether `bearer` carries `account`'s fixture token.
+fn bearer_of(bearer: &str, account: Option<&String>) -> bool {
+    account.is_some_and(|account| bearer == format!("Bearer {}", token_for(account)))
+}
+
 async fn user(AxumState(up): AxumState<Arc<Upstream>>, headers: HeaderMap) -> impl IntoResponse {
     let bearer = bearer(&headers);
     *up.user_bearer.lock().unwrap() = bearer.clone();
     if !bearer_ok(&bearer) {
         return (StatusCode::UNAUTHORIZED, axum::Json(json!({}))).into_response();
+    }
+    up.user_reads.fetch_add(1, Ordering::SeqCst);
+    let stall = up.user_stall_ms.load(Ordering::SeqCst);
+    if stall > 0 {
+        tokio::time::sleep(std::time::Duration::from_millis(stall)).await;
     }
     let exhausted = up.user_exhausted.load(Ordering::SeqCst);
     let base = up.base.lock().unwrap().clone();
@@ -108,6 +132,15 @@ async fn messages(
     *up.messages_bearer.lock().unwrap() = bearer.clone();
     if !bearer_ok(&bearer) {
         return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if bearer_of(&bearer, up.messages_hold_for.lock().unwrap().as_ref()) {
+        up.messages_parked.fetch_add(1, Ordering::SeqCst);
+        while bearer_of(&bearer, up.messages_hold_for.lock().unwrap().as_ref()) {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+    if bearer_of(&bearer, up.messages_402_for.lock().unwrap().as_ref()) {
+        return StatusCode::PAYMENT_REQUIRED.into_response();
     }
     if let Some(location) = up.messages_redirect.lock().unwrap().clone() {
         return (StatusCode::FOUND, [("location", location)]).into_response();
@@ -156,6 +189,32 @@ impl Rig {
             .json()
             .await
             .unwrap()
+    }
+
+    /// Status reads until `done` holds: a read answers from cache and only
+    /// starts the owed check, which lands a moment later (plan 230).
+    async fn status_until(&self, done: impl Fn(&Status) -> bool) -> Status {
+        for _ in 0..500 {
+            let status = self.status().await;
+            if done(&status) {
+                return status;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("never settled: {:?}", self.status().await);
+    }
+
+    /// Switch the configured account and reload, as `pij-rs cache-proxy account` does.
+    async fn switch_to(&self, account: &str) -> Status {
+        config::save(
+            &self.dir,
+            &ProxyConfig {
+                account: Some(account.to_string()),
+                enabled: true,
+            },
+        )
+        .unwrap();
+        self.proxy.reload().await
     }
 
     async fn message(&self, body: &Value) -> StatusCode {
@@ -266,6 +325,7 @@ async fn a_ready_account_reports_its_endpoint_models_and_one_gh_launch() {
     assert_eq!(status.counters.gh_launches, 1);
     assert_eq!(rig.launches(), 1);
     assert_eq!(status.pid, std::process::id());
+    assert!(status.checked_at_ms.is_some(), "start ran a check");
     // The fake gh saw the account as a separate argument, never the token.
     let argv = std::fs::read_to_string(rig.dir.join("launches")).unwrap();
     assert_eq!(argv.trim(), "auth token --user tester");
@@ -423,8 +483,8 @@ async fn a_402_latches_until_a_2xx_the_reset_date_or_a_reload() {
     "2000-01-01".clone_into(&mut rig.upstream.reset_date.lock().unwrap());
     rig.upstream.messages_402.store(true, Ordering::SeqCst);
     assert_eq!(rig.message(&hello()).await, StatusCode::PAYMENT_REQUIRED);
-    let status = rig.status().await;
-    assert_eq!(status.state, State::Ready, "(b) {status:?}");
+    let status = rig.status_until(|status| status.state == State::Ready).await;
+    assert!(status.quota.usable, "(b) {status:?}");
 
     // A snapshot that itself says exhausted still refuses, with its reset date.
     rig.upstream.messages_402.store(false, Ordering::SeqCst);
@@ -603,4 +663,113 @@ async fn off_stops_new_spawns_but_keeps_serving_live_seats() {
     assert_eq!(status.fix, "pij-rs cache-proxy on");
     assert_eq!(rig.message(&hello()).await, StatusCode::OK);
     assert_eq!(rig.launches(), 1, "off then serve launches nothing");
+}
+
+async fn until(what: &str, done: impl Fn() -> bool) {
+    for _ in 0..500 {
+        if done() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("timed out waiting for {what}");
+}
+
+/// F204: a status read never waits on GitHub. With a recheck owed (a 401
+/// refresh owes one, as a 402 or the 10 min TTL do) and `copilot_internal/user`
+/// stalled 5 s, reads answer at once from the cached state, and two concurrent
+/// reads plus a third while the check is in flight start one check.
+#[tokio::test]
+async fn a_status_read_never_waits_on_a_stalled_readiness_check() {
+    let rig = Arc::new(rig("stalled-check", Some("tester"), true).await);
+    let checked_at = rig.status().await.checked_at_ms.expect("start ran a check");
+    assert_eq!(rig.message(&hello()).await, StatusCode::OK, "401, refresh, retry");
+    let before = rig.upstream.user_reads.load(Ordering::SeqCst);
+    rig.upstream.user_stall_ms.store(5_000, Ordering::SeqCst);
+
+    let started = std::time::Instant::now();
+    let (first, second) = tokio::join!(rig.status(), rig.status());
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_millis(100),
+        "{elapsed:?}"
+    );
+    for status in [&first, &second] {
+        assert_eq!(status.state, State::Ready, "{status:?}");
+        assert_eq!(status.checked_at_ms, Some(checked_at), "the cached answer");
+    }
+    let reads = || rig.upstream.user_reads.load(Ordering::SeqCst) - before;
+    until("the background check to reach upstream", || reads() >= 1).await;
+    let started = std::time::Instant::now();
+    assert_eq!(rig.status().await.state, State::Ready);
+    assert!(started.elapsed() < std::time::Duration::from_millis(100));
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(reads(), 1, "three reads, one check");
+
+    rig.upstream.user_stall_ms.store(0, Ordering::SeqCst);
+    let landed = rig
+        .status_until(|status| status.checked_at_ms > Some(checked_at))
+        .await;
+    assert_eq!(landed.state, State::Ready, "{landed:?}");
+    assert_eq!(reads(), 1, "the check that landed is the one started");
+}
+
+/// Park one request carrying `account`'s token at the fake upstream.
+async fn park_one(rig: &Arc<Rig>, account: &str) -> tokio::task::JoinHandle<StatusCode> {
+    *rig.upstream.messages_hold_for.lock().unwrap() = Some(account.to_string());
+    let in_flight = {
+        let rig = rig.clone();
+        tokio::spawn(async move { rig.message(&hello()).await })
+    };
+    until("the request to park", || {
+        rig.upstream.messages_parked.load(Ordering::SeqCst) == 1
+    })
+    .await;
+    in_flight
+}
+
+/// The 402 twin of #239 F001 (s04 row 12): a 402 answering a request sent with
+/// account A's token, landing after a switch to usable account B, is counted but
+/// never latches B.
+#[tokio::test]
+async fn a_stale_402_from_the_old_account_never_latches_the_new_one() {
+    let rig = Arc::new(rig("stale-402", Some("acct_b"), false).await);
+    assert_eq!(rig.switch_to("acct_a").await.state, State::Ready);
+    *rig.upstream.messages_402_for.lock().unwrap() = Some("acct_a".into());
+    let in_flight = park_one(&rig, "acct_a").await;
+
+    let status = rig.switch_to("acct_b").await;
+    assert_eq!(
+        (status.state, status.account.as_deref()),
+        (State::Ready, Some("acct_b"))
+    );
+    *rig.upstream.messages_hold_for.lock().unwrap() = None;
+    assert_eq!(in_flight.await.unwrap(), StatusCode::PAYMENT_REQUIRED);
+
+    let status = rig.status().await;
+    assert_eq!(status.state, State::Ready, "{status:?}");
+    assert!(status.quota.usable, "{status:?}");
+    assert_eq!(status.counters.upstream_402, 1, "counted, not latched");
+    assert_eq!(rig.message(&hello()).await, StatusCode::OK);
+    assert_eq!(rig.status().await.state, State::Ready);
+}
+
+/// The same rule the other way: a 2xx answering a request sent with A's token
+/// never clears the 402 latched for B.
+#[tokio::test]
+async fn a_stale_2xx_from_the_old_account_never_clears_the_new_ones_402() {
+    let rig = Arc::new(rig("stale-2xx", Some("acct_a"), false).await);
+    let in_flight = park_one(&rig, "acct_a").await;
+
+    assert_eq!(rig.switch_to("acct_b").await.state, State::Ready);
+    *rig.upstream.messages_402_for.lock().unwrap() = Some("acct_b".into());
+    assert_eq!(rig.message(&hello()).await, StatusCode::PAYMENT_REQUIRED);
+    assert_eq!(rig.status().await.state, State::QuotaExhausted);
+
+    *rig.upstream.messages_hold_for.lock().unwrap() = None;
+    assert_eq!(in_flight.await.unwrap(), StatusCode::OK);
+    let status = rig.status().await;
+    assert_eq!(status.state, State::QuotaExhausted, "{status:?}");
+    assert!(status.reason.contains("acct_b"), "{}", status.reason);
+    assert!(!status.quota.usable);
 }
