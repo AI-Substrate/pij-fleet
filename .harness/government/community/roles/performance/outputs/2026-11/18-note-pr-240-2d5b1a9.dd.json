@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-18",
+				"head": "2d5b1a9c19c0c771a43a4ef46f87a54398e2608c",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/240#issuecomment-6968528883",
+				"role": "performance",
+				"subject": "pr:240",
+				"writer": "pij-net-iguana",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "pij-rs --json ping, twice across just spawn-rate --seconds 20 --json",
+					"exit_code": 0,
+					"log": "AFTER: same daemon19370, 2026-11-18T03:51:25.050131Z..03:51:45.257404Z,20.207214s,total447->456,+9=git.community7+ddocs.community2,0.445385 launches/s; machine232.1/s. BEFORE: daemon46800,total793->793,20.184645s,0/s; machine111.9/s."
+				},
+				{
+					"command": "/bin/ps -p 19370 -o pid=,ppid=,%cpu=,rss=,time=,etime=,comm= (paired)",
+					"exit_code": 0,
+					"log": "AFTER parent CPU+3.65s over20.222464s=18.05% one core; RSS228144->137008KiB; uptime01:17->01:37. BEFORE CPU+2.89s over approximately20.2s; RSS142768->142256KiB; uptime50:35->50:55. Unmatched shared-fleet windows; no causal PR attribution."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "## Performance AFTER receipt\n\nMerge: `2d5b1a9c19c0c771a43a4ef46f87a54398e2608c`. After the reinstall/bounce, daemon PID **19370** was verified in both ping responses and by the listening socket at both window edges. This closes the post-deployment measurement owed by the performance verdicts.\n\n| Measurement | BEFORE | AFTER |\n|---|---|---|\n| UTC window, November 18, 2026 | 03:15:32.321241 to 03:15:52.506222 | 03:51:25.050131 to 03:51:45.257404 |\n| Same daemon PID within window | 46800 | 19370 |\n| Monotonic counter interval | 20.184645 s | 20.207214 s |\n| `spawns.total` | 793 -> 793 | 447 -> 456 |\n| Exact counted daemon launches | 0; **0.0000/s** | 9; **0.4454/s** |\n| Machine launches/s, 20.0 s probe | **111.9/s** | **232.1/s** |\n| Parent cumulative CPU time | 11:23.49 -> 11:26.38; +2.89 CPU s | 0:34.56 -> 0:38.21; +3.65 CPU s |\n| Parent CPU during sample | approximately 14.3% of one core; baseline ps snapshots bracket the counter window | **18.05% of one core** over the separately timed 20.222464 s ps interval |\n| RSS, KiB | 142768 -> 142256 | 228144 -> 137008 |\n| RSS, MiB | 139.42 -> 138.92 | 222.80 -> 133.80 |\n| Daemon uptime at ps snapshots | 50:35 -> 50:55 | 01:17 -> 01:37 |\n\nCommands: `pij-rs --json ping` twice, selecting `data.pid` and `data.spawns` in Python; `just spawn-rate --seconds 20 --json`; exact-pid `/bin/ps -p <pid> -o pid=,ppid=,%cpu=,rss=,time=,etime=,comm=`. UTC timestamps and monotonic elapsed times were captured with the responses. No build, test, install or bounce was performed by this measurement.\n\n### AFTER daemon counters, every reported operation\n\n| Operation | Before | After | Delta |\n|---|---:|---:|---:|\n| `ddocs.community` | 12 | 14 | +2 |\n| `gh.delivered` | 1 | 1 | 0 |\n| `git.community` | 28 | 35 | +7 |\n| `git.pa-watchdog-common-dir` | 22 | 22 | 0 |\n| `ps.registration-native-process` | 133 | 133 | 0 |\n| `ps.sidecar-process-group` | 1 | 1 | 0 |\n| `tmux.control-client` | 1 | 1 | 0 |\n| `tmux.new-window` | 1 | 1 | 0 |\n| `tmux.pipe-pane attach` | 121 | 121 | 0 |\n| `tmux.rename-window` | 6 | 6 | 0 |\n| `tmux.set-options tap owner` | 121 | 121 | 0 |\n\nThe site deltas sum to the total delta, **9**: `git.community` 0.3464/s and `ddocs.community` 0.0990/s. All counted launches in this window were community writers; the process-probe and tmux counters did not move. In the BEFORE window, all 20 reported operation counters were unchanged.\n\n### AFTER machine probe, unmodified numeric receipt\n\n```json\n{\n  \"seconds\": 20.0,\n  \"daemon_pid\": 19370,\n  \"total_new_per_s\": 232.1,\n  \"polls\": 139815,\n  \"sampled_per_s\": 224.7,\n  \"attributed_per_s_lower_bound\": {\n    \"<gone before seen>\": 114.9,\n    \"other\": 109.3,\n    \"pij-rs daemon\": 0.4\n  },\n  \"daemon_children_per_s_lower_bound\": {\n    \"pij-rs\": 0.4\n  },\n  \"statusline_runs_seen_per_s\": 0.1,\n  \"pij_claude_hook_runs_seen_per_s_lower_bound\": {\n    \"display\": 0.0,\n    \"stop\": 0.0\n  },\n  \"top_commands_per_s_lower_bound\": {\n    \"bash\": 68.9,\n    \"copilot\": 12.0,\n    \"node\": 8.2,\n    \"sh\": 5.7,\n    \"git-ai\": 3.3,\n    \"git\": 3.1,\n    \"pij-rs\": 2.2,\n    \"rust-analyzer\": 1.4,\n    \"bun.exe\": 1.4,\n    \"rustup\": 0.7,\n    \"rustc\": 0.6,\n    \"cargo\": 0.5\n  }\n}\n```\n\n### Interpretation and limits\n\nThe observed machine-wide increase is **120.2 launches/s**, and parent CPU was higher in this sample. These are not controlled estimates of #240's incremental cost: the daemon was only 77-97 seconds old after reconnecting, versus roughly 51 minutes before, and the shared machine's workload differed. The RSS fall within the fresh-daemon window is an observation, not proof of a fixed leak or lower steady-state memory.\n\nDo not subtract the absolute counters across the bounce. Compare each window's same-PID deltas. The daemon counter is exact for its instrumented launch sites, but does not count the Copilot-owned statusline CLI's launches or in-process CPU. Source review established that the new ownership probe itself launches nothing; these counters alone do not prove that.\n\nMachine per-parent/command attribution is a lower bound. In particular `statusline_runs_seen_per_s` searches for the managed script's argv marker, which can disappear when the script execs `pij-rs statusline copilot`; **0.1/s is not the true render rate**. The scheduled rate remains one render per 10 s per rendering session, plus event-driven renders. The busy-polling sampler also contributes overhead in both measurements.\n\n**Owed AFTER measurement: completed.** The non-blocking C34 follow-up about the self-plus-64-ancestors bound (65 reader calls) is unchanged; this receipt does not claim a per-render latency benchmark or a universal no-regression result.\n"
+		}
+	]
+}
