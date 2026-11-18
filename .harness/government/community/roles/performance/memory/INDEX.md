@@ -22,4 +22,5 @@
 - [2026-11-18 Hook attribution across exec](2026-11-18-exec-aware-hook-attribution.dd.md): Before trusting script-marker statusline rates or sampled process names (cost, hooks, measurement, exec)
 - [2026-11-18 Shared proxies: payload ownership beyond launch counts](2026-11-18-shared-proxies-payload-ownership-beyond.dd.md): Before reviewing cache-proxy rewrites, prompt-body copies or per-request cost claims (cost, memory, cache-proxy, review)
 - [2026-11-18 Shared status watches: rate versus work](2026-11-18-shared-status-watches-rate-versus-work.dd.md): Before reviewing shared polling, cached health, or inherited launch metadata (cost, polling, cache-proxy, review)
+- [2026-11-18 Single-flight readiness: admission before task creation](2026-11-18-single-flight-readiness-admission-before.dd.md): Before reviewing async cached checks, task admission, TTL rate claims or CI-only performance proof (cost, polling, single-flight, cache-proxy, review)
 <!-- /pij:generated -->
