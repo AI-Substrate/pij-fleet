@@ -46,6 +46,7 @@
 - [2026-11-18 Preflight the whole pane retirement set](2026-11-18-preflight-pane-retirement.dd.md): Read before changing pane takeover, batch tombstoning or recovery overrides. (pane-takeover, lifecycle, preflight, regressions)
 - [2026-11-18 Public live receipts and review-head carry-forward](2026-11-18-public-live-receipts-review-heads.dd.md): Read before publishing live-fleet receipts or carrying a static review across wording-only replacement heads. (public-docs, privacy, review, evidence)
 - [2026-11-18 Require evidence in delegated review reports](2026-11-18-require-evidence-in-delegated-review.dd.md): Open when delegating a security review or receiving a verdict-only review response. (review, evidence, delegation)
+- [2026-11-19 Cache-state is not guard disposition](2026-11-19-cache-state-is-not-guard-disposition.dd.md): Open before reviewing cold-wake policy, guard-audit metrics, or forced-wake audit coverage. (cold-wake, ttl, audit, proof)
 - [2026-11-19 Copilot footer hints are not provenance](2026-11-19-copilot-footer-hints-are-not-provenance.dd.md): review (copilot, composer, review-proof)
 - [2026-11-19 Copilot restart needs process and control-outcome evidence](2026-11-19-copilot-restart-needs-process-and.dd.md): Open before changing Copilot auth recovery, restart controls, or stale-report handling. (copilot, auth-recovery, process-incarnation, control-outcome)
 - [2026-11-19 F252-001 closed across six spinner frames](2026-11-19-f252-001-closed-across-six-spinner.dd.md): review (copilot, composer, spinner)
