@@ -385,6 +385,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-deliberate-orca",
 					"why": "D-F208-1 real-SDK registration canary #259"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T06:04:45.272Z",
+					"harness": "copilot",
+					"harness_session": "62dda8ac-73c4-4f85-bdd1-5f7de7b72c06",
+					"instance_key": "260",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-deliberate-orca",
+					"why": "F219 OMP worktree.clone off + sensor; F218 #260"
 				}
 			]
 		}
