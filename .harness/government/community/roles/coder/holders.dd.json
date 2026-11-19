@@ -1094,7 +1094,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f211",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #253 merged (48b8bd0ef299)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-19T04:56:50.813Z",
 					"why": "F211: a failed spawn leaves an orphan live seat"
 				},
 				{

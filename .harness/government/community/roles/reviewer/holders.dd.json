@@ -1792,7 +1792,10 @@
 					"harness_session": "470d0436-5f90-4ef5-807e-bac29edea5c1",
 					"instance_key": "253",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #253 merged (48b8bd0ef299)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-solar-piranha",
+					"to": "2026-11-19T04:56:50.813Z",
 					"why": "F211 #253 correctness (Copilot gpt-6.1-sol)"
 				},
 				{
