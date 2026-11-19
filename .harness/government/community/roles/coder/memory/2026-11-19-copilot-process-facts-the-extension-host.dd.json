@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before designing anything that has a Copilot seat (or its pij extension) report its own env, provider or cache route, or that reasons about a Copilot /restart or resume",
+				"tags": [
+					"f213",
+					"copilot",
+					"cache-proxy",
+					"registration",
+					"lineage",
+					"mutation"
+				],
+				"title": "Copilot process facts: the extension host has no provider env; /restart's new CLI is a child of the old; read routes by lineage, not self-report (F213)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Measured on a throwaway proxied seat (Copilot 1.0.114):\n\n- The process tree after spawn is: pane root `pij-rs __spawn-child` (has COPILOT_PROVIDER_*) -> copilot loader (node) -> CLI. Copilot runs the pij extension in a SANDBOXED host (env has COPILOT_EXTENSION_SANDBOXED and COPILOT_EXTENSION_PARENT_PID) that gets PIJ_*, SESSION_ID and TMUX* but NO COPILOT_PROVIDER_*. Any design that has the extension report the provider route is dead on arrival. Run the (h)-style check, \"does the extension process really see X\", before building.\n- /restart starts the new CLI as a CHILD of the old CLI (the old one stays alive) and keeps the env. /exit ends the spawn-child, so the pane and seat die; a resume from a shell has no provider env, so it is truthfully plain.\n- Copilot's events.jsonl has isByok and providerType per usage record, but never the base URL.\n- F213 fix: verify_native_host already walks the claimed host's ancestry with pid+start re-checks up to the pane process. Return that chain (NativeHandoff.ancestors) and carry a proxied stamp when the recorded proc is in it. Zero extra reads. pm-004 rejected reading the CLI's env from the daemon: the whole env would pass through daemon memory, plus a launch.\n\nProcess: mutation-check with a throwaway eval that writes a mutated copy and restores it in `finally`. Use ABSOLUTE paths: the eval kernel's cwd silently reset to the canonical checkout after a compaction, and a relative path would have mutated main's file.\n"
+		}
+	]
+}
