@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "open before any extension reload rollout",
+				"tags": [
+					"pa",
+					"reload",
+					"rollout",
+					"omp",
+					"copilot"
+				],
+				"title": "OMP extension rollouts need a restart; Copilot seats reload themselves"
+			}
+		},
+		{
+			"name": "body",
+			"value": "OMP extension rollouts need a process restart, not a reload (prime, 2026-11-19 13:09). OMP's /reload and pij send --command reload do not load new extension code (same as models.yml changes); only quit + revive with the same session and model does. The PA can't do either: --command reload is refused unless the sender is the target or its recorded parent (E-RS-CONTROL-OWNERSHIP), and an OMP seat asked to /reload itself never did. So for an OMP rollout, list the stale pij-fleet OMP seats (harness omp in pij-rs --json state) and hand the list to the prime, who restarts them with its omp-restart script at each idle. Copilot seats are different: a normal send asking the seat to run its extensions_reload tool at its next idle works, and you reload yourself with the tool. Skip Jordan's own panes (takin, macaw) and seats in other projects. Leave cold OMP seats until they wake. Compact anything over 450k before a reload (F180).\n"
+		}
+	]
+}
