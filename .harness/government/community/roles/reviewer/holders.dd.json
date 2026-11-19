@@ -2131,7 +2131,10 @@
 					"harness_session": "3a7c075e-a9cd-487b-9746-0c8468f93a8f",
 					"instance_key": "274",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #274 merged (3347a586e030)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-functional-pony",
+					"to": "2026-11-19T23:24:11.433Z",
 					"why": "#274 one-line SDK record, after #273"
 				}
 			]
