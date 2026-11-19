@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"head": "bf124e64f1297601cba277ce4d1eea3709a0a272",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/255#issuecomment-6999945833",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:255",
+				"writer": "pij-mass-pony",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "security: pass (head bf124e64f1297601cba277ce4d1eea3709a0a272)\n\nNo actionable security findings. There were no earlier security findings to close.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | 17 changed files | - | None identified | - |\n\nSecurity checks:\n- Restricted extraction: `docs/plans/232-proxy-tool-flips/assets/flip_window.py:33-71` and `sim232.py:52-100` select usage/lifecycle measurements. The simulator also tests fixed reload markers and retains a boolean (`sim232.py:63-65,98`); no message text, prompts, tool arguments/results or credential contents are selected. These readers stream mixed JSONL, so this is a field-selection boundary, not byte-level isolation.\n- Public artifacts: all 17 complete changed files, the current PR title/body, both introduced commit messages, and paginated discussion collections were inspected. No prohibited disclosure identified. Forced local-path scanning covered all 17 final blobs with zero findings; the ordinary path check excludes these documents, so its coverage was not assumed.\n- Writes: opens at `flip_window.py:40` and `sim232.py:56` are read-only. Complete-module inspection and AST sink audits found stdout-only output and no file-write API, arbitrary output-path option, subprocess/network API, `eval` or `exec`. Operator shell redirection is external to the scripts.\n\nRebase confirmed with `git range-diff c68ac8f7~1..be735f65 2f269126..bf124e64`: the second commit is identical; only inherited difficulties-ledger context changes in the first. 16/17 file blobs match the reviewed predecessor; the ledger was reread and its inherited row matches the final base.\n\nLimits/readiness: static review only; no builds, live-session reads or credential access. Cost arithmetic, output provenance and AC5/s07 live evidence were not independently reproduced. Latest `just pr-freeze 255`: **NOT FINAL (exit 1)**, merge BLOCKED and `rust-test` running; the other four checks passed. This is a security verdict, not merge-readiness approval.\n"
+		}
+	]
+}
