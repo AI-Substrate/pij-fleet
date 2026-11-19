@@ -1,0 +1,39 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"head": "88636516859d2249548920c9e7aaadc53b5178a5",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/247",
+				"role": "performance",
+				"subject": "pr:247",
+				"writer": "pij-identical-wolf",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "pij-rs --json ping; just spawn-rate --seconds 20; pij-rs --json ping; /bin/ps -p 61945 -o pid=,%cpu=,rss=,etime=,command=",
+					"exit_code": 0,
+					"log": "2026-11-19T00:54:05Z..00:54:26Z; sampler 20.0s; same PID 61945 commit 8863651685; spawns 428->428, all by_op unchanged; machine 168.1 launches/s; CPU 69.2%, RSS 223440 KiB at elapsed 00:48; startup/resource attribution unproven"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "## #247 after-deploy performance receipt\n\nMerge: `88636516859d2249548920c9e7aaadc53b5178a5` (merged 2026-11-19T00:52:21Z). Measured live daemon reports commit `8863651685`, PID **61945** in both pings. This completes the owed after-deploy measurement; the held-close memory-note scenario is still the separate upcoming live proof.\n\nCommand (exit 0):\n```sh\ndate -u +%Y-%m-%dT%H:%M:%SZ\npij-rs --json ping\njust spawn-rate --seconds 20\ndate -u +%Y-%m-%dT%H:%M:%SZ\npij-rs --json ping\n/bin/ps -p 61945 -o pid=,%cpu=,rss=,etime=,command=\n```\n\nPair boundary timestamps: **2026-11-19T00:54:05Z → 00:54:26Z**; sampler reports **20.0 s**, command wall time 20.35 s. Exact daemon spawn total **428 → 428**: **zero launches** between pings. Every by_op value is unchanged:\n\n| Operation | Before | After |\n|---|---:|---:|\n| ddocs.community | 6 | 6 |\n| gh.delivered | 1 | 1 |\n| git.community | 7 | 7 |\n| ps.registration-native-process | 149 | 149 |\n| ps.sidecar-process-group | 1 | 1 |\n| tmux.control-client | 1 | 1 |\n| tmux.pipe-pane attach | 130 | 130 |\n| tmux.rename-window | 3 | 3 |\n| tmux.set-options tap owner | 130 | 130 |\n\n### Before / after on the same live machine\n\n| Measurement | Before deploy | After deploy |\n|---|---:|---:|\n| Daemon PID | 23167 | 61945 |\n| Daemon commit | 577a6c7a13 | 8863651685 |\n| Exact daemon launches during pair | 1 | 0 |\n| Exact daemon launch rate | 0.05/s | 0/s |\n| Whole-machine new processes | 186.2/s | 168.1/s |\n| Sampled processes | 164.7/s | 164.2/s |\n| Sampler polls | 137563 | 137071 |\n| `ps` daemon CPU | 18.2% | 69.2% |\n| Daemon RSS | 165712 KiB | 223440 KiB |\n| Daemon elapsed at resource snapshot | 36:28 | 00:48 |\n\nBefore window: 00:37:28Z–00:37:48Z; its sole exact daemon increment was `git.pa-watchdog-common-dir` 28→29. After sampler attribution lower bounds: gone-before-seen 112.1/s, other 52.1/s; no daemon children observed; statusline runs 0.0/s; Claude display/stop hooks 0.0/s. Per-parent sampling is a lower bound; the exact counter is the daemon launch receipt.\n\n**Reading:** no added daemon process launches observed in the deployed window. The machine total is lower, but workload was not controlled and this does not establish a causal PR improvement. CPU and RSS are **higher**, not improved: the after snapshot is a 48-second-old daemon versus the baseline's 36-minute-old daemon, and `ps %cpu` is not a matched interval benchmark. Startup/workload attribution is unproven; do not interpret this as steady-state CPU/RSS equivalence. Neither this launch sampler nor its CPU snapshot measures the reduction in activity HTTP posts directly.\n\nPerformance source verdict remains pass-with-notes: settle retargets the existing per-pending-turn deadline, no new polling task; grace adds per-close state and a normally in-process process-start probe (existing counted `/bin/ps` fallback remains). No local build/test was run. No memory note has been written before the requested close proof.\n"
+		}
+	]
+}
