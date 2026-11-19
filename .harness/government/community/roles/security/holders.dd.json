@@ -217,6 +217,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-autonomous-guppy",
 					"why": "security review of #246 (plan 231)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T00:36:51.409Z",
+					"harness": "copilot",
+					"harness_session": "291276aa-7423-4bcb-acd1-bf4abdd64df8",
+					"instance_key": "247",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-pleased-pike",
+					"why": "F207 #247 security (Copilot gpt-6.1-sol)"
 				}
 			]
 		}
