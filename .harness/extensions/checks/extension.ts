@@ -70,7 +70,7 @@ const SENSORS: Sensor[] = [
 		cmd: "just",
 		args: ["test"],
 		proves:
-			"the vitest suite passes, and no test starts a cargo build (the F217 cargo tripwire on every test's PATH)",
+			"the vitest suite passes; no test starts a cargo build (the F217 cargo tripwire), and every justfile test or build recipe runs niced, into the checkout's one target (recipe-cost.test.ts)",
 	},
 	{
 		name: "copilot-native",

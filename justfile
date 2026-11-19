@@ -71,7 +71,7 @@ rs-install:
     commit="$(printf %.10s "$1")" copilot="$(printf %.10s "$2")" omp="$(printf %.10s "$3")+$(printf %.10s "$4")"
     # Stamped on this command only, never exported (#175 review, P175-F001).
     PIJ_BUILD_COMMIT="$commit" PIJ_EXT_TREE_COPILOT="$copilot" PIJ_EXT_TREE_OMP="$omp" \
-        cargo build --release --locked -p pij-cli
+        /usr/bin/nice -n 19 cargo build --release --locked -p pij-cli
     bin="$(npm prefix -g)/bin"
     copy="$(sh harness/scripts/install-pij-rs.sh target/release/pij-rs "$bin")"
     echo "✓ $bin/pij-rs → $copy (copied from $(pwd)/target/release/pij-rs)"
@@ -113,8 +113,9 @@ format:
     npm run format
 
 # Run vitest. Optionally scope to file(s)/pattern: `just test path/to/x.test.ts`.
+# Every test and build recipe runs under nice -n 19 (F217, F186).
 test *ARGS:
-    npm run test -- "$@"
+    /usr/bin/nice -n 19 npm run test -- "$@"
 
 # tmux-driven end-to-end smoke (Driver SDK). Its private daemon runs this
 # checkout's pij-rs, built here into the checkout's one target (F217): a test
@@ -124,12 +125,12 @@ smoke:
     set -euo pipefail
     target="$(bash harness/scripts/cargo-target.sh)"
     PIJ_SHARED_TARGET="$target" bash harness/scripts/shared-build.sh -- build --locked -p pij-cli --bin pij-rs
-    CARGO_TARGET_DIR="$target" npm run smoke
+    CARGO_TARGET_DIR="$target" /usr/bin/nice -n 19 npm run smoke
 
 
 # Native Copilot extension contracts are node:test, outside Vitest's TS include.
 copilot-native-test:
-    node --test .copilot/extensions/pij/*.test.mjs
+    /usr/bin/nice -n 19 node --test .copilot/extensions/pij/*.test.mjs
 
 # Through shared-build into the checkout's one target (F217).
 copilot-native-rust-test:
@@ -607,7 +608,7 @@ omp-doctor:
 # Run vitest scoped to the flow-pair lib tests (explicit path bypasses vitest
 # config include filter; also works with: just test skills/flow-pair/test/).
 flow-pair-test *ARGS:
-    node_modules/.bin/vitest run skills/flow-pair/test/ "$@"
+    /usr/bin/nice -n 19 node_modules/.bin/vitest run skills/flow-pair/test/ "$@"
 
 # Mutation smoke: PROVE the flow-pair suite actually guards a behaviour. The worker
 # writes its own tests, so green != good — this deliberately breaks <file> with a
@@ -617,7 +618,7 @@ flow-pair-test *ARGS:
 #   just flow-pair-mutate skills/flow-pair/lib/ledger.ts 's/if \(!ev[A-Za-z]+\.ok\)/if (false)/g'
 #   just flow-pair-mutate <file> '<expr>' 'npx vitest run <suite>'   # target the suite that guards <file>
 flow-pair-mutate file expr *test_cmd:
-    bash harness/scripts/flow-pair-mutate.sh "{{file}}" '{{expr}}' {{test_cmd}}
+    /usr/bin/nice -n 19 bash harness/scripts/flow-pair-mutate.sh "{{file}}" '{{expr}}' {{test_cmd}}
 
 # --- pij-rs daemon + CLI ---
 
@@ -701,7 +702,7 @@ bounce-rs:
     # passes its environment to every job it runs, including cargo in other
     # worktrees (#175 review, P175-F001).
     PIJ_BUILD_COMMIT="$commit" PIJ_EXT_TREE_COPILOT="$copilot" PIJ_EXT_TREE_OMP="$omp" \
-        cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
+        /usr/bin/nice -n 19 cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
     # F187: refresh the installed copy (and the PATH link) from this build and
     # launch that, never target/. The running daemon keeps its own file.
     bin="$(npm prefix -g)/bin"

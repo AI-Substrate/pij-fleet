@@ -201,8 +201,13 @@ citation disputes, all of which resolved as neither party being wrong.)
   and the `copilot-native-*` Rust recipes build into it through shared-build.
   The governance fixture never builds: it copies `<CARGO_TARGET_DIR or
   target>/debug/pij-rs` and runs the copy (`just smoke` builds it; CI builds
-  `target/` first). Vitest puts `harness/test-tripwire/cargo` first on every
-  test's PATH, so a test that starts a cargo build fails.
+  `target/` first). Every recipe that runs a test runner (vitest, `node --test`,
+  the smoke) or a cargo build runs under `nice -n 19`; load reached 198 from one
+  un-niced `node --test`. Two sensors hold this: vitest puts
+  `harness/test-tripwire/cargo` first on every test's PATH, so a test that
+  starts a cargo build fails, and `harness/scripts/recipe-cost.test.ts` fails on
+  an un-niced test or build recipe, cargo outside shared-build (bar the niced
+  release deploy builds), or a target not from `cargo-target.sh`.
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
 - **`just pr-freeze <pr>`**: is a PR head final for verdicts? Run by hand before each verdict
