@@ -102,9 +102,15 @@ pub(crate) struct RegistrationService {
 }
 
 /// What a native claim carries into the locked registration: a verified
-/// spawn prebind, if one exists.
+/// spawn prebind, if one exists, and the host's ancestors as the daemon
+/// observed them (never as the claim names them).
 struct NativeHandoff {
     prebind: Option<SeatDescriptor>,
+    /// The claimed host's ancestors up to its pane process, nearest first, each
+    /// pid with its start time, read through the kernel parent chain and
+    /// re-checked ([`RegistrationService::verify_native_host`]). F213: a route
+    /// stamped for one of them carries to this host.
+    ancestors: Vec<ProcIdentity>,
 }
 
 /// F196: the other live rows recorded on a claimed pane, judged by their own
@@ -604,7 +610,7 @@ impl RegistrationService {
                 return Err(RegistrationError::NativeHolderCurrent(holder.id.clone()));
             }
         }
-        tokio::time::timeout(
+        let ancestors = tokio::time::timeout(
             HOST_OBSERVATION_TIMEOUT,
             self.verify_native_host(identity, claim.pane.as_deref(), tmux, &mut observe),
         )
@@ -622,6 +628,7 @@ impl RegistrationService {
                 harness_session
                     .as_deref()
                     .expect("validated native session"),
+                ancestors,
             )
             .await?;
         self.register_inner(
@@ -637,6 +644,7 @@ impl RegistrationService {
         &self,
         claim: &Registration,
         session: &str,
+        ancestors: Vec<ProcIdentity>,
     ) -> std::result::Result<NativeHandoff, RegistrationError> {
         // Only Copilot seats can be a native prebind (F182: not the whole roster).
         let copilot = SeatFilter {
@@ -650,6 +658,7 @@ impl RegistrationService {
             .map_err(RegistrationError::Runtime)?;
         Ok(NativeHandoff {
             prebind: native_prebind(claim, session, &seats).cloned(),
+            ancestors,
         })
     }
 
@@ -714,7 +723,7 @@ impl RegistrationService {
         pane: Option<&str>,
         tmux: &dyn TmuxPort,
         observe: &mut F,
-    ) -> std::result::Result<(), RegistrationError>
+    ) -> std::result::Result<Vec<ProcIdentity>, RegistrationError>
     where
         F: FnMut(u32) -> Fut,
         Fut: Future<Output = std::result::Result<Option<NativeProcess>, RegistrationError>>,
@@ -774,8 +783,8 @@ impl RegistrationService {
         }
         // Sandwich the entire observation, including the pane and every ancestor,
         // with start-time checks. A PID by itself is never an incarnation witness.
-        for process in ancestry {
-            self.require_process(process).await?;
+        for process in &ancestry {
+            self.require_process(*process).await?;
         }
         if let (Some(pane), Some(expected)) = (pane, pane_process)
             && tmux
@@ -788,7 +797,10 @@ impl RegistrationService {
                 "pane process changed during host observation",
             ));
         }
-        self.require_process(identity).await
+        self.require_process(identity).await?;
+        // The host's ancestors, nearest first, without the host itself (F213).
+        ancestry.remove(0);
+        Ok(ancestry)
     }
 
     async fn observe_identity(
@@ -1179,10 +1191,38 @@ impl RegistrationService {
         let same_launch =
             binds_spawned_incarnation || descriptor.proc.is_some_and(|old| Some(old) == proc);
         if !same_launch {
-            descriptor.cache_proxy = predecessor
+            let inherited = predecessor
                 .as_ref()
                 .filter(|previous| previous.proc.is_some() && previous.proc == proc)
                 .and_then(|previous| previous.cache_proxy.clone());
+            // F213: a Copilot `/restart` runs the new process as a child of the
+            // old one, with its environment. When the process this row's proxied
+            // route was stamped for (pid and start time) is among the host's
+            // ancestors as the daemon observed them, the route carries, also
+            // through an earlier carried stamp. Never from anything the claim
+            // names, and the gate does not re-run.
+            let carried =
+                handoff.is_some_and(|proof| {
+                    descriptor.cache_proxy.as_ref().is_some_and(|route| {
+                        route.state == pij_core::model::CacheProxyRoute::Proxied
+                    }) && descriptor
+                        .proc
+                        .is_some_and(|stamped| proof.ancestors.contains(&stamped))
+                });
+            // F213: an opt-out belongs to the seat, not to one launch, so it
+            // holds in any new process (a Copilot `/restart`, a resume), and a
+            // later revive still reads it and keeps the seat plain.
+            let opted_out = descriptor
+                .cache_proxy
+                .as_ref()
+                .is_some_and(pij_core::model::SeatCacheProxy::opted_out);
+            if inherited.is_some() {
+                descriptor.cache_proxy = inherited;
+            } else if carried {
+                descriptor.cache_proxy = Some(pij_core::model::SeatCacheProxy::carried());
+            } else if !opted_out {
+                descriptor.cache_proxy = None;
+            }
         }
         let requested_model = descriptor.model.clone();
         let model_matches = requested_model_matches(
@@ -3353,6 +3393,140 @@ mod tests {
             resumes,
             ["seat.native-resumed"],
             "one fact per native transition"
+        );
+    }
+
+    /// F213: the Copilot process a `/restart` starts, as a child of `parent`.
+    const RESTARTED: ProcIdentity = ProcIdentity {
+        pid: 900,
+        proc_start: 130,
+    };
+
+    /// The seat `row` re-registered from [`RESTARTED`], whose observed parent
+    /// is `parent` (4242 is [`HOST`] under the pane shell; 41 is the shell).
+    async fn restart_route(
+        row: SeatDescriptor,
+        parent: u32,
+        spawn_id: Option<&str>,
+    ) -> Option<pij_core::model::SeatCacheProxy> {
+        let liveness = Arc::new(
+            FakeLiveness::new()
+                .with_proc(HOST)
+                .with_proc(SHELL)
+                .with_proc(RESTARTED),
+        );
+        let (service, _) = native_service(vec![row.clone()], liveness).await;
+        let mut claim = native_claim(row.id.as_str());
+        claim.pid = Some(RESTARTED.pid);
+        claim.proc_start = Some(RESTARTED.proc_start);
+        claim.spawn_id = spawn_id.map(str::to_string);
+        let line = format!("{parent} /opt/copilot/copilot /opt/copilot/copilot --model gpt-5\n");
+        let (seat, _) = service
+            .register_native_with_observer(
+                claim,
+                Some(SESSION.into()),
+                &native_tmux(),
+                move |pid| {
+                    if pid == RESTARTED.pid {
+                        ready(parse_native_process(line.as_bytes()).map(Some))
+                    } else {
+                        fixture_process(pid)
+                    }
+                },
+            )
+            .await
+            .expect("the restarted host registers");
+        assert_eq!(seat.proc, Some(RESTARTED));
+        seat.cache_proxy
+    }
+
+    fn routed(route: pij_core::model::SeatCacheProxy) -> SeatDescriptor {
+        let mut seat = native_seat("pij-restarted");
+        seat.cache_proxy = Some(route);
+        seat
+    }
+
+    fn gate_proxied() -> pij_core::model::SeatCacheProxy {
+        pij_core::model::SeatCacheProxy {
+            state: pij_core::model::CacheProxyRoute::Proxied,
+            reason: "1-hour cache through http://127.0.0.1:7471 as claude-opus-5.5".into(),
+            fix: None,
+        }
+    }
+
+    /// F213: a Copilot `/restart` runs the new process as a child of the one
+    /// the gate stamped. The route carries through that observed lineage, and
+    /// says it was carried, not re-checked.
+    #[tokio::test]
+    async fn a_restart_under_the_stamped_process_carries_its_route() {
+        let carried = restart_route(routed(gate_proxied()), HOST.pid, None)
+            .await
+            .expect("a route");
+        assert_eq!(carried.state, pij_core::model::CacheProxyRoute::Proxied);
+        assert_eq!(
+            carried.reason,
+            "carried from its proxied launch through a Copilot restart; route not re-read"
+        );
+        assert_eq!(carried.fix, None);
+        // A second restart, under the first restarted (carried) process.
+        let again = restart_route(routed(carried.clone()), HOST.pid, None).await;
+        assert_eq!(again, Some(carried));
+    }
+
+    /// F213: the stamped process is matched by pid AND start time: a reused
+    /// pid is another process, whose environment the gate never saw.
+    #[tokio::test]
+    async fn a_reused_pid_carries_no_route() {
+        let mut row = routed(gate_proxied());
+        row.proc = Some(ProcIdentity {
+            pid: HOST.pid,
+            proc_start: HOST.proc_start - 1,
+        });
+        assert_eq!(restart_route(row, HOST.pid, None).await, None);
+    }
+
+    /// F213: a process that does not descend from the stamped one (a
+    /// quit-and-resume, a relaunch from a shell) reads plain, as before.
+    #[tokio::test]
+    async fn a_process_outside_the_stamped_lineage_reads_plain() {
+        assert_eq!(
+            restart_route(routed(gate_proxied()), SHELL.pid, None).await,
+            None
+        );
+    }
+
+    /// F213: an opt-out holds in any new process, descendant or not; lineage
+    /// carries only a proxied route.
+    #[tokio::test]
+    async fn an_opted_out_seat_stays_opted_out_across_a_restart() {
+        let opted =
+            pij_core::model::SeatCacheProxy::plain(pij_core::model::CACHE_PROXY_OPTED_OUT, None);
+        for parent in [HOST.pid, SHELL.pid] {
+            let route = restart_route(routed(opted.clone()), parent, None).await;
+            assert!(
+                route
+                    .as_ref()
+                    .is_some_and(pij_core::model::SeatCacheProxy::opted_out),
+                "{parent}: {route:?}"
+            );
+        }
+    }
+
+    /// F213, matrix row 7: a revive's launch binds its own spawned row, so it
+    /// keeps the stamp its own gate wrote (here plain), whatever its parent.
+    #[tokio::test]
+    async fn a_revived_launch_keeps_its_own_plain_stamp() {
+        let plain = pij_core::model::SeatCacheProxy::plain(
+            "proxy not listening",
+            Some("start the sidecar".into()),
+        );
+        let mut revived = routed(plain.clone());
+        revived.proc = None;
+        revived.harness_session = None;
+        revived.spawn_id = Some("s-revive".into());
+        assert_eq!(
+            restart_route(revived, HOST.pid, Some("s-revive")).await,
+            Some(plain)
         );
     }
 

@@ -601,6 +601,11 @@ pub struct SeatCacheProxy {
 pub const CACHE_PROXY_OPTED_OUT: &str = "opted out with --no-cache-proxy";
 /// The reason shown for a Copilot seat with nothing recorded.
 pub const CACHE_PROXY_BEFORE_GATE: &str = "launched before the cache proxy";
+/// F213: the reason on a route carried to a restarted Copilot process from the
+/// proxied launch it descends from. The gate did not re-run: the proxy's
+/// state, the model and the account were not re-checked.
+pub const CACHE_PROXY_CARRIED: &str =
+    "carried from its proxied launch through a Copilot restart; route not re-read";
 
 impl SeatCacheProxy {
     /// A plain decision with its reason and fix.
@@ -615,6 +620,16 @@ impl SeatCacheProxy {
     /// True for a seat spawned with `--no-cache-proxy`.
     pub fn opted_out(&self) -> bool {
         self.state == CacheProxyRoute::Plain && self.reason == CACHE_PROXY_OPTED_OUT
+    }
+
+    /// F213: proxied, carried from a stamped launch to a process that
+    /// descends from it.
+    pub fn carried() -> Self {
+        Self {
+            state: CacheProxyRoute::Proxied,
+            reason: CACHE_PROXY_CARRIED.to_string(),
+            fix: None,
+        }
     }
 }
 
