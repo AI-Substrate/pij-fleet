@@ -820,6 +820,59 @@ async fn all_matching_seeks_seat_and_kind_whatever_else_the_seat_has() {
     }
 }
 
+/// F209: past a cursor, the same seek also bounds `seq`, so a projection that
+/// keeps its place reads only the rows added since, not the seat's history.
+#[tokio::test]
+async fn all_matching_after_seeks_past_its_cursor() {
+    for analyze in [false, true] {
+        let (_fresh, pool) = skewed_seat_history(analyze).await;
+        let plan = plan_of(
+            &pool,
+            &pij_store::spine::all_matching_after_sql(3),
+            &[
+                "pij-history",
+                "delivery.held",
+                "delivery.released",
+                "delivery.outcome",
+                "0",
+            ],
+        )
+        .await;
+        assert_eq!(
+            plan.first().map(String::as_str),
+            Some(
+                "SEARCH spine_events USING INDEX spine_by_seat_kind (seat=? AND kind=? AND seq>?)"
+            ),
+            "analyzed={analyze}: {plan:?}"
+        );
+        let spine = SqliteSpine::new(pool);
+        let seat = SeatId::from("pij-history");
+        let kinds = ["delivery.held", "delivery.released", "delivery.outcome"];
+        let all = spine
+            .all_matching(&seat, &kinds)
+            .await
+            .expect("all matching");
+        let cursor = all[1].seq.expect("stored seq");
+        let after = spine
+            .all_matching_after(&seat, &kinds, cursor)
+            .await
+            .expect("after");
+        assert_eq!(
+            after,
+            all[2..],
+            "only the rows past the cursor, oldest first"
+        );
+        let last = all.last().and_then(|event| event.seq).expect("last seq");
+        assert!(
+            spine
+                .all_matching_after(&seat, &kinds, last)
+                .await
+                .expect("past the end")
+                .is_empty()
+        );
+    }
+}
+
 /// Issue #119: the seat seeks the anomalies, node show and spine events reads
 /// now use stay on an index whatever else the seat holds. `latest_matching` is
 /// one `(seat, kind)` seek per kind: as one `kind IN (..)` statement the planner

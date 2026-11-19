@@ -1384,6 +1384,7 @@ async fn typing_release_wakes_an_already_waiting_inbox_reader() {
         double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
         federation: None,
+        held: Default::default(),
     };
     let held = hold_inbox(
         State(state.clone()),
@@ -2004,6 +2005,7 @@ async fn typing_hold_projections_follow_terminal_outcomes_and_sequence() {
             double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
             typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
             federation: None,
+            held: Default::default(),
         };
         let seat = SeatId::from("pij-held");
         let other_seat = SeatId::from("pij-other");
@@ -5040,6 +5042,14 @@ impl Spine for FailingPageSpine {
     }
     async fn all_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Vec<Event>> {
         self.inner.all_matching(seat, kinds).await
+    }
+    async fn all_matching_after(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        after: Seq,
+    ) -> Result<Vec<Event>> {
+        self.inner.all_matching_after(seat, kinds, after).await
     }
     async fn latest_matching_message(
         &self,

@@ -94,7 +94,31 @@ pub(crate) struct AppState {
     typing_grace_ms: u64,
     federation: Option<Arc<FederationService>>,
     registration: RegistrationService,
+    /// Each seat's held deliveries, kept in step with its delivery events.
+    held: HeldProjections,
 }
+
+/// One seat's held deliveries as of its delivery events up to `after` (F209).
+#[derive(Clone)]
+struct HeldProjection {
+    after: Seq,
+    holds: BTreeMap<String, HeldEvent>,
+}
+
+impl Default for HeldProjection {
+    /// Before every event: spine sequences start at 1.
+    fn default() -> Self {
+        Self {
+            after: Seq(0),
+            holds: BTreeMap::new(),
+        }
+    }
+}
+
+/// Per seat, so cards for different seats never wait on one another.
+type HeldProjections = Arc<
+    std::sync::Mutex<std::collections::HashMap<SeatId, Arc<tokio::sync::Mutex<HeldProjection>>>>,
+>;
 
 /// HTTP configuration supplied by the daemon composition root.
 #[derive(Clone)]
@@ -593,6 +617,7 @@ fn router_with_optional_federation(
         typing_grace_ms: resolve_typing_grace_ms(),
         federation,
         registration,
+        held: HeldProjections::default(),
     };
     let mut router = Router::new();
     let mut job_token_routes = Vec::new();
@@ -3747,6 +3772,12 @@ pub(crate) async fn session_status_block(
 /// The spine kinds that decide whether a delivery is held right now.
 const HOLD_EVENT_KINDS: [&str; 3] = ["delivery.held", "delivery.released", "delivery.outcome"];
 
+/// The seat's held deliveries now. Its projection is kept per seat and moved
+/// on by only the delivery events added since the last read, so a card's cost
+/// follows what is new, never the seat's whole delivery history (F209: every
+/// `/v1/cards` request replayed 42,915 rows across 120 seats). A read that
+/// fails to decode keeps the projection where it was, so the next read
+/// retries the same rows.
 async fn active_holds(state: &AppState, seat: &SeatId) -> Result<Vec<HeldEvent>> {
     #[derive(Deserialize)]
     struct ProjectedHold {
@@ -3754,47 +3785,63 @@ async fn active_holds(state: &AppState, seat: &SeatId) -> Result<Vec<HeldEvent>>
         held: HeldEvent,
         job_id: Option<pij_core::model::JobId>,
     }
-    let mut holds = BTreeMap::new();
-    // Only this seat's delivery events, on the `(seat, kind)` index. It read
-    // `tail(Some(seat), Seq(0))`, every row the seat had: on SQLite the whole
-    // spine, and for a seat with millions of `bg.lost` rows, all of them
-    // decoded to find a handful of deliveries (plan 188).
-    for event in state
+    let slot = Arc::clone(
+        state
+            .held
+            .lock()
+            .expect("held projections")
+            .entry(seat.clone())
+            .or_default(),
+    );
+    let mut kept = slot.lock().await;
+    // Only this seat's delivery events, on the `(seat, kind, seq)` index, past
+    // the last one applied (plan 188 for the seat and kind seek).
+    let events = state
         .services
         .spine
-        .all_matching(seat, &HOLD_EVENT_KINDS)
-        .await?
-    {
-        match event.kind.as_str() {
-            "delivery.held" => {
-                // Job diagnostics are projected from live rows, not sampled history.
-                // A terminal job must disappear even if it has no release event.
-                let projection: ProjectedHold =
-                    serde_json::from_str(&event.payload).map_err(|error| PijError::Adapter {
-                        adapter: "daemon/http".to_string(),
-                        message: format!("decode held event: {error}"),
-                    })?;
-                if projection.job_id.is_none() {
-                    holds.insert(projection.held.msg_id.clone(), projection.held);
+        .all_matching_after(seat, &HOLD_EVENT_KINDS, kept.after)
+        .await?;
+    if !events.is_empty() {
+        let mut next = kept.clone();
+        for event in events {
+            match event.kind.as_str() {
+                "delivery.held" => {
+                    // Job diagnostics are projected from live rows, not sampled history.
+                    // A terminal job must disappear even if it has no release event.
+                    let projection: ProjectedHold =
+                        serde_json::from_str(&event.payload).map_err(|error| {
+                            PijError::Adapter {
+                                adapter: "daemon/http".to_string(),
+                                message: format!("decode held event: {error}"),
+                            }
+                        })?;
+                    if projection.job_id.is_none() {
+                        next.holds
+                            .insert(projection.held.msg_id.clone(), projection.held);
+                    }
                 }
-            }
-            "delivery.released" => {
-                let released: ReleasedEvent =
-                    serde_json::from_str(&event.payload).map_err(|error| PijError::Adapter {
-                        adapter: "daemon/http".to_string(),
-                        message: format!("decode released event: {error}"),
-                    })?;
-                holds.remove(&released.msg_id);
-            }
-            "delivery.outcome" => {
-                if let Some(msg_id) = terminal_outcome_message(&event.payload)? {
-                    holds.remove(&msg_id);
+                "delivery.released" => {
+                    let released: ReleasedEvent =
+                        serde_json::from_str(&event.payload).map_err(|error| {
+                            PijError::Adapter {
+                                adapter: "daemon/http".to_string(),
+                                message: format!("decode released event: {error}"),
+                            }
+                        })?;
+                    next.holds.remove(&released.msg_id);
                 }
+                "delivery.outcome" => {
+                    if let Some(msg_id) = terminal_outcome_message(&event.payload)? {
+                        next.holds.remove(&msg_id);
+                    }
+                }
+                _ => {}
             }
-            _ => {}
+            next.after = event.seq.map_or(next.after, |seq| seq.max(next.after));
         }
+        *kept = next;
     }
-    Ok(holds.into_values().collect())
+    Ok(kept.holds.values().cloned().collect())
 }
 
 #[derive(Serialize)]
@@ -5002,5 +5049,6 @@ pub(crate) fn test_state(services: Services) -> AppState {
         double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
         federation: None,
+        held: HeldProjections::default(),
     }
 }

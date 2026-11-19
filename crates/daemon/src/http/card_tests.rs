@@ -395,6 +395,80 @@ async fn cards(addr: SocketAddr) -> serde_json::Value {
     envelope.data.expect("cards data")
 }
 
+fn held_ids(cards: &serde_json::Value, seat: &str) -> Vec<String> {
+    let card = cards["cards"]
+        .as_array()
+        .expect("cards array")
+        .iter()
+        .find(|card| card["id"] == seat)
+        .expect("the seat's card");
+    card["held"]
+        .as_array()
+        .expect("held array")
+        .iter()
+        .map(|hold| hold["msg_id"].as_str().expect("msg_id").to_string())
+        .collect()
+}
+
+/// F209: a card's held deliveries cost the delivery events added since the
+/// last read, never the seat's whole delivery history. Every `/v1/cards`
+/// request replayed it: 42,915 rows across 120 seats on the live fleet.
+#[tokio::test]
+async fn the_held_deliveries_read_only_what_is_new_since_the_last_card() {
+    let fleet = fleet().await;
+    for n in 0..300 {
+        let msg_id = format!("m-old-{n}");
+        fleet
+            .spine
+            .append(event("delivery.held", BUSY, 200, held(&msg_id)))
+            .await
+            .expect("held");
+        let released = ReleasedEvent {
+            at_ms: 201,
+            msg_id,
+            seat: BUSY.into(),
+        };
+        fleet
+            .spine
+            .append(event(
+                "delivery.released",
+                BUSY,
+                201,
+                serde_json::to_string(&released).expect("released"),
+            ))
+            .await
+            .expect("released");
+    }
+
+    let first = cards(fleet.addr).await;
+    assert_eq!(held_ids(&first, BUSY), ["m-still-held"]);
+    let cold = fleet.spine.matching_rows();
+    assert!(cold >= 600, "the first card reads the history once: {cold}");
+
+    let again = cards(fleet.addr).await;
+    assert_eq!(held_ids(&again, BUSY), ["m-still-held"]);
+    assert_eq!(
+        fleet.spine.matching_rows(),
+        cold,
+        "nothing new, nothing read"
+    );
+
+    fleet
+        .spine
+        .append(event("delivery.held", BUSY, 300, held("m-new")))
+        .await
+        .expect("new hold");
+    let after = cards(fleet.addr).await;
+    assert_eq!(held_ids(&after, BUSY), ["m-new", "m-still-held"]);
+    assert_eq!(
+        fleet.spine.matching_rows(),
+        cold + 1,
+        "one new row, one read"
+    );
+
+    fleet.server.abort();
+}
+
 fn ids(cards: &serde_json::Value) -> Vec<String> {
     cards
         .as_array()

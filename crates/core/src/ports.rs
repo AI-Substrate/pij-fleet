@@ -261,6 +261,19 @@ pub trait Spine: Send + Sync {
     /// Refuses an empty kind set rather than silently broadening it.
     async fn all_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Vec<Event>>;
 
+    /// [`Self::all_matching`], only the events after `after`, oldest first.
+    ///
+    /// The same `(seat, kind)` seek, starting past `after`: a caller that keeps
+    /// a projection reads only what is new since its last read, so its cost
+    /// follows the rows added since, never the seat's history (F209). Required
+    /// for the reason [`Self::all_matching`] is.
+    async fn all_matching_after(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        after: Seq,
+    ) -> Result<Vec<Event>>;
+
     /// Latest event for one seat and kind whose JSON payload names `msg_id`.
     ///
     /// The spine performs the predicate in its bounded query; callers must not

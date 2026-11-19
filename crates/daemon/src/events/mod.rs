@@ -318,6 +318,15 @@ impl Spine for EventBus {
         self.spine.all_matching(seat, kinds).await
     }
 
+    async fn all_matching_after(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        after: Seq,
+    ) -> Result<Vec<Event>> {
+        self.spine.all_matching_after(seat, kinds, after).await
+    }
+
     async fn latest_matching_message(
         &self,
         seat: &SeatId,
