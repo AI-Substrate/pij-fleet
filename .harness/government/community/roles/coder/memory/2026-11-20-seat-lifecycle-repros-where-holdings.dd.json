@@ -1,0 +1,30 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Open before touching close/revive/registration lifecycle, role holdings or role queues, or before reproducing a fleet lifecycle bug on throwaway seats",
+				"tags": [
+					"f227",
+					"f193",
+					"f200",
+					"f190",
+					"f199",
+					"lifecycle",
+					"repro",
+					"live-store"
+				],
+				"title": "Seat lifecycle repros: where holdings, queues and revives go wrong, and how to prove it cheaply (F227, F193, F200, F190, F199)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- Diagnose from the live store first (sqlite3 \"file:~/.pij-rs/pij.sqlite?mode=ro\"): community_assignments (seat, role, instance, from_at, to_at, release_why), seats (tombstone_reason; columns pid/pane, no proc), spine_events kinds memory.turn (payload.then = closed/skipped/failed), seat.tombstone, seat.put (native_extension_delivery), delivery.outcome (refusal reasons are recorded there). Classify ALL affected seats by path before blaming one commit: F227's \"regression\" was three paths (409 pre-F194, skip on observed-dead mid-turn, observer death) and no commit.\n- Held close: its answer tells the closer to kill the pane, so the seat is usually observed-dead BEFORE the turn ends. Any held-action brake must treat observed-dead differently from owner-close (F227 skip_reason by Action).\n- Seats come back under the SAME id (observed-dead is liftable; revive relaunches through spawn: pre-bind row then spawn bind). Anything keyed on \"seat became live\" must hook registration (resuming || binds_spawned_incarnation), not just the revive endpoint: a Copilot seat's receiver isn't up at revive time (F193 drain_returned + RegistrationService::with_return_hook).\n- Revive: liveness dead is the policy, pane present is the brake; OMP panes close ~2-3 s after the process exits (F200). Never wait under state.spawn_lock (machine-wide); do pre-lock waits that decide nothing.\n- Copilot /clear = new native session in the same process: registration.rs supersedes and mints a new seat id; holdings, role requests and held FYIs stay on the old id (F190, ruled: carry them only on same process + same spawn_id + session-boundary supersede).\n- OMP reload/newSession exist only on ExtensionCommandContext (inside a registered command), so remote reload is refused 'Control context is unarmed' until a human runs /pij (F199/F222-2). Every OMP seat records native_extension_delivery=0; that flag is Copilot-only.\n- Throwaway repro kit: pij-rs spawn --harness omp|copilot --role worker --cwd <trusted> [--trust-folder] --json (fields at .data.id/.pane/.pid, not .data.seat); tmux send-keys \"/quit\" or \"/clear\"; poll pij state + revive; then release holdings, withdraw requests, pij close, tmux kill-pane, /bin/ps -p. Copilot process logs rotate within hours; session events.jsonl keeps session.info banners and session.warning (managed_plugins precedes every receiver lapse seen 19 Nov).\n- Two PRs appending ledger rows at the end of docs/difficulties.md always conflict: rebase, read <file>:conflicts, resolve with @both, rerun the touched suites, range-diff.\n"
+		}
+	]
+}
