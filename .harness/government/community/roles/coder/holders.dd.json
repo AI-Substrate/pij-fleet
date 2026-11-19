@@ -1237,7 +1237,10 @@
 					"harness_session": "01a1f29e-03b8-7604-952e-38a0b4454f95",
 					"instance_key": "f222",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "F222 done (#270 merged, step 3 parked)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-compact-bat",
+					"to": "2026-11-19T10:47:34.056Z",
 					"why": "F222 daemon CPU: per-route counter, then /v1/seats filter-before-project/cache"
 				},
 				{
