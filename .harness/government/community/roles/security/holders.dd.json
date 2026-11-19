@@ -427,6 +427,16 @@
 					"seat": "pij-deliberate-orca",
 					"to": "2026-11-19T06:56:16.219Z",
 					"why": "F220 idempotent nice19 wrapper #262"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T07:42:30.588Z",
+					"harness": "copilot",
+					"harness_session": "c353bc51-64e6-403b-95f2-9dc3768220c0",
+					"instance_key": "263",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-xeric-squid",
+					"why": "F213 proxied seat route from stamped-ancestor lineage #263"
 				}
 			]
 		}
