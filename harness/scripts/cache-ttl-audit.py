@@ -7,14 +7,17 @@ it pairs the seat's previous main-chain call (idle time, context size) with its
 next one (cacheRead share of the prompt: >= 50% warm, < 10% cold, between is
 "partial" and set aside). It then reconstructs two verdicts at send time:
 
-- `old`: the pre-F214 guard. Treats a seat as warm while idle <= 60 min,
-  whatever its TTL; refuses a large (> 400k) seat only past 60 min.
+- `old`: the pre-F214 guard. Refuses a large (> 400k) seat only past 60 min,
+  whatever its TTL. Its implicit "warm while idle <= 60 min" is scored as
+  `heuristic_old_hour_*`; the pre-F214 cache-state view (5m/1h from the
+  seat's record, anything else unknown) as `cache_old_*`.
 - `new`: the F214 rule. The TTL comes from the seat's own record (Copilot's
   native cachePolicyTtlSeconds, or Claude/OMP's 1h/5m write split), then the
   proxy (proxied Copilot Claude: 1 h), then the table (crates/core
   session_status.rs CACHE_TTL_TABLE). Warm while idle < min(TTL, 60 min); a
-  large seat is refused past it (PAST_TTL = Refuse) and warned about past
-  5 min when no rung has a TTL.
+  large seat past it is handled by PAST_TTL (shipped: warn until 60 min,
+  refuse after; `replay` scores every value) and warned about past 5 min when
+  no rung has a TTL.
 
 A "silent cold wake" is a delivery the verdict let through with no word whose
 next call re-wrote the cache. Read-only: it opens the store read-only and reads
@@ -185,7 +188,7 @@ def classify(args):
                 "busy": busy,
                 "old_guard": old_guard(busy, ctx, idle),
                 "new_guard": new_guard(busy, ctx, idle, new_ttl),
-                "old_warm": idle <= COLD_IDLE_MS,
+                "old_hour_warm": idle <= COLD_IDLE_MS,
                 "old_cache": None if old_ttl is None else idle < old_ttl,
                 "new_ttl_ms": new_ttl,
                 "ttl_basis": basis,
@@ -260,7 +263,9 @@ def stats(rows):
     disposition: allowed in silence (`clear`) yet the next call was cold;
     refused (`cold`) or warned (`warn`) yet the next call read the cache.
     cache_*: what the cache-state view (`pij state`, the CACHE column, the FYI
-    flush) said, for every size; it decides no send.
+    flush) said, for every size, over sends whose TTL that view knew; it
+    decides no send. heuristic_old_hour_*: the old guard's fixed-hour idea of
+    warm, which is no cache view.
     """
     decided = [r for r in rows if r["actual"] != "partial" and not r["busy"]]
     cold = lambda r: r["actual"] == "cold"
@@ -275,12 +280,13 @@ def stats(rows):
         out[f"guard_{rule}_stopped_warm"] = sum(1 for r in decided if verdict(r) in ("cold", "warn") and warm(r))
         out[f"guard_{rule}_refused"] = sum(1 for r in decided if verdict(r) == "cold")
         out[f"guard_{rule}_warned"] = sum(1 for r in decided if verdict(r) == "warn")
-    new_known = [r for r in decided if r["new_warm"] is not None]
-    out["cache_old_said_warm_was_cold"] = sum(1 for r in decided if r["old_warm"] and cold(r))
-    out["cache_old_said_cold_was_warm"] = sum(1 for r in decided if not r["old_warm"] and warm(r))
-    out["cache_new_said_warm_was_cold"] = sum(1 for r in new_known if r["new_warm"] and cold(r))
-    out["cache_new_said_cold_was_warm"] = sum(1 for r in new_known if not r["new_warm"] and warm(r))
-    out["cache_new_ttl_unknown"] = len(decided) - len(new_known)
+    out["heuristic_old_hour_said_warm_was_cold"] = sum(1 for r in decided if r["old_hour_warm"] and cold(r))
+    out["heuristic_old_hour_said_cold_was_warm"] = sum(1 for r in decided if not r["old_hour_warm"] and warm(r))
+    for rule, key in (("old", "old_cache"), ("new", "new_warm")):
+        known = [r for r in decided if r[key] is not None]
+        out[f"cache_{rule}_said_warm_was_cold"] = sum(1 for r in known if r[key] and cold(r))
+        out[f"cache_{rule}_said_cold_was_warm"] = sum(1 for r in known if not r[key] and warm(r))
+        out[f"cache_{rule}_ttl_unknown"] = len(decided) - len(known)
     return out
 
 

@@ -35,7 +35,8 @@ def row(ctx, idle, ttl, actual):
         "ctx": ctx, "idle_ms": idle, "new_ttl_ms": ttl,
         "old_guard": audit.old_guard(False, ctx, idle),
         "new_guard": audit.new_guard(False, ctx, idle, ttl, "a"),
-        "old_warm": idle <= audit.COLD_IDLE_MS,
+        "old_hour_warm": idle <= audit.COLD_IDLE_MS,
+        "old_cache": None if ttl not in (300_000, 3_600_000) else idle < ttl,
         "new_warm": None if ttl is None else idle < min(ttl, audit.COLD_IDLE_MS),
     }
 rows = [
@@ -60,9 +61,15 @@ print(json.dumps({"stats": audit.stats(rows), "replay": audit.replay(rows)}))
 				guard_new_stopped_warm: 2,
 				guard_new_refused: 2,
 				guard_new_warned: 1,
-				// The cache view's misses are their own columns, not guard errors.
+				// The cache views' misses are their own columns, not guard errors.
 				cache_new_said_cold_was_warm: 2,
 				cache_new_ttl_unknown: 1,
+				// The old cache view reads the seat's 5m/1h, not the old guard's hour.
+				cache_old_said_warm_was_cold: 0,
+				cache_old_said_cold_was_warm: 2,
+				cache_old_ttl_unknown: 1,
+				heuristic_old_hour_said_warm_was_cold: 2,
+				heuristic_old_hour_said_cold_was_warm: 0,
 			},
 			replay: {
 				a: {
