@@ -39,5 +39,6 @@
 - [2026-11-19 PR260 rebase-only approval at1139cfca](2026-11-19-pr260-rebase-1139cfca.dd.md): review-close (F219, review, rebase)
 - [2026-11-19 PR261 final version binding adds no launches](2026-11-19-pr261-final-version-binding.dd.md): review-close (F208, review, update)
 - [2026-11-19 PR261 updater on-demand source cost only](2026-11-19-pr261-updater-demand-cost.dd.md): review-close (F208, review, update)
+- [2026-11-19 PR262 final priority wrapper PASS](2026-11-19-pr262-final-priority-pass.dd.md): f9cb2d1 convergence verified; actual updater recipe stubbed at19; ps-failure edge retained (pr262, performance, niceness)
 - [2026-11-19 PR262 held: per-command priority cost](2026-11-19-pr262-held-priority-cost.dd.md): nice19 execs in place; shared-build queries per command, not per batch; await convergence head (pr262, performance, niceness)
 <!-- /pij:generated -->
