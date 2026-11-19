@@ -1229,6 +1229,16 @@
 					"seat": "pij-compact-bat",
 					"to": "2026-11-19T08:24:22.926Z",
 					"why": "F215 spawn trust-prompt + F216 pij_close E-NOID outside project"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T08:30:12.412Z",
+					"harness": "omp",
+					"harness_session": "01a1f29e-03b8-7604-952e-38a0b4454f95",
+					"instance_key": "f222",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-compact-bat",
+					"why": "F222 daemon CPU: per-route counter, then /v1/seats filter-before-project/cache"
 				}
 			]
 		}
