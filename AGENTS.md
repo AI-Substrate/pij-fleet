@@ -151,7 +151,7 @@ citation disputes, all of which resolved as neither party being wrong.)
 3. Smoke: `just smoke` before merging.
 4. **Before declaring any task done — or before ship — run `harness checks`.**
    The engineering-harness gate: it runs the full deterministic **signal
-   inventory** (local-path portability → project docs (ddocs) → workstream coverage → pij skill structure → typecheck → lockfile allowlist → lint →
+   inventory** (local-path portability → OMP worktree config → project docs (ddocs) → workstream coverage → pij skill structure → typecheck → lockfile allowlist → lint →
    test → Copilot native contracts → route inventory → Rust gate → smoke → commit-trailer
    attribution) as individual stages and reports a per-sensor verdict — and
    unlike `just self-check` it runs **all** sensors, so one invocation surfaces
@@ -209,6 +209,15 @@ citation disputes, all of which resolved as neither party being wrong.)
   starts a cargo build fails, and `harness/scripts/recipe-cost.test.ts` fails on
   an un-niced test or build recipe, cargo outside shared-build (bar the niced
   release deploy builds), or a target not from `cargo-target.sh`.
+- **Worktrees are plain checkouts (F219).** The committed project layer
+  `.omp/config.yml` sets `worktree.clone: false`, so OMP's rewrite of
+  `git worktree add` (and `github pr_checkout`) no longer clones the checkout,
+  `target/` and `node_modules` included; deps come through `just worktree-deps`,
+  cargo through the shared target. `just omp-config-check` (a `harness checks`
+  stage) fails if the file or OMP's own answer from the repo root says otherwise.
+  It is project-scoped: `just link` never links it, and `~/.omp` is not touched.
+  OMP reads it from the OMP session's start directory (and an explicit
+  `omp worktree add`'s cwd): start OMP seats at the repo root.
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
 - **`just pr-freeze <pr>`**: is a PR head final for verdicts? Run by hand before each verdict
