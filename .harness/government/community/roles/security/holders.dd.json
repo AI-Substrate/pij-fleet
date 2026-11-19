@@ -362,6 +362,16 @@
 					"seat": "pij-magnificent-reindeer",
 					"to": "2026-11-19T05:22:47.349Z",
 					"why": "same seat: C21 public-text check on a docs/test-only PR"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T05:29:03.957Z",
+					"harness": "copilot",
+					"harness_session": "62dda8ac-73c4-4f85-bdd1-5f7de7b72c06",
+					"instance_key": "257",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-deliberate-orca",
+					"why": "F217 #257 security (shell scripts, recipes)"
 				}
 			]
 		}
