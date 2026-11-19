@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f28a-cc5d-7132-b5ab-6e0b95e01980",
+				"date": "2026-11-19",
+				"head": "22fca9571e0538b10f7f481caa9cf66069798196",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:261",
+				"writer": "pij-compulsory-junglefowl",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just test harness/scripts/update-copilot.test.ts --reporter=verbose",
+					"exit_code": 0,
+					"log": "All 10 tests pass, including old version, missing version and unrecorded version; recipe supplies nice 19; only stubbed updates"
+				},
+				{
+					"command": "just update-copilot (all executable seams stubbed)",
+					"exit_code": 1,
+					"log": "Original stale-report reproduction now correctly refuses: installed 1.0.115-0, report version/verified 1.0.114-0; prints do not reload and never may reload; no real update"
+				},
+				{
+					"command": "just pr-freeze 261",
+					"exit_code": 0,
+					"log": "FINAL at 22fca9571e0538b10f7f481caa9cf66069798196; clean exact-head worktree, latest checks pass; no builds/cargo/target"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #261: final round-2 correctness review\n\nHead: 22fca9571e0538b10f7f481caa9cf66069798196\nCompared with round 1: 549bb717d539bd8bb37a981274497d18d7a217af\nVerdict: PASS\n\nR261-001 is closed. No remaining normal-use path was found that prints may reload without a successful contract report naming and recording the post-update installed version. No new blocking bug found in the two-file delta. This completes the final C34 review round.\n\n## R261-001 verification\n\nThe existing exit-code/status guard still runs first. The new guard then requires both report.version and report.verified to equal after. Undefined or mismatched fields stop with do not reload and a retry command. The success message now uses report.version rather than relabeling evidence with after.\n\nReplayed the original standalone reproduction using only safe executable stubs:\n\n- fake CLI reports 1.0.115-0;\n- update executable is /usr/bin/true;\n- fake contract exits 0 with seven passing checks, version=1.0.114-0 and verified=1.0.114-0.\n\nThe new updater returned exit 1 and:\n\n```\nupdate-copilot: do not reload: the SDK would drop pij_send/hooks. The contract passed on Copilot 1.0.114-0 and recorded 1.0.114-0, but Copilot 1.0.115-0 is installed: run just update-copilot again\n```\n\nIt did not print may reload. This is the same older-report discrepancy that incorrectly returned success in round 1. The private probe files were removed after use.\n\nThe normal contract is still freshly spawned with --record --json; it does not read a cached result. Its unchanged producer writes the version record only when all checks pass and returns that recorded version. Together with the new consumer binding, the normal sequential workflow now has the required fresh-pass/recorded-version evidence before approval. The command is not a lock against another process replacing the CLI later; this verdict does not claim that broader installation-concurrency guarantee.\n\n## Focused tests\n\nAfter the worktree dependency helper, ran:\n\n```\njust test harness/scripts/update-copilot.test.ts --reporter=verbose\n```\n\nAll 10 tests passed. The cases explicitly include an older-version report, a report naming no version, a checked-but-unrecorded version, ordinary update/pass, no-update/pass, failed checks, unreadable report, and pinned verdict wording. The just recipe supplied nice 19; no outer nice was added.\n\nThe actual SDK contract implementation and its previously reviewed barriers/framing are unchanged in this delta, so its round-1 7/7 real-SDK result is carried as prior evidence, not claimed as a new execution.\n\n## Finality and scope\n\n`just pr-freeze 261` returned FINAL twice at the exact full head: main base, CLEAN, matching heads and all latest effective checks passed. CI run 44473445886 succeeded at this head; both Node matrix jobs and Rust gates passed, and the latest Delivers check passed.\n\n`git diff --check 549bb717d539bd8bb37a981274497d18d7a217af..HEAD` passed. Tracked checkout files remain clean and target/ remains absent.\n\nNo real copilot update, builds, cargo, general test suites, global configuration edits or real version-record writes were run. The two-file delta adds comparisons, a failure diagnostic and tests only: no new process launches, shell evaluation, timer, loop or daemon behavior. The same-user executable seam boundary is unchanged.\n\nHarness feedback: the receipt-to-version invariant is now directly encoded in three negative regression cases, so the prior false reload authorization cannot silently return.\n"
+		}
+	]
+}
