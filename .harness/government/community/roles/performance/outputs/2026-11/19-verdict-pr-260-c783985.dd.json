@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f274-d139-7410-b3cb-bb12e321faee",
+				"date": "2026-11-19",
+				"head": "c783985cd54ce4aca0a7f29be16cf0fd93d7e9ab",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "performance",
+				"subject": "pr:260",
+				"writer": "pij-public-cobra",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #260 performance verdict — final round\n\n**PASS** at `c783985cd54ce4aca0a7f29be16cf0fd93d7e9ab`.\nRequest: `01a1f274-d139-7410-b3cb-bb12e321faee`.\n\nNo new performance concern in the four-file delta from `c270201970dbd55bf1f11c9ed3d7d2491c5be8e6`. The change is parser bookkeeping, two negative fixtures and corrected scope/side-effect documentation. No subprocess site, entry point, timer, hook, poll or process environment changed.\n\n## Executed proof\n\nVerified the detached worktree HEAD equals the full subject SHA and consumed exact-head green CI statuses. Used `just worktree-deps` to link 165 existing dependency entries; no install or build.\n\n- `just test harness/scripts/omp-config-check.test.ts`: **exit 0; 9/9 passed**, one file, **682 ms** total; test body **494 ms**, installed-OMP repo case **485 ms**. This includes the wrongly nested clone key and false-then-true override fixtures. The recipe applied its own `/usr/bin/nice -n 19`; no outer nice.\n- `/usr/bin/nice -n 19 /usr/bin/time -lp node --import tsx harness/scripts/omp-config-check.ts`: **exit 0**, live sensor reports `worktree.clone false`; **1.02 s real, 0.56 s user, 0.09 s system**; time-reported maximum resident set size **229,539,840 bytes**. This directly exercises the sensor CLI through a niced Node/tsx entrypoint, not a full composite gate. The time resource statistic is not persistent fleet RSS or a sum of simultaneous child RSS.\n- `test ! -e target`: passed; no worktree target created.\n\nThe approximately one-second sensor remains suitable for `--quick`. These are current-load samples, not a controlled performance benchmark against the prior 0.86-second recipe sample (the invocation also differs).\n\n## Unchanged resource contract\n\nThe parser remains a single linear scan of the small committed config. It now remembers direct-child indentation and the latest clone value rather than returning at the first false occurrence. Additional state is two scalars; no new file walk, subprocess, timer or persistent cache.\n\nThe two added negative fixtures inject the no-OMP function; they add **zero launches**. The pre-existing repo fixture still makes one live OMP query when installed. The production sensor still has one `execFileSync('omp', ['config','get','worktree.clone','--json'])` site, unchanged. Thus cost remains one OMP query per standalone sensor invocation and normally two per complete quick/self-check gate including its Vitest suite. No per-seat multiplier or recurring rate: zero added launches/s at rest.\n\nOn-demand PATH lookup for OMP, finite checks-stage scheduling, and the lack of an explicit query timeout are unchanged. No repeated-path launch is introduced; daemon launch counters and spawn_sites.rs are unaffected. No new builds or worktree-clone operations run as part of this parser delta.\n\nThe updated comments correctly stop claiming the live OMP query is provably read-only on global state: OMP may initialize/migrate its own settings. This review made no explicit settings writes and does not claim to have proved the absence of OMP-internal global side effects. Session-start-directory and explicit worktree-command cwd wording is clarified, not implemented by a new runtime path.\n\nNo local cargo, builds, full gates, source mutation or disk-savings experiment ran. Overall parser acceptance of alternate YAML styles remains the correctness reviewer's scope; this verdict confirms the exercised regressions and unchanged cost, not a full YAML-parser equivalence proof.\n"
+		}
+	]
+}
