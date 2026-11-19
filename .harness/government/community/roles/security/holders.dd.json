@@ -165,7 +165,10 @@
 					"harness": "copilot",
 					"harness_session": "b92b0286-68d3-4250-a4a4-e173b7544aac",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "dead seat (F227)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-overall-mammal",
+					"to": "2026-11-19T09:47:45.543Z",
 					"why": "pm-004: verdict on #241 (ws004 s03)"
 				},
 				{
