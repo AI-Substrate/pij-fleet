@@ -3711,10 +3711,10 @@ fn render_directory_at(
                 instance
                     .map(|key| format!(" ({})", render::name(key)))
                     .unwrap_or_default(),
-                match dead["retired"]["reason"].as_str() {
-                    Some(reason) => format!(
+                match dead["retired"]["kind"].as_str() {
+                    Some(kind) => format!(
                         "{} {}",
-                        render::word(reason),
+                        render::word(kind),
                         local_time(&dead["retired"]["at"], &zone)
                     ),
                     None => "seat unknown".to_string(),
@@ -5405,7 +5405,7 @@ mod tests {
                 {"id": "historian", "kind": "specialist", "holders": "one", "live": [],
                  "dead": [
                     {"seat": "pij-d", "instance": "", "since": "2026-11-05T23:30:00Z",
-                     "retired": {"reason": "observed-dead", "at": 1_793_934_000_000_u64},
+                     "retired": {"reason": "superseded by `pij-f` at a native session boundary (same process)", "kind": "superseded", "at": 1_793_934_000_000_u64},
                      "command": "pij directory release historian pij-d --why '<why>' --project fleet"},
                     {"seat": "pij-e", "instance": "7", "since": "2026-11-05T23:30:00Z", "retired": null, "command": null}
                  ],
@@ -5436,7 +5436,7 @@ fleet: 3 role(s); prime: pij-prime (no prime role document yet)
   pm (specialist, one): pij-c since 2026-11-06 09:30 +10:00 on m
     memory: no notes
   historian (specialist, one): no live holder
-    open holding on dead seat pij-d (observed-dead 2026-11-06 13:00 +10:00); end it: pij directory release historian pij-d --why '<why>' --project fleet
+    open holding on dead seat pij-d (superseded 2026-11-06 13:00 +10:00); end it: pij directory release historian pij-d --why '<why>' --project fleet
     open holding on dead seat pij-e (7) (seat unknown); end it: release it by its raw key from --json
     memory: 12 note(s), newest 2026-10-01
     cold, with memory to call on: pij send role:historian --body-file x

@@ -1073,7 +1073,8 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
             Arc::clone(&services.event_bus),
             Arc::clone(&services.roles),
         )
-        .with_spawn_waits(Arc::clone(&services.spawn_waits)),
+        .with_spawn_waits(Arc::clone(&services.spawn_waits))
+        .with_return_hook(delivery::role_send::return_hook(&services)),
     );
     let codex_binder = Arc::new(
         codex_bind::CodexBinder::new(
@@ -1083,7 +1084,8 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
             Arc::clone(&services.roles),
             Arc::clone(&services.tmux),
         )
-        .with_spawn_waits(Arc::clone(&services.spawn_waits)),
+        .with_spawn_waits(Arc::clone(&services.spawn_waits))
+        .with_return_hook(delivery::role_send::return_hook(&services)),
     );
 
     let drain = Arc::new(

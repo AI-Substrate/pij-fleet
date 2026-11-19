@@ -679,9 +679,9 @@ async fn live_seats(
 }
 
 /// F227: each open holding on a seat that is not live gets how its seat ended
-/// (`retired`: the tombstone's reason and time), or `null` for a seat the
-/// registry no longer knows or could not read. One registry read per dead
-/// seat, only when the view is asked for.
+/// (`retired`: the tombstone's reason, its [`retired_kind`] and time), or
+/// `null` for a seat the registry no longer knows or could not read. One
+/// registry read per dead seat, only when the view is asked for.
 async fn how_dead_seats_ended(state: &AppState, view: &mut Value) {
     let seats: std::collections::BTreeSet<String> = view["roles"]
         .as_array()
@@ -699,10 +699,13 @@ async fn how_dead_seats_ended(state: &AppState, view: &mut Value) {
             .get(&SeatId::from(seat.as_str()))
             .await
         {
-            Ok(Some(row)) => row.tombstoned_at.map_or(
-                Value::Null,
-                |at| json!({"reason": row.tombstone_reason, "at": at}),
-            ),
+            Ok(Some(row)) => row.tombstoned_at.map_or(Value::Null, |at| {
+                json!({
+                    "reason": row.tombstone_reason,
+                    "kind": retired_kind(row.tombstone_reason.as_deref()),
+                    "at": at,
+                })
+            }),
             _ => Value::Null,
         };
         ended.insert(seat, retired);
@@ -716,6 +719,31 @@ async fn how_dead_seats_ended(state: &AppState, view: &mut Value) {
                 .unwrap_or(Value::Null);
             dead["retired"] = retired;
         }
+    }
+}
+
+/// A tombstone reason as one word the human view can print (F193): many
+/// reasons are sentences (`superseded by … at a native session boundary`, an
+/// owner's close with its text), which the view's word grammar refuses. The
+/// raw reason stays in `reason`.
+fn retired_kind(reason: Option<&str>) -> &str {
+    match reason {
+        Some(reason) if pij_core::model::is_owner_close(reason) => "owner-close",
+        Some(reason)
+            if reason.starts_with("superseded")
+                || reason.starts_with("native registration released") =>
+        {
+            "superseded"
+        }
+        Some(reason)
+            if (1..=32).contains(&reason.len())
+                && reason
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'-') =>
+        {
+            reason
+        }
+        _ => "retired",
     }
 }
 
@@ -2161,6 +2189,42 @@ pub(super) fn refused(refusal: &Refusal) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// F193: the dead-holder line prints one word for how a seat ended, never
+    /// `invalid (N chars)`: a supersede and an owner's close with its text
+    /// are sentences; a one-word reason prints as itself.
+    #[test]
+    fn a_tombstone_reason_prints_as_one_word() {
+        for (reason, kind) in [
+            (
+                Some(
+                    "superseded by `pij-associated-dormouse` at a native session boundary (same process)",
+                ),
+                "superseded",
+            ),
+            (
+                Some("superseded: pane %4 taken by `pij-x`; its recorded process is gone"),
+                "superseded",
+            ),
+            (
+                Some(
+                    "native registration released its previous binding to `pij-x`; queued work retains its original address",
+                ),
+                "superseded",
+            ),
+            (Some("owner-close: revive/close repro done"), "owner-close"),
+            (Some("owner-close"), "owner-close"),
+            (Some("observed-dead"), "observed-dead"),
+            (
+                Some("process-dead-and-pane-absent"),
+                "process-dead-and-pane-absent",
+            ),
+            (Some("Something Else; with $(text)"), "retired"),
+            (None, "retired"),
+        ] {
+            assert_eq!(retired_kind(reason), kind, "{reason:?}");
+        }
+    }
 
     fn argv(tokens: &[&str]) -> Vec<String> {
         tokens.iter().map(|token| (*token).to_string()).collect()

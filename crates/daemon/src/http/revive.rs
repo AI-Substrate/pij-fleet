@@ -693,6 +693,8 @@ pub(super) async fn revive_seat(
             None,
         )
         .await;
+        // F193: its roles' requests queued while it was gone come back to it.
+        crate::delivery::role_send::drain_returned(&state.services, &seat);
     }
     response
 }

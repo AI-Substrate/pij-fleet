@@ -129,9 +129,17 @@ pub(crate) struct RegistrationService {
     /// F211: launches whose hand-off to their caller is not settled; absent
     /// in services that never bind a spawned seat.
     spawn_waits: Option<Arc<SpawnWaits>>,
+    /// F193: told the id of a seat a registration brought back (a lifted
+    /// tombstone, a resumed native session, or a bound spawn such as a
+    /// revive's relaunch), after the commit, so its roles' queues drain to
+    /// it. Absent in services with no role queues.
+    returned: Option<ReturnHook>,
     /// F197: parent pids, read in-process, for the pane-holder-child brake.
     parents: ParentReader,
 }
+
+/// What a registration that brought a seat back calls (F193).
+pub(crate) type ReturnHook = Arc<dyn Fn(&SeatId) + Send + Sync>;
 
 /// What a native claim carries into the locked registration: a verified
 /// spawn prebind, if one exists, and the host's ancestors as the daemon
@@ -185,6 +193,7 @@ impl RegistrationService {
             native_receivers: None,
             attempts: Arc::default(),
             spawn_waits: None,
+            returned: None,
             parents: Arc::new(real_parent),
         }
     }
@@ -330,6 +339,12 @@ impl RegistrationService {
     /// Signal bound spawned seats to the launches that wait for them (F211).
     pub(crate) fn with_spawn_waits(mut self, waits: Arc<SpawnWaits>) -> Self {
         self.spawn_waits = Some(waits);
+        self
+    }
+
+    /// Drain a returning seat's role queues through `hook` (F193).
+    pub(crate) fn with_return_hook(mut self, hook: ReturnHook) -> Self {
+        self.returned = Some(hook);
         self
     }
 
@@ -1624,6 +1639,15 @@ impl RegistrationService {
                 })
                 .await
                 .map_err(RegistrationError::Runtime)?;
+        }
+        // F193: a seat brought back (its tombstone lifted, its native session
+        // resumed, or the incarnation a spawn or revive launched bound) takes
+        // what its roles queued while it was gone. After the commit, so the
+        // drain finds it live with its receiver attested.
+        if (resuming || binds_spawned_incarnation)
+            && let Some(returned) = &self.returned
+        {
+            returned(&descriptor.id);
         }
         Ok((descriptor, binding))
     }
@@ -3620,6 +3644,66 @@ mod tests {
             resumes,
             ["seat.native-resumed"],
             "one fact per native transition"
+        );
+    }
+
+    /// F193: a registration that brings a seat back (its tombstone lifted, or
+    /// the incarnation a spawn or revive launched binding its prebind) tells the
+    /// return hook once, after the commit, so its roles' queues drain to it. A
+    /// renew of the live seat brings nothing back and tells it nothing.
+    #[tokio::test]
+    async fn a_registration_that_brings_a_seat_back_tells_the_return_hook() {
+        let returned = Arc::new(std::sync::Mutex::new(Vec::<SeatId>::new()));
+        let hook = |seen: &Arc<std::sync::Mutex<Vec<SeatId>>>| -> super::ReturnHook {
+            let seen = Arc::clone(seen);
+            Arc::new(move |seat: &SeatId| seen.lock().unwrap().push(seat.clone()))
+        };
+
+        let mut old = native_seat("pij-durable");
+        old.tombstoned_at = Some(1);
+        old.tombstone_reason = Some("observed-dead".into());
+        old.native_extension_delivery = false;
+        let (service, registry) = native_service(vec![old.clone()], native_liveness()).await;
+        let service = service.with_return_hook(hook(&returned));
+        let mut claim = native_claim("");
+        claim.pid = Some(OTHER_HOST.pid);
+        claim.proc_start = Some(OTHER_HOST.proc_start);
+        claim.pane = None;
+        let resumed = attest(&service, claim.clone(), Some(SESSION), &native_tmux())
+            .await
+            .expect("the retired session resumes");
+        assert_eq!(*returned.lock().unwrap(), [old.id.clone()]);
+        assert_eq!(registry.get(&old.id).await.unwrap(), Some(resumed));
+        attest(&service, claim, Some(SESSION), &native_tmux())
+            .await
+            .expect("renew");
+        assert_eq!(
+            returned.lock().unwrap().len(),
+            1,
+            "a renew brings nothing back"
+        );
+
+        let bound = Arc::new(std::sync::Mutex::new(Vec::<SeatId>::new()));
+        let mut prebind = native_seat("pij-preallocated");
+        prebind.proc = None;
+        prebind.harness_session = None;
+        prebind.native_extension_delivery = false;
+        prebind.spawn_id = Some("spawn-137".to_string());
+        let (service, _) = native_service(vec![prebind.clone()], native_liveness()).await;
+        let service = service.with_return_hook(hook(&bound));
+        let mut claim = precedence_claim("pij-preallocated", None, None, 1_000);
+        claim.spawn_id = prebind.spawn_id.clone();
+        attest(&service, claim.clone(), Some(SESSION), &native_tmux())
+            .await
+            .expect("the launched incarnation binds its prebind");
+        assert_eq!(*bound.lock().unwrap(), [prebind.id.clone()]);
+        attest(&service, claim, Some(SESSION), &native_tmux())
+            .await
+            .expect("renew");
+        assert_eq!(
+            bound.lock().unwrap().len(),
+            1,
+            "a renew brings nothing back"
         );
     }
 
