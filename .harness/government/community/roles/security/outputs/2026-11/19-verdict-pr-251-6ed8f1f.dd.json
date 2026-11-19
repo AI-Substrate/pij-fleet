@@ -1,0 +1,50 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f198-b878-70b1-9051-f77e8a0e0793",
+				"date": "2026-11-19",
+				"head": "6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:251",
+				"writer": "pij-formidable-vicuna",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 251",
+					"exit_code": 0
+				},
+				{
+					"command": "gh run view 44444211355 --job 135292259680 --log",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44444211355/job/135292259680"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14492757970/zip | python (ZIP SHA-256 and JUnit inspection)",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44444211355/artifacts/14492757970"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS: security review of PR #251 at 6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5 against main f06f00f56b30f0ea8c7e6e37c37ea5cba283329c. No introduced security vulnerabilities found.\n\nHead carry-forward: the complete 19-file PR was first reviewed at f2b8d0c25f973f4fdcfeb09d577d12ab1f94bd41 against f99a1f9e03d5536fa1a893036abd217d12365c86. The immediate pre-publication pr-freeze caught the replacement head with CI still running, so no old-head verdict was published. A retained-context comparison then verified that all 19 scoped PR files have identical added/deleted bytes between the old and replacement PR patches: 17 Rust production/test files and two documentation files. Range-diff shows documentation context from merged #249 only. All 12 head-to-head changed-file patches match main's old-base-to-new-base changes. Thus no new #251 logic or dependency delta was introduced by the rebase; the completed security review carries forward.\n\nScoped source findings: cards retain the bearer-authenticated route boundary and closed peer allowlist, with no new exposure beyond existing same-account visibility under C33. Held output remains typed metadata, not message bodies. The private server-owned cursor is not request input. The replacement-head query retains mandatory seat/kind predicates with seat, kinds and cursor bound as parameters; empty kinds and signed-range overflow fail closed (crates/store/src/spine.rs:87-100,180-219). EventBus forwards all three scope arguments (crates/daemon/src/events/mod.rs:321-327).\n\nPer-seat cache/error boundary: exact SeatId keys and a per-seat async mutex serialize query/fold/commit for that seat, without sharing state across router authority. Events are folded into a clone and kept state is replaced only after clean decoding; a decode failure cannot advance after or partially poison holds (replacement object crates/daemon/src/http/mod.rs:3793-3842; crates/store/src/spine.rs:213-219).\n\nThe original complete trace also verified sequence allocation inside the committing BEGIN IMMEDIATE write transaction, AUTOINCREMENT seq, and all 14 implementations of the required no-default port method preserving seat/kind/cursor filters. These scoped patches are unchanged. No changed shell, rendering, grammar, launch or authority boundary was found.\n\nPublic content: manual inspection covered all changed lines across all 19 scoped files, including both documentation changes. No introduced credentials, keys, private transcript/log content, or dependency/source references were found. No automated secret scanner was run and no credential files were read. Main's advancement includes #249, separately security-reviewed at its final head; it was not re-reviewed here.\n\nIndependent replacement-head CI: run 44444211355 attempt 1 directly matches 6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5 and succeeded. All five PR checks pass. Successful rust-test job 135292259680 reports 2523 passed, 6 skipped. Its own upload receipt identifies JUnit artifact 14492757970; downloaded ZIP SHA-256 dc5600291f02f7a3b762f4da297de18911a172a9701d443b584c97dfe82f9074 matches. JUnit confirms the new incremental-card and indexed-seek regressions, incremental terminal-outcome projection, no-tail guard, and both #249 round-two regressions pass on this combined base.\n\nLimits: static security review, exact-object carry-forward comparison and Linux CI only; zero local builds/tests/cargo runs, mutations, runtime configuration changes or exploit probes. No local harness boot/checks because this packet mandates CI-only build/test proof. General projection lifecycle/pruning, measured fleet cost and post-merge/bounce live CPU proof remain with reviewer/performance. This is a security-only verdict. Publication is gated by a fresh pr-freeze at the replacement head.\n"
+		}
+	]
+}
