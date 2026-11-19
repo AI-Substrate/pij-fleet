@@ -2121,6 +2121,173 @@ async fn a_dead_seats_open_holding_is_named_never_counted_and_a_revive_restores_
     rig.server.abort();
 }
 
+/// F227: project fleet (pm-001 and pa one-holder, reviewer many-holder) with
+/// `holdings` assigned, then pij-holder observed dead. Returns pij-holder's
+/// live row, which a revive puts back.
+async fn dead_holder_fleet(rig: &Rig, repo: &Repo, holdings: &[(&str, &str)]) -> SeatDescriptor {
+    with_roles(rig.addr, repo).await;
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "pa",
+            "--title",
+            "pa",
+            "--kind",
+            "general",
+            "--lifecycle",
+            "long-lived",
+            "--holders",
+            "one",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    for (target, seat) in holdings {
+        let assigned = call(
+            rig.addr,
+            "/v1/directory",
+            &["directory", "assign", target, seat, "--why", "review"],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(assigned["ok"], true, "{assigned}");
+    }
+    let alive = rig
+        .services
+        .registry
+        .get(&"pij-holder".into())
+        .await
+        .unwrap()
+        .unwrap();
+    rig.services
+        .registry
+        .tombstone(&"pij-holder".into(), "observed-dead")
+        .await
+        .unwrap();
+    alive
+}
+
+/// Whether `msg_id` sits in `seat`'s delivery queue, sent by the test caller.
+async fn queued_for(rig: &Rig, seat: &str, msg_id: &str) -> bool {
+    queued_from(rig, seat, SEAT)
+        .await
+        .iter()
+        .any(|(_, id)| id == msg_id)
+}
+
+/// F227: a role whose only holder is observed dead has no live holder. The
+/// send queues as a request, wakes the PA, names the dead holder with the
+/// release that ends it, and nothing reaches the dead seat. A revive lifts
+/// the tombstone and the next send is delivered to it again.
+#[tokio::test]
+async fn a_role_send_to_a_dead_holder_queues_and_a_revive_delivers_again() {
+    let repo = repo("pij-role-send-dead");
+    let rig = rig(Arc::new(NoHook)).await;
+    let alive = dead_holder_fleet(
+        &rig,
+        &repo,
+        &[("pa", "pij-second"), ("pm-001", "pij-holder")],
+    )
+    .await;
+    let queued = send_to(rig.addr, &repo.main, "role:pm-001", "req-dead", json!({})).await;
+    assert_eq!(queued["ok"], true, "{queued}");
+    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
+    assert!(queued["data"]["request"]["holder"].is_null(), "{queued}");
+    assert_eq!(queued["data"]["woke"]["seat"], "pij-second", "{queued}");
+    let reason = queued["data"]["outcome"]["reason"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        reason.contains(
+            "pij-holder holds pm-001 but its seat is not live (end it: pij directory release pm-001 pij-holder --why '<why>' --project fleet)"
+        ),
+        "{queued}"
+    );
+    assert!(!queued_for(&rig, "pij-holder", "req-dead").await);
+
+    rig.services.registry.put(alive).await.unwrap();
+    let back = send_to(rig.addr, &repo.main, "role:pm-001", "req-back", json!({})).await;
+    assert_eq!(back["ok"], true, "{back}");
+    assert_eq!(back["data"]["request"]["holder"], "pij-holder", "{back}");
+    assert_ne!(back["data"]["request"]["state"], "queued", "{back}");
+    assert!(queued_for(&rig, "pij-holder", "req-back").await);
+    rig.server.abort();
+}
+
+/// F227: with one dead and one live holder, a role send goes to the live one,
+/// never refused as several holders, and nothing reaches the dead seat.
+#[tokio::test]
+async fn a_role_send_skips_a_dead_holder_for_the_live_one() {
+    let repo = repo("pij-role-send-dead-live");
+    let rig = rig(Arc::new(NoHook)).await;
+    dead_holder_fleet(
+        &rig,
+        &repo,
+        &[
+            ("reviewer/196", "pij-holder"),
+            ("reviewer/197", "pij-second"),
+        ],
+    )
+    .await;
+    let sent = send_to(rig.addr, &repo.main, "role:reviewer", "req-live", json!({})).await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    assert_eq!(sent["data"]["request"]["holder"], "pij-second", "{sent}");
+    assert_eq!(sent["data"]["request"]["instance"], "197", "{sent}");
+    assert!(queued_for(&rig, "pij-second", "req-live").await);
+    assert!(!queued_for(&rig, "pij-holder", "req-live").await);
+    rig.server.abort();
+}
+
+/// F227: an instance whose holder is dead queues, named with its release; it
+/// never reaches the dead seat, nor the live holder of another instance.
+#[tokio::test]
+async fn an_instance_whose_holder_is_dead_queues_and_reaches_no_one() {
+    let repo = repo("pij-role-send-dead-instance");
+    let rig = rig(Arc::new(NoHook)).await;
+    dead_holder_fleet(
+        &rig,
+        &repo,
+        &[
+            ("reviewer/196", "pij-holder"),
+            ("reviewer/197", "pij-second"),
+        ],
+    )
+    .await;
+    let sent = send_to(
+        rig.addr,
+        &repo.main,
+        "role:reviewer/196",
+        "req-196",
+        json!({}),
+    )
+    .await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    assert_eq!(sent["data"]["request"]["state"], "queued", "{sent}");
+    assert!(sent["data"]["request"]["holder"].is_null(), "{sent}");
+    let reason = sent["data"]["outcome"]["reason"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        reason.contains(
+            "pij-holder holds reviewer/196 but its seat is not live (end it: pij directory release reviewer/196 pij-holder --why '<why>' --project fleet)"
+        ),
+        "{sent}"
+    );
+    assert!(!queued_for(&rig, "pij-holder", "req-196").await);
+    assert!(!queued_for(&rig, "pij-second", "req-196").await);
+    rig.server.abort();
+}
+
 /// Plan 202 AC2: assign, a compact control and a revive each hold the table
 /// once for a role holder; a seat holding no role gets nothing.
 #[tokio::test]
