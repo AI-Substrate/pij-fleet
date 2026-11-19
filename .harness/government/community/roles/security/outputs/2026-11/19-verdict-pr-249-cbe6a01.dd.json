@@ -1,0 +1,50 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f198-b704-7d72-ab3e-1ca104dae587",
+				"date": "2026-11-19",
+				"head": "cbe6a01d2bd9ad72f8b3e3c0fb839967804d8959",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:249",
+				"writer": "pij-formidable-vicuna",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 249",
+					"exit_code": 0
+				},
+				{
+					"command": "gh run view 44442078410 --job 135287030553 --log",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44442078410/job/135287030553"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14492720598/zip | python (ZIP SHA-256 and JUnit inspection)",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44442078410/artifacts/14492720598"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS: final-round security delta for PR #249 at cbe6a01d2bd9ad72f8b3e3c0fb839967804d8959. No introduced security vulnerabilities found. C34 scope: the R249-001 repair and its tests/docs, not a reopened round-one review or PR #251.\n\nComparison: range-diff isolated the round-two commit from the rebase. Original and rebased crates patches have identical stable patch ID e85882d66cc2fd07b44e4911ee3cbdf8e0131e0b. The complete five-file a20721ef..cbe6a01d delta was reviewed; F208's inherited ledger/rebase changes were excluded. Prior security PASS carries forward for unchanged code.\n\nTTL reachability: crates/unisphere/src/lib.rs:72,93-110 retains the 30-second default. with_miss_ttl is publicly callable Rust library API, not #[cfg(test)]; #[must_use] is a lint attribute, not an access boundary. Its only repository invocation is the regression fixture at crates/daemon/src/pa_watchdog_tests.rs:3598-3600. Production constructs the adapter with with_roots(session_roots()) without a TTL override (crates/daemon/src/lib.rs:550-558,1261-1274); crates/core/src/config.rs:34-51,82-195 exposes no miss-TTL setting. Thus test-only use, not a new production runtime configuration input.\n\nRetry change: crates/daemon/src/pa_presence.rs:1040-1049 makes NotFound stale/retryable while Unbound and Unsupported stay completed. Existing freshness checks and deduplicated sizing pass remain at lines 105-112,727-749. The existing 60-second tick and pending-read-aware bounded status reader remain unchanged (crates/daemon/src/pa_watchdog.rs:85,1039-1095). No new wire input, authority change, path construction, process launch or timer was introduced by this delta. R249-001 correctness/cost closure remains with its assigned reviewer/performance roles.\n\nPublic content: the new real-adapter regression uses fabricated IDs, x/y messages, claude-fixture and synthetic usage counters (crates/daemon/src/pa_watchdog_tests.rs:3592-3627), inside a test-gated module (pa_watchdog.rs:1619-1621). The target-isolation test uses the synthetic fixture and adds assertions only (crates/unisphere/src/lib.rs:810-815,943-988); target matching and hit-clearing code remain at lines 247-269. No credentials, private transcript content or sensitive logs found in the complete delta. No credential files read.\n\nIndependent CI: run 44442078410, attempt 2, is successful at the exact reviewed SHA. Successful rust-test job 135287030553 reports 2521 passed, 6 skipped. Its own upload log identifies JUnit artifact 14492720598. Downloaded archive SHA-256 6543ab3984b920a016f366f9ee12d1149a432dc72d6f1510df3b6c8c49521e31 matches that receipt. JUnit confirms both new regressions pass: an_idle_seat_read_during_a_kept_miss_is_sized_once_it_expires and a_kept_miss_answers_only_its_own_target_and_a_hit_clears_it. The compaction_wake tests also pass in this successful rerun artifact.\n\nProof limits: static read-only review and Linux CI; zero local builds/tests, mutations or runtime-setting changes. No local harness boot/checks because this packet requires CI-only build/test proof. Live after-merge CPU/latency proof belongs to performance. Exact-head pr-freeze is FINAL and the detached review tree is clean.\n"
+		}
+	]
+}
