@@ -27,3 +27,4 @@
 | — | pij-net-iguana | copilot | c9a3d075-2b11-49a1-b7b9-38c8c3dc5bd1 | JordansacStudio.localdomain | 240 | 2026-11-18T03:14:16.455Z | 2026-11-18T03:50:11.990Z | pij-steady-otter | pij-far-jackal | F198+F195 #240 cost (gpt-6.1-sol) | PR #240 merged (2d5b1a9c19c0) |
 | — | pij-random-crayfish | copilot | e0dba0e8-34fc-4608-be5e-c4d52e5387ac | JordansacStudio.localdomain | — | 2026-11-18T03:50:20.278Z | — | pij-outstanding-silkworm | — | pm-004: cost verdict on #241 (ws004 s03) | — |
 | — | pij-back-rooster | copilot | dd2d8d1d-610d-482c-bccd-70de66231c76 | JordansacStudio.localdomain | — | 2026-11-18T05:46:55.037Z | — | pij-outstanding-silkworm | — | pm-004: cost verdict on #243 (ws004 s05) | — |
+| — | pij-identical-wolf | omp | 01a1f13c-081e-70f3-bc6e-825a16305ee5 | JordansacStudio.localdomain | 247 | 2026-11-19T00:36:51.942Z | — | pij-steady-otter | — | F207 #247 cost: activity hooks + settle timer (OMP gpt-6.1-sol) | — |
