@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f2f8-5025-7cd2-a1fb-6d60154d54fd",
+				"date": "2026-11-19",
+				"head": "890515121f3d8f38cc96947847e7178ce42e1cc9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:266",
+				"writer": "pij-doubtful-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 266",
+					"exit_code": 0,
+					"log": "FINAL at 890515121f3d8f38cc96947847e7178ce42e1cc9; all five checks passed; detached checkout clean"
+				},
+				{
+					"command": "gh run view 44489032862 --repo AI-Substrate/pij-fleet --job 135439657640 --log",
+					"exit_code": 0,
+					"log": "2579 passed, 6 skipped; successful upload log identifies JUnit artifact 14512171702; exact artifact confirms all three counter regressions passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS - security review, C34 round 1 of 2.\nPR: #266\nHead: 890515121f3d8f38cc96947847e7178ce42e1cc9\n\nNo security vulnerabilities found in the six changed files.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None found in scope | - |\n\nSecurity evidence:\n\n1. Counter keys are server-controlled, not retained client input.\n   crates/daemon/src/http/route_counts.rs:27-47,110-179 restrict methods to\n   seven constants plus OTHER and use one (unmatched) bucket.\n   route_counts.rs:188-246 uses Axum MatchedPath rather than the raw URI.\n   Query values become a fixed bitmask; rendered names use six constant\n   parameter names and the literal scope=local. Raw paths, query values,\n   tokens, seat IDs and job IDs do not become request-counter keys.\n\n2. Both key cardinality and retained key bytes are bounded.\n   crates/daemon/src/http/mod.rs:266-399 supplies 62 static route templates.\n   route_counts.rs:63-85,110-179 bounds the route snapshot to 497 keys\n   (62 templates x 8 method buckets, plus unmatched); :45-47,188-220 uses\n   128 fixed query-shape slots. Long methods collapse to OTHER and unknown\n   paths to unmatched. Request data cannot add retained labels or key bytes.\n\n3. Authentication is unchanged.\n   crates/daemon/src/http/mod.rs:705,796-843 retains require_bearer for\n   health and adds job-token routes separately before the outer counting\n   layer. mod.rs:480-486,518-555 preserves the peer-key allowlist, which\n   excludes health. route_counts.rs:224-246 returns next.run's response\n   unchanged. http/background.rs:422-472 and background.rs:631-647 retain\n   job-token verification. lib.rs:1231-1261 serves the same shared router\n   on both listeners. Delegated source inspection also checked the pinned\n   Axum implementation for template provenance and fallback layering.\n\nValidation:\n\n- just pr-freeze 266: FINAL, exact head matched ls-remote and gh, main\n  CLEAN, non-draft, all five latest checks passed, worktree clean.\n- CI run 44489032862 at this exact head: successful; rust-lint,\n  rust-test, check (22), check (24) all successful. The delivers run\n  44489032748 also succeeded.\n- Successful rust-test job 135439657640 reports 2579 passed, 6 skipped.\n  Its upload log identifies JUnit artifact 14512171702; that exact\n  artifact independently confirms these three regressions passed:\n  counts_by_route_method_and_outcome_and_leaves_unrequested_routes_out;\n  seats_reads_are_counted_by_query_shape_and_unknown_parameters_add_no_keys;\n  ping_counts_requests_by_route_and_seats_reads_by_query_shape.\n- Delegated review checked the full six-file diff, relevant auth,\n  background, listener and Axum source, and git diff --check.\n- No local builds, Cargo commands, tests, typechecks, live-daemon probes\n  or harness checks were run, as instructed. The author's mutation\n  receipts were not independently rerun. Security behavior outside the\n  CI regressions is source-reviewed, not a local dynamic reproduction.\n\nCost observation for the separate performance review:\n\nNo new periodic loop, poll, timer, process launch, per-request log or\nstore write. Work is request-driven; snapshots scale with the fixed\nroute/method/query vocabulary, not seat count. Source inspection finds\na mutex/map lookup on matched request accounting\n(route_counts.rs:110-139), so this is not an atomic-only hot path.\nThis security PASS does not certify live CPU cost or performance approval.\n\nHarness feedback, not a PR finding:\n\nmagicWand: a no-build review-readiness command that verifies the checkout's\nexact head against successful CI. Difficulty: generic boot/checks recipes\nbuild, conflicting with read-only fleet reviews. This repeats the existing\ndependency-free review-readiness lesson and was captured as MW-001.\nSuggested encoding: a scoped read-only CI/finality receipt, without\ndependency installation, shared configuration changes or Cargo execution.\n"
+		}
+	]
+}
