@@ -193,6 +193,16 @@
 					"seat": "pij-mild-pony",
 					"to": "2026-11-19T05:07:59.519Z",
 					"why": "F214 #256 cost (cold-check and TTL accounting; OMP gpt-6.1-sol)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T05:29:04.504Z",
+					"harness": "omp",
+					"harness_session": "01a1f247-4f29-751d-8849-f77c26569f15",
+					"instance_key": "257",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-public-cobra",
+					"why": "F217 #257 build cost and disk (OMP gpt-6.1-sol)"
 				}
 			]
 		}
