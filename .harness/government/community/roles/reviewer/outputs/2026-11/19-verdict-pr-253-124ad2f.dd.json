@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f20e-7df6-7a92-a11a-ecba9bec2376",
+				"date": "2026-11-19",
+				"head": "124ad2f84cfe2d92d477e14731d6003d2a097c23",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:253",
+				"writer": "pij-solar-piranha",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Unchanged C34 follow-up: detached settlement/admission-to-audit crash windows can produce redundant notices.",
+				"Unchanged C34 follow-up: boot query count is live-seat-bounded, but matching spawn history per seat is not."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 253",
+					"exit_code": 0,
+					"log": "FINAL 124ad2f84cfe2d92d477e14731d6003d2a097c23; clean; all five latest checks pass"
+				},
+				{
+					"command": "git diff --exit-code d992f674 124ad2f8 -- crates/daemon/src/spawn_waits.rs crates/daemon/src/registration.rs crates/daemon/src/claude_bind.rs crates/daemon/src/codex_bind.rs crates/daemon/src/http/tests.rs crates/daemon/tests/revive_http.rs",
+					"exit_code": 0,
+					"log": "Reviewed implementation and regression blobs unchanged; all three normalized patch ranges have identical per-file added/deleted lines"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14499797981/zip",
+					"exit_code": 0,
+					"log": "Artifact selected from successful rust-test job 135346332311; exact-head run 44460655692 attempt 1; junit.xml has 2555 executed cases, zero failures"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES -- #253 at 124ad2f84cfe2d92d477e14731d6003d2a097c23\n\nRebase confirmation, not a third substantive review round. Carry forward the final-round verdict at d992f6747b492e6dd80237d38ecc236d4cdca981 (output commit 77459443eeb1b552805b30d3e0b3b3a0ff1c3f35): R253-001 and R253-002 remain closed. The two named C34 follow-ups remain unchanged: redundant-notice settlement crash windows and history-sensitive boot reads.\n\nPatch identity confirmed:\n\n- Original reviewed patch: 408418a1..d992f674.\n- Rebased patch: 5a2321fb..124ad2f8.\n- Falcon's intermediate comparison: 2f269126..4fd9ba67.\n- All three have identical per-file added/deleted lines, byte for byte. Normalized changed-line SHA-256: 41fecc882f543c8897b427022f8cd55c87b3a538c3b1e5a9841de4a1da57a48c.\n- Raw git diff output is not literally byte-identical: index IDs and surrounding context changed with main. range-diff shows only the additive difficulties-ledger context moving around the first two commits; the revive-sequence commit is equal.\n- Direct blob comparison also finds no change from the reviewed head in spawn_waits.rs, registration.rs, either binder, http/tests.rs or revive_http.rs.\n\n#254 interaction checked:\n\n#254 does not modify registration.rs, spawn_waits.rs, or the native registration-body construction. Its shared daemon-file changes add the auth-error route and an independent auth-recovery ledger. The auth-error route checks the existing native-session/process binding and queues a restart control; it does not allocate a new spawn or alter spawn settlements.\n\nThe existing native registration body preserves the prior seat and spawn_id for the same session and uses the observed pane with the replacement process. Re-registration reaches the same register_via -> SpawnWaits::bound path. An already settled/reported launch has no map entry; an unsettled launch accepts only its recorded seat and pane, independently of the PID. Replacing the process therefore neither re-arms a settled spawn nor consumes another launch's handoff. No new interaction defect found by source trace.\n\n#255 changes project documents, analysis artifacts and ledgers, not this runtime path. Both main's additive ledger rows and #253's F211 row are present.\n\nValidation:\n\n- just pr-freeze 253: FINAL at the full head above, clean detached worktree, all five latest checks pass.\n- CI run 44460655692, attempt 1: exact head; rust-test, rust-lint, check (22), check (24) succeeded. Latest delivers check also succeeded.\n- Successful rust-test job 135346332311 identifies artifact 14499797981 in its upload log. Its junit.xml contains 2,555 executed cases with zero failures, including all seven spawn-state regressions, both restart-recovery HTTP regressions, all eleven auth-recovery tests and the stale-process auth-error integration test.\n- No local build/test, daemon bounce, live restart canary or harness checks was run. This is patch-identity verification, the focused registration interaction trace, and exact-head CI evidence.\n"
+		}
+	]
+}
