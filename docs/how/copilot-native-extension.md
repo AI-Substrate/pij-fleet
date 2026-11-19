@@ -41,6 +41,13 @@ After setup, start `copilot` manually or spawn a new Copilot seat through Pij.
 The native `pij_send({to, message})` tool returns a Pij receipt. Ordinary assistant
 turns are not forwarded automatically.
 
+The extension joins with the CLI 1.0.113+ SDK shape: `pij_send` under
+`tools.definitions`, and `onUserPromptSubmitted` (held FYIs, plan 158) and
+`onAgentStop` (end-of-turn pij blocks, plan 226) under `hooks.handlers`. The SDK
+ignores the older flat `tools: [...]` and `hooks: {...}` without an error, so a
+wrong shape still registers and receives messages but loses the tool and both
+hooks (F208). Copilot CLI 1.0.113 or later is required.
+
 Remote `compact` works for Copilot (plan 186): `pij send <seat> --command compact`
 types `/compact` into the seat's pane through the same pane control path as
 Claude's compact (the typing gate and an empty composer). It also waits for a
