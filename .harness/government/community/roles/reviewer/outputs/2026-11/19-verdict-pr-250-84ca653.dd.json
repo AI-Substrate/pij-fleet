@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f186-dccb-7c33-aba1-0034d94d47a8",
+				"date": "2026-11-19",
+				"head": "84ca653e3c101153e06b890a8ee2ffb512eac5c7",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:250",
+				"writer": "pij-near-coral",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 250",
+					"exit_code": 0
+				},
+				{
+					"command": "gh run view 44440232882 --repo AI-Substrate/pij-fleet --json headSha,status,conclusion,jobs",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES -- PR #250\nHead: 84ca653e3c101153e06b890a8ee2ffb512eac5c7\nAnswers: 01a1f186-dccb-7c33-aba1-0034d94d47a8\n\nNo blocking correctness finding. Read the PR body first, reviewed all four\nchanged files and the whitespace-insensitive production diff, and inspected\nthe installed SDK read-only. No local builds, tests, dependency installation,\nsymlinks, runtime reloads or source edits were performed.\n\nInstalled SDK contract:\n- Used the current self-updated CLI 1.0.114-0 runtime's copilot-sdk files,\n  not the stale npm launcher package (0.0.412-2).\n- extension.js:20137-20173: joinSession preserves hooks and passes tools'\n  definitions through to resumeSessionForExtension.\n- extension.js:18146,18172-18173,18255,18349: resume registers tools from\n  tools.definitions, hooks from hooks.handlers, serializes the tool definitions,\n  and advertises hasHandlers from those nested callbacks.\n- extension.js:14154-14177,14863-14866,14980-15010: registerTools installs named\n  handlers; registerHooks stores callbacks; dispatch selects\n  onUserPromptSubmitted/onAgentStop and supplies invocation.sessionId. Missing\n  hooks return undefined. types.d.ts:3178-3190,3688-3693 and\n  extension.d.ts:6-9 agree with the new nesting.\n- The extension's single tool and both configured hooks are nested correctly\n  (.copilot/extensions/pij/extension.mjs:90-176). No registered callback was\n  left at the old config level. session.on subscriptions are a different API:\n  precedence, final-reply tracking, shutdown and NativeBridge activity/progress\n  observers remain unchanged. The SDK still supports wildcard and typed on()\n  listeners (extension.js:13728-13750). F207/#247 session.idle handling survives:\n  store.mjs:1538 and 2222-2234 still subscribe and publish idle only at the\n  intended idle/abort/fusion-completion boundaries, not assistant.turn_end.\n\nCompatibility and proof notes:\n- 1.0.114 does NOT adapt the old flat shape. Its tool object spread and nested\n  lookups discard the old array's useful definitions and ignore flat hooks.\n- Installed 1.0.112-0 instead directly passes config.tools/config.hooks\n  (extension.js:17946,17975). The new object is not compatible with that old\n  tool-array contract. There is no fallback. The documented CLI >=1.0.113 floor\n  makes this explicit; older CLI users must upgrade before adopting this\n  extension. Backward compatibility is not claimed or a blocker for this fix.\n- The fake now mirrors the relevant real nested lookups, missing-hook result,\n  invocation session ID and named pij_send lookup. The existing tool/FYI tests\n  plus the new stop-hook test exercise the actual extension with that fake.\n- Non-blocking follow-up, consistent with C34: this is still a hand-maintained\n  fake, not an installed-SDK/type conformance test. An upstream rename can leave\n  it green again. D-F208-1 already records the same stretch item. Highest-value\n  harness improvement/magicWand: a version-qualified SDK registration contract\n  probe or repaired native smoke that proves tool and hook availability.\n- No live post-fix GREEN is claimed. The PR reports the native smoke failing\n  identically on main and this branch; the real-seat GREEN is deferred until\n  merge/reload. This is a known evidence ceiling, not a successful smoke.\n\nRestored boundaries and cost:\n- Handler bodies and schemas are unchanged. pij_send checks native session\n  identity, then NativeBridge.send validates nonempty strings, destination,\n  force/reason/FYI combinations and reply ID. It sends JSON over the existing\n  HTTP client, never invokes a shell, and derives sender/caller from immutable\n  registration rather than model-supplied from/caller fields\n  (store.mjs:2345-2430). No skipPermission/approval override or additional\n  environment-variable request was added.\n- FYI additionalContext remains the daemon's exact rendered block\n  (store.mjs:2288-2305). It is a numbered FYI section with sender/machine\n  attribution, timestamps and indented continuation lines\n  (crates/core/src/fyi.rs:130-175,249-264), not newly authored system\n  instructions. This is attribution/delimitation, not an injection-proof\n  sandbox; body rendering and trust semantics are unchanged.\n- No new credential read, loop, poll, timer, subprocess or daemon launch site.\n  Restored hook work is one HTTP claim per eligible typed prompt and zero or\n  one turn-end HTTP call per eligible fenced final reply, zero process launches,\n  scaling with events rather than seats per tick. No live before/after launch\n  measurement was performed by this read-only reviewer.\n\nVerification:\n- just pr-freeze 250: PASS/FINAL at the full head above.\n- gh run view 44440232882: success; headSha matches the reviewed head.\n- CI Node 22 and 24: typecheck, lint, npm test, just copilot-native-test and\n  audit gate all PASS. The Node 22 job log (135278952855) explicitly shows the\n  tool, FYI and new natural-stop tests passing; native totals 357/357, 0 failed,\n  0 skipped. npm test reports 102 passed files and 1 skipped file.\n- CI rust-lint, rust-test and Delivers all PASS. CI's ddocs warning mode is\n  not full local document validation.\n- No local harness checks or live smoke were run under the packet's explicit\n  CI-only/no-local-build-or-test constraint. The reviewed product worktree\n  remains unchanged.\n"
+		}
+	]
+}
