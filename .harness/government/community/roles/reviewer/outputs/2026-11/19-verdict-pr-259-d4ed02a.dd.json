@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f259-2749-7da0-901e-d356e555fbf6",
+				"date": "2026-11-19",
+				"head": "d4ed02aabdb7989508f3205307ded9927f76a694",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:259",
+				"writer": "pij-compulsory-junglefowl",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "/usr/bin/nice -n 19 just copilot-sdk-contract --json",
+					"exit_code": 0,
+					"log": "Unchanged exact-head extension with installed SDK 1.0.114-0: all seven checks pass before and after the ordering probe"
+				},
+				{
+					"command": "/usr/bin/nice -n 19 just copilot-sdk-contract --json",
+					"exit_code": 1,
+					"log": "Session-only parent preload defers stderr data delivery 50 ms without changing bytes or their order: both hook checks and the tool check falsely fail; declarations and events pass"
+				},
+				{
+					"command": "just pr-freeze 259",
+					"exit_code": 0,
+					"log": "FINAL at d4ed02aabdb7989508f3205307ded9927f76a694; latest effective checks pass; source tree clean; target absent; no builds or cargo run"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #259: round-1 correctness review\n\nHead: d4ed02aabdb7989508f3205307ded9927f76a694\nDiff base: 70d01ba27a6258efa69b66d30ba5671ee1d30b68\nVerdict: BLOCK\n\n## R259-001: independent stderr delivery makes valid registrations fail\n\n`harness/scripts/copilot-sdk-contract.mjs:233-241` awaits the hook's JSON-RPC response on stdout, then immediately checks `calledNamed(handler)`, whose facts arrive on the independent stderr pipe. The tool assertion has the same race after `toolResult` at lines 271-276. Receiving the stdout response does not establish that the earlier stderr write has been delivered to this process.\n\nReproduced against the real installed 1.0.114-0 SDK and the unchanged extension:\n\n- Canonical `/usr/bin/nice -n 19 just copilot-sdk-contract --json`: pass, 7/7.\n- Same command with a session-only Node preload that defers the parent's child-stderr `data` delivery by 50 ms, preserving all bytes and their order: fail, exit 1. Both hook checks and the tool call say \"never reached\", while declarations and both event checks pass.\n- Remove the preload and rerun the canonical command: pass, 7/7.\n\nThe preload changes neither SDK behavior, extension code nor JSON-RPC responses. It only supplies a legal relative delivery order for two separate pipes. The event checks already wait on `factSeen`, which is why they survive the same delay. The hooks/tool checks must also wait for their matching fact, within the existing deadline, in addition to requiring their successful wire response. Do not repair this with a fixed sleep.\n\nThis would otherwise make doctor/self-check/checks falsely diagnose a broken installed SDK under scheduling or IO delay. It is a normal-use transport correctness issue in the new gate, not a request for exhaustive mutation coverage.\n\nThe same fact reader at lines 136-143 also splits each individual data chunk as if it contained whole newline-delimited records. Preserve partial records or use the existing Node readline pattern when fixing the fact channel; a stream chunk boundary is not a JSON-line boundary.\n\nReproduction preload mechanism, applied only in the parent canary process: wrap `ChildProcess.prototype.spawn`; for each resulting child's stderr stream, forward its ordinary events unchanged but forward each `data` event with `setTimeout(() => originalEmit(...), 50)`. The real canary then performs its existing complete run and cleanup. The temporary probe was removed after use; no product files were edited.\n\n## R259-002: nonblocking report-adapter validation note\n\nAt `.harness/extensions/checks/extension.ts:182-191`, `reported` starts as pass and only changes for warn/skipped or JSON syntax failure. A successful command returning valid JSON `{}` is therefore recorded as `copilot-sdk: pass`; an unrecognized status also passes.\n\nA niced, in-memory invocation of this extension with a stub `ctx.exec` returning `{}` for the SDK sensor reproduced `status: pass, code: 0` and overall `ok: true`. It invoked no real sensors, tests or cargo. Require an explicit recognized pass before assigning pass; use warn/fail with the original output for missing or unknown status. The present producer does return recognized statuses on the exercised paths, so this is not a second merge blocker.\n\n## What the canary does prove\n\nIt uses the actual installed SDK: the loader hook imports that SDK's file, decorates the extension's existing callback locations without remapping them, and delegates to real joinSession. Declarations and handler dispatch are observed through the SDK's own JSON-RPC handling. A future SDK that ignores an obsolete registration shape will lose declarations or callback facts and fail this check, rather than passing a copied fake shape assertion. A protocol/export/package-layout change may also fail loudly; this is not a real-provider or running-CLI attachment witness.\n\nThe version record is not a cached compatibility bypass: all seven checks run before its version is compared. Only an explicit --record after successful checks writes the record. A missing/unreadable record becomes a visible warn; no new version is recorded by ordinary doctor/checks runs. The committed record contains only a version and check names, with no home path or account identity.\n\n## Validation\n\nThe requested `just worktree-deps` prepared this linked worktree's own node_modules containers and package links before the canary. No builds, cargo, general test suites, daemon mutation or pane mutation were performed. Every executable probe ran under nice 19.\n\n| Probe | Observed result |\n|---|---|\n| Canonical niced canary, before and after the ordering probe | pass, exit 0, seven checks |\n| Niced canary with parent-only stderr delivery deferred 50 ms | fail, exit 1; both hooks and tool falsely missing |\n| COPILOT_BIN=/nonexistent with the niced canary | skipped, exit 0, explicit missing-CLI reason |\n| Installed CLI with --sdk /nonexistent | fail, exit 1, explicit SDK loading error |\n| --copilot-version review-unrecorded with --sdk pointing at the installed 1.0.114-0 SDK, no --record | warn, exit 0, all seven checks passed, record instruction printed |\n| git diff --exit-code -- harness/copilot-sdk-verified.json | passed; record unchanged |\n| git diff --check 70d01ba2...HEAD | passed |\n| just pr-freeze 259, twice | FINAL at the requested head; CLEAN against main, latest effective checks pass |\n\nCI run 44466954957 is successful at the exact reviewed head: both Node matrix jobs, Rust lint and Rust tests passed. Delivers also passed. CI lacks the installed CLI, so it is not the installed-SDK behavioral witness; the local canary executions above are that witness. The worktree remains tracked-file clean, and target/ remains absent.\n\n## Demand, isolation and harness feedback\n\nThe added entry points are doctor, self-check and the checks sensor, including quick checks. The added code installs no production timer, hook or polling loop. The script starts one CLI version query and one isolated extension Node child per ordinary invocation; the real extension also performs process inspection. This review does not substitute a nominal child count for the performance role's launch measurement.\n\nThe child uses an empty private Pij state directory and an overridden loopback daemon address, removes pane/seat startup identifiers, and has no ready bridge. It inherits the ambient process environment, rather than claiming a scrubbed environment. SDK resolution uses a quoted filesystem import URL through JSON serialization, not shell interpolation. No --record invocation or credential-file inspection was performed.\n\nmagicWand: one reliable awaited, line-framed callback-fact channel, so an SDK canary reports SDK compatibility rather than host IO scheduling.\n\ndifficulties: a real-SDK baseline passed, but the new callback evidence still relied on an unstated cross-pipe ordering guarantee. The legal-ordering probe makes that missing guarantee visible without changing the product or SDK.\n"
+		}
+	]
+}
