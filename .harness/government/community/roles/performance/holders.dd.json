@@ -316,6 +316,16 @@
 					"seat": "pij-melodic-snail",
 					"to": "2026-11-19T09:01:22.303Z",
 					"why": "F222 step 1: per-route request counter #266"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T09:54:19.144Z",
+					"harness": "omp",
+					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
+					"instance_key": "270",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-melodic-snail",
+					"why": "F222 step 2: closed seats stop the registration loop; /v1/seats live-rows-only #270"
 				}
 			]
 		}
