@@ -613,10 +613,7 @@ fn router_with_optional_federation(
         Arc::clone(&services.roles),
     )
     .with_native_delivery(Arc::clone(&services.delivery))
-    .with_spawn_reports(
-        Arc::clone(&services.spawn_waits),
-        Arc::clone(&services.delivery),
-    );
+    .with_spawn_waits(Arc::clone(&services.spawn_waits));
     let state = AppState {
         services,
         auth: config.auth,
@@ -1643,14 +1640,24 @@ async fn launch_seat_locked(
         Err(error) => return internal(command_name, error),
     };
     // F211: from here a harness may come up whatever this request does next.
-    // Until the caller is answered with the seat, a binding is reported to
-    // the parent; dropping this request unanswered counts as a failure.
-    let watch = state.services.spawn_waits.watch(&spawn_id);
+    // The launch is recorded before the row, so a restart at any later point
+    // finds it; until the caller is answered with the seat, a binding is
+    // handed to the parent, and dropping this request unanswered counts.
+    let launch = crate::spawn_waits::Launch {
+        spawn_id: spawn_id.clone(),
+        seat: seat_id.clone(),
+        pane: Some(pane.id.clone()),
+        parent: request.parent.clone(),
+    };
+    if let Err(error) = publish_spawn_launched(state, &launch).await {
+        eprintln!("pij-rs: spawn {spawn_id}: launch not recorded: {error}");
+    }
+    let watch = state.services.spawn_waits.watch(launch);
     if displaced.is_some()
         && let Err(error) = publish_revive_postmortem(state, &seat_id).await
     {
         let _ = state.services.tmux.kill(&pane.id).await;
-        watch.answered();
+        watch.withdrawn();
         return internal(command_name, error);
     }
 
@@ -1695,7 +1702,7 @@ async fn launch_seat_locked(
         Err(write_error) => {
             // No row was written, so nothing can bind: the pane goes.
             let rollback = state.services.tmux.kill(&pane.id).await;
-            watch.answered();
+            watch.withdrawn();
             let message = match rollback {
                 Ok(()) => format!(
                     "observed launch in pane {} but registry write failed ({write_error}); the pane was removed",
@@ -1718,8 +1725,9 @@ async fn launch_seat_locked(
     drop(spawn_guard);
 
     if no_wait {
-        watch.answered();
-        return spawn_success(command_name, descriptor, revive_receipt);
+        let answer = spawn_success(command_name, descriptor, revive_receipt);
+        watch.answered("dispatched");
+        return answer;
     }
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(wait_seconds);
@@ -1759,9 +1767,10 @@ async fn launch_seat_locked(
                 if requested_model_matches(requested_model.as_deref(), bound.model.as_deref(), true)
                 {
                     let _ = tokio::fs::remove_file(&status_path).await;
-                    watch.answered();
                     // A revive that waits (`--cheap`) keeps its receipt too.
-                    return spawn_success(command_name, bound, revive_receipt);
+                    let answer = spawn_success(command_name, bound, revive_receipt);
+                    watch.answered("bound");
+                    return answer;
                 }
                 let actual = bound.model.as_deref().unwrap_or("no-model");
                 let footer_deadline = tokio::time::Instant::now() + Duration::from_secs(8);
@@ -1889,8 +1898,9 @@ async fn launch_seat_locked(
 /// names the seat, its pane, its spawn id and how to close it, because the
 /// harness may still be running or still coming up. Nothing is killed: the
 /// daemon cannot tell a dead launch from a slow one, and the caller decides.
-/// A seat that binds later is reported to its parent, unless it is already
-/// bound, when this answer names it.
+/// The watch settles only once the answer is built: an answer that says the
+/// seat is bound hands it to the caller; one that says it is not leaves a
+/// later (or concurrent) binding to be handed to the parent.
 async fn report_spawn_failure(
     state: &AppState,
     command_name: &'static str,
@@ -1898,12 +1908,8 @@ async fn report_spawn_failure(
     failure: SpawnFailure<'_>,
     watch: crate::spawn_waits::WaitGuard,
 ) -> Response {
-    if seat.proc.is_some() {
-        watch.answered();
-    } else {
-        watch.failed(failure.reason);
-    }
-    match spawn_failure(state, command_name, seat, failure).await {
+    let reason = failure.reason.to_string();
+    let answer = match spawn_failure(state, command_name, seat, failure).await {
         Ok(response) => response,
         Err(error) => internal(
             command_name,
@@ -1913,7 +1919,13 @@ async fn report_spawn_failure(
                 close_command(seat)
             ),
         ),
+    };
+    if seat.proc.is_some() {
+        watch.answered("failed-bound");
+    } else {
+        watch.failed(&reason);
     }
+    answer
 }
 
 /// `seat <id> in pane <pane> (spawn <spawn id>)`.
@@ -1926,13 +1938,35 @@ fn launched_as(seat: &SeatDescriptor) -> String {
     )
 }
 
-/// How the spawning parent ends a seat its failed spawn left running: the
-/// close retires the seat, and the pane kill stops its process.
+/// [`crate::spawn_waits::close_command`] for a spawned row.
 fn close_command(seat: &SeatDescriptor) -> String {
-    match seat.pane.as_deref() {
-        Some(pane) => format!("pij close {}; tmux kill-pane -t {pane}", seat.id),
-        None => format!("pij close {}", seat.id),
-    }
+    crate::spawn_waits::close_command(&seat.id, seat.pane.as_deref())
+}
+
+/// F211: the durable record that a spawn launched a pane for a seat, written
+/// before the seat's row so a restart at any later point can recover it.
+async fn publish_spawn_launched(
+    state: &AppState,
+    launch: &crate::spawn_waits::Launch,
+) -> Result<()> {
+    state
+        .services
+        .event_bus
+        .publish(Event {
+            seq: None,
+            v: wire::EVENT_VERSION,
+            at: system_time_ms()?,
+            kind: crate::spawn_waits::LAUNCHED.to_string(),
+            seat: Some(launch.seat.clone()),
+            payload: serde_json::json!({
+                "spawn_id": launch.spawn_id,
+                "pane": launch.pane,
+                "parent": launch.parent,
+            })
+            .to_string(),
+        })
+        .await
+        .map(|_| ())
 }
 
 pub(crate) fn spawn_evidence_paths(spawn_id: &str) -> (PathBuf, PathBuf) {

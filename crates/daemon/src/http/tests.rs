@@ -336,6 +336,14 @@ pub(super) async fn test_services(
         )
         .expect("delivery service"),
     );
+    // Likewise the spawn hand-off (F211): its notices go through these parts.
+    services.spawn_waits = Arc::new(crate::spawn_waits::SpawnWaits::new(Arc::new(
+        crate::spawn_waits::ParentNotice::new(
+            Arc::clone(&services.registry),
+            Arc::clone(&services.event_bus),
+            Arc::clone(&services.delivery),
+        ),
+    )));
     services.decisions = Arc::new(super::decisions::DecisionService::new(
         store.clone(),
         services.registry.clone(),
@@ -3730,7 +3738,7 @@ async fn a_timed_out_spawn_names_its_seat_and_a_late_registration_tells_the_pare
             .await
             .expect("seat events")
             .into_iter()
-            .filter(|event| event.kind == "spawn.unreported")
+            .filter(|event| event.kind == crate::spawn_waits::REPORTED)
             .collect::<Vec<_>>()
     };
     let mut reported = Vec::new();
@@ -3818,9 +3826,45 @@ async fn an_adapter_error_while_waiting_names_the_seat_it_left() {
     server.abort();
 }
 
+/// F211: the spine record of a launch, as `/v1/spawn` writes it.
+async fn record_spine(spine: &FakeSpine, seat: &str, kind: &str, spawn_id: &str) {
+    spine
+        .append(Event {
+            seq: None,
+            v: wire::EVENT_VERSION,
+            at: 1,
+            kind: kind.to_string(),
+            seat: Some(seat.into()),
+            payload: serde_json::json!({"spawn_id": spawn_id, "pane": "%74"}).to_string(),
+        })
+        .await
+        .expect("spine record");
+}
+
+/// F211: the spawn records for `seat`, once the detached report has run.
+async fn reports_for(spine: &FakeSpine, seat: &SeatId) -> Vec<serde_json::Value> {
+    let mut found = Vec::new();
+    for _ in 0..50 {
+        found = spine
+            .tail(Some(seat), Seq(0))
+            .await
+            .expect("seat events")
+            .into_iter()
+            .filter(|event| event.kind == crate::spawn_waits::REPORTED)
+            .map(|event| serde_json::from_str(&event.payload).expect("payload"))
+            .collect();
+        if !found.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    found
+}
+
 /// F211, pij-sure-eagle: the daemon restarted while a spawn waited, so the
 /// spawn's answer was lost and its pre-bind row outlived it. The next daemon
-/// inherits that row at boot; when the seat registers, the parent is told.
+/// finds the unsettled launch on the spine at boot; when the seat registers,
+/// the parent is told.
 #[tokio::test]
 async fn a_seat_spawned_before_a_restart_is_reported_to_its_parent_when_it_binds() {
     let mut orphan = SeatDescriptor::new("pij-before-restart", Harness::Omp, "/abs/tree");
@@ -3833,6 +3877,13 @@ async fn a_seat_spawned_before_a_restart_is_reported_to_its_parent_when_it_binds
             .with_seat(orphan.clone()),
     );
     let spine = Arc::new(FakeSpine::new());
+    record_spine(
+        &spine,
+        "pij-before-restart",
+        crate::spawn_waits::LAUNCHED,
+        "s-before-restart",
+    )
+    .await;
     let identity = ProcIdentity {
         pid: 13_374,
         proc_start: 20260902013374,
@@ -3845,8 +3896,16 @@ async fn a_seat_spawned_before_a_restart_is_reported_to_its_parent_when_it_binds
     .await;
     services.tmux = Arc::new(FakeTmux::new());
     services.liveness = Arc::new(FakeLiveness::new().with_proc(identity));
-    let seats = registry.list(SeatFilter::default()).await.expect("roster");
-    services.spawn_waits.inherit(&seats);
+    crate::spawn_waits::recover(
+        &services.spawn_waits,
+        services.registry.as_ref(),
+        services.spine.as_ref(),
+    )
+    .await;
+    assert!(
+        reports_for(&spine, &orphan.id).await.is_empty(),
+        "not bound yet"
+    );
     let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
 
     let registered = reqwest::Client::new()
@@ -3877,21 +3936,9 @@ async fn a_seat_spawned_before_a_restart_is_reported_to_its_parent_when_it_binds
         .await
         .expect("registration");
     assert_eq!(registered.status(), 200);
-    let mut reported = None;
-    for _ in 0..200 {
-        reported = spine
-            .tail(Some(&orphan.id), Seq(0))
-            .await
-            .expect("seat events")
-            .into_iter()
-            .find(|event| event.kind == "spawn.unreported");
-        if reported.is_some() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    let payload: serde_json::Value =
-        serde_json::from_str(&reported.expect("reported to the parent").payload).expect("payload");
+    let reported = reports_for(&spine, &orphan.id).await;
+    assert_eq!(reported.len(), 1, "{reported:?}");
+    let payload = &reported[0];
     assert_eq!(payload["reason"], crate::spawn_waits::RESTARTED);
     assert_eq!(payload["parent"], "pij-parent");
     assert_eq!(
@@ -3900,6 +3947,100 @@ async fn a_seat_spawned_before_a_restart_is_reported_to_its_parent_when_it_binds
     );
     assert!(!payload["notice"].is_null(), "{payload}");
     server.abort();
+}
+
+/// R253-002: the seat bound while its spawn still waited, then the daemon
+/// restarted before the answer. Its row has a process, and the spine shows
+/// the launch with no answer, so the boot tells the parent, once. A bound
+/// row whose launch was answered, and a historical row with no launch
+/// record, are left alone.
+#[tokio::test]
+async fn a_seat_bound_before_a_restart_cut_its_answer_is_reported_at_boot() {
+    let bound = |id: &str, spawn_id: &str| {
+        let mut seat = SeatDescriptor::new(id, Harness::Omp, "/abs/tree");
+        seat.pane = Some("%74".to_string());
+        seat.parent = Some("pij-parent".into());
+        seat.spawn_id = Some(spawn_id.to_string());
+        seat.proc = Some(ProcIdentity {
+            pid: 13_375,
+            proc_start: 20260902013375,
+        });
+        seat
+    };
+    let registry = Arc::new(
+        FakeRegistry::new()
+            .with_seat(SeatDescriptor::new("pij-parent", Harness::Omp, "/abs/tree"))
+            .with_seat(bound("pij-cut-answer", "s-cut"))
+            .with_seat(bound("pij-answered", "s-answered"))
+            .with_seat(bound("pij-historical", "s-historical")),
+    );
+    let spine = Arc::new(FakeSpine::new());
+    record_spine(
+        &spine,
+        "pij-cut-answer",
+        crate::spawn_waits::LAUNCHED,
+        "s-cut",
+    )
+    .await;
+    record_spine(
+        &spine,
+        "pij-answered",
+        crate::spawn_waits::LAUNCHED,
+        "s-answered",
+    )
+    .await;
+    record_spine(
+        &spine,
+        "pij-answered",
+        crate::spawn_waits::ANSWERED,
+        "s-answered",
+    )
+    .await;
+    let services = test_services(
+        registry.clone(),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        spine.clone(),
+    )
+    .await;
+
+    crate::spawn_waits::recover(
+        &services.spawn_waits,
+        services.registry.as_ref(),
+        services.spine.as_ref(),
+    )
+    .await;
+    let reported = reports_for(&spine, &SeatId::from("pij-cut-answer")).await;
+    assert_eq!(reported.len(), 1, "{reported:?}");
+    assert_eq!(reported[0]["reason"], crate::spawn_waits::RESTARTED);
+    assert!(!reported[0]["notice"].is_null(), "{reported:?}");
+    for settled in ["pij-answered", "pij-historical"] {
+        assert!(
+            reports_for(&spine, &SeatId::from(settled)).await.is_empty(),
+            "{settled} was settled"
+        );
+    }
+
+    // A second boot finds the report on the spine and stays quiet.
+    let again = test_services(
+        registry,
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        spine.clone(),
+    )
+    .await;
+    crate::spawn_waits::recover(
+        &again.spawn_waits,
+        again.registry.as_ref(),
+        again.spine.as_ref(),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        reports_for(&spine, &SeatId::from("pij-cut-answer"))
+            .await
+            .len(),
+        1,
+        "reported once"
+    );
 }
 
 #[tokio::test]
@@ -4007,9 +4148,10 @@ async fn spawn_wait_returns_bound_process_and_publishes_event() {
         )
         .await
         .expect("bind event");
-    assert_eq!(
-        events.last().map(|event| event.kind.as_str()),
-        Some("spawn.bound")
+    // `spawn.answered` (F211) follows it, so look for the kind, not the last.
+    assert!(
+        events.iter().any(|event| event.kind == "spawn.bound"),
+        "{events:?}"
     );
 
     server.abort();
@@ -4137,9 +4279,9 @@ async fn spawn_reports_model_mismatch_without_killing_registered_seat() {
         )
         .await
         .expect("mismatch event");
-    assert_eq!(
-        events.last().map(|event| event.kind.as_str()),
-        Some("spawn.failed")
+    assert!(
+        events.iter().any(|event| event.kind == "spawn.failed"),
+        "{events:?}"
     );
 
     server.abort();

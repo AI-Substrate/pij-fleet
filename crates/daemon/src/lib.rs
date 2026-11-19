@@ -662,6 +662,13 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         Arc::clone(&role_queue) as Arc<dyn community::directory::AfterAssign>,
         Arc::clone(&tmux),
     ));
+    let spawn_waits = Arc::new(spawn_waits::SpawnWaits::new(Arc::new(
+        spawn_waits::ParentNotice::new(
+            Arc::clone(&registry),
+            Arc::clone(&event_bus),
+            Arc::clone(&delivery),
+        ),
+    )));
     let services = Services {
         registry,
         spine,
@@ -683,7 +690,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         session_status,
         reported_context,
         seat_sizes,
-        spawn_waits: Arc::default(),
+        spawn_waits,
         usage_limits,
         delivery,
         roles,
@@ -1054,10 +1061,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
             Arc::clone(&services.event_bus),
             Arc::clone(&services.roles),
         )
-        .with_spawn_reports(
-            Arc::clone(&services.spawn_waits),
-            Arc::clone(&services.delivery),
-        ),
+        .with_spawn_waits(Arc::clone(&services.spawn_waits)),
     );
     let codex_binder = Arc::new(
         codex_bind::CodexBinder::new(
@@ -1067,10 +1071,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
             Arc::clone(&services.roles),
             Arc::clone(&services.tmux),
         )
-        .with_spawn_reports(
-            Arc::clone(&services.spawn_waits),
-            Arc::clone(&services.delivery),
-        ),
+        .with_spawn_waits(Arc::clone(&services.spawn_waits)),
     );
 
     let drain = Arc::new(
@@ -1177,15 +1178,14 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
     // After the bind is won and before anything is served: no claim can be in
     // flight, and a boot that lost the bind never touches a live daemon's rows.
     delivery::role_send::recover_requests(&services).await;
-    // F211: whatever waited for a pre-bind row died with the last daemon.
-    match services
-        .registry
-        .list(pij_core::ports::SeatFilter::default())
-        .await
-    {
-        Ok(seats) => services.spawn_waits.inherit(&seats),
-        Err(error) => eprintln!("pij-rs: unreported spawns not inherited: {error}"),
-    }
+    // F211: a launch the spine shows was never settled lost its caller with
+    // the last daemon; re-arm it, bound or not.
+    spawn_waits::recover(
+        &services.spawn_waits,
+        services.registry.as_ref(),
+        services.spine.as_ref(),
+    )
+    .await;
 
     let (governance_shutdown, governance_shutdown_rx) = tokio::sync::oneshot::channel();
     let governance_observer =

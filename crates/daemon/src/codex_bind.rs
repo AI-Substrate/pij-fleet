@@ -213,13 +213,9 @@ impl CodexBinder {
         }
     }
 
-    /// Report seats whose spawn never answered to their parent (F211).
-    pub(crate) fn with_spawn_reports(
-        mut self,
-        waits: Arc<crate::spawn_waits::SpawnWaits>,
-        delivery: Arc<crate::delivery::DeliveryService>,
-    ) -> Self {
-        self.registration = self.registration.with_spawn_reports(waits, delivery);
+    /// Signal bound spawned seats to the launches that wait for them (F211).
+    pub(crate) fn with_spawn_waits(mut self, waits: Arc<crate::spawn_waits::SpawnWaits>) -> Self {
+        self.registration = self.registration.with_spawn_waits(waits);
         self
     }
 
