@@ -344,7 +344,10 @@
 					"harness_session": "eafacdd7-9802-4b14-9b45-1f959814a71d",
 					"instance_key": "256",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #256 merged (a70cace40b00)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-perfect-cicada",
+					"to": "2026-11-19T05:07:59.519Z",
 					"why": "F214 #256 security"
 				}
 			]

@@ -1146,7 +1146,10 @@
 					"harness_session": "01a1f1de-6c8d-7431-9640-98f465df725e",
 					"instance_key": "f214",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #256 merged (a70cace40b00)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-determined-silkworm",
+					"to": "2026-11-19T05:07:59.519Z",
 					"why": "F214 HIGH: cache TTL as a first-class fact; never mistake cold for warm"
 				},
 				{
