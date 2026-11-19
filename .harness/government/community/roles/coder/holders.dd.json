@@ -1265,6 +1265,16 @@
 					"seat": "pij-cultural-falcon",
 					"to": "2026-11-19T09:43:14.067Z",
 					"why": "F224 ordinary register path escapes the F197 brake (re-resolution to the loader)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T09:47:29.556Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f226",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F226 bounce-rs installs stale cross-worktree binary; build via shared-build, abort on failure, stamp check"
 				}
 			]
 		}
