@@ -2066,7 +2066,10 @@
 					"harness_session": "01a1f5da-c3e8-744a-9865-9053f9bd8ba3",
 					"instance_key": "f227-proof-a",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-cultural-falcon",
 					"seat": "pij-quaint-roadrunner",
+					"to": "2026-11-19T22:08:56.044Z",
 					"why": "F227 live proof A"
 				},
 				{
