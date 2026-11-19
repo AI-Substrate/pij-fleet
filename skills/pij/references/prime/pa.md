@@ -121,3 +121,8 @@ the handover files you check, you are read-only.
 - Chores only on the prime's order: tmux tidies, removing the worktrees it names, restarts after a reboot
   or re-login.
 - Report at both edges of a round that did something: `pij report now "<did>" "<next>"`.
+- **A process's seat is its pane-tree ancestor, never its `PIJ_*` env** (F203). `PIJ_SESSION_ID` is
+  inherited: OMP's machine-wide `__omp_worker_*` processes carry the id of whichever seat started them.
+  Count `__omp_worker_*` (and rust-analyzer under them) as machine-wide in any size or cost report, even
+  when one runs under a seat's own `omp` process.
+  The rule and how to apply it: `docs/how/daemon-cost.md` § "Which seat a process belongs to".

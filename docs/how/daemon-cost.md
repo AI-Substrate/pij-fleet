@@ -51,6 +51,10 @@ python3 docs/plans/185-daemon-cpu-memory/assets/evidence/sample-busy.py /tmp/dae
 
 `crates/daemon/tests/spine_attach_cost.rs` replays one cursor attach on a synthetic spine of any size (`PIJ_ATTACH_ROWS`); run it under `/usr/bin/time -l` for the peak RSS.
 
+### Which seat a process belongs to (F203)
+
+Attribute a process to a seat by **pane-tree descent from the seat's recorded process** (`pij-rs --json list`'s `proc`, matched by pid and start time), never by its `PIJ_SESSION_ID`, `PIJ_SPAWN_ID` or `TMUX_PANE`. Those variables are inherited, so they name whichever seat started the process's ancestor, not a seat that owns it. OMP's machine-wide workers (`__omp_worker_daemon_broker`, `__omp_worker_lsp_mux`, and rust-analyzer under them) carry the env of the first OMP seat that started them, and a broker can live under some other seat's `omp` process. Treat every `__omp_worker_*` process and its subtree as machine-wide, even one that descends from a seat's process: cut it out of the seat's tree and report it on its own line. pij itself never attributes by env: liveness tracks the selected harness process (`harness_process_tree`, which never matches a worker), `pij close` kills nothing, and `spawn-rate` attributes by parent. A worker living under a seat's `omp` may die when that seat's pane is killed (not observed; F223).
+
 ## Measured (plan 185)
 
 Private daemon (temp state dir, private `-L` tmux server), same recorded workload on both builds: a 2,978,027-row spine like the live one, one events source whose owner is tombstoned, and a client that attaches with a cursor 10 events behind every 3.7 s, like chainglass. Release builds of main `d459dda` and this branch, 2026-10-29/30.
