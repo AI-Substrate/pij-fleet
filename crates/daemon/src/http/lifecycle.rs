@@ -497,14 +497,37 @@ async fn handle(
                 return ownership_failure(command, &actor.id, &target, expected.parent.as_ref());
             }
             // Plan 201: a role holder writes its memory before it is closed,
-            // and so does a seat that released one in this context (F130).
-            let turn = if expected.tombstoned_at.is_none() {
-                memory_turn::turn_for(&state, &target).await
-            } else {
-                None
+            // and so does a seat that released one in this context (F130). A
+            // turn already pending answers first, whatever the seat's notes
+            // say meanwhile (F194, #245 review).
+            let live = expected.tombstoned_at.is_none();
+            let pending = live
+                .then(|| {
+                    memory_turn::pending_answer(
+                        &state,
+                        command,
+                        &expected,
+                        memory_turn::Action::Close,
+                        Some(&actor.id),
+                    )
+                })
+                .flatten();
+            let turn = match &pending {
+                None if live => {
+                    memory_turn::turn_for(&state, &target, memory_turn::Action::Close).await
+                }
+                _ => None,
             };
-            let Some(turn) = turn else {
-                return match close_seat(
+            // A held answer says the close leaves the process running.
+            let respond = |held: Result<Value, Box<Response>>, note: String| match held {
+                Ok(mut data) => {
+                    data["process"] = note.into();
+                    envelope(StatusCode::OK, &Envelope::ok(command, data))
+                }
+                Err(refusal) => *refusal,
+            };
+            match (pending, turn) {
+                (None, None) => match close_seat(
                     &state,
                     command,
                     &actor.id,
@@ -515,27 +538,45 @@ async fn handle(
                 .await
                 {
                     Ok(data) => envelope(StatusCode::OK, &Envelope::ok(command, data)),
-                    Err(response) => *response,
-                };
-            };
-            let note = process_note(expected.pane.as_deref(), &pane_now(&state, &expected).await);
-            match memory_turn::hold(
-                &state,
-                command,
-                expected,
-                turn,
-                memory_turn::Then::Close {
-                    actor: actor.id,
-                    reason: call.reason,
+                    Err(refused) => refused.into_response(),
                 },
-            ) {
-                Ok(held) => {
-                    let mut data = serde_json::to_value(&held).unwrap_or(Value::Null);
-                    data["process"] = note.into();
-                    envelope(StatusCode::OK, &Envelope::ok(command, data))
+                (Some(held), _) => {
+                    let note =
+                        process_note(expected.pane.as_deref(), &pane_now(&state, &expected).await);
+                    respond(held, note)
                 }
-                Err(refusal) => *refusal,
+                (None, Some(turn)) => {
+                    let note =
+                        process_note(expected.pane.as_deref(), &pane_now(&state, &expected).await);
+                    let held = memory_turn::hold(
+                        &state,
+                        command,
+                        expected,
+                        turn,
+                        memory_turn::Then::Close {
+                            actor: actor.id,
+                            reason: call.reason,
+                        },
+                    );
+                    respond(held, note)
+                }
             }
+        }
+    }
+}
+
+/// Why a close did not land. `Changed`: the row moved between the caller's
+/// read and the compare-and-set (`E-RS-INCARNATION-CHANGED`), which a held
+/// close reads again and retries (F194). Both carry the refusal to answer.
+pub(super) enum CloseRefused {
+    Changed(Box<Response>),
+    Other(Box<Response>),
+}
+
+impl CloseRefused {
+    pub(super) fn into_response(self) -> Response {
+        match self {
+            Self::Changed(response) | Self::Other(response) => *response,
         }
     }
 }
@@ -550,7 +591,8 @@ pub(super) async fn close_seat(
     target: SeatId,
     reason: String,
     expected: Option<SeatDescriptor>,
-) -> std::result::Result<Value, Box<Response>> {
+) -> std::result::Result<Value, CloseRefused> {
+    let refused = |error| CloseRefused::Other(Box::new(runtime_failure(command, error)));
     // Recorded as an owner's close, so the seat's own next registration can't
     // lift it (F149).
     let reason = pij_core::model::owner_close_reason(&reason);
@@ -559,15 +601,12 @@ pub(super) async fn close_seat(
         None => match state.services.registry.get(&target).await {
             Ok(Some(expected)) => expected,
             Ok(None) => {
-                return Err(Box::new(runtime_failure(
-                    command,
-                    PijError::NoRegistryEntry {
-                        seat: target,
-                        store: "the daemon's configured registry".to_string(),
-                    },
-                )));
+                return Err(refused(PijError::NoRegistryEntry {
+                    seat: target,
+                    store: "the daemon's configured registry".to_string(),
+                }));
             }
-            Err(error) => return Err(Box::new(runtime_failure(command, error))),
+            Err(error) => return Err(refused(error)),
         },
     };
     let note = process_note(expected.pane.as_deref(), &pane_now(state, &expected).await);
@@ -610,14 +649,16 @@ pub(super) async fn close_seat(
             }
             Ok(data)
         }
-        Ok(None) => Err(Box::new(runtime_failure(
-            command,
-            PijError::Adapter {
-                adapter: "lifecycle/tombstone-receipt".to_string(),
-                message: format!("no matching durable tombstone event for {target}"),
-            },
-        ))),
-        Err(error) => Err(Box::new(runtime_failure(command, error))),
+        Ok(None) => Err(refused(PijError::Adapter {
+            adapter: "lifecycle/tombstone-receipt".to_string(),
+            message: format!("no matching durable tombstone event for {target}"),
+        })),
+        Err(error) if matches!(&error, PijError::GovernanceRefused { code, .. } if code == "E-RS-INCARNATION-CHANGED") => {
+            Err(CloseRefused::Changed(Box::new(runtime_failure(
+                command, error,
+            ))))
+        }
+        Err(error) => Err(refused(error)),
     }
 }
 

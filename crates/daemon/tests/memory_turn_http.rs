@@ -427,6 +427,9 @@ async fn a_seat_holding_no_role_is_closed_and_compacted_directly() {
     rig.server.abort();
 }
 
+/// F194: the bound completes the close with no turn-end, and the closed seat's
+/// reason says its note may be missing (the bound is a policy: it decides the
+/// close without the note).
 #[tokio::test]
 async fn when_the_bound_passes_the_close_proceeds_and_says_so() {
     let rig = rig(Duration::from_millis(300), &["holder"]).await;
@@ -444,6 +447,12 @@ async fn when_the_bound_passes_the_close_proceeds_and_says_so() {
         "{turn}"
     );
     assert!(tombstoned(&rig, "holder").await);
+    let closed = rig.registry.get(&"holder".into()).await.unwrap().unwrap();
+    let reason = closed.tombstone_reason.unwrap();
+    assert!(
+        reason.starts_with("owner-close: done (memory note may be missing: "),
+        "{reason}"
+    );
     rig.server.abort();
 }
 
@@ -588,24 +597,29 @@ async fn a_seat_reparented_during_its_turn_is_not_closed_by_its_old_parent() {
     rig.server.abort();
 }
 
-/// Security S4: a second compact or close while one is held is refused by
-/// name; there is never a second turn.
+/// Security S4 and F194: a second close while one is held answers with the
+/// pending close and its deadline, and never starts a second turn; a compact
+/// meanwhile is refused by name with the same deadline.
 #[tokio::test]
-async fn a_repeat_request_while_one_is_held_is_refused_by_name() {
+async fn a_repeat_request_while_one_is_held_reports_the_pending_close() {
     let rig = rig(Duration::from_secs(30), &["holder"]).await;
     let first = post(rig.addr, "/v1/close", close("holder", "prime")).await;
     assert_eq!(first["data"]["held"], "memory-turn", "{first}");
+    let deadline = first["data"]["memory_turn"]["deadline_ms"]
+        .as_u64()
+        .unwrap();
     let prompt = prompt_for(&rig, "holder").await;
     let again = post(rig.addr, "/v1/close", close("holder", "prime")).await;
-    assert_eq!(
-        again["details"]["code"], "E-RS-MEMORY-TURN-PENDING",
-        "{again}"
-    );
+    assert_eq!(again["ok"], true, "{again}");
+    assert_eq!(again["data"]["held"], "memory-turn", "{again}");
+    assert_eq!(again["data"]["memory_turn"]["pending"], true, "{again}");
+    assert_eq!(again["data"]["memory_turn"]["deadline_ms"], deadline);
     let compact = post(rig.addr, "/v1/send", compact("holder", "prime")).await;
     assert_eq!(
         compact["details"]["code"], "E-RS-MEMORY-TURN-PENDING",
         "{compact}"
     );
+    assert_eq!(compact["details"]["deadline_ms"], deadline, "{compact}");
     take_turn(&rig, "holder", &prompt).await;
     assert_eq!(turn_event(&rig, "holder").await["then"], "closed");
     assert!(
@@ -1034,5 +1048,271 @@ async fn an_unreadable_store_takes_a_generic_memory_turn_never_a_refusal() {
     let close_turn = turn_event(&rig, "plain").await;
     assert_eq!(close_turn["then"], "closed", "{close_turn}");
     assert!(tombstoned(&rig, "plain").await);
+    rig.server.abort();
+}
+
+/// Liveness that, once armed, writes the seat's activity on its next probe of
+/// `pid`: the seat's own end-of-turn write landing inside the held close,
+/// between its read and its compare-and-set (F194).
+struct EndOfTurnWrite {
+    inner: Arc<dyn pij_core::ports::LivenessPort>,
+    registry: Arc<dyn Registry>,
+    seat: SeatId,
+    pid: u32,
+    armed: Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[async_trait::async_trait]
+impl pij_core::ports::LivenessPort for EndOfTurnWrite {
+    async fn proc_start(&self, pid: u32) -> pij_core::error::Result<Option<u64>> {
+        if pid == self.pid && self.armed.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            self.registry
+                .set_activity(&self.seat, SystemState::Working, None)
+                .await?;
+        }
+        self.inner.proc_start(pid).await
+    }
+}
+
+/// F194: the seat's turn ends, then its own writes change its row while the
+/// held close is running. The close reads the seat again and lands; before,
+/// it answered 409 and the close was lost (echidna, crane, friendly-gull).
+#[tokio::test]
+async fn the_turn_end_completes_the_close_despite_the_seats_own_writes() {
+    let armed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let rig = rig_with(Duration::from_secs(30), &["holder"], |services| {
+        services.liveness = Arc::new(EndOfTurnWrite {
+            inner: services.liveness.clone(),
+            registry: services.registry.clone(),
+            seat: "holder".into(),
+            pid: 920_002,
+            armed: Arc::clone(&armed),
+        });
+    })
+    .await;
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "holder").await;
+    armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    take_turn(&rig, "holder", &prompt).await;
+    let turn = turn_event(&rig, "holder").await;
+    assert_eq!(turn["ended"], "turn-end", "{turn}");
+    assert_eq!(turn["then"], "closed", "{turn}");
+    assert!(
+        !armed.load(std::sync::atomic::Ordering::SeqCst),
+        "the write landed"
+    );
+    assert!(tombstoned(&rig, "holder").await);
+    rig.server.abort();
+}
+
+/// The `memory.note` a `pij directory memory add` by `seat` records.
+async fn note_written(rig: &Rig, seat: &str, role: &str, at: u64) {
+    rig.bus
+        .publish(Event {
+            seq: None,
+            v: 1,
+            at,
+            kind: "memory.note".to_string(),
+            seat: Some(seat.into()),
+            payload: json!({"project": "fleet", "role": role, "path": "n.dd.json", "commit": "c"})
+                .to_string(),
+        })
+        .await
+        .unwrap();
+}
+
+fn now_ms() -> u64 {
+    u64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap()
+}
+
+/// F194: a seat that already wrote its note in this context (after its newest
+/// holding began) is closed at once, with no memory turn. A note older than
+/// that holding, or for a role it did not hold here, does not count. A seat
+/// that only held released roles is never refused with a directory error: it
+/// takes its turn, and the turn's end closes it.
+#[tokio::test]
+async fn a_close_after_the_note_is_written_needs_no_memory_turn() {
+    let first = rig(Duration::from_secs(30), &[]).await;
+    set_holdings(
+        &first,
+        &[
+            ("holder", "pm-001", None),
+            ("plain", "reviewer/240", Some("2026-11-07T00:00:00.000Z")),
+        ],
+    )
+    .await;
+    // Before the holding began (2026-11-06): asked again.
+    note_written(&first, "holder", "pm-001", 1_762_300_000_000).await;
+    let held = post(first.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&first, "holder").await;
+    take_turn(&first, "holder", &prompt).await;
+    assert_eq!(turn_event(&first, "holder").await["then"], "closed");
+
+    // Released only, a note for a role it never held: asked, then closed at turn end.
+    note_written(&first, "plain", "pm-001", now_ms()).await;
+    let held = post(first.addr, "/v1/close", close("plain", "prime")).await;
+    assert_eq!(held["ok"], true, "{held}");
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&first, "plain").await;
+    take_turn(&first, "plain", &prompt).await;
+    assert_eq!(turn_event(&first, "plain").await["then"], "closed");
+
+    first.server.abort();
+
+    // Its note written in this context: closed at once, no turn.
+    let rig = rig(Duration::from_secs(30), &["holder"]).await;
+    note_written(&rig, "holder", "pm-001", now_ms()).await;
+    let closed = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(closed["ok"], true, "{closed}");
+    assert!(closed["data"]["tombstoned_at"].is_number(), "{closed}");
+    assert!(closed["data"]["held"].is_null(), "{closed}");
+    assert!(
+        rig.bus
+            .latest_matching(&"holder".into(), &["memory.turn"])
+            .await
+            .unwrap()
+            .is_none(),
+        "no memory turn"
+    );
+    assert!(tombstoned(&rig, "holder").await);
+    rig.server.abort();
+}
+
+/// The `memory.turn` event of the turn `prompt` asked for.
+async fn turn_event_for(rig: &Rig, seat: &str, prompt: &Msg) -> Value {
+    for _ in 0..500 {
+        if let Some(event) = rig
+            .bus
+            .latest_matching(&seat.into(), &["memory.turn"])
+            .await
+            .unwrap()
+        {
+            let turn: Value = serde_json::from_str(&event.payload).unwrap();
+            if turn["prompt"] == prompt.msg_id.as_str() {
+                return turn;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("no memory.turn event for {seat}'s prompt {}", prompt.msg_id);
+}
+
+/// A close refused while another is held, by name, with why and when.
+fn refused_as_pending(answer: &Value, why: &str, deadline: &Value) {
+    assert_eq!(answer["ok"], false, "{answer}");
+    assert_eq!(
+        answer["details"]["code"], "E-RS-MEMORY-TURN-PENDING",
+        "{answer}"
+    );
+    assert_eq!(answer["details"]["why"], why, "{answer}");
+    assert_eq!(answer["details"]["deadline_ms"], *deadline, "{answer}");
+}
+
+/// R245-001: the prime's close of `holder` is held; `holder` is reparented to
+/// `plain`, which closes it. The held close is the prime's and will be
+/// skipped, so plain's close is refused by name, never acknowledged as
+/// pending and then lost; once that turn ends, plain's close is held and
+/// lands.
+#[tokio::test]
+async fn a_new_owners_close_during_a_held_close_is_refused_by_name_then_lands() {
+    let rig = rig(Duration::from_secs(30), &["holder"]).await;
+    let first = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(first["data"]["held"], "memory-turn", "{first}");
+    let deadline = first["data"]["memory_turn"]["deadline_ms"].clone();
+    let prompt = prompt_for(&rig, "holder").await;
+    let mut moved = rig.registry.get(&"holder".into()).await.unwrap().unwrap();
+    moved.parent = Some("plain".into());
+    rig.registry.put(moved).await.unwrap();
+
+    let by_plain = post(rig.addr, "/v1/close", close("holder", "plain")).await;
+    refused_as_pending(&by_plain, "another-closer", &deadline);
+    take_turn(&rig, "holder", &prompt).await;
+    let turn = turn_event_for(&rig, "holder", &prompt).await;
+    assert!(
+        turn["then"].as_str().unwrap().contains("no longer owns"),
+        "{turn}"
+    );
+    assert!(!tombstoned(&rig, "holder").await);
+
+    let again = post(rig.addr, "/v1/close", close("holder", "plain")).await;
+    assert_eq!(again["data"]["held"], "memory-turn", "{again}");
+    assert!(again["data"]["memory_turn"]["pending"].is_null(), "{again}");
+    let prompt = prompt_for(&rig, "holder").await;
+    take_turn(&rig, "holder", &prompt).await;
+    assert_eq!(
+        turn_event_for(&rig, "holder", &prompt).await["then"],
+        "closed"
+    );
+    assert!(tombstoned(&rig, "holder").await);
+    rig.server.abort();
+}
+
+/// R245-001, the same rule for a replacement: a close of the seat revived
+/// while the old incarnation's close is held is refused by name; the old
+/// close skips the revived seat, and the close asked again lands on it.
+#[tokio::test]
+async fn a_close_of_a_revived_seat_during_a_held_close_is_refused_by_name_then_lands() {
+    let rig = rig(Duration::from_secs(30), &["holder"]).await;
+    let first = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    let deadline = first["data"]["memory_turn"]["deadline_ms"].clone();
+    let prompt = prompt_for(&rig, "holder").await;
+    revive(&rig, "holder").await;
+
+    let again = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    refused_as_pending(&again, "another-incarnation", &deadline);
+    take_turn(&rig, "holder", &prompt).await;
+    let turn = turn_event_for(&rig, "holder", &prompt).await;
+    assert!(turn["then"].as_str().unwrap().contains("revived"), "{turn}");
+    assert!(!tombstoned(&rig, "holder").await);
+
+    let again = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(again["data"]["held"], "memory-turn", "{again}");
+    let prompt = prompt_for(&rig, "holder").await;
+    take_turn(&rig, "holder", &prompt).await;
+    assert_eq!(
+        turn_event_for(&rig, "holder", &prompt).await["then"],
+        "closed"
+    );
+    assert!(tombstoned(&rig, "holder").await);
+    rig.server.abort();
+}
+
+/// #245 review: the one-turn rule holds whatever the seat writes meanwhile. A
+/// note written while a turn is pending never lets a close skip past it: a
+/// repeat of the held close is answered as pending, and a close while a
+/// compact is held is refused, so neither closes the seat at once.
+#[tokio::test]
+async fn a_note_written_while_a_turn_is_pending_never_skips_past_it() {
+    let held_close = rig(Duration::from_secs(30), &["holder"]).await;
+    let first = post(held_close.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(first["data"]["held"], "memory-turn", "{first}");
+    let prompt = prompt_for(&held_close, "holder").await;
+    note_written(&held_close, "holder", "pm-001", now_ms()).await;
+    let again = post(held_close.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(again["data"]["memory_turn"]["pending"], true, "{again}");
+    assert!(!tombstoned(&held_close, "holder").await);
+    take_turn(&held_close, "holder", &prompt).await;
+    assert_eq!(
+        turn_event_for(&held_close, "holder", &prompt).await["then"],
+        "closed"
+    );
+    held_close.server.abort();
+
+    let rig = rig(Duration::from_secs(30), &["holder"]).await;
+    let held = post(rig.addr, "/v1/send", compact("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let deadline = held["data"]["memory_turn"]["deadline_ms"].clone();
+    note_written(&rig, "holder", "pm-001", now_ms()).await;
+    let closed = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    refused_as_pending(&closed, "another-action", &deadline);
+    assert!(!tombstoned(&rig, "holder").await);
     rig.server.abort();
 }

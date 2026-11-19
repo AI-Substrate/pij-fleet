@@ -1405,6 +1405,17 @@ async fn memory_add_writes_one_note_per_commit_and_reads_back() {
         "{path}"
     );
     assert_eq!(added["data"]["commit"], head(&repo));
+    // F194: the note is recorded for its author, so a close of that seat can
+    // skip a memory turn whose note is already written.
+    let recorded = rig
+        .bus
+        .latest_matching(&SEAT.into(), &["memory.note"])
+        .await
+        .unwrap()
+        .expect("a memory.note for the author");
+    let recorded: Value = serde_json::from_str(&recorded.payload).unwrap();
+    assert_eq!(recorded["role"], "reviewer", "{recorded}");
+    assert_eq!(recorded["path"], path, "{recorded}");
     let changed = git(&repo.gov, &["show", "--name-only", "--format=", "HEAD"]);
     assert_eq!(changed.lines().count(), 3, "{changed}");
     assert_eq!(

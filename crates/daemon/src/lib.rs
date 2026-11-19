@@ -224,8 +224,11 @@ pub struct Services {
     /// How long a compact or close of a role holder waits for its memory turn
     /// (plan 201).
     pub memory_turn_bound: std::time::Duration,
-    /// Seats with a memory turn pending: one at a time per seat (plan 201).
-    pub memory_turns: Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
+    /// Seats with a memory turn pending: one at a time per seat (plan 201),
+    /// each with what it holds and when its bound passes (F194).
+    pub memory_turns: Arc<
+        std::sync::Mutex<std::collections::BTreeMap<String, crate::http::memory_turn::PendingTurn>>,
+    >,
     /// Whether this daemon is running entirely on fakes.
     pub offline: bool,
     /// The cache-proxy status client and watch memory (plan 229); its URL is

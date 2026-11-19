@@ -1868,6 +1868,30 @@ async fn memory(
                 ),
             )
         })?;
+    // F194: the note is the author seat's, so a close of that seat can tell
+    // its memory turn is already done. One spine event; a failed publish only
+    // means that close asks for the turn again.
+    let event = pij_core::model::Event {
+        seq: None,
+        v: 1,
+        at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| {
+                u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+            }),
+        kind: super::memory_turn::NOTE_EVENT_KIND.to_string(),
+        seat: Some(actor.clone()),
+        payload: json!({
+            "project": project,
+            "role": role_id,
+            "path": note,
+            "commit": written.commit,
+        })
+        .to_string(),
+    };
+    if let Err(error) = state.services.event_bus.publish(event).await {
+        eprintln!("pij-rs could not record {actor}'s memory note: {error}");
+    }
     Ok(json!({
         "project": project,
         "role": role_id,

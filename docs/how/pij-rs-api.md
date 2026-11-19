@@ -1771,10 +1771,28 @@ incarnation in it (its process or pane changed), during the turn: a brake, so
 an old action never gains authority over a replacement that reuses the seat
 id. A held close also rechecks authority: the closer must still be the seat or
 its recorded parent, so a seat reparented during the turn is not closed. Each
-skip is named in the `memory.turn` event's `then`. A close then compares-and-sets against that same read, so the seat's
-ordinary activity changes during the turn do not block it. The native CLI's
-`send --command compact` and `compact-self` print the held receipt with its
-`held` and `memory_turn`.
+skip is named in the `memory.turn` event's `then`. A close then compares-and-sets against that same read. The seat's own
+writes as its turn ends (its idle, its activity) can land between the read and
+the compare-and-set and answer `E-RS-INCARNATION-CHANGED`. The close then reads
+the seat again, rechecks the same skips and authority, and retries, at most 5
+times (`CLOSE_ATTEMPTS`). Before F194 that 409 ended the close as
+`failed: the close answered 409 Conflict`, and a turn that had ended left the seat
+open. A close that proceeds at the bound adds `(memory note may be missing: …)`
+to the tombstone reason. The bound is a policy: it decides to close without the
+note. The native CLI's `send --command compact` and `compact-self` print the held
+receipt with its `held` and `memory_turn`.
+
+A close needs no turn when the seat already wrote its note in this context
+(F194). `pij directory memory add` records a `memory.note` spine event on the
+author seat (`project`, `role`, `path`, `commit`). A close skips the turn, and
+tombstones at once, when the seat's newest `memory.note` names a project and role
+among its holdings in this context and is no older than the newest of those
+holdings' starts. The anchor is the holding's start, not the close request, so a
+note written before anyone asked still counts, while one from an earlier holding
+of the same role does not. A seat whose holdings in this context are all released
+follows the same rule, and is never refused with a directory error: without the
+note it takes the turn, and the turn's end closes it. A compact always takes its
+turn, because a compact keeps the seat working, so its note can change.
 
 A project, role or instance appears in the prompt only when it fits
 `[a-z0-9][a-z0-9-]{0,31}`, the shape of every one in use; otherwise it shows as
@@ -1792,9 +1810,27 @@ context, or end your turn"), and `data.memory_turn` and the event carry
 never block or skip the action, so a seat whose context is full is never
 stranded by a store error.
 
-A seat has at most one memory turn pending. A second compact or close for it
-while one is held is refused with `E-RS-MEMORY-TURN-PENDING` (HTTP 409); it is
-never a second turn or a second action.
+A seat has at most one memory turn pending, and the rule holds whatever the
+seat's holdings or notes say meanwhile: the daemon checks for a pending turn
+before it reads them. A close of the seat answers `ok` with the pending close
+(`data.held: "memory-turn"`, `data.memory_turn`
+`{action, pending: true, deadline_ms, note}`), with no second turn and no second
+action, only when the held close will do exactly what it asks: the same closer
+and the same incarnation (process and pane). Any other request while a turn is
+held is refused with `E-RS-MEMORY-TURN-PENDING` (HTTP 409) and is not run later.
+Its `details` carry `code`, `seat`, `pending` (the held action), `deadline_ms`, and
+`why`:
+
+- `another-action`: a compact, or a close while a compact is held.
+- `another-closer`: another seat's close, for instance a new parent's after a
+  reparent. The held close rechecks its own closer and skips.
+- `another-incarnation`: the seat was revived or rebound since the close was
+  held, which then skips it.
+
+The caller asks again once the turn ends (R245-001). It is a refusal, not a
+replacement, so the held action keeps every brake it was held with. Every held
+answer carries `memory_turn.deadline_ms`, the time (Unix ms) the bound ends the
+turn.
 
 Every turn records one `memory.turn` spine event on the seat: `action`,
 `holdings`, `prompt` (the prompt's msg_id), `ended` (`turn-end`, `bound`, or
@@ -1817,7 +1853,14 @@ turn or arrived during it.
 Cost: one live subscription per pending memory turn (only for seats that
 held a role in this context, being compacted or closed), one delivery, one
 spine event and one deadline; no poll and no launch. Anyone else pays the two
-bounded, indexed holdings reads.
+bounded, indexed holdings reads. A close of a holder adds one indexed spine read
+(the seat's newest `memory.note`), and a memory add adds one spine append. A held
+close is at most 5 attempts. Each attempt is one registry read (`current`), the
+close path's existing `pane_now` (one read on the daemon's live tmux control
+client, in-process process-start checks, and, when that path reaches it, one
+registry list over the fleet), and the tombstone compare-and-set with its
+receipt reads. Attempts after the first happen only when the seat's own writes
+raced the one before. None of them launches anything.
 
 ## Number claims and delivery at merge (plan 196)
 
