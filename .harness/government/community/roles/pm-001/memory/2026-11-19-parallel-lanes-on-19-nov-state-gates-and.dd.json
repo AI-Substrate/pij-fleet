@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Read when resuming pm-001 after the 19 Nov compaction, or before sending any READY, or when running several coder lanes at once",
+				"tags": [
+					"lanes",
+					"ready",
+					"seats",
+					"traps",
+					"resume"
+				],
+				"title": "Parallel lanes on 19 Nov: state, gates and traps"
+			}
+		},
+		{
+			"name": "body",
+			"value": "State at compaction (19 Nov ~15:40): merged today: #245 F194, #247 F207, #248 F202, #249/#251 F209 (daemon CPU 48% -> 17.7%), #250 F208, #252 F210, #253 F211, #254 F212, #256 F214 (PAST_TTL defaults to Warn (b); Jordan still to rule a/b/c from the replay table), #258 F214 follow-up. In flight: #257 F217 (falcon) round 2 for R257-001 (nested nice gives 20 on macOS; shared-build.test asserts 19; just test fails, CI misses it via bare npm test); reviewers junglefowl (reviewer/257), orca (security/257, passed), cobra (OMP, performance/257). Egret (coder/d-f208-1) on D-F208-1, a real-SDK registration canary. Pony (performance/256) owes the F214 after-deploy audit at ~06:10Z, then close it. Queue after: F203, F197, F190/F193/F199/F200, F213 (check pm-004 overlap), F215, F216.\n\nGates and traps learned:\n- Gate READY on a FINAL freeze: `just pr-freeze N > f; rc=$?; if [ $rc -eq 0 ]; then send READY; fi`. I once sent READY chained after an UNKNOWN freeze; another PR merged and it went DIRTY. Re-freeze after every merge.\n- Per-PR verdict instances always (reviewer/N, security/N, performance/N): other communities hold bare security/performance, and role sends then fail with E-RS-ROLE-HOLDERS.\n- OMP seats can't spawn from a linked worktree: spawn from ~/pi-hacking/pij, then cd. OMP gpt selector: github-copilot/gpt-6.1-sol. Use an OMP perf seat as the third live-proof harness.\n- A peer compact is `pij send <seat> --command compact` (`pij compact` is unported). `pij revive` is unported too: use `pij-rs revive`.\n- Plain `pij close` now works for holders (F194/F207): it waits for the memory note (ended note-written), then kill-pane plus a ps check. A seat that already wrote its note closes at once.\n- Coders must scrub PR bodies (home paths, account names) before FINAL (C21; the prime had to scrub #256). Every test they run: nice -n 19.\n- Don't let three verdict seats each claim an after-audit: name one owner (performance).\n- Disk: shared-build refuses under a 25 GiB floor; never lower it; ask coders to remove their OWN merged lanes' target/ first, and send the rest to the prime.\n"
+		}
+	]
+}
