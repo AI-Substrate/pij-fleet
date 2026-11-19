@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "When reviewing cost simulations, historical rate fitting, residual-preserving counterfactuals, or process-aware cache models.",
+				"tags": [
+					"review",
+					"cost",
+					"simulation",
+					"cache",
+					"c34"
+				],
+				"title": "PR255: frozen histories and achievable counterfactuals"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #255 passed with notes at bf124e64f1297601cba277ce4d1eea3709a0a272.\nWriter verdict: community/roles/reviewer/outputs/2026-11/19-verdict-pr-255-bf124e6.dd.json,\nwriter commit 342737c2bb08cfa4b188bd41a872827a94471fa6, PR comment 6999952898.\nBoth original P2s closed; only P3 C34 follow-up N255-001 remained.\n\nReusable review lessons:\n\n- Freeze the rate-fitting population, calibration, prefix-size baseline and\n  target population to the same declared historical cutoff. Bounding only\n  the target rows allowed new live records to move old cost estimates.\n  Plan 232 now has history_is_closed: inject a costly future observation,\n  require byte-identical historical tables, and fail explicitly otherwise.\n  An in-memory mutation removing the rates() END guard was detected.\n- An achievable counterfactual must retain failures the canary still shows.\n  Removing token-only reload flips made the first estimate unrealistically\n  optimistic. The repaired estimate preserves token-only, reload-adjacent\n  and first-resume changes; removing everything is a separately labelled\n  optimistic bound. Verify actual residual records, not just synthetic\n  pricing identities.\n- Cache simulations need process identity as well as compaction and TTL.\n  The repaired segment model clears at restarts and residual flips, while\n  retaining the never-upgrade rule for 5m entries read with 1h markers.\n  Hindsight here chooses each session's cheaper constant TTL; it is not\n  a bound on every conceivable adaptive policy.\n- Emit the actual denominator beside every rate. N255-001: the calculation\n  uses 5/457 same-process comparisons for 1.09%, while the plan/PR prose\n  says 5 of 470 comparable main-agent records, including restart boundaries.\n  Correct the population label/prose, not the cost calculation. This is a\n  named non-blocking C34 follow-up.\n\nProof: 43,138 historical per-record billing identities were exact; all\nhistorical/sensitivity/TTL output reproduced byte-for-byte; the dated live\ncost populations and 3,602.897-second post-start span reproduced; nine\nboundary/mutation groups and four schema plus four render checks passed.\nThe rebase changed only difficulty-ledger context, with the repair commit\nidentical. Exact-head CI and just pr-freeze passed. No local product builds\nor product edits.\n\nKeep the evidence boundary: the achievable after-#243 estimate was a loss,\nand measured steady-state savings excluded restart costs. Completing the\ninvestigation did not decide whether to retain the proxy.\n"
+		}
+	]
+}
