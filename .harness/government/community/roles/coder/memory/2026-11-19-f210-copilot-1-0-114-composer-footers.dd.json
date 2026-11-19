@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before touching composer.rs Copilot recognition (footer, activity brake, caret clip), diagnosing a Copilot control held unrecognized, or building pane fixtures from live captures (f210, copilot, composer, compact, fixtures, review)",
+				"tags": [
+					"f210",
+					"copilot",
+					"composer",
+					"compact",
+					"fixtures",
+					"review"
+				],
+				"title": "F210 Copilot 1.0.114 composer: footers without context, spinner frames, draft hints"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F210 (#252): Copilot /compact parked `unrecognized` on 1.0.114 panes whose footers never say `context` (claude-model seats, e.g. a 250x70 PA).\n\nWhere: crates/harnesses/src/composer.rs. copilot_v1_composer reads the ╻▄/┃/╹▀ box only when is_copilot_footer matches a row within 2 below it. The 1.0.114 idle hint row is `← open sidebar · Interactive · Allow All · / commands · ? help · tab next tab <model>`. With a draft typed it becomes `Interactive · Allow All · @ files/sessions · # issues <model>`. gpt seats passed only because their right-aligned text says `922K context`. Width, the right-edge ┃ and `Session: … AIC used` are red herrings.\n\nGet the vocabulary from the installed CLI, not one capture (the reviewer broke round 1 on this). ~/.copilot/pkg/darwin-arm64/<ver>/cli-main.js holds the tables: grep `pulseFrames` to get `frames [∙ ◉ ◎]`, `pulseFrames [● ◉ ◎ ○ ◎ ◉]` and `framesAltScreen [∙ ∘ ○ ◎ ◉ ◎ ○ ∘]`. The activity row (`◉ Compacting conversation history (1s)`) sits at column 0 just above the cwd row; transcript rows are indented (` ● DONE`).\n\nFast live rig: `pij-rs spawn --harness copilot --model claude-opus-5.5 --role worker` from the main checkout reproduces the context-less layout (250x70 in my session). `tmux send-keys -l 'hello draft'`, then `Home` and `tmux display -p '#{cursor_x},#{cursor_y}'` for draft frames. Type /compact and loop `capture-pane -p` every 150 ms for ~15 s to see every spinner frame. Then pij close, kill-pane and ps.\n\nFixture scrub (C21): strip ANSI, rstrip trailing spaces (capture-pane -p trims them), x every [A-Za-z0-9] in transcript rows, and swap the cwd for a same-width path. Assert that no private names or /Users/ remain.\n\nBrake vs policy wording that reviewers accepted: footer recognition is a POLICY (it decides whether a control can be typed, and composer text is still read at the caret). The activity row is a BRAKE (it only turns empty into unrecognized). Mutation-check both: `&& false`, and restoring the narrower glyph check.\n\nPre-existing, left alone: a pane whose footers say `context` is recognized with a draft, and Home puts the caret at column 2, so clip_payload reads \"\" (the ghost-suggestion clip).\n\nMistakes to avoid: the conflict:// write tool refuses until you `read <file>:conflicts` to register the blocks. I committed and pushed literal conflict markers once because I didn't check that call's result; `grep -c '^<<<<<<<'` before every merge commit. Worktrees made with `git worktree add` have no node_modules: symlink the main checkout's (with an identical lockfile) before harness checks, or every TS sensor fails.\n"
+		}
+	]
+}
