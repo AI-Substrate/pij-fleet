@@ -2029,6 +2029,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-uniform-butterfly",
 					"why": "F222 step 2: closed seats stop the registration loop; /v1/seats live-rows-only #270"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T10:12:25.239Z",
+					"harness": "copilot",
+					"harness_session": "a3739038-9369-4cef-9ab6-4b5159b17ef3",
+					"instance_key": "271",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-concrete-antelope",
+					"why": "F226 deploy builds through release-build.sh (shared-build, status, stamp check) #271"
 				}
 			]
 		}
