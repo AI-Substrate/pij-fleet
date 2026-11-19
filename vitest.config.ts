@@ -1,3 +1,4 @@
+import { delimiter, join } from "node:path";
 import { defineConfig } from "vitest/config";
 
 const NODE_SQLITE_SHIM = "\0node-sqlite-shim";
@@ -58,7 +59,16 @@ export default defineConfig({
 		// maybeFsyncSync): 18 fsync sites x 16 parallel workers on one disk
 		// starved boot-path tests into 20s+ timeouts. Ordering/content
 		// assertions are unaffected; production always fsyncs.
-		env: { PIJ_TEST_NO_FSYNC: "1" },
+		//
+		// The cargo tripwire comes first on every test's PATH (F217): a test that
+		// starts a cargo build fails instead of building a fresh per-worktree
+		// target. See harness/test-tripwire/cargo.
+		env: {
+			PIJ_TEST_NO_FSYNC: "1",
+			PATH: [join(import.meta.dirname, "harness/test-tripwire"), process.env.PATH ?? ""].join(
+				delimiter,
+			),
+		},
 		reporters: process.env.CI ? ["default", "github-actions"] : ["default"],
 		// A fresh clone with no extensions yet (and post-demo-teardown at
 		// v1 ship) has no .test.ts files. Vitest's default is exit 1 in

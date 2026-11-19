@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixtureArtifact } from "../driver/governance-fixture.js";
 import type * as DriverModule from "../driver/index.js";
 import { loadScenario, runScenario } from "../driver/index.js";
 import {
@@ -30,12 +31,33 @@ afterEach(() => {
 	vi.unstubAllEnvs();
 });
 
-describe("runWatchdogSmoke", () => {
-	it("refuses legacy watchdog grammar without mutation and round-trips on/status/off through the shim", async () => {
-		const result = await runWatchdogSmoke();
-		expect(result, result.reason).toEqual({ verdict: "PASS" });
-	}, 600_000);
-});
+// The watchdog smoke runs a built pij-rs and never builds one (F217). CI builds
+// it before `npm test` and sets PIJ_RS_BIN_REQUIRED=1, so absence fails loud
+// there; elsewhere the suite skips, and says why and how to run it.
+const ARTIFACT = fixtureArtifact(join(import.meta.dirname, "../.."));
+const ARTIFACT_PRESENT = existsSync(ARTIFACT);
+const HOW_TO_RUN =
+	"run `just smoke` (it builds pij-rs through shared-build), or build pij-rs, point CARGO_TARGET_DIR at its target and set PIJ_RS_BIN_REQUIRED=1";
+if (!ARTIFACT_PRESENT && process.env.PIJ_RS_BIN_REQUIRED === "1") {
+	throw new Error(`PIJ_RS_BIN_REQUIRED=1 but ${ARTIFACT} is missing; build it first`);
+}
+if (!ARTIFACT_PRESENT) {
+	console.warn(
+		`smoke.test: runWatchdogSmoke SKIPPED: no pij-rs binary at ${ARTIFACT}. To run it, ${HOW_TO_RUN}.`,
+	);
+}
+
+(ARTIFACT_PRESENT ? describe : describe.skip)(
+	ARTIFACT_PRESENT
+		? "runWatchdogSmoke"
+		: `runWatchdogSmoke (skipped: no pij-rs binary; ${HOW_TO_RUN})`,
+	() => {
+		it("refuses legacy watchdog grammar without mutation and round-trips on/status/off through the shim", async () => {
+			const result = await runWatchdogSmoke();
+			expect(result, result.reason).toEqual({ verdict: "PASS" });
+		}, 600_000);
+	},
+);
 
 describe("parseSmokeEnvelope", () => {
 	it("preserves the complete successful wire envelope and added fields", () => {

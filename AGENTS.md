@@ -183,16 +183,32 @@ citation disputes, all of which resolved as neither party being wrong.)
   Cargo names workspace artifacts by crate, so two trees building into one
   target overwrite each other mid-build. The recipe serialises builds with a
   lock, refuses under the disk floor (`PIJ_DISK_FLOOR_GB`, default 25), rebuilds
-  your own sources with `CARGO_INCREMENTAL=0`, runs every cargo command under
-  `nice -n 19` only (never `taskpolicy -b`, F186), and always releases. A stale lock is reported with its clear command, never
+  your own sources with `CARGO_INCREMENTAL=0`, runs every cargo command at
+  niceness 19 only (never `taskpolicy -b`, F186; a caller already at 19, such as
+  `just test`, gets no second nice, so it never stacks to 20), and always releases. A stale lock is reported with its clear command, never
   cleared for you (plans 198, 208). Parallelism is capped too, because `nice`
   lowers priority but does not shorten the run queue (F126). The repository's
   `.cargo/config.toml` sets `build.jobs = 4` and `RUST_TEST_THREADS = 4` for
-  every cargo run in the repo, whatever its environment: recipes, the governance
-  fixture's build, `pij daemon bounce`, `pij-gate` and CI. Override with
+  every cargo run in the repo, whatever its environment: recipes, `pij daemon
+  bounce`, `pij-gate` and CI. Override with
   `CARGO_BUILD_JOBS`, or your own `RUST_TEST_THREADS` or `-- --test-threads N`.
   shared-build maps `PIJ_CARGO_JOBS` (default 4) onto both and prints the cap
   first: `cargo jobs: 4 (PIJ_CARGO_JOBS), test threads: 4 (RUST_TEST_THREADS)`.
+- **One cargo target per checkout, and tests never build (F217).** A debug
+  workspace build is about 15 GB, so a fresh `target/` per lane filled the disk.
+  `harness/scripts/cargo-target.sh` names the one target: `CARGO_TARGET_DIR`,
+  else `PIJ_SHARED_TARGET`, else the main checkout's `target/`, which every
+  linked worktree shares. `just rust-check`, `route-inventory-check`, `smoke`
+  and the `copilot-native-*` Rust recipes build into it through shared-build.
+  The governance fixture never builds: it copies `<CARGO_TARGET_DIR or
+  target>/debug/pij-rs` and runs the copy (`just smoke` builds it; CI builds
+  `target/` first). Every recipe that runs a test runner (vitest, `node --test`,
+  the smoke) or a cargo build runs under `nice -n 19`; load reached 198 from one
+  un-niced `node --test`. Two sensors hold this: vitest puts
+  `harness/test-tripwire/cargo` first on every test's PATH, so a test that
+  starts a cargo build fails, and `harness/scripts/recipe-cost.test.ts` fails on
+  an un-niced test or build recipe, cargo outside shared-build (bar the niced
+  release deploy builds), or a target not from `cargo-target.sh`.
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
 - **`just pr-freeze <pr>`**: is a PR head final for verdicts? Run by hand before each verdict
