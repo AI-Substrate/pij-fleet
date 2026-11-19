@@ -201,7 +201,10 @@
 					"harness": "copilot",
 					"harness_session": "54c155a3-d090-4fad-9ac4-1397958f4a3b",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "dead seat (F227)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-eventual-boar",
+					"to": "2026-11-19T09:47:46.734Z",
 					"why": "PR #244 close-out + scrub"
 				},
 				{
