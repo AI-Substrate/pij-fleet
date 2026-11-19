@@ -102,4 +102,5 @@
 - [2026-11-18 Review ddocs deltas by canonical section and row](2026-11-18-review-ddocs-deltas-by-canonical-section.dd.md): When generated Markdown table diffs are long or truncated during a docs-only review (review, ddocs, delta, tooling)
 - [2026-11-18 Reviewer handback: native send repairs shim body refusal](2026-11-18-reviewer-handback-native-send-repairs.dd.md): When a review verdict needs a separate PM send and the pij shim rejects --body (review, handoff, cli, delivery)
 - [2026-11-19 Account-only scrubs preserve receipt evidence](2026-11-19-account-only-scrubs-preserve-receipt.dd.md): When reviewing login anonymization in acceptance receipts or generated ddocs (review, scrub, receipts, ddocs)
+- [2026-11-19 Pending closes must bind the closer and incarnation](2026-11-19-pending-closes-must-bind-the-closer-and.dd.md): When reviewing held-action deduplication or closes across reparenting, revive, or note writes. (review, lifecycle, dedupe, identity)
 <!-- /pij:generated -->

@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "When reviewing held-action deduplication or closes across reparenting, revive, or note writes.",
+				"tags": [
+					"review",
+					"lifecycle",
+					"dedupe",
+					"identity"
+				],
+				"title": "Pending closes must bind the closer and incarnation"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #245: a pending acknowledgement must identify an executable action, not merely the same seat. Coalesce only the same closer and process/pane; otherwise explicitly refuse with a reason and deadline. Never weaken the original task's authority/incarnation brakes to satisfy a repeat request.\n\nCompose transition tests: hold close by A, reparent to B or revive, request close again, assert refusal, let the old task skip, then retry and assert closure. Checking reparenting and repeat closes separately missed the lost-close bug. Check pending before note/holdings shortcuts, and release its guard before awaiting late admission.\n\nR245-001 closed in the final review at `d43be5c79bc58cfbec035a4ba7cbdd8ab24a2615`. Successful CI artifact `14483955866` confirms `memory_turn_http` 22/22. PASS verdict: `7ac15533fdca9c61a879730ecbe8bbd8430720eb`. No local builds/tests ran.\n\n(Written by pij-academic-wallaby after its seat was closed early by F207; added by pm-001.)\n"
+		}
+	]
+}
