@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f1af-367c-7d40-9c78-5090c2ceccc9",
+				"date": "2026-11-19",
+				"head": "c6a05846a4bd7f7af65ad08a7ab76d55dc53ea40",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:252",
+				"writer": "pij-splendid-kite",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 252",
+					"exit_code": 0,
+					"log": "FINAL; remote and GitHub heads agree; CLEAN; five latest checks pass; detached clean worktree"
+				},
+				{
+					"command": "gh run view 44445612065 --json headSha,conclusion,jobs",
+					"exit_code": 0,
+					"log": "Exact head c6a05846a4bd7f7af65ad08a7ab76d55dc53ea40; success; Rust job 135296931821 artifact 14491889852: 2528 passed, 6 skipped; all five new and older Copilot composer fixture tests pass"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Review: #252\n\n**BLOCK** at `c6a05846a4bd7f7af65ad08a7ab76d55dc53ea40`.\n\n## F252-001 — P1: the compaction brake misses the other real animation frames\n\nLocation: `crates/harnesses/src/composer.rs:147-149`.\n\nThe new footer POLICY makes the recorded 1.0.114 compaction layout recognizable, but its BRAKE rejects only a column-zero `○`. The actual running Copilot **1.0.114-0** renders compaction using `Q6n` -> `vr` (`TextSpinner`). That spinner selects `Lg.pulseFrames`, whose cycle is **`●`, `◉`, `◎`, `○`, `◎`, `◉`**. The glyph is not fixed.\n\nStatic counterexample: keep the committed compacting fixture and its measured caret `(2,66)` unchanged except for its activity row's first glyph, replacing `○` with `●`, `◉` or `◎`. At this head the footer matches, `found.activity` is false, and `clip_payload(\"\", 66, 1, 2, 66)` returns `Some(\"\")`. Thus `composer_region` reports an empty composer during an ordinary phase of the same compaction. Main rejects these frames because neither recorded footer qualifies there (`is_copilot_footer`, main lines 188-194).\n\nThe published-state brake does not close this hole. `.copilot/extensions/pij/store.mjs:2220-2234` publishes working for foreground assistant/fusion starts, not compaction starts. Manual compact is a separate command operation in the real CLI. `crates/daemon/src/pointer/worker.rs:380-393,465-477` can therefore observe settled idle during manual compaction. `interaction.rs:565-603,635-677` converts this recognized empty string to permission on both the preliminary and owned reads; `crates/tmux/src/lib.rs:401-431,977-1021` then pastes and sends Enter without an independent busy check.\n\nThis is newly reachable through #252's footer policy in the layout it repairs, not an optional inventory or a pre-existing recognized-layout limitation. It can type another queued control into an actively compacting pane. Recognize the complete real activity shape, retaining its conservative direction, and add a focused regression covering its actual glyph variants. No local tests or mutation runs were executed.\n\nRuntime evidence: the version-qualified installed `1.0.114-0/cli-main.js`, confirmed as in use by this review seat, SHA-256 `3774a14143c9906293cb1974ec360cabd7243ba0d66854aa8c2db5cd019a75ff`. The inspected definitions were `Q6n`, `vr`, `Lg.pulseFrames`, `WBi`, and the manual `compact` command case. No runtime source or private capture text is copied into this output.\n\n## C34 follow-up — pre-caret extraction is not whole-draft proof\n\nMain already implements `clip_payload` as `take_chars(payload, cursor_x - first_column)` (`composer.rs` main lines 151-162). On its already-recognized older Copilot layouts, a draft with the caret moved to its beginning can consequently read empty. The new synthetic draft test checks only the end-of-draft caret and retains an idle footer, so it does not prove the Home case safe.\n\nThis is not a second block: the actual 1.0.114 footer renderer suppresses the sidebar/commands/help hints when `hasInputText` is true, so the synthetic idle-footer-plus-draft frame is not itself proof of a newly reachable normal-use draft state. Preserve the existing inline-suggestion behavior while separately adding whole-draft safety evidence.\n\n## Remaining requested checks\n\n- Both new fixtures were compared read-only against the supplied original captures. After CSI removal, trailing-space trimming, ASCII letter/digit replacement in transcript rows 0-62, and the same-width generic cwd replacement, **both match exactly**. Each has 70 rows, 250-column box rules, unchanged composer/footer rows, and preserved transcript row lengths. Every transcript ASCII letter/digit is `x`; no private repository/account/path/token text remains. The generic cwd is fabricated, not the original machine path. The docs diff contains no private source text or paths.\n- Each fixture retains four ESC bytes belonging to two sanitized OSC sequences. Their payloads contain only scrubbed letters/digits and punctuation, not private data. The PR body's claim that all ANSI was stripped is inaccurate, but this is not a privacy block.\n- Whole-segment matching rejects the tested prose but is not a general proof of footer identity: prose containing all three exact standalone segments would match. The existing box position and measured-caret gates still have to match before that can authorize typing. A wrapped hint missing a required segment is not joined across rows and fails closed unless another existing footer rule qualifies.\n- A normal end-of-draft caret returns the draft text. A multi-row Copilot box does not satisfy this three-row box recognizer. Recorded follow-up dialogs replace the composer; sidebar-specific hints do not satisfy the new hint rule. There are no new 1.0.114 multiline/dialog/sidebar fixture tests, and this review does not claim a live negative-state matrix was executed.\n- Normal model work retains the existing published-working and settled-idle controls. `○ Thinking` is caught by the new prefix brake; the missing `●`/`◉`/`◎` activity phases are the blocking issue above.\n- Cost: no added poll, timer, subprocess launch, capture, or per-seat scheduling. The existing parse performs bounded two-row activity inspection and footer segment matching. No live cost measurement was needed for a new recurring mechanism.\n\n## Validation receipts\n\n- `just pr-freeze 252`: **FINAL**, matching remote/GitHub full head, CLEAN, ready, five latest checks passed, detached clean review worktree.\n- `git diff --check origin/main...HEAD`: **passed**.\n- CI run **44445612065**, exact head above: all four CI jobs succeeded; separate `delivers` check also succeeded.\n- Successful Rust job **135296931821**, JUnit artifact **14491889852**, selected from that job's upload log: **2,528 tests passed, 6 skipped**. `pij-harnesses` lib suite: **225 passed**, including all five new tests and the existing Copilot 1.0.82/1.0.84 composer/footer fixtures. Existing Copilot compact draft, published-working and idle-blip integration tests also passed.\n- CI `cargo clippy --locked --workspace --all-targets -- -D warnings`, formatting, Node 22/24 checks and delivers: **passed**.\n- Local builds, tests, mutations, boot/checks execution and pane input: **not run**, as requested. The counterexample above is a source trace, not an executed test.\n\nHighest-value harness improvement: make the compacting regression cover the real renderer's activity phases rather than one captured animation instant.\n"
+		}
+	]
+}
