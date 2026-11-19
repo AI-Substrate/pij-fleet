@@ -34,6 +34,8 @@ function checkout(): string {
 	mkdirSync(join(root, ".omp", "extensions", "pij"), { recursive: true });
 	writeFileSync(join(root, ".omp", "models.yml"), "providers: {}\n");
 	writeFileSync(join(root, ".omp", "mcp.json"), "{}\n");
+	// F219: the project-scoped layer; it must never be linked machine-wide.
+	writeFileSync(join(root, ".omp", "config.yml"), "worktree:\n  clone: false\n");
 	mkdirSync(join(root, ".copilot", "extensions", "pij"), { recursive: true });
 	for (const name of ["extension.mjs", "store.mjs"]) {
 		writeFileSync(join(root, ".copilot", "extensions", "pij", name), "export {};\n");
@@ -87,6 +89,12 @@ describe("link-global", () => {
 			join(root, ".omp", "models.yml"),
 		);
 		expect(existsSync(join(home, ".pi"))).toBe(false);
+		// The project layer stays project-scoped: no global link to it (F219).
+		expect(
+			lstatSync(join(home, ".omp", "agent", "config.yml"), {
+				throwIfNoEntry: false,
+			})?.isSymbolicLink(),
+		).not.toBe(true);
 		expect(run(root, home, ["--doctor-omp"])).toMatchObject({ code: 0, stderr: [] });
 	});
 

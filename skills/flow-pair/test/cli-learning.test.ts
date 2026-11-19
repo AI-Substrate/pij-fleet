@@ -15,6 +15,8 @@ function runCli(args: string[]): { stdout: string; stderr: string; status: numbe
 	const r = spawnSync("npx", ["tsx", CLI_PATH, ...args], {
 		encoding: "utf8",
 		timeout: 15000,
+		// F218: with both set, Node warns on stderr, which this suite asserts empty.
+		env: { ...process.env, FORCE_COLOR: undefined, NO_COLOR: undefined },
 	});
 	return {
 		stdout: r.stdout ?? "",

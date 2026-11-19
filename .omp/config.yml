@@ -1,0 +1,10 @@
+# Project-scoped OMP settings for this repository. Never linked into
+# ~/.omp/agent/ (`just link` links only mcp.json and models.yml).
+#
+# F219: OMP rewrites `git worktree add` (and `github pr_checkout`) into its own
+# worktree command, which by default makes a copy-on-write clone of the whole
+# checkout, ignored files included: the ~15 GB cargo target/ and node_modules
+# came along into every lane. A pij worktree is a plain checkout: deps come
+# through `just worktree-deps`, cargo builds into the shared target (F217).
+worktree:
+  clone: false

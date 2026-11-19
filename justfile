@@ -260,6 +260,12 @@ pr-freeze *ARGS:
 local-path-check:
     node_modules/.bin/tsx harness/scripts/local-path-check.ts
 
+# F219: OMP's worktree command must not clone the checkout (target/ and
+# node_modules included) into new worktrees: .omp/config.yml sets
+# worktree.clone false, and OMP itself must answer false from the repo root.
+omp-config-check:
+    node_modules/.bin/tsx harness/scripts/omp-config-check.ts
+
 # Validate every ddoc under docs/project/ and the community skill examples, and
 # check each rendered .dd.md is current. ddocs comes from PIJ_DDOCS, else PATH;
 # without it this fails UNAVAILABLE (pass --unavailable=warn to only warn).
@@ -338,6 +344,7 @@ copilot-models *ARGS:
 # task complete — never run npm directly to compose these steps.
 self-check:
     just local-path-check
+    just omp-config-check
     just ddocs-check
     just coverage-check
     just pij-skill-check
