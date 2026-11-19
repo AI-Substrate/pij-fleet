@@ -1,5 +1,5 @@
 {
-	"version": "1.0.114-0",
+	"version": "1.0.115-1",
 	"checks": [
 		"tool declared",
 		"hooks declared",
