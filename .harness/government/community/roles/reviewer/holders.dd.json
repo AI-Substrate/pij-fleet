@@ -1861,6 +1861,16 @@
 					"seat": "pij-compulsory-junglefowl",
 					"to": "2026-11-19T05:46:26.952Z",
 					"why": "F217 #257 correctness"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T05:47:57.210Z",
+					"harness": "copilot",
+					"harness_session": "4b0db837-7643-466e-b89f-a8ec3a6fb6bc",
+					"instance_key": "259",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-compulsory-junglefowl",
+					"why": "D-F208-1 real-SDK registration canary #259"
 				}
 			]
 		}
