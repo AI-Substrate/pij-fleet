@@ -1,0 +1,59 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"head": "e56cb949d907dd41e9e77a52b64374f21928a851",
+				"kind": "verdict",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:246",
+				"writer": "pij-small-swift",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 246 --worktree; just pr-freeze 246",
+					"exit_code": 0,
+					"log": "FINAL at e56cb949d907dd41e9e77a52b64374f21928a851; CLEAN; all latest checks passed"
+				},
+				{
+					"command": "git diff --check f3784caab656c1665c2daa469b283f60b2aa0065..HEAD",
+					"exit_code": 0,
+					"log": "No whitespace errors in the final-round delta"
+				},
+				{
+					"command": "just shared-build --timeout 2 -- test --locked -p pij-cli --bin pij-rs --then clippy --locked -p pij-cli --all-targets -- -D warnings",
+					"exit_code": 0,
+					"log": "Shared target selected through PIJ_SHARED_TARGET; nice 19, four jobs/test threads; all 82 CLI binary tests pass, including the privacy regression, route formatter and directory-holder test; macOS clippy clean"
+				},
+				{
+					"command": "gh run view 44430351257 --repo AI-Substrate/pij-fleet --job 135245837397 --log",
+					"exit_code": 0,
+					"log": "Exact-head successful Rust job: 2509 passed, six skipped; latest JS, Rust lint and delivers checks passed"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "Dependency-free review: seven JS-dependent sensors fail on missing tools or incompatible ambient Biome; pij-skill and copilot-native pass; heavy stages skipped; exact-head CI green"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "## A) Verdict\n\nPASS for PR #246 at e56cb949d907dd41e9e77a52b64374f21928a851.\nFinal round under C34. No blocking correctness findings, required fixes or further review round.\n\n## B) Scope\n\nReviewed the repair delta from f3784caab656c1665c2daa469b283f60b2aa0065 to the full head above, the original findings, the affected daemon reason producers, both human rendering call sites, regression tests and updated documentation.\n\n## C) Repair verification\n\nS246-001: the plan's execution guardrail now names a portable sibling worktree rather than an identifying absolute path. Source and generated Markdown agree. A scoped plan-artifact scan found no absolute home-directory paths.\n\nS246-002: cache_route_line now obtains its reason and fix through public_cache_reason. Known sidecar states receive fixed descriptions and repairs rather than sidecar-supplied text. Unknown states and reasons point to cache-proxy status without echoing their inputs. Transport failures retain only a fixed head; their retained repairs are fixed daemon strings, verified against the producers. Known daemon-built route/model reasons retain their established presentation. render::line still fences what is displayed.\n\nThe directory holder renderer uses the same projection for plain-route reasons and discards its fix. Proxied rows retain their fixed label; absent route data still adds nothing.\n\n## D) Correctness and compatibility\n\nNo round-two change to spawn/revive dispatch, emit_seat_receipt, the success/JSON condition, raw-envelope handling or cheap-compaction sequencing. The projection borrows display text and does not mutate descriptor data. JSON therefore retains the original raw cache_proxy fields, while refusals and JSON output still add no receipt line.\n\nNo normal-use correctness regression found in the repair delta.\n\n## E) Regression quality\n\nthe_receipt_line_never_shows_the_account_or_a_local_path checks exact identity-free output for account-bearing token/quota failures, path-bearing configuration/transport failures, an unknown state, an unknown reason and multiline forged text. The former verbatim renderer would retain those inputs and fail the new expected-output assertions; no executed mutation run is claimed.\n\nThe existing route-format test and directory-holder test also passed. As in round one, these unit tests do not independently prove both CLI receipt call sites; that bounded coverage limitation does not require new hardening or another review round.\n\n## F) Cost\n\nZero additional steady-state launches/second. No new poll, timer, recurring hook, sweep, request or process launch. The repair adds bounded in-process prefix/state comparisons per human receipt or rendered holder. Neither a destructive policy nor a brake: display projection only. No live fleet-rate measurement is claimed.\n\n## G) Validation\n\n- just pr-freeze 246 --worktree: FINAL at the full reviewed head; CLEAN, main base, latest checks passed, no migration changes.\n- git diff --check f3784caab656c1665c2daa469b283f60b2aa0065..HEAD: passed.\n- just shared-build --timeout 2 -- test --locked -p pij-cli --bin pij-rs --then clippy --locked -p pij-cli --all-targets -- -D warnings: passed with PIJ_SHARED_TARGET selecting the existing shared target. All 82 CLI binary tests passed, including both receipt tests and the directory-holder test; macOS all-target clippy was clean. The wrapper serialized work at nice 19 with four jobs/test threads.\n- CI run 44430351257, Rust job 135245837397: 2,509 passed, six skipped. Rust lint and both JS jobs passed. The latest delivers run also passed.\n- harness checks --quick: exit 1 in the dependency-free review worktree. Seven JS-dependent sensors could not pass without local tools; lint resolved an incompatible ambient Biome. Pij-skill and native Copilot contracts passed; heavy stages were skipped. Exact-head CI supplies JS evidence. No dependencies were installed or borrowed, and no full local gate pass is claimed.\n- Canonical-checkout harness boot passed readiness/typecheck/smoke; baseline orientation only, not exact-head PR proof.\n\n## H) Handover and harness feedback\n\nBoth requested repairs are verified within this correctness review. Product sources remain unchanged by review. Use this final verdict only for the full head above.\n\nmagicWand: retain round one's optional fake-daemon stdout regression suggestion so receipt/directory call-site removal can be detected without live seat creation. Captured the final-round proof boundary as INS-001 in bucket pr246-review-r2. No new mandatory follow-up.\n\ndifficulties: the dependency-free quick-gate limitation persists; exact-head CI and serialized local Rust validation keep the proof boundary explicit.\n"
+		}
+	]
+}
