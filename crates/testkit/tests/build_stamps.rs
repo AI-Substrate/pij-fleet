@@ -140,11 +140,14 @@ fn try_run_seeded(name: &str, env: &[(&str, &str)], seed: &[(&str, &str)]) -> (P
     );
     let scripts = scratch.join("harness/scripts");
     std::fs::create_dir_all(&scripts).expect("scratch scripts");
-    std::fs::copy(
-        root.join("harness/scripts/install-pij-rs.sh"),
-        scripts.join("install-pij-rs.sh"),
-    )
-    .expect("the installer the recipes run");
+    // The scripts the recipes run (F220: they nice through nice19.sh).
+    for script in ["install-pij-rs.sh", "nice19.sh"] {
+        std::fs::copy(
+            root.join("harness/scripts").join(script),
+            scripts.join(script),
+        )
+        .expect("a script the recipes run");
+    }
     for (path, contents) in seed {
         let path = scratch.join(path);
         std::fs::create_dir_all(path.parent().expect("a seeded file's folder"))

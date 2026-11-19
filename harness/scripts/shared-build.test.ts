@@ -314,11 +314,19 @@ describe("just shared-build", () => {
 		);
 		expect(result.code).toBe(0);
 		// One step per command: a test is no longer split into a --no-run compile
-		// and a run (F63's split fell away with background QoS).
+		// and a run (F63's split fell away with background QoS). Each runs at
+		// max(19, the runner's niceness): 19 under bare `npm test` or `just test`,
+		// 20 under an outer nice on a recipe that already nices (F220).
+		const runner = Number(
+			log(f)
+				.find((line) => line.startsWith("parent-niceness="))
+				?.slice("parent-niceness=".length),
+		);
+		const niceness = Math.max(19, runner);
 		expect(log(f).filter((line) => line.startsWith("niceness="))).toEqual([
-			"niceness=19 taskpolicy=none args=build",
-			"niceness=19 taskpolicy=none args=test -p x -- name",
-			"niceness=19 taskpolicy=none args=test -p x --doc -- name",
+			`niceness=${niceness} taskpolicy=none args=build`,
+			`niceness=${niceness} taskpolicy=none args=test -p x -- name`,
+			`niceness=${niceness} taskpolicy=none args=test -p x --doc -- name`,
 		]);
 		expect(existsSync(f.lock)).toBe(false);
 	});
