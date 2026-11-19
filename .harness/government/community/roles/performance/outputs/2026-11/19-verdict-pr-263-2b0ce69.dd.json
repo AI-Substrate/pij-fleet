@@ -1,0 +1,58 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f2c1-d443-7dc1-911f-6e0e9b845cff",
+				"date": "2026-11-19",
+				"head": "2b0ce696554bd03a023193a584f916a904a160e9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:263",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Live-proof owner to capture post-deployment counters, machine spawn-rate and daemon CPU/RSS while exercising Copilot restart; this review captures before only."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "pij-rs --json ping (two readings bracketing the 20-second machine probe)",
+					"exit_code": 0,
+					"log": "{\"started_at\": \"2026-11-19T07:43:47.306322+00:00\", \"ended_at\": \"2026-11-19T07:44:07.555743+00:00\", \"elapsed_s\": 20.249, \"pid_before\": 36530, \"pid_after\": 36530, \"running_commit_before\": \"a70cace40b\", \"running_commit_after\": \"a70cace40b\", \"before\": {\"total\": 2582, \"by_op\": {\"ddocs.community\": 260, \"gh.delivered\": 7, \"git.community\": 801, \"kill.background-job\": 1, \"ps.background-process-group\": 1, \"ps.registration-native-process\": 931, \"ps.sidecar-process-group\": 1, \"ps.tmux-harness-process-tree\": 48, \"tmux.atomically reserve staged submit\": 14, \"tmux.authorize staged submit commit\": 14, \"tmux.clear-options tap owner\": 12, \"tmux.control-client\": 1, \"tmux.load submit buffer\": 42, \"tmux.new-window\": 16, \"tmux.paste owned submit buffer\": 42, \"tmux.pipe-pane attach\": 151, \"tmux.pipe-pane detach\": 18, \"tmux.rename-window\": 43, \"tmux.restore pane input and release ownership\": 14, \"tmux.set-options tap owner\": 151, \"tmux.submit authorized staged body\": 14}}, \"after\": {\"total\": 2582, \"by_op\": {\"ddocs.community\": 260, \"gh.delivered\": 7, \"git.community\": 801, \"kill.background-job\": 1, \"ps.background-process-group\": 1, \"ps.registration-native-process\": 931, \"ps.sidecar-process-group\": 1, \"ps.tmux-harness-process-tree\": 48, \"tmux.atomically reserve staged submit\": 14, \"tmux.authorize staged submit commit\": 14, \"tmux.clear-options tap owner\": 12, \"tmux.control-client\": 1, \"tmux.load submit buffer\": 42, \"tmux.new-window\": 16, \"tmux.paste owned submit buffer\": 42, \"tmux.pipe-pane attach\": 151, \"tmux.pipe-pane detach\": 18, \"tmux.rename-window\": 43, \"tmux.restore pane input and release ownership\": 14, \"tmux.set-options tap owner\": 151, \"tmux.submit authorized staged body\": 14}}, \"delta\": {\"total\": 0, \"by_op\": {\"ddocs.community\": 0, \"gh.delivered\": 0, \"git.community\": 0, \"kill.background-job\": 0, \"ps.background-process-group\": 0, \"ps.registration-native-process\": 0, \"ps.sidecar-process-group\": 0, \"ps.tmux-harness-process-tree\": 0, \"tmux.atomically reserve staged submit\": 0, \"tmux.authorize staged submit commit\": 0, \"tmux.clear-options tap owner\": 0, \"tmux.control-client\": 0, \"tmux.load submit buffer\": 0, \"tmux.new-window\": 0, \"tmux.paste owned submit buffer\": 0, \"tmux.pipe-pane attach\": 0, \"tmux.pipe-pane detach\": 0, \"tmux.rename-window\": 0, \"tmux.restore pane input and release ownership\": 0, \"tmux.set-options tap owner\": 0, \"tmux.submit authorized staged body\": 0}}}"
+				},
+				{
+					"command": "just spawn-rate --seconds 20 --json",
+					"exit_code": 0,
+					"log": "{\n  \"seconds\": 20.0,\n  \"daemon_pid\": 36530,\n  \"total_new_per_s\": 117.2,\n  \"polls\": 192045,\n  \"sampled_per_s\": 112.4,\n  \"attributed_per_s_lower_bound\": {\n    \"other\": 57.6,\n    \"<gone before seen>\": 54.8\n  },\n  \"daemon_children_per_s_lower_bound\": {},\n  \"statusline_runs_seen_per_s\": 0.0,\n  \"pij_claude_hook_runs_seen_per_s_lower_bound\": {\n    \"display\": 0.0,\n    \"stop\": 0.0\n  },\n  \"top_commands_per_s_lower_bound\": {\n    \"bash\": 34.3,\n    \"copilot\": 8.0,\n    \"sh\": 3.2,\n    \"tmux\": 2.3,\n    \"pij-rs\": 2.0,\n    \"adapter-70532c1\": 1.7,\n    \"node\": 1.3,\n    \"flowspace3\": 1.1,\n    \"gc\": 1.0,\n    \"git\": 0.8,\n    \"bun.exe\": 0.7,\n    \"git-ai\": 0.3\n  }\n}\n"
+				},
+				{
+					"command": "/bin/ps -p 36530 -o pid=,lstart=,%cpu=,rss=,comm=",
+					"exit_code": 0,
+					"log": "36530 Thu 19 Nov 15:07:56 2026       8.3 154160 /Users/jordanknight/.npm-global/bin/pij-rs\n"
+				},
+				{
+					"command": "git diff --exit-code origin/main...2b0ce696554bd03a023193a584f916a904a160e9 -- crates/testkit/tests/spawn_sites.rs",
+					"exit_code": 0,
+					"log": "No output: spawn_sites.rs unchanged."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES — performance/263, round 1, exact head 2b0ce696554bd03a023193a584f916a904a160e9.\n\nNo blocking performance finding. Detached HEAD matched the requested SHA; the exact-head merge-base diff touches nine files and no launch inventory, dependency, extension, timer or scheduling code.\n\nCost contract (source review / inferential):\n| Changed path | Added launches/s | Trigger / interval | Scaling |\n| --- | --- | --- | --- |\n| NativeHandoff ancestry retention and carried-route decision | 0 | Existing native registration; route lookup only under !same_launch; no new poll/timer | Existing vector moved, not cloned; host removal and exact-identity lookup each bounded by the existing 32-process ancestry cap (at most 31 ancestors). No per-tick/per-seat work. One fixed reason String for a successful carry. |\n\nEvidence: crates/daemon/src/registration.rs:613-662 reuses verify_native_host's result, :746-803 retains the already-allocated/verified vector, and :1191-1225 consults it without another observation, spawn or await. The existing loop bound and five-second observation timeout are unchanged. CacheProxy notice/doctor classification receives the same proxied enum, without an additional polling path. Workstream 004 s08's no-launch description and blueprint 003 are consistent with this delta.\n\nImportant distinction: native registration is NOT wholly launch-free on macOS. Existing native_observer / AncestryReads (:2067-2105, :2224-2309) reads parent/name in-process and caches one absolute-path /bin/ps argv read per host-named ancestor. This PR adds zero such calls and changes neither the walk nor its trigger rate. Linux's existing /proc path remains launch-free. The only route membership scan is in-memory.\n\nLive-before receipt: 2026-11-19T07:43:47.306322Z–07:44:07.555743Z, monotonic interval 20.249 s. Both ping readings identify daemon PID 36530, running commit a70cace40b (not the reviewed patch). Total spawns stayed 2582; every by_op delta was zero, including ps.registration-native-process at 931. The embedded spawn-rate receipt is the simultaneous 20-second whole-machine sample; attribution is a lower bound, not an exact daemon count. Resource snapshot is embedded separately; ps %CPU is a snapshot, not an interval CPU benchmark.\n\nChecks exercised: live ping twice; just spawn-rate --seconds 20 --json; /bin/ps PID/CPU/RSS; exact-head diff; git diff --exit-code origin/main...<head> -- crates/testkit/tests/spawn_sites.rs returned 0/no diff. No builds, cargo, shared-build, tests or daemon restart performed, as required for this review seat. This is not a runtime proof of the patch.\n\nNote owed by the live-proof owner: repeat counters, whole-machine spawn rate and daemon CPU/RSS after deployment while exercising the Copilot restart path; confirm zero added launch sites/calls. Current baseline alone cannot establish that after result.\n\nHarness feedback / magicWand: a single spawn-rate receipt that brackets itself with ping counters, same-daemon identity and CPU/RSS would encode the manual pairing. Difficulties: no blocking tooling issue; the distinction between zero incremental launches and the pre-existing host argv ps calls must remain explicit.\n"
+		}
+	]
+}
