@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f3a7-de55-7bf3-91e1-62635616e2e4",
+				"date": "2026-11-19",
+				"head": "55cea7a841f93e8f1565ed368279ce6ff03fa5c9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:272",
+				"writer": "pij-whispering-marmot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 272",
+					"exit_code": 0
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --test directory_http -- a_role_send_to_a_dead_holder_queues_and_a_revive_delivers_again a_role_send_skips_a_dead_holder_for_the_live_one an_instance_whose_holder_is_dead_queues_and_reaches_no_one",
+					"exit_code": 0
+				},
+				{
+					"command": "L1 mutation: live_seat retains tombstoned rows; rerun the same three targeted directory_http tests",
+					"exit_code": 101
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #272: round 2 delta review\n\nHead: `55cea7a841f93e8f1565ed368279ce6ff03fa5c9`.\nScope: only `645ab5103784ce386f63f0f37bba95c490c162dc..55cea7a841f93e8f1565ed368279ce6ff03fa5c9`, one descendant commit with no rebase. Round-1 verdict `de812635a0de5692621dd8cd551ad0d53b19f04f` stands for the rest.\n\n## Result\n\n**PASS WITH NOTES**, C34 final round. No new blocking correctness or security finding. The delta satisfies the requested dead-holder routing proof. The notes are the existing local-gate limitations below, not additional merge conditions.\n\n## Delta findings\n\n- No change to holder selection: `role_send.rs:295-310` still adds exactly the same `Some(seat)` results to `live`. The new `dead` vector is consumed only while formatting the queued receipt after the existing request write and wake. It neither mutates holdings nor chooses or delivers to a seat.\n- Instance isolation: the addressed-instance equality filter at `role_send.rs:301` runs before liveness classification. For `role:reviewer/196`, a live `/197` holder never enters `live` or `dead`; the empty live set queues, with no fallback to another instance. The third regression asserts no original request reaches either seat.\n- Project isolation: assignments are read with `assignments(&send.project)` at `role_send.rs:238-241`, then filtered to the addressed open role and instance. The store binds `WHERE project = ?1` (`store/community.rs:362-373`). The suffix uses only those dead rows and the same project. It reads no other project's holdings.\n- Shell safety and disclosure: `role_send.rs:386-413` sends every release-command word, including the combined role/instance, seat, why and project, through `picture::command` (`picture.rs:98-103`) and `shell_word` (`core/directory.rs:32-42`). Noncanonical seat IDs and unprintable instances are skipped. The addressed role already passed its closed grammar. Prime designation and legacy prime rows never enter the new dead-holding suffix (`role_send.rs:246-257,305`).\n- The existing directory already exposes the same dead holdings and repair commands (`community/directory.rs:473-494`); the sender-facing reason adds no privileged directory information under C33. Security found no newly added private home paths or credential material in the four-file delta or PR text; this was manual inspection, not an automated secret scan.\n- Cost: no new recurring loop, timer, poll, launch, registry read or wake. The existing per-candidate lookup is unchanged. One additional in-process formatting pass runs only for queued receipts, linear in the addressed dead holdings; zero added launches and no per-tick work.\n\n## Evidence\n\n| Check | Result |\n|---|---|\n| `just pr-freeze 272` | FINAL at the full head above; detached worktree clean |\n| `git merge-base --is-ancestor 645ab5103784ce386f63f0f37bba95c490c162dc HEAD` | Passed; exactly one descendant commit |\n| CI run `44518137806`; delivers run `44518150019` | Successful; both returned this exact `head_sha` |\n| Three new role-send regressions, one targeted `directory_http` invocation through shared-build | 3 passed, 0 failed |\n| Reviewer L1: `live_seat` retains tombstoned registry rows | Caught: all 3 executed tests failed their routing assertions, exit 101; no compilation failure |\n| Restore the L1 mutation and compare production source with this exact head | Exact match |\n| `git diff --check 645ab5103784ce386f63f0f37bba95c490c162dc..HEAD` | Passed |\n| `harness checks --quick --json` | Non-green: same eight TS/tooling failures from missing local dependencies/incompatible ambient tools; native contracts, SDK contract and pij-skill passed; heavy stages explicitly skipped |\n\nLocal cargo uses the canonical shared-build lock, niceness 19, four jobs and `CARGO_INCREMENTAL=0`. Mutation work is isolated outside the read-only review worktree.\n\nThe exact targeted command for both the green run and the L1 mutant was:\n\n```sh\njust shared-build -- test --locked -p pij-daemon --test directory_http -- a_role_send_to_a_dead_holder_queues_and_a_revive_delivers_again a_role_send_skips_a_dead_holder_for_the_live_one an_instance_whose_holder_is_dead_queues_and_reaches_no_one\n```\n\nL1 incorrectly produced a two-live-holders refusal for the mixed case and attempted dead-holder admission instead of queuing in the two dead-only cases. The green run proved the intended queue/delivery states and message-queue exclusions. Review worktree source remained unchanged.\n\n## Limits\n\nC33 and C34 apply. No dependency installation or symlink was made under C25. This review does not claim a green local full gate: the round-1 full-gate limitations stand, and this delta's complete workspace proof is exact-head CI. No live-fleet post-deploy proof is claimed.\n"
+		}
+	]
+}
