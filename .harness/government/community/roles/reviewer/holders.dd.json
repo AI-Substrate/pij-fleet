@@ -2120,6 +2120,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-functional-pony",
 					"why": "#273 F193 correctness review, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T23:09:49.712Z",
+					"harness": "copilot",
+					"harness_session": "3a7c075e-a9cd-487b-9746-0c8468f93a8f",
+					"instance_key": "274",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-functional-pony",
+					"why": "#274 one-line SDK record, after #273"
 				}
 			]
 		}

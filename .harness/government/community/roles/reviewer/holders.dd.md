@@ -182,3 +182,4 @@
 | — | pij-essential-dove | omp | 01a1f5e5-92b6-7467-a16b-1861d9ce9b0a | JordansacStudio.localdomain | f193-proof | 2026-11-19T22:22:03.562Z | 2026-11-19T22:24:14.757Z | pij-cultural-falcon | pij-cultural-falcon | F193 repro | F193 repro done |
 | — | pij-regulatory-snipe | copilot | f9fd96aa-a56d-43fc-a3d2-da5cfefef4e2 | JordansacStudio.localdomain | f190-proof | 2026-11-19T22:23:14.916Z | 2026-11-19T22:24:15.313Z | pij-cultural-falcon | pij-cultural-falcon | F190 repro | F190 repro done |
 | — | pij-functional-pony | copilot | 3a7c075e-a9cd-487b-9746-0c8468f93a8f | JordansacStudio.localdomain | 273 | 2026-11-19T23:01:52.065Z | — | pij-steady-otter | — | #273 F193 correctness review, fresh seat | — |
+| — | pij-functional-pony | copilot | 3a7c075e-a9cd-487b-9746-0c8468f93a8f | JordansacStudio.localdomain | 274 | 2026-11-19T23:09:49.712Z | — | pij-steady-otter | — | #274 one-line SDK record, after #273 | — |
