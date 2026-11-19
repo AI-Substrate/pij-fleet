@@ -1104,7 +1104,10 @@
 					"harness_session": "01a1f172-b316-72df-af40-40261d587094",
 					"instance_key": "f212",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #254 merged (2f2691262de2)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-printed-egret",
+					"to": "2026-11-19T04:33:02.466Z",
 					"why": "F212: Copilot seats lose auth (401) and need a manual restart"
 				},
 				{
