@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f305-e96d-7e90-a4f5-65159ea3da57",
+				"date": "2026-11-19",
+				"head": "dabbd04062d73a12ffef2a831bd7e2f2030c8f8a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:266",
+				"writer": "pij-doubtful-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 266",
+					"exit_code": 0,
+					"log": "FINAL at dabbd04062d73a12ffef2a831bd7e2f2030c8f8a; all five checks passed; detached checkout clean"
+				},
+				{
+					"command": "gh run view 44491243773 --repo AI-Substrate/pij-fleet --log",
+					"exit_code": 0,
+					"log": "rust-test job 135447109921: 2582 passed, 6 skipped; upload identifies artifact 14512742291; exact JUnit artifact confirms all five counter regressions passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS - security, C34 round 2 (final).\nPR: #266\nHead: dabbd04062d73a12ffef2a831bd7e2f2030c8f8a\nDelta: 890515121f3d8f38cc96947847e7178ce42e1cc9 to this head.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No security regression found | - |\n\nNo security findings or security follow-ups. Prior authentication and\nprivacy conclusions carry forward after review of the complete four-file\ndelta (+138/-63).\n\nSecurity evidence:\n\n- crates/daemon/src/http/mod.rs:609-615,642 constructs the counter table\n  from Endpoint::ALL paths. route_counts.rs:87-93,115-131 sorts and\n  deduplicates static templates into a fixed boxed slice with inline\n  counters. No request-derived label is inserted.\n- route_counts.rs:134-159 only searches the table; missing or unknown\n  templates increment unmatched without allocating or expanding storage.\n  :35-57,163-196 emits fixed method names, table templates and unmatched.\n  Bounds remain 62 templates, eight method buckets, one unmatched bucket,\n  and 128 query-shape slots. Key bytes remain application-controlled.\n- route_counts.rs:67-77,163-196 reads independent atomics; each emitted\n  count is reused in the wrapping total. Snapshot nontransactionality and\n  u64 wrapping are documented diagnostics, not authorization decisions.\n  :201-259 retains fixed-vocabulary query shapes and MatchedPath, not raw\n  paths, query values, tokens, seat IDs or captured job IDs.\n- http/mod.rs:792-851 preserves bearer middleware, the separately\n  authenticated job-token route and outer counting layer.\n  route_counts.rs:237-259 still delegates to guarded handlers and returns\n  responses unchanged. Authentication has no delta.\n\nValidation:\n\n- just pr-freeze 266: FINAL at the exact head; ls-remote and gh agree,\n  main CLEAN, all five latest checks passed, detached checkout clean.\n- CI run 44491243773 succeeded at this exact head; rust-lint,\n  rust-test, check (22), check (24) passed. Latest delivers run\n  44491244809 succeeded.\n- rust-test job 135447109921 reports 2582 passed and 6 skipped.\n  Independently parsed its exact JUnit artifact 14512742291, identified\n  from that successful job's upload log. All five regressions passed:\n  a_template_outside_the_table_counts_as_unmatched_and_adds_no_key;\n  counts_by_route_method_and_outcome_and_leaves_unrequested_routes_out;\n  seats_reads_are_counted_by_query_shape_and_unknown_parameters_add_no_keys;\n  snapshots_during_recording_lose_nothing;\n  ping_counts_requests_by_route_and_seats_reads_by_query_shape.\n- Delegated reviewer inspected the complete delta and necessary context,\n  verified head/clean status, and ran git diff --check successfully.\n  New unknown-template and concurrent snapshot test bodies were inspected.\n- No local builds, Cargo commands, tests, typechecks, harness checks,\n  benchmarks or live-daemon probes. Mutation claims were not independently\n  rerun. Security retention and cost conclusions are source-derived.\n\nCost:\n\nThe earlier recording mutex/map lookup is removed. Recording now performs\na binary search and atomic outcome increment, with no recording mutex,\nper-path Arc clone or first-request allocation. GET /v1/seats retains a\nquery-byte scan and second increment; the existing MatchedPath middleware\nclone is unchanged. No new production background loop, poll, timer,\nprocess launch, logging or store write; no per-seat scaling. This is a\nsecurity PASS, not the separate performance role's live-cost verdict.\n"
+		}
+	]
+}
