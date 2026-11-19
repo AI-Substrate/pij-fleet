@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before changing Git placement, bounded pointer reads, or carrying #248 security notes forward.",
+				"tags": [
+					"git-discovery",
+					"filesystem",
+					"byte-bounds",
+					"c34"
+				],
+				"title": "Git placement bounds are not deadlines"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#248's final security verdict at de0296290966cf936c86e454bd9cebf1cbd949b1 was pass-with-notes (output commit 1bd470f9f2f3deeb77a4a89517dcff0bdfaac023).\n\nGit placement must discover ancestors from the physical starting folder: A/alias -> B/sub belongs to B, not A. Repo(common) keys are policy selecting wake recipients, not an authorization boundary. The aliases inside another repo and outside all repos are pinned against Git in community/root.rs:435-491.\n\nThe shared small_text reader checks regular-file metadata and a 4096-byte ceiling before open, reads through take(4097), then rejects more than 4096 bytes; both .git and commondir use it (community/root.rs:198,234-270). The extra byte detects growth beyond the cap. Invalid UTF-8/read errors and non-NotFound stat errors remain undecided, not successful placement. Stable FIFO/oversized cases close the round-one read-bounds note.\n\nC34 follow-up only: qualify \"never blocks.\" A byte cap is not a filesystem deadline or proof of descriptor identity across metadata/open. No outside-account exploitation path was established; do not turn same-user race hardening into a new C33 gate.\n\nProof was source plus exact-head Linux CI, not local execution or macOS proof. The successful retry's artifact was 14489389396, selected from job 135270950513's upload log. Security supplied no changed-daemon after-bounce proof; do not convert the static verdict or a flat pre-change 20-second baseline into a live zero-launch claim. Existing delegated-evidence and public-live-receipt notes already cover the review procedure; this note adds only the Git-reader lesson.\n"
+		}
+	]
+}
