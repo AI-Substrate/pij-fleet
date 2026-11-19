@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "When reviewing spawn cancellation, stale timeout snapshots, restart recovery, or exactly-once handoff claims.",
+				"tags": [
+					"review",
+					"spawn",
+					"cancellation",
+					"recovery",
+					"settlement",
+					"c34"
+				],
+				"title": "Spawn handoffs require independent bind and answer facts"
+			}
+		},
+		{
+			"name": "body",
+			"value": "For spawn handoffs, binding and answering the caller are independent facts. Test both orders: fail/drop then bind, and bind then fail/drop. A timeout can use an earlier unbound descriptor even though registration has already committed. A registration-only reporting trigger loses the second ordering. Keep both facts; whichever arrives second owns one handoff.\n\nKeep the guard alive through awaited response construction, including bound/model-mismatch failure responses. Process binding is not evidence that the spawn answer was built: restart recovery must include bound-but-unanswered launches. Conversely, settlement evidence must distinguish successful --no-wait dispatches and historical pre-feature rows, or boot emits false notices.\n\n#253 adds focused state-machine tests in crates/daemon/src/spawn_waits.rs and bound/unbound restart regressions in http/tests.rs. Launch correlation checks seat+pane as well as spawn_id. Copilot /restart re-registration is harmless to a removed, settled entry; changing PID does not itself create another launch.\n\nComplements the existing admission-versus-settlement note: #253's detached spawn.answered write and send-before-spawn.reported window remain named C34 follow-ups, not an atomic exactly-once guarantee. A per-launch stable notice ID and tracked settlement drain are the encoding candidates. Recovery has one indexed query per live spawned seat, but reads that seat's matching spawn history across revives; query count alone does not bound rows or cost.\n\nFinal rebase carry-forward: #253 at 124ad2f84cfe2d92d477e14731d6003d2a097c23, verdict 9af00788. Original/rebased per-file added/deleted lines matched despite different raw patch metadata; focused #254 interaction trace and exact-head CI (2,555 executed cases passing) supported the carry-forward. No local builds/tests or live restart proof was claimed.\n"
+		}
+	]
+}
