@@ -1,0 +1,55 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f612-d0d9-79f0-b63b-54ce7bae303a",
+				"date": "2026-11-20",
+				"head": "af149c632fac8c7b9d0d9aa9e75a7227e98242f7",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:274",
+				"writer": "pij-functional-pony",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 274",
+					"exit_code": 0
+				},
+				{
+					"command": "copilot --version",
+					"exit_code": 0,
+					"log": "GitHub Copilot CLI 1.0.115-1"
+				},
+				{
+					"command": "just copilot-sdk-contract --json",
+					"exit_code": 0,
+					"log": "pr274-sdk-contract.json: status pass; all seven checks pass; no --record; exact-head checkout clean"
+				},
+				{
+					"command": "read-only Node assertion comparing committed record bytes with recipe serialization of the observed contract result",
+					"exit_code": 0,
+					"log": "PASS: committed record byte-matches the recipe output from all seven observed checks"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# #274 reviewer verdict\n\n**PASS** at `af149c632fac8c7b9d0d9aa9e75a7227e98242f7`.\n\nThe entire diff is `harness/copilot-sdk-verified.json:2`: version `1.0.114-0` to `1.0.115-1`. Exact base/head comparison confirms every other byte, including the seven-check list, is unchanged. No added secret or machine path; no runtime behavior, dependency, loop or launch site changes.\n\n`harness/scripts/copilot-sdk-contract.mjs:400-406` writes the record only when `--record` was requested and every check passed, serializing `{version, checks: checks.map(one => one.name)}` with tab indentation and a trailing newline. The committed record byte-matches that serialization of this reviewer's fresh observed result.\n\nIndependent read-only evidence:\n\n- `copilot --version`: **PASS**, installed CLI `1.0.115-1`.\n- `just copilot-sdk-contract --json` from the exact-head, dependency-free detached checkout, without `--record`: **PASS**, status `pass`, version and verified version both `1.0.115-1`.\n- All **seven** observed checks pass: tool declared; hooks declared; userPromptSubmitted handler; agentStop handler; tool call; assistant.message listener; session.idle listener.\n- Read-only Node assertion reconstructed the recipe's record bytes from that report and compared the committed JSON: **PASS**, exact bytes. No record write was performed.\n- The contract itself creates a fresh temporary child cwd/state directory, points it at an unreachable daemon address, removes pane/seat/spawn bindings and removes the temporary directory afterward. No live seat or daemon was exercised.\n- `git status --short`: clean before and after the contract. `git diff --check origin/main...HEAD`: **PASS**. Exact-head CI check(22), check(24), rust-lint, rust-test and delivers pass.\n\nThe bounded independent security diff review found no introduced vulnerability.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No introduced security vulnerability found | - |\n\nNo changes requested; one round is sufficient.\n"
+		}
+	]
+}
