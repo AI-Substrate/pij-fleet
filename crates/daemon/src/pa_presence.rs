@@ -481,7 +481,7 @@ impl PaWatchdog {
                 if !Self::claim(services, claimed, kind, &scope.key, now_ms).await {
                     return None;
                 }
-                let last_pa = last_pa(seats, prime, &scope.key, &self.repos).await;
+                let last_pa = last_pa(seats, prime, &scope.key, self).await;
                 let body = pa_missing_body(&prime.id, missing_for, last_pa.as_ref(), &prime.folder);
                 let msg_id = format!("pa-missing:{}:{now_ms}", prime.id);
                 let (delivery, cold_check) = wake_pa(
@@ -1109,22 +1109,27 @@ fn descends(seat: &SeatDescriptor, seats: &[SeatDescriptor], members: &HashSet<&
 }
 
 /// The scope's last PA: the most recently tombstoned `pa`-role seat whose
-/// parent is the prime, or whose folder the repository cache already places
-/// in the scope. Reads only the cache: never a launch.
+/// parent is the prime, or whose folder is placed in the scope without a
+/// launch ([`PaWatchdog::placed`]).
 async fn last_pa(
     seats: &[SeatDescriptor],
     prime: &SeatDescriptor,
     key: &str,
-    repos: &tokio::sync::Mutex<HashMap<String, String>>,
+    watchdog: &PaWatchdog,
 ) -> Option<SeatId> {
-    let repos = repos.lock().await;
-    seats
+    let mut in_scope = Vec::new();
+    for seat in seats
         .iter()
         .filter(|seat| seat.role.as_deref() == Some(PA_ROLE) && !live(seat))
-        .filter(|seat| {
-            seat.parent.as_ref() == Some(&prime.id)
-                || repos.get(&seat.folder).is_some_and(|repo| repo == key)
-        })
+    {
+        if seat.parent.as_ref() == Some(&prime.id)
+            || watchdog.placed(&seat.folder).await.as_deref() == Some(key)
+        {
+            in_scope.push(seat);
+        }
+    }
+    in_scope
+        .into_iter()
         .max_by_key(|seat| (seat.tombstoned_at.unwrap_or(0), seat.id.clone()))
         .map(|seat| seat.id.clone())
 }
