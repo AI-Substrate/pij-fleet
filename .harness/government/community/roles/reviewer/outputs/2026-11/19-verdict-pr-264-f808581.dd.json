@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f2d3-9a24-7c31-b918-8f405fb48a01",
+				"date": "2026-11-19",
+				"head": "f808581187bf33c0513a637304264e9e4029ecb3",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:264",
+				"writer": "pij-wispy-penguin",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 264",
+					"exit_code": 0,
+					"log": "FINAL exact head f808581187bf33c0513a637304264e9e4029ecb3; all five checks pass"
+				},
+				{
+					"command": "CI run 44483637105 Rust job 135421644243, successful JUnit artifact 14510261401",
+					"exit_code": 0,
+					"log": "2576 passed, 6 skipped; all 11 focused trust/close/F211 testcase receipts passed"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Dependency-free review checkout: eight local tooling/dependency stages fail; native/SDK/skill checks pass; no Rust builds attempted"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: BLOCK\n\nPR #264, round 1 of 2. Exact head: f808581187bf33c0513a637304264e9e4029ecb3.\n\n## R264-001 (P2): refusal recovery instructions assume the default highlight\n\nLocation: `crates/harnesses/src/trust.rs:89-94`, with the fixed instructions at lines 57 and 66-67, consumed by `crates/daemon/src/http/mod.rs:2011-2024`.\n\n`safe_answer()` ignores the prompt's observed `highlighted` row. Unlike `next_key()`, it always returns the default-row instructions. The no-flag refusal therefore gives the wrong recovery action on a supported, committed screen: `copilot-1.0.114-folder-trust-second-row.txt` highlights `2. Yes, and remember this folder for future sessions`, but the refusal says to press Enter and describes that action as trusting this session only. Following it persists folder trust instead. Claude's committed yes-row fixture is similarly told Down then Enter although its trust row is already selected.\n\nThis affects F215's primary no-flag recovery path, not speculative hardening. Have the refusal tell the person to select the named trust row before Enter, or derive navigation from the observed highlight; do not describe an unconditional Enter as session-only trust. When the highlight is unavailable, name the target row rather than inventing a safe key. Extend the existing nondefault/no-highlight fixture assertions to cover the refusal guidance, not just automatic `next_key()`.\n\n## Other requested checks\n\n- The five live prompt fixtures cover the stated tall/short/second-row cases. The classifier is not a general guarantee against quoted text: Claude accepts matching option rows anywhere in the screen, even without its workspace heading. A multiline menu quotation can therefore match. This is a known matching limitation from source inspection, not a separately reproduced normal-startup blocker.\n- The opt-in path uses the observed highlight: Claude's No row produces Down, the trust row produces Enter, and no highlight refuses. It reclassifies each capture, so the inspected control flow stops sending keys when the prompt disappears. Menu keys are a closed enum; the one-second settle interval bounds key sends.\n- The refusal uses the existing F211 failure helper. It preserves the launched seat/pane/spawn identifiers, writes `spawn.failed`, and calls `watch.failed`, not `answered`; the existing two-fact handoff handles later or concurrent binding.\n- F216 goes directly to `/v1/close` by seat ID. Caller resolution, contradictory-attribution refusal, self/recorded-parent ownership and designated-prime dead-orphan authority remain in the daemon. No PA branch was added.\n- `kill_pane` follows the existing pane-ownership predicate, is validated as `%N` in the TS decoder, and is suppressed on a held close. The extension kills only that returned pane. The pane-identity checks are one-directional safety interlocks (brakes): removing them permits more kills; they are not retention policy.\n- Removing the boot-roster close and its otherwise-unused reducers leaves no callers of `requestClose` or `applyTerminalObservation`. Durable close truth now comes from the daemon's tombstone and role-ending path.\n- Existing nonblocking teardown-reporting limit: the concrete TS `TmuxAdapter.killPane` swallows execution failures and returns success, so the new `killed`/`killFailed` reporting cannot detect those failures. This root predates the PR; the former close also relied on that adapter result. Performance reviewer pij-united-dragonfly independently raised it.\n\n## Cost\n\nThe existing registration-wait loop sleeps 50 ms between iterations (at most about 20 iterations/s per active spawn wait, plus work time). The change reuses its single visible-screen capture and adds only in-process row classification; no new healthy-seat loop or capture launch. `--trust-folder` adds at most one recorded `tmux.send-keys` launch/s per opted-in active wait, and only while a matching prompt remains. No fleet measurements or builds were performed by this correctness review seat; live cost receipts belong to the separate performance verdict.\n\n## Evidence\n\n- `just pr-freeze 264`: FINAL at the exact head; all five checks green.\n- Exact-head CI run `44483637105`: Rust job `135421644243` reports 2,576 tests passed, 6 skipped. Its successful upload names JUnit artifact `14510261401` (downloaded by ID, not name). Parsed JUnit confirms all six trust unit tests, both new daemon trust tests, both pane-close guard tests and the F211 late-registration test passed.\n- Exact-head CI Node 22 job `135421644338`: `rust-runtime.test.ts` 120 tests passed; `session.test.ts` 49 passed; `spawn-expectation.test.ts` 2 passed. Suite total: 2,350 passed, 7 skipped; typecheck and lint job succeeded. Node 24, Rust lint and Delivers checks also succeeded.\n- Dependency-free, niceness-19 Node execution of the exact `decodeSeatCloseAnswer` implementation with `--experimental-transform-types`: PASS for retired/held/unchecked responses and four invalid pane values.\n- `just worktree-deps --check`: NOT-READY (no local node_modules). No dependency installation or symlink was attempted.\n- `harness checks --quick --json`: exit 1, environment-limited. Eight dependency/tooling stages failed; native contracts, SDK contract and skill check passed; Rust/route-inventory/smoke were skipped to honor the no-build review instruction. This is not a green local ship gate.\n- `git diff --check origin/main...HEAD`: exit 2 for the two Claude screen fixtures' intentional trailing blank screen rows; not treated as a code defect.\n- No source edits, cargo invocations, shared-build invocations, pane input or pane kills.\n\n## Harness feedback\n\nmagicWand: a read-only, CI-backed review gate that binds results and artifacts to the exact head without trying dependency-dependent development checks or builds.\n\ndifficulties: this detached review checkout has no node_modules; development-gate fallthrough reaches unrelated ambient tool versions. Captured as observation MW-001 in the review seat's harness buffer. The fixture assertions prove automatic navigation but do not protect the user-facing recovery instructions; the targeted regression requested in R264-001 would close that proof gap.\n"
+		}
+	]
+}
