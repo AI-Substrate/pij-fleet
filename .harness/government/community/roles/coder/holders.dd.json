@@ -1073,6 +1073,16 @@
 					"seat": "pij-printed-egret",
 					"to": "2026-11-19T02:05:31.379Z",
 					"why": "F208: Copilot held FYIs not claimed on typed prompt (hook:copilot silent since 11-17); second coder while falcon is on F202"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T02:25:02.176Z",
+					"harness": "omp",
+					"harness_session": "01a1f172-b316-72df-af40-40261d587094",
+					"instance_key": "f210",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-printed-egret",
+					"why": "F210: Copilot /compact parks unrecognized on a wide pane (salamander %189)"
 				}
 			]
 		}
