@@ -1,0 +1,78 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 231 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident",
+        "basis_sha": "d527cc9c9218e2671199dc3a0444f40d472bd0d60616b37844dd7fffa048e922"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-5bb9",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD→RUN: unit tests on the cache-line helper in crates/cli/src/main.rs (proxied; plain with and without fix; before-gate; non-Copilot); then `cargo test -p pij-cli` via shared-build. Live: a real Copilot spawn prints the line.",
+          "state": "checked",
+          "probe": "crates/cli/src/main.rs tests (the directory holder cache test is the existing pattern)"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-5bb9",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Live: a refused `pij-rs revive` prints no cache line; `pij-rs --json spawn` prints only the envelope (one line, carrying data.cache_proxy). The `!json && ok` condition is one line in emit_seat_receipt, so a unit test would only re-state it.",
+          "state": "checked",
+          "probe": "crates/cli/src/main.rs emit()"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-5bb9",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Unit test the_receipt_line_never_shows_the_account_or_a_local_path: account-bearing (no_token, quota_exhausted), path-bearing (no_account, status unreadable), an unknown state, an unknown reason and a multi-line forged reason each render fixed words with no account or path; then `cargo test -p pij-cli`.",
+          "state": "checked",
+          "probe": "crates/core/src/render.rs line()"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-5bb9",
+          "mode": "ABSENT",
+          "tier": "human-judgement",
+          "proof": "Reviewer reads docs/how/pij-rs-api.md § Copilot cache proxy gate against the shipped behaviour; no docs sensor covers prose.",
+          "state": "checked",
+          "probe": "docs/how/pij-rs-api.md"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks --quick",
+          "dimension": "correctness"
+        }
+      ]
+    }
+  ]
+}
