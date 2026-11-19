@@ -375,6 +375,16 @@
 					"seat": "pij-deliberate-orca",
 					"to": "2026-11-19T05:46:26.952Z",
 					"why": "F217 #257 security (shell scripts, recipes)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T05:47:57.641Z",
+					"harness": "copilot",
+					"harness_session": "62dda8ac-73c4-4f85-bdd1-5f7de7b72c06",
+					"instance_key": "259",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-deliberate-orca",
+					"why": "D-F208-1 real-SDK registration canary #259"
 				}
 			]
 		}
