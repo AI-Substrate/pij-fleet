@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "When reviewing held close or compact, dead role holdings, or revive routing.",
+				"tags": [
+					"review",
+					"lifecycle",
+					"liveness",
+					"role-send",
+					"f227"
+				],
+				"title": "Observed death is not an owner close"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Adds to the pending-close actor/incarnation note: a tombstone does not prove that close_seat ended the holdings. F227 lets an already-authorized held close continue after observed-dead, with ownership rechecked and descriptor CAS intact. Compact still skips every tombstone; an owner-close or missing reason conservatively spares the target.\n\nDeath without a close deliberately leaves holdings open for revival. Directory views, routes and role sends must exclude dead seats without releasing those holdings. Filter an explicitly addressed instance BEFORE liveness selection: a dead /196 must queue, never fall back to a live /197.\n\nProof lesson: restoring a saved descriptor through registry.put proves the persistence seam, not the revive HTTP path. A separate POST /v1/revive probe preserved the complete holding unchanged. Independently removing live_seat's tombstone filter failed all three new role-send regressions; the unchanged implementation passed all three.\n\nEvidence: PR #272 final head 55cea7a841f93e8f1565ed368279ce6ff03fa5c9; final-round verdict be54feba982cc40cee6f65e5018c60ea6526c921.\n"
+		}
+	]
+}
