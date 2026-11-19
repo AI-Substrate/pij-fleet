@@ -1900,6 +1900,16 @@
 					"seat": "pij-compulsory-junglefowl",
 					"to": "2026-11-19T06:45:02.841Z",
 					"why": "D-F208-2 just update-copilot #261"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T06:46:44.356Z",
+					"harness": "copilot",
+					"harness_session": "4b0db837-7643-466e-b89f-a8ec3a6fb6bc",
+					"instance_key": "262",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-compulsory-junglefowl",
+					"why": "F220 idempotent nice19 wrapper #262"
 				}
 			]
 		}
