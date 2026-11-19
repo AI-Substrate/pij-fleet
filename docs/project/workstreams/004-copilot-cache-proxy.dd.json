@@ -180,8 +180,8 @@
 							"worktree": "pij-f213"
 						}
 					],
-					"done_when": "A Copilot /restart of a proxied seat keeps it proxied: at registration in a new process, a proxied stamp carries when the process it was stamped for (pid and start time) is among the claimed host's ancestors as the daemon reads them through the kernel parent chain, also through an earlier carried stamp. The reason says 'carried from its proxied launch through a Copilot restart; route not re-read'. A reused pid, a process outside the lineage (quit-and-resume, reclaim) and a revive's own launch keep today's reading; an opted-out seat stays opted out in any new process. Carried seats count in the outage notice and the doctor's lists. Each rule has a registration-seam test that fails without it.",
-					"note": "F213: lark, parakeet and puffin read plain after /restart while their usage said isByok. Constraint (h), checked on a throwaway seat: Copilot runs extensions in a sandboxed host process (COPILOT_EXTENSION_SANDBOXED) that gets no COPILOT_PROVIDER_*, so a self-report from the extension is impossible. Reading the CLI's env from the daemon was rejected (pm-004: the whole env would pass through daemon memory, d-2/req-02, plus a launch per registration). Lineage costs no launch: it reuses the ancestry the native registration already verifies. Residual: a future Copilot that dropped the env on restart would read carried-proxied while going direct."
+					"done_when": "A Copilot /restart of a proxied seat keeps it proxied, for every restart: at registration in a new process, a proxied route carries when its anchor, the stamped launch process (pid and start time), is among the claimed host's ancestors as the daemon reads them through the kernel parent chain, and the carried route keeps that anchor. Restarts are siblings under the first CLI, so the second and third restarts carry as the first does. The reason says 'carried from its proxied launch through a Copilot restart; route not re-read'. A reused or exited anchor, a process outside the lineage (quit-and-resume, reclaim) and a revive's own launch keep today's reading, and a route that turns plain drops its anchor; an opted-out seat stays opted out in any new process; a claim cannot supply a route or an anchor. Carried seats count in the outage notice and the doctor's lists. Each rule has a registration-seam test that fails without it.",
+					"note": "F213: lark, parakeet and puffin read plain after /restart while their usage said isByok. Constraint (h), checked on a throwaway seat: Copilot runs extensions in a sandboxed host process (COPILOT_EXTENSION_SANDBOXED) that gets no COPILOT_PROVIDER_*, so a self-report from the extension is impossible. Reading the CLI's env from the daemon was rejected (pm-004: the whole env would pass through daemon memory, d-2/req-02, plus a launch per registration). Lineage costs no launch: it reuses the ancestry the native registration already verifies. Round 2 (live proof of #263): the second /restart read plain. Copilot's first CLI supervises: each restart is its fresh child and the previous restart's process exits, so restarts are siblings, not a chain; #263 matched the row's latest process, never the next restart's ancestor, and its unit test modelled a chain. The anchor (the stamped launch process, kept on the carried route) fixes it. Seats restarted before F213 read plain until revived (F221, won't fix). Residual: a future Copilot that dropped the env on restart would read carried-proxied while going direct."
 				}
 			]
 		},
@@ -237,6 +237,11 @@
 					"date": "2026-11-19",
 					"by": "coder/f213 (pij-cultural-falcon), for pm-004",
 					"change": "Step s08 (F213): a Copilot /restart keeps a seat proxied through the stamped process lineage the daemon observes; extension self-report ruled out (sandboxed host, no provider env)."
+				},
+				{
+					"date": "2026-11-19",
+					"by": "coder/f213 (pij-cultural-falcon), for pm-004",
+					"change": "s08 round 2: the carried route keeps its anchor (the stamped launch process), because Copilot restarts are siblings under the first CLI; second and later restarts now carry."
 				}
 			]
 		}

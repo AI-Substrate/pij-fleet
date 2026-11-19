@@ -4914,6 +4914,7 @@ mod tests {
             state: pij_core::model::CacheProxyRoute::Proxied,
             reason: "1-hour cache through http://127.0.0.1:7471 as claude-opus-5.5".to_string(),
             fix: None,
+            anchor: None,
         };
         assert_eq!(
             cache_line(Harness::Copilot, Some(proxied)).as_deref(),

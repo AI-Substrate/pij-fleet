@@ -145,6 +145,7 @@ fn proxied_seats() -> Vec<SeatDescriptor> {
                 state: CacheProxyRoute::Proxied,
                 reason: "through".into(),
                 fix: None,
+                anchor: None,
             });
             seat
         })
@@ -296,6 +297,7 @@ fn seat_split_reads_a_missing_route_as_plain() {
         state: CacheProxyRoute::Proxied,
         reason: "through".into(),
         fix: None,
+        anchor: None,
     });
     let before = SeatDescriptor::new("pij-old", Harness::Copilot, "/w");
     let omp = SeatDescriptor::new("pij-omp", Harness::Omp, "/w");
@@ -315,7 +317,12 @@ fn seat_split_reads_a_missing_route_as_plain() {
 #[test]
 fn a_carried_seat_counts_as_proxied() {
     let mut carried = SeatDescriptor::new("pij-carried", Harness::Copilot, "/w");
-    carried.cache_proxy = Some(pij_core::model::SeatCacheProxy::carried());
+    carried.cache_proxy = Some(pij_core::model::SeatCacheProxy::carried(
+        pij_core::model::ProcIdentity {
+            pid: 4242,
+            proc_start: 126,
+        },
+    ));
     let split = SeatSplit::of(std::slice::from_ref(&carried));
     assert_eq!(split.proxied, ["pij-carried"]);
     assert!(split.plain.is_empty());
@@ -543,6 +550,7 @@ async fn a_tick_tells_each_live_prime_once_and_then_nothing() {
         state: CacheProxyRoute::Proxied,
         reason: "through".into(),
         fix: None,
+        anchor: None,
     });
     let mut gone = SeatDescriptor::new("pij-gone-prime", Harness::Claude, "/w");
     gone.tombstoned_at = Some(1);

@@ -270,6 +270,7 @@ pub fn decide(
             state: CacheProxyRoute::Proxied,
             reason: format!("1-hour cache through {base_url} as {base_id}"),
             fix: None,
+            anchor: None,
         },
         Some(CopilotProviderWiring {
             base_url: base_url.to_string(),
