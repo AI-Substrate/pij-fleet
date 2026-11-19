@@ -1,0 +1,58 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f13c-6e91-7570-9e7e-418099977161",
+				"date": "2026-11-19",
+				"head": "9b4edcecb50cec1f12ace63060e9a1d762b7be25",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:247",
+				"writer": "pij-smiling-parrotfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After merge/bounce: record the two-Copilot/one-OMP plain-close memory-note proof, and repeat daemon spawn counters, whole-machine spawn-rate, CPU and RSS measurements."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 247",
+					"exit_code": 0,
+					"log": "FINAL at 9b4edcecb50cec1f12ace63060e9a1d762b7be25; CLEAN; all five checks pass"
+				},
+				{
+					"command": "CI run 44429730440: cargo nextest run --locked --workspace --profile ci",
+					"exit_code": 0,
+					"log": "2511 passed; successful job 135243708924 uploaded artifact 14486725645; exact artifact confirms F207 regressions"
+				},
+				{
+					"command": "CI check (24): npm run typecheck; npm run lint; npm test; just copilot-native-test",
+					"exit_code": 0,
+					"log": "2307 vitest tests passed; 356 main and 2 additional native tests passed; Node 22 matrix also green; Ubuntu only"
+				},
+				{
+					"command": "pij-rs --json ping | jq .data.spawns; just spawn-rate --seconds 20; pij-rs --json ping | jq .data.spawns",
+					"exit_code": 0,
+					"log": "2026-11-19 00:37:47Z-00:38:07Z: daemon 592->592; all by_op unchanged; machine total_new_per_s=187.8; after-deploy owed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PR: 247\nHead: 9b4edcecb50cec1f12ace63060e9a1d762b7be25\nReviewer: pij-smiling-parrotfish\nRequest: 01a1f13c-6e91-7570-9e7e-418099977161\nVerdict: PASS WITH NOTES. No blocking correctness defect or confirmed\nsecurity vulnerability found at this head.\n\nCorrectness evidence\n\nCopilot's observeActivity retains session.idle, abort, and\nsession.fusion_completed as real idle endpoints; assistant.turn_end no longer\npublishes idle. It keeps foreground/sub-agent filtering, serialized posts,\nfailure reporting, and bounded shutdown idle repair. Root turn_end still\nfeeds the independent delivery-completion observation path.\n\nOMP/Pi retains agent_end without willContinue and bounded shutdown idle\nrepair. turn_end still performs its local session bookkeeping and boundary\nresend work; it no longer posts daemon idle. agent_end(true) stays working.\n\nConsumers inspected: status badges; idle_nudge and its indexed own-event\nanchor; PA idle-edge and presence/dormancy/size refresh; modal stall;\ncold_wake; compaction wake; pointer worker idle-settle; background event\nbatch delivery; native extension lease renewal; queued-send turn-wait notes;\nanomaly activity observations. These consume real busy/idle state or explicit\nown-work events, not a required stream of tool-boundary idle pulses.\n\nmemory_turn::run uses its existing one task and subscription, filtered to\nthe target seat and future events. Own memory.note ends the wait, including\nbefore prompt delivery has settled; it is not correlated to a prompt ID.\nHistorical/replayed notes and other seats' notes are not subscribed.\nAfter the prompt's own delivered outcome, idle arms a settle deadline,\nworking clears it, and later idle starts a new deadline. Each timeout is\nthe minimum of settle and the original hold deadline. One loop termination\nfeeds one proceed call; the pending-seat guard and existing incarnation,\nauthority, and compare-and-set checks remain.\n\nThe turn-end reading is POLICY. Settle is a one-directional BRAKE: removing\nit makes close/compact happen sooner, never later. Grace is AUTHORIZATION,\nnot a brake.\n\nValidation receipts\n\njust pr-freeze 247: FINAL at the exact full head; ls-remote and gh agree,\nbase main, merge CLEAN, all five checks pass, ready/non-draft, no migrations.\n\ngh run view 44429730440: success; headSha is the exact reviewed head.\nrust-lint passed cargo fmt --all --check and\ncargo clippy --locked --workspace --all-targets -- -D warnings.\nrust-test passed cargo nextest run --locked --workspace --profile ci:\n2511 passed, 6 skipped by the runner. Its successful upload log identifies\njunit-linux artifact 14486725645. That exact artifact has zero failures or\nerrors and includes these passing cases:\n- memory_turn::tests::a_memory_note_ends_the_turn\n- memory_turn::tests::the_turn_settles_on_an_idle_after_the_prompt_is_delivered\n- memory_turn::tests::an_idle_buffered_before_the_prompts_delivery_does_not_end_its_turn\n- memory_turn_http::an_idle_blip_mid_turn_never_ends_it_and_a_settled_idle_does\n- memory_turn_http::the_seats_memory_note_ends_its_turn\n- memory_turn_http::a_pending_turn_answers_repeats_first_and_the_seats_note_ends_it\n- memory_turn_http::when_the_bound_passes_the_close_proceeds_and_says_so\n- directory_http::memory_add_right_after_its_own_held_close_still_writes_the_note\n- spawn_sites::every_daemon_launch_site_records_itself\n- spawn_sites::no_daemon_launch_searches_path_for_git_or_tmux\n- spawn_sites::no_daemon_launch_searches_path_for_ps_or_date\n\ncheck (24) passed npm run typecheck, npm run lint, npm test (2307 passed,\n6 skipped; 102 files passed, 1 skipped) and just copilot-native-test\n(356 main tests and 2 additional tests passed, zero failures). The Copilot\nF207 no-idle-at-tool-boundary regression is named in the successful log.\ncheck (22) and delivers also passed. All jobs run on Ubuntu, not macOS.\nddocs was explicitly UNAVAILABLE/warn in CI, not falsely validated.\n\nNo local cargo build or test was run, per the review packet.\nharness boot --json attempted readiness only: NOT-READY before typecheck\nor smoke because the detached worktree has no node_modules/.bin/vitest.\nNo dependencies were linked or installed; no full local harness checks run.\n\nCost receipt (before deployment)\n\n2026-11-19T00:37:47Z:\n  pij-rs --json ping | jq .data.spawns\n  total = 592.\n2026-11-19T00:38:07Z:\n  same command, total = 592; every by_op counter unchanged.\n  daemon delta = 0 launches / 20 seconds, or 0 launches/s in this window.\n\njust spawn-rate --seconds 20:\n  seconds = 20.0\n  daemon_pid = 23167\n  total_new_per_s = 187.8\n  sampled_per_s = 176.3\n  daemon_children_per_s_lower_bound = {}\n  statusline_runs_seen_per_s = 0.0\n  claude display/stop hook runs seen per second = 0.0/0.0.\n\nSeparate subsequent /bin/ps sample: PID 23167, CPU 85.8%, RSS 165744 KiB.\nThis is the existing deployed fleet, not the PR's after result.\n\nSettle is an alternative deadline on the existing wait, per pending held\nclose/compact: no new task, poll, per-tick launch, or per-seat periodic work.\nGrace is per landed held close and uses an in-process process-start check\nonly on the exceptional unregistered memory-add path. Activity traffic drops:\none idle post per OMP tool boundary is removed; Copilot also deduplicates\nthe subsequent redundant working transition.\n\nOwed after merge/bounce: repeat spawn counters and whole-machine spawn-rate,\nCPU/RSS, and the requested plain-close live proof on two Copilot seats and\none OMP seat, retaining each memory.note/memory.turn/role-memory receipt.\n\nHarness feedback\n\nmagicWand: a read-only review-evidence verb selecting CI artifacts by the\nsuccessful upload's artifact ID for a frozen full head, listing named\nregressions and explicit local-proof limitations without rebuilding.\ndifficulties: full checks are not appropriate for this source/CI-only,\ndependency-free review; artifact/run/head linkage currently requires manual\nCLI plumbing. Captured as MW-001 in this review's observation bucket.\n\nSecurity grace assessment\n\nSource inspection confirms grace is issued only after this seat's held\nclose actually lands, not after compact or a skipped/failed close. Lookup\nchecks the cached pane, matching asserted IDs, monotonic expiry, recorded\nprocess liveness and equal process start. Only parsed memory-add can use\nthis exceptional identity. Different pane/ID, recycled PID with a different\nstart, another valid verb, and expiry are refused by source-level guards.\nOnly the successful post-close write is exercised by the new integration\ntest; its other-verb example is unsupported syntax, so the valid-other-verb\nguarantee is source inspection, not that assertion.\n\nKnown limit: the memory writer does not restrict a note to roles the author\nheld. That was already true for a live author in the unchanged\ncommunity/directory.rs:943-974 and community/memory.rs:177-180. Grace extends\nthe lifetime of memory-add authorization after close, not its role-target\nprivileges. Do not claim a held-role allowlist exists.\n\nC34 follow-up, nonblocking: http/directory.rs:572-586 tries grace after any\nnormal identity refusal. http/identity.rs:1513-1524 can refuse a stale A\nclaim when the pane now belongs to B; http/memory_turn.rs:422-436 does not\nrecheck current live pane ownership. OMP /new can replace A with B in the\nsame still-live process, but successful boot updates PIJ_SESSION_ID to B;\nan already-running CLI retaining A may legitimately be A's final note.\nThe focused security review therefore withdrew its initial MEDIUM\nmisattribution claim: no normal-use B-as-A write was established, and C33\ndoes not make deliberate same-user impersonation a new vulnerability.\nA rollover/grace regression could clarify the intended treatment of an\nin-flight A note. No block for speculative hardening or missing fixtures.\n\nThe other requested note guarantee is also bounded: memory.note is fresh,\ntarget-seat-scoped, and durable before publication, but not prompt-ID\ncorrelated or required to follow delivered outcome. Accepting a fresh own\nnote before admission settles is intentional and explicitly unit-tested.\n\nRendered text: existing rendering and prompt sanitization unchanged.\nProduct worktree remains read-only and clean.\n"
+		}
+	]
+}
