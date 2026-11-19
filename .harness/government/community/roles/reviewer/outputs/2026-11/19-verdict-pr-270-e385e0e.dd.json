@@ -1,0 +1,56 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f34b-9621-7343-9829-c2024843bca9",
+				"date": "2026-11-19",
+				"head": "e385e0e2540962d9d6add6d92a061789adbfa1c6",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:270",
+				"writer": "pij-uniform-butterfly",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "nice -n 19 node --input-type=module",
+					"exit_code": 0,
+					"log": "Ten actual-code scenario assertions passed: original old-launch/new-launch repro retries then registers; same-launch closure stops; revived and legacy restarts behave correctly; legacy session/process witnesses stop, recycled pid does not; missing prebind retries."
+				},
+				{
+					"command": "gh run view 44502679729 --job 135486212198 --log",
+					"exit_code": 0,
+					"log": "Exact-head successful CI: just copilot-native-test 365 passed, 0 failed, 0 skipped; both R270-001 regressions, closed-seat stop and absent-prebind retry explicitly PASS."
+				},
+				{
+					"command": "just pr-freeze 270",
+					"exit_code": 0,
+					"log": "FINAL at e385e0e2540962d9d6add6d92a061789adbfa1c6; all five latest checks pass"
+				},
+				{
+					"command": "git diff --check d232b1e18aa7aa4505a77e6dcdfd9d4b9126d4fc HEAD",
+					"exit_code": 0,
+					"log": "Round-2 delta clean; no product changes or builds by reviewer"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR 270 correctness review, round 2 of 2\n\nHead: e385e0e2540962d9d6add6d92a061789adbfa1c6\nReviewed delta: d232b1e18aa7aa4505a77e6dcdfd9d4b9126d4fc..e385e0e2540962d9d6add6d92a061789adbfa1c6\nVerdict: PASS. R270-001 is closed; no remaining normal-use correctness blocker found.\n\n## Fix assessment\n\n`store.mjs:492-499` now distinguishes the launch incarnation before making a requested-id tombstone terminal. When `PIJ_SPAWN_ID` exists, only a matching stored spawn id is final. A stale tombstone with another spawn id falls through to the existing retryable prebind wait, even when it carries the same saved conversation. The subsequent open prebind follows the existing registration path.\n\nWithout a spawn id, the fallback requires the same native session OR the exact same pid/start tuple. Thus a legacy closed seat's restart still stops through its continuing session; a same-process legacy host is also recognized, while a recycled pid with a different session does not falsely stop. Existing open-row selection still precedes this terminal check.\n\nNot reordering the daemon's launch/prebind writes is appropriate for this bounded fix: launch failure rollback and postmortem publication keep their existing semantics, and incarnation-aware selection closes the reported window without that broader transition change.\n\n## Reproduction and compatibility checks\n\nExecuted the actual round-2 exports under `nice -n 19 node --input-type=module`, with synthetic identities, no daemon, and no product writes. Ten scenarios passed:\n\n- Original same-session old-launch/new-launch repro: old tombstone is retryable, not closed; the subsequent fresh prebind registers.\n- A closed revived launch's restart stops with its matching spawn id despite a changed host pid.\n- The original closed launch still stops.\n- Legacy no-spawn-id closure is recognized by session or, independently, exact process.\n- Legacy unrelated session plus a recycled pid retries.\n- An absent prebind still retries.\n- A live revived seat's restart keeps its id/spawn correlation and registers the new host.\n- A live legacy seat's restart keeps its id through its native session without requiring a spawn id.\n\nThe new extension test at `extension.test.mjs:1370` models the stateful old-closed-row -> fresh-prebind sequence and asserts two related reads followed by registration with the fresh spawn id. The store regression at `store.test.mjs:2899` covers the incarnation distinction and both legacy fallback witnesses. Existing terminal-close and absent-prebind cases remain. The banner and API/ledger text now correctly name revive as a supported recovery.\n\n## Validation and scope\n\n- `just pr-freeze 270`: PASS/FINAL at the full requested head; all five latest checks pass.\n- `git diff --check d232b1e18aa7aa4505a77e6dcdfd9d4b9126d4fc HEAD`: PASS; product worktree clean.\n- Exact-head CI run 44502679729, attempt 1: SUCCESS.\n- CI job 135486212198, `just copilot-native-test`: **365 passed, 0 failed, 0 skipped**. Its log explicitly shows both R270-001 tests, the terminal closed-seat case, and the absent-prebind case passing.\n- Ten direct local scenario assertions passed. No builds, cargo, installs, local suite reruns or independent mutation runs.\n\nNo new launch, loop, timer or polling schedule in this round-2 delta. The existing bounded retry is retained only for an uncorroborated/new incarnation. Prior performance measurement-provenance limits remain the performance role's notes, not a new correctness condition.\n\nHarness win: the missing state-transition proof from round 1 is now encoded in the repository's extension test suite; captured as reviewer-270-r2/GFT-001.\n"
+		}
+	]
+}
