@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f20e-7e52-7b22-8bc1-ff8e4eafddf8",
+				"date": "2026-11-19",
+				"head": "124ad2f84cfe2d92d477e14731d6003d2a097c23",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:253",
+				"writer": "pij-dear-walrus",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 253",
+					"exit_code": 0,
+					"log": "FINAL at 124ad2f84cfe2d92d477e14731d6003d2a097c23; clean; all five latest checks pass"
+				},
+				{
+					"command": "gh run view 44460655692 --job 135346332311 --log",
+					"exit_code": 0,
+					"log": "Attempt 1 at exact rebased head: 2555 Rust tests passed, 6 skipped; upload pins JUnit artifact 14499797981"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14499797981/zip",
+					"exit_code": 0,
+					"log": "Parsed exact successful-job artifact; all eight previously named regressions present and passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security review: PR #253, rebase revalidation\n\nHead: 124ad2f84cfe2d92d477e14731d6003d2a097c23\nPrevious approved head: d992f6747b492e6dd80237d38ecc236d4cdca981\nResult: pass\n\nBounded carry-forward of the final-round security approval under C33/C34, not another review round. No rebase-induced security regression found; both round-1 security findings remain closed.\n\n## Patch equivalence\n\nThe actual merge bases are 408418a1 for the previously approved head and 5a2321fb for the rebased head. The complete patch text is not byte-identical: blob hashes, hunk offsets and ledger context differ. All added/deleted lines are identical; code patches match after removing only blob hashes and hunk offsets.\n\nThe requester's supplied intermediate comparison, git diff 2f269126 4fd9ba67 versus git diff origin/main 124ad2f8, differs only in ledger context. Excluding that ledger, those patches are byte-identical. This confirms no changed implementation was hidden by the additive docs/difficulties.md conflict resolution, without claiming raw whole-patch identity.\n\n## Interaction with main\n\n- #254's auth route requires the bound native session and current PID/start identity (crates/daemon/src/http/auth_error.rs:41-80).\n- Re-registration still passes both seat and pane to SpawnWaits (crates/daemon/src/registration.rs:198-202). Matching precedes consumption, and consumption removes the entry before notification (crates/daemon/src/spawn_waits.rs:163-198). The new registration path does not bypass launch correlation or duplicate an already consumed spawn handoff.\n- Native re-registration preserves the existing parent (registration.rs:1240-1242,1394-1399). Notification continues to target stored Launch.parent; boot reconstructs it from persisted row metadata (spawn_waits.rs:67-73,312-340).\n- The shared close-command constructor still calls shell_word on each complete seat and pane argument (spawn_waits.rs:85-90); HTTP still delegates to it (crates/daemon/src/http/mod.rs:1941-1943).\n- #255 introduces no runtime overlap relevant to this review.\n\n## Verification\n\n- just pr-freeze 253: PASS at the requested full head; clean detached review worktree, remote/GitHub head agreement, main base, all five latest checks pass.\n- GitHub Actions run 44460655692, attempt 1: SUCCESS at 124ad2f84cfe2d92d477e14731d6003d2a097c23. Rust test job 135346332311 reports 2555 passed and 6 skipped; Rust lint and both Node check jobs also pass.\n- Successful test job's upload log pins JUnit artifact 14499797981. Downloaded that artifact by ID and parsed its XML: all eight previously named regressions passed, including shell quoting, wrong-seat/pane rejection, bound/drop and timeout ordering, answered-launch suppression and bound-before-restart recovery.\n- No local build, test, mutation run, harness boot or harness checks was executed. CI evidence is not represented as a local harness run. Product files remain unchanged by this review.\n\nThe exact-head CI evidence collection still requires manual successful-job artifact selection; the previously captured read-only CI-evidence command proposal remains applicable. No additional security follow-up is owed by this head.\n"
+		}
+	]
+}
