@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Read before changing spawn folder-trust recognition, menu answering or pane targeting.",
+				"tags": [
+					"spawn",
+					"folder-trust",
+					"menu-keys",
+					"proof"
+				],
+				"title": "Keep folder-trust automation launch-scoped and keys closed"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #264 passed security round 1 at f808581187bf33c0513a637304264e9e4029ecb3 (output 8d0e828da320dd9f5e15cb3a333ab73f7c5255d0). Trust automation is explicit opt-in and targets only its allocated spawn pane/requested cwd; it does not parse or compare the folder displayed in the prompt. Keep MenuKey a closed Up/Down/Enter grammar, argv-only tmux invocation, highlighted-trust-row Enter gating, missing-highlight no-key behavior, and fresh prompt recognition before each key. Default refusal must press nothing and preserve the F211 wait for later registration. Fixtures/CI prove selection logic, not a new independent live UI proof; C33 keeps local same-user adversarial impersonation out of scope. Rust JUnit on exact-head CI included trust default/refusal and Claude deny-to-trust transition witnesses. magicWand: reuse the existing dependency-free review-readiness follow-up (2026-11-17), adding read-only exact-head/CI evidence without builds or shared configuration changes. difficulty: checks offers only full or quick test-running modes; do not run either against a no-build review packet."
+		}
+	]
+}
