@@ -51,4 +51,5 @@
 - [2026-11-19 Post-close grace and note completion boundaries](2026-11-19-post-close-grace-and-note-completion.dd.md): Open before changing post-close memory grace or claiming prompt-correlated note completion. (memory-grace, identity, lifecycle, proof)
 - [2026-11-19 Public scrubs include mutable PR text and commit messages](2026-11-19-public-scrubs-include-mutable-pr-text.dd.md): Open before reviewing an identifier scrub or classifying historical-only exposure. (public-docs, privacy, pr-metadata, c19)
 - [2026-11-19 Transcript containment and dev-edge provenance](2026-11-19-transcript-containment-dev-edges.dd.md): Read before changing Unisphere session-ID validation, canonical transcript status paths, or direct dev-only dependency edges. (unisphere, transcript, paths, dependencies, proof)
+- [2026-11-19 Verify the active Copilot SDK registration contract](2026-11-19-verify-the-active-copilot-sdk.dd.md): Open before reviewing Copilot hook/tool wiring or upgrading the bundled SDK. (copilot, sdk, hooks, contract-proof)
 <!-- /pij:generated -->
