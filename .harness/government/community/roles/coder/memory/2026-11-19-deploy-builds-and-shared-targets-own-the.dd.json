@@ -1,0 +1,29 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before touching rs-install, bounce-rs, pij daemon bounce, release-build.sh or shared-build, before any check-then-act on a file in the shared cargo target, or before adding a registration brake that walks process trees",
+				"tags": [
+					"f226",
+					"f224",
+					"f197",
+					"deploy",
+					"shared-target",
+					"registration",
+					"live-proof"
+				],
+				"title": "Deploy builds and shared targets: own the bytes through install; prove red in a scratch target (F226, F224, F197)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- Shared cargo target (F217) = any path in target/ can change the moment shared-build releases its lock. Never verify a target path and hand it on: copy out UNDER the lock (`shared-build --copy-out`), verify the copy, install the copy (R271-001). Same rule for any check-then-act on shared files.\n- Cargo trusts another tree's newer artifacts for workspace crates in ANY profile; only shared-build's own-source touch forces a rebuild. Never pipe cargo (`| grep | tail` hid E0308 and installed a foreign binary).\n- Red proof for deploy/build bugs without touching the fleet: two detached worktrees (one with a divergent crate), CARGO_TARGET_DIR=/tmp/<scratch>, HOME=/tmp/<scratch> for the installer. Full red+green took about 6 min of release builds.\n- Registration brakes that walk process trees: the ordinary /v1/register path re-resolves a claim to the pane's NEAREST harness process (for Copilot, the loader `node .../bin/copilot`, the PARENT of the registered CLI), and Copilot /restart children are children of the live first CLI in the same session. Test fixtures with fake pids skip parent walks (`with_parents(|_| None)`), so draw the real tree or the brake goes untested (F197 nearly refused every restart; F224 let a launcher claim through).\n- Read refusals off `ping` registrations.by_key (pane-holder-child, pane-held), never off a client's retry message; the Copilot extension logs only safe fields.\n- Live probes from inside a seat: have the seat run a script from its own shell tool (pij send \"run exactly: bash /tmp/x.sh\"); spawn throwaways with --role worker so pij close works; a no-parent seat can't be closed by you.\n- Session shell trap: after long sessions the persistent shell may stop at the first failing command in a `;` chain (a no-match grep exits 1), so later commands silently don't run. Verify pushes with `git ls-remote` and run edits as separate commands.\n"
+		}
+	]
+}
