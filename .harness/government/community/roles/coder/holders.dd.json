@@ -1213,6 +1213,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-cultural-falcon",
 					"why": "F213 proxied seats reported plain after restart; derive route from seat evidence"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T07:03:59.362Z",
+					"harness": "omp",
+					"harness_session": "01a1f29e-03b8-7604-952e-38a0b4454f95",
+					"instance_key": "f215",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-compact-bat",
+					"why": "F215 spawn trust-prompt + F216 pij_close E-NOID outside project"
 				}
 			]
 		}
