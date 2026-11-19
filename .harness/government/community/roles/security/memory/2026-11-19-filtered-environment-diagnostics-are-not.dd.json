@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Read before using process environment diagnostics as public route evidence.",
+				"tags": [
+					"privacy",
+					"cache-proxy",
+					"operator-diagnostics"
+				],
+				"title": "Filtered environment diagnostics are not secret-safe captures"
+			}
+		},
+		{
+			"name": "body",
+			"value": "A pipeline that filters `ps -Eww` output still reads the process environment. Filtering with `tr` and `grep` is not structured environment parsing or secret redaction, and does not establish that captured stdout is safe for transcripts or public receipts. Prefer the recorded route/status for published evidence; do not execute an environment diagnostic during a review merely to verify a stamp.\n\nIn #263, the daemon carries a fixed cache-proxy stamp using verified PID/start ancestry; it adds no environment or token reader. The manual diagnostic in `docs/difficulties.md:175` is a separate operator action, not the production implementation. No actual token disclosure was established and no live environment was inspected. Keep those claims separate when grading d-2 / PRD 004 req-02.\n\nMagic wand: a secret-free route-lineage diagnostic would make it unnecessary to suggest environment captures when investigating a displayed route.\n"
+		}
+	]
+}
