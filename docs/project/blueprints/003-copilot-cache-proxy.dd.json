@@ -124,8 +124,8 @@
 					"id": "c-seat-proxy-state",
 					"name": "Seat proxy state and receipt",
 					"kind": "store",
-					"where": "SeatDescriptor (crates/core) field `cache_proxy: {state: proxied|plain, reason}`; SpawnResponse in crates/daemon/src/http/types.rs; directory holder rows (crates/daemon/src/community/directory.rs, rendered in crates/cli/src/main.rs render_directory)",
-					"responsibility": "Every Copilot spawn records proxied or plain with the reason and fix; the spawn receipt prints it; directory rows show it. A seat with no field (launched before the proxy existed) reads as plain.",
+					"where": "SeatDescriptor (crates/core) field `cache_proxy: {state: proxied|plain, reason}`; the route rule at registration in crates/daemon/src/registration.rs (register_inner; the verified host ancestry from verify_native_host); SpawnResponse in crates/daemon/src/http/types.rs; directory holder rows (crates/daemon/src/community/directory.rs, rendered in crates/cli/src/main.rs render_directory)",
+					"responsibility": "Every Copilot spawn records proxied or plain with the reason and fix; the spawn receipt prints it; directory rows show it. A seat with no field (launched before the proxy existed) reads as plain. The route holds for its own launch's process, a same-process /new successor, or (F213, s08) a later process that descends from the stamped one: spawn stamp or stamped-ancestor lineage, matched by pid and start time through the kernel parent chain the daemon reads itself, never from a claim and never self-reported. A carried route reads `carried from its proxied launch through a Copilot restart; route not re-read` and counts as proxied for notices and the doctor. An opt-out holds in any new process. Self-report is impossible: Copilot runs extensions in a sandboxed host (COPILOT_EXTENSION_SANDBOXED) that gets no COPILOT_PROVIDER_*.",
 					"realises": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-04",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-09"
