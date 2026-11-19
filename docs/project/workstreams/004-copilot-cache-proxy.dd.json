@@ -137,6 +137,31 @@
 					"needs": ["role:model-cost", "role:coder", "role:performance"],
 					"done_when": "(1) N243-001: a test where a stale 402 or 2xx from the same account but an older token generation changes no state. (2) A production comparison after rollout of daemon CPU/RSS and the machine launch rate against s04's baseline (receipts.md: 7.8% CPU, 189,536 KB RSS; the spawn-rate top commands). (3) N002 from #239: a 401 refresh racing an in-flight readiness check, tested.",
 					"note": "Follow-ups named in the #243 and #239 reviews and in s04's cost row; none blocks the shipped requirements."
+				},
+				{
+					"id": "s07",
+					"title": "Stop tool-list flips on proxied seats; weigh per-seat TTL",
+					"state": "in-progress",
+					"delivers": [
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-01",
+						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-07"
+					],
+					"depends_on": ["#steps/s03"],
+					"needs": [
+						"role:coder",
+						"role:reviewer",
+						"role:security",
+						"role:performance",
+						"role:model-cost"
+					],
+					"lanes": [
+						{
+							"branch": "coder/232-proxy-tool-flips",
+							"worktree": "fleet-232-proxy-tool-flips"
+						}
+					],
+					"done_when": "Plan 232 (docs/plans/232-proxy-tool-flips) shows four things. (1) A proxied seat started after toolSearch=false keeps a flat tool list through bash, read_bash, extensions_reload and user turns. (2) The fleet is re-priced in egret's terms with the flips gone and the larger tool prefix paid for. (3) Per-seat TTL policies are weighed against 1h and 5m for all. (4) The live after-window is split by Copilot process start and re-run with at least 1h of post-restart data.",
+					"note": "The fix is not code. It is `toolSearch: false` in the user-wide ~/.copilot/settings.json, applied by the prime (pij-far-jackal) on Jordan's go at 2026-11-19T03:27:46Z, because a repo cannot set it. Cause: Copilot 1.0.114's client-side generic tool search on the BYOK route added and dropped deferred tools, and every change re-wrote the whole prompt at the 1h price (egret's survey: 35% of proxied spend). Verdict: keep 1h for every seat; no per-seat TTL is built. Known residual: extensions_reload can change toolTokenCount with the count unchanged (1 of 2 reloads on the canary)."
 				}
 			]
 		},
@@ -182,6 +207,11 @@
 					"date": "2026-11-18",
 					"by": "model-cost (pij-amazing-takin) for pm-004",
 					"change": "s04 complete: row 12 re-run passed after s05 (#243); all 23 rows receipted. Added s06 (proof follow-ups: N243-001, a production cost comparison, N002 from #239)."
+				},
+				{
+					"date": "2026-11-19",
+					"by": "coder/232 (pij-joyous-sailfish) for pm-004",
+					"change": "s07 added (plan 232), delivering req-01 and req-07. The tool-list flips on proxied seats are fixed by `toolSearch: false` in the user-wide ~/.copilot/settings.json, which the prime applied on Jordan's go at 2026-11-19T03:27:46Z. It is not code in this PR. The PR carries the canary, the re-priced fleet (sim232.py, extending egret's sim.py) and the per-seat TTL verdict: keep 1h for every seat and build nothing. Requirement states unchanged (both shipped)."
 				}
 			]
 		}
