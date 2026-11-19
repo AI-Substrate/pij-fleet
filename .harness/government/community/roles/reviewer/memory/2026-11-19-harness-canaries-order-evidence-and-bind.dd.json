@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Before reviewing installed-SDK probes, CLI update approval, OMP config sensors or scheduling wrappers.",
+				"tags": [
+					"review",
+					"harness",
+					"sdk",
+					"proof",
+					"scheduling"
+				],
+				"title": "Harness canaries: order evidence and bind its version"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Adds to the earlier SDK-runtime note: #259 now supplies the real installed-SDK canary that its final paragraph said was missing.\n\n- Cross-pipe order is not program order. #259 initially read callback facts on stderr immediately after stdout RPC answers; delaying stderr 50 ms made valid hooks/tool calls fail. The repair uses readline plus a barrier fact on the SAME stderr writer after each answer. `copilot-sdk-contract.test.ts` delays and splits stderr; a removed-callback probe must still fail. A passing fake SDK is not the installed-runtime witness.\n- Bind approval to the checked artifact. #261 initially accepted an old-version pass report and relabeled it as the newly installed CLI. Approval now requires report.version AND report.verified to match the post-update version, plus pass status and exit zero. For reviews, ALWAYS stub the update executable; never run the real fleet updater. `update-copilot.test.ts` covers stale, missing-version and unrecorded reports.\n- Scheduling is max(19, caller), not literal 19. macOS can report 20; plain nested nice increments stack. #262 centralizes recipes and shared-build on `nice19.sh`, preserving exec PID, signals, exit status and literal arguments. Count its ps once per wrapped command, not once per shared-build batch. R257-002 remains a NONBLOCKING C34 follow-up: failed/invalid ps output still silently becomes zero.\n- Config syntax must protect the actual key: #260's old static scanner accepted worktree.unrelated.clone=false while live OMP kept worktree.clone=true. Its direct-child regression fixes this. Inline YAML remains the existing nonblocking R260-002 limitation. Root-started OMP bash rewrite uses session settings, not command cwd; explicit omp worktree invocations use their own cwd.\n\nFinal review receipts: #259 ad3dcdd; #260 11ec6d0; #261 a99fda2; #262 24d013f. Rebase-only confirmations used range-diff and a fresh pr-freeze rather than re-reviewing unchanged code.\n"
+		}
+	]
+}
