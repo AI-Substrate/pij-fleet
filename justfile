@@ -64,17 +64,15 @@ rs-install:
     #!/bin/sh
     set -eu
     npm run link -- --check-only
-    # F113: the commit, and the extension source trees the PA digest compares
-    # seats' extensions with (ten characters of each id; the OMP extension also
-    # loads crates/core/tests/fixtures/control-commands.json). One git launch.
-    set -- $(git rev-parse HEAD HEAD:.copilot/extensions/pij HEAD:.omp/extensions/pij HEAD:crates/core/tests/fixtures/control-commands.json)
-    commit="$(printf %.10s "$1")" copilot="$(printf %.10s "$2")" omp="$(printf %.10s "$3")+$(printf %.10s "$4")"
-    # Stamped on this command only, never exported (#175 review, P175-F001).
-    PIJ_BUILD_COMMIT="$commit" PIJ_EXT_TREE_COPILOT="$copilot" PIJ_EXT_TREE_OMP="$omp" \
-        harness/scripts/nice19.sh cargo build --release --locked -p pij-cli
+    # F226: built through shared-build (lock, this tree's own sources, clean
+    # build inputs), stamped, and copied out under the lock; that private copy is
+    # refused unless it carries this checkout's commit, and it is what is
+    # installed. A failed build stops here: nothing is installed.
+    built="$(bash harness/scripts/release-build.sh)"
+    trap 'rm -rf "${built%/*}"' EXIT
     bin="$(npm prefix -g)/bin"
-    copy="$(sh harness/scripts/install-pij-rs.sh target/release/pij-rs "$bin")"
-    echo "✓ $bin/pij-rs → $copy (copied from $(pwd)/target/release/pij-rs)"
+    copy="$(sh harness/scripts/install-pij-rs.sh "$built" "$bin")"
+    echo "✓ $bin/pij-rs → $copy ($("$copy" --version))"
 
 # Read-only audit of the installed surfaces: CLI shim, pij-rs, OMP policy,
 # skill link, pij-managed Claude hooks, the Copilot extension, daemon health
@@ -716,20 +714,17 @@ bounce-rs:
       0|off|false) idle_nudge=0 ;;
       *) echo "bounce-rs: PIJ_IDLE_NUDGE must be 1, on, true, 0, off or false (case-insensitive); nothing was changed" >&2; exit 2 ;;
     esac
-    # F113: the commit, and the extension source trees the PA digest compares
-    # seats' extensions with (ten characters of each id; the OMP extension also
-    # loads crates/core/tests/fixtures/control-commands.json). One git launch.
-    set -- $(git rev-parse HEAD HEAD:.copilot/extensions/pij HEAD:.omp/extensions/pij HEAD:crates/core/tests/fixtures/control-commands.json)
-    commit="$(printf %.10s "$1")" copilot="$(printf %.10s "$2")" omp="$(printf %.10s "$3")+$(printf %.10s "$4")"
-    # Stamped on this command only, never exported: the daemon launched below
-    # passes its environment to every job it runs, including cargo in other
-    # worktrees (#175 review, P175-F001).
-    PIJ_BUILD_COMMIT="$commit" PIJ_EXT_TREE_COPILOT="$copilot" PIJ_EXT_TREE_OMP="$omp" \
-        harness/scripts/nice19.sh cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
+    # F226: built through shared-build (lock, this tree's own sources, clean
+    # build inputs), stamped, and copied out under the lock; that private copy is
+    # refused unless it carries this checkout's commit, and it is what is
+    # installed. A failed build stops here, before anything is installed or the
+    # daemon is stopped.
+    built="$(bash harness/scripts/release-build.sh)"
+    trap 'rm -rf "${built%/*}"' EXIT
     # F187: refresh the installed copy (and the PATH link) from this build and
     # launch that, never target/. The running daemon keeps its own file.
     bin="$(npm prefix -g)/bin"
-    sh harness/scripts/install-pij-rs.sh target/release/pij-rs "$bin" >/dev/null
+    sh harness/scripts/install-pij-rs.sh "$built" "$bin" >/dev/null
     bin="$bin/pij-rs"
     old=$(lsof -nP -iTCP:7461 -sTCP:LISTEN -t || true)
     [ -n "$old" ] && kill "$old" && sleep 0.5

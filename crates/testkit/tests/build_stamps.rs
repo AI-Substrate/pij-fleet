@@ -98,24 +98,32 @@ fn try_run_seeded(name: &str, env: &[(&str, &str)], seed: &[(&str, &str)]) -> (P
     std::fs::create_dir_all(&bin).expect("scratch bin");
     std::fs::create_dir_all(global.join("bin")).expect("scratch global bin");
     let out = scratch.display();
+    // The ids rev-parse names, the scratch as the checkout and a clean status
+    // (F226: the deploy build resolves its target through git and refuses dirty
+    // build inputs).
     fake(
         &bin,
         "git",
-        "for id in 1111111111aaaa 2222222222bbbb 3333333333cccc 4444444444dddd; do echo $id; done",
+        &format!(
+            "case \"$*\" in status*) ;; *--show-toplevel*) echo '{out}';; *--git-common-dir*) echo '{out}/.git';; \
+             *) for id in 1111111111aaaa 2222222222bbbb 3333333333cccc 4444444444dddd; do echo $id; done;; esac"
+        ),
     );
-    // The build: a pij-rs that records the environment it runs the daemon with.
+    // The build: a pij-rs stamped with the commit the fake git names, which
+    // records the environment it runs the daemon with.
     fake(
         &scratch,
         "artifact",
         &format!(
-            "[ \"$1\" = daemon ] && env > '{out}/daemon.tmp' && mv '{out}/daemon.tmp' '{out}/daemon.env'; exit 0"
+            "[ \"$1\" = --version ] && echo 'pij-rs 0.1.0 (1111111111)' && exit 0\n\
+             [ \"$1\" = daemon ] && env > '{out}/daemon.tmp' && mv '{out}/daemon.tmp' '{out}/daemon.env'; exit 0"
         ),
     );
     fake(
         &bin,
         "cargo",
         &format!(
-            "env > '{out}/cargo.env'; mkdir -p target/release && cp '{out}/artifact' target/release/pij-rs; echo Finished"
+            "env > '{out}/cargo.env'; mkdir -p \"$CARGO_TARGET_DIR/release\" && cp '{out}/artifact' \"$CARGO_TARGET_DIR/release/pij-rs\"; echo Finished"
         ),
     );
     fake(
@@ -140,8 +148,15 @@ fn try_run_seeded(name: &str, env: &[(&str, &str)], seed: &[(&str, &str)]) -> (P
     );
     let scripts = scratch.join("harness/scripts");
     std::fs::create_dir_all(&scripts).expect("scratch scripts");
-    // The scripts the recipes run (F220: they nice through nice19.sh).
-    for script in ["install-pij-rs.sh", "nice19.sh"] {
+    // The scripts the recipes run (F220: they nice through nice19.sh; F226:
+    // they build through release-build.sh, which runs shared-build).
+    for script in [
+        "install-pij-rs.sh",
+        "nice19.sh",
+        "release-build.sh",
+        "shared-build.sh",
+        "cargo-target.sh",
+    ] {
         std::fs::copy(
             root.join("harness/scripts").join(script),
             scripts.join(script),

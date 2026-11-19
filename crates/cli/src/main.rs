@@ -37,7 +37,7 @@ use pij_harnesses::{
 use serde_json::{Value, json};
 
 #[derive(Parser)]
-#[command(name = "pij-rs", version, about = "pij, in Rust")]
+#[command(name = "pij-rs", version = pij_daemon::VERSION.as_str(), about = "pij, in Rust")]
 struct Cli {
     /// Emit JSON from the same value used for human output.
     #[arg(long, global = true)]

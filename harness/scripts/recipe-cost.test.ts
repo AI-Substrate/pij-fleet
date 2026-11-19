@@ -32,6 +32,17 @@ describe("justfile recipe cost (F217, F220)", () => {
 			'r:\n    PIJ_SHARED_TARGET="$PWD/target" bash harness/scripts/shared-build.sh -- test\n',
 			"not the checkout's one target",
 		],
+		// F226: the old deploy line, a release build piped through grep | tail.
+		[
+			"a bare release build",
+			"r:\n    harness/scripts/nice19.sh cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1\n",
+			"outside shared-build",
+		],
+		[
+			"an install of a binary release-build.sh did not hand on",
+			'r:\n    sh harness/scripts/install-pij-rs.sh target/release/pij-rs "$bin"\n',
+			"not built and stamp-checked",
+		],
 	])("flags %s", (_, justfile, problem) => {
 		const findings = recipeCostFindings(justfile);
 		expect(findings).toHaveLength(1);
@@ -50,6 +61,9 @@ describe("justfile recipe cost (F217, F220)", () => {
 					"    #!/usr/bin/env bash",
 					'    target="$(bash harness/scripts/cargo-target.sh)"',
 					'    CARGO_TARGET_DIR="$target" harness/scripts/nice19.sh npm run smoke',
+					"d:",
+					'    built="$(bash harness/scripts/release-build.sh)"',
+					'    sh harness/scripts/install-pij-rs.sh "$built" "$bin"',
 					"",
 				].join("\n"),
 			),
