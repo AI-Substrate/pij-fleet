@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f205-3c9a-7132-a466-29db0bea8d8a",
+				"date": "2026-11-19",
+				"head": "ffb3b3739459679593cde029cabeee11999f21c9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:254",
+				"writer": "pij-partial-echidna",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 254",
+					"exit_code": 0,
+					"log": "FINAL at ffb3b3739459679593cde029cabeee11999f21c9; CLEAN; clean detached worktree; all five latest checks pass"
+				},
+				{
+					"command": "git diff 0d62f23bc6a24546c481a7d12fa7d7ed62c783e7..ffb3b3739459679593cde029cabeee11999f21c9 --check",
+					"exit_code": 0,
+					"log": "passed; four-file notice/assertion/documentation delta only"
+				},
+				{
+					"command": "pij-rs revive --help",
+					"exit_code": 0,
+					"log": "Confirmed native grammar pij-rs revive [OPTIONS] <ID>; no revive attempted"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES at ffb3b3739459679593cde029cabeee11999f21c9. Delta-only confirmation against 0d62f23bc6a24546c481a7d12fa7d7ed62c783e7; this does not reopen the C34 final-round review.\n\nR254-001 is now closed end-to-end: auth_recovery.rs uses /exit followed by the supported native pij-rs revive command, with the raw seat argument rendered through pij_core::directory::shell_word. The existing helper preserves one POSIX argument and escapes embedded single quotes. The settlement regression checks the corrected command for both Done and Failed outcomes, and both documentation locations match. No new correctness or authority/privacy issue found in this delta. No change to loops, timers, delivery, restart admission, recipients or process-launch behavior.\n\nR254-002..005 retain their prior dispositions. Carry forward only the already-recorded nonblocking C34 follow-up R254-C34-01: bootstrap age is wall-clock-derived after a daemon restart; do not claim a strict cross-daemon monotonic interval across a simultaneous forward correction. This is not a new block or new review demand.\n\nValidation: exact-head pr-freeze FINAL, all five latest CI checks pass, delta whitespace check passes, and native revive help confirms the advertised grammar. No local builds/tests, installs, live restart probes or credential-file reads. The earlier repair-string harness feedback is addressed by this correction to the existing regression and docs."
+		}
+	]
+}
