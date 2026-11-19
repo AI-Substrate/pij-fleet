@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Read before changing incremental held projection scope, cursor commits, or carrying verdicts across a main rebase.",
+				"tags": [
+					"spine",
+					"projection",
+					"cursor",
+					"scope",
+					"review",
+					"proof"
+				],
+				"title": "Incremental held scope and final-head carry-forward"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #251 security PASS carried to 6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5, base f06f00f56b30f0ea8c7e6e37c37ea5cba283329c. Original complete 19-file source review at f2b8d0c found no introduced vulnerability or sensitive public content. Pre-publication pr-freeze caught a head change and blocked every stale verdict/memory/send command.\n\nCarry-forward evidence: compare the scoped old-base..old-head and new-base..new-head patches, not a head-to-head diff alone. All 19 PR files (17 Rust, two docs) retain identical added/deleted bytes; range-diff shows only context from merged #249. All 12 head-to-head file changes match main's base advancement. No extra full review or local build was needed.\n\nReusable security invariants: all_matching_after must retain bound seat/kind predicates as well as seq > after; empty kinds and signed-range cursor overflow fail closed (crates/store/src/spine.rs:87-100,180-219). EventBus forwards all three arguments (events/mod.rs:321-327). Cards use a private cursor and per-SeatId mutex. Fold a clone and replace kept after/holds only after every event decodes (replacement-head http/mod.rs:3793-3842). The required port method has no broad fallback; all 14 implementations were traced. Bearer/peer route boundaries and metadata-only output remain unchanged under C33. Recheck the BEGIN IMMEDIATE allocation/commit boundary if adding another spine writer.\n\nReplacement-head CI proof: run 44444211355 attempt 1, successful rust-test job 135292259680, artifact 14492757970. ZIP SHA-256 dc5600291f02f7a3b762f4da297de18911a172a9701d443b584c97dfe82f9074 matched its successful-job receipt; 2523 executed tests passed (6 skipped in runner summary). Relevant regressions from both F209 parts passed. Zero local build/test; no automated secret scanner.\n\nmagicWand: a read-only carry-forward receipt command exposing old/new baselines, scoped patch hashes and exact-head CI artifact IDs would replace the manual comparison. Keep the existing final pre-publication pr-freeze: it correctly prevented a stale-head verdict here.\ndifficulties: head drift during source review required a narrow retained-context comparison and a new CI artifact, not a fresh broad review. Public-content/projection source work stayed with one retained reviewer; parent handled CI and publication.\n"
+		}
+	]
+}
