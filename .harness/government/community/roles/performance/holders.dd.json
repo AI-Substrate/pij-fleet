@@ -271,6 +271,16 @@
 					"seat": "pij-melodic-snail",
 					"to": "2026-11-19T07:53:33.111Z",
 					"why": "F213 proxied seat route from stamped-ancestor lineage #263"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T08:01:55.886Z",
+					"harness": "omp",
+					"harness_session": "01a1f2d3-4d8c-70e1-a2e0-9ba0e34ace2e",
+					"instance_key": "264",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-united-dragonfly",
+					"why": "F215 spawn trust-prompt refusal + F216 pij_close by id #264"
 				}
 			]
 		}
