@@ -37,5 +37,6 @@
 - [2026-11-19 PR260 merged proof old session creates plain tree](2026-11-19-pr260-merged-old-session-plain.dd.md): review-close (F219, live-proof, settings)
 - [2026-11-19 PR260 project clone sensor cost](2026-11-19-pr260-project-clone-sensor-cost.dd.md): review-close (F219, F218, review, sensor)
 - [2026-11-19 PR260 rebase-only approval at1139cfca](2026-11-19-pr260-rebase-1139cfca.dd.md): review-close (F219, review, rebase)
+- [2026-11-19 PR261 final version binding adds no launches](2026-11-19-pr261-final-version-binding.dd.md): review-close (F208, review, update)
 - [2026-11-19 PR261 updater on-demand source cost only](2026-11-19-pr261-updater-demand-cost.dd.md): review-close (F208, review, update)
 <!-- /pij:generated -->
