@@ -188,11 +188,21 @@ citation disputes, all of which resolved as neither party being wrong.)
   cleared for you (plans 198, 208). Parallelism is capped too, because `nice`
   lowers priority but does not shorten the run queue (F126). The repository's
   `.cargo/config.toml` sets `build.jobs = 4` and `RUST_TEST_THREADS = 4` for
-  every cargo run in the repo, whatever its environment: recipes, the governance
-  fixture's build, `pij daemon bounce`, `pij-gate` and CI. Override with
+  every cargo run in the repo, whatever its environment: recipes, `pij daemon
+  bounce`, `pij-gate` and CI. Override with
   `CARGO_BUILD_JOBS`, or your own `RUST_TEST_THREADS` or `-- --test-threads N`.
   shared-build maps `PIJ_CARGO_JOBS` (default 4) onto both and prints the cap
   first: `cargo jobs: 4 (PIJ_CARGO_JOBS), test threads: 4 (RUST_TEST_THREADS)`.
+- **One cargo target per checkout, and tests never build (F217).** A debug
+  workspace build is about 15 GB, so a fresh `target/` per lane filled the disk.
+  `harness/scripts/cargo-target.sh` names the one target: `CARGO_TARGET_DIR`,
+  else `PIJ_SHARED_TARGET`, else the main checkout's `target/`, which every
+  linked worktree shares. `just rust-check`, `route-inventory-check`, `smoke`
+  and the `copilot-native-*` Rust recipes build into it through shared-build.
+  The governance fixture never builds: it copies `<CARGO_TARGET_DIR or
+  target>/debug/pij-rs` and runs the copy (`just smoke` builds it; CI builds
+  `target/` first). Vitest puts `harness/test-tripwire/cargo` first on every
+  test's PATH, so a test that starts a cargo build fails.
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
 - **`just pr-freeze <pr>`**: is a PR head final for verdicts? Run by hand before each verdict

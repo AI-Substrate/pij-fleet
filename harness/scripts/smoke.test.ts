@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixtureArtifact } from "../driver/governance-fixture.js";
 import type * as DriverModule from "../driver/index.js";
 import { loadScenario, runScenario } from "../driver/index.js";
 import {
@@ -30,7 +31,16 @@ afterEach(() => {
 	vi.unstubAllEnvs();
 });
 
-describe("runWatchdogSmoke", () => {
+// The watchdog smoke runs a built pij-rs and never builds one (F217). CI builds
+// it before `npm test` and sets PIJ_RS_BIN_REQUIRED=1, so absence fails loud
+// there; elsewhere the suite skips with the reason on the record.
+const ARTIFACT = fixtureArtifact(join(import.meta.dirname, "../.."));
+const ARTIFACT_PRESENT = existsSync(ARTIFACT);
+if (!ARTIFACT_PRESENT && process.env.PIJ_RS_BIN_REQUIRED === "1") {
+	throw new Error(`PIJ_RS_BIN_REQUIRED=1 but ${ARTIFACT} is missing; build it first`);
+}
+
+(ARTIFACT_PRESENT ? describe : describe.skip)("runWatchdogSmoke", () => {
 	it("refuses legacy watchdog grammar without mutation and round-trips on/status/off through the shim", async () => {
 		const result = await runWatchdogSmoke();
 		expect(result, result.reason).toEqual({ verdict: "PASS" });

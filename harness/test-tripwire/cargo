@@ -1,0 +1,46 @@
+#!/bin/sh
+# F217: vitest puts this directory first on every test's PATH. A test that
+# starts a cargo build fails here instead of building pij-rs into a fresh
+# per-worktree target (about 2.4 GB each, outside shared-build's lock and
+# nice). Tests run an already-built binary: see fixtureArtifact in
+# harness/driver/governance-fixture.ts. Anything that does not build (metadata,
+# fmt, --version) passes through to the next cargo on PATH.
+
+here=$(cd "$(dirname "$0")" && pwd -P)
+
+subcommand=""
+skip=0
+for arg in "$@"; do
+	if [ "$skip" = 1 ]; then
+		skip=0
+		continue
+	fi
+	case "$arg" in
+	+*) ;;
+	--color | --config | -Z | -C | --manifest-path) skip=1 ;;
+	-*) ;;
+	*)
+		subcommand=$arg
+		break
+		;;
+	esac
+done
+
+case "$subcommand" in
+build | b | check | c | clippy | test | t | bench | run | r | rustc | doc | d | install | nextest | fix)
+	printf 'cargo tripwire (F217): a test ran `cargo %s` (CARGO_TARGET_DIR=%s). Tests never build: run an already-built binary, and build through `just shared-build`.\n' "$*" "${CARGO_TARGET_DIR:-<default>}" >&2
+	exit 101
+	;;
+esac
+
+# Pass through to the next cargo on PATH, never this one.
+IFS=:
+for dir in $PATH; do
+	[ -n "$dir" ] || continue
+	[ "$(cd "$dir" 2>/dev/null && pwd -P)" = "$here" ] && continue
+	if [ -x "$dir/cargo" ]; then
+		exec "$dir/cargo" "$@"
+	fi
+done
+printf 'cargo tripwire (F217): no cargo on PATH after %s\n' "$here" >&2
+exit 127

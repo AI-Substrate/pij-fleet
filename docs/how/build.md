@@ -63,8 +63,8 @@ just bounce-rs        # start the daemon
 | `just typecheck` | `tsc --noEmit` via `npm run typecheck` |
 | `just lint` / `just format` | Biome check (errors + warnings) / auto-fix |
 | `just test [path]` | Run vitest; optionally scope to a file/pattern |
-| `just rust-check` | `Cargo.lock` current, `cargo fmt --check`, clippy `-D warnings`, `cargo test` |
-| `just smoke` | tmux-driven end-to-end smoke (Driver SDK) |
+| `just rust-check` | `Cargo.lock` current, `cargo fmt --check`, clippy `-D warnings`, `cargo test` (the builds through `just shared-build`) |
+| `just smoke` | tmux-driven end-to-end smoke (Driver SDK); builds this checkout's `pij-rs` first, through `just shared-build` |
 | `just self-check` | The composite gate (below) |
 | `just bounce-rs` | Rebuild `pij-rs` and restart the daemon |
 | `just rs-autostart` / `just rs-autostart-off` | macOS LaunchAgent for the daemon |
@@ -186,6 +186,14 @@ gate.
 every `.omp/extensions/<name>/smoke.ts` plus the governance round trip against a
 private `pij-rs` daemon in tmux, so it requires `tmux` on `PATH`. Author rich scenarios against the SDK directly; the
 smoke script is just the default entry point.
+
+The recipe first builds this checkout's `pij-rs` through `just shared-build`
+into the checkout's one target (`harness/scripts/cargo-target.sh`), then runs
+the smoke with `CARGO_TARGET_DIR` naming it. The governance fixture copies that
+binary into its private root and runs the copy; it never builds (F217). Under
+vitest, `harness/scripts/smoke.test.ts` skips the watchdog smoke when no binary
+is built, unless `PIJ_RS_BIN_REQUIRED=1` (CI), and `harness/test-tripwire/cargo`
+fails any test that starts a cargo build.
 
 ## See also
 

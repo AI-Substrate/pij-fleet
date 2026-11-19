@@ -1,9 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { constants } from "node:fs";
-import { access, lstat, mkdir, mkdtemp, realpath, rm, symlink, unlink } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, mkdtemp, realpath, rm, unlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { createConnection, createServer, type Server } from "node:net";
-import { homedir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
@@ -16,9 +14,18 @@ const STOP = scaled(3_000);
 // The daemon's own graceful drain may take SHUTDOWN_DRAIN_TIMEOUT (5 s) after
 // SIGINT; a SIGKILL inside that window reads as a failed shutdown (F27).
 const DAEMON_STOP = scaled(10_000);
-const BUILD = 180_000;
 const POLL = 25;
 const require = createRequire(import.meta.url);
+
+/**
+ * The pij-rs this checkout's private fixtures run (F217): `<target>/debug/pij-rs`,
+ * where target is CARGO_TARGET_DIR or this checkout's `target/`. A test never
+ * builds it. `just smoke` builds it through shared-build and names its target;
+ * CI builds `target/` before `npm test`.
+ */
+export function fixtureArtifact(projectRoot: string): string {
+	return join(resolve(projectRoot, process.env.CARGO_TARGET_DIR ?? "target"), "debug", "pij-rs");
+}
 
 export interface CommandResult {
 	readonly status: number | null;
@@ -195,6 +202,7 @@ export class PrivateGovernanceFixture {
 	readonly repo: string;
 	readonly state: string;
 	readonly binary: string;
+	private readonly artifact: string;
 	readonly env: NodeJS.ProcessEnv;
 	private readonly label: string;
 	private readonly clients = new Set<ManagedProcess>();
@@ -213,7 +221,9 @@ export class PrivateGovernanceFixture {
 	) {
 		this.repo = join(root, "repo");
 		this.state = join(root, "state");
-		this.binary = join(projectRoot, "target/debug/pij-rs");
+		// A private copy: a build into a shared target mid-run cannot swap it.
+		this.binary = join(root, "bin/pij-rs");
+		this.artifact = fixtureArtifact(projectRoot);
 		this.label = basename(root);
 		const home = join(root, "home");
 		// Deliberately no ambient identities, credentials, proxies, NODE_OPTIONS,
@@ -340,58 +350,20 @@ export class PrivateGovernanceFixture {
 			if (path) directories.push(path);
 		}
 		for (const path of directories) await mkdir(path, { recursive: true });
-		const target = join(await realpath(this.projectRoot), "target");
-		const assertLocalArtifact = async (): Promise<void> => {
-			for (const path of [join(this.projectRoot, "target"), dirname(this.binary), this.binary]) {
-				if (await absent(path)) continue;
-				const actual = await realpath(path);
-				const within = relative(target, actual);
-				if (within.startsWith("..") || isAbsolute(within)) {
-					throw new Error(
-						`native fixture authority escaped worktree target: ${path} -> ${actual}; build a local target/debug/pij-rs`,
-					);
-				}
-			}
-		};
-		await assertLocalArtifact();
+		// Never build here (F217): a nested build per worktree cost about 2.4 GB of
+		// fresh target each, and went around shared-build's lock and nice.
 		try {
-			await access(this.binary, constants.X_OK);
+			if (!(await lstat(await realpath(this.artifact))).isFile())
+				throw new Error(`native fixture artifact is not a file: ${this.artifact}`);
 		} catch (error) {
-			if (!hasCode(error, "ENOENT") && !hasCode(error, "EACCES")) throw error;
-			// Only the offline build may read installed Rust caches. Runtime children
-			// never inherit these homes. Cargo output is forced into this worktree.
-			const buildEnv = {
-				...this.env,
-				CARGO_HOME: process.env.CARGO_HOME ?? join(homedir(), ".cargo"),
-				RUSTUP_HOME: process.env.RUSTUP_HOME ?? join(homedir(), ".rustup"),
-				CARGO_TARGET_DIR: join(this.projectRoot, "target"),
-			};
-			try {
-				successful(
-					await command(
-						this.track(
-							"cargo",
-							["build", "--locked", "--offline", "-p", "pij-cli", "--bin", "pij-rs"],
-							buildEnv,
-							this.projectRoot,
-						),
-						BUILD,
-						"offline native build",
-					),
-					"offline native build",
-				);
-				await access(this.binary, constants.X_OK);
-			} catch (buildError) {
-				throw new Error(
-					`missing executable ${this.binary}; bounded cargo build --locked --offline -p pij-cli --bin pij-rs failed (CARGO_TARGET_DIR=${buildEnv.CARGO_TARGET_DIR}); provision the installed Rust toolchain and offline caches`,
-					{ cause: buildError },
-				);
-			}
+			if (!hasCode(error, "ENOENT")) throw error;
+			throw new Error(
+				`missing ${this.artifact}: build it first (\`just smoke\` builds it through shared-build and sets CARGO_TARGET_DIR; CI builds target/ before npm test)`,
+				{ cause: error },
+			);
 		}
-		await assertLocalArtifact();
-		if (!(await lstat(await realpath(this.binary))).isFile())
-			throw new Error(`native fixture artifact is not a file: ${this.binary}`);
-		await symlink(this.binary, join(this.root, "bin/pij-rs"));
+		await copyFile(this.artifact, this.binary);
+		await chmod(this.binary, 0o755);
 
 		this.reservation = createServer();
 		await new Promise<void>((fulfill, reject) => {

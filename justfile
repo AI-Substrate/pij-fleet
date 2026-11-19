@@ -116,23 +116,29 @@ format:
 test *ARGS:
     npm run test -- "$@"
 
-# tmux-driven end-to-end smoke (Driver SDK).
+# tmux-driven end-to-end smoke (Driver SDK). Its private daemon runs this
+# checkout's pij-rs, built here into the checkout's one target (F217): a test
+# never builds, and never into a per-worktree target.
 smoke:
-    npm run smoke
+    #!/usr/bin/env bash
+    set -euo pipefail
+    target="$(bash harness/scripts/cargo-target.sh)"
+    PIJ_SHARED_TARGET="$target" bash harness/scripts/shared-build.sh -- build --locked -p pij-cli --bin pij-rs
+    CARGO_TARGET_DIR="$target" npm run smoke
 
 
 # Native Copilot extension contracts are node:test, outside Vitest's TS include.
 copilot-native-test:
     node --test .copilot/extensions/pij/*.test.mjs
 
-# Keep Cargo artifacts local to this checkout during isolated parallel work.
+# Through shared-build into the checkout's one target (F217).
 copilot-native-rust-test:
-    CARGO_TARGET_DIR="{{justfile_directory()}}/target" cargo test -p pij-core -p pij-store -p pij-harnesses -p pij-daemon -p pij-cli
+    PIJ_SHARED_TARGET="$(bash harness/scripts/cargo-target.sh)" bash harness/scripts/shared-build.sh -- test -p pij-core -p pij-store -p pij-harnesses -p pij-daemon -p pij-cli
 
 # Opt-in actual JS + daemon HTTP + SQLite contract, outside Rust-only/default gates.
 copilot-native-contract-test:
     node --check "{{justfile_directory()}}/.copilot/extensions/pij/store.mjs"
-    VITEST_MAX_WORKERS=4 VITEST_MAX_THREADS=4 CARGO_BUILD_JOBS=4 PIJ_NATIVE_RUNTIME_MODULE="{{justfile_directory()}}/.copilot/extensions/pij/store.mjs" CARGO_TARGET_DIR="{{justfile_directory()}}/target" cargo test --locked -p pij-daemon --test native_runtime_cold_resume -- --ignored --nocapture --test-threads=1
+    VITEST_MAX_WORKERS=4 VITEST_MAX_THREADS=4 PIJ_NATIVE_RUNTIME_MODULE="{{justfile_directory()}}/.copilot/extensions/pij/store.mjs" PIJ_SHARED_TARGET="$(bash harness/scripts/cargo-target.sh)" bash harness/scripts/shared-build.sh -- test --locked -p pij-daemon --test native_runtime_cold_resume -- --ignored --nocapture --test-threads=1
 
 # Actual CLI smoke; local fixture and real-provider evidence remain distinct.
 copilot-native-smoke *ARGS:
@@ -261,11 +267,11 @@ coverage-check:
 # Route inventory (plan 221, F88): every (method, path) pair the daemon really
 # serves (probed through the router from Endpoint::ALL) is classified in
 # harness/scripts/route-inventory.json, and nothing stale is listed there.
-# Resource-safe like shared-build: nice -n 19 only, in one step (F186: no
-# taskpolicy -b). rust-check skips the probe test so a full gate runs it once;
-# CI's workspace run includes it.
+# Through shared-build into the checkout's one target (F217): nice -n 19 only,
+# one build at a time (F186: no taskpolicy -b). rust-check skips the probe test
+# so a full gate runs it once; CI's workspace run includes it.
 route-inventory-check:
-    /usr/bin/nice -n 19 cargo test --locked -p pij-daemon --lib route_inventory_tests
+    PIJ_SHARED_TARGET="$(bash harness/scripts/cargo-target.sh)" bash harness/scripts/shared-build.sh -- test --locked -p pij-daemon --lib route_inventory_tests
 
 # Report-only attribution scan, scoped after merge-base with main.
 pij-commit-trailers *ARGS:
@@ -337,11 +343,11 @@ self-check:
     just pij-commit-trailers
 
 # The Rust gate CI runs: lockfile, fmt, clippy (warnings are errors), tests.
+# The build steps go through shared-build into the checkout's one target (F217).
 rust-check:
     cargo metadata --locked --format-version 1 >/dev/null
     cargo fmt --all --check
-    cargo clippy --locked --workspace --all-targets -- -D warnings
-    cargo test --locked --workspace -- --skip route_inventory_tests::every_served_route_is_in_the_inventory_and_classified
+    PIJ_SHARED_TARGET="$(bash harness/scripts/cargo-target.sh)" bash harness/scripts/shared-build.sh -- clippy --locked --workspace --all-targets -- -D warnings --then test --locked --workspace -- --skip route_inventory_tests::every_served_route_is_in_the_inventory_and_classified
 
 # Cargo into a target several worktrees share, one worktree at a time (plan 198):
 # lock, disk floor, fresh sources, CARGO_INCREMENTAL=0, nice -n 19 only on

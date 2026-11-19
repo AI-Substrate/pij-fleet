@@ -65,7 +65,13 @@ const SENSORS: Sensor[] = [
 		proves: "every package-lock.json source is an allowed registry host",
 	},
 	{ name: "lint", cmd: "just", args: ["lint"], proves: "Biome (errors + warnings) is clean" },
-	{ name: "test", cmd: "just", args: ["test"], proves: "the vitest suite passes" },
+	{
+		name: "test",
+		cmd: "just",
+		args: ["test"],
+		proves:
+			"the vitest suite passes, and no test starts a cargo build (the F217 cargo tripwire on every test's PATH)",
+	},
 	{
 		name: "copilot-native",
 		cmd: "just",
