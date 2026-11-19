@@ -1,0 +1,42 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f34b-142b-7d40-b518-d5b583fa86a5",
+				"date": "2026-11-19",
+				"head": "1759a6297b9a18eb301b87e8c1ec995be21ea330",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:271",
+				"writer": "pij-established-marsupial",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Overall merge remains blocked by reviewer R271-001: bind checked bytes to the artifact installed and cover concurrent worktree handoff."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 271",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security PASS WITH NOTES - #271, round 1 of 2\n\nHead: `1759a6297b9a18eb301b87e8c1ec995be21ea330`.\n\nNo high-confidence shell injection, privilege escalation, or C21 privacy vulnerability was found. This is a security-scope verdict, not overall merge approval: correctness finding **R271-001 remains blocking** at this head.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No security vulnerabilities found | - |\n\n## Security findings and trust limits\n\n- **Shell safety:** `harness/scripts/release-build.sh:25-53` uses `set -euo pipefail`, quoted path expansions and fixed build arguments. Its intentional word splitting consumes Git object IDs, not shell source. The changed callers quote the returned pathname (`justfile:70-72,718-722`), and native bounce passes an argument vector (`crates/cli/src/bounce/mod.rs:103-127`). No new `eval` was introduced; the inherited shared-build command reconstruction uses `%q`-escaped arguments (`harness/scripts/shared-build.sh:369`). Ordinary embedded spaces are preserved by inspection and the mocked-helper checks; this security review did not execute a real deployment.\n- **What the stamp trusts:** `harness/scripts/release-build.sh:35-53` checks the binary's compile-time version self-report against the checkout's HEAD prefix. It trusts local Git, the compiler/build tools and the produced executable under C33's user-account boundary. It is not a signature, byte digest, clean-tree attestation, or a binding between the bytes checked and a subsequent copy. The just recipes permit dirty sources bearing HEAD's stamp; native bounce retains its initial clean/main check (`crates/cli/src/bounce/mod.rs:41-62`).\n- **Existing correctness block:** the released shared-build lock does not protect the later installation of its returned mutable pathname. A normal second worktree build can replace it between check and copy. Reviewer R271-001 owns the deterministic reproduction and required regression; C33 does not excuse accidental concurrency. See the exact-head reviewer verdict at `community/roles/reviewer/outputs/2026-11/19-verdict-pr-271-1759a62.dd.json`.\n- **Failure ordering:** build/stamp refusals precede installation and daemon shutdown (`justfile:718-725`; `crates/cli/src/bounce/mod.rs:70-80,110-117`). The stamp refusal is a one-directional safety interlock, not a policy: removing it permits more deployments. This does not claim rollback for failures after the old daemon has already been stopped.\n- **Privilege and paths:** the unchanged installer retains `$HOME/.local/share/pij/bin/pij-rs`, optional npm-bin linkage, ownership/write checks, and temporary-copy/rename installation (`harness/scripts/install-pij-rs.sh:26-64`). No new privilege or install destination was introduced.\n- **Privacy:** no prohibited private identity, private content, or machine path was found in the changed documentation (`AGENTS.md:176-190`; `docs/difficulties.md:182`), graded against C19/C21.\n- **Cost:** deployment is on demand, with no new steady-state daemon loop, timer, or per-seat polling. This review did not deploy or measure live fleet cost.\n\n## Validation evidence and boundaries\n\n- `just pr-freeze 271`: exit 0, FINAL at the exact full head; all listed CI groups passed. The review worktree was clean.\n- Delegated security evidence: five helper-script syntax checks passed as a batch; both changed recipe bodies passed `sh -n`; dependency-free recipe-cost assertions passed against the actual justfile and three focused fixtures.\n- Delegated mocked-helper checks passed: simulated build failure propagated 101; missing artifact returned 1; both emitted no success pathname. Stamp arguments and a space-containing target survived argument passing. These were in-memory mocks, not real build or install proof.\n- Extracted version-match checks returned the expected statuses for matching, unstamped, foreign, and suffixed versions: 0/1/1/1.\n- `git diff --check origin/main...HEAD`: exit 0 in the delegated review.\n- An initial mock-construction probe exited 127 because Bash rejected its function name; it was discarded and was not a product failure.\n\nNo cargo/build, dependency restoration or node_modules linking, Vitest/Rust suite, real install, bounce, or fleet daemon mutation was performed. Full `harness boot`/`harness checks` were not run because they build; CI supplies that proof for this review-only packet.\n\n## Harness feedback\n\nMagic wand: provide a read-only review profile that binds pinned HEAD, pr-freeze, CI and safe fixture evidence without invoking build/deploy recipes. Captured as observation `agent/MW-001`; no product changes are proposed in this review seat. The immediate deployment-proof improvement is already R271-001's requested interleaving regression.\n"
+		}
+	]
+}
