@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before changing held-close skip_reason, dead-holder views or role-send liveness.",
+				"tags": [
+					"lifecycle",
+					"liveness",
+					"role-routing",
+					"regressions"
+				],
+				"title": "Observed death is not an owner close"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F227/#272 distinguishes observer retirement from owner intent. With no pending pij close, observed-dead leaves holdings open: views/routing exclude the dead seat, and revival restores its holdings without reassignment. Never turn a display/liveness filter into automatic holding release.\n\nAn already-authorized held close is different: observer retirement during its memory turn must not skip close_seat/end_holdings. Keep the original actor, current may_close recheck and descriptor CAS. Changed process OR pane and an owner-close already landed remain brakes; compact still skips every tombstone. POLICY is the explicit close; those checks only spare.\n\nFor role sends, filter the requested instance before live/dead classification. A dead reviewer/196 queues; it must never fall through to reviewer/197's live holder. New queued-reason diagnostics use only the addressed project's holdings and change no recipient or holding state. General shell-quoting guidance is already in the existing holding-data note.\n\nUseful proof: changing live_seat to retain tombstoned rows fails all three dead-holder role-send regressions in directory_http.rs; restoring it passes. Changing the process/pane brake from OR to AND fails the action-brake unit test. Independently verified at 55cea7a841f93e8f1565ed368279ce6ff03fa5c9. Verdict commits: dac562c5 (round 1), 0f987c04 (final delta).\n"
+		}
+	]
+}
