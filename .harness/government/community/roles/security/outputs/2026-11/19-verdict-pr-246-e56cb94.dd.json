@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"head": "e56cb949d907dd41e9e77a52b64374f21928a851",
+				"kind": "verdict",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:246",
+				"writer": "pij-autonomous-guppy",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 246 --worktree; just pr-freeze 246",
+					"exit_code": 0,
+					"log": "FINAL at e56cb949d907dd41e9e77a52b64374f21928a851; clean detached worktree; all five latest checks pass"
+				},
+				{
+					"command": "gh run view 44430351257 --repo AI-Substrate/pij-fleet --job 135245837397 --log",
+					"exit_code": 0,
+					"log": "Run associated with requested head succeeded; rust-test reported 2509 passed and six skipped; successful upload artifact ID 14486377176"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14486377176/zip",
+					"exit_code": 0,
+					"log": "JUnit parsed: 2509 cases, zero failures/errors; tests::the_receipt_line_never_shows_the_account_or_a_local_path passed"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "Exact-head detached review: pij-skill and copilot-native pass; dependency-dependent checks fail without node_modules; heavy stages skipped; no full local gate claimed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "READY / security PASS - round 2, final under C34\n\nPR #246 at e56cb949d907dd41e9e77a52b64374f21928a851.\nReviewed the complete seven-file repair delta from\nf3784caab656c1665c2daa469b283f60b2aa0065.\nS246-001 and S246-002 are closed. No remaining blocking security finding\nor new C34 follow-up is required by this review.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No remaining security vulnerabilities found | - |\n\nS246-001 closed: the plan receipt uses repository-relative references at\ndocs/plans/231-spawn-cache-line/plan.dd.json:147 and its generated\nplan.dd.md:171. The case-insensitive plan scan found no machine-home or\nemail match at this head. Earlier source-tree exposure is historical-only;\nC19 requires the forward scrub, not a history rewrite.\n\nS246-002 closed: crates/cli/src/main.rs:4643-4667 maps ordinary sidecar\nfailures to fixed identity-free descriptions AND replacement fixes.\nThe receipt uses these descriptions at :4605-4609. Transport error details\nare removed at :4630-4633. Directory holder cache reasons now use the same\nhelper at :3644, so the adjacent human presentation does not retain the\nold identity-bearing reason.\n\nDisplayed fields still pass through render::line. Core rendering,\nspawn/revive dispatch, envelope serialization and JSON/success guards\nare unchanged. No token, account identifier, local account path or upstream\ncredential is exposed by the repaired human presentations.\n\nThe new regression,\ntests::the_receipt_line_never_shows_the_account_or_a_local_path\n(crates/cli/src/main.rs:4937-5006), exercises account-bearing reasons AND\nfixes, path-bearing reasons AND fixes, unknown states/reasons, and forged\nmultiline input. It asserts exact safe output and absence of the synthetic\nidentities and home paths. This directly covers the original privacy\nfailure instead of treating escaping as redaction.\n\nPublication checks: the complete repair delta was inspected, including\nthe removed identifying text. Current PR title/body and both complete PR\ncommit messages contain no detected private identifier.\nCase-insensitive git grep -n -i -I -E at the exact full head included\ntracked hidden files. Full-tree matches relevant to the repair were\nsynthetic fixtures/assertions at main.rs:4963-5003 and policy prose at\nplan.dd.json:149 / plan.dd.md:173, not private account data. Matched values\nwere captured and reduced to locations, never reproduced here.\nThe plan-only machine-home/email scan exited 1 with no matches.\n\nValidation:\n- just pr-freeze 246 --worktree: passed, FINAL at the requested full head;\n  clean detached review worktree; both remote head probes agree; all five\n  latest checks passed.\n- gh run view 44430351257 --repo AI-Substrate/pij-fleet\n  --json headSha,event,status,conclusion: succeeded and names the requested\n  head; pull_request event.\n- Rust-test job 135245837397 reported 2,509 passed and six skipped.\n  Its successful upload log identifies artifact 14486377176. Reading that\n  artifact by ID found 2,509 JUnit cases, zero failures/errors, and the new\n  privacy regression passed. The six nextest skips are reported separately\n  and are not represented as skipped cases in that JUnit XML.\n- Rust lint, both Node jobs and delivers also passed.\n- harness checks --quick in the exact-head detached review exited 1:\n  pij-skill and copilot-native passed; dependency-dependent checks failed\n  in the node_modules-less worktree; heavy route-inventory, Rust and smoke\n  stages were skipped. No dependency symlink was created. This is not a\n  full local harness pass or a full product-readiness certification.\n\nProof limits: source review and associated Linux CI, not a live fleet\nspawn/revive exercise or an exact-head macOS Rust build. Product source and\ntracked review-worktree files were not changed by this review.\nCost: no new recurring loop, timer, poll or process launch; the repair\nchanges request-driven in-process human formatting only.\n\nHarness improvement: the new privacy regression now gives deterministic\nbackpressure against reintroducing account/path-bearing receipt text.\nmagicWand remains a dependency-free scoped review gate that separates\nnative-contract/CI receipts from full readiness and routes local Rust work\nthrough the serialized nice-only build surface. The existing captured\ndependency-free review difficulty is unchanged, not a new PR defect.\n"
+		}
+	]
+}
