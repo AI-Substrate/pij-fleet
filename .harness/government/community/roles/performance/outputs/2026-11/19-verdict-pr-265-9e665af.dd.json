@@ -1,0 +1,58 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f2e2-b14e-7383-82bb-c05c2f0668dd",
+				"date": "2026-11-19",
+				"head": "9e665af8b04ef4fc03f309cfa8fb7d02211e3386",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:265",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Post-deploy launch counters, machine spawn-rate and daemon CPU/RSS paired with sibling restart live-proof timestamps."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "pij-rs --json ping (two readings bracketing the machine probe)",
+					"exit_code": 0,
+					"log": "{\"subject\": \"pr:265\", \"head\": \"9e665af8b04ef4fc03f309cfa8fb7d02211e3386\", \"phase\": \"live-before-only\", \"started_at\": \"2026-11-19T08:18:57.096917+00:00\", \"elapsed_s\": 20.262, \"ended_at\": \"2026-11-19T08:19:17.359234+00:00\", \"pid_before\": 17600, \"pid_after\": 17600, \"running_commit_before\": \"dba0c0803b\", \"running_commit_after\": \"dba0c0803b\", \"spawns_before\": {\"total\": 655, \"by_op\": {\"ddocs.community\": 38, \"gh.delivered\": 1, \"git.community\": 112, \"ps.registration-native-process\": 206, \"ps.sidecar-process-group\": 1, \"ps.tmux-harness-process-tree\": 6, \"tmux.clear-options tap owner\": 1, \"tmux.control-client\": 1, \"tmux.new-window\": 4, \"tmux.pipe-pane attach\": 137, \"tmux.pipe-pane detach\": 2, \"tmux.rename-window\": 9, \"tmux.set-options tap owner\": 137}}, \"spawns_after\": {\"total\": 655, \"by_op\": {\"ddocs.community\": 38, \"gh.delivered\": 1, \"git.community\": 112, \"ps.registration-native-process\": 206, \"ps.sidecar-process-group\": 1, \"ps.tmux-harness-process-tree\": 6, \"tmux.clear-options tap owner\": 1, \"tmux.control-client\": 1, \"tmux.new-window\": 4, \"tmux.pipe-pane attach\": 137, \"tmux.pipe-pane detach\": 2, \"tmux.rename-window\": 9, \"tmux.set-options tap owner\": 137}}, \"spawn_delta\": {\"total\": 0, \"by_op\": {\"ddocs.community\": 0, \"gh.delivered\": 0, \"git.community\": 0, \"ps.registration-native-process\": 0, \"ps.sidecar-process-group\": 0, \"ps.tmux-harness-process-tree\": 0, \"tmux.clear-options tap owner\": 0, \"tmux.control-client\": 0, \"tmux.new-window\": 0, \"tmux.pipe-pane attach\": 0, \"tmux.pipe-pane detach\": 0, \"tmux.rename-window\": 0, \"tmux.set-options tap owner\": 0}}}"
+				},
+				{
+					"command": "just spawn-rate --seconds 20 --json",
+					"exit_code": 0,
+					"log": "{\n  \"seconds\": 20.0,\n  \"daemon_pid\": 17600,\n  \"total_new_per_s\": 115.8,\n  \"polls\": 197251,\n  \"sampled_per_s\": 112.9,\n  \"attributed_per_s_lower_bound\": {\n    \"<gone before seen>\": 63.7,\n    \"other\": 49.2\n  },\n  \"daemon_children_per_s_lower_bound\": {},\n  \"statusline_runs_seen_per_s\": 0.0,\n  \"pij_claude_hook_runs_seen_per_s_lower_bound\": {\n    \"display\": 0.0,\n    \"stop\": 0.0\n  },\n  \"top_commands_per_s_lower_bound\": {\n    \"bash\": 26.6,\n    \"copilot\": 7.8,\n    \"sh\": 3.8,\n    \"node\": 3.0,\n    \"pij-rs\": 2.4,\n    \"git\": 1.6,\n    \"git-ai\": 1.2,\n    \"flowspace3\": 1.1,\n    \"bun.exe\": 0.6,\n    \"gh\": 0.5,\n    \"dlpuser_helper\": 0.1,\n    \"Microsoft Edge\": 0.0\n  }\n}\n"
+				},
+				{
+					"command": "/bin/ps -p 17600 -o pid=,lstart=,%cpu=,rss=,comm=",
+					"exit_code": 0,
+					"log": "17600 Thu 19 Nov 17:53:30 2026      63.7 156992 /Users/jordanknight/.npm-global/bin/pij-rs\n"
+				},
+				{
+					"command": "git diff --exit-code dba0c080...9e665af8b04ef4fc03f309cfa8fb7d02211e3386 -- crates/testkit/tests/spawn_sites.rs",
+					"exit_code": 0,
+					"log": "No output: launch-site inventory unchanged."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES — performance/265, exact head 9e665af8b04ef4fc03f309cfa8fb7d02211e3386, diff base dba0c080 (#263).\n\nNo blocking performance finding. Detached HEAD matched the requested SHA. The full diff contains no production change to the ancestry observer/walk, scheduling or launch sites. spawn_sites.rs is unchanged (exact-base diff exit 0, no output).\n\n| Changed work | Added launches/s | Trigger / interval | Scaling |\n| --- | --- | --- | --- |\n| Select route.anchor.or(descriptor.proc), then test ancestor membership | 0 | Existing native registration, only !same_launch; no added poll/timer | One in-memory membership scan, at most 31 ancestors under the unchanged 32-process verifier cap. Independent of previous restart count and other seats. |\n| Retain anchor on carried route | 0 | Existing route assignment and descriptor persistence | One inline optional ProcIdentity per route. Fixed-size identity/JSON fields, not a list or new heap-owned collection. Existing roster serializations acquire bounded extra bytes per carried seat; no added roster pass. |\n\nEvidence: crates/daemon/src/registration.rs:1191-1228 selects an anchor by value and reuses NativeHandoff.ancestors; no new await, syscall, process liveness query, allocation of an ancestry vector, or process observation is introduced. verify_native_host (:746-803), its 32-process cap, its five-second outer deadline and its existing observation machinery are unchanged. crates/core/src/model.rs:589-640 stores one optional identity, defaults it to None and omits absent anchors from serialized JSON; carried(anchor) keeps the same single identity. cache_proxy.rs adds only anchor: None to the existing proxied gate result. The pre-existing carried-reason String allocation is unchanged. No accumulated sibling history or per-tick/per-seat work.\n\nZero launches means zero incremental launches for this patch. Existing macOS ancestry validation still performs cached absolute-path /bin/ps argv reads for host-named ancestors; this patch does not add one or extend the chain. Source review is inferential proof of that delta, not a live restart result. The updated sibling regression feeds each returned seat into the next registration and keeps only HOST, SHELL and the current child alive; test code inspected, not run by this no-build reviewer.\n\nLive-before receipt: 2026-11-19T08:18:57.096917Z–08:19:17.359234Z, monotonic span 20.262 s. Same daemon PID 17600 and running commit dba0c0803b in both ping readings. Counters 655→655, all by_op deltas zero, including ps.registration-native-process at 206. The 20-second whole-machine probe observed 115.8 launches/s; per-parent sampling is only a lower bound. Daemon snapshot: 63.7% CPU, RSS 156992 KiB. CPU is high in this pre-patch snapshot; no causal claim or controlled idle claim is made. Full per-site readings, probe and resource command output are embedded.\n\nPerformed only exact-head diff inspection, live ping twice, just spawn-rate --seconds 20 --json, and /bin/ps resources. No builds, cargo, shared-build, tests, mutations or daemon restart performed. CI green and eight mutations are supplied upstream, not independently reproduced here.\n\nNote owed: live-proof owner to repeat post-deploy counter/machine/CPU/RSS receipts and correlate the sibling restart timestamps; the current window runs #263, not #265. No code change requested for performance.\n\nHarness insight: external-process sequence fixtures must feed output state forward and use observed parent relationships; the updated sibling fixture now does so without growing retained state. MagicWand remains a single counter-bracketed spawn-rate receipt with daemon identity and CPU/RSS, eliminating manual receipt assembly.\n"
+		}
+	]
+}
