@@ -159,7 +159,7 @@ copilot-sdk-contract *ARGS:
 # (commit harness/copilot-sdk-verified.json) and says the fleet may reload
 # seats, otherwise it stops: do not reload. With no update it still checks.
 update-copilot:
-    @nice -n 19 node harness/scripts/update-copilot.mjs
+    @harness/scripts/nice19.sh node harness/scripts/update-copilot.mjs
 
 
 # Large native history, receiver death and manual inbox recovery on isolated services.
