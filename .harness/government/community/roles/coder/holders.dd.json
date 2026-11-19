@@ -1106,6 +1106,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-printed-egret",
 					"why": "F212: Copilot seats lose auth (401) and need a manual restart"
+				},
+				{
+					"assigned_by": "pij-printed-egret",
+					"from": "2026-11-19T03:24:00.152Z",
+					"harness": "copilot",
+					"harness_session": "eff193b0-ae34-4723-ab8e-2fc9ba49ba0a",
+					"instance_key": "f212-probe",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-subsequent-mockingbird",
+					"why": "F212 throwaway probe: does Copilot /restart keep the seat's holdings"
 				}
 			]
 		}
