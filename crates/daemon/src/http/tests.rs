@@ -3521,12 +3521,20 @@ async fn spawn_wait_reports_child_exit_with_log_tail() {
     let details = parsed["details"]
         .as_object()
         .expect("structured failure details");
-    assert_eq!(details.len(), 5, "details shape must stay exact");
+    assert_eq!(details.len(), 8, "details shape must stay exact");
     assert_eq!(details["dispatched"], true);
     assert_eq!(details["bound"], false);
+    assert_eq!(details["seat"], "pij-exits-before-bind");
     assert!(details["pane"].as_str().is_some());
+    assert!(details["spawn_id"].as_str().is_some());
     assert_eq!(details["pid"], serde_json::Value::Null);
     assert_eq!(details["reason"], "child exited before registration");
+    assert!(
+        details["close"].as_str().is_some_and(
+            |close| close.starts_with("pij close pij-exits-before-bind; tmux kill-pane -t %")
+        ),
+        "{details:?}"
+    );
     let events = spine
         .tail(
             Some(&SeatId::from("pij-exits-before-bind")),
@@ -3595,6 +3603,302 @@ async fn codex_spawn_timeout_names_the_prompt_on_screen() {
         "timed out after 1s waiting for registration: Codex is showing its update prompt \
          (`Update available · 0.164.0 → 0.165.0`)"
     );
+    server.abort();
+}
+
+/// F211: an omp spawn of `id` under `pij-parent`, waiting `wait_seconds`.
+fn f211_spawn(id: &str, wait_seconds: u64) -> SpawnRequest {
+    SpawnRequest {
+        id: Some(id.into()),
+        harness: Harness::Omp,
+        allow_retired: false,
+        executable: None,
+        model: None,
+        effort: None,
+        cwd: "/abs/tree".to_string(),
+        session: Some("fleet".to_string()),
+        caller_pane: None,
+        name: None,
+        parent: Some("pij-parent".into()),
+        accept_inbound: false,
+        wait_seconds: Some(wait_seconds),
+        no_wait: false,
+        resume: None,
+        role: None,
+        caller: None,
+        no_cache_proxy: false,
+    }
+}
+
+/// F211: the failure answer names the seat its spawn left, so the caller can
+/// close it (pij-sure-eagle's spawn answered `adapter` and named nothing).
+fn assert_names_the_seat(details: &serde_json::Value, id: &str, spawned: &SeatDescriptor) {
+    let pane = spawned.pane.as_deref().expect("launched pane");
+    assert_eq!(details["seat"], id, "{details}");
+    assert_eq!(details["pane"], pane, "{details}");
+    assert_eq!(
+        details["spawn_id"].as_str(),
+        spawned.spawn_id.as_deref(),
+        "{details}"
+    );
+    assert_eq!(
+        details["close"],
+        format!("pij close {id}; tmux kill-pane -t {pane}"),
+        "{details}"
+    );
+}
+
+/// F211: a spawn that stopped waiting (here a timeout) answers with the seat,
+/// its pane, its spawn id and how to close it. When the harness comes up
+/// anyway and registers, the spawning parent is told once, by a notice.
+#[tokio::test]
+async fn a_timed_out_spawn_names_its_seat_and_a_late_registration_tells_the_parent() {
+    let registry = Arc::new(FakeRegistry::new().with_seat(SeatDescriptor::new(
+        "pij-parent",
+        Harness::Omp,
+        "/abs/tree",
+    )));
+    let spine = Arc::new(FakeSpine::new());
+    let identity = ProcIdentity {
+        pid: 13_311,
+        proc_start: 20260902013311,
+    };
+    let mut services = test_services(
+        registry.clone(),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        spine.clone(),
+    )
+    .await;
+    services.tmux = Arc::new(FakeTmux::new());
+    services.liveness = Arc::new(FakeLiveness::new().with_proc(identity));
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(format!("http://{addr}/v1/spawn"))
+        .bearer_auth("key")
+        .json(&f211_spawn("pij-late-binder", 1))
+        .send()
+        .await
+        .expect("spawn response");
+    assert_eq!(response.status(), reqwest::StatusCode::GATEWAY_TIMEOUT);
+    let failure: serde_json::Value = response.json().await.expect("failure JSON");
+    let spawned = registry
+        .get(&SeatId::from("pij-late-binder"))
+        .await
+        .expect("read pre-bind row")
+        .expect("pre-bind row");
+    assert_names_the_seat(&failure["details"], "pij-late-binder", &spawned);
+
+    let register = |id: &'static str| {
+        client
+            .post(format!("http://{addr}/v1/register"))
+            .bearer_auth("key")
+            .json(&Registration {
+                supersedes: None,
+                id: id.to_string(),
+                harness: "omp".to_string(),
+                folder: "/abs/tree".to_string(),
+                extension_build: None,
+                extension_path: None,
+                pane: spawned.pane.clone(),
+                pid: Some(identity.pid),
+                proc_start: Some(identity.proc_start),
+                spawn_id: spawned.spawn_id.clone(),
+                model: None,
+                actual_model: None,
+                actual_model_observed: false,
+                provider: None,
+                effort: None,
+                parent: None,
+                role: None,
+                relay: false,
+                native_precedence: None,
+            })
+            .send()
+    };
+    assert_eq!(
+        register("runtime-candidate")
+            .await
+            .expect("late registration")
+            .status(),
+        200
+    );
+    let unreported = || async {
+        spine
+            .tail(Some(&SeatId::from("pij-late-binder")), Seq(0))
+            .await
+            .expect("seat events")
+            .into_iter()
+            .filter(|event| event.kind == "spawn.unreported")
+            .collect::<Vec<_>>()
+    };
+    let mut reported = Vec::new();
+    for _ in 0..200 {
+        reported = unreported().await;
+        if !reported.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(reported.len(), 1, "the parent is told once");
+    let payload: serde_json::Value = serde_json::from_str(&reported[0].payload).expect("payload");
+    assert_eq!(payload["parent"], "pij-parent");
+    assert_eq!(payload["spawn_id"].as_str(), spawned.spawn_id.as_deref());
+    assert!(
+        payload["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.starts_with("timed out")),
+        "{payload}"
+    );
+    assert!(!payload["notice"].is_null(), "a notice was sent: {payload}");
+
+    assert_eq!(
+        register("pij-late-binder")
+            .await
+            .expect("re-registration")
+            .status(),
+        200
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(unreported().await.len(), 1, "never twice");
+    server.abort();
+}
+
+/// F211: an adapter error while the spawn watches its launch (here tmux's
+/// pane inventory) is answered like any other failure after the launch: with
+/// the seat, its pane, its spawn id and how to close it, never a bare
+/// `adapter` error that names nothing.
+#[tokio::test]
+async fn an_adapter_error_while_waiting_names_the_seat_it_left() {
+    let registry = Arc::new(FakeRegistry::new());
+    let spine = Arc::new(FakeSpine::new());
+    let mut services = test_services(
+        registry.clone(),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        spine.clone(),
+    )
+    .await;
+    services.tmux = Arc::new(FakeTmux::new().with_list_pane_failures(1));
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/spawn"))
+        .bearer_auth("key")
+        .json(&f211_spawn("pij-unwatched", 5))
+        .send()
+        .await
+        .expect("spawn response");
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::INTERNAL_SERVER_ERROR
+    );
+    let failure: serde_json::Value = response.json().await.expect("failure JSON");
+    assert_eq!(failure["error"], "adapter");
+    let spawned = registry
+        .get(&SeatId::from("pij-unwatched"))
+        .await
+        .expect("read pre-bind row")
+        .expect("pre-bind row");
+    assert_names_the_seat(&failure["details"], "pij-unwatched", &spawned);
+    assert!(
+        failure["details"]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.starts_with("could not list tmux panes")),
+        "{failure}"
+    );
+    let events = spine
+        .tail(Some(&SeatId::from("pij-unwatched")), Seq(0))
+        .await
+        .expect("seat events");
+    assert_eq!(
+        events.last().map(|event| event.kind.as_str()),
+        Some("spawn.failed")
+    );
+    server.abort();
+}
+
+/// F211, pij-sure-eagle: the daemon restarted while a spawn waited, so the
+/// spawn's answer was lost and its pre-bind row outlived it. The next daemon
+/// inherits that row at boot; when the seat registers, the parent is told.
+#[tokio::test]
+async fn a_seat_spawned_before_a_restart_is_reported_to_its_parent_when_it_binds() {
+    let mut orphan = SeatDescriptor::new("pij-before-restart", Harness::Omp, "/abs/tree");
+    orphan.pane = Some("%74".to_string());
+    orphan.parent = Some("pij-parent".into());
+    orphan.spawn_id = Some("s-before-restart".to_string());
+    let registry = Arc::new(
+        FakeRegistry::new()
+            .with_seat(SeatDescriptor::new("pij-parent", Harness::Omp, "/abs/tree"))
+            .with_seat(orphan.clone()),
+    );
+    let spine = Arc::new(FakeSpine::new());
+    let identity = ProcIdentity {
+        pid: 13_374,
+        proc_start: 20260902013374,
+    };
+    let mut services = test_services(
+        registry.clone(),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        spine.clone(),
+    )
+    .await;
+    services.tmux = Arc::new(FakeTmux::new());
+    services.liveness = Arc::new(FakeLiveness::new().with_proc(identity));
+    let seats = registry.list(SeatFilter::default()).await.expect("roster");
+    services.spawn_waits.inherit(&seats);
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+
+    let registered = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/register"))
+        .bearer_auth("key")
+        .json(&Registration {
+            supersedes: None,
+            id: "runtime-candidate".to_string(),
+            harness: "omp".to_string(),
+            folder: "/abs/tree".to_string(),
+            extension_build: None,
+            extension_path: None,
+            pane: orphan.pane.clone(),
+            pid: Some(identity.pid),
+            proc_start: Some(identity.proc_start),
+            spawn_id: orphan.spawn_id.clone(),
+            model: None,
+            actual_model: None,
+            actual_model_observed: false,
+            provider: None,
+            effort: None,
+            parent: None,
+            role: None,
+            relay: false,
+            native_precedence: None,
+        })
+        .send()
+        .await
+        .expect("registration");
+    assert_eq!(registered.status(), 200);
+    let mut reported = None;
+    for _ in 0..200 {
+        reported = spine
+            .tail(Some(&orphan.id), Seq(0))
+            .await
+            .expect("seat events")
+            .into_iter()
+            .find(|event| event.kind == "spawn.unreported");
+        if reported.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let payload: serde_json::Value =
+        serde_json::from_str(&reported.expect("reported to the parent").payload).expect("payload");
+    assert_eq!(payload["reason"], crate::spawn_waits::RESTARTED);
+    assert_eq!(payload["parent"], "pij-parent");
+    assert_eq!(
+        payload["close"],
+        "pij close pij-before-restart; tmux kill-pane -t %74"
+    );
+    assert!(!payload["notice"].is_null(), "{payload}");
     server.abort();
 }
 

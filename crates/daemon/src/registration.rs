@@ -17,6 +17,7 @@ use crate::delivery::{DeliveryService, NativeHolder, NativeInboxIdentity, Report
 use crate::events::EventBus;
 use crate::http::role::RoleService;
 use crate::http::{NativePrecedence, Registration};
+use crate::spawn_waits::SpawnWaits;
 
 #[derive(Debug)]
 pub(crate) enum RegistrationError {
@@ -95,6 +96,10 @@ pub(crate) struct RegistrationService {
     native_receivers: Option<Arc<DeliveryService>>,
     /// Attempts by path, mode and outcome, with their ancestry reads (plan 211).
     attempts: Arc<attempts::Attempts>,
+    /// F211: launches whose spawn never answered, and the path that tells the
+    /// spawning parent when one binds; absent in services that never bind a
+    /// spawned seat.
+    spawn_reports: Option<(Arc<SpawnWaits>, Arc<DeliveryService>)>,
 }
 
 /// What a native claim carries into the locked registration: a verified
@@ -142,6 +147,7 @@ impl RegistrationService {
             registration_lock: Arc::new(tokio::sync::Mutex::new(())),
             native_receivers: None,
             attempts: Arc::default(),
+            spawn_reports: None,
         }
     }
 
@@ -188,6 +194,9 @@ impl RegistrationService {
         };
         self.count(path, mode, &claimed, &result, reads.close())
             .await;
+        if let Ok((descriptor, _)) = &result {
+            self.report_unanswered_spawn(descriptor);
+        }
         result
     }
 
@@ -269,6 +278,105 @@ impl RegistrationService {
         self.registration_lock = delivery.native_lock();
         self.native_receivers = Some(delivery);
         self
+    }
+
+    /// Tell a spawning parent about seats whose spawn never answered (F211).
+    pub(crate) fn with_spawn_reports(
+        mut self,
+        waits: Arc<SpawnWaits>,
+        delivery: Arc<DeliveryService>,
+    ) -> Self {
+        self.spawn_reports = Some((waits, delivery));
+        self
+    }
+
+    /// F211: a seat bound to a launch whose spawn failed or never answered is
+    /// running, and its caller does not know. Its parent is told once, with
+    /// how to close it, and a `spawn.unreported` event records it. Nothing is
+    /// killed or retired: the seat is live, and the parent decides. A seat with
+    /// no live parent gets the event only. The notice runs detached, so it
+    /// never holds up the registration or a lock its caller holds.
+    fn report_unanswered_spawn(&self, seat: &SeatDescriptor) {
+        let Some((waits, delivery)) = &self.spawn_reports else {
+            return;
+        };
+        if seat.proc.is_none() {
+            return;
+        }
+        let Some(spawn_id) = seat.spawn_id.clone() else {
+            return;
+        };
+        let Some(reason) = waits.take_unreported(&spawn_id) else {
+            return;
+        };
+        let (registry, event_bus, delivery, seat) = (
+            Arc::clone(&self.registry),
+            Arc::clone(&self.event_bus),
+            Arc::clone(delivery),
+            seat.clone(),
+        );
+        tokio::spawn(async move {
+            let pane = seat.pane.as_deref().unwrap_or("unknown");
+            let close = match seat.pane.as_deref() {
+                Some(pane) => format!("pij close {}; tmux kill-pane -t {pane}", seat.id),
+                None => format!("pij close {}", seat.id),
+            };
+            let parent = match &seat.parent {
+                Some(parent) => registry.get(parent).await.ok().flatten(),
+                None => None,
+            };
+            let mut payload = serde_json::json!({
+                "spawn_id": spawn_id,
+                "pane": pane,
+                "parent": seat.parent,
+                "reason": reason,
+                "close": close,
+                "notice": null,
+            });
+            match parent.filter(|parent| parent.tombstoned_at.is_none()) {
+                Some(parent) => {
+                    let body = format!(
+                        "Your spawn {spawn_id} never told you about seat {} in pane {pane}: \
+                         {reason}. That seat registered and is running now. Use it, or \
+                         close it: {close}",
+                        seat.id
+                    );
+                    match delivery
+                        .send(SeatId::from(pij_core::BG_ACTOR), parent.id, body)
+                        .await
+                    {
+                        Ok(receipt) => payload["notice"] = serde_json::json!(receipt),
+                        Err(error) => {
+                            eprintln!(
+                                "pij-rs: unreported spawn {spawn_id}: notice failed: {error}"
+                            );
+                            payload["error"] = serde_json::json!(error.to_string());
+                        }
+                    }
+                }
+                None => payload["withheld"] = serde_json::json!("no live parent"),
+            }
+            let at = match system_time_ms() {
+                Ok(at) => at,
+                Err(error) => {
+                    eprintln!("pij-rs: unreported spawn {spawn_id}: audit failed: {error}");
+                    return;
+                }
+            };
+            if let Err(error) = event_bus
+                .publish(Event {
+                    seq: None,
+                    v: wire::EVENT_VERSION,
+                    at,
+                    kind: "spawn.unreported".to_string(),
+                    seat: Some(seat.id.clone()),
+                    payload: payload.to_string(),
+                })
+                .await
+            {
+                eprintln!("pij-rs: unreported spawn {spawn_id}: audit failed: {error}");
+            }
+        });
     }
 
     /// The first memorable id for `seed` that no row, live or retired, holds:

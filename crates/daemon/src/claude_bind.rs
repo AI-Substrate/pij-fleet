@@ -67,6 +67,16 @@ impl ClaudeBinder {
         }
     }
 
+    /// Report seats whose spawn never answered to their parent (F211).
+    pub(crate) fn with_spawn_reports(
+        mut self,
+        waits: Arc<crate::spawn_waits::SpawnWaits>,
+        delivery: Arc<crate::delivery::DeliveryService>,
+    ) -> Self {
+        self.registration = self.registration.with_spawn_reports(waits, delivery);
+        self
+    }
+
     pub(crate) async fn bind_once(&self) -> Result<usize> {
         // Only live Claude seats can be pending (F185: not the whole roster).
         let claude = SeatFilter {

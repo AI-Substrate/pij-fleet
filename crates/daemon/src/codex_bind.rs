@@ -213,6 +213,16 @@ impl CodexBinder {
         }
     }
 
+    /// Report seats whose spawn never answered to their parent (F211).
+    pub(crate) fn with_spawn_reports(
+        mut self,
+        waits: Arc<crate::spawn_waits::SpawnWaits>,
+        delivery: Arc<crate::delivery::DeliveryService>,
+    ) -> Self {
+        self.registration = self.registration.with_spawn_reports(waits, delivery);
+        self
+    }
+
     pub(crate) async fn bind_once(&self) -> Result<usize> {
         let locks = self.facts.thread_locks();
         let pending: Vec<SeatDescriptor> = self
