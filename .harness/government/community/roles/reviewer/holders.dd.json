@@ -1895,7 +1895,10 @@
 					"harness_session": "4b0db837-7643-466e-b89f-a8ec3a6fb6bc",
 					"instance_key": "261",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #261 merged (4c899c0ac540)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-compulsory-junglefowl",
+					"to": "2026-11-19T06:45:02.841Z",
 					"why": "D-F208-2 just update-copilot #261"
 				}
 			]
