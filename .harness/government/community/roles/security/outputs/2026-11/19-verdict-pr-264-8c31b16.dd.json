@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f2e4-1979-7321-a281-c3ef3990dc64",
+				"date": "2026-11-19",
+				"head": "8c31b168a8cc8f92e09ce768c9dde443597e196f",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:264",
+				"writer": "pij-industrial-chickadee",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 264",
+					"exit_code": 0,
+					"log": "FINAL at 8c31b168a8cc8f92e09ce768c9dde443597e196f; clean detached worktree; all five checks pass; no migration"
+				},
+				{
+					"command": "gh run view 44486038586 --repo AI-Substrate/pij-fleet --json headSha,status,conclusion,workflowName",
+					"exit_code": 0,
+					"log": "ci completed success on 8c31b168a8cc8f92e09ce768c9dde443597e196f"
+				},
+				{
+					"command": "gh run view 44486075628 --repo AI-Substrate/pij-fleet --json headSha,status,conclusion,workflowName",
+					"exit_code": 0,
+					"log": "delivers completed success on 8c31b168a8cc8f92e09ce768c9dde443597e196f"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS -- security review, C34 final round\nPR #264 at 8c31b168a8cc8f92e09ce768c9dde443597e196f.\nBaseline: f808581187bf33c0513a637304264e9e4029ecb3, prior security PASS\n8d0e828da320dd9f5e15cb3a333ab73f7c5255d0.\n\nNo new security vulnerability found. The exact two-head delta is one commit,\nthree modified files (+114/-54), with no main merge requiring isolation:\ncrates/harnesses/src/trust.rs, crates/daemon/src/http/tests.rs, and\ndocs/how/pij-rs-api.md.\n\nR264-001: safe_answer now derives guidance from the captured highlighted row.\nEnter alone is advised only on the trust row; otherwise guidance names the\ncurrent Enter choice and the Up/Down steps needed first\n(crates/harnesses/src/trust.rs:94-124). Labels and options remain fixed\nstrings, and only Copilot's \"1. Yes\" is described as session-only (:46-68).\nClaude recognition now requires its whole-row \"Accessing workspace:\" heading\nbefore the menu (:144-165). This narrows recognition rather than adding key\nauthority. Documentation matches these distinctions\n(docs/how/pij-rs-api.md:189-196).\n\nUnchanged security boundaries: MenuKey remains closed Up/Down/Enter, dispatched\nas argv rather than shell text (crates/core/src/ports.rs:976-995;\ncrates/tmux/src/lib.rs:338-345,1094-1100). trust_folder remains explicit\nfalse-default opt-in, with no automated key on absent highlight\n(crates/daemon/src/http/types.rs:187-192;\ncrates/daemon/src/http/mod.rs:1780-1805). Capture and dispatch stay scoped to the\nnewly allocated spawn pane/requested cwd and re-detect each iteration\n(crates/daemon/src/http/mod.rs:1640-1680,1773-1805). No close/auth code,\ndependency manifest, lockfile, download configuration, captured fixture,\npolling rate or launch site changed.\n\nInspected tests cover all five trust captures, highlight-aware exact guidance,\nthe no-highlight case, heading-less Claude rows refusing recognition, and\nthe second-row Copilot daemon refusal with HTTP 409 and no keys/kills\n(crates/daemon/src/http/tests.rs:3669-3727).\nExisting killPane execution-error swallowing remains an unchanged follow-up.\nConditional manual Enter advice after moving an unobserved highlight is not\nan automated blind keypress: next_key returns None without a visible highlight.\nNo new blocking issue is raised in this final round.\n\nIndependent finality evidence: just pr-freeze 264 returned FINAL at the exact\nhead, clean detached worktree, all five checks passed, no migration.\nIndependently verified ci run 44486038586 and delivers run 44486075628 both\ncompleted successfully on 8c31b168a8cc8f92e09ce768c9dde443597e196f.\nDelta source/test inspection was delegated; finality and CI verification\nwere performed by the publishing role holder.\n\nProof limits: no local builds, test runners, dependency changes, mutation runs,\nlive trust acceptance or pane-kill probes. The supplied mutation claims were\nnot independently repeated. No before/after cost measurement was needed for\nthis security-only delta; no new polling or process-launch behavior was added.\nC33's same-user trust boundary and C34's final-round scope apply.\n\nHarness feedback: the changed exact-guidance assertions encode the manual\nrepair-text correctness lesson. The pre-existing review-readiness and\ndelegated evidence-reporting gaps were captured as session feedback, not PR\nfindings.\n"
+		}
+	]
+}
