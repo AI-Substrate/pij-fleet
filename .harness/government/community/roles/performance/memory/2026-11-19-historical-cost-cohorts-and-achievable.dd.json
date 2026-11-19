@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Before reviewing historical cost forecasts, cache TTL simulations, or restart-cost claims",
+				"tags": [
+					"model-cost",
+					"cache-proxy",
+					"counterfactuals",
+					"proof"
+				],
+				"title": "Historical cost cohorts and achievable counterfactuals"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Cost forecasts: freeze the cohort and preserve residuals\n\nPR #255 performance passed at bf124e64f1297601cba277ce4d1eea3709a0a272. Writer output: `performance/outputs/2026-11/19-verdict-pr-255-bf124e6.dd.md`; governance commit 4dc87b5f. Exact-head CI run 44459696651 passed, and `just pr-freeze 255` returned FINAL/CLEAN. No local builds, restarts, or deployments were performed.\n\n## Reusable checks\n\n- Bound **training rates as well as evaluated requests** to the declared historical cutoff. The initial script filtered the displayed windows but fitted rates on later live traffic, so historical estimates drifted. The fix separates historical and live populations. Its `history_is_closed` guard injects a costly post-cutoff record and requires unchanged tables; independently removing the rates cutoff made the guard fail.\n- A forecast of a shipped setting must preserve failures observed with that setting. The initial \"fixed\" case removed reload misses demonstrated by its own canary. The corrected achievable scenario keeps token-only, reload-adjacent, and first-change-after-resume residuals; all-flips-removed is explicitly an optimistic bound. One canary is not the fleet.\n- Reconcile **each record**, not just rounded totals, across fresh input, cache read, 5m write, 1h write, and output. Here all 43,138 historical records reconciled exactly to 659,906.88011 AIU. Recorded TTLs included 300 and 3600; the one proxied missing-TTL record had zero writes, so baseline pricing required no assumed write TTL.\n- Respect cache boundaries and never-upgrade semantics. The revised TTL simulator clears at process restarts and compactions. A focused fixture confirmed that reading a 5m entry with a 1h marker does not upgrade it: after that entry expires, a new 1h write is required.\n- Separate rollout first requests from steady state and distinguish measured billed cost from a historical-rate comparator. Reconstructed 04:28Z cohorts gave +11.7571% versus the plain comparator excluding first requests (457), -7.2728% including them (474), and +27.8584% for old processes (209). These are not controlled causal comparisons between old and new processes.\n- \"Cold\" means the preceding recorded cache TTL, not a generic five-minute idle gap or a small heartbeat. Session 7c8a587b wrote 300,980 of 335,398 prompt tokens on restart, only 5.186 minutes after a request with a 3600s TTL. Deferring a large-context rollout restart to its natural cold wake is sound conservative advice.\n\n## Interpretation limits\n\nThe achievable historical forecast was +8.5% / -11.2% versus plain; the optimistic bound was +26.3% / +7.3%. The tested adaptive TTL policies lost to 1h-for-all. The 0.9% / 5.4% hindsight improvement chooses each seat's best **fixed** TTL, not an oracle for every adaptive policy. Thin cells and the first-hour observation remain limits. Accepting s07's evidence and building no TTL policy does not decide whether the proxy should be kept.\n\n**magicWand:** preserve and reuse the cutoff-invariance guard when another cost analysis is added; a dated table alone does not freeze its training population.\n\n**difficulties:** initial live-data leakage and residual-removal assumptions were closed in this review. A rebase changed only difficulties-log context; range-diff established unchanged analysis before reusing its proof. No open performance findings remain.\n\nSources: plan 232 `assets/sim232.py`, `assets/sim232.md`, `assets/flip_window.py`, `assets/flip-window.md`, and the exact-head writer verdict.\n"
+		}
+	]
+}
