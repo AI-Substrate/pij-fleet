@@ -1148,6 +1148,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-determined-silkworm",
 					"why": "F214 HIGH: cache TTL as a first-class fact; never mistake cold for warm"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T04:58:28.717Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f217",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F217: tests build pij-rs into per-worktree target dirs (~15 GB/lane)"
 				}
 			]
 		}
