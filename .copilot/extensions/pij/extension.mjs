@@ -84,80 +84,92 @@ async function startExtension() {
 	process.once("exit", (code) => bridge?.stop(`process.exit:${code}`));
 
 	try {
+		// Copilot CLI 1.0.113+ SDK (F208): tools live under `tools.definitions` and
+		// callbacks under `hooks.handlers`. The SDK silently ignores the older flat
+		// shape, which drops pij_send and both hooks without an error.
 		session = await joinSession({
-			tools: [
-				{
-					name: "pij_send",
-					description:
-						'Send a message to a Pij peer from this native Copilot seat. A receipt proves queue/native acceptance, not completed model work. Call explicitly; replies are never automatically forwarded. For fire-and-forget sends that close your reply, end it with a pij block instead (no extra call); see the pij skill. Before setting `fyi: true`, ask: does the recipient have to do anything because of this message? Yes: normal send, even if you need no reply. No: fyi, which is only for information the recipient does not have to act on. Never fyi: "step done, your turn", hand-offs, "ready", work or a phase complete, review verdicts, blockers, questions, decisions. An FYI never wakes anyone: it rides along on the recipient\'s next turn, so an idle seat will not see it until something else wakes it. FYI examples: "merged #452, nothing needed from you"; "heads-up: main moved, rebase when you next touch it"; progress notes nobody is waiting on. A cold recipient (large context, idle over an hour, not working) refuses a waking message with E-RS-COLD-WAKE naming the price; if the recipient has nothing to do with it, resend with fyi; if they have to act, resend with force and a reason when the wake is worth that price (audited), or let their parent decide. When you answer a role request (its header reads `[pij role:<role> request <id> …]`), pass that <id> as in_reply_to: that is what marks the request answered and stops its time limit.',
-					parameters: {
-						type: "object",
-						properties: {
-							to: {
-								type: "string",
-								description:
-									"Recipient Pij seat ID, or seat@machine for a paired machine (copy a `[pij from …]` sender verbatim)",
+			tools: {
+				definitions: [
+					{
+						name: "pij_send",
+						description:
+							'Send a message to a Pij peer from this native Copilot seat. A receipt proves queue/native acceptance, not completed model work. Call explicitly; replies are never automatically forwarded. For fire-and-forget sends that close your reply, end it with a pij block instead (no extra call); see the pij skill. Before setting `fyi: true`, ask: does the recipient have to do anything because of this message? Yes: normal send, even if you need no reply. No: fyi, which is only for information the recipient does not have to act on. Never fyi: "step done, your turn", hand-offs, "ready", work or a phase complete, review verdicts, blockers, questions, decisions. An FYI never wakes anyone: it rides along on the recipient\'s next turn, so an idle seat will not see it until something else wakes it. FYI examples: "merged #452, nothing needed from you"; "heads-up: main moved, rebase when you next touch it"; progress notes nobody is waiting on. A cold recipient (large context, idle over an hour, not working) refuses a waking message with E-RS-COLD-WAKE naming the price; if the recipient has nothing to do with it, resend with fyi; if they have to act, resend with force and a reason when the wake is worth that price (audited), or let their parent decide. When you answer a role request (its header reads `[pij role:<role> request <id> …]`), pass that <id> as in_reply_to: that is what marks the request answered and stops its time limit.',
+						parameters: {
+							type: "object",
+							properties: {
+								to: {
+									type: "string",
+									description:
+										"Recipient Pij seat ID, or seat@machine for a paired machine (copy a `[pij from …]` sender verbatim)",
+								},
+								message: { type: "string", description: "Message body" },
+								fyi: {
+									type: "boolean",
+									description:
+										'Does the recipient have to do anything because of this message? Yes: leave this off and send normally, even when you need no reply. No: true holds it until the recipient\'s next turn; it wakes no one. Never for "step done, your turn", hand-offs, "ready", verdicts, blockers, questions or decisions. Never with force',
+								},
+								force: {
+									type: "boolean",
+									description:
+										"Wake a cold recipient anyway (otherwise refused with E-RS-COLD-WAKE and the price). Needs reason; never with fyi",
+								},
+								reason: {
+									type: "string",
+									pattern: "\\S",
+									description:
+										"Why this forced cold wake is worth its price; recorded in the daemon's audit. Required with force",
+								},
+								in_reply_to: {
+									type: "string",
+									pattern: "^\\S+$",
+									description:
+										"The id of the message this answers. When answering a role request, its request id (from `[pij role:<role> request <id> …]`): a reply from the request's holder marks it answered",
+								},
 							},
-							message: { type: "string", description: "Message body" },
-							fyi: {
-								type: "boolean",
-								description:
-									'Does the recipient have to do anything because of this message? Yes: leave this off and send normally, even when you need no reply. No: true holds it until the recipient\'s next turn; it wakes no one. Never for "step done, your turn", hand-offs, "ready", verdicts, blockers, questions or decisions. Never with force',
-							},
-							force: {
-								type: "boolean",
-								description:
-									"Wake a cold recipient anyway (otherwise refused with E-RS-COLD-WAKE and the price). Needs reason; never with fyi",
-							},
-							reason: {
-								type: "string",
-								pattern: "\\S",
-								description:
-									"Why this forced cold wake is worth its price; recorded in the daemon's audit. Required with force",
-							},
-							in_reply_to: {
-								type: "string",
-								pattern: "^\\S+$",
-								description:
-									"The id of the message this answers. When answering a role request, its request id (from `[pij role:<role> request <id> …]`): a reply from the request's holder marks it answered",
-							},
+							required: ["to", "message"],
+							additionalProperties: false,
 						},
-						required: ["to", "message"],
-						additionalProperties: false,
+						handler: async (input, invocation) => {
+							if (
+								!session ||
+								invocation.sessionId !== session.sessionId ||
+								!bridge ||
+								signal.aborted
+							)
+								return { ok: false, error: "Pij native identity is not ready for this session" };
+							return bridge.send(input);
+						},
 					},
-					handler: async (input, invocation) => {
-						if (!session || invocation.sessionId !== session.sessionId || !bridge || signal.aborted)
-							return { ok: false, error: "Pij native identity is not ready for this session" };
-						return bridge.send(input);
-					},
-				},
-			],
+				],
+			},
 			hooks: {
-				// Plan 158: a typed prompt carries this seat's held FYIs as context.
-				onUserPromptSubmitted: async (input, invocation) => {
-					if (
-						!session ||
-						!bridge ||
-						signal.aborted ||
-						invocation?.sessionId !== session.sessionId ||
-						(input?.sessionId ?? session.sessionId) !== session.sessionId
-					)
-						return undefined;
-					return bridge.claimFyis();
-				},
-				// Plan 226: a reply ending in a pij block runs it at the natural end of
-				// the run (never on abort); failure gives the seat one follow-up turn.
-				onAgentStop: async (input, invocation) => {
-					const text = turnEnd.take();
-					if (
-						!session ||
-						!bridge ||
-						signal.aborted ||
-						invocation?.sessionId !== session.sessionId ||
-						(input?.sessionId ?? session.sessionId) !== session.sessionId
-					)
-						return undefined;
-					return bridge.turnEnd(text, input?.stopHookActive === true);
+				handlers: {
+					// Plan 158: a typed prompt carries this seat's held FYIs as context.
+					onUserPromptSubmitted: async (input, invocation) => {
+						if (
+							!session ||
+							!bridge ||
+							signal.aborted ||
+							invocation?.sessionId !== session.sessionId ||
+							(input?.sessionId ?? session.sessionId) !== session.sessionId
+						)
+							return undefined;
+						return bridge.claimFyis();
+					},
+					// Plan 226: a reply ending in a pij block runs it at the natural end of
+					// the run (never on abort); failure gives the seat one follow-up turn.
+					onAgentStop: async (input, invocation) => {
+						const text = turnEnd.take();
+						if (
+							!session ||
+							!bridge ||
+							signal.aborted ||
+							invocation?.sessionId !== session.sessionId ||
+							(input?.sessionId ?? session.sessionId) !== session.sessionId
+						)
+							return undefined;
+						return bridge.turnEnd(text, input?.stopHookActive === true);
+					},
 				},
 			},
 		});

@@ -96,18 +96,32 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
           }
           return;
         }
+        // As the real SDK (CLI 1.0.113+): callbacks are read from hooks.handlers and
+        // a missing handler answers undefined; tools from tools.definitions (F208).
+        const hooks = config.hooks?.handlers;
         if (input.userPrompt !== undefined) {
-          const result = await config.hooks.onUserPromptSubmitted(
+          const handler = hooks?.onUserPromptSubmitted;
+          const result = handler && await handler(
             {sessionId: input.hookSessionId ?? session.sessionId, prompt: input.userPrompt, timestamp: new Date(), workingDirectory: process.cwd()},
             {sessionId: input.invocationSessionId ?? session.sessionId},
           );
           emit({kind:'hook-result', returned: result !== undefined, result: result ?? null});
           return;
         }
-        const result = await config.tools[0].handler(input, {sessionId:session.sessionId});
+        if (input.agentStop !== undefined) {
+          const handler = hooks?.onAgentStop;
+          const result = handler && await handler(
+            {sessionId: session.sessionId, timestamp: new Date(), workingDirectory: process.cwd(), stopReason: 'end_turn', stopHookActive: input.agentStop.stopHookActive === true},
+            {sessionId: session.sessionId},
+          );
+          emit({kind:'stop-result', returned: result !== undefined, result: result ?? null});
+          return;
+        }
+        const tool = config.tools?.definitions?.find((definition) => definition.name === 'pij_send');
+        const result = tool ? await tool.handler(input, {sessionId:session.sessionId}) : null;
         emit({kind:'tool-result',result});
       });
-      emit({kind:'joined', tools: config.tools.map((tool) => tool.name)});
+      emit({kind:'joined', tools: (config.tools?.definitions ?? []).map((tool) => tool.name)});
       return session;
     }
   `;
@@ -196,6 +210,7 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 			controlledClock = false,
 			startupReadFails = false,
 			fyiClaims = [],
+			turnEnds = [],
 		} = {},
 	) {
 		const home = await mkdtemp(join(tmpdir(), "pij-native-shell-"));
@@ -326,6 +341,7 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 					({ data, refusal, status } = fyiClaims.shift() ?? {
 						data: { seat: registered.id, count: 0, block: "", ids: [] },
 					});
+				else if (request.url === "/v1/turn-end") data = turnEnds.shift();
 				else throw new Error(`Unexpected native endpoint ${request.url}`);
 				response.setHeader("Content-Type", "application/json");
 				response.statusCode = status ?? (refusal ? 400 : 200);
@@ -989,6 +1005,29 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		assert.equal(sends[0].body.fyi, true);
 		assert.equal("fyi" in sends[1].body, false);
 		assert.equal(f.events.filter((event) => event.kind === "native-log").length, 0);
+		assert.equal(f.stdout(), "");
+	});
+
+	test("natural stop hands a fenced reply to the daemon and a failure gives one follow-up", async (t) => {
+		const f = await launch(t, {
+			messages: 0,
+			turnEnds: [
+				{ outcome: "failed", ran: 0, summary: "pij ✗ 0 of 1 ran", followup: "FOLLOWUP_137" },
+			],
+		});
+		await f.waitFor("registered");
+		const reply = "Done.\n\n```pij\nsend pij-peer hi\n```";
+		f.child.stdin.write(
+			`${JSON.stringify({ nativeEvents: [{ type: "assistant.message", id: "a-1", data: { messageId: "m-1", content: reply } }] })}\n`,
+		);
+		await f.waitFor("native-event", (event) => event.type === "assistant.message");
+		f.child.stdin.write(`${JSON.stringify({ agentStop: { stopHookActive: false } })}\n`);
+		const stopped = await f.waitFor("stop-result");
+		assert.deepEqual(stopped.result, { decision: "block", reason: "FOLLOWUP_137" });
+		const turnEnd = f.requests.filter((request) => request.path === "/v1/turn-end");
+		assert.equal(turnEnd.length, 1);
+		assert.equal(turnEnd[0].body.text, reply);
+		assert.equal(turnEnd[0].body.via, "hook:copilot");
 		assert.equal(f.stdout(), "");
 	});
 
