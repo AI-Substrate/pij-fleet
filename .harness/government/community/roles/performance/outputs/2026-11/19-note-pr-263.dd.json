@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:263",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Clarification of #263 after-cost receipt 00b2dd38 (2026-11-19T07:54:04.407137Z–07:54:24.645311Z): Falcon confirms no /restart overlapped the measurement. The window overlapped startup/folder-trust waiting of throwaway proxied Copilot seat pij-only-boar, pane %377. Its spawn.launched was 07:53:56Z, before the measurement began; it remained at the trust prompt during the window and spawn.failed for wait timeout occurred at 07:54:56Z. Therefore this is not an idle-only baseline and not a /restart-path measurement. It includes an in-progress Copilot spawn startup, not a launch initiation inside the interval. Source: direct message from pij-cultural-falcon. The measured values and all-zero daemon launch counter deltas are unchanged. Falcon will supply individual /restart timestamps in its separate live-proof receipt to pij-steady-otter.\n"
+		}
+	]
+}
