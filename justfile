@@ -71,7 +71,7 @@ rs-install:
     commit="$(printf %.10s "$1")" copilot="$(printf %.10s "$2")" omp="$(printf %.10s "$3")+$(printf %.10s "$4")"
     # Stamped on this command only, never exported (#175 review, P175-F001).
     PIJ_BUILD_COMMIT="$commit" PIJ_EXT_TREE_COPILOT="$copilot" PIJ_EXT_TREE_OMP="$omp" \
-        /usr/bin/nice -n 19 cargo build --release --locked -p pij-cli
+        harness/scripts/nice19.sh cargo build --release --locked -p pij-cli
     bin="$(npm prefix -g)/bin"
     copy="$(sh harness/scripts/install-pij-rs.sh target/release/pij-rs "$bin")"
     echo "✓ $bin/pij-rs → $copy (copied from $(pwd)/target/release/pij-rs)"
@@ -114,9 +114,10 @@ format:
     npm run format
 
 # Run vitest. Optionally scope to file(s)/pattern: `just test path/to/x.test.ts`.
-# Every test and build recipe runs under nice -n 19 (F217, F186).
+# Every test and build recipe nices itself to 19 through nice19.sh, which never
+# stacks past the caller's niceness (F217, F186, F220).
 test *ARGS:
-    /usr/bin/nice -n 19 npm run test -- "$@"
+    harness/scripts/nice19.sh npm run test -- "$@"
 
 # tmux-driven end-to-end smoke (Driver SDK). Its private daemon runs this
 # checkout's pij-rs, built here into the checkout's one target (F217): a test
@@ -126,12 +127,12 @@ smoke:
     set -euo pipefail
     target="$(bash harness/scripts/cargo-target.sh)"
     PIJ_SHARED_TARGET="$target" bash harness/scripts/shared-build.sh -- build --locked -p pij-cli --bin pij-rs
-    CARGO_TARGET_DIR="$target" /usr/bin/nice -n 19 npm run smoke
+    CARGO_TARGET_DIR="$target" harness/scripts/nice19.sh npm run smoke
 
 
 # Native Copilot extension contracts are node:test, outside Vitest's TS include.
 copilot-native-test:
-    /usr/bin/nice -n 19 node --test .copilot/extensions/pij/*.test.mjs
+    harness/scripts/nice19.sh node --test .copilot/extensions/pij/*.test.mjs
 
 # Through shared-build into the checkout's one target (F217).
 copilot-native-rust-test:
@@ -151,7 +152,7 @@ copilot-native-smoke *ARGS:
 # when no Copilot CLI is installed (CI); warns when it passed on a version not
 # yet recorded in harness/copilot-sdk-verified.json (`--record` records it).
 copilot-sdk-contract *ARGS:
-    @nice -n 19 node harness/scripts/copilot-sdk-contract.mjs "$@"
+    @harness/scripts/nice19.sh node harness/scripts/copilot-sdk-contract.mjs "$@"
 
 # D-F208-2: the one way to take a Copilot CLI update. `copilot update`, then the
 # installed-SDK contract on the new version; on a pass it records the version
@@ -245,7 +246,7 @@ spawn-rate *ARGS:
 # reads, per harness x model x route, old rule and new. Read-only. Make the
 # report first: pij-rs fleet-report ~ --since 7d --threads 2 --out <dir>
 cache-ttl-audit *ARGS:
-    @nice -n 19 python3 harness/scripts/cache-ttl-audit.py {{ARGS}}
+    @harness/scripts/nice19.sh python3 harness/scripts/cache-ttl-audit.py {{ARGS}}
 
 # Plan 220 (F92). Run by hand before each verdict request and before READY.
 # FINAL (exit 0) only when ls-remote and gh agree on the head, base is main,
@@ -288,7 +289,7 @@ coverage-check:
 # Route inventory (plan 221, F88): every (method, path) pair the daemon really
 # serves (probed through the router from Endpoint::ALL) is classified in
 # harness/scripts/route-inventory.json, and nothing stale is listed there.
-# Through shared-build into the checkout's one target (F217): nice -n 19 only,
+# Through shared-build into the checkout's one target (F217): niceness 19 only,
 # one build at a time (F186: no taskpolicy -b). rust-check skips the probe test
 # so a full gate runs it once; CI's workspace run includes it.
 route-inventory-check:
@@ -373,8 +374,8 @@ rust-check:
     PIJ_SHARED_TARGET="$(bash harness/scripts/cargo-target.sh)" bash harness/scripts/shared-build.sh -- clippy --locked --workspace --all-targets -- -D warnings --then test --locked --workspace -- --skip route_inventory_tests::every_served_route_is_in_the_inventory_and_classified
 
 # Cargo into a target several worktrees share, one worktree at a time (plan 198):
-# lock, disk floor, fresh sources, CARGO_INCREMENTAL=0, nice -n 19 only on
-# every cargo command (F186), always released.
+# lock, disk floor, fresh sources, CARGO_INCREMENTAL=0, niceness max(19, the
+# caller's) on every cargo command (F186, F220: nice19.sh), always released.
 # `PIJ_SHARED_TARGET=<abs dir> just shared-build [--timeout <min>] -- test -p pij-store --then clippy -p pij-store`
 shared-build *ARGS:
     @bash harness/scripts/shared-build.sh "$@"
@@ -630,7 +631,7 @@ omp-doctor:
 # Run vitest scoped to the flow-pair lib tests (explicit path bypasses vitest
 # config include filter; also works with: just test skills/flow-pair/test/).
 flow-pair-test *ARGS:
-    /usr/bin/nice -n 19 node_modules/.bin/vitest run skills/flow-pair/test/ "$@"
+    harness/scripts/nice19.sh node_modules/.bin/vitest run skills/flow-pair/test/ "$@"
 
 # Mutation smoke: PROVE the flow-pair suite actually guards a behaviour. The worker
 # writes its own tests, so green != good — this deliberately breaks <file> with a
@@ -640,7 +641,7 @@ flow-pair-test *ARGS:
 #   just flow-pair-mutate skills/flow-pair/lib/ledger.ts 's/if \(!ev[A-Za-z]+\.ok\)/if (false)/g'
 #   just flow-pair-mutate <file> '<expr>' 'npx vitest run <suite>'   # target the suite that guards <file>
 flow-pair-mutate file expr *test_cmd:
-    /usr/bin/nice -n 19 bash harness/scripts/flow-pair-mutate.sh "{{file}}" '{{expr}}' {{test_cmd}}
+    harness/scripts/nice19.sh bash harness/scripts/flow-pair-mutate.sh "{{file}}" '{{expr}}' {{test_cmd}}
 
 # --- pij-rs daemon + CLI ---
 
@@ -724,7 +725,7 @@ bounce-rs:
     # passes its environment to every job it runs, including cargo in other
     # worktrees (#175 review, P175-F001).
     PIJ_BUILD_COMMIT="$commit" PIJ_EXT_TREE_COPILOT="$copilot" PIJ_EXT_TREE_OMP="$omp" \
-        /usr/bin/nice -n 19 cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
+        harness/scripts/nice19.sh cargo build --release --locked -p pij-cli 2>&1 | grep -E '^error|Finished' | tail -1
     # F187: refresh the installed copy (and the PATH link) from this build and
     # launch that, never target/. The running daemon keeps its own file.
     bin="$(npm prefix -g)/bin"

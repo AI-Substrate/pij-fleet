@@ -102,7 +102,7 @@ Any plan, PR or feature that adds or changes a **loop, poll, timer, hook, status
 2. **Measure it on the live fleet, before and after**, and keep the receipts: `pij-rs --json ping | jq .data.spawns` (two readings a known number of seconds apart; per call site) and `just spawn-rate --seconds 20` (whole machine). See [`docs/how/macos-defender.md`](docs/how/macos-defender.md) § Measure launches.
 3. **Launch nothing per tick per seat.** Prefer in-process work (read the file, call the syscall), the daemon's persistent tmux control client for tmux reads, or a cache with an explicit lifetime. Launch by **absolute path** (`/bin/ps`), never a bare name, in any repeated path.
 4. **Record every new daemon launch site** with the spawn counter; `crates/testkit/tests/spawn_sites.rs` fails if you don't.
-5. **Build and test nice-only, one build at a time; time real children honestly (F28, F186).** Every pij cargo build and test runs under `nice -n 19` only, one build at a time (shared-build's lock), with 4 jobs (`.cargo/config.toml`). Never `taskpolicy -b`: background QoS confines cargo to the efficiency cores and throttles its IO, so at fleet load builds starved for 20 to 35 minutes (Jordan's ruling of 2026-11-11, which supersedes plan 208's background-QoS rule and plan 209's `--no-run` split). `just shared-build` does all of this for you. Write a budget on a real `ps`, tmux or spawn as `pij_testkit::time::scaled(...)` (TS: `scaled()` in `harness/driver/time-scale.ts`); `PIJ_TEST_TIME_SCALE` (default 1) stretches it on a loaded machine, and production constants never read it.
+5. **Build and test nice-only, one build at a time; time real children honestly (F28, F186).** Every pij cargo build and test runs at niceness 19 only, one build at a time (shared-build's lock), with 4 jobs (`.cargo/config.toml`). `just` recipes nice themselves through `harness/scripts/nice19.sh`, which runs at max(19, the caller's niceness) and never stacks (F220): run them with no outer `nice`, and prefix `nice -n 19` only on a direct `node`, `vitest` or `cargo` call. Never `taskpolicy -b`: background QoS confines cargo to the efficiency cores and throttles its IO, so at fleet load builds starved for 20 to 35 minutes (Jordan's ruling of 2026-11-11, which supersedes plan 208's background-QoS rule and plan 209's `--no-run` split). `just shared-build` does all of this for you. Write a budget on a real `ps`, tmux or spawn as `pij_testkit::time::scaled(...)` (TS: `scaled()` in `harness/driver/time-scale.ts`); `PIJ_TEST_TIME_SCALE` (default 1) stretches it on a loaded machine, and production constants never read it.
 
 Reviewers check cost explicitly, the same as correctness: name the loop, its rate, and its per-seat scaling, or say there is none.
 
@@ -184,8 +184,8 @@ citation disputes, all of which resolved as neither party being wrong.)
   target overwrite each other mid-build. The recipe serialises builds with a
   lock, refuses under the disk floor (`PIJ_DISK_FLOOR_GB`, default 25), rebuilds
   your own sources with `CARGO_INCREMENTAL=0`, runs every cargo command at
-  niceness 19 only (never `taskpolicy -b`, F186; a caller already at 19, such as
-  `just test`, gets no second nice, so it never stacks to 20), and always releases. A stale lock is reported with its clear command, never
+  niceness max(19, the caller's) through `harness/scripts/nice19.sh` (never
+  `taskpolicy -b`, F186; never stacked to 20, F220), and always releases. A stale lock is reported with its clear command, never
   cleared for you (plans 198, 208). Parallelism is capped too, because `nice`
   lowers priority but does not shorten the run queue (F126). The repository's
   `.cargo/config.toml` sets `build.jobs = 4` and `RUST_TEST_THREADS = 4` for
@@ -203,12 +203,14 @@ citation disputes, all of which resolved as neither party being wrong.)
   The governance fixture never builds: it copies `<CARGO_TARGET_DIR or
   target>/debug/pij-rs` and runs the copy (`just smoke` builds it; CI builds
   `target/` first). Every recipe that runs a test runner (vitest, `node --test`,
-  the smoke) or a cargo build runs under `nice -n 19`; load reached 198 from one
-  un-niced `node --test`. Two sensors hold this: vitest puts
-  `harness/test-tripwire/cargo` first on every test's PATH, so a test that
-  starts a cargo build fails, and `harness/scripts/recipe-cost.test.ts` fails on
-  an un-niced test or build recipe, cargo outside shared-build (bar the niced
-  release deploy builds), or a target not from `cargo-target.sh`.
+  the smoke) or a cargo build nices itself through `harness/scripts/nice19.sh`
+  (F220); load reached 198 from one un-niced `node --test`. Two sensors hold
+  this: vitest puts `harness/test-tripwire/cargo` first on every test's PATH,
+  so a test that starts a cargo build fails, and
+  `harness/scripts/recipe-cost.test.ts` fails on an un-niced test or build
+  recipe, a bare `nice -n` in any recipe (it stacks past 19 under a niced
+  caller), cargo outside shared-build (bar the niced release deploy builds), or
+  a target not from `cargo-target.sh`.
 - **Worktrees are plain checkouts (F219).** The committed project layer
   `.omp/config.yml` sets `worktree.clone: false`, so OMP's rewrite of
   `git worktree add` (and `github pr_checkout`) no longer clones the checkout,

@@ -5,7 +5,7 @@ import { recipeCostFindings } from "./recipe-cost.js";
 
 const JUSTFILE = join(import.meta.dirname, "../../justfile");
 
-describe("justfile recipe cost (F217)", () => {
+describe("justfile recipe cost (F217, F220)", () => {
 	it("runs every test and cargo build niced, into the checkout's one target", () => {
 		expect(recipeCostFindings(readFileSync(JUSTFILE, "utf8"))).toEqual([]);
 	});
@@ -16,9 +16,12 @@ describe("justfile recipe cost (F217)", () => {
 		["a bare cargo test", "r:\n    cargo test --workspace\n", "without nice"],
 		[
 			"a niced cargo test into the default target",
-			"r:\n    /usr/bin/nice -n 19 cargo test -p pij-daemon\n",
+			"r:\n    harness/scripts/nice19.sh cargo test -p pij-daemon\n",
 			"outside shared-build",
 		],
+		// R257-001: under a caller that already niced, nice -n 19 stacks to 20.
+		["a stacking nice -n 19", "r:\n    /usr/bin/nice -n 19 npm run test\n", "stacks past 19"],
+		["a stacking nice on a script", "r:\n    @nice -n 19 node x.mjs\n", "stacks past 19"],
 		[
 			"a per-worktree target",
 			'r:\n    PIJ_SHARED_TARGET="{{justfile_directory()}}/target" bash harness/scripts/shared-build.sh -- test\n',
@@ -40,13 +43,13 @@ describe("justfile recipe cost (F217)", () => {
 			recipeCostFindings(
 				[
 					"a:",
-					"    /usr/bin/nice -n 19 npm run test",
+					"    harness/scripts/nice19.sh npm run test",
 					"b:",
 					'    PIJ_SHARED_TARGET="$(bash harness/scripts/cargo-target.sh)" bash harness/scripts/shared-build.sh -- test',
 					"c:",
 					"    #!/usr/bin/env bash",
 					'    target="$(bash harness/scripts/cargo-target.sh)"',
-					'    CARGO_TARGET_DIR="$target" /usr/bin/nice -n 19 npm run smoke',
+					'    CARGO_TARGET_DIR="$target" harness/scripts/nice19.sh npm run smoke',
 					"",
 				].join("\n"),
 			),

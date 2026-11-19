@@ -37,9 +37,9 @@
 # explicit `-- --test-threads N` still wins, as does a RUST_TEST_THREADS the
 # caller set. The cap is printed first.
 #
-# Every cargo command runs at niceness 19 only, which rustc, linkers and test
-# binaries inherit (nice skipped if absent; no extra nice when the caller is
-# already at 19, so it never stacks to 20), and runs as given: one step each.
+# Every cargo command runs at niceness max(19, the caller's), through
+# harness/scripts/nice19.sh (F220), which rustc, linkers and test binaries
+# inherit; it never stacks to 20. Each runs as given: one step each.
 # No `taskpolicy -b` (F186, Jordan's ruling of 2026-11-11): background QoS
 # confined cargo to the efficiency cores and throttled its IO, so at fleet load
 # builds starved for 20 to 35 minutes. The lock (one build at a time) and the
@@ -50,8 +50,8 @@
 # Cost: nothing at rest. A build uses the performance cores at nice 19, one at
 # a time, with at most PIJ_CARGO_JOBS rustc jobs and test threads per binary
 # (F126). Waiting: one df, one mkdir and one sleep per poll (20 s) per waiting
-# caller. Holding: one ps per run (the caller's niceness), and one df and one
-# nice launch per cargo command (nice execs into cargo), never per poll.
+# caller. Holding: one df and one nice19.sh per cargo command (one ps, then
+# nice execs into cargo), never per poll.
 
 set -uo pipefail
 
@@ -59,8 +59,6 @@ DF="${PIJ_SHARED_BUILD_DF:-/bin/df}"         # test seam
 MKDIR="${PIJ_SHARED_BUILD_MKDIR:-/bin/mkdir}" # test seam
 POLL="${PIJ_SHARED_BUILD_POLL_SECONDS:-20}"  # test seam
 WHOAMI="${PIJ_SHARED_BUILD_WHOAMI-}"          # test seam; default: pij-rs on PATH
-NICE="${PIJ_SHARED_BUILD_NICE:-/usr/bin/nice}" # test seam
-PS="${PIJ_SHARED_BUILD_PS:-/bin/ps}"         # test seam
 FLOOR_GB="${PIJ_DISK_FLOOR_GB:-25}"
 JOBS="${PIJ_CARGO_JOBS:-4}"
 
@@ -340,19 +338,12 @@ for file in "$worktree"/crates/*/src/lib.rs "$worktree"/crates/*/src/main.rs; do
 done
 [ ${#sources[@]} -eq 0 ] || touch "${sources[@]}"
 
-# Every cargo command runs at niceness 19 only (F186), whatever the caller's:
-# `just test` already runs under nice -n 19, and a second nice -n 19 stacked it
-# to 20 (F217 review R257-001). Read the current niceness once and nice by the
-# difference; a caller at 19 or above adds nothing.
-niced=()
-if [ -x "$NICE" ]; then
-	current=$("$PS" -o nice= -p $$ 2>/dev/null)
-	current=${current//[[:space:]]/}
-	case "$current" in
-	"" | *[!0-9-]* | -) current=0 ;;
-	esac
-	[ "$current" -ge 19 ] || niced+=("$NICE" -n $((19 - current)))
-fi
+# Every cargo command runs at niceness max(19, the caller's) (F186, F220): the
+# wrapper adds 19 minus the caller's niceness, so `just test` (already at 19)
+# adds nothing instead of stacking to 20 (R257-001).
+here=${BASH_SOURCE[0]%/*}
+[ "$here" != "${BASH_SOURCE[0]}" ] || here=.
+niced=(/bin/sh "$here/nice19.sh")
 
 # One cargo command, niced, in its own process group, drained after. In the
 # background under `wait`, so a signal is handled at once rather than after
