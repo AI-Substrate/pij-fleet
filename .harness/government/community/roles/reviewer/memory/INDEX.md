@@ -122,4 +122,5 @@
 - [2026-11-19 Shared-target deploy proof must follow installed bytes](2026-11-19-shared-target-deploy-proof-must-follow.dd.md): Before reviewing shared-target deploys, snapshot cleanup, or clean-HEAD stamp claims. (review, deploy, shared-build, provenance, c34)
 - [2026-11-19 Spawn handoffs require independent bind and answer facts](2026-11-19-spawn-handoffs-require-independent-bind.dd.md): When reviewing spawn cancellation, stale timeout snapshots, restart recovery, or exactly-once handoff claims. (review, spawn, cancellation, recovery, settlement, c34)
 - [2026-11-19 Trust recovery guidance needs fixture coverage](2026-11-19-trust-recovery-guidance-needs-fixture.dd.md): phase-end (review, trust-prompts)
+- [2026-11-20 Returning holders need a queue trigger as well as liveness](2026-11-20-returning-holders-need-a-queue-trigger.dd.md): When reviewing revive/registration hooks, role-queue drains, or their asynchronous regression tests. (review, role-send, registration, proof, f193)
 <!-- /pij:generated -->
