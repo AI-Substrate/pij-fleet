@@ -1184,6 +1184,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-cultural-falcon",
 					"why": "F219 OMP worktree.clone off (project layer) + sensor; F218 row"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T06:20:27.975Z",
+					"harness": "omp",
+					"harness_session": "01a1f172-b316-72df-af40-40261d587094",
+					"instance_key": "d-f208-2",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-printed-egret",
+					"why": "D-F208-2 just update-copilot + mismatch-warn wording"
 				}
 			]
 		}

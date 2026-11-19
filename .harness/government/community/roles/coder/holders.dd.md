@@ -109,3 +109,4 @@
 | — | pij-cultural-falcon | omp | 01a1ec37-421c-73b4-b9d3-da9d4ed048ca | JordansacStudio.localdomain | f217 | 2026-11-19T04:58:28.717Z | 2026-11-19T05:46:26.952Z | pij-steady-otter | pij-far-jackal | F217: tests build pij-rs into per-worktree target dirs (~15 GB/lane) | PR #257 merged (9543d9ada766) |
 | — | pij-printed-egret | omp | 01a1f172-b316-72df-af40-40261d587094 | JordansacStudio.localdomain | d-f208-1 | 2026-11-19T05:23:12.427Z | — | pij-steady-otter | — | D-F208-1: real-SDK registration canary | — |
 | — | pij-cultural-falcon | omp | 01a1ec37-421c-73b4-b9d3-da9d4ed048ca | JordansacStudio.localdomain | f219 | 2026-11-19T05:54:29.299Z | — | pij-steady-otter | — | F219 OMP worktree.clone off (project layer) + sensor; F218 row | — |
+| — | pij-printed-egret | omp | 01a1f172-b316-72df-af40-40261d587094 | JordansacStudio.localdomain | d-f208-2 | 2026-11-19T06:20:27.975Z | — | pij-steady-otter | — | D-F208-2 just update-copilot + mismatch-warn wording | — |
