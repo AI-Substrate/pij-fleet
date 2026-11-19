@@ -110,8 +110,9 @@ internal = ["pij-core"]
 # deliberately absent because they pull rusqlite, whose libsqlite3-sys `links`
 # collides with sqlx's. The SDK is synchronous, so `tokio` supplies the blocking
 # pool that keeps a cold whole-transcript read off the reactor. `async-trait`
-# implements the port.
-external = ["async-trait", "tokio", "unisphere-adapter-claude", "unisphere-adapter-codex", "unisphere-adapter-copilot-cli", "unisphere-adapter-omp", "unisphere-loader-jsonl", "unisphere-sdk"]
+# implements the port. `unisphere-core` is dev-only: a counting loader in the
+# tests names its loader types to prove a missing transcript walks nothing (F209).
+external = ["async-trait", "tokio", "unisphere-adapter-claude", "unisphere-adapter-codex", "unisphere-adapter-copilot-cli", "unisphere-adapter-omp", "unisphere-core@dev", "unisphere-loader-jsonl", "unisphere-sdk"]
 why = "Session facts behind SessionStatusPort (R3-AMEND-10): per-seat transcript read positions over the in-process Unisphere SDK, mapped into pij-core's SeatStatus."
 
 [crates.pij-sidecars]

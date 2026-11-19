@@ -61,6 +61,8 @@ unisphere-adapter-claude = { git = "https://github.com/AI-Substrate/Unisphere.gi
 unisphere-adapter-omp = { git = "https://github.com/AI-Substrate/Unisphere.git", rev = "0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59" }
 unisphere-adapter-codex = { git = "https://github.com/AI-Substrate/Unisphere.git", rev = "0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59" }
 unisphere-adapter-copilot-cli = { git = "https://github.com/AI-Substrate/Unisphere.git", rev = "0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59" }
+# The SDK's loader types, for pij-unisphere's tests only (F209).
+unisphere-core = { git = "https://github.com/AI-Substrate/Unisphere.git", rev = "0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

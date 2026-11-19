@@ -1377,6 +1377,7 @@ dependencies = [
  "unisphere-adapter-codex",
  "unisphere-adapter-copilot-cli",
  "unisphere-adapter-omp",
+ "unisphere-core",
  "unisphere-loader-jsonl",
  "unisphere-sdk",
 ]

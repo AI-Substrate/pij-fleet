@@ -22,3 +22,8 @@ unisphere-adapter-claude = { workspace = true }
 unisphere-adapter-omp = { workspace = true }
 unisphere-adapter-codex = { workspace = true }
 unisphere-adapter-copilot-cli = { workspace = true }
+
+# Tests only: a counting loader names the SDK's loader types, which live in
+# `unisphere-core`, to prove a missing transcript walks nothing (F209).
+[dev-dependencies]
+unisphere-core = { workspace = true }

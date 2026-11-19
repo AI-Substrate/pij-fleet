@@ -702,7 +702,15 @@ transcript through `SessionStatusPort` (plan 157, adapter `pij-unisphere` over
   per-call input or cache usage, so a Copilot seat's `contextUsedTokens` is always
   unknown. The cold-wake guard therefore allows every send to a Copilot seat
   (`unknown: context size unknown`).
-- `not-found` (`detail`)
+- `not-found` (`detail`): no transcript for the bound session. A Copilot seat
+  is looked up at its one path, `<session-state>/<id>/events.jsonl`, with one
+  `stat` and never a walk of every session (F209). Claude, OMP and Codex name
+  their files with more than the session id (the launch directory's project
+  folder, a timestamp, a date), so a miss there walks that harness's roots.
+  Either way the miss is kept for 30 s (`MISS_TTL`) per seat: reads in that
+  window, concurrent ones included, answer `not-found` without looking, so a
+  missing transcript costs at most one look per seat per 30 s, and a
+  transcript that appears is seen within 30 s.
 - `failed` (`error`): the rest of the card is still served.
 
 Each fact is `{"value":V,"basis":"native|derived|table@vN|mtime-fallback"}` or
