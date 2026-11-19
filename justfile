@@ -89,6 +89,7 @@ doctor:
     just omp-doctor
     @pij-rs doctor claude-hooks 2>/dev/null || echo 'claude hooks: (unknown: pij-rs is missing or predates this check — run: just rs-install)'
     @just _copilot-native-install-check || echo 'copilot:    (not ready — the fix is printed above)'
+    @just copilot-sdk-contract || echo 'copilot sdk: (the installed Copilot SDK would not register pij: see above, and D-F208-1 in docs/how/copilot-native-extension.md)'
     @printf 'daemon:     '; pij-rs ping 2>/dev/null || echo '(not running — run: just bounce-rs)'
     @printf 'ddocs:      '; pij-rs --json ping 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { let d; try { d = JSON.parse(s).data; } catch { return console.log("(unknown: daemon not running)"); } console.log(d.ddocs === undefined ? "(unknown: this daemon predates the ddocs field)" : (d.ddocs ?? "(missing: install ddocs or set PIJ_DDOCS, then run: just bounce-rs)")); })'
     @printf 'gh:         '; pij-rs --json ping 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { let d; try { d = JSON.parse(s).data; } catch { return console.log("(unknown: daemon not running)"); } console.log(d.gh === undefined ? "(unknown: this daemon predates the gh field)" : (d.gh ?? "(missing: install gh or set PIJ_GH, then run: just bounce-rs)")); })'
@@ -144,6 +145,13 @@ copilot-native-contract-test:
 # Actual CLI smoke; local fixture and real-provider evidence remain distinct.
 copilot-native-smoke *ARGS:
     node_modules/.bin/tsx harness/scripts/copilot-native-smoke.ts "$@"
+
+# D-F208-1: does the INSTALLED Copilot SDK register pij's tools and hooks? Runs
+# the real extension against `copilot`'s own SDK over its JSON-RPC wire. Skips
+# when no Copilot CLI is installed (CI); warns when it passed on a version not
+# yet recorded in harness/copilot-sdk-verified.json (`--record` records it).
+copilot-sdk-contract *ARGS:
+    @nice -n 19 node harness/scripts/copilot-sdk-contract.mjs "$@"
 
 
 
@@ -338,6 +346,7 @@ self-check:
     just lint
     just test
     just copilot-native-test
+    just copilot-sdk-contract
     just route-inventory-check
     just rust-check
     just smoke

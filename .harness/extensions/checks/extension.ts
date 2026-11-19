@@ -18,6 +18,11 @@ interface Sensor {
 	heavy?: boolean;
 	/** Report-only sensor: preserve its output without failing the gate. */
 	advisory?: boolean;
+	/**
+	 * The command prints one JSON report whose `status` (`pass`, `warn` or
+	 * `skipped`) this sensor takes when it exits 0; a non-zero exit still fails.
+	 */
+	reports?: boolean;
 	/** Extra env for this sensor (merged into process.env for the child). */
 	env?: Record<string, string>;
 	/** One-line description of what it proves. */
@@ -79,6 +84,14 @@ const SENSORS: Sensor[] = [
 		proves: "native Copilot extension node:test contracts pass",
 	},
 	{
+		name: "copilot-sdk",
+		cmd: "just",
+		args: ["copilot-sdk-contract", "--json"],
+		reports: true,
+		proves:
+			"the installed Copilot CLI's own SDK registers pij_send and pij's hooks (D-F208-1); skipped without a Copilot CLI, warns on a version not yet recorded",
+	},
+	{
 		name: "route-inventory",
 		cmd: "just",
 		args: ["route-inventory-check"],
@@ -129,7 +142,7 @@ const checks: HarnessVerb = {
 		"Run pij's full deterministic gate (the signal inventory) and report a ship/done verdict.",
 	description:
 		'The single "are we done?" gate. Runs every sensor in the engineering-harness signal inventory ' +
-		"(mirrors `just self-check`: local-paths, ddocs, coverage, pij-skill, typecheck, lockfile, lint, test, copilot-native, route-inventory, rust, smoke, pij-commit-trailers) as individual " +
+		"(mirrors `just self-check`: local-paths, ddocs, coverage, pij-skill, typecheck, lockfile, lint, test, copilot-native, copilot-sdk, route-inventory, rust, smoke, pij-commit-trailers) as individual " +
 		"stages, reports a per-sensor verdict, and — unlike self-check — runs ALL of them so you see every " +
 		"failure in one pass. Run it before ship and before declaring any non-trivial task done. " +
 		"`--quick` skips heavy sensors (route-inventory, rust, smoke) for a fast static+unit gate.",
@@ -172,21 +185,42 @@ const checks: HarnessVerb = {
 					// An unavailable advisory must remain visible, never block delivery.
 				}
 			}
+			// Only an explicit, recognized status is taken as given: `{}`, an unknown
+			// status or unreadable output is a visible warn, never a silent pass (R259-002).
+			let reported: "pass" | "warn" | "skipped" = "pass";
+			if (s.reports && res.ok) {
+				let status: unknown;
+				try {
+					const report: unknown = JSON.parse(res.stdout);
+					if (report && typeof report === "object" && "status" in report) status = report.status;
+				} catch {
+					status = undefined;
+				}
+				reported = status === "pass" || status === "warn" || status === "skipped" ? status : "warn";
+			}
 			results.push({
 				name: s.name,
-				status: s.advisory ? advisoryStatus : res.ok ? "pass" : "fail",
+				status: s.advisory ? advisoryStatus : res.ok ? reported : "fail",
 				code: res.code,
 				proves: s.proves,
-				...(s.advisory ? { output: res.stdout || res.stderr } : {}),
+				...(s.advisory || (s.reports && reported !== "pass") ? { output: res.stdout || res.stderr } : {}),
 			});
 			if (!res.ok && !s.advisory) failureLogs.push({ name: s.name, output: tail(res.stderr || res.stdout) });
 		}
 
 		const failed = results.filter((r) => r.status === "fail");
 		const skipped = results.filter((r) => r.status === "skipped").map((r) => r.name);
-		const advisoryGuidance = results.some((r) => r.status === "warn")
-			? " Review advisory attribution findings with `just pij-commit-trailers`; JSON details are in results[].output."
-			: "";
+		const warnedSensors = results
+			.filter((r) => r.status === "warn")
+			.map((r) => SENSORS.find((s) => s.name === r.name));
+		const reportsWarned = warnedSensors.filter((s) => s?.reports).map((s) => s?.name);
+		const advisoryGuidance =
+			(warnedSensors.some((s) => s?.advisory)
+				? " Review advisory attribution findings with `just pij-commit-trailers`; JSON details are in results[].output."
+				: "") +
+			(reportsWarned.length > 0
+				? ` ${reportsWarned.join(", ")} warned: its report, with the next step, is in results[].output.`
+				: "");
 
 		if (failed.length > 0) {
 			const names = failed.map((r) => r.name).join(", ");
