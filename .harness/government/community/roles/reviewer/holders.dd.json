@@ -2045,6 +2045,16 @@
 					"seat": "pij-concrete-antelope",
 					"to": "2026-11-19T10:46:16.225Z",
 					"why": "F226 deploy builds through release-build.sh (shared-build, status, stamp check) #271"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T11:25:38.873Z",
+					"harness": "copilot",
+					"harness_session": "315720bd-44dc-4cc8-ae4b-63667a267c8e",
+					"instance_key": "272",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-whispering-marmot",
+					"why": "#272 F227 correctness review, fresh seat"
 				}
 			]
 		}
