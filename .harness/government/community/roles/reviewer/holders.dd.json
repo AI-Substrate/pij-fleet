@@ -2149,6 +2149,16 @@
 					"seat": "pij-reliable-meerkat",
 					"to": "2026-11-19T23:28:46.271Z",
 					"why": "F193 #273 live proof (throwaway)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T23:29:37.980Z",
+					"harness": "copilot",
+					"harness_session": "8754052e-e5ea-4ec5-9711-89fc659723d7",
+					"instance_key": "275",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-correct-ocelot",
+					"why": "#275 F200 correctness review, fresh seat"
 				}
 			]
 		}
