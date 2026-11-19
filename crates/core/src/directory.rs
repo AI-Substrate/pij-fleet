@@ -192,7 +192,10 @@ with a warning. The prime is never assigned: it is designated with
 and # lines skipped) and writes them all in one commit, or none. release closes
 the row; release --batch takes the same lines and ends them all in one commit,
 or none. `pij delivered <pr>` ends the holdings a merged PR finished, and
-`pij close <seat>` ends every holding.
+`pij close <seat>` ends every holding, even when the seat died during its
+memory turn. A seat that dies with no close keeps its holdings open (a revive
+takes them back), but no view counts it as a holder: `pij directory` names each
+such holding with the release that ends it.
 
 lineage add (the prime only) records a closed seat's past holding: no live seat
 needed, no seat role set. Times are RFC 3339 with Z or an offset, or a date

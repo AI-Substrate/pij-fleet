@@ -569,7 +569,7 @@ async fn proceed(
 ) -> (String, Option<Value>) {
     let (actor, reason) = match then {
         Then::Compact(msg) => {
-            if let Err(skipped) = current(state, held).await {
+            if let Err(skipped) = current(state, held, Action::Compact).await {
                 return (skipped, None);
             }
             return match super::admit_control(state, msg).await {
@@ -590,7 +590,7 @@ async fn proceed(
     // row is read again and every check below repeated, a bounded number of
     // times; a revive or close in between still skips the close.
     for _ in 0..CLOSE_ATTEMPTS {
-        let now = match current(state, held).await {
+        let now = match current(state, held, Action::Close).await {
             Ok(now) => now,
             Err(skipped) => return (skipped, None),
         };
@@ -635,26 +635,46 @@ async fn proceed(
     )
 }
 
-/// The seat as it is now, or why the held action must not run against it.
+/// The seat as it is now, or why the held `action` must not run against it.
 /// The brake: the action was authorized against the incarnation it was held
 /// for, and ordinary activity changes during the turn are allowed.
-async fn current(state: &AppState, held: &SeatDescriptor) -> Result<SeatDescriptor, String> {
+async fn current(
+    state: &AppState,
+    held: &SeatDescriptor,
+    action: Action,
+) -> Result<SeatDescriptor, String> {
     let now = match state.services.registry.get(&held.id).await {
         Ok(Some(now)) => now,
         Ok(None) => return Err("skipped: the seat no longer exists".to_string()),
         Err(error) => return Err(format!("failed: could not read the seat: {error}")),
     };
-    match skip_reason(held, &now) {
+    match skip_reason(held, &now, action) {
         Some(skip) => Err(skip.to_string()),
         None => Ok(now),
     }
 }
 
-/// Why the held action must not run against `now`: the seat closed, or a
-/// revive put another incarnation (process or pane) in it, during the turn.
+/// Why the held `action` must not run against `now`: the seat was closed, or
+/// a revive put another incarnation (process or pane) in it, during the turn.
 /// A one-directional brake: removing it only lets more actions run.
-pub(crate) fn skip_reason(held: &SeatDescriptor, now: &SeatDescriptor) -> Option<&'static str> {
-    if now.tombstoned_at.is_some() {
+///
+/// F227: a close is skipped only for an owner's close, which ended the seat's
+/// holdings itself. A seat retired any other way during the turn, most often
+/// observed dead because the closer killed its pane as the held answer says,
+/// is still closed (as its owner's, `close_seat`), so `pij close` ends every
+/// holding. A compact skips any retired seat: there is nothing to compact.
+pub(crate) fn skip_reason(
+    held: &SeatDescriptor,
+    now: &SeatDescriptor,
+    action: Action,
+) -> Option<&'static str> {
+    let closed = now.tombstoned_at.is_some()
+        && (action != Action::Close
+            || now
+                .tombstone_reason
+                .as_deref()
+                .is_none_or(pij_core::model::is_owner_close));
+    if closed {
         Some("skipped: the seat was closed during its memory turn")
     } else if now.proc != held.proc || now.pane != held.pane {
         Some("skipped: the seat was revived during its memory turn")
@@ -1257,26 +1277,55 @@ mod tests {
             pid: 1,
             proc_start: 7,
         });
-        assert_eq!(skip_reason(&held, &held.clone()), None);
-        let mut revived = held.clone();
-        revived.proc = Some(pij_core::model::ProcIdentity {
-            pid: 2,
-            proc_start: 9,
-        });
-        assert!(skip_reason(&held, &revived).unwrap().contains("revived"));
-        let mut moved = held.clone();
-        moved.pane = Some("%9".into());
-        assert!(skip_reason(&held, &moved).unwrap().contains("revived"));
-        let mut working = held.clone();
-        working.state = pij_core::model::SystemState::Working;
-        assert_eq!(
-            skip_reason(&held, &working),
-            None,
-            "activity is not a new incarnation"
+        for action in [Action::Compact, Action::Close] {
+            assert_eq!(skip_reason(&held, &held.clone(), action), None);
+            let mut revived = held.clone();
+            revived.proc = Some(pij_core::model::ProcIdentity {
+                pid: 2,
+                proc_start: 9,
+            });
+            assert!(
+                skip_reason(&held, &revived, action)
+                    .unwrap()
+                    .contains("revived")
+            );
+            let mut moved = held.clone();
+            moved.pane = Some("%9".into());
+            assert!(
+                skip_reason(&held, &moved, action)
+                    .unwrap()
+                    .contains("revived")
+            );
+            let mut working = held.clone();
+            working.state = pij_core::model::SystemState::Working;
+            assert_eq!(
+                skip_reason(&held, &working, action),
+                None,
+                "activity is not a new incarnation"
+            );
+            for reason in [Some("owner-close"), Some("owner-close: done"), None] {
+                let mut closed = held.clone();
+                closed.tombstoned_at = Some(1);
+                closed.tombstone_reason = reason.map(str::to_string);
+                assert!(
+                    skip_reason(&held, &closed, action)
+                        .unwrap()
+                        .contains("closed"),
+                    "{action:?} after {reason:?}"
+                );
+            }
+        }
+        // F227: a seat retired any other way during the turn is still closed,
+        // its holdings ended; a compact of it is skipped.
+        let mut dead = held.clone();
+        dead.tombstoned_at = Some(1);
+        dead.tombstone_reason = Some("observed-dead".into());
+        assert_eq!(skip_reason(&held, &dead, Action::Close), None);
+        assert!(
+            skip_reason(&held, &dead, Action::Compact)
+                .unwrap()
+                .contains("closed")
         );
-        let mut closed = held.clone();
-        closed.tombstoned_at = Some(1);
-        assert!(skip_reason(&held, &closed).unwrap().contains("closed"));
     }
 
     #[test]

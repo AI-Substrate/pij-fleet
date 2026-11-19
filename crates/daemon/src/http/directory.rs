@@ -626,11 +626,15 @@ pub(crate) async fn handle(
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
                     Ok((live, cache_proxy)) => {
-                        state
+                        let mut view = state
                             .services
                             .directory
                             .view(&project, &repo, &live, &cache_proxy, call.suggest)
-                            .await
+                            .await;
+                        if let Ok(data) = view.as_mut() {
+                            how_dead_seats_ended(&state, data).await;
+                        }
+                        view
                     }
                     Err(refusal) => Err(refusal),
                 },
@@ -672,6 +676,47 @@ async fn live_seats(
         .collect();
     let live = seats.into_iter().map(|seat| seat.id.to_string()).collect();
     Ok((live, cache_proxy))
+}
+
+/// F227: each open holding on a seat that is not live gets how its seat ended
+/// (`retired`: the tombstone's reason and time), or `null` for a seat the
+/// registry no longer knows or could not read. One registry read per dead
+/// seat, only when the view is asked for.
+async fn how_dead_seats_ended(state: &AppState, view: &mut Value) {
+    let seats: std::collections::BTreeSet<String> = view["roles"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|role| role["dead"].as_array())
+        .flatten()
+        .filter_map(|dead| dead["seat"].as_str().map(str::to_string))
+        .collect();
+    let mut ended = std::collections::HashMap::new();
+    for seat in seats {
+        let retired = match state
+            .services
+            .registry
+            .get(&SeatId::from(seat.as_str()))
+            .await
+        {
+            Ok(Some(row)) => row.tombstoned_at.map_or(
+                Value::Null,
+                |at| json!({"reason": row.tombstone_reason, "at": at}),
+            ),
+            _ => Value::Null,
+        };
+        ended.insert(seat, retired);
+    }
+    for role in view["roles"].as_array_mut().into_iter().flatten() {
+        for dead in role["dead"].as_array_mut().into_iter().flatten() {
+            let retired = dead["seat"]
+                .as_str()
+                .and_then(|seat| ended.get(seat))
+                .cloned()
+                .unwrap_or(Value::Null);
+            dead["retired"] = retired;
+        }
+    }
 }
 
 async fn add(

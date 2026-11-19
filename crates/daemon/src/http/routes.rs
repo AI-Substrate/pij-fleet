@@ -60,7 +60,11 @@ pub(crate) async fn table_for(
     Ok(Some((table, text)))
 }
 
-/// Each role's live holders in `project`, as `seat` or `seat (instance)`.
+/// Each role's live holders in `project`, as `seat` or `seat (instance)`: open
+/// holdings whose seat is registered and untombstoned (F227). A holding on a
+/// retired or unknown seat stays open, so a revived seat holds it again, but
+/// it is never shown as a holder: `pij directory` names it with its release.
+/// One registry read of the live seats per call.
 ///
 /// # Errors
 /// `E-RS-STORE`.
@@ -74,11 +78,22 @@ pub(crate) async fn live_holders(
         .assignments(project)
         .await
         .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+    let live: std::collections::HashSet<String> = services
+        .registry
+        .list(pij_core::ports::SeatFilter {
+            live_only: true,
+            ..pij_core::ports::SeatFilter::default()
+        })
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .into_iter()
+        .map(|seat| seat.id.to_string())
+        .collect();
     let mut holders: BTreeMap<String, Vec<String>> = BTreeMap::new();
     // C24 (F168): the prime is the project's designation, never a row.
     for row in rows
         .into_iter()
-        .filter(|row| row.to.is_none() && row.role != PRIME_ROLE)
+        .filter(|row| row.to.is_none() && row.role != PRIME_ROLE && live.contains(&row.seat))
     {
         let seat = holder_label(&row);
         holders.entry(row.role).or_default().push(seat);
@@ -89,7 +104,8 @@ pub(crate) async fn live_holders(
         .project(project)
         .await
         .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
-        .and_then(|record| record.prime_id);
+        .and_then(|record| record.prime_id)
+        .filter(|prime| live.contains(prime.as_str()));
     if let Some(prime) = prime {
         holders
             .entry(PRIME_ROLE.to_string())

@@ -3689,6 +3689,7 @@ fn render_directory_at(
                     );
                 }
                 None if role["id"] == "prime" => out.push_str("no designated prime"),
+                None if !list(&role["dead"]).is_empty() => out.push_str("no live holder"),
                 None => out.push_str("no holder"),
             },
             [only] => out.push_str(only),
@@ -3698,6 +3699,31 @@ fn render_directory_at(
                     let _ = write!(out, "\n    {holder}");
                 }
             }
+        }
+        // F227: an open holding on a dead or unknown seat is no holder; it is
+        // named, with how its seat ended and the release that ends it.
+        for dead in list(&role["dead"]) {
+            let instance = dead["instance"].as_str().filter(|key| !key.is_empty());
+            let _ = write!(
+                out,
+                "\n    open holding on dead seat {}{} ({}); end it: {}",
+                shown(&dead["seat"], render::seat),
+                instance
+                    .map(|key| format!(" ({})", render::name(key)))
+                    .unwrap_or_default(),
+                match dead["retired"]["reason"].as_str() {
+                    Some(reason) => format!(
+                        "{} {}",
+                        render::word(reason),
+                        local_time(&dead["retired"]["at"], &zone)
+                    ),
+                    None => "seat unknown".to_string(),
+                },
+                dead["command"].as_str().map_or_else(
+                    || "release it by its raw key from --json".to_string(),
+                    str::to_string
+                )
+            );
         }
         // Review of #177: a legacy prime assignment is never the prime (C24).
         for legacy in list(&role["legacy"]) {
@@ -5377,6 +5403,12 @@ mod tests {
                  "live": [{"seat": "pij-c", "instance": "", "since": "2026-11-05T23:30:00Z", "machine": "m", "seat_live": true}],
                  "requests": null, "latest_output": null, "memory": {"notes": 0, "latest": null}},
                 {"id": "historian", "kind": "specialist", "holders": "one", "live": [],
+                 "dead": [
+                    {"seat": "pij-d", "instance": "", "since": "2026-11-05T23:30:00Z",
+                     "retired": {"reason": "observed-dead", "at": 1_793_934_000_000_u64},
+                     "command": "pij directory release historian pij-d --why '<why>' --project fleet"},
+                    {"seat": "pij-e", "instance": "7", "since": "2026-11-05T23:30:00Z", "retired": null, "command": null}
+                 ],
                  "memory": {"notes": 12, "latest": "2026-10-01"}, "call_on": "pij send role:historian --body-file x"}
             ],
             "actions": [{"role": "pm", "condition": "memory-stale", "says": "pm's last 2 closes left no memory note", "commands": ["pij directory memory add pm --project fleet"]}],
@@ -5403,7 +5435,9 @@ fleet: 3 role(s); prime: pij-prime (no prime role document yet)
     memory: 3 note(s), newest 2026-11-05
   pm (specialist, one): pij-c since 2026-11-06 09:30 +10:00 on m
     memory: no notes
-  historian (specialist, one): no holder
+  historian (specialist, one): no live holder
+    open holding on dead seat pij-d (observed-dead 2026-11-06 13:00 +10:00); end it: pij directory release historian pij-d --why '<why>' --project fleet
+    open holding on dead seat pij-e (7) (seat unknown); end it: release it by its raw key from --json
     memory: 12 note(s), newest 2026-10-01
     cold, with memory to call on: pij send role:historian --body-file x
 

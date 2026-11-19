@@ -2006,6 +2006,121 @@ async fn routes_on_demand_and_write_only_when_stale() {
     rig.server.abort();
 }
 
+/// F227, ruling (a): a holding whose seat is retired (observed dead) or
+/// unknown stays open, and no view counts it as a holder. Routes show only the
+/// live holders, and `pij directory` names each dead seat's open holding with
+/// how it ended and the release that ends it. A revive lifts the tombstone,
+/// and the seat is a holder again: nothing was written.
+#[tokio::test]
+async fn a_dead_seats_open_holding_is_named_never_counted_and_a_revive_restores_it() {
+    let repo = repo("pij-routes-dead");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    for (target, seat) in [("delivery", "pij-holder"), ("delivery/7", "pij-second")] {
+        let assigned = call(
+            rig.addr,
+            "/v1/directory",
+            &["directory", "assign", target, seat, "--why", "own it"],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(assigned["ok"], true, "{assigned}");
+    }
+    let routes_data = || async {
+        let shown = call(
+            rig.addr,
+            "/v1/directory",
+            &["directory", "routes"],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(shown["ok"], true, "{shown}");
+        shown["data"].clone()
+    };
+    let routes = || async { routes_data().await["text"].as_str().unwrap().to_string() };
+    let delivery = |view: &Value| -> Value {
+        view["data"]["roles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|role| role["id"] == "delivery")
+            .cloned()
+            .unwrap()
+    };
+    let seats = |rows: &Value| -> Vec<String> {
+        rows.as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["seat"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert!(
+        routes()
+            .await
+            .contains("| role:delivery | pij-holder, pij-second (7) |")
+    );
+
+    let alive = rig
+        .services
+        .registry
+        .get(&"pij-holder".into())
+        .await
+        .unwrap()
+        .unwrap();
+    rig.services
+        .registry
+        .tombstone(&"pij-holder".into(), "observed-dead")
+        .await
+        .unwrap();
+    let text = routes().await;
+    assert!(
+        text.contains("| role:delivery | pij-second (7) |"),
+        "{text}"
+    );
+    let shown = delivery(&view(rig.addr, &repo).await);
+    assert_eq!(seats(&shown["live"]), ["pij-second"], "{shown}");
+    assert_eq!(seats(&shown["dead"]), ["pij-holder"], "{shown}");
+    let dead = &shown["dead"][0];
+    assert_eq!(dead["retired"]["reason"], "observed-dead", "{dead}");
+    assert!(dead["retired"]["at"].is_u64(), "{dead}");
+    assert_eq!(
+        dead["command"], "pij directory release delivery pij-holder --why '<why>' --project fleet",
+        "{dead}"
+    );
+    let open = rig.store.open_assignments("pij-holder").await.unwrap();
+    assert_eq!(open.len(), 1, "the holding stays open: nothing is written");
+
+    rig.services.registry.put(alive).await.unwrap();
+    assert!(
+        routes()
+            .await
+            .contains("| role:delivery | pij-holder, pij-second (7) |")
+    );
+    let shown = delivery(&view(rig.addr, &repo).await);
+    assert_eq!(
+        seats(&shown["live"]),
+        ["pij-holder", "pij-second"],
+        "{shown}"
+    );
+    assert_eq!(shown["dead"], json!([]), "{shown}");
+
+    // The designated prime is no holder once its seat is retired either.
+    assert_eq!(
+        routes_data().await["holders"]["prime"],
+        json!(["pij-second"])
+    );
+    rig.services
+        .registry
+        .tombstone(&"pij-second".into(), "observed-dead")
+        .await
+        .unwrap();
+    let holders = &routes_data().await["holders"];
+    assert!(holders["prime"].is_null(), "{holders}");
+    assert_eq!(holders["delivery"], json!(["pij-holder"]), "{holders}");
+    rig.server.abort();
+}
+
 /// Plan 202 AC2: assign, a compact control and a revive each hold the table
 /// once for a role holder; a seat holding no role gets nothing.
 #[tokio::test]

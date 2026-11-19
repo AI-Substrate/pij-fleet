@@ -1579,7 +1579,19 @@ points at (`needed_by`, a `needed` or `recurring` prompt) always shows.
 `--suggest` belongs to the view; on any other verb it refuses with `E-RS-ARG`. Each
 role also carries:
 
-- `live[].seat_live`: whether the holder's seat is registered and not tombstoned;
+- `live`: its holders, the open holdings whose seat is registered and not
+  tombstoned, plus any end still pending (`end_pending`); `live[].seat_live`
+  says whether the holder's seat is live (only a pending end's can be false);
+- `dead` (F227): each open holding whose seat is tombstoned or unknown,
+  `{seat, instance, since, retired, command}`. `retired` is how the seat ended,
+  `{reason, at}` (the tombstone's reason and epoch ms), or `null` when the
+  registry no longer knows the seat; `command` is the `pij directory release`
+  that ends it, or `null` when its stored key does not print (F132). Such a
+  holding stays open, so a revived seat holds it again, but it is no holder:
+  routes' `Holder now` and every liveness signal leave it out. The human view
+  prints `open holding on dead seat <seat> (<reason> <time>); end it:
+  <command>`, and a role with no live holder but such a holding says `no live
+  holder`;
 - `designated`: for the `prime` role only, the project's designated prime
   `{seat, seat_live}` (its `prime_id`), else `null`. The prime is designated,
   never assigned (C24), and the designation is its only authority (F117,
@@ -1778,7 +1790,10 @@ never reach the daemon and send nothing.
 
 `pij directory routes [--project <slug>]` returns `text` (the table with a Holder
 now column), `routes`, `overlaps`, `holders` and `stale` (whether `ROUTES.md`
-differs from the scopes). `--write --why <text>` rewrites a stale `ROUTES.md` in
+differs from the scopes). `Holder now` and `holders` name live holders only: a
+holding or designated prime whose seat is tombstoned or unknown is no holder
+(F227; one registry read of the live seats).
+`--write --why <text>` rewrites a stale `ROUTES.md` in
 one writer commit (`community: routes`), returning `commit` and `written`; on a
 current file it writes nothing and says so. `--write` without `--why` refuses
 `E-RS-ARG`.
@@ -1938,6 +1953,13 @@ The caller asks again once the turn ends (R245-001). It is a refusal, not a
 replacement, so the held action keeps every brake it was held with. Every held
 answer carries `memory_turn.deadline_ms`, the time (Unix ms) the bound ends the
 turn.
+
+When the turn ends, a held close skips a seat revived during the turn (another
+process or pane) or one its owner closed meanwhile (that close ended its
+holdings). A seat retired any other way during the turn, most often observed
+dead because the closer killed its pane as the held answer says, is still closed
+(as its owner's, F149) and its holdings end: `pij close` ends every holding
+(F227). A held compact skips any retired seat.
 
 Every turn records one `memory.turn` spine event on the seat: `action`,
 `holdings`, `prompt` (the prompt's msg_id), `ended` (`note-written`,
