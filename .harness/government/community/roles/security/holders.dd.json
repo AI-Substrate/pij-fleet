@@ -569,6 +569,16 @@
 					"seat": "pij-far-emu",
 					"to": "2026-11-19T12:01:04.069Z",
 					"why": "#272 F227 security verdict, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T23:01:53.192Z",
+					"harness": "copilot",
+					"harness_session": "90522f3a-544d-42ad-8c12-92ab70b4ec6e",
+					"instance_key": "273",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-distinctive-wolf",
+					"why": "#273 F193 security verdict, fresh seat"
 				}
 			]
 		}
