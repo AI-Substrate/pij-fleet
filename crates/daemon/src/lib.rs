@@ -36,6 +36,7 @@ mod registration;
 pub mod reported_context;
 mod serve;
 pub mod session_warmup;
+pub mod spawn_waits;
 mod supervise;
 
 // u-orchestration's git-facts gatherer: IO belongs at the runtime root, and a
@@ -165,6 +166,10 @@ pub struct Services {
     /// Each seat's last size from the PA watchdog's round, read when a held
     /// large-seat notice flushes (F170).
     pub seat_sizes: Arc<fyi_notes::SeatSizes>,
+    /// Launched spawns whose answer to their caller is not settled (F211):
+    /// a seat that binds after its spawn failed or never answered is
+    /// reported to its parent.
+    pub spawn_waits: Arc<spawn_waits::SpawnWaits>,
     /// Usage-limit rejections from harness transcripts (plan 172 R3): the PA
     /// watchdog's limit-reset wake. Blocking; called off the reactor.
     pub usage_limits: Arc<dyn pij_core::usage_limit::UsageLimitSource>,
@@ -657,6 +662,13 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         Arc::clone(&role_queue) as Arc<dyn community::directory::AfterAssign>,
         Arc::clone(&tmux),
     ));
+    let spawn_waits = Arc::new(spawn_waits::SpawnWaits::new(Arc::new(
+        spawn_waits::ParentNotice::new(
+            Arc::clone(&registry),
+            Arc::clone(&event_bus),
+            Arc::clone(&delivery),
+        ),
+    )));
     let services = Services {
         registry,
         spine,
@@ -678,6 +690,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         session_status,
         reported_context,
         seat_sizes,
+        spawn_waits,
         usage_limits,
         delivery,
         roles,
@@ -1041,19 +1054,25 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         )?
         .with_tap_refusals(Arc::clone(&services.tap_refusals)),
     );
-    let claude_binder = Arc::new(claude_bind::ClaudeBinder::new(
-        Arc::clone(&services.registry),
-        Arc::clone(&services.liveness),
-        Arc::clone(&services.event_bus),
-        Arc::clone(&services.roles),
-    ));
-    let codex_binder = Arc::new(codex_bind::CodexBinder::new(
-        Arc::clone(&services.registry),
-        Arc::clone(&services.liveness),
-        Arc::clone(&services.event_bus),
-        Arc::clone(&services.roles),
-        Arc::clone(&services.tmux),
-    ));
+    let claude_binder = Arc::new(
+        claude_bind::ClaudeBinder::new(
+            Arc::clone(&services.registry),
+            Arc::clone(&services.liveness),
+            Arc::clone(&services.event_bus),
+            Arc::clone(&services.roles),
+        )
+        .with_spawn_waits(Arc::clone(&services.spawn_waits)),
+    );
+    let codex_binder = Arc::new(
+        codex_bind::CodexBinder::new(
+            Arc::clone(&services.registry),
+            Arc::clone(&services.liveness),
+            Arc::clone(&services.event_bus),
+            Arc::clone(&services.roles),
+            Arc::clone(&services.tmux),
+        )
+        .with_spawn_waits(Arc::clone(&services.spawn_waits)),
+    );
 
     let drain = Arc::new(
         pointer::DrainWorker::new(
@@ -1159,6 +1178,14 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
     // After the bind is won and before anything is served: no claim can be in
     // flight, and a boot that lost the bind never touches a live daemon's rows.
     delivery::role_send::recover_requests(&services).await;
+    // F211: a launch the spine shows was never settled lost its caller with
+    // the last daemon; re-arm it, bound or not.
+    spawn_waits::recover(
+        &services.spawn_waits,
+        services.registry.as_ref(),
+        services.spine.as_ref(),
+    )
+    .await;
 
     let (governance_shutdown, governance_shutdown_rx) = tokio::sync::oneshot::channel();
     let governance_observer =

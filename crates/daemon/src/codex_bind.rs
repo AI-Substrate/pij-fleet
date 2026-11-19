@@ -213,6 +213,12 @@ impl CodexBinder {
         }
     }
 
+    /// Signal bound spawned seats to the launches that wait for them (F211).
+    pub(crate) fn with_spawn_waits(mut self, waits: Arc<crate::spawn_waits::SpawnWaits>) -> Self {
+        self.registration = self.registration.with_spawn_waits(waits);
+        self
+    }
+
     pub(crate) async fn bind_once(&self) -> Result<usize> {
         let locks = self.facts.thread_locks();
         let pending: Vec<SeatDescriptor> = self

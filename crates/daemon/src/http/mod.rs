@@ -612,7 +612,8 @@ fn router_with_optional_federation(
         pij_harnesses::claude_homes(),
         Arc::clone(&services.roles),
     )
-    .with_native_delivery(Arc::clone(&services.delivery));
+    .with_native_delivery(Arc::clone(&services.delivery))
+    .with_spawn_waits(Arc::clone(&services.spawn_waits));
     let state = AppState {
         services,
         auth: config.auth,
@@ -1638,10 +1639,25 @@ async fn launch_seat_locked(
         Ok(pane) => pane,
         Err(error) => return internal(command_name, error),
     };
+    // F211: from here a harness may come up whatever this request does next.
+    // The launch is recorded before the row, so a restart at any later point
+    // finds it; until the caller is answered with the seat, a binding is
+    // handed to the parent, and dropping this request unanswered counts.
+    let launch = crate::spawn_waits::Launch {
+        spawn_id: spawn_id.clone(),
+        seat: seat_id.clone(),
+        pane: Some(pane.id.clone()),
+        parent: request.parent.clone(),
+    };
+    if let Err(error) = publish_spawn_launched(state, &launch).await {
+        eprintln!("pij-rs: spawn {spawn_id}: launch not recorded: {error}");
+    }
+    let watch = state.services.spawn_waits.watch(launch);
     if displaced.is_some()
         && let Err(error) = publish_revive_postmortem(state, &seat_id).await
     {
         let _ = state.services.tmux.kill(&pane.id).await;
+        watch.withdrawn();
         return internal(command_name, error);
     }
 
@@ -1684,7 +1700,9 @@ async fn launch_seat_locked(
     let descriptor = match written {
         Ok(written) => written,
         Err(write_error) => {
+            // No row was written, so nothing can bind: the pane goes.
             let rollback = state.services.tmux.kill(&pane.id).await;
+            watch.withdrawn();
             let message = match rollback {
                 Ok(()) => format!(
                     "observed launch in pane {} but registry write failed ({write_error}); the pane was removed",
@@ -1707,11 +1725,37 @@ async fn launch_seat_locked(
     drop(spawn_guard);
 
     if no_wait {
-        return spawn_success(command_name, descriptor, revive_receipt);
+        let answer = spawn_success(command_name, descriptor, revive_receipt);
+        watch.answered("dispatched");
+        return answer;
     }
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(wait_seconds);
     let mut last_output = String::new();
+    let failed = |seat: SeatDescriptor,
+                  exit_code: Option<i32>,
+                  reason: String,
+                  status: StatusCode,
+                  last_output: String,
+                  watch: crate::spawn_waits::WaitGuard| {
+        let log_path = log_path.clone();
+        async move {
+            report_spawn_failure(
+                state,
+                command_name,
+                &seat,
+                SpawnFailure {
+                    exit_code,
+                    reason: &reason,
+                    status,
+                    last_output: &last_output,
+                    log_path: &log_path,
+                },
+                watch,
+            )
+            .await
+        }
+    };
     loop {
         if let Ok(output) = state.services.tmux.capture(&pane.id, 20).await
             && !output.trim().is_empty()
@@ -1724,7 +1768,9 @@ async fn launch_seat_locked(
                 {
                     let _ = tokio::fs::remove_file(&status_path).await;
                     // A revive that waits (`--cheap`) keeps its receipt too.
-                    return spawn_success(command_name, bound, revive_receipt);
+                    let answer = spawn_success(command_name, bound, revive_receipt);
+                    watch.answered("bound");
+                    return answer;
                 }
                 let actual = bound.model.as_deref().unwrap_or("no-model");
                 let footer_deadline = tokio::time::Instant::now() + Duration::from_secs(8);
@@ -1747,72 +1793,82 @@ async fn launch_seat_locked(
                     "model-mismatch: requested {}, actual {actual}",
                     requested_model.as_deref().unwrap_or("default")
                 );
-                return match spawn_failure(
-                    state,
-                    command_name,
-                    &bound,
-                    SpawnFailure {
-                        exit_code: None,
-                        reason: &reason,
-                        status: StatusCode::BAD_GATEWAY,
-                        last_output: &last_output,
-                        log_path: &log_path,
-                    },
+                return failed(
+                    bound,
+                    None,
+                    reason,
+                    StatusCode::BAD_GATEWAY,
+                    last_output,
+                    watch,
                 )
-                .await
-                {
-                    Ok(response) => response,
-                    Err(error) => internal(command_name, error),
-                };
+                .await;
             }
             Ok(_) => {}
-            Err(error) => return internal(command_name, error),
+            Err(error) => {
+                let reason = format!("could not read the seat's row while waiting: {error}");
+                return failed(
+                    descriptor,
+                    None,
+                    reason,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    last_output,
+                    watch,
+                )
+                .await;
+            }
         }
         match read_spawn_exit(&status_path).await {
             Ok(Some(exit_code)) => {
-                return match spawn_failure(
-                    state,
-                    command_name,
-                    &descriptor,
-                    SpawnFailure {
-                        exit_code: Some(exit_code),
-                        reason: "child exited before registration",
-                        status: StatusCode::BAD_GATEWAY,
-                        last_output: &last_output,
-                        log_path: &log_path,
-                    },
+                return failed(
+                    descriptor,
+                    Some(exit_code),
+                    "child exited before registration".to_string(),
+                    StatusCode::BAD_GATEWAY,
+                    last_output,
+                    watch,
                 )
-                .await
-                {
-                    Ok(response) => response,
-                    Err(error) => internal(command_name, error),
-                };
+                .await;
             }
             Ok(None) => {}
-            Err(error) => return internal(command_name, error),
+            Err(error) => {
+                let reason = format!("could not read the launch's exit status: {error}");
+                return failed(
+                    descriptor,
+                    None,
+                    reason,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    last_output,
+                    watch,
+                )
+                .await;
+            }
         }
         let pane_exists = match state.services.tmux.list_panes().await {
             Ok(panes) => panes.iter().any(|listed| listed.id == pane.id),
-            Err(error) => return internal(command_name, error),
+            Err(error) => {
+                let reason = format!("could not list tmux panes while waiting: {error}");
+                return failed(
+                    descriptor,
+                    None,
+                    reason,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    last_output,
+                    watch,
+                )
+                .await;
+            }
         };
         if !pane_exists {
-            return match spawn_failure(
-                state,
-                command_name,
-                &descriptor,
-                SpawnFailure {
-                    exit_code: None,
-                    reason: "pane disappeared before registration and before an exit code was recorded",
-                    status: StatusCode::BAD_GATEWAY,
-                    last_output: &last_output,
-                    log_path: &log_path,
-                },
+            return failed(
+                descriptor,
+                None,
+                "pane disappeared before registration and before an exit code was recorded"
+                    .to_string(),
+                StatusCode::BAD_GATEWAY,
+                last_output,
+                watch,
             )
-            .await
-            {
-                Ok(response) => response,
-                Err(error) => internal(command_name, error),
-            };
+            .await;
         }
         if tokio::time::Instant::now() >= deadline {
             let mut reason = format!("timed out after {wait_seconds}s waiting for registration");
@@ -1824,26 +1880,93 @@ async fn launch_seat_locked(
                     });
                 reason = format!("{reason}: {seen}");
             }
-            return match spawn_failure(
-                state,
-                command_name,
-                &descriptor,
-                SpawnFailure {
-                    exit_code: None,
-                    reason: &reason,
-                    status: StatusCode::GATEWAY_TIMEOUT,
-                    last_output: &last_output,
-                    log_path: &log_path,
-                },
+            return failed(
+                descriptor,
+                None,
+                reason,
+                StatusCode::GATEWAY_TIMEOUT,
+                last_output,
+                watch,
             )
-            .await
-            {
-                Ok(response) => response,
-                Err(error) => internal(command_name, error),
-            };
+            .await;
         }
         tokio::time::sleep(SPAWN_POLL_INTERVAL).await;
     }
+}
+
+/// Answer a spawn that failed after its pane was launched (F211). The answer
+/// names the seat, its pane, its spawn id and how to close it, because the
+/// harness may still be running or still coming up. Nothing is killed: the
+/// daemon cannot tell a dead launch from a slow one, and the caller decides.
+/// The watch settles only once the answer is built: an answer that says the
+/// seat is bound hands it to the caller; one that says it is not leaves a
+/// later (or concurrent) binding to be handed to the parent.
+async fn report_spawn_failure(
+    state: &AppState,
+    command_name: &'static str,
+    seat: &SeatDescriptor,
+    failure: SpawnFailure<'_>,
+    watch: crate::spawn_waits::WaitGuard,
+) -> Response {
+    let reason = failure.reason.to_string();
+    let answer = match spawn_failure(state, command_name, seat, failure).await {
+        Ok(response) => response,
+        Err(error) => internal(
+            command_name,
+            format!(
+                "{error}; {} is still running: {}",
+                launched_as(seat),
+                close_command(seat)
+            ),
+        ),
+    };
+    if seat.proc.is_some() {
+        watch.answered("failed-bound");
+    } else {
+        watch.failed(&reason);
+    }
+    answer
+}
+
+/// `seat <id> in pane <pane> (spawn <spawn id>)`.
+fn launched_as(seat: &SeatDescriptor) -> String {
+    format!(
+        "seat {} in pane {} (spawn {})",
+        seat.id,
+        seat.pane.as_deref().unwrap_or("unknown"),
+        seat.spawn_id.as_deref().unwrap_or("unknown")
+    )
+}
+
+/// [`crate::spawn_waits::close_command`] for a spawned row.
+fn close_command(seat: &SeatDescriptor) -> String {
+    crate::spawn_waits::close_command(&seat.id, seat.pane.as_deref())
+}
+
+/// F211: the durable record that a spawn launched a pane for a seat, written
+/// before the seat's row so a restart at any later point can recover it.
+async fn publish_spawn_launched(
+    state: &AppState,
+    launch: &crate::spawn_waits::Launch,
+) -> Result<()> {
+    state
+        .services
+        .event_bus
+        .publish(Event {
+            seq: None,
+            v: wire::EVENT_VERSION,
+            at: system_time_ms()?,
+            kind: crate::spawn_waits::LAUNCHED.to_string(),
+            seat: Some(launch.seat.clone()),
+            payload: serde_json::json!({
+                "spawn_id": launch.spawn_id,
+                "pane": launch.pane,
+                "parent": launch.parent,
+            })
+            .to_string(),
+        })
+        .await
+        .map(|_| ())
 }
 
 pub(crate) fn spawn_evidence_paths(spawn_id: &str) -> (PathBuf, PathBuf) {
@@ -1983,8 +2106,11 @@ async fn spawn_failure(
         || "exit code unavailable".to_string(),
         |code| format!("exit code {code}"),
     );
+    // F211: the caller learns which seat its failed spawn left, and how to end it.
+    let close = close_command(seat);
     let meta = format!(
-        "spawn.failed: seat {} in pane {pane} {reason} ({exit}); log: {}; last output:\n{log}",
+        "spawn.failed: seat {} in pane {pane} (spawn {spawn_id}) {reason} ({exit}); to close it: \
+         {close}; log: {}; last output:\n{log}",
         seat.id,
         log_path.display()
     );
@@ -1992,9 +2118,12 @@ async fn spawn_failure(
     refusal.details = Some(serde_json::json!({
         "dispatched": true,
         "bound": seat.proc.is_some(),
+        "seat": seat.id,
         "pane": pane,
+        "spawn_id": spawn_id,
         "pid": seat.proc.map(|identity| identity.pid),
         "reason": reason,
+        "close": close,
     }));
     Ok(envelope(status, &refusal))
 }

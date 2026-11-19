@@ -17,6 +17,7 @@ use crate::delivery::{DeliveryService, NativeHolder, NativeInboxIdentity, Report
 use crate::events::EventBus;
 use crate::http::role::RoleService;
 use crate::http::{NativePrecedence, Registration};
+use crate::spawn_waits::SpawnWaits;
 
 #[derive(Debug)]
 pub(crate) enum RegistrationError {
@@ -95,6 +96,9 @@ pub(crate) struct RegistrationService {
     native_receivers: Option<Arc<DeliveryService>>,
     /// Attempts by path, mode and outcome, with their ancestry reads (plan 211).
     attempts: Arc<attempts::Attempts>,
+    /// F211: launches whose hand-off to their caller is not settled; absent
+    /// in services that never bind a spawned seat.
+    spawn_waits: Option<Arc<SpawnWaits>>,
 }
 
 /// What a native claim carries into the locked registration: a verified
@@ -142,6 +146,7 @@ impl RegistrationService {
             registration_lock: Arc::new(tokio::sync::Mutex::new(())),
             native_receivers: None,
             attempts: Arc::default(),
+            spawn_waits: None,
         }
     }
 
@@ -188,6 +193,14 @@ impl RegistrationService {
         };
         self.count(path, mode, &claimed, &result, reads.close())
             .await;
+        // F211: a bound spawned seat whose caller was not answered with it is
+        // handed to its parent ([`SpawnWaits::bound`]).
+        if let (Ok((seat, _)), Some(waits)) = (&result, &self.spawn_waits)
+            && seat.proc.is_some()
+            && let Some(spawn_id) = seat.spawn_id.as_deref()
+        {
+            waits.bound(spawn_id, &seat.id, seat.pane.as_deref());
+        }
         result
     }
 
@@ -268,6 +281,12 @@ impl RegistrationService {
     pub(crate) fn with_native_delivery(mut self, delivery: Arc<DeliveryService>) -> Self {
         self.registration_lock = delivery.native_lock();
         self.native_receivers = Some(delivery);
+        self
+    }
+
+    /// Signal bound spawned seats to the launches that wait for them (F211).
+    pub(crate) fn with_spawn_waits(mut self, waits: Arc<SpawnWaits>) -> Self {
+        self.spawn_waits = Some(waits);
         self
     }
 
