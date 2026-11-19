@@ -466,6 +466,16 @@
 					"seat": "pij-xeric-squid",
 					"to": "2026-11-19T08:39:49.364Z",
 					"why": "F213 round 2: restart anchor #265"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T08:42:01.395Z",
+					"harness": "copilot",
+					"harness_session": "2ec3a53d-033a-43ac-8682-a811d0861a52",
+					"instance_key": "266",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-doubtful-snail",
+					"why": "F222 step 1: per-route request counter #266"
 				}
 			]
 		}
