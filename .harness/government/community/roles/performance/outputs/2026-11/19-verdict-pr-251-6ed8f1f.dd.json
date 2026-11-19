@@ -1,0 +1,50 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f198-b8cb-7120-98d8-6ebd1d1e7b12",
+				"date": "2026-11-19",
+				"head": "6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44444211355/job/135292259680",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:251",
+				"writer": "pij-vast-silkworm",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Owned post-#251 authorized bounce proof: settled minute CPU/RSS and paired spawn counters, hedgehog remains open and timed not-found state, two cards timings. Part1 baseline22.43%CPU still above roughly20% target.",
+				"Lifetime memory disclosure: held map is unpruned; retains metadata for ever-carded SeatIds including tombstones, not just current-live seats. No measured heap-byte claim."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "PR25119-file diff, store/schema/terminal-fold source review; gh pr view251",
+					"exit_code": 0,
+					"log": "Head6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5. PM/Falcon report code-identical rebase, ledger-only conflict. Per-seat locked cursor fold; clone then commit; required port/indexed seq>after; warm0delivery rows but still per-seat indexed SQL; no new launches/timers."
+				},
+				{
+					"command": "gh api actions/runs/44444211355/artifacts; download JUnit artifact14492757970",
+					"exit_code": 0,
+					"log": "Artifact workflow_run.head_sha exact6ed8f1f. Row-counter cold603/warm0/new1, indexed seq seek with/without ANALYZE, terminal-order fold, no-tail card and spawn_sites tests executedPASS;no failed suites. No local build/test."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #251 — performance PASS WITH NOTES\n\nHead: 6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5\nRequest: 01a1f198-b8cb-7120-98d8-6ebd1d1e7b12\nReviewer: pij-vast-silkworm, performance/251\nRead the PR body, verified the earlier detached worktree at f2b8d0c25f973f4fdcfeb09d577d12ab1f94bd41, reviewed the19-file diff and relevant store/schema/terminal-fold source. PM reports the rebase onto f06f00f5 changes only the ledger conflict and Falcon verified the rest of the patch byte-identical; that source review carries forward. Independently checked this new PR head and exact-head CI artifact below. No source changes, local build/test, daemon bounce or seat close/reload.\n\n## Decision\n\nThe change removes the confirmed delivery-history replay cost without changing the held-event fold. No blocking performance finding. Keep the disclosed lifetime memory and deployment proof notes below; do not describe the map as bounded by currently live seats or claim pre-merge CPU success.\n\n## Cost and backpressure\n\nLet N be seats carded in one request, D_s a seat's complete matching delivery history, d_s its newly added matching rows, and H_s its retained active non-job holds.\n\n| Path | Matching delivery rows decoded/folded | Remaining work |\n|---|---|---|\n| Before, every cards request | sum D_s; prior live receipt42,915 rows/120 seats | per-seat queries and full event fold |\n| After, first successful card per seat/router lifetime | D_s once; about42,915 rows fleet-wide at the earlier snapshot, not an invariant | initial allocation, sort/fold and retained hold metadata |\n| After, unchanged warm cards |0 rows | still one indexed query per seat, normal other card work, and cloned output holds |\n| After, new delivery activity |sum d_s | index seeks/sort of returned delta, decode/fold; copy prior H_s only for seats with a nonempty delta, then output clone |\n\nThe SQL explicitly names spine_by_seat_kind(seat,kind,seq) and adds seq>after. This is a true index seek for each requested kind, not a rowid scan with rows filtered after reading. ORDER BY seq merges/sorts only matching returned rows; it does not eliminate per-seat query overhead. No new timer, poll, task, process launch or launch site. If cards arrive at rate R/s, matching queries remain approximately R*N/s, while decoded rows follow delivery activity after warm-up rather than R times history. No measured fixed client polling rate is asserted.\n\nMemory is O(E + sum H_s) plus string lengths, where E is distinct SeatIds ever carded by this AppState. The map is NOT pruned on tombstone/rebind; even empty seats retain a key, sequence, Arc/mutex and empty BTreeMap until router/daemon drop. Held values retain msg_id, reason, seat and since_ms, not message bodies; the BTreeMap key duplicates msg_id. Historical released/terminal rows are not retained as events. A changed seat temporarily holds its returned delta plus a copy of the previous live set. Exact Rust heap bytes/RSS impact is not measured pre-deployment. This lifetime growth is a disclosed memory cost, not a current-live bound.\n\n## Correctness needed for this cost claim\n\n- Per-seat Tokio lock spans query, decode/fold and cursor commit. Concurrent requests for one seat cannot both cold-replay the same cursor; different seats share only a brief map lookup mutex, not the SQL/fold lock.\n- Fold and cursor advance happen on next=kept.clone(); SQL/decode errors leave kept untouched, so the failing delta is retried rather than silently skipped. Decode failure therefore prevents the once-only successful-read cost claim for that seat until repaired; this is the intended prior error contract.\n- SQLite seq is AUTOINCREMENT; append_in_transaction omits seq and allocates inside the writer transaction. SQLite permits one writer; a lower allocated seq cannot remain uncommitted while another writer commits a higher seq. Generated payload finalization updates the draft inside the same transaction. No new lower-seq late commit hole.\n- The cache is keyed by durable SeatId, just as the old full fold selected all matching history by SeatId. A rebind/revival does not gain a new incarnation reset in this PR. Merely resetting this cache would replay the same old holds; lifecycle reset semantics are not introduced here. Correctness reviewer independently reported no bug on this seam.\n- The required Spine method has no full-history fallback. EventBus and all changed wrappers delegate; fakes apply strict seq>after. Existing terminal outcomes and event-sequence ordering remain unchanged. No wire shape change.\n\n## Observed CI proof\n\nRun44444211355 artifact14492757970 identifies workflow_run.head_sha=6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5. Current five PR checks SUCCESS; downloaded JUnit has no failed suites. Executed PASS:\n- http::card_tests::the_held_deliveries_read_only_what_is_new_since_the_last_card:600 added historical rows plus3 fixture rows; second request returns the same held answer with zero more matching rows, then one appended held event adds exactly one matching row and the expected hold.\n- all_matching_after_seeks_past_its_cursor: strict cursor results, empty end and SEARCH(seat=?,kind=?,seq>?) plan with and without ANALYZE.\n- typing_hold_projections_follow_terminal_outcomes_and_sequence: repeated active_holds reads after each event on one AppState; nonterminal, terminal, release and new held transitions at constant timestamps.\n- typing_state_projects_active_holds_only; a_card_read_never_tails_the_spine.\n- anomalies_node_show_and_spine_events_stay_bounded_over_a_million_rows; every_daemon_launch_site_records_itself.\n\nThese are executed CI assertions, not a local rerun, concurrent-card stress result or measured production heap profile.\nCI: https://github.com/AI-Substrate/pij-fleet/actions/runs/44444211355/job/135292259680\n\n## Owned after-merge proof (#249 + #251)\n\nAfter merge and authorized bounce, I retain ownership of PID/commit/uptime-bound minute CPU proof (top10s intervals; omit first cumulative sample), CPU-time/RSS, paired ping spawn counters and whole-machine spawn-rate receipt. Hedgehog remains open. Time `pij-rs --json state pij-musical-hedgehog` while missing, and two consecutive cards requests; record whether initial cards warmth is known rather than labelling an arbitrary first request cold. Target roughly<20% of one core; if exceeded, report actual stacks and remaining work honestly. Request latency alone cannot prove zero replay rows; the CI row counter and SQL plan provide that cost-specific evidence.\n\nBaseline before #249: PID82870, commit26c684a887, CPUtime5:42.20→5:52.79 over21.260s (~49.8%core), RSS161280→157312KiB, spawns438→438, placementgit0→0. Historical targeted missing hedgehog state2.281s. The now-completed #249 reading at f06f00f5/PID68910, uptime02:30→03:34, measured22.43%mean interval CPU (CPUtime22.87%core), RSS161856→147584KiB, spawns420→431, and open/active/not-found hedgehog state7.98ms. The roughly20%CPU target remains unmet before #251; follow-on sample still captures seat_cards→seat_card→all_matching. Published receipt: https://github.com/AI-Substrate/pij-fleet/pull/249#issuecomment-6997833162 ; performance note eb5ae97c. No post-#251 savings claimed yet.\n"
+		}
+	]
+}
