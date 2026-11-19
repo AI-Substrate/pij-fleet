@@ -177,6 +177,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-productive-stingray",
 					"why": "pm-004: cost verdict on #255 (ws004 s07)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T04:26:19.200Z",
+					"harness": "omp",
+					"harness_session": "01a1f20d-dca9-77cd-8934-e5624930cc02",
+					"instance_key": "256",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-mild-pony",
+					"why": "F214 #256 cost (cold-check and TTL accounting; OMP gpt-6.1-sol)"
 				}
 			]
 		}
