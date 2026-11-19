@@ -1,0 +1,29 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before writing any spawn/registration hand-off, any in-memory cache or miss-cache in the daemon, or when shared-build refuses on the disk floor",
+				"tags": [
+					"spawn",
+					"f211",
+					"f209",
+					"f202",
+					"cache",
+					"disk",
+					"state-machine"
+				],
+				"title": "Hand-offs need independent facts and durable evidence; caches need a retry path; worktree targets eat the disk (F202, F209, F211)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F211 (#253): a spawn answered ok:false yet left a live seat. Root cause was a daemon RESTART mid-wait (find it with daemon.log boot lines at the spine timestamp), not any handler step. My round 1 keyed the parent notice to one event order (bind sees \"unreported\"), and the reviewer broke it twice: bind-then-drop, and bind just before a timeout built from a stale row. The shape that holds: keep two INDEPENDENT facts per launch (bound / answered-with-the-seat). Whichever of \"bound\" and \"not answered\" comes second does the hand-off, exactly once. Settle only AFTER the answer is built, never before an await. For restarts, persist evidence (spawn.launched before the row, spawn.answered, spawn.reported). At boot, unsettled = launched with neither of the others, bound or NOT. Historical rows have no launched event, so they are never flagged. Quote printed commands with pij_core::directory::shell_word. Correlate by seat+pane, not just an id.\n\nF209 (#249/#251): a negative cache (MISS_TTL) froze the PA's size read, because the PA cached \"not found\" as a completed read and only re-reads on activity. Any cache you add: check every consumer that caches its answer in turn, and make transient answers retryable there (NotFound -> stale). Incremental projections (all_matching_after on the (seat,kind,seq) index) beat full replays. A required port method means about 14 wrapper impls; delegate those mechanically.\n\nF202 (#248): measure a launch rate with the daemon's uptime next to both readings. A boot burst looks like a steady rate in a 20 s window. Walk to .git from the CANONICAL path (a symlink places by its target) and read pointer files only if regular and <= 4 KiB.\n\nDisk: tests build pij-rs into EACH worktree's own target/ (about 15 GB per lane, outside the shared target). After a lane merges, rm -rf <worktree>/target, or shared-build hits the 25 GiB floor. Never lower the floor yourself; ask the PM.\n"
+		}
+	]
+}
