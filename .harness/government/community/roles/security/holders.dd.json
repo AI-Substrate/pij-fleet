@@ -440,6 +440,16 @@
 					"seat": "pij-xeric-squid",
 					"to": "2026-11-19T07:53:33.111Z",
 					"why": "F213 proxied seat route from stamped-ancestor lineage #263"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T08:01:55.525Z",
+					"harness": "copilot",
+					"harness_session": "1e46c12d-494f-4ad5-aef6-fba9e82aea8c",
+					"instance_key": "264",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-industrial-chickadee",
+					"why": "F215 spawn trust-prompt refusal + F216 pij_close by id #264"
 				}
 			]
 		}
