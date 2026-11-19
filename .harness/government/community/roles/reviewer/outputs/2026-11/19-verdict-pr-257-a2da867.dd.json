@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f254-8fda-7f11-bda4-99e952a12dc0",
+				"date": "2026-11-19",
+				"head": "a2da867f6ab0644db8b20f36ffe2ed7f6b39d4ac",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:257",
+				"writer": "pij-compulsory-junglefowl",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 257",
+					"exit_code": 0,
+					"log": "FINAL at a2da867f6ab0644db8b20f36ffe2ed7f6b39d4ac; latest effective checks pass; detached worktree clean"
+				},
+				{
+					"command": "gh run view 44466537257 --json headSha,status,conclusion,jobs",
+					"exit_code": 0,
+					"log": "Exact reviewed head; completed success; shared-build 22 tests and smoke 9 tests passed in Node 24 CI; no local builds, cargo or suites run"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #257: round-2 correctness review\n\nHead: a2da867f6ab0644db8b20f36ffe2ed7f6b39d4ac\nCompared with round 1: d968afe002b745c8f43eac5a6d80783bf8b88601\nVerdict: PASS WITH NOTES\n\nR257-001 is closed. No new normal-use blocking bug found in the five-file delta. This is the final C34 review round; the note below is a nonblocking follow-up, not a new merge gate.\n\n## Round-1 finding and skip diagnostic\n\n`harness/scripts/shared-build.sh:345-355` now measures the script's inherited niceness once. For a valid current value below 19, the increment is `19 - current`; for 19 or above, it uses no wrapper. Thus current -20, 0, 5 and 19 yield increments 39, 19, 14 and 0 respectively, and the child ends at 19. A caller already at 20 remains at 20: the contract is max(19, caller), not unconditional exactly 19.\n\nNiceness above 19 is not impossible on macOS. A read-only probe under `/usr/bin/nice -n 19`, containing only bash arithmetic and `/bin/ps`, returned `caller=19 increment=0`; another nested nice wrapper returned `nested-caller=20 increment=0`. No cargo or test runner was involved.\n\nThe new real-nice regression cases cover parent increments [5], [19] and [19,19], measure the script's actual niceness rather than assuming the runner starts at zero, and compare the fake cargo with max(19, script). The old F186 assertion now also agrees with the ordinary `just test` path starting from a normal caller: the script inherits 19 and adds nothing.\n\n`harness/scripts/smoke.test.ts:33-61` closes the earlier skip note: the suite title names the missing binary and repair instructions, and a single warning includes the artifact path. `PIJ_RS_BIN_REQUIRED=1` still throws before any optional skip.\n\n## R257-002: C34 follow-up, nonblocking ps-failure diagnostics\n\nAt `shared-build.sh:349-354`, a failed ps invocation is not checked; stderr is suppressed, and empty or rejected output silently becomes current=0. With an already-niced caller this can restore the old relative +19 behavior rather than the measured max(19, caller) behavior. The character whitelist also is not a strict signed-decimal parser, although the normal single-PID `/bin/ps` result is a simple integer.\n\nFollow up with an explicit diagnostic/refusal or a clearly diagnosed fallback when the read fails, and strict integer validation. This is an exceptional-input/read-failure path, not evidence that the default own-PID ps call fails in normal use, so it does not block this final review round.\n\n## Cost and security of the delta\n\nThe only new non-test subprocess site is `\"$PS\" -o nice= -p $$`, defaulting to absolute `/bin/ps`. It runs once after lock acquisition, not in the 20-second waiting poll and not once per cargo command. At a shared-build invocation rate of R, the added launch rate is R ps launches, with no autonomous per-seat rate. A caller already at or above 19 also avoids the old per-command nice launch. There is no daemon, timer, polling-loop or spawn-counter change.\n\nThe PS seam is invoked as one quoted executable path, not shell text or eval. A value containing spaces stays one path; embedded options or shell syntax do not become commands. Normal ps output is stripped of whitespace, and unexpected characters do not reach arithmetic. Malformed sign-only/digit-sign combinations are a correctness-validation follow-up, not a shell-injection capability; an explicitly supplied executable seam is trusted same-user configuration under C33.\n\n## Verification\n\n- `just pr-freeze 257`: FINAL at the exact reviewed head, run twice; latest effective checks passed, main base, CLEAN, nondraft, migration and Delivers checks satisfied.\n- CI run 44466537257: success at a2da867f6ab0644db8b20f36ffe2ed7f6b39d4ac. Node 24 job 135365563110 records shared-build.test.ts 22 passed, smoke.test.ts 9 passed, recipe-cost.test.ts 8 passed, cargo-tripwire.test.ts 4 passed, and 105 test files passed / 1 skipped. Rust lint/test and Node 22 jobs passed. The current successful Delivers job is 135365572039.\n- `git diff --check d968afe002b745c8f43eac5a6d80783bf8b88601..HEAD`: passed.\n- `/usr/bin/nice -n 19 /bin/bash -n harness/scripts/shared-build.sh`: passed.\n- Review worktree remains clean, and target/ remains absent. No local builds, cargo invocations, dependency installation or test suites were run. The PR body's local canonical-path and mutation results are author-provided receipts, not claimed reviewer executions.\n\nHarness feedback: the round-1 scheduling lesson is now encoded in real inherited-niceness regression cases, and missing-binary skips now explain their repair. magicWand: make a failed scheduling probe visibly different from a measured niceness of zero.\n"
+		}
+	]
+}
