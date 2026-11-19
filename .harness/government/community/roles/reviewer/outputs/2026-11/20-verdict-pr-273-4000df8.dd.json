@@ -1,0 +1,62 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f60b-da4f-7591-9462-90855de6d2d3",
+				"date": "2026-11-20",
+				"head": "4000df85fad3260db1d3fbff8791c8f06196a6b1",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:273",
+				"writer": "pij-functional-pony",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R273-001: nonblocking C34 follow-up; poll the revive regression for Delivered, not merely non-Queued."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 273",
+					"exit_code": 0
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=$(bash harness/scripts/cargo-target.sh) just shared-build -- test --locked -p pij-daemon --test directory_http -- --exact a_revived_holder_takes_what_its_role_queued_while_it_was_gone review_overlapping_assign_drains_must_deliver_an_unscoped_request_once a_claim_left_by_a_stopped_daemon_drains_once_after_restart security_a_released_holder_never_drains_and_a_cold_drain_is_audited a_cancelled_assign_waiter_never_strands_its_drain --then test --locked -p pij-daemon --lib -- a_registration_that_brings_a_seat_back_tells_the_return_hook community::picture::tests a_tombstone_reason_prints_as_one_word --then clippy --locked -p pij-daemon -p pij-cli --all-targets -- -D warnings",
+					"exit_code": 0,
+					"log": "pr273-final-rust.log: 5 integration + 15 library tests passed; macOS clippy passed"
+				},
+				{
+					"command": "M1: remove revive drain; shared-build test -p pij-daemon --test directory_http a_revived_holder_takes_what_its_role_queued_while_it_was_gone -- --exact --nocapture",
+					"exit_code": 101,
+					"log": "pr273-M1.log: caught; Queued with holder None"
+				},
+				{
+					"command": "M3: remove bound-spawn return predicate; shared-build test -p pij-daemon --lib a_registration_that_brings_a_seat_back_tells_the_return_hook -- --nocapture",
+					"exit_code": 101,
+					"log": "pr273-M3.log: caught; missing pij-preallocated callback"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "pr273-harness-checks.json: local TS sensors unavailable; native contracts pass; exact-head CI green"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# #273 reviewer verdict\n\n**PASS WITH NOTES** at `4000df85fad3260db1d3fbff8791c8f06196a6b1`. No blocking normal-use product correctness bug found. `just pr-freeze 273` reconfirmed this exact head FINAL immediately before publication.\n\n## Nonblocking finding\n\n**R273-001, LOW, C34 follow-up (test only):** `crates/daemon/tests/directory_http.rs:2340-2361` stops polling when the request is anything other than `Queued`, including the legitimate intermediate state `Delivering`, then requires `Delivered`. A poll between the claim and settlement can fail an otherwise correct return. Poll for `Delivered` instead. Both baseline runs passed; this is a code-derived race, not a reproduced failure, and does not require another review round.\n\n## Requested checks\n\n1. **Competing drains:** `drain` takes the role admission gate and calls the existing atomic `claim_role_request` before delivery (`delivery/role_send.rs:1090-1183`; `store/src/role_requests.rs:855-878`). Only one `state = 'queued'` update can win. The same guard covers assign/return, revive/registration, and simultaneous registration callbacks. Delivery keeps the original request id. The overlapping-drains regression passed.\n2. **Target and incarnation:** `drain_returned` reads only the returning seat's open assignments and passes that same seat id into every drain (`delivery/role_send.rs:1197-1235`); it never resolves a different many-role holder. The claim rechecks current liveness and matching project/role/instance ownership. This is intentionally a durable seat-id address, not a pin to the old process: a newer valid incarnation of that same seat can receive the role's work. A released or tombstoned seat cannot win the claim.\n3. **Plain renew:** `resuming` requires a tombstone or a native process/pane change; `binds_spawned_incarnation` requires the stored process to be absent and the nonempty spawn id to match (`registration.rs:1274-1295`). After commit and native receiver attestation, only their disjunction calls the hook (`registration.rs:1643-1652`). Both tested plain renews call nothing. No new steady-state poll/timer/process launch; per return: one indexed open-holdings read plus one queue read per holding and actual deliveries. Both relevant partial indexes exist.\n4. **Task/error/shutdown:** the owned Tokio task is independent of the HTTP waiter. Holdings-read errors, drain errors, and per-request outcome errors are printed explicitly. Existing drain settlement/requeue and boot recovery are reused. Recovery runs after winning the daemon bind and before serving (`lib.rs:1192-1194`); admitted ledger/job/FYI evidence is marked delivered, otherwise the claim is requeued. Cancellation and restart regressions passed. A failed drain is not a periodic retry: another return/assign, or the printed repair, is still needed.\n5. **Live-holder repair:** release ends assignment lineage; it does not kill, compact, restart, or cancel the live seat, and does not rewrite already delivered requests (`community/directory.rs:1920-2120`). The following assign drains queued work normally. Thus an existing job is not discarded, although new work can be delivered/steered to the busy seat under normal delivery semantics. The two commands are not an atomic transaction; a race/failure between them can leave the holding released and requires finishing the explicit repair. This is advisory, never run automatically, and omitted for the designated prime. No new destructive policy; the explicit operator release decides the lineage change.\n\n## Security\n\nNo introduced vulnerability found in the bounded security review. Tombstone lift still requires native-session/spawn/process continuity or verified reclaim; the return hook gets the committed descriptor id after receiver attestation. Claude's unique cwd/pane-suffix/session and PID-start correlation, and Codex's child/wrapper/thread/conversation/pane/process checks, are unchanged (`claude_bind.rs:100-180`; `codex_bind.rs:283-306`). C33 applies: same-user process isolation is not promised.\n\nRepair arguments use the existing shell-word quoting helper; seat/instance print grammars and constant `--why requeue` remain enforced (`community/picture.rs:546-605`; `core/src/directory.rs:32-43`). No new C21 private identity or prohibited machine path identified. Raw tombstone reasons intentionally remain in JSON; printable `kind` is not general redaction.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No introduced security vulnerability found | - |\n\n## Independent proof\n\n- Baseline revive and registration regressions: **PASS** before mutation.\n- **M1 caught**, isolated source archive of the exact head, only the revive drain removed: revive regression failed with request `Queued`, holder `None`, exit 101.\n- **M3 caught**, M1 restored and only `binds_spawned_incarnation` removed from the hook predicate: registration regression failed with no callback for `pij-preallocated`, exit 101.\n- Exact-head final `directory_http` selection: **5 PASS** (revive, overlapping drains, shutdown recovery, released-holder/cold-audit, cancelled waiter).\n- Exact-head final library selection: **15 PASS** (registration return/renew, picture tests, tombstone-kind rendering).\n- `PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- clippy --locked -p pij-daemon -p pij-cli --all-targets -- -D warnings`: **PASS on macOS** as the final command in the serialized proof batch.\n- `nice -n 19 cargo fmt --all --check` and `git diff --check origin/main...HEAD`: **PASS**.\n- `harness checks --quick`: **NOT GREEN locally**: dependency-free review checkout lacks tsx/vitest and resolves an incompatible ambient Biome. Native Copilot contracts and pij-skill sensor pass; SDK contract passes with the pre-existing version-record warning. Heavy sensors were not run locally. Exact-head CI check(22), check(24), rust-lint, rust-test and delivers all pass. No dependencies were installed or symlinked (C25), and no source file in the frozen worktree was changed.\n- No deployed live-fleet before/after proof claimed; the requested post-merge reproduction remains a deployment check.\n\n## Harness feedback\n\nMagic wand: a canonical read-only mutation runner that archives an exact SHA, uses the existing shared-build lock, and emits baseline/mutant receipts without touching the frozen checkout. Difficulties captured: dependency-free review sensors cannot provide TS proof; shared-target contention delayed independent mutation runs. The immediately encodable proof improvement is R273-001's terminal-state poll.\n"
+		}
+	]
+}
