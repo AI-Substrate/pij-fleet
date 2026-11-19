@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f13c-6f3d-7170-b5f2-41276e9aac32",
+				"date": "2026-11-19",
+				"head": "9b4edcecb50cec1f12ace63060e9a1d762b7be25",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44429730440",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:247",
+				"writer": "pij-identical-wolf",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After deploy, repeat paired exact spawn counters, just spawn-rate --seconds 20, and daemon CPU/RSS on the same fleet; retain the receipt and run the planned held-close memory-note proof."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "pij-rs --json ping; just spawn-rate --seconds 20; pij-rs --json ping",
+					"exit_code": 0,
+					"log": "2026-11-19T00:37:28Z..00:37:48Z; PID 23167 commit 577a6c7a13; spawns 591->592, only git.pa-watchdog-common-dir 28->29 (0.05/s); machine 186.2 launches/s; daemon sampled attribution 0.0/s lower bound"
+				},
+				{
+					"command": "/bin/ps -p 23167 -o pid=,%cpu=,rss=,etime=,command=",
+					"exit_code": 0,
+					"log": "PID 23167 CPU 18.2%, RSS 165712 KiB, elapsed 36:28; baseline snapshot, not candidate measurement"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR 247 performance review\n\nVerdict: PASS WITH NOTES at `9b4edcecb50cec1f12ace63060e9a1d762b7be25`. No blocking performance finding. Scope: performance; correctness/security have separate assigned reviewers.\n\n## Cost findings\n\n1. `crates/daemon/src/http/memory_turn.rs:1034-1061`: SETTLE is a deadline on the existing event wait, not a poll, a new task, or a fleet-wide/per-seat timer. The wake is `min(settle, bound)`; working clears the settle and a later idle creates a new deadline. Existing `hold` and admission tasks remain; no additional spawn is introduced. Cost scales with pending held closes/compacts and their events, not every fleet seat on a tick. The settle is a brake (only delays; the bound remains), while deciding turn-end is policy.\n2. The same seat-filtered live subscription now accepts `memory.note` as a third event kind. It does not open another subscription or scan the spine. One event-loop exit reaches the single existing proceed/record path. No new repeating work.\n3. `grant_note_grace` adds one BTreeMap entry by pane only after a held close succeeds (`closed.is_some()`). It prunes expired entries on a subsequent grant: O(G) retain plus O(log G) insertion, where G is the retained grace entries. Expired entries may remain allocated while no further close lands, but are authorization-inert and are pruned on the next grant; growth is tied to close bursts, not uptime/ticks. `note_grace` performs an O(log G) lookup and one process-start probe only for an unregistered caller attempting memory add with an unexpired matching grace. No sweep is added.\n4. Activity traffic decreases. OMP removes one idle HTTP publication per model/tool iteration while preserving the existing working publications at turn_start and final idle at agent_end(false). Copilot removes the intermediate idle AND usually the following working publication because observeActivity already deduplicates unchanged working state. session.idle, abort, fusion_completed, and shutdown still provide its idle paths. No new hook/tick/launch is added. Existing tool-boundary delivery/resend handling is retained, independently of seat.activity.\n5. The process-start claim needs one qualification: normal own-live-process probes use macOS proc_pidinfo or Linux /proc in-process, but existing ProcLiveness::proc_start falls back to the already-counted absolute `/bin/ps` probe on an unreadable existing process or conversion failure (`crates/harnesses/src/proc.rs:90-104,286-293`). Thus this is no new launch SITE and no steady-state launch, not an unconditional guarantee of zero launches for every possible grace attempt. The fallback is already counted as `ps.proc-liveness-fallback`, covered by the existing spawn-site sensor. No such fallback appeared in the baseline interval. Existing memory-add persistence launches are unchanged.\n\nRelevant state consumers inspected: idle-nudge candidates require actual Idle (`idle_nudge.rs:90-98`); watchdog fleet activity and PA scope tracking read current Working/Idle; cold-wake bypasses Working (`core/cold_wake.rs:169`); PA digest hides working seats; PA size refresh reads working/previously-working or generation-changed seats (`pa_presence.rs:990-1061`). These consumers need true ongoing work/end-of-work, not tool-boundary false idles. Existing PA working-seat refresh may now correctly remain eligible across tool boundaries; its cadence is unchanged. This is source analysis, not a claim that the post-deploy fleet path has already been exercised.\n\n## Live pre-deploy receipts\n\nCommand, in the detached review worktree:\n`date -u +%Y-%m-%dT%H:%M:%SZ && pij-rs --json ping && just spawn-rate --seconds 20 && date -u +%Y-%m-%dT%H:%M:%SZ && pij-rs --json ping`\nExit 0. Window: 2026-11-19T00:37:28Z through 00:37:48Z; sampler duration 20.0 s. Both pings: daemon PID 23167, live commit 577a6c7a13 (NOT the candidate).\n\n| Exact daemon counter | Before | After | Delta / 20 s |\n|---|---:|---:|---:|\n| total | 591 | 592 | 0.05/s |\n| git.pa-watchdog-common-dir | 28 | 29 | 0.05/s |\n| all other by_op counters | unchanged | unchanged | 0/s |\n\nWhole-machine sampler: total_new_per_s 186.2; sampled_per_s 164.7; polls 137563. Attributed lower bounds: gone-before-seen 111.7/s, other 52.9/s, pij-rs daemon 0.0/s. Observed daemon children pij-rs 0.0/s; statusline runs 0.1/s. The sampler's displayed daemon 0.0/s is a lower bound/rounding, not a contradiction of the exact one-launch delta.\n\nSubsequent resource snapshot: `/bin/ps -p 23167 -o pid=,%cpu=,rss=,etime=,command=` exited 0 and returned PID 23167, CPU 18.2%, RSS 165712 KiB, elapsed 36:28, `/Users/jordanknight/.npm-global/bin/pij-rs daemon`. CPU is ps's reported snapshot, not an interval CPU benchmark.\n\n## Verification and limits\n\n`git rev-parse HEAD` in `/Users/jordanknight/pi-hacking/review-247-9b4edce` returned the full candidate SHA. `gh pr view 247 --json headRefOid,statusCheckRollup` agrees and reports check (22), check (24), rust-lint, rust-test and delivers all SUCCESS. CI run https://github.com/AI-Substrate/pij-fleet/actions/runs/44429730440 is at the same full head; its Rust build/test and lint steps succeeded. No local cargo build or test was run, per the one-build rule. No source was changed.\n\nOwed after merge/deploy: repeat the same exact-counter pair and 20 s machine sampler on the same fleet, recording the new PID/commit, plus daemon CPU/RSS; exercise the planned held-close memory-note scenario. This baseline does not prove a candidate after-deploy improvement. The owner should retain that receipt alongside this verdict. Nonblocking documentation precision: describe grace's process probe as normally in-process with the existing counted fallback, rather than promising no possible launch.\n"
+		}
+	]
+}
