@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f247-a896-7e81-96aa-b51ca93f1e83",
+				"date": "2026-11-19",
+				"head": "d968afe002b745c8f43eac5a6d80783bf8b88601",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:257",
+				"writer": "pij-compulsory-junglefowl",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 257",
+					"exit_code": 0,
+					"log": "FINAL at d968afe002b745c8f43eac5a6d80783bf8b88601; all five checks pass; detached worktree clean"
+				},
+				{
+					"command": "gh run view 44464878980 --json headSha,status,conclusion",
+					"exit_code": 0,
+					"log": "exact reviewed head; completed; success; no local builds or tests"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Correctness review: PR #257\n\nHead: d968afe002b745c8f43eac5a6d80783bf8b88601\nBase: 70d01ba27a6258efa69b66d30ba5671ee1d30b68\nVerdict: BLOCK\n\n## R257-001: the canonical test recipe deterministically fails on macOS\n\n`justfile:118` now starts the complete Vitest suite under `/usr/bin/nice -n 19`. The existing test at `harness/scripts/shared-build.test.ts:272-311` launches `shared-build.sh`, which applies another relative nice increment of 19. On macOS that child reports niceness 20, while lines 306-309 require exactly 19 for all three commands. Thus ordinary `just test`, and the test stage of `harness checks`, fail on the supported fleet host even though the scheduling change itself is conservative.\n\nRead-only OS receipt, not a test-suite run:\n\n```\n/usr/bin/nice -n 19 /usr/bin/nice -n 19 /bin/sh -c '/bin/ps -o ni= -p \"$$\"'\n20\n```\n\nThe fake cargo reads the same process property with `ps -o nice= -p $$`. Existing independent evidence in `docs/retros/pij-previous-firefly-plan-227.md:3-6` records exactly this assertion failure under an outer nice wrapper. Performance reviewer pij-public-cobra independently raised the same issue.\n\nFix the test's scheduling contract to account for inherited niceness and platform saturation without removing the new niced recipe or weakening the check that shared-build actually applies its wrapper. CI does not disprove this failure: `.github/workflows/ci.yml` runs bare `npm test` on Linux, not `just test` on macOS. This is a normal-use harness correctness bug, not an optional mutation or hardening request under C34.\n\n## Nonblocking follow-up: explain the local smoke skip\n\n`harness/scripts/smoke.test.ts:33-43` says the reason is recorded, but the missing-artifact branch only selects `describe.skip(\"runWatchdogSmoke\", ...)`. It emits neither the missing artifact path nor a repair command. Add an explicit skip diagnostic or reason-bearing suite title. CI is correctly strict: it builds pij-rs before npm test and sets `PIJ_RS_BIN_REQUIRED=1`; the exact-head CI log confirms the watchdog smoke ran. This note does not add a gate.\n\n## Reviewed behavior\n\n- The target resolver uses the absolute git common directory's parent. In a normal clone that is its main checkout; linked worktrees and this detached review worktree share that clone's target. A different ordinary clone has its own common directory and does not accidentally use this clone's target. Read-only execution here selected the canonical checkout's target; relative and absolute overrides containing spaces were preserved. No directories were created.\n- Debug/test building recipes retain their package selections and arguments and use the existing shared-build lock, source refresh, disk floor and nice wrapper. rust-check keeps clippy and tests under one lock hold. Release deployment recipes retain their release profile, install source and stamping, with only the nice wrapper added; their documented shared-build exemption is unchanged.\n- The fixture no longer contains a cargo build path and copies an existing binary before executing it. The PATH shim refuses the listed build-class commands and delegates nonbuilding commands to the next inherited PATH cargo. Its executable path is quoted, and it skips its own physical directory. This is a same-user development guard under C33, not a new hostile-PATH security boundary. No new eval or machine-specific path was added.\n- The recipe-cost sensor is a direct-command syntax check, not a shell parser. Manual provider/timing probes are not exempted by recipe-name allowlist: their script invocations do not match its runner patterns. That matches the declared scope.\n- Target selection and the no-build rule are policies, not deletion brakes. Nothing deletes existing targets.\n\n## Evidence and cost\n\nNo local builds, test suites, dependency installation or code edits were performed.\n\n`just pr-freeze 257` passed twice, most recently immediately before preparing this verdict: exact head agreement, main base, CLEAN, all five checks successful, nondraft, migration and Delivers checks satisfied. `git diff --check 70d01ba2...HEAD` passed. The review worktree remained clean and had no target directory.\n\nCI run 44464878980 is successful at the exact reviewed head. Node 24 job 135360150049 shows smoke.test.ts 9 tests passed, shared-build.test.ts 19 passed, recipe-cost.test.ts 8 passed, cargo-tripwire.test.ts 4 passed, and 105 test files passed / 1 skipped. Rust lint and test jobs also passed. These are CI receipts, not claims of local execution.\n\nThe PR's before/after build receipts report a missing-binary fixture build of 2.4 GB and 69 seconds before, versus zero nested builds after; shared debug artifacts around 15 GB; route inventory 49 seconds; smoke 79 seconds total. Those build/disk measurements were not repeated, per the no-build/no-test review contract. Source inspection confirms removal of the nested build path. New contention is intentional: the heavy recipes now wait for the same lock rather than building concurrently. Each waiting caller retains the existing 20-second poll, with one df, mkdir and sleep per poll, approximately 0.15 launches/second/caller. There is no new daemon loop or per-seat recurring launch; the cargo tripwire is per attempted cargo invocation, not periodic.\n\nLive baseline, 2026-11-19 05:31:01-05:31:22 UTC: `/usr/bin/nice -n 19 just spawn-rate --seconds 20 --json` measured 87.4 machine launches/second over 20 seconds. Daemon spawn counters stayed 1531 -> 1531, with no per-operation change. Daemon PID 36530 had ps CPU 20.0%, RSS 151616 KiB, nice 0. Load averages moved from 20.95/24.95/40.75 at 05:30 to 16.00/22.55/38.59 at 05:31. This is a current shared-host baseline, not a controlled before/after performance comparison.\n\n## Harness feedback\n\nmagicWand: CI should exercise the canonical niced test entry point, with platform-aware evidence for macOS scheduling, rather than proving only the bare npm path.\n\ndifficulties: Linux CI passes a scheduling assertion that contradicts the new normal macOS recipe; the preexisting retro already contained the diagnostic. Encode that lesson in the scheduling test instead of asking every coder to explain away a red gate.\n"
+		}
+	]
+}
