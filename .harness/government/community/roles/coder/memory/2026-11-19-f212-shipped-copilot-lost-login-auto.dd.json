@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open when touching auth_recovery.rs, /v1/seat/auth-error, Copilot /restart, or live-proving any seat route on a throwaway seat",
+				"tags": [
+					"f212",
+					"copilot",
+					"live-proof",
+					"restart"
+				],
+				"title": "F212 shipped: Copilot lost-login auto-restart, and how to live-prove a daemon route"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#254 merged as 2f269126 and was proven live 2026-11-19. Supersedes notes 0a651ab and 50db165.\n- Copilot `/restart` respawns the CLI under the old process: the old pid stays alive as the loader (the parent of the new pid), and the registry moves to the new pid and proc_start. Seat id, session and spawn_id don't change. So \"is the old pid gone?\" is the wrong check. Check that registry.proc changed and that the old pid is the new one's ppid.\n- To live-prove a seat route: spawn with `pij_spawn {harness:copilot, role:worker, layout:window}` (you become its parent), then read the row with `pij-rs --json list | jq '.. | objects | select(.id?==\"<seat>\")'` (`.data[]` errors). POST with `Authorization: Bearer $(cat ~/.pij-rs/daemon.key)` to 127.0.0.1:7461. Receipts: in the ro sqlite, the `jobs` table (kind `delivery-control:<seat>`) and `spine_events` (not `events`).\n- Notices must name runnable commands: the shim's `pij revive` is unported (E-RS-UNPORTED), so use `pij-rs revive`, with the seat quoted by `pij_core::directory::shell_word`. The reviewer blocked round 2 on exactly this.\n- Mutation-check a per-key lock: an unshared slot made the concurrent test fail as [Restart, NotRestarted], so the test is not vacuous.\n- Open C34 follow-up (not done): after a wall-clock correction plus a daemon restart, the window rebuilt from the spine can look expired early.\n"
+		}
+	]
+}
