@@ -1,0 +1,63 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f205-3c9a-7132-a466-29db0bea8d8a",
+				"date": "2026-11-19",
+				"head": "0d62f23bc6a24546c481a7d12fa7d7ed62c783e7",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:254",
+				"writer": "pij-partial-echidna",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R254-001: new not-restarted notice gives unsupported pij revive; use supported pij-rs revive and correct its existing regression assertion"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 254",
+					"exit_code": 0,
+					"log": "FINAL at 0d62f23bc6a24546c481a7d12fa7d7ed62c783e7; clean; all five latest checks pass"
+				},
+				{
+					"command": "gh run view 44456587720 --json conclusion,headSha,jobs",
+					"exit_code": 0,
+					"log": "SUCCESS at the exact reviewed SHA; Node 22/24 and Rust lint/test jobs pass"
+				},
+				{
+					"command": "pij revive --help",
+					"exit_code": 4,
+					"log": "E-RS-UNPORTED revive: shim revive grammar is not native revive grammar; use pij-rs revive --help; read-only probe, no revive attempted"
+				},
+				{
+					"command": "pij-rs revive --help",
+					"exit_code": 0,
+					"log": "Native grammar: pij-rs revive [OPTIONS] <ID>; no revive attempted"
+				},
+				{
+					"command": "git diff 92ce117..0d62f23 --check",
+					"exit_code": 0,
+					"log": "passed; no local builds or tests run"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Round 2: BLOCK at 0d62f23bc6a24546c481a7d12fa7d7ed62c783e7\n\nReviewed only the delta from 92ce1171412a8555d986246e188b158430238e8f, plus the immediate contracts it relies on. This is the final review round under C34. One normal-use correctness regression introduced by the fix blocks; no additional exploratory round is requested.\n\n## Blocking: R254-001 repair notice names an unsupported command\n\nPriority: P2. Location: `crates/daemon/src/auth_recovery.rs:446-447`.\n\nThe new `NotRestarted` notice correctly detects a settled control followed by another error from the same process, but tells the parent to quit that process and run `pij revive <seat>`. That command is explicitly unported: `.omp/extensions/pij/core/generation-routing.ts:331-334` rejects the shim verb and directs callers to native `pij-rs revive`.\n\nRead-only executable receipt: `pij revive --help` exited 4 with `E-RS-UNPORTED revive: shim revive grammar is not native revive grammar; use pij-rs revive --help`. Conversely, `pij-rs revive --help` exited 0 and documents `pij-rs revive [OPTIONS] <ID>`.\n\nThis is the normal fallback after \"Restart is not available\", not hypothetical hardening. Following the notification leaves the affected process exited and the advertised recovery command refusing to run. The new regression currently asserts the same unsupported spelling in `a_restart_that_settles_without_a_new_process_is_reported_once`.\n\nUse the supported native recovery command in the notice and its existing regression assertion, with matching documentation. The pending-state bug itself is fixed; this remaining broken recovery instruction prevents closing R254-001 end-to-end.\n\n## Original findings\n\n| Finding | Disposition | Evidence |\n|---|---|---|\n| R254-001 | Pending-state logic fixed; repair instruction still blocks as above | Same-incarnation reports consult the specific restart ID through `control_live`; both pending and running jobs count as live. Settled Done/Failed produces `NotRestarted` and one notice. |\n| R254-002 | Running-daemon clock correction fixed; nonblocking bootstrap limit below | Active entries use `Instant` and `RECOVERY_WINDOW`; wall-clock input no longer expires an existing in-memory entry. `a_wall_clock_jump_never_ends_the_window` covers the original live-daemon failure. |\n| R254-003 | Closed | Shared `Services.auth_recovery` owns one async slot per seat; read/decide/record/enqueue runs under that slot. `two_reports_at_once_queue_one_restart` covers overlapping reports. |\n| R254-004 | Closed for stale-incarnation admission | Extension posts its existing registration tuple; route checks both PID and process-start identity against the registered process and returns 409 on mismatch. The replaced-process route regression covers no enqueue. |\n| R254-005 | Closed | Recipients are the live parent plus the designated primes of projects from stored open holdings, with project and seat deduplication, self exclusion and tombstone filtering. The multi-project regression covers these choices. |\n\n## Requested boundary checks\n\n- Locking: the short synchronous map lock ends when `Ledger::slot` returns. Composer observation, store reads and delivery awaits hold only that seat's async slot. No path read here reacquires that slot, and unrelated seats have different slots; no new lock inversion or cross-seat lock stall was found. Serializing reports for one seat during its observation is intentional.\n- No-role seats: with no held-project affiliation, the live parent is the recipient. This is the appropriate available owner rather than inventing a project or notifying an unrelated machine prime. A parentless seat with no held project has no recipient under this explicit rule.\n- Reporter identity: `extension.mjs:201-205` resolves the native Copilot ancestor, not the extension child; `store.mjs:2578-2610` follows OS parent links and rechecks that host. `chooseRegistration` puts that host's PID/start into the registration (`store.mjs:385-462`), and `tuple()` reuses those exact fields (`:1536-1538`). Auth reporting does not substitute the extension child's `process.pid`.\n- `live_payloads` includes both pending and running controls (`crates/store/src/queue.rs:778-792`), so claiming a restart does not incorrectly make it settled.\n- The stale-report refusal exposes only the reporting PID and seat identifier, not native session identifiers, error text, account details or credentials. Project notification targets come from stored holdings and project records, never report-supplied recipient fields.\n- The existing generic Copilot control drain and composer brakes are unchanged in this delta and still apply to restart.\n\n## C34 follow-up, not a block\n\nR254-C34-01: bootstrap across a clock correction plus daemon restart. `remembered` (`auth_recovery.rs:297-303`) reconstructs elapsed age from wall time when the ledger is empty. A forward correction followed by a bounce can therefore make a recent real-time recovery appear expired. The running-daemon monotonic fix is real; a strict elapsed-time guarantee across that combined event is not established by it. This is the new bootstrap edge, not another blocker or a demand for additional machinery in this final round. The persisted-event check is a one-directional brake relative to having no recovered entry, but should not be described as proving a cross-daemon monotonic interval.\n\n## Security\n\nNo confirmed authority/privacy vulnerability found in the round-2 delta under C33. Existing native-session binding remains; the new process identity is checked before recovery; recipients are store-derived; no error text or credential handling was introduced.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None confirmed under C33 | - |\n\n## Validation and cost\n\n- `just pr-freeze 254`: FINAL at 0d62f23bc6a24546c481a7d12fa7d7ed62c783e7; clean detached worktree, CLEAN mergeability, all five latest checks pass.\n- `gh run view 44456587720 --json conclusion,headSha,jobs`: SUCCESS at the exact reviewed SHA; Node 22/24 check jobs and Rust lint/test jobs successful. Latest delivers check is also SUCCESS.\n- `git diff 92ce117..0d62f23 --check`: passed.\n- `pij revive --help`: failed, exit 4, explicit unsupported-verb refusal; no revive attempted.\n- `pij-rs revive --help`: passed, exit 0; native command grammar confirmed; no revive attempted.\n- No local build, test, install, live restart probe or credential-file read. CI remains the build/test proof as instructed.\n- Cost: no new loop, poll, timer or direct daemon process launch. One per-seat slot per reporting seat; event-driven lookups only: live controls while pending, stored holdings/project primes when notifying, and composer observation when eligible. Work is per report, not per tick per fleet seat; notification count scales with distinct live parent/project-prime recipients.\n\n## Harness feedback\n\nThe round-1 request for a restart-settlement fixture was encoded in the Done/Failed regressions. Remaining lesson: a test that asserts a generated repair string can pin an unsupported command. Correct the existing assertion alongside the notice; validating generated repairs against the authoritative command routing table would be a useful later sensor, not an additional gate here.\n"
+		}
+	]
+}
