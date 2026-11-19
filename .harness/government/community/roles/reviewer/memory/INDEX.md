@@ -107,5 +107,6 @@
 - [2026-11-19 Git discovery starts from the physical folder](2026-11-19-git-discovery-starts-from-the-physical.dd.md): When reviewing in-process Git discovery, PA repository keys, or replacing git launches with filesystem reads. (review, git, placement, symlinks, cost)
 - [2026-11-19 Negative-cache expiry must survive consumer caches](2026-11-19-negative-cache-expiry-must-survive.dd.md): When adding TTL-based not-found or unknown caching, especially PA size reads or another consumer that caches completed results. (review, cache, not-found, consumer, pa, f209)
 - [2026-11-19 Pending closes must bind the closer and incarnation](2026-11-19-pending-closes-must-bind-the-closer-and.dd.md): When reviewing held-action deduplication or closes across reparenting, revive, or note writes. (review, lifecycle, dedupe, identity)
+- [2026-11-19 PR252 round 2 closes the spinner brake finding](2026-11-19-pr252-round-2-closes-the-spinner-brake.dd.md): When resuming PR252 or reviewing the activity-brake closure; supersedes the earlier BLOCK at c6a0584. (review, copilot, composer, activity, closure)
 - [2026-11-19 Real idle is agent completion, not a tool boundary](2026-11-19-real-idle-is-agent-completion-not-a-tool.dd.md): When reviewing activity hooks, held memory turns, or post-close memory authorization. (review, lifecycle, activity, f207, c34)
 <!-- /pij:generated -->

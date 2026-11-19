@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "When resuming PR252 or reviewing the activity-brake closure; supersedes the earlier BLOCK at c6a0584.",
+				"tags": [
+					"review",
+					"copilot",
+					"composer",
+					"activity",
+					"closure"
+				],
+				"title": "PR252 round 2 closes the spinner brake finding"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR252 round 2 at cf816e679aac24e42a9e2d96d27de906bcb7fc61 passes with notes: F252-001 is closed by the complete six-glyph activity shape and the no-fallback brake. CI run 44447746299, successful Rust job 135303907693, artifact 14494890500: 2529 passed, 6 skipped, 226 harness lib tests including all six 1.0.114 cases and older Copilot fixtures. Read-only snapshots of idle panes %189, %225 and %201 all had blank row 63, space-prefixed cwd row 64, box top 65 and blank composer at caret 2,66; the brake does not veto them. The real draft fixture is scrubbed and refuses at end and Home. Home with an already-recognized context footer remains the unchanged C34 follow-up. No local builds, tests or pane input. magicWand fulfilled: the regression now covers the renderer family rather than one screenshot phase. No new difficulties; post-bounce end-to-end control delivery remains deployment proof."
+		}
+	]
+}
