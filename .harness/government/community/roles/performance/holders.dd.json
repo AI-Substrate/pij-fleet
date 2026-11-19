@@ -214,7 +214,10 @@
 					"harness_session": "01a1f247-4f29-751d-8849-f77c26569f15",
 					"instance_key": "259",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #259 merged (31f9ef20884f)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-public-cobra",
+					"to": "2026-11-19T06:18:31.777Z",
 					"why": "D-F208-1 real-SDK registration canary #259 (adds on-demand process launches to doctor/self-check/harness checks)"
 				},
 				{

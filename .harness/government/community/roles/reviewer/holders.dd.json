@@ -1869,7 +1869,10 @@
 					"harness_session": "4b0db837-7643-466e-b89f-a8ec3a6fb6bc",
 					"instance_key": "259",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #259 merged (31f9ef20884f)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-compulsory-junglefowl",
+					"to": "2026-11-19T06:18:31.777Z",
 					"why": "D-F208-1 real-SDK registration canary #259"
 				},
 				{
