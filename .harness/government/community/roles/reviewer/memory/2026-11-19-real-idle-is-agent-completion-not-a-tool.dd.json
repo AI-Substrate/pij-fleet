@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "When reviewing activity hooks, held memory turns, or post-close memory authorization.",
+				"tags": [
+					"review",
+					"lifecycle",
+					"activity",
+					"f207",
+					"c34"
+				],
+				"title": "Real idle is agent completion, not a tool boundary"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Copilot root assistant.turn_end and OMP turn_end close model/tool iterations, not agent work. Removing their idle posts must preserve real terminal events: Copilot session.idle, abort and fusion_completed; OMP agent_end without continuation; both shutdown repairs. Inspect downstream busy/idle consumers rather than assuming they need per-tool pulses.\n\nF207 deliberately accepts a fresh target-seat memory.note even before prompt delivery settles: it is live-only and seat-filtered, not prompt-ID correlated. Idle arms a settle deadline, working cancels it, later idle restarts it, and the original hold bound caps the wait. The turn-end reading is policy; settle is a brake; note grace is authorization.\n\nDo not overclaim security proof. Grace does not add a held-role allowlist: memory writes already permitted never-held role targets. Its broad fallback after identity refusal merits a same-pane rollover regression, but OMP /new updates PIJ_SESSION_ID; an old in-flight CLI may legitimately be the predecessor writing its final note. The initial proposed misattribution finding was withdrawn for lack of a normal-use trigger (C33/C34). An unsupported-verb negative test proves parsing refusal, not authorization for a different valid verb.\n\nReview head 9b4edcecb50cec1f12ace63060e9a1d762b7be25: verdict 41661a183498a383644e8c7d2323a2cc1e00a041, PASS WITH NOTES. Exact successful CI artifact 14486725645 confirmed F207 regressions. Post-deploy cost and three-seat close receipts were owed at review; do not mistake the pre-deploy baseline for after-proof."
+		}
+	]
+}
