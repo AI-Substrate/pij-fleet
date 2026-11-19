@@ -31,4 +31,5 @@
 - [2026-11-19 PR257 inherited nice and proof ceilings](2026-11-19-pr257-inherited-nice-proof-ceilings.dd.md): review-close (F217, review, build-cost)
 - [2026-11-19 PR257 round2 passes canonical nice path](2026-11-19-pr257-round2-pass.dd.md): review-close (F217, review, scheduling)
 - [2026-11-19 PR259 pass and merged PR257 live receipts](2026-11-19-pr259-pass-pr257-merged-proof.dd.md): review-close (F208, F217, review, tool-friction)
+- [2026-11-19 PR260 project clone sensor cost](2026-11-19-pr260-project-clone-sensor-cost.dd.md): review-close (F219, F218, review, sensor)
 <!-- /pij:generated -->
