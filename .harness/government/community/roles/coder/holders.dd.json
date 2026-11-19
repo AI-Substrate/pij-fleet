@@ -1119,6 +1119,16 @@
 					"seat": "pij-subsequent-mockingbird",
 					"to": "2026-11-19T03:27:06.839Z",
 					"why": "F212 throwaway probe: does Copilot /restart keep the seat's holdings"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-19T03:27:34.135Z",
+					"harness": "omp",
+					"harness_session": "01a1f1d8-52bb-7492-bb2c-e92eae596aa0",
+					"instance_key": "232",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-joyous-sailfish",
+					"why": "pm-004: workstream 004 s07 (plan 232, proxied tool-list flips)"
 				}
 			]
 		}
