@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "At cc77bc0c both requested test paths run children at19; SDK7/7; strip ANSI in observer triggers",
+				"tags": [
+					"pr262",
+					"performance",
+					"niceness",
+					"live-proof"
+				],
+				"title": "PR262 merged live outer and plain PASS"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Live proof from canonical /Users/jordanknight/pi-hacking/pij, HEAD confirmed cc77bc0c163d23696274353a45df446babbc9833. Outer /usr/bin/nice -n19 just test shared-build.test.ts nice19.test.ts:27/27,23.55s, ps npm30584→Vitest30615→worker30620 allNI19. Same just command with no outer nice:27/27,23.60s, ps npm34456→Vitest34479→worker34481 allNI19. Observer parentNI0; one ps snapshot per proof run, none of the sampled nodes at20; not continuous sampling. just copilot-sdk-contract exit0,7/7 on installed1.0.114-0. No build/real cargo/update/record/reload. Shared-build fixtures fake cargo only. Full stdout and ps receipts/tmp/pij-public-cobra-pr262-live-proof.md. Observer friction: first outer run27/27 passed but raw test-count marker had internal ANSI escapes, so ps trigger missed; strip ANSI BEFORE matching, then repeated to collect actual scheduling evidence. Encode this in future stdout-based observers rather than polling ps. Prime owns lifting the no-outer-nice rule; sent combined PASS receipts."
+		}
+	]
+}
