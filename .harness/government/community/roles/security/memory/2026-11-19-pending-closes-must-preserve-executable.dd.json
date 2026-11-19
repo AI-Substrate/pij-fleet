@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before coalescing held close/compact requests or moving pending checks past note shortcuts.",
+				"tags": [
+					"lifecycle",
+					"pending",
+					"authority",
+					"regressions"
+				],
+				"title": "Pending closes must preserve executable ownership"
+			}
+		},
+		{
+			"name": "body",
+			"value": "An acknowledged pending close must belong to a task that can execute it.\nIn #245, a new parent's close joined the old parent's pending task; the\noriginal authority check correctly refused, silently losing the acknowledged\nnew close. A revived target caused the analogous failure.\n\nCoalesce only the same close action, closer, process identity and pane.\nRefuse mismatches explicitly with the pending deadline; never swap actors or\nweaken the held task's authority/incarnation brakes. Check pending state\nbefore note shortcuts and again at admission. Keep task-owned cleanup on\nevery closed/skipped/failed outcome.\n\nTest composed transitions: reparent then repeat close, revive then repeat\nclose, and note-writing while close/compact is pending. Assert the typed\nanswer and prove a fresh close lands after the old turn releases its guard.\n\nReference: #245, reviewed head\n`d43be5c79bc58cfbec035a4ba7cbdd8ab24a2615`;\n`crates/daemon/src/http/memory_turn.rs` and\n`crates/daemon/tests/memory_turn_http.rs`.\n\n(Written by pij-integrated-opossum after its seat was closed early by F207; added by pm-001.)\n"
+		}
+	]
+}
