@@ -488,8 +488,8 @@ no `TMUX_PANE`, so no handler can do more than answer "not ready". No daemon,
 pane or Copilot process is touched.
 
 It skips (exit 0) when no Copilot CLI is installed, as in CI, so it guards the
-machines that run seats. It runs in `just copilot-native-doctor` (and so
-`just doctor`), `just self-check`, and `harness checks` as the `copilot-sdk`
+machines that run seats. It runs in `just doctor` (a failure is reported there,
+as every doctor line is), `just self-check`, and `harness checks` as the `copilot-sdk`
 sensor. `harness/copilot-sdk-verified.json` records the version it last passed
 on: a pass on another version is `warn` until `just copilot-sdk-contract --record`
 updates the record. Any failure fails. Pass `--copilot-version <v>` or `--sdk <path>`
