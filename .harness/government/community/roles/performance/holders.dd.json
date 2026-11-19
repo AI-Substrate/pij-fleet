@@ -152,6 +152,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-vast-silkworm",
 					"why": "F209 #249 cost: the daemon CPU bug it measured"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T02:17:59.347Z",
+					"harness": "omp",
+					"harness_session": "01a1f15f-842f-773e-94e3-5bc54ec11dcb",
+					"instance_key": "251",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-vast-silkworm",
+					"why": "F209 part 2 #251 cost (cards history read)"
 				}
 			]
 		}
