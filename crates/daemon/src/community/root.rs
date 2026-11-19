@@ -5,6 +5,7 @@
 //! out, never main's stub. It costs three git launches, and is resolved per
 //! write, never on a timer.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use super::git::{Locks, git};
@@ -186,28 +187,42 @@ pub(crate) enum Place {
     Repo(PathBuf),
     /// The folder is missing, or nothing from it up to `/` is a repository.
     NotARepo,
-    /// A layout this reader does not decide (a bare repository, a garbled or
-    /// dangling `.git`, a `.git` directory with no `HEAD`): ask git.
+    /// A layout this reader does not decide (a bare repository, a garbled,
+    /// dangling, oversized or non-regular `.git` or `commondir`, a `.git`
+    /// directory with no `HEAD`, an unreadable level): ask git.
     Unknown,
 }
+
+/// Most bytes read from a `.git` file or a `commondir`: real ones hold one
+/// path, so a larger file is not a pointer.
+const POINTER_CAP: u64 = 4_096;
 
 /// Walk up from `start` as git's discovery does: at each level a `.git`
 /// directory is the common dir (main checkout), a `.git` file names the
 /// gitdir (`gitdir: <path>`, relative to its folder), whose `commondir`
 /// (relative to the gitdir) names the common dir if present. A level that is
-/// itself a git directory (bare, or inside `.git`) is left to git. One
-/// difference, stated: the walk does not stop at a filesystem boundary.
+/// itself a git directory (bare, or inside `.git`) is left to git. The walk
+/// starts from the canonical folder, as git does: a symlink is placed where
+/// it points, never by the folders it is named in (R248-1). One difference,
+/// stated: the walk does not stop at a filesystem boundary.
 pub(crate) fn place(start: &Path) -> Place {
     if !start.is_dir() {
         return Place::NotARepo;
     }
+    let Ok(start) = start.canonicalize() else {
+        return Place::Unknown;
+    };
     for level in start.ancestors() {
         let dotgit = level.join(".git");
-        let Ok(meta) = std::fs::metadata(&dotgit) else {
-            if looks_like_git_dir(level) {
-                return Place::Unknown;
+        let meta = match std::fs::metadata(&dotgit) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if looks_like_git_dir(level) {
+                    return Place::Unknown;
+                }
+                continue;
             }
-            continue;
+            Err(_) => return Place::Unknown,
         };
         if meta.is_dir() {
             return if dotgit.join("HEAD").is_file() {
@@ -216,16 +231,20 @@ pub(crate) fn place(start: &Path) -> Place {
                 Place::Unknown
             };
         }
-        let Some(gitdir) = std::fs::read_to_string(&dotgit).ok().and_then(|text| {
+        let Some(gitdir) = small_text(&dotgit, &meta).and_then(|text| {
             let named = text.trim().strip_prefix("gitdir:")?.trim().to_string();
             (!named.is_empty()).then(|| level.join(named))
         }) else {
             return Place::Unknown;
         };
-        let common = match std::fs::read_to_string(gitdir.join("commondir")) {
-            Ok(named) if !named.trim().is_empty() => gitdir.join(named.trim()),
-            Ok(_) => return Place::Unknown,
-            Err(_) => gitdir,
+        let commondir = gitdir.join("commondir");
+        let common = match std::fs::metadata(&commondir) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => gitdir,
+            Err(_) => return Place::Unknown,
+            Ok(meta) => match small_text(&commondir, &meta) {
+                Some(named) if !named.trim().is_empty() => gitdir.join(named.trim()),
+                _ => return Place::Unknown,
+            },
         };
         return if common.is_dir() {
             Place::Repo(canonical(&common))
@@ -234,6 +253,21 @@ pub(crate) fn place(start: &Path) -> Place {
         };
     }
     Place::NotARepo
+}
+
+/// A pointer file's text: only a regular file of at most [`POINTER_CAP`]
+/// bytes, so a FIFO or a huge file never blocks or bloats a round.
+fn small_text(path: &Path, meta: &std::fs::Metadata) -> Option<String> {
+    if !meta.is_file() || meta.len() > POINTER_CAP {
+        return None;
+    }
+    let mut text = String::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(POINTER_CAP + 1)
+        .read_to_string(&mut text)
+        .ok()?;
+    (text.len() as u64 <= POINTER_CAP).then_some(text)
 }
 
 /// A folder git would take as a git directory itself.
@@ -407,8 +441,10 @@ mod tests {
     }
 
     /// F202: the in-process read names the common dir git names, for the
-    /// main checkout, a folder inside a worktree, and a linked worktree
-    /// whose gitdir is absolute (as git writes it) or relative.
+    /// main checkout, a folder inside a worktree, a linked worktree whose
+    /// gitdir is absolute (as git writes it) or relative, and (R248-1) a
+    /// symlink into another repository, named inside a repository or
+    /// outside every one.
     #[test]
     fn place_names_the_common_dir_git_names() {
         let scratch = Scratch::new("pij-community-place");
@@ -437,6 +473,33 @@ mod tests {
             place(&scratch.gov),
             Place::Repo(git_says(&scratch, &scratch.gov))
         );
+
+        let other = Scratch::bare_main("pij-community-place-other");
+        let target = other.main.join("sub");
+        std::fs::create_dir_all(&target).unwrap();
+        let inside_alias = scratch.main.join("alias");
+        let outside_alias = scratch.root.join("alias");
+        for alias in [&inside_alias, &outside_alias] {
+            std::os::unix::fs::symlink(&target, alias).unwrap();
+            assert_eq!(
+                place(alias),
+                Place::Repo(other.main.join(".git")),
+                "{alias:?}"
+            );
+            assert_eq!(
+                place(alias),
+                Place::Repo(git_says(&scratch, alias)),
+                "{alias:?}"
+            );
+        }
+    }
+
+    fn mkfifo(path: &Path) {
+        let made = std::process::Command::new("mkfifo")
+            .arg(path)
+            .status()
+            .expect("run mkfifo");
+        assert!(made.success(), "mkfifo {path:?}");
     }
 
     /// A folder no repository holds, or one that is gone, is no repository.
@@ -457,19 +520,38 @@ mod tests {
             std::fs::write(path.join(".git"), contents).unwrap();
             path
         };
-        let worktrees = scratch.main.join(".git/worktrees/half");
-        std::fs::create_dir_all(&worktrees).unwrap();
-        std::fs::write(worktrees.join("HEAD"), "ref: refs/heads/main\n").unwrap();
-        std::fs::write(worktrees.join("commondir"), "../missing\n").unwrap();
+        let worktree_admin = |name: &str| {
+            let admin = scratch.main.join(".git/worktrees").join(name);
+            std::fs::create_dir_all(&admin).unwrap();
+            std::fs::write(admin.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+            admin
+        };
+        let half = worktree_admin("half");
+        std::fs::write(half.join("commondir"), "../missing\n").unwrap();
+        let fifo_common = worktree_admin("fifo-common");
+        mkfifo(&fifo_common.join("commondir"));
+        let huge_common = worktree_admin("huge-common");
+        std::fs::write(
+            huge_common.join("commondir"),
+            format!("../..{}\n", " ".repeat(5_000)),
+        )
+        .unwrap();
+        let pointing = |admin: &Path| format!("gitdir: {}\n", admin.display()).into_bytes();
+        let fifo_git = dir("fifo-git");
+        mkfifo(&fifo_git.join(".git"));
         let undecided = [
             gitfile("garbled", b"not a pointer\n"),
             gitfile("empty-pointer", b"gitdir:   \n"),
             gitfile("not-utf8", &[0x67, 0xff, 0xfe]),
             gitfile("dangling", b"gitdir: ../nowhere\n"),
+            gitfile("dangling-commondir", &pointing(&half)),
             gitfile(
-                "dangling-commondir",
-                format!("gitdir: {}\n", worktrees.display()).as_bytes(),
+                "huge-git",
+                format!("gitdir: {}{}\n", half.display(), " ".repeat(5_000)).as_bytes(),
             ),
+            gitfile("fifo-commondir", &pointing(&fifo_common)),
+            gitfile("huge-commondir", &pointing(&huge_common)),
+            fifo_git,
         ];
         for path in &undecided {
             assert_eq!(place(path), Place::Unknown, "{path:?}");
