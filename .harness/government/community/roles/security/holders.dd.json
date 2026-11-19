@@ -476,6 +476,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-doubtful-snail",
 					"why": "F222 step 1: per-route request counter #266"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T08:56:32.376Z",
+					"harness": "copilot",
+					"harness_session": "6822a621-fecc-4d87-bdfa-86e6881f0f0e",
+					"instance_key": "267",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-minimal-stoat",
+					"why": "F197 one-shot child registering on parent pane #267"
 				}
 			]
 		}
