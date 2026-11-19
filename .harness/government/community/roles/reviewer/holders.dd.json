@@ -2019,6 +2019,16 @@
 					"seat": "pij-uniform-butterfly",
 					"to": "2026-11-19T09:43:14.067Z",
 					"why": "F224 register-path launcher escapes the F197 brake #269"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T09:54:18.314Z",
+					"harness": "copilot",
+					"harness_session": "a1942b0f-0653-4e84-b2a7-f9fd85f7488d",
+					"instance_key": "270",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-uniform-butterfly",
+					"why": "F222 step 2: closed seats stop the registration loop; /v1/seats live-rows-only #270"
 				}
 			]
 		}
