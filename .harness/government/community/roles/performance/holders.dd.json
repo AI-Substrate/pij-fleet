@@ -245,6 +245,16 @@
 					"seat": "pij-public-cobra",
 					"to": "2026-11-19T06:45:02.841Z",
 					"why": "D-F208-2 just update-copilot #261"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T06:46:45.292Z",
+					"harness": "omp",
+					"harness_session": "01a1f247-4f29-751d-8849-f77c26569f15",
+					"instance_key": "262",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-public-cobra",
+					"why": "F220 idempotent nice19 wrapper #262"
 				}
 			]
 		}
