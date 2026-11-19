@@ -1161,6 +1161,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-cultural-falcon",
 					"why": "F217: tests build pij-rs into per-worktree target dirs (~15 GB/lane)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T05:23:12.427Z",
+					"harness": "omp",
+					"harness_session": "01a1f172-b316-72df-af40-40261d587094",
+					"instance_key": "d-f208-1",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-printed-egret",
+					"why": "D-F208-1: real-SDK registration canary"
 				}
 			]
 		}
