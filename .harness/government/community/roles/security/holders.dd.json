@@ -505,6 +505,16 @@
 					"seat": "pij-uniform-butterfly",
 					"to": "2026-11-19T09:13:10.194Z",
 					"why": "F203 docs: process attribution by pane-tree descent #268"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T09:37:52.686Z",
+					"harness": "copilot",
+					"harness_session": "6822a621-fecc-4d87-bdfa-86e6881f0f0e",
+					"instance_key": "269",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-minimal-stoat",
+					"why": "F224 register-path launcher escapes the F197 brake #269"
 				}
 			]
 		}
