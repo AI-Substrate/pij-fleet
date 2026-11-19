@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before touching the Copilot extension's joinSession config, its fake SDK in extension.test.mjs, or diagnosing a Copilot hook, tool or FYI claim that silently stopped (f208, copilot, sdk, hooks, fyi, testing)",
+				"tags": [
+					"f208",
+					"copilot",
+					"sdk",
+					"hooks",
+					"fyi",
+					"testing"
+				],
+				"title": "F208 Copilot SDK 1.0.113 config shape: silent hook and tool loss"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F208 (#250, merged f99a1f9e, live-proven): Copilot seats stopped claiming held FYIs on a typed prompt from 2026-11-17 15:58.\n\nRoot cause: Copilot CLI 1.0.113-0 changed the SDK session config shape. resumeSessionForExtension now calls registerTools(config.tools?.definitions) and registerHooks(config.hooks?.handlers); 1.0.112 used config.tools and config.hooks directly. The flat `tools: [...]` and `hooks: {...}` were ignored with NO error: seats still registered and received, but lost pij_send, onUserPromptSubmitted (FYIs) and onAgentStop (pij blocks). The SessionHooks type was unchanged, which is why the types looked fine.\n\nHow to find the next one fast:\n- Look at the CLI's real SDK, not the docs: ~/.copilot/pkg/darwin-arm64/<ver>/copilot-sdk/extension.js and types.d.ts. grep `registerHooks(config` and `registerTools(config` and compare versions. Install dates: `stat -f %SB <ver dir>`. cli-main.js has no usable strings; the SDK files do.\n- Store receipt for silent loss: `select settled_via, count(*), max(settled_at_ms) from fyis group by settled_via` (the column is settled_at_ms, not settled_at).\n- The extension's stderr ([pij-native] lines) lands in ~/.copilot/logs/process-*.log for the extension host pid, not the CLI pid. Hook calls are not logged there.\n- Live probe pattern (cheap, decisive): spawn a throwaway seat, send it a --fyi with a codeword, type 'quote any codeword ... or say NONE. Do not run tools.' with tmux send-keys -l then Enter. Ask 'is a tool named pij_send in your tool list? YES or NO'. For onAgentStop, type a multi-line prompt using `tmux send-keys C-j` between lines, ending with a ```pij block that sends to yourself; the pane shows 'pij ✓ 1 sent'.\n\nTest lesson: the fake joinSession in .copilot/extensions/pij/extension.test.mjs is the only contract check. It must read config exactly as the real SDK does (now tools.definitions, hooks.handlers, with a missing handler returning undefined). A fake that mirrors our own call shape proves nothing; that is how #232 passed.\n\nTraps:\n- copilot-native-smoke (isolated COPILOT_HOME, --provider local) fails on 1.0.114 for everyone (blank pane, PIJ_NATIVE_TIMEOUT at the first step). Don't chase it as your regression; compare with main via a detached worktree first.\n- harness checks/just test fail in an OMP shell because NO_COLOR and FORCE_COLOR are both set (the flow-pair cli-learning stderr test). Run with `env -u NO_COLOR -u FORCE_COLOR`.\n- Running Copilot seats keep the old extension until extensions_reload or a restart.\n"
+		}
+	]
+}
