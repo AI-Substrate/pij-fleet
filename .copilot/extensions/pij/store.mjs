@@ -483,9 +483,22 @@ export function chooseRegistration({
 		prior.spawn_id === requestedSpawn &&
 		sameProcess(prior, host);
 	if (requestedId && (!prior || prior.id !== requestedId) && !correlatedSuccessor) {
-		// F222: no open row yet is a spawn still writing its prebind, so retry; a
-		// closed row for the requested id never reopens, so stop. Its owner closed it.
-		if (!prior && closed.some((seat) => seat.id === requestedId && seat.tombstoned_at != null)) {
+		// F222: no open row yet is a spawn still writing its prebind, so retry. A
+		// closed row of THIS launch never reopens, so stop: its owner closed it. The
+		// launch is its spawn id, minted afresh for every spawn and revive; a closed
+		// row of another spawn id is a prior incarnation whose id a revive or respawn
+		// is reusing, and its fresh prebind comes after the child starts (R270-001).
+		// Without a spawn id, only the same native session or process is this launch.
+		const thisLaunch = (seat) =>
+			requestedSpawn
+				? seat.spawn_id === requestedSpawn
+				: seat.session === sessionId || sameProcess(seat, host);
+		if (
+			!prior &&
+			closed.some(
+				(seat) => seat.id === requestedId && seat.tombstoned_at != null && thisLaunch(seat),
+			)
+		) {
 			const error = new NativeError(
 				`Pij seat ${requestedId} was closed; native registration stopped`,
 				false,
@@ -2741,8 +2754,8 @@ export function createNativeReporter({ log, capture }) {
 						: "receiving held; inspect native history and acceptance before recovery, do not blindly resend or acknowledge"
 					: event.kind === "extension-unavailable"
 						? event.closed
-							? // F222: a /restart inherits the same closed id, so only a new seat rejoins.
-								`${event.safeDiagnostic}; pij delivery is off and no retry is scheduled; spawn a new seat to rejoin pij; ordinary Copilot remains usable`
+							? // F222: a /restart inherits this launch's ids and stops again; a revive or new spawn mints a new launch.
+								`${event.safeDiagnostic}; pij delivery is off and no retry is scheduled; revive this seat or spawn a new one to rejoin pij; ordinary Copilot remains usable`
 							: event.takeOver
 								? // F196: a restart alone meets the same holder; the take-over clears it.
 									`native registration failed: ${event.safeDiagnostic}; take the pane over with \`${event.takeOver}\` (from this pane, or ask the prime), then /restart; ordinary Copilot remains usable`

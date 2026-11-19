@@ -1328,7 +1328,7 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		const log = await f.waitFor("native-log", (e) => e.message.includes("was closed"));
 		assert.equal(
 			log.message,
-			"[pij native] unavailable: extension-unavailable; this Pij seat (pij-closed-child) was closed; pij delivery is off and no retry is scheduled; spawn a new seat to rejoin pij; ordinary Copilot remains usable",
+			"[pij native] unavailable: extension-unavailable; this Pij seat (pij-closed-child) was closed; pij delivery is off and no retry is scheduled; revive this seat or spawn a new one to rejoin pij; ordinary Copilot remains usable",
 		);
 		// Retries start at 250 ms and double: a second ask would come within a second.
 		await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -1362,6 +1362,46 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		await f.waitFor("completion-wait");
 		assert.equal(f.requests.filter((r) => r.path.startsWith("/v1/seats/related?")).length, 2);
 		assert.equal(f.requests.find((r) => r.path === "/v1/register").body.id, prebind.id);
+		const exited = once(f.child, "exit");
+		f.child.stdin.end();
+		assert.equal((await exited)[0], 0);
+	});
+
+	test("R270-001: a revived seat retries past its old closed row until its fresh prebind registers", async (t) => {
+		// The revive starts the child before it writes the fresh prebind, so the
+		// first answer for the id is the previous launch's closed row.
+		const stale = {
+			id: "pij-revived-child",
+			harness: "copilot",
+			session: "old-native-session",
+			proc: { pid: process.pid + 7, proc_start: 20260905110000 },
+			pane: "%2",
+			spawn_id: "old-launch",
+			native_extension_delivery: false,
+			tombstoned_at: 5,
+			state: "idle",
+		};
+		const fresh = {
+			id: stale.id,
+			harness: "copilot",
+			session: null,
+			proc: null,
+			pane: "%2",
+			spawn_id: "new-launch",
+			native_extension_delivery: false,
+		};
+		const f = await launch(t, {
+			rosters: [[stale]],
+			seats: [fresh],
+			pane: fresh.pane,
+			requestedId: fresh.id,
+			requestedSpawn: fresh.spawn_id,
+		});
+		await f.waitFor("completion-wait");
+		assert.equal(f.requests.filter((r) => r.path.startsWith("/v1/seats/related?")).length, 2);
+		const registered = f.requests.find((r) => r.path === "/v1/register").body;
+		assert.equal(registered.id, fresh.id);
+		assert.equal(registered.spawn_id, fresh.spawn_id);
 		const exited = once(f.child, "exit");
 		f.child.stdin.end();
 		assert.equal((await exited)[0], 0);

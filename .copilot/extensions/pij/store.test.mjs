@@ -2896,6 +2896,64 @@ test("F222: a requested id the daemon names closed stops for good; one not writt
 	);
 });
 
+test("R270-001: a closed row of another launch is a prior incarnation, retried until this launch's prebind registers", () => {
+	// A revive (or a respawn reusing the id) mints a new spawn id and starts the
+	// child before it writes the fresh prebind; until then the old closed row is all
+	// the daemon has for the id.
+	const stale = {
+		id: "pij-revived-child",
+		harness: "copilot",
+		session: "old-native-session",
+		proc: { pid: 555, proc_start: 20260905110000 },
+		pane: "%2",
+		spawn_id: "old-launch",
+		tombstoned_at: 5,
+	};
+	const fresh = {
+		id: stale.id,
+		harness: "copilot",
+		session: null,
+		proc: null,
+		pane: "%2",
+		spawn_id: "new-launch",
+	};
+	const input = {
+		sessionId: "native-session",
+		host: { pid: 999, proc_start: 20260905120000, pane: "%2" },
+		folder: "/work",
+		env: { PIJ_SESSION_ID: stale.id, PIJ_SPAWN_ID: fresh.spawn_id },
+	};
+	assert.throws(
+		() => chooseRegistration({ ...input, ...registrationRows([stale]) }),
+		(error) => /not corroborated/.test(error.message) && error.retryable === true && !error.closed,
+	);
+	const registration = chooseRegistration({ ...input, ...registrationRows([fresh]) });
+	assert.equal(registration.id, stale.id);
+	assert.equal(registration.spawn_id, fresh.spawn_id);
+	// Without a spawn id, only the same native session or process is this launch.
+	const unspawned = { ...input, env: { PIJ_SESSION_ID: stale.id } };
+	assert.throws(
+		() => chooseRegistration({ ...unspawned, ...registrationRows([stale]) }),
+		(error) => error.retryable === true && !error.closed,
+	);
+	assert.throws(
+		() =>
+			chooseRegistration({
+				...unspawned,
+				...registrationRows([{ ...stale, session: input.sessionId }]),
+			}),
+		(error) => error.closed === true && error.retryable === false,
+	);
+	assert.throws(
+		() =>
+			chooseRegistration({
+				...unspawned,
+				...registrationRows([{ ...stale, proc: { pid: 999, proc_start: 20260905120000 } }]),
+			}),
+		(error) => error.closed === true && error.retryable === false,
+	);
+});
+
 test("plan 211: only a typed E-RS-SEAT-RETIRED registration refusal marks the seat retired", async () => {
 	const retired = {
 		ok: false,
