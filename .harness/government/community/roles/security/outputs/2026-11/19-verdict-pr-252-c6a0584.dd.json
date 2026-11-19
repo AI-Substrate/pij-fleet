@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f1af-36c2-78a3-b70d-b8ac158ccb9c",
+				"date": "2026-11-19",
+				"head": "c6a05846a4bd7f7af65ad08a7ab76d55dc53ea40",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44445612065/job/135296931821",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:252",
+				"writer": "pij-fashionable-sailfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 252",
+					"exit_code": 0
+				},
+				{
+					"command": "CI cargo nextest run --locked --workspace --profile ci; JUnit artifact 14491889852",
+					"exit_code": 0,
+					"log": "run 44445612065, job 135296931821: 2528 passed, 6 skipped; all 31 composer tests PASS"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security review: PR #252\n\nHead: `c6a05846a4bd7f7af65ad08a7ab76d55dc53ea40`\n\nResult: **PASS WITH NOTES**. No demonstrated vulnerability or blocking C21 disclosure in the final five-file delta. Reviewed the PR body, final code/docs diff, complete composer implementation and both complete fixtures. No local build, test, mutation run, daemon bounce or live pane input was performed.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No security vulnerabilities found | - |\n\n## Injection safety\n\n- **POLICY:** `composer.rs:217-243` broadens footer recognition through three exact, trimmed middle-dot segments. A literal transcript quote containing those complete segments CAN satisfy this helper; these strings are layout hints, not authenticated provenance. A partial/wrapped set of hints does not satisfy the new rule. Matching a footer alone does not permit typing: `composer.rs:121-157` still requires a three-row box and a footer within its next two rows, and `composer.rs:184-197` requires the measured caret on that box's content row. A transcript quote elsewhere therefore cannot by itself authorize an empty composer.\n- **BRAKE:** `composer.rs:15-29,143-151` refuses a selected box when either of the preceding two rows starts at column zero with `○`. It covers `○ Thinking` as well as `○ Compacting`, without depending on activity wording. Its early return prevents every later recognizer from reconsidering that frame. Removing it can only admit the same or more frames.\n- A normal draft at the measured caret remains text, not an empty composer; a taller multiline box does not match the three-row box recognizer. The existing interaction path requires both permission and an empty recognized composer, then rechecks under owned input before staging (`interaction.rs:572-610,638-672`). Cursor-prefix clipping and older fallback recognizers are unchanged.\n- The new visual brake is NOT a complete activity/prompt detector: it does not recognize `● Working`. Copilot controls separately require published `Idle` twice, 250 ms apart, before reaching submission (`crates/daemon/src/pointer/worker.rs:379-395,465-478`). Working/waiting published states still defer. No new command, argument, sender authority, native-message transport or input-ownership bypass is introduced; the intended effect is to allow the existing control on the newly recognized idle layout.\n\n**C34 follow-up, non-blocking:** additional captured alternate-glyph, permission-dialog and sidebar states would strengthen end-to-end coverage. The new tests do not establish that every possible busy/dialog/sidebar rendering refuses, and the footer helper must not be described as rejecting every literal transcript quotation. No normal-use bypass of the combined gates was demonstrated. This is a proof boundary, not a new exploit finding or a request for another review round.\n\n## Public-fixture privacy and provenance\n\nRead all 70 lines of each new fixture and all added documentation. Transcript rows 0-62 contain no ASCII letters/digits other than scrub characters. The cwd is the explicitly synthetic `~/workspace/projectxy/main`, not an exposed original machine path. Remaining footer content is public model/UI text, an animal seat identifier and usage counters; no credential, account identifier, private project/owner identity or usable hyperlink target was found. Scrubbed OSC sequences remain in transcript rows (idle line 55, compacting line 54), but their parameters and targets are also scrubbed; do not claim these files contain no escape bytes.\n\nBoth fixtures have 70 rows, 250-character top/bottom composer borders, the content row at zero-based row 66 and the same footer/cwd layout. The compacting fixture has the activity at row 63. This verifies internal geometry, not byte-for-byte provenance against unsanitized originals, which were not requested or accessed. The supplied same-width scrub explanation is consistent with the final captures.\n\n## Evidence and cost\n\n- `just pr-freeze 252`: FINAL; full remote/GitHub/local head agreement, CLEAN, non-draft, all five latest checks successful.\n- `git diff --check origin/main...HEAD`: passed.\n- CI run `44445612065`, successful `rust-test` job `135296931821`: `cargo nextest run --locked --workspace --profile ci` reported 2,528 passed and six skipped.\n- Read JUnit artifact **14491889852**, selected from that successful job's upload log: all **31 composer tests passed**, including all five `copilot_1_0_114_wide` tests and the existing Copilot 1.0.82/1.0.84 fixtures. Rust lint and both TS CI jobs passed on the same head.\n- RED/mutation receipts in the PR body are author evidence, not independently rerun. No claim of live post-merge compact success; the PR explicitly leaves that canary until daemon bounce.\n- No new scheduling loop, poll, timer, hook, process launch or per-seat launch multiplier. The existing parse performs bounded nearby-row checks and a split of at most two candidate footer rows.\n\nHarness feedback: observation `DL-001` records that a delegated clean security result arrived without supporting evidence and a synchronous review agent could not accept an evidence follow-up. Magic wand: require exact head, scoped files, citations and validation provenance even when the vulnerability list is empty.\n"
+		}
+	]
+}
