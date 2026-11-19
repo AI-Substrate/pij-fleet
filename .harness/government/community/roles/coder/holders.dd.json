@@ -1114,7 +1114,10 @@
 					"harness_session": "eff193b0-ae34-4723-ab8e-2fc9ba49ba0a",
 					"instance_key": "f212-probe",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "F212 probe done",
+					"released_by": "pij-printed-egret",
 					"seat": "pij-subsequent-mockingbird",
+					"to": "2026-11-19T03:27:06.839Z",
 					"why": "F212 throwaway probe: does Copilot /restart keep the seat's holdings"
 				}
 			]
