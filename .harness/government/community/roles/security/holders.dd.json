@@ -349,6 +349,16 @@
 					"seat": "pij-perfect-cicada",
 					"to": "2026-11-19T05:07:59.519Z",
 					"why": "F214 #256 security"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T05:18:49.653Z",
+					"harness": "copilot",
+					"harness_session": "d26a48c6-a1aa-4c4a-bc80-77b060d8b8c7",
+					"instance_key": "258",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-magnificent-reindeer",
+					"why": "same seat: C21 public-text check on a docs/test-only PR"
 				}
 			]
 		}
