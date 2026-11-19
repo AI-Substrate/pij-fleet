@@ -1,0 +1,50 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f184-89b5-78b1-ad02-05c42abeb200",
+				"date": "2026-11-19",
+				"head": "0c7649929f8b4837f4d0d131a151077d8d223b79",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:249",
+				"writer": "pij-formidable-vicuna",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 249",
+					"exit_code": 0
+				},
+				{
+					"command": "gh run view 44439668833 --job 135277075292 --log",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44439668833/job/135277075292"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14490442186/zip | python (ZIP SHA-256 and JUnit inspection)",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44439668833/artifacts/14490442186"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS: security review of PR #249 at 0c7649929f8b4837f4d0d131a151077d8d223b79. No introduced security vulnerabilities found in the complete nine-file diff against 26c684a887c809268c42aa9ceaee088569a7e1c9.\n\nDependency provenance: crates/unisphere/Cargo.toml:28-29 adds a direct dev-only unisphere-core edge. Cargo.toml:65 pins AI-Substrate/Unisphere commit 0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59. Cargo.lock:2542-2550 already records unisphere-core 0.1.0 from that Git source; it is not a new registry package and has no registry checksum field. Base/head parsing found zero new packages and an unchanged core package record. Core was already a runtime transitive dependency through the SDK (Cargo.lock:2563-2574); only the new direct dependency is dev-only, not the crate's entire presence in the binary. crates/testkit/arch-allowlist.toml:115 permits unisphere-core@dev, and both metadata fixtures classify the edge as dev.\n\nPath containment: crates/unisphere/src/lib.rs:209-219 constructs root/session/events.jsonl and passes the same session ID to status_incremental at line 251. Common registration filters blank sessions, not traversal (crates/daemon/src/registration.rs:823,1182-1183). The actual guard is the pinned SDK, Unisphere@0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59, crates/sdk/src/status.rs:241-244,600-647: status_incremental checks is_plain_component before locating or accessing a cursor path; empty IDs, dot/dot-dot, slash, backslash and NUL are rejected. Thus ../ cannot reach the new read. The daemon-owned default root remains HOME/.copilot/session-state (crates/daemon/src/lib.rs:1261-1274). This assurance uses a trusted root plus the SDK component guard, not filesystem canonicalization; explicit-path lookup itself is lexical. Ordinary/native/paneless registration, adopt/reclaim and stored resume-to-binding status paths were traced. Not every harness producer body was inspected, and no universal registration-validation claim is made.\n\nPublic content: manual inspection of all changed source, manifests, fixtures and documentation found no introduced credentials, keys, tokens, private transcript content or sensitive logs. The added transcript fixture is synthetic (crates/unisphere/src/lib.rs:800-807). No credential files were read; no automated secret scanner was run.\n\nIndependent validation: just pr-freeze 249 returned FINAL at this exact head with CLEAN, all five checks green and a clean detached review worktree. CI run 44439668833 is successful at the same SHA; rust-lint passed lockfile freshness, fmt and clippy. Successful rust-test job 135277075292 reports 2519 passed, 6 skipped. Its upload log identifies artifact 14490442186; the downloaded archive SHA-256 matches 0d1d2ddb26ebef30831396a2d7deddca2656fafe15abd1a2621baa9acefc8435. JUnit independently confirms passing Copilot present-transcript, no-walk, concurrent negative-cache/TTL, Claude miss/TTL, and dependency-architecture tests, including a_dev_only_rule_never_permits_a_shipped_edge and the_live_workspace_matches_the_ratified_graph.\n\nProof limits and scope: read-only static security review plus Linux CI. Zero local cargo builds/tests or runtime traversal probes; harness boot/checks were not executed because this packet requires CI-only build/test proof. No added launch, timer or poll site is identified by the change; the TTL is an answer policy, not a brake. General root-override compatibility, consumer correctness and measured fleet cost belong to the separately assigned reviewer/performance seats. F209 part 2 and post-merge/bounce live CPU proof are not graded here.\n"
+		}
+	]
+}
