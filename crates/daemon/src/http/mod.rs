@@ -46,6 +46,9 @@ const INBOX_ACK_EVENT_KIND: &str = "delivery.inbox-ack";
 const REVIVE_POSTMORTEM_EVENT_KIND: &str = "seat.revive-postmortem";
 const DEFAULT_SPAWN_WAIT_SECONDS: u64 = 30;
 const SPAWN_POLL_INTERVAL: Duration = Duration::from_millis(50);
+/// How long `--trust-folder` lets a pressed key redraw the prompt before it
+/// reads the highlight again and presses the next one (F215).
+const TRUST_KEY_SETTLE: Duration = Duration::from_secs(1);
 
 use axum::Router;
 use axum::body::{Body, Bytes};
@@ -1441,6 +1444,13 @@ async fn launch_seat_locked(
     }
     let wait_seconds = request.wait_seconds.unwrap_or(DEFAULT_SPAWN_WAIT_SECONDS);
     let no_wait = request.no_wait;
+    let trust_folder = request.trust_folder;
+    if trust_folder && no_wait {
+        return refused(
+            command_name,
+            "--trust-folder answers a folder-trust prompt while the spawn waits; it can't be used with --no-wait",
+        );
+    }
     let mut request = request;
     // Plan 166: a role is stamped from above. Refuse before any launch; the
     // daemon-resolved caller becomes the parent and the role's author.
@@ -1756,11 +1766,62 @@ async fn launch_seat_locked(
             .await
         }
     };
+    let mut trust_key_at: Option<tokio::time::Instant> = None;
     loop {
-        if let Ok(output) = state.services.tmux.capture(&pane.id, 20).await
-            && !output.trim().is_empty()
-        {
-            last_output = output;
+        // One read of the whole screen: the log keeps its bottom rows, and a
+        // folder-trust prompt (F215) is looked for in all of it, because
+        // Claude draws its prompt at the top of a tall pane.
+        if let Ok(screen) = state.services.tmux.capture(&pane.id, u32::MAX).await {
+            let tail = last_lines(&screen, 20);
+            if !tail.trim().is_empty() {
+                last_output = tail;
+            }
+            if let Some(prompt) =
+                pij_harnesses::trust::folder_trust_prompt(descriptor.harness, &screen)
+            {
+                let blocked = match (trust_folder, prompt.next_key()) {
+                    (false, _) => Some(trust_prompt_refusal(&prompt, &descriptor, &pane.id)),
+                    (true, None) => Some(format!(
+                        "is waiting on {} for {}, and --trust-folder can't see which row is \
+                         highlighted, so it pressed nothing; the pane is left live on the prompt",
+                        prompt.label(),
+                        descriptor.folder
+                    )),
+                    (true, Some(key)) => {
+                        if trust_key_at.is_none_or(|at| at.elapsed() >= TRUST_KEY_SETTLE) {
+                            trust_key_at = Some(tokio::time::Instant::now());
+                            state
+                                .services
+                                .tmux
+                                .press_key(&pane.id, key)
+                                .await
+                                .err()
+                                .map(|error| {
+                                    format!(
+                                        "is waiting on {} for {}, and --trust-folder could not \
+                                         press {}: {error}; the pane is left live on the prompt",
+                                        prompt.label(),
+                                        descriptor.folder,
+                                        key.tmux_name()
+                                    )
+                                })
+                        } else {
+                            None
+                        }
+                    }
+                };
+                if let Some(reason) = blocked {
+                    return failed(
+                        descriptor,
+                        None,
+                        reason,
+                        StatusCode::CONFLICT,
+                        screen.trim_end().to_string(),
+                        watch,
+                    )
+                    .await;
+                }
+            }
         }
         match state.services.registry.get(&descriptor.id).await {
             Ok(Some(bound)) if bound.proc.is_some() => {
@@ -1941,6 +2002,25 @@ fn launched_as(seat: &SeatDescriptor) -> String {
 /// [`crate::spawn_waits::close_command`] for a spawned row.
 fn close_command(seat: &SeatDescriptor) -> String {
     crate::spawn_waits::close_command(&seat.id, seat.pane.as_deref())
+}
+
+/// F215: why a spawn stopped at a folder-trust prompt, and the safe answer.
+/// The prompt is named by its fixed label and the folder from the request,
+/// never by text read from the pane. The pane is left on the prompt, so an
+/// answer there still registers the seat, and its parent hears of it (F211).
+fn trust_prompt_refusal(
+    prompt: &pij_harnesses::trust::TrustPrompt,
+    seat: &SeatDescriptor,
+    pane: &str,
+) -> String {
+    format!(
+        "is waiting on {} for {}, which pij answers only with --trust-folder; the pane is \
+         left live on the prompt. To trust the folder, in pane {pane} {}. The seat then \
+         registers and its parent, if any, is told. Or spawn again with --trust-folder",
+        prompt.label(),
+        seat.folder,
+        prompt.safe_answer()
+    )
 }
 
 /// F211: the durable record that a spawn launched a pane for a seat, written

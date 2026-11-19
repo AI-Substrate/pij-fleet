@@ -36,10 +36,8 @@ import {
 	STACK_COLUMN_PERCENT,
 } from "./spawn.js";
 import {
-	applyTerminalObservation,
 	bindSpawnExpectation,
 	createSpawnExpectation,
-	requestClose,
 	spawnExpectationDeadline,
 } from "./spawn-expectation.js";
 import {
@@ -462,85 +460,6 @@ export class PijSession {
 			paneId: winResult.value.paneId,
 			...(binding.value.notice ? { notice: binding.value.notice } : {}),
 		});
-	}
-
-	/** Kill the tmux window of a spawned peer and remove its descriptor.
-	 *  Returns `{ warning }` if the session was spawned by a different peer
-	 *  (AC-06 non-owner close — still succeeds; caller should surface the text). */
-	close(id: SessionId): Result<{ warning?: string }> {
-		const descriptor = this.ports.registry.read(id);
-		if (!descriptor) {
-			return err("E-NOID", `no such session '${id}'`);
-		}
-		if (descriptor.lifecycle === "dissolved") return ok({});
-		// §H3: descriptor.paneId is string|undefined; guard before killWindow
-		if (!descriptor.paneId) {
-			return err("E-NOID", `session '${id}' has no paneId — not a spawned window`);
-		}
-		// Warn when the caller did not spawn this session.
-		// Also warn when spawnedBy is absent but paneId exists (spawned via an
-		// external path — ownership is unknown — AC-06).
-		let warning: string | undefined;
-		if (descriptor.spawnedBy !== this.self) {
-			warning = `warning: session '${id}' was spawned by ${
-				descriptor.spawnedBy ?? "unknown"
-			}; you are ${this.self}`;
-			this.capture("receipt", {
-				kind: "warn-close-not-mine",
-				id,
-				spawnedBy: descriptor.spawnedBy,
-				closedBy: this.self,
-			});
-		}
-		// Kill the pane (TmuxAdapter is idempotent: swallows "already gone").
-		// kill-pane is split-safe AND closes the window when it is the last pane,
-		// so it is correct for both window-mode and split-mode workers.
-		const closeIntent = {
-			actor: this.self,
-			kind: "in-process-close" as const,
-			requestedAt: this.nowIso(),
-		};
-		// Persist intent before touching tmux so a later absence is not misclassified.
-		// "close": the close path is the sole writer of terminal truth (s070/#47).
-		this.ports.registry.write({ ...descriptor, closeIntent }, "close");
-		if (descriptor.spawnId) {
-			const expectation = this.ports.expectations?.read(descriptor.spawnId);
-			if (expectation) this.ports.expectations?.write(requestClose(expectation, closeIntent));
-		}
-		const killResult = this.ports.tmux.killPane(descriptor.paneId);
-		if (!killResult.ok) {
-			return err(killResult.code, killResult.message);
-		}
-		// killPane is idempotent: successful return observes the owned pane absent.
-		const terminal = {
-			disposition: "requested" as const,
-			observedAt: this.nowIso(),
-			evidence: "pane-missing" as const,
-		};
-		// "close": this IS the terminal-truth writer (s070/#47).
-		this.ports.registry.write(
-			{
-				...descriptor,
-				closeIntent,
-				terminal,
-				deathNoticeLatchedAt: terminal.observedAt,
-			},
-			"close",
-		);
-		if (descriptor.spawnId) {
-			const expectation = this.ports.expectations?.read(descriptor.spawnId);
-			if (expectation) {
-				this.ports.expectations?.write(
-					applyTerminalObservation(requestClose(expectation, closeIntent), {
-						kind: "absent",
-						observedAt: terminal.observedAt,
-						evidence: "pane-missing",
-					}),
-				);
-			}
-		}
-		this.ports.registry.dissolve(id);
-		return ok({ warning });
 	}
 
 	/** Append one captured pi-activity event (monotonic seq + ISO timestamp). */

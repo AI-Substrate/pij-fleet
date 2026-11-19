@@ -30,7 +30,7 @@ use pij_core::model::{
 };
 use pij_core::ports::{
     DeferNoopReason, DeferOutcome, DeliveryAck, DeliveryEnqueue, HarnessPort, LaunchCommand,
-    LivenessPort, Queue, Registry, ReleaseOutcome, STAGED_SUBMIT_RECOVERY, SeatFilter,
+    LivenessPort, MenuKey, Queue, Registry, ReleaseOutcome, STAGED_SUBMIT_RECOVERY, SeatFilter,
     SessionStatusPort, Spine, StagedSubmit, TmuxPort, Transport, is_rendered_leftover,
     staged_leftover,
 };
@@ -2566,9 +2566,10 @@ impl TmuxPort for FakeTmux {
         Ok(())
     }
 
-    async fn press_enter(&self, pane: &str) -> Result<()> {
+    async fn press_key(&self, pane: &str, key: MenuKey) -> Result<()> {
         let mut state = self.state.lock().expect("fake tmux mutex");
-        state.recorder.record(format!("enter:{pane}"));
+        let name = key.tmux_name().to_lowercase();
+        state.recorder.record(format!("{name}:{pane}"));
         Ok(())
     }
 

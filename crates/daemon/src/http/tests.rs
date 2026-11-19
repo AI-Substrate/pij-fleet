@@ -3043,6 +3043,7 @@ async fn spawned_registration_adopts_prebind_row_and_preserves_port() {
             role: None,
             caller: None,
             no_cache_proxy: false,
+            trust_folder: false,
         })
         .send()
         .await
@@ -3494,6 +3495,7 @@ async fn spawn_wait_reports_child_exit_with_log_tail() {
             role: None,
             caller: None,
             no_cache_proxy: false,
+            trust_folder: false,
         })
         .send();
     let report_exit = async {
@@ -3599,6 +3601,7 @@ async fn codex_spawn_timeout_names_the_prompt_on_screen() {
             role: None,
             caller: None,
             no_cache_proxy: false,
+            trust_folder: false,
         })
         .send()
         .await
@@ -3612,6 +3615,139 @@ async fn codex_spawn_timeout_names_the_prompt_on_screen() {
          (`Update available · 0.164.0 → 0.165.0`)"
     );
     server.abort();
+}
+
+fn trust_fixture(name: &str) -> String {
+    std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../testkit/fixtures/harnesses")
+            .join(name),
+    )
+    .expect("read a harness fixture")
+}
+
+/// F215: spawn `id` of `harness` with no parent, against `tmux`.
+async fn trust_spawn(
+    tmux: Arc<FakeTmux>,
+    harness: Harness,
+    id: &str,
+    wait_seconds: u64,
+    trust_folder: bool,
+) -> (reqwest::StatusCode, serde_json::Value, Arc<FakeSpine>) {
+    let spine = Arc::new(FakeSpine::new());
+    let mut services = test_services(
+        Arc::new(FakeRegistry::new()),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        spine.clone(),
+    )
+    .await;
+    services.tmux = tmux;
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/spawn"))
+        .bearer_auth("key")
+        .json(&SpawnRequest {
+            harness,
+            parent: None,
+            trust_folder,
+            ..f211_spawn(id, wait_seconds)
+        })
+        .send()
+        .await
+        .expect("spawn response");
+    let status = response.status();
+    let body = serde_json::from_str(&response.text().await.expect("body")).expect("JSON");
+    server.abort();
+    (status, body, spine)
+}
+
+/// F215: a Copilot or Claude spawn that meets its folder-trust prompt is
+/// refused at once (not after the 30 s wait), naming the prompt, the folder
+/// and the safe key. Nothing is pressed and nothing is killed: the pane is
+/// left live on the prompt, and the spawn's failure is on the spine.
+#[tokio::test]
+async fn a_folder_trust_prompt_refuses_the_spawn_at_once_naming_its_safe_key() {
+    for (harness, fixture, key) in [
+        (
+            Harness::Copilot,
+            "copilot-1.0.114-folder-trust.txt",
+            "press Enter: its default, `1. Yes`",
+        ),
+        (
+            Harness::Claude,
+            "claude-2.1.328-folder-trust.txt",
+            "press Down, then Enter: its default is `No, exit`",
+        ),
+    ] {
+        let tmux = Arc::new(FakeTmux::new().with_standing_capture(trust_fixture(fixture)));
+        let started = std::time::Instant::now();
+        let (status, body, spine) =
+            trust_spawn(tmux.clone(), harness, "pij-trusting-wren", 30, false).await;
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "{harness:?} waited out the timeout"
+        );
+        assert_eq!(status, reqwest::StatusCode::CONFLICT, "{body}");
+        let reason = body["details"]["reason"].as_str().expect("reason");
+        assert!(
+            reason.contains("folder-trust prompt for /abs/tree"),
+            "{reason}"
+        );
+        assert!(reason.contains(key), "{reason}");
+        assert!(reason.contains("--trust-folder"), "{reason}");
+        assert!(reason.contains("left live on the prompt"), "{reason}");
+        assert_eq!(body["details"]["bound"], false, "{body}");
+        let pane = body["details"]["pane"].as_str().expect("pane");
+        assert!(reason.contains(&format!("in pane {pane}")), "{reason}");
+        assert!(
+            !tmux.calls().iter().any(|call| call.starts_with("kill:")
+                || call.starts_with("enter:")
+                || call.starts_with("down:")
+                || call.starts_with("up:")),
+            "{:?}",
+            tmux.calls()
+        );
+        let events = spine
+            .tail(
+                Some(&SeatId::from("pij-trusting-wren")),
+                pij_core::model::Seq(0),
+            )
+            .await
+            .expect("events");
+        assert_eq!(
+            events.last().map(|event| event.kind.as_str()),
+            Some("spawn.failed")
+        );
+    }
+}
+
+/// F215: with --trust-folder, Claude's prompt is answered one key at a time
+/// from what it highlights: Down off `No, exit`, then Enter on `Yes, I trust
+/// this folder`. Never Enter first.
+#[tokio::test]
+async fn trust_folder_moves_claude_off_no_exit_before_it_presses_enter() {
+    let tmux = Arc::new(
+        FakeTmux::new()
+            .script_capture(trust_fixture("claude-2.1.328-folder-trust.txt"))
+            .with_standing_capture(trust_fixture("claude-2.1.328-folder-trust-yes-row.txt")),
+    );
+    let (status, body, _) =
+        trust_spawn(tmux.clone(), Harness::Claude, "pij-trusted-wren", 2, true).await;
+    // Nothing registers in a fake, so the wait still ends at its deadline.
+    assert_eq!(status, reqwest::StatusCode::GATEWAY_TIMEOUT, "{body}");
+    let keys: Vec<String> = tmux
+        .calls()
+        .into_iter()
+        .filter(|call| {
+            call.starts_with("enter:") || call.starts_with("down:") || call.starts_with("up:")
+        })
+        .map(|call| call.split(':').next().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(keys.first().map(String::as_str), Some("down"), "{keys:?}");
+    assert!(
+        keys[1..].iter().all(|key| key == "enter") && keys.len() >= 2,
+        "{keys:?}"
+    );
 }
 
 /// F211: an omp spawn of `id` under `pij-parent`, waiting `wait_seconds`.
@@ -3635,6 +3771,7 @@ fn f211_spawn(id: &str, wait_seconds: u64) -> SpawnRequest {
         role: None,
         caller: None,
         no_cache_proxy: false,
+        trust_folder: false,
     }
 }
 
@@ -4085,6 +4222,7 @@ async fn spawn_wait_returns_bound_process_and_publishes_event() {
             role: None,
             caller: None,
             no_cache_proxy: false,
+            trust_folder: false,
         })
         .send();
     let register = async {
@@ -4201,6 +4339,7 @@ async fn spawn_reports_model_mismatch_without_killing_registered_seat() {
             role: None,
             caller: None,
             no_cache_proxy: false,
+            trust_folder: false,
         })
         .send();
     let register = async {
@@ -4797,6 +4936,7 @@ async fn spawn_into_the_control_session_is_refused_by_name() {
                 role: None,
                 caller: None,
                 no_cache_proxy: false,
+                trust_folder: false,
             })
             .send()
             .await
@@ -4870,6 +5010,7 @@ async fn spawn_stamps_only_the_argv_that_reached_the_observed_launch() {
             role: None,
             caller: None,
             no_cache_proxy: false,
+            trust_folder: false,
         };
 
     for (id, accept, session, pane) in [
@@ -5001,6 +5142,7 @@ async fn direct_http_spawn_carries_no_claude_default_the_cli_owns_it() {
             role: None,
             caller: None,
             no_cache_proxy: false,
+            trust_folder: false,
         })
         .send()
         .await

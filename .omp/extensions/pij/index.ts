@@ -19,6 +19,7 @@ import {
 } from "./adapters/pi-runtime.js";
 import {
 	consumedMessageId,
+	describeSeatClosed,
 	describeSpawnedWorker,
 	RustRuntimeSession,
 } from "./adapters/rust-runtime.js";
@@ -374,12 +375,13 @@ export default function (pi: ExtensionAPI): void {
 		},
 	});
 
-	// pij_close — kill a spawned worker's tmux window + remove its descriptor (T206).
+	// pij_close — retire a seat through the daemon, by id, wherever it runs, and
+	// kill its pane when the daemon names it as still the seat's own (F216).
 	pi.registerTool({
 		name: "pij_close",
 		label: "pij close",
 		description:
-			"Close a pij worker session: kills its tmux window and removes it from the peer registry.",
+			"Close a pij worker session through the daemon: retires its seat and kills its tmux pane while that pane is still the seat's own. Only the seat itself, its recorded parent, or the prime (for a dead parentless seat) may close it.",
 		promptSnippet: "Close a pij worker session",
 		promptGuidelines: [
 			// FT-005: pij_spawn returns spawnId+paneId, NOT the child SessionId.
@@ -391,20 +393,16 @@ export default function (pi: ExtensionAPI): void {
 				description: "Session id of the worker to close (e.g. pij-1abc2de).",
 			}),
 		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			requirePeerContext(ctx);
 			if (!session) throw new Error("pij_close: session not booted yet");
-			const res = session.close(params.to);
+			const res = await session.close(params.to, signal);
 			if (!res.ok) {
 				throw new Error(`pij_close failed (${res.code}): ${res.message}`);
 			}
-			// FT-002: surface AC-06 non-owner warning to the caller.
-			const text = res.value.warning
-				? `closed pij worker: ${params.to}\n⚠️ ${res.value.warning}`
-				: `closed pij worker: ${params.to}`;
 			return {
-				content: [{ type: "text", text }],
-				details: {},
+				content: [{ type: "text", text: describeSeatClosed(params.to, res.value) }],
+				details: res.value,
 			};
 		},
 	});

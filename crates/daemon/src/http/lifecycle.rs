@@ -292,12 +292,7 @@ pub(super) async fn pane_now(state: &AppState, seat: &SeatDescriptor) -> PaneNow
 /// until its parent kills the pane, which is named only while it is still
 /// this seat's own (F175).
 pub(super) fn process_note(pane: Option<&str>, now: &PaneNow) -> String {
-    let pane = pane.filter(|pane| {
-        pane.len() > 1
-            && pane.starts_with('%')
-            && pane[1..].bytes().all(|byte| byte.is_ascii_digit())
-    });
-    let Some(pane) = pane else {
+    let Some(pane) = pane_id(pane) else {
         return "pij close retires the seat; its process keeps running. To stop it, its parent kills its pane (tmux kill-pane -t <pane>)".to_string();
     };
     match now {
@@ -318,6 +313,21 @@ pub(super) fn process_note(pane: Option<&str>, now: &PaneNow) -> String {
             "pij close retires the seat; its process, if any, keeps running. Pane {pane} could not be checked as still this seat's, so pij names no kill command: look with `tmux list-panes -a` first."
         ),
     }
+}
+
+/// The pane a close names to kill, typed (F216): the same pane, under the same
+/// rule, as [`process_note`]'s kill command.
+fn pane_to_kill<'a>(pane: Option<&'a str>, now: &PaneNow) -> Option<&'a str> {
+    pane_id(pane).filter(|_| matches!(now, PaneNow::Own))
+}
+
+/// A tmux pane id (`%N`), or nothing.
+fn pane_id(pane: Option<&str>) -> Option<&str> {
+    pane.filter(|pane| {
+        pane.len() > 1
+            && pane.starts_with('%')
+            && pane[1..].bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 /// Who may close `seat` (one predicate for the close route and the close held
@@ -609,7 +619,9 @@ pub(super) async fn close_seat(
             Err(error) => return Err(refused(error)),
         },
     };
-    let note = process_note(expected.pane.as_deref(), &pane_now(state, &expected).await);
+    let now = pane_now(state, &expected).await;
+    let note = process_note(expected.pane.as_deref(), &now);
+    let kill = pane_to_kill(expected.pane.as_deref(), &now).map(str::to_string);
     // A repeat close returns the existing owner-close. A seat retired for any
     // other reason (observed dead, reaped) is closed again as its owner's, so
     // its own session can't lift it either (F149, review of #200).
@@ -644,6 +656,9 @@ pub(super) async fn close_seat(
             let ends = end_holdings(state, &target, actor).await;
             let mut data = serde_json::to_value(&receipt).unwrap_or(Value::Null);
             data["process"] = note.into();
+            if let Some(pane) = kill {
+                data["kill_pane"] = pane.into();
+            }
             if !ends.committed.is_empty() || !ends.pending.is_empty() {
                 data["directory"] = serde_json::to_value(&ends).unwrap_or(Value::Null);
             }
@@ -881,6 +896,8 @@ mod tests {
                 && !note.contains("kill-pane"),
             "{old}"
         );
+        // F216: the typed kill pane follows the same rule as the note.
+        assert_eq!(old["data"].get("kill_pane"), None, "{old}");
         // Review of #220 (S220-001, F002): the predecessor's process and root
         // pass, but the pane's live successor vetoes the command.
         let (status, predecessor) = close(addr, "pij-parent", "pij-predecessor").await;
@@ -891,6 +908,7 @@ mod tests {
                 && !note.contains("kill-pane"),
             "{predecessor}"
         );
+        assert_eq!(predecessor["data"].get("kill_pane"), None, "{predecessor}");
         let (status, worker) = close(addr, "pij-parent", "pij-worker").await;
         assert_eq!(status, 200, "{worker}");
         assert!(
@@ -899,6 +917,7 @@ mod tests {
                 .is_some_and(|note| note.ends_with("its parent runs: tmux kill-pane -t %62")),
             "{worker}"
         );
+        assert_eq!(worker["data"]["kill_pane"], "%62", "{worker}");
         server.abort();
     }
 
@@ -933,6 +952,7 @@ mod tests {
                 .is_some_and(|note| note.contains("Its pane %63 is gone: nothing to kill.")),
             "{closed}"
         );
+        assert_eq!(closed["data"].get("kill_pane"), None, "{closed}");
         let orphan = registry.get(&"pij-orphan".into()).await.unwrap().unwrap();
         assert!(orphan.tombstoned_at.is_some());
         let live = registry
