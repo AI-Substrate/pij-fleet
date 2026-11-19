@@ -207,6 +207,16 @@
 					"seat": "pij-integrated-opossum",
 					"to": "2026-11-19T00:01:40.224Z",
 					"why": "F194 #245 security (gpt-6.1-sol)"
+				},
+				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-19T00:14:37.649Z",
+					"harness": "copilot",
+					"harness_session": "f9acef2d-685d-4694-947d-23eff09700f1",
+					"instance_key": "246",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-autonomous-guppy",
+					"why": "security review of #246 (plan 231)"
 				}
 			]
 		}
