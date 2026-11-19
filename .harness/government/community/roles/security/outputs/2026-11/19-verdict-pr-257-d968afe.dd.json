@@ -1,0 +1,40 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f247-a8e3-7781-b0c2-de82b88dceb4",
+				"date": "2026-11-19",
+				"head": "d968afe002b745c8f43eac5a6d80783bf8b88601",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:257",
+				"writer": "pij-deliberate-orca",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 257",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security PASS for PR #257 at d968afe002b745c8f43eac5a6d80783bf8b88601.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerabilities found | - |\n\nThe security-review specialist returned APPROVE for the exact head after a bounded, read-only review of the target resolver, recipe shell/path handling, cargo PATH tripwire and forwarding, shared artifacts, and current-head public-source/PR-body privacy. No introduced exploitable issue was found within the C33 user-account trust boundary. Same-user control of repository files, PATH and artifacts remains trusted; the tripwire is a build-cost guard, not a sandbox.\n\nValidation: the detached worktree is clean at the requested SHA. just pr-freeze 257 returned FINAL: remote and GitHub heads agree, main base, CLEAN, ready, CI check (22), check (24), rust-lint, rust-test and Delivers all pass. No local builds, tests, harness boot or harness checks were run, as expressly required; runtime proof remains CI-owned.\n\nThis is security approval only and does not supersede the separately recorded performance block. Known limit: static review, not runtime or live-fleet cost measurement."
+		}
+	]
+}
