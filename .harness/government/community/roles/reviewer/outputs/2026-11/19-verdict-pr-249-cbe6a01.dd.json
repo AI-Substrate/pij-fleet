@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f198-b6b0-7831-8ea0-35d7de74e9b2",
+				"date": "2026-11-19",
+				"head": "cbe6a01d2bd9ad72f8b3e3c0fb839967804d8959",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:249",
+				"writer": "pij-daily-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci (CI run 44442078410 attempt 2, job 135287030553)",
+					"exit_code": 0,
+					"log": "2521 passed, 6 skipped; artifact 14492720598 confirms the real-adapter PA recovery and target-change regressions passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Round 2 (final under C34): PASS at cbe6a01d2bd9ad72f8b3e3c0fb839967804d8959. R249-001 is closed.\n\nReviewed the repair against round-one head 0c764992, separating the rebase onto f99a1f9e with git range-diff. The rebase's F208 changes are not graded as new PR249 work.\n\npa_presence::refresh_sizes now marks NotFound stale=true, making the same idle seat eligible on the next existing PA round without any further activity. Unbound and Unsupported remain completed; successful unchanged idle seats remain cached. The real-adapter regression reproduces the original kept-miss sequence and requires the next round after expiry to send the large-seat FYI. The added adapter regression separately pins same-seat session changes and clearing the old miss after a hit.\n\nA permanently not-found seat contributes at most one extra size-refresh status request per existing 60-second PA round, rather than a new loop or an idle-fleet reread. The per-seat pending-read guard still prevents accumulating reads behind a slow one. These refresh retries do not themselves send FYIs: large_seats ignores unknown sizes, neither crossing nor rearming a claim, so missing transcripts do not generate repeated large-seat notices. Remote/unbound/unsupported classifications are unchanged; only an actual NotFound enters this retry path.\n\nCost: for a permanently missing Copilot transcript this PA path performs at most one cold-path stat per minute, zero recursive walks; a request inside the shared 30-second negative cache does no filesystem lookup. Claude/OMP/Codex may perform one discovery per configured root on a PA retry outside that window, hence at most one search per missing seat per minute from this path, not zero walks. Other callers remain bounded by the adapter's 30-second negative cache. No new timer or process launch.\n\nwith_miss_ttl is public compiled code, not conditionally test-only, and must_use does not enforce test-only reachability. However, the only call site in the entire Rust workspace is this daemon regression; production constructs the adapter with the unchanged 30-second default. No production config, CLI or HTTP setting reaches the builder.\n\nEvidence:\n- just pr-freeze 249: FINAL at the full head above.\n- git diff --check f99a1f9e..HEAD: passed.\n- CI run 44442078410, attempt 2, exact head cbe6a01d: all final checks succeeded; rust-test job 135287030553 reports 2,521 passed, 6 skipped.\n- Downloaded successful-job artifact 14492720598 by ID, not by repeated artifact name. JUnit confirms all 20 pij-unisphere tests, an_idle_seat_read_during_a_kept_miss_is_sized_once_it_expires, a_kept_miss_answers_only_its_own_target_and_a_hit_clears_it, and the existing idle-activity/compaction-wake tests passed.\n- No local cargo build/test or dependency change. This is source plus Linux CI proof, not macOS runtime performance proof.\n\nThe after-merge/bounce CPU and hedgehog latency receipt remains performance/vast-silkworm's separate obligation. Part 2 is reviewed separately as PR251.\n"
+		}
+	]
+}
