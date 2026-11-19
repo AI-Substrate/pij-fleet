@@ -256,6 +256,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-formidable-vicuna",
 					"why": "F209 #249 security (Copilot gpt-6.1-sol)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T01:58:29.511Z",
+					"harness": "copilot",
+					"harness_session": "750508b7-5056-4194-86fb-3fff043347a3",
+					"instance_key": "250",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-indirect-zebra",
+					"why": "F208 #250 security (Copilot gpt-6.1-sol)"
 				}
 			]
 		}
