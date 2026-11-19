@@ -116,4 +116,5 @@
 - [2026-11-19 PR256 R1: audit cache warmth is not guard disposition](2026-11-19-pr256-r1-audit-cache-warmth-is-not-guard.dd.md): When resuming PR256 round 2 or the owed post-deploy F214 audit. (review, cache-ttl, audit, f214, follow-up)
 - [2026-11-19 Real idle is agent completion, not a tool boundary](2026-11-19-real-idle-is-agent-completion-not-a-tool.dd.md): When reviewing activity hooks, held memory turns, or post-close memory authorization. (review, lifecycle, activity, f207, c34)
 - [2026-11-19 Spawn handoffs require independent bind and answer facts](2026-11-19-spawn-handoffs-require-independent-bind.dd.md): When reviewing spawn cancellation, stale timeout snapshots, restart recovery, or exactly-once handoff claims. (review, spawn, cancellation, recovery, settlement, c34)
+- [2026-11-19 Trust recovery guidance needs fixture coverage](2026-11-19-trust-recovery-guidance-needs-fixture.dd.md): phase-end (review, trust-prompts)
 <!-- /pij:generated -->

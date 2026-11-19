@@ -1,0 +1,24 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "phase-end",
+				"tags": [
+					"review",
+					"trust-prompts"
+				],
+				"title": "Trust recovery guidance needs fixture coverage"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR264 R1: automatic next_key used the observed highlight, but manual refusal guidance returned default-row keys. Check both recovery instructions and automatic navigation against moved-highlight and missing-highlight fixtures. A read-only CI-backed review gate would avoid dependency-dependent development checks in detached no-node_modules review checkouts; exact-head CI and downloaded job-specific JUnit supplied the suite evidence here."
+		}
+	]
+}
