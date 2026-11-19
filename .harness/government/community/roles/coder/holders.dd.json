@@ -1096,6 +1096,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-cultural-falcon",
 					"why": "F211: a failed spawn leaves an orphan live seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T03:12:27.663Z",
+					"harness": "omp",
+					"harness_session": "01a1f172-b316-72df-af40-40261d587094",
+					"instance_key": "f212",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-printed-egret",
+					"why": "F212: Copilot seats lose auth (401) and need a manual restart"
 				}
 			]
 		}
