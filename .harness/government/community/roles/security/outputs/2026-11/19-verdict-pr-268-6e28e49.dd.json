@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f311-d73d-7d50-9c09-e0f81ceda1b7",
+				"date": "2026-11-19",
+				"head": "6e28e49d670df0b5a9469250eabd115cea53fad2",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:268",
+				"writer": "pij-uniform-butterfly",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "security-review agent",
+					"exit_code": 0,
+					"log": "No security vulnerabilities found in the reviewed changes; documentation-only exact-head scope"
+				},
+				{
+					"command": "just pr-freeze 268",
+					"exit_code": 0,
+					"log": "FINAL at 6e28e49d670df0b5a9469250eabd115cea53fad2; all five checks pass"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR 268 security verdict\n\nHead: 6e28e49d670df0b5a9469250eabd115cea53fad2\nResult: PASS.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No security vulnerabilities found. | - |\n\nThe security-review agent reported no security vulnerabilities in the four-file documentation diff. Scope: added attribution guidance and difficulty rows in AGENTS.md, docs/difficulties.md, docs/how/daemon-cost.md, and skills/pij/references/prime/pa.md.\n\nNo added secrets, private owner/name references, account names, machine-local home paths, or sensitive concrete PIDs. Worker names, environment-variable names, F-numbers, dates, and aggregate memory figures do not disclose the excluded C21 material. The new guidance rejects environment-based attribution; it adds no environment-dumping command or instruction to expand process-environment access. The upstream environment-scrub/detachment wish is a clearly marked stretch, not a local command to modify or terminate workers.\n\nEvidence: exact checkout SHA verified; `just pr-freeze 268` returned FINAL with all five checks passing, and `git diff --check origin/main...HEAD` passed. CI run 44493010700 attempt 1 is successful at the exact head. No runtime/source/dependency changes, builds, live process-environment inspection, or exploit testing were necessary for this documentation-only patch.\n"
+		}
+	]
+}
