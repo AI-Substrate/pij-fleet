@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Read when resuming pm-001 after the 19 Nov evening compaction, before a READY that needs a bounce, or when a daemon-cost or registration lane opens (proofs, bounce, cost, registration, resume)",
+				"tags": [
+					"proofs",
+					"bounce",
+					"cost",
+					"registration",
+					"resume"
+				],
+				"title": "19 Nov evening: live proofs find what review misses; deploy and cost traps"
+			}
+		},
+		{
+			"name": "body",
+			"value": "State at 20:43 on 19 Nov:\n- Merged and live-proved: #257 (F217), #259 (D-F208-1), #260 (F219+F218), #261 (D-F208-2), #262 (F220), #263+#265 (F213 + restart anchor), #264 (F215+F216), #266+#270 (F222: the daemon went from ~32% to ~16% of a core), #267 (F197), #268 (F203 docs), #269 (F224).\n- #271 (F226, the deploy build fix) is READY at 8b08ba8, waiting on the prime's merge, then a dry run (bash harness/scripts/release-build.sh) and bounce-rs as the live proof.\n- Seats:\n  - coders: falcon (OMP), bat (OMP, coder/f222);\n  - reviewers: butterfly, minimal-stoat, melodic-snail (F222 re-measure owed after the #270 extensions_reloads, ~1-2 h), antelope, marsupial.\n- Close the idle ones when their lanes end.\n- Queue: F190, F193, F199, F200. C34 follow-ups: R257-002, R260-002, R264 (short Claude fixture), R266 (scheduler test), R271-002 (dirty guard misses embedded inputs), R271-003 (SIGTERM temp leak). F225 (should close kill the pane?) is for discussion only. F227 (holdings never end) is interim: release dead holders by hand.\n\nLessons:\n1. LIVE PROOFS FIND WHAT UNIT TESTS MODEL WRONG. F213's second /restart failed live: restarts are SIBLINGS under the original CLI, not a chain. F197's live proof found F224 (the launcher re-resolution hole). Always ask for a multi-step live proof on a --role worker throwaway (2+ restarts), and make coders copy fixture process trees from a real `ps -o pid,ppid,lstart`.\n2. VERIFY THE COPILOT EXTENSION SEES WHAT YOU THINK. Its host is sandboxed (COPILOT_EXTENSION_SANDBOXED) and gets no COPILOT_PROVIDER_*. Have coders check env visibility BEFORE designing around it (pm-004's constraint h saved a wasted build).\n3. BOUNCE TRAP (F226): until #271 is live, bounce only by hand via shared-build, and check `pij-rs --version` / ping build_commit == HEAD. A sibling worktree's release build in the shared target got installed once.\n4. COST WORK: measure first (sample x2, CPU-time slope, then per-route counters (#266) to name the caller), code second. ps %cpu is a decayed average: use CPU-time deltas. F222's culprit was owner-closed Copilot seats left running whose extension host respawned and looped the full roster. Pane kills fixed it live; #270 prevents a repeat.\n5. REBASES: when a sibling merges, the next PR goes DIRTY. Verify the range-diff yourself and send a 'rebase-only' confirmation; each round answers its NEW request id (my packet once said 'original' and that was wrong). `pij output` takes the bare role in --role.\n6. A held bounce: if perf needs readings on the current daemon, tell the prime to hold the next bounce until perf says its last reading is in.\n7. An unarmed control context refuses reload controls (self or peer). For a fresh tool, test via a fresh helper seat.\n"
+		}
+	]
+}
