@@ -1921,7 +1921,10 @@
 					"harness_session": "0fca0720-6e09-44c3-bb64-34c82d935ddc",
 					"instance_key": "263",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #263 merged (dba0c0803b0e)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-main-prawn",
+					"to": "2026-11-19T07:53:33.111Z",
 					"why": "F213 proxied seat route from stamped-ancestor lineage #263"
 				}
 			]
