@@ -7,16 +7,18 @@ Every Claude usage record carries its billed token classes (copilotUsage.tokenDe
 (5 min), cache_write_1h, output, each with count and price) and totalNanoAiu. So the counterfactual moves tokens
 between classes and prices them at the record's own prices, and assumes no TTL the transcript does not record.
 
-Counterfactual "fixed" (toolSearch=false, measured on canary session 23fd00ea and the prime's e6499e1f):
-  1. Flip removed. A main-agent request whose tool list changed (the count, or the toolTokenCount with the count
-     unchanged) reads the previous request's prompt instead of re-writing it. This applies only when the previous
-     request ran in the same process, no compaction came between, and the gap is inside the previous request's
-     cachePolicyTtlSeconds.
+Counterfactual "achievable" (toolSearch=false, as measured on canary session 23fd00ea and the prime's e6499e1f):
+  1. Flip removed. A main-agent request whose tool count changed reads the previous request's prompt instead of
+     re-writing it. This applies only when the previous request ran in the same process, no compaction came between,
+     and the gap is inside the previous request's cachePolicyTtlSeconds. The residual flips that toolSearch=false keeps
+     are left as they were billed: a token-only change (toolTokenCount moved, count unchanged) and any change right
+     after an extensions_reload call. "bound" also removes those, and is labelled an optimistic bound.
   2. Larger tool prefix. Each request's tool definitions grow to TOOLS_AFTER tokens. Tools lead the prompt, so the
      extra tokens are read when the request read any cache, and written at the request's own write price when it
      read none.
 Plain (CAPI) records are not changed. Their re-pricing as proxied-fixed adds the same prefix growth,
-d = TOOLS_AFTER - DELTA_BASE (the proxied before-window median tool size).
+d = TOOLS_AFTER - DELTA_BASE (the proxied historical median tool size).
+Historical figures read only records before END, so later sessions cannot move them (history_is_closed checks this).
 
 Usage: python3 sim232.py > sim232.md
 """
@@ -55,9 +57,12 @@ def load():
         except FileNotFoundError:  # session pruned between glob and open
             continue
         sid = path.split("/")[-2]
-        start, compacted = None, False
+        start, resumed, compacted, reloaded = None, False, False, False
         with f:
             for line in f:
+                if '"tool.execution_start"' in line and '"extensions_reload"' in line:
+                    reloaded = True  # an extensions_reload call since the main agent's last request
+                    continue
                 if not any(k in line for k in ('"session.start"', '"session.resume"',
                                                '"session.compaction_complete"', '"session.usage_record"')):
                     continue
@@ -67,7 +72,7 @@ def load():
                     continue
                 kind, ts = e.get("type"), e.get("timestamp", "")
                 if kind in ("session.start", "session.resume"):
-                    start = ts
+                    start, resumed = ts, kind == "session.resume"
                     continue
                 if kind == "session.compaction_complete":
                     compacted = True
@@ -89,10 +94,10 @@ def load():
                                  actual=n, cls=cls, out_cost=cls["output"][0] * cls["output"][1],
                                  R=u.get("cacheReadTokens") or 0, W=u.get("cacheWriteTokens") or 0,
                                  ttl=u.get("cachePolicyTtlSeconds"), tools=u.get("availableToolCount"),
-                                 tool_tokens=u.get("toolTokenCount"), start=start, agent=agent,
-                                 after_compaction=compacted and agent))
+                                 tool_tokens=u.get("toolTokenCount"), start=start, resumed=resumed, agent=agent,
+                                 after_compaction=compacted and agent, after_reload=reloaded and agent))
                 if agent:
-                    compacted = False
+                    compacted = reloaded = False
     by = collections.defaultdict(list)
     for r in recs:
         by[r["sid"]].append(r)
@@ -104,6 +109,7 @@ def load():
         for r in rs:  # the main agent's own stream, for flips and the TTL sim
             r["prev"] = prev if r["agent"] else None
             r["agent_gap"] = None if not r["agent"] or prev is None else (r["t"] - prev["t"]) / 60
+            r["proc_first"] = r["agent"] and (prev is None or prev["start"] != r["start"])
             if r["agent"]:
                 prev = r
     return recs, by
@@ -125,19 +131,41 @@ def flip(r):
     return p is not None and (r["tools"] != p["tools"] or r["tool_tokens"] != p["tool_tokens"])
 
 
-def fixable(r):
+def residual(r):
+    """A flip toolSearch=false does not remove, by every class seen in the post-setting fresh processes:
+    a token-only change (count unchanged; canary 23fd00ea and 9da2c60e, after extensions_reload), any change right
+    after an extensions_reload call, and the first change inside a resumed process (e69a6a28: 44 -> 49 tools,
+    +1,915 tool tokens, on its first bash call after a resume)."""
+    return flip(r) and (r["tools"] == r["prev"]["tools"] or r["after_reload"]
+                        or (r["prev"]["proc_first"] and r["prev"]["resumed"]))
+
+
+def reload_only(r):
+    """A residual flip whose only residual reason is a preceding extensions_reload with the tool count changed."""
+    return (residual(r) and r["tools"] != r["prev"]["tools"] and r["after_reload"]
+            and not (r["prev"]["proc_first"] and r["prev"]["resumed"]))
+
+
+def fixable(r, fix="achievable"):
+    """fix="achievable" keeps the residual flips; "bound" removes every flip (an optimistic bound); "half_reload" is
+    achievable, except that every second reload-only flip (r["reload_half"], set in main) is removed: the canary's
+    observed 1-in-2 reload rate, a sensitivity."""
     p = r["prev"]
-    return (r["byok"] and flip(r) and not r["after_compaction"] and p["start"] == r["start"]
-            and p["ttl"] and r["agent_gap"] * 60 < p["ttl"])
+    if not (r["byok"] and flip(r) and not r["after_compaction"] and p["start"] == r["start"]
+            and p["ttl"] and r["agent_gap"] * 60 < p["ttl"]):
+        return False
+    if fix == "half_reload" and r.get("reload_half"):
+        return True
+    return fix == "bound" or not residual(r)
 
 
-def counterfactual(r, fix_flips=True, grow_prefix=True, delta_plain=0):
-    """Return (P', cost') for one record under the fixed regime."""
+def counterfactual(r, fix="achievable", grow_prefix=True, delta_plain=0):
+    """Return (P', cost') for one record. fix is "achievable", "bound", or None (keep every flip)."""
     if not r["byok"]:
         d = delta_plain if grow_prefix else 0
         return r["P"] + d, None
     R, W = r["R"], r["W"]
-    if fix_flips and r["agent"] and fixable(r):
+    if fix and r["agent"] and fixable(r, fix):
         cached = min(r["P"] - (r["P"] - r["R"] - r["W"]), r["prev"]["P"])
         R, W = cached, r["R"] + r["W"] - cached
     d = max(0, TOOLS_AFTER - (r["tool_tokens"] or TOOLS_AFTER)) if grow_prefix else 0
@@ -152,7 +180,7 @@ def rates(recs, regime_of, cost_of, size_of):
     num, den, cnt = collections.Counter(), collections.Counter(), collections.Counter()
     for r in recs:
         g = regime_of(r)
-        if g is None:
+        if g is None or r["ts"] >= END:  # rates are fitted on the historical windows only (F255-001)
             continue
         k = (g, r["model"], r["gap"])
         num[k] += cost_of(r) - r["out_cost"]
@@ -218,23 +246,27 @@ def unit(r, key):
 
 
 
-def ttl_sim(sessions, policy, delta_plain, grow=True, flips=False):
+def ttl_sim(sessions, policy, delta_plain, grow=True, flips="residual"):
     """Simulate the proxy's cache over each session's main-agent stream under a TTL policy.
 
     The cache is a list of segments [end, ttl_s, touched]. A request reads the longest prefix of live segments
     (a read refreshes a segment at its own TTL: a 1h marker over a 5m entry never upgrades it, per takin's spike).
-    It writes the rest of its prompt as one new segment at the policy's TTL. A compaction clears the cache, and so
-    does a tool-list change when flips=True (the calibration run against billed). Prices are the record's own."""
+    It writes the rest of its prompt as one new segment at the policy's TTL. A compaction or a new Copilot process
+    (a restart: the process start changes) clears the cache. So does a tool-list change, as flips says: "all" (as the
+    seats ran, the calibration run), "residual" (the flips toolSearch=false keeps: the achievable fixed regime), or
+    None (every flip removed: an optimistic bound). Prices are the record's own."""
     total = collections.Counter()
     for rs in sessions:
-        segs, history, prev_cacheable = [], [], None
+        segs, history, prev_cacheable, prev_start = [], [], None, None
         for r in rs:
             d = (max(0, TOOLS_AFTER - (r["tool_tokens"] or TOOLS_AFTER)) if r["byok"] else delta_plain) if grow else 0
             P = r["P"] + d
             fresh = r["P"] - r["R"] - r["W"]
             cacheable = P - fresh
-            if r["after_compaction"] or (flips and flip(r)):
+            flipped = (flips == "all" and flip(r)) or (flips == "residual" and residual(r))
+            if r["after_compaction"] or r["start"] != prev_start or flipped:
                 segs = []
+            prev_start = r["start"]
             hit = 0
             for s in segs:
                 if r["t"] - s[2] < s[1] and s[0] <= cacheable:
@@ -288,59 +320,120 @@ def cost_based(n):
     return pol
 
 
+def history_is_closed(hist, delta_plain):
+    """F255-001 guard: a record after END must not change the historical re-pricing. Re-run the headline tables with
+    a copy of a proxied main-agent record moved past END and compare."""
+    probe = dict(next(r for r in reversed(hist) if r["byok"] and r["agent"]))
+    probe.update(ts="2026-11-19T05:00:00Z", t=secs("2026-11-19T05:00:00Z"), actual=probe["actual"] * 1000)
+    return egret_tables(hist, "check", delta_plain) == egret_tables(hist + [probe], "check", delta_plain)
+
+
 def main():
     recs, by = load()
-    for r in recs:
+    hist = [r for r in recs if r["ts"] < END]  # the historical windows; the live after-window reads recs
+    for r in hist:
         for k, (_, p) in r["cls"].items():
             PRICES[r["model"]].setdefault(k, p)
-    clash = {(r["model"], k) for r in recs for k, (_, p) in r["cls"].items() if p != PRICES[r["model"]][k]}
+    clash = {(r["model"], k) for r in hist for k, (_, p) in r["cls"].items() if p != PRICES[r["model"]][k]}
     if clash:
         print(f"WARNING: a token class has more than one price: {sorted(clash)}\n")
-    before_tools = [r["tool_tokens"] for r in recs if r["byok"] and r["ts"] < SETTING and r["tool_tokens"]]
-    delta_base = statistics.median(before_tools)
+    delta_base = statistics.median(r["tool_tokens"] for r in hist if r["byok"] and r["tool_tokens"])
     delta_plain = TOOLS_AFTER - delta_base
     print(f"# Plan 232 sim: proxied fleet with the tool-list flips removed ({dt.datetime.now(dt.timezone.utc):%Y-%m-%dT%H:%MZ})\n")
-    print(f"Windows as egret's sim.md: before = {FROM} to {CUT}, after = {CUT} to {END}. Claude records only; AIU = nanoAiu / 1e9.")
-    print(f"Tool prefix: proxied before-window median toolTokenCount {delta_base:,.0f} → {TOOLS_AFTER:,} with toolSearch=false (+{delta_plain:,.0f}).\n")
+    print(f"Windows as egret's sim.md: before = {FROM} to {CUT}, after = {CUT} to {END}. Claude records only; AIU = nanoAiu / 1e9. "
+          f"Every historical figure (rates, calibration, TTL) reads only records before {END}; only the live window reads later ones.")
+    print(f"Tool prefix: proxied historical median toolTokenCount {delta_base:,.0f} → {TOOLS_AFTER:,} with toolSearch=false (+{delta_plain:,.0f}).\n")
+    closed = history_is_closed(hist, delta_plain)
+    print(f"Check (F255-001): a record after {END} leaves the historical tables unchanged: {'yes' if closed else 'NO'}.")
+    if not closed:
+        raise SystemExit("history_is_closed failed: the historical re-pricing reads records after END")
 
-    # calibration: token classes x their own prices against billed
-    billed = sum(r["actual"] for r in recs)
-    priced = sum(sum(cnt * p for cnt, p in r["cls"].values()) for r in recs)
-    print(f"Calibration: token classes × listed prices = {A(priced):,.0f} AIU against billed {A(billed):,.0f} AIU over {len(recs):,} records.")
-    px = [r for r in recs if r["byok"]]
+    billed = sum(r["actual"] for r in hist)
+    priced = sum(sum(cnt * p for cnt, p in r["cls"].values()) for r in hist)
+    print(f"Calibration: token classes × listed prices = {A(priced):,.0f} AIU against billed {A(billed):,.0f} AIU over {len(hist):,} records.")
+    px = [r for r in hist if r["byok"]]
     same = sum(class_cost(r, r["R"], r["W"]) for r in px)
     print(f"Calibration: proxied records re-priced unchanged by class_cost = {A(same):,.0f} AIU against billed {A(sum(r['actual'] for r in px)):,.0f}.\n")
 
     flips = [r for r in px if r["agent"] and flip(r)]
-    fixed = [r for r in flips if fixable(r)]
-    saved = sum(r["actual"] - counterfactual(r, grow_prefix=False)[1] for r in fixed)
-    print(f"Proxied main-agent flips {len(flips):,}; fixable (same process, no compaction, inside TTL) {len(fixed):,}; "
-          f"their re-writes cost {A(sum(r['actual'] for r in fixed)):,.0f} AIU billed, {A(saved):,.0f} AIU of which goes away.")
+    print("Proxied main-agent flips in the historical windows: "
+          f"{len(flips):,}, of which {sum(1 for r in flips if residual(r)):,} are residual (token-only, right after an extensions_reload, "
+          "or the first change in a resumed process).\n")
+    print("| estimate | flips removed | their re-writes, billed AIU | AIU that goes away |")
+    print("|---|---|---|---|")
+    for name, fix in [("achievable (residual kept)", "achievable"), ("optimistic bound (every flip removed)", "bound")]:
+        gone = [r for r in flips if fixable(r, fix)]
+        saved = sum(r["actual"] - counterfactual(r, fix=fix, grow_prefix=False)[1] for r in gone)
+        print(f"| {name} | {len(gone):,} | {A(sum(r['actual'] for r in gone)):,.0f} | {A(saved):,.0f} |")
+    for i, r in enumerate(sorted((r for r in flips if reload_only(r)), key=lambda r: r["t"])):
+        r["reload_half"] = i % 2 == 1
 
-    for label, cf in [("Proxied-fixed: flips removed AND larger tool prefix (the real toolSearch=false)", {}),
-                      ("Partial: flips removed only (no prefix growth)", {"grow_prefix": False}),
-                      ("Partial: larger tool prefix only (flips kept)", {"fix_flips": False})]:
-        print("\n".join(egret_tables(recs, label, delta_plain, **cf)))
+    for label, cf in [("Achievable toolSearch=false: flips removed except the residual, larger tool prefix", {}),
+                      ("Optimistic bound: every flip removed, larger tool prefix", {"fix": "bound"}),
+                      ("Partial: achievable flip removal only (no prefix growth)", {"grow_prefix": False}),
+                      ("Partial: larger tool prefix only (flips kept)", {"fix": None})]:
+        print("\n".join(egret_tables(hist, label, delta_plain, **cf)))
+    rows = [ln for ln in egret_tables(hist, "sensitivity", delta_plain, fix="half_reload") if ln.startswith(("| before", "| after"))]
+    print(f"\nSensitivity: reload-only flips at the canary's observed 1-in-2 rate (every second one removed, "
+          f"{sum(1 for r in flips if r.get('reload_half'))} of {sum(1 for r in flips if reload_only(r))}), "
+          "otherwise achievable. Fleet, egret's method:\n")
+    print("| window | requests | billed AIU | as plain | as proxied | as proxied-fixed | proxied vs plain | proxied-fixed vs plain |")
+    print("|---|---|---|---|---|---|---|---|")
+    print("\n".join(rows))
 
-    # live after-window by process start
+    # live after-window by process start: every record to now
     print("\n## Live window after the setting, by process start\n")
-    print("| proxied requests | n | hot n | billed AIU | AIU per 1M prompt tokens (all) | AIU per 1M (hot) | flips |")
-    print("|---|---|---|---|---|---|---|")
+    print("Flips are split by kind. A flip across a restart compares two processes; the same-process flips are those the setting can or cannot remove.\n")
+    print("| proxied requests | n | main-agent n | hot n | billed AIU | AIU per 1M prompt tokens (all) | AIU per 1M (hot) | flips across a restart | same-process count flips | same-process token-only flips | same-process flip rate |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|")
+    live = [r for r in recs if r["byok"]]
     for name, sel in [("before setting (to 03:27:46Z)", lambda r: CUT <= r["ts"] < SETTING),
                       ("after setting, process started before it", lambda r: r["ts"] >= SETTING and (r["start"] or "") < SETTING),
                       ("after setting, process started after it", lambda r: r["ts"] >= SETTING and (r["start"] or "") >= SETTING)]:
-        rs = [r for r in px if sel(r)]
+        rs = [r for r in live if sel(r)]
         hot = [r for r in rs if r["gap"] == "<5 min"]
+        agent = [r for r in rs if r["agent"] and r["prev"] is not None]
+        same = [r for r in agent if r["prev"]["start"] == r["start"]]
         per = lambda xs: A(sum(r["actual"] - r["out_cost"] for r in xs)) / (sum(r["P"] for r in xs) / 1e6) if xs else 0
-        print(f"| {name} | {len(rs):,} | {len(hot):,} | {A(sum(r['actual'] for r in rs)):,.0f} | {per(rs):.1f} | {per(hot):.1f} | "
-              f"{sum(1 for r in rs if r['agent'] and flip(r))} |")
+        cnt = sum(1 for r in same if flip(r) and r["tools"] != r["prev"]["tools"])
+        tok = sum(1 for r in same if flip(r) and r["tools"] == r["prev"]["tools"])
+        print(f"| {name} | {len(rs):,} | {len(agent):,} | {len(hot):,} | {A(sum(r['actual'] for r in rs)):,.0f} | {per(rs):.1f} | {per(hot):.1f} | "
+              f"{sum(1 for r in agent if flip(r) and r['prev']['start'] != r['start'])} | {cnt} | {tok} | {(cnt + tok) / len(same) if same else 0:.2%} |")
+
+    # measured post-setting cost against plain, same method: billed, against the same requests priced at the
+    # historical plain rates (egret's cells, before #243)
+    plain_rate, plain_n = rates(hist, lambda r: None if r["byok"] or r["ts"] >= CUT else "plain",
+                                lambda r: r["actual"], lambda r: r["P"])
+    as_plain = lambda xs: sum(r["P"] * plain_rate("plain", r["model"], r["gap"]) + r["out_cost"] for r in xs)
+    print("\n### Measured after the setting: billed against the same requests priced as plain\n")
+    print("Egret's method on observed data: each proxied request's billed AIU, against its own prompt at the plain cell rate (model × gap, before #243). Positive means the proxy cost less than plain. "
+          "A process's first request (the restart re-write, one per seat per restart) is its own row, so the steady state shows apart from the rollout.\n")
+    print("| population | model | gap | n | billed AIU | as plain AIU | proxied vs plain |")
+    print("|---|---|---|---|---|---|---|")
+    for name, sel in [("process started after the setting", lambda r: r["ts"] >= SETTING and (r["start"] or "") >= SETTING),
+                      ("process started before it (old seats)", lambda r: r["ts"] >= SETTING and (r["start"] or "") < SETTING)]:
+        rs = [r for r in live if sel(r)]
+        cells = collections.defaultdict(list)
+        for r in rs:
+            cells[(r["model"], "process's first request" if r["proc_first"] else r["gap"])].append(r)
+        order = GAPS + ["process's first request"]
+        for (model, gap), xs in sorted(cells.items(), key=lambda kv: (kv[0][0], order.index(kv[0][1]))):
+            b, p = sum(r["actual"] for r in xs), as_plain(xs)
+            print(f"| {name} | {model} | {gap} | {len(xs):,} | {A(b):,.1f} | {A(p):,.1f} | {1 - b / p:+.1%} |")
+        steady = [r for r in rs if not r["proc_first"]]
+        for label, xs in [("all but first requests", steady), ("all", rs)]:
+            if xs:
+                b, p = sum(r["actual"] for r in xs), as_plain(xs)
+                print(f"| **{name}, {label}** | | | {len(xs):,} | {A(b):,.1f} | {A(p):,.1f} | {1 - b / p:+.1%} |")
 
     # per-seat TTL
     sessions_all = [[r for r in rs if r["agent"] and r["ts"] < END] for rs in by.values()]
     sessions_all = [s for s in sessions_all if s]
-    print("\n## Per-seat TTL, weighed on the fixed regime\n")
-    print("Every Claude main-agent session in both windows (subagents excluded), simulated as a proxied seat with no flips and the larger tool prefix. "
-          "Shared cross-seat prefix hits are not modelled (the same for every policy). The table shows cache and input cost; output is the same in every row and is included.\n")
+    print("\n## Per-seat TTL, weighed on the achievable fixed regime\n")
+    print("Every Claude main-agent session in both windows (subagents excluded), simulated as a proxied seat with the larger tool prefix. "
+          "Residual flips (token-only, right after an extensions_reload, or the first change in a resumed process), compactions and process restarts clear the cache. "
+          f"There are {sum(1 for s in sessions_all for a, b in zip(s, s[1:]) if a['start'] != b['start']):,} restart boundaries in these streams. "
+          "Shared cross-seat prefix hits are not modelled, so absolute costs run high (calibration below), equally for every policy. The policy ranking is what this table is for. Output cost is included.\n")
     pols = [("5m for all", lambda h, r: 300), ("1h for all", lambda h, r: 3600)]
     for n, k in [(5, 1), (10, 1), (10, 2), (20, 2), (20, 3)]:
         pols.append((f"1h if ≥{k} of last {n} gaps were 5-60 min", last_n(n, k)))
@@ -363,15 +456,17 @@ def main():
             cells.append(f"{A(c):,.0f} | {A(c - base):+,.0f} ({c / base - 1:+.1%})")
         print(f"| {name} | " + " | ".join(cells) + " |")
 
-    # calibration of the TTL sim: the proxied main-agent sessions as they ran (1h, flips kept, no prefix growth)
+    # calibration of the TTL sim: the proxied main-agent sessions as they ran (1h, every flip clears, no prefix growth)
     proxied = [x for x in ([r for r in s if r["byok"]] for s in sessions_all) if x]
     billed_px = sum(r["actual"] for s in proxied for r in s)
-    as_ran = ttl_sim(proxied, lambda h, r: 3600, delta_plain, grow=False, flips=True)["cost"]
-    no_flip = ttl_sim(proxied, lambda h, r: 3600, delta_plain, grow=False)["cost"]
-    fixed = ttl_sim(proxied, lambda h, r: 3600, delta_plain)["cost"]
+    one_h = lambda h, r: 3600
+    as_ran = ttl_sim(proxied, one_h, delta_plain, grow=False, flips="all")["cost"]
+    achievable = ttl_sim(proxied, one_h, delta_plain)["cost"]
+    bound = ttl_sim(proxied, one_h, delta_plain, flips=None)["cost"]
     print(f"\nTTL sim calibration on the proxied main-agent sessions to {END} ({sum(map(len, proxied)):,} requests): billed {A(billed_px):,.0f} AIU; "
-          f"simulated as they ran (1h, flips kept) {A(as_ran):,.0f} ({as_ran / billed_px - 1:+.1%}); flips removed {A(no_flip):,.0f}; "
-          f"flips removed and the larger prefix {A(fixed):,.0f} ({fixed / billed_px - 1:+.1%} against billed).")
+          f"simulated as they ran (1h, every flip clears) {A(as_ran):,.0f} ({as_ran / billed_px - 1:+.1%}). "
+          f"Achievable (residual flips kept, larger prefix): {A(achievable):,.0f} ({achievable / as_ran - 1:+.1%} against the as-ran sim). "
+          f"Optimistic bound (every flip removed, larger prefix): {A(bound):,.0f} ({bound / as_ran - 1:+.1%}).")
 
 
 if __name__ == "__main__":

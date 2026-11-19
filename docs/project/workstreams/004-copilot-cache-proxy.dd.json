@@ -141,7 +141,7 @@
 				{
 					"id": "s07",
 					"title": "Stop tool-list flips on proxied seats; weigh per-seat TTL",
-					"state": "in-progress",
+					"state": "complete",
 					"delivers": [
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-01",
 						"../prds/004-copilot-cache-proxy.dd.json#requirements/req-07"
@@ -161,7 +161,7 @@
 						}
 					],
 					"done_when": "Plan 232 (docs/plans/232-proxy-tool-flips) shows four things. (1) A proxied seat started after toolSearch=false keeps a flat tool list through bash, read_bash, extensions_reload and user turns. (2) The fleet is re-priced in egret's terms with the flips gone and the larger tool prefix paid for. (3) Per-seat TTL policies are weighed against 1h and 5m for all. (4) The live after-window is split by Copilot process start and re-run with at least 1h of post-restart data.",
-					"note": "The fix is not code. It is `toolSearch: false` in the user-wide ~/.copilot/settings.json, applied by the prime (pij-far-jackal) on Jordan's go at 2026-11-19T03:27:46Z, because a repo cannot set it. Cause: Copilot 1.0.114's client-side generic tool search on the BYOK route added and dropped deferred tools, and every change re-wrote the whole prompt at the 1h price (egret's survey: 35% of proxied spend). Verdict: keep 1h for every seat; no per-seat TTL is built. Known residual: extensions_reload can change toolTokenCount with the count unchanged (1 of 2 reloads on the canary)."
+					"note": "The fix is not code. It is `toolSearch: false` in the user-wide ~/.copilot/settings.json, applied by the prime (pij-far-jackal) on Jordan's go at 2026-11-19T03:27:46Z, because a repo cannot set it. Cause: Copilot 1.0.114's client-side generic tool search on the BYOK route added and dropped deferred tools, and every change re-wrote the whole prompt at the 1h price. The setting leaves residual flips, all priced as kept: extensions_reload token-only flips (canary 23fd00ea, 9da2c60e) and a +5-tool first change in one resumed process (e69a6a28, D-232-5). Re-priced against plain (egret's windows): achievable +8.5% before #243 and -11.2% after (a loss); optimistic bound +26.3% and +7.3%. Measured in the first hour after the setting: +11.8% in steady state, -7.3% with the restart re-writes included (n=474). Whether to keep the proxy is a prime/Jordan decision outside plan 232. Verdict: keep 1h for every seat; no per-seat TTL is built."
 				}
 			]
 		},
@@ -211,7 +211,7 @@
 				{
 					"date": "2026-11-19",
 					"by": "coder/232 (pij-joyous-sailfish) for pm-004",
-					"change": "s07 added (plan 232), delivering req-01 and req-07. The tool-list flips on proxied seats are fixed by `toolSearch: false` in the user-wide ~/.copilot/settings.json, which the prime applied on Jordan's go at 2026-11-19T03:27:46Z. It is not code in this PR. The PR carries the canary, the re-priced fleet (sim232.py, extending egret's sim.py) and the per-seat TTL verdict: keep 1h for every seat and build nothing. Requirement states unchanged (both shipped)."
+					"change": "s07 added (plan 232), delivering req-01 and req-07. The tool-list flips on proxied seats are fixed by `toolSearch: false` in the user-wide ~/.copilot/settings.json, which the prime applied on Jordan's go at 2026-11-19T03:27:46Z. It is not code in this PR. The PR carries the canary, the fleet's residual flips, the re-priced fleet (sim232.py, extending egret's sim.py: an achievable estimate with the residual flips kept, and an optimistic bound) and the per-seat TTL verdict: keep 1h for every seat and build nothing. Requirement states unchanged (both shipped)."
 				}
 			]
 		}

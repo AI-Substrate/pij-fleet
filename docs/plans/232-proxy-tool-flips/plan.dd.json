@@ -10,13 +10,13 @@
         "slug": "proxy-tool-flips",
         "ordinal": 232,
         "status": "ready",
-        "summary": "Evidence plan for workstream 004 s07. A canary confirms that toolSearch=false (applied user-wide by the prime on Jordan's go, not code here) holds the proxied tool list flat. sim232.py re-prices egret's windows with the flips gone, and finds that a per-seat TTL doesn't pay, so every seat keeps 1h. Docs and sim scripts only.",
+        "summary": "Evidence plan for workstream 004 s07. toolSearch=false was applied user-wide by the prime on Jordan's go and is not code here. With it, the proxied tool count holds flat except for measured residuals. Against plain, egret's windows re-price at +8.5% / -11.2% achievable and +26.3% / +7.3% as an optimistic bound. A per-seat TTL doesn't pay, so every seat keeps 1h. Docs and sim scripts only.",
         "backpressure": "assets/backpressure.dd.json#rows"
       }
     },
     {
       "name": "summary",
-      "value": "On proxied (BYOK) Copilot seats, Copilot 1.0.114's client-side generic tool search leaves deferred tools out of the tools array until they are activated, then drops them again. availableToolCount swung between 30 and 50, and tools lead the cached prefix, so every swing re-wrote the whole prompt at the 1-hour price: 87% of hot flips re-wrote more than half the prompt, and egret's survey put 35% of proxied spend on them. The fix is a setting, not code. `toolSearch: false` cannot be set from a repo, so the prime applied it user-wide in ~/.copilot/settings.json on Jordan's go at 2026-11-19T03:27:46Z; this PR contains none of it. This plan proves the fix on a canary, measures its price (a larger tool prefix), and re-prices the fleet with the flips gone by extending egret's sim.py. It also weighs a per-seat cache TTL in the proxy. That doesn't pay, so every seat keeps 1h and nothing is built."
+      "value": "On proxied (BYOK) Copilot seats, Copilot 1.0.114's client-side generic tool search leaves deferred tools out of the tools array until they are activated, then drops them again. availableToolCount swung between 30 and 50, and tools lead the cached prefix, so every swing re-wrote the whole prompt at the 1-hour price (86% of hot same-process flips re-wrote more than half the prompt). The fix is a setting, not code. `toolSearch: false` cannot be set from a repo, so the prime applied it user-wide in ~/.copilot/settings.json on Jordan's go at 2026-11-19T03:27:46Z; this PR contains none of it. This plan measures the fix on a canary and on the fleet, measures its price (a larger tool prefix) and the flips it leaves (reload token-only flips, and a +5-tool first change in one resumed process), and re-prices egret's windows. The achievable estimate keeps those residual flips, and an optimistic bound removes every flip. It also weighs a per-seat cache TTL in the proxy: that doesn't pay, so every seat keeps 1h and nothing is built. The after-window is a loss: with the residual flips kept, the proxy re-prices at 11.2% more than plain after #243 (it saves 8.5% only in the cold-wake-heavy week before), while the first measured hour after the setting saves 11.8% against plain in steady state and costs 7.3% more with the restart re-writes included (n=474; sim232.md § Measured after the setting). Whether to keep the proxy is a decision for the prime and Jordan, outside plan 232."
     },
     {
       "name": "goals",
@@ -32,7 +32,8 @@
         "No proxy, daemon or CLI code. The fix is a Copilot setting the prime applied user-wide; this PR only documents and measures it.",
         "No fix for the extensions_reload token-only flip (a known residual, below).",
         "No change to the shared sidecar, its config or LaunchAgent, or the prod daemon.",
-        "No per-request TTL mix: takin's spike showed a 1h marker read over a 5m entry never upgrades it."
+        "No per-request TTL mix: takin's spike showed a 1h marker read over a 5m entry never upgrades it.",
+        "No decision on keeping or dropping the proxy: that belongs to the prime and Jordan."
       ]
     },
     {
@@ -40,7 +41,7 @@
       "value": [
         {
           "id": "ac-0001",
-          "claim": "A proxied Copilot seat started after the setting keeps availableToolCount flat through bash calls, an async shell with read_bash, extensions_reload and user turns: 0 count flips, and hot follow-ups write under 1% of the prompt. Known residual: an extensions_reload can change toolTokenCount with the count unchanged and re-write the prompt once (1 of 2 reloads on the canary).",
+          "claim": "A proxied Copilot seat started after the setting mostly keeps availableToolCount flat. On the canary it held through bash calls, an async shell with read_bash, extensions_reload and user turns: 0 count flips over 18 requests, and hot follow-ups wrote under 1% of the prompt. That is qualified against the fleet. In the post-setting fresh processes, the same-process flips seen are 1 count flip (e69a6a28: 44 to 49 tools on the first bash call after a resume) and 4 token-only flips (2 extensions_reloads, 2 records each). All of them are priced as residuals.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
@@ -52,20 +53,20 @@
         },
         {
           "id": "ac-0003",
-          "claim": "sim232.py re-prices egret's two windows as proxied-fixed beside plain and proxied, with each token class at its own record's listed price, which sums to billed exactly. It also shows the flip removal and the prefix growth on their own.",
+          "claim": "sim232.py re-prices egret's two windows beside plain and proxied, with each token class at its own record's listed price, which sums to billed exactly. It gives an achievable estimate that keeps every residual class seen under toolSearch=false (token-only, right after an extensions_reload, first change in a resumed process), and labels the removal of every flip an optimistic bound. Rates and calibration read only records before END, and history_is_closed fails the run if a later record moves them. It also shows each part alone.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0004",
-          "claim": "Per-seat TTL policies are weighed against 1h for all and 5m for all on the fixed regime, under the never-upgrade rule. The verdict is recorded, and proxy code is built only on a clear win (none: every seat keeps 1h).",
+          "claim": "Per-seat TTL policies are weighed against 1h for all and 5m for all on the achievable fixed regime: the never-upgrade rule holds, and residual flips, compactions and process restarts clear the cache. The verdict is recorded, and proxy code is built only on a clear win (none: every seat keeps 1h).",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
         {
           "id": "ac-0005",
-          "claim": "The live after-window is reported split by Copilot process start (before or after 03:27:46Z), with a dated receipt at 03:40Z, then re-run once with at least an hour of post-restart data before the round-1 verdicts.",
-          "state": "unchecked",
+          "claim": "The live after-window is reported split by Copilot process start (before or after 03:27:46Z), with flips across a restart counted apart. Its first receipt was dated 03:40Z, and it was re-run at 04:28Z with an hour of post-setting data. It also gives the measured post-setting cost against plain by egret's method, per cell with n and AIU, with each process's first request (the restart re-write) shown separately.",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },
         {
@@ -83,7 +84,7 @@
           "id": "ph-1b0d",
           "title": "Canary, sim and verdict recorded",
           "brief": "One PR: plan, evidence scripts and their outputs under assets/, workstream 004 s07. No code.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]
@@ -98,7 +99,7 @@
     },
     {
       "name": "research_context",
-      "value": "Cause (pm-004, confirmed by the prime). On the BYOK Anthropic route, Copilot 1.0.114 runs client-side generic tool search (flag copilot_cli_tool_search_client_generic). Deferred tools stay out of the tools array until activated and are dropped again afterwards (copilot_cli_tool_deferral_sticky null). A bash call adds the 5 async-shell companions, and extensions_reload adds 1 or removes 5. On CAPI, hosted tool search keeps the array fixed. Setting scope: `copilot config --local toolSearch false` refuses, because toolSearch is not among the settings a repo may override, and neither a flag nor an env var sets it. Copilot reads settings.json only at process start, so seats started before 03:27:46Z keep flipping until restarted. Canary (assets/canary-sessions.md): proxied opus 23fd00ea held 49 tools on all 18 requests, and its hot writes were 96-423 tokens (0.2-0.9%). The first extensions_reload changed toolTokenCount from 30,846 to 36,528 and back with the count unchanged, costing one full re-write (48,911) and a 20.6% one. The second reload changed nothing. The prime's haiku canary e6499e1f held 49 over 5 requests. Price of the fix: fresh opus seats used to write about 17-22k of a 37-43k prompt and read about 20k of prefix that other seats had already cached. After the change, b7d8d616 wrote 16,744 of 51,162 and read 34,418 from that shared prefix. Restart cost: the first request after a restart re-writes the whole prompt once (7c8a587b: 300,980 of 335,398), so a rolling restart costs one full 1h write per seat. Sim (assets/sim232.md, egret's method): proxied-fixed against plain comes to +25.7% saving before #243 and +6.9% after, where the proxy as it ran was -10.7% and -27.6%. Opus <5 min costs 26.4 AIU/1M against plain's 22.5; 5-60 min costs 82.9 against 414.9 (a thin cell, n=103). The larger prefix alone costs about 1.5 points. A mechanistic segment-cache sim lands within +5.3% of billed for the proxied sessions as they ran; removing the flips cuts it by 29%, or 24% with the prefix growth. Per-seat TTL: against 1h for all, every buildable policy costs 6-26% more, and even a per-seat hindsight bound saves only 0.9-3.8%. Once a seat drops to 5m, its prefix stays 5m until the next full miss."
+      "value": "Cause (pm-004, confirmed by the prime). On the BYOK Anthropic route, Copilot 1.0.114 runs client-side generic tool search (flag copilot_cli_tool_search_client_generic). Deferred tools stay out of the tools array until activated and are dropped again afterwards (copilot_cli_tool_deferral_sticky null). A bash call adds the 5 async-shell companions, and extensions_reload adds 1 or removes 5. On CAPI, hosted tool search keeps the array fixed. Setting scope: `copilot config --local toolSearch false` refuses, because toolSearch is not among the settings a repo may override, and neither a flag nor an env var sets it. Copilot reads settings.json only at process start, so seats started before 03:27:46Z keep their old tool search until restarted. Canary (assets/canary-sessions.md): proxied opus 23fd00ea held 49 tools on all 18 requests, and its hot writes were 96-423 tokens (0.2-0.9%). The first extensions_reload changed toolTokenCount from 30,846 to 36,528 and back with the count unchanged, costing one full re-write (48,911) and a 20.6% one. The second reload changed nothing. The prime's haiku canary e6499e1f held 49 over 5 requests. Fleet residuals under the setting (fresh processes, same process): e69a6a28 was resumed at 03:30:18Z. Its first request carried 44 tools (28,931 tool tokens) and the next one, after its first bash call, carried 49 (30,846; +1,915, the size of the async-shell set). That re-wrote 273,951 tokens (222 AIU billed). It happened in 1 of 11 resumed processes. 9da2c60e repeated the reload token-only flip right after its resume (190 AIU over 2 records). Price of the fix: tool definitions grow from 17,913 to 30,846 tokens on every request. Fresh seats now read about 34.4k of shared prefix (system and tools) that other seats wrote. Restart cost: the first request after a restart re-writes the whole prompt once (7c8a587b: 300,980 of 335,398). Sim (assets/sim232.md). Historical flips: 126, of which 50 are residual-class (15 token-only, 30 right after a reload, 5 first change in a resumed process). The achievable estimate removes 42 (6,066 of 6,327 AIU billed), and the bound removes 87 (12,060 of 12,584). Egret's method against plain: achievable +8.5% saving before #243 and -11.2% after, bound +26.3% and +7.3%, and the proxy as it ran -10.2% and -27.5%. Opus <5 min costs 35.1 AIU/1M achievable and 26.4 bound, against plain's 22.5. The 5-60 min cell is thin (n=94). The mechanistic segment-cache sim is within +5.3% of billed for the proxied sessions as they ran. Achievable is -11.5% against that, and the bound -27.3%. Per-seat TTL: against 1h for all, every buildable policy costs 5.9-24.2% more before #243 and 7.2-11.3% after, and a per-seat hindsight bound saves only 0.9% and 5.4%. Live after-window at 04:28Z (sim232.md, flip-window.md), proxied main-agent requests: Before the setting: same-process flip rate 3.40% (82 count + 9 token-only of 2,710). Processes started after it (17, 13 of them resumed): 1.09% (1 count, e69a6a28, + 4 token-only, two reloads, of 470); one of these processes holds a steady 36 tools without flipping. Old processes after the setting: 1.91% (4 count of 209). Measured cost against plain, same method: Fresh processes, steady state (each process's first request excluded): 3,539 AIU billed against 4,011 as plain, +11.8% (n=457). Opus hot cell -30.4% (n=319); opus 5-60 min cell +91.5% (n=16). Including the 17 restart re-writes: 5,716 against 5,329, -7.3%. Old processes: +27.9% (n=209). One hour of data: the steady state beats plain, while the achievable model says -11.2% for the after-#243 window. The difference is cold wakes, which the model prices from a thin cell."
     },
     {
       "name": "testing_strategy",
@@ -148,22 +149,34 @@
       "name": "risks",
       "value": [
         {
-          "risk": "The before-window saving rests on a thin proxied 5-60 min cell (n=103).",
+          "risk": "The achievable estimate is conservative. Every flip right after an extensions_reload (30 historical) and every first change in a resumed process (5) is kept, although the canary removed one reload of two.",
           "likelihood": "Medium",
-          "impact": "Medium",
-          "mitigation": "The mechanistic sim, calibrated to billed within 5.3%, gives the same direction. The live after-window is re-run as data accrues."
+          "impact": "Low",
+          "mitigation": "Both the achievable estimate and the optimistic bound are reported. The live after-window shows which way the fleet goes."
         },
         {
-          "risk": "Seats started before 03:27:46Z keep flipping until restarted, and each restart re-writes its whole prompt once.",
+          "risk": "With the residual flips kept, the modelled proxy costs more than plain after #243 (achievable -11.2%), and saves only in the cold-wake-heavy week before (+8.5%). The first measured hour after the setting saves 11.8% in steady state but costs 7.3% more with the restart re-writes included.",
+          "likelihood": "High",
+          "impact": "High",
+          "mitigation": "Stated plainly here, in s07 and in the PR. Keeping or dropping the proxy is a prime/Jordan decision outside plan 232 (pm-004 has raised it with far-jackal)."
+        },
+        {
+          "risk": "Seats started before 03:27:46Z keep their old tool search until restarted, and each restart re-writes its whole prompt once.",
           "likelihood": "High",
           "impact": "Low",
-          "mitigation": "Restarts are the prime's rollout. The after-window is split by process start so old seats don't mask the gain."
+          "mitigation": "Restarts are the prime's rollout. The after-window is split by process start, and flips across a restart are counted apart."
         },
         {
-          "risk": "extensions_reload can still bust the cache (a token-only flip).",
+          "risk": "A resumed process can add +5 tools on its first bash call (e69a6a28), a Copilot behaviour that toolSearch=false does not remove.",
+          "likelihood": "Low",
+          "impact": "Medium",
+          "mitigation": "Priced as residual. 1 of 11 resumed processes so far; a follow-up only if the re-run shows it recurring."
+        },
+        {
+          "risk": "The achievable estimate keeps every reload-adjacent flip, while the canary showed only one reload in two flipping.",
           "likelihood": "Medium",
           "impact": "Low",
-          "mitigation": "Recorded as a known residual. flip_window.py counts toolTokenCount changes, so it stays visible."
+          "mitigation": "Sensitivity line in sim232.md: at 1 in 2 the achievable figures are +13.1% before #243 and -6.3% after."
         }
       ]
     },

@@ -38,7 +38,7 @@ _Empty._
 | tk-0001 | Canary: one proxied opus seat after the setting, driven through the flip script; per-request table from flip_window.py | — | ph-1b0d | [x] checked | — | — | [x] 2/2 [tk-0001](#tk-0001) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0002 | sim232.py: egret's windows re-priced as proxied-fixed and part by part, with class-price calibration | — | ph-1b0d | [x] checked | — | — | [x] 1/1 [tk-0002](#tk-0002) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0003 | Per-seat TTL weighed in the segment-cache sim; verdict recorded (keep 1h, build nothing) | — | ph-1b0d | [x] checked | — | — | [x] 1/1 [tk-0003](#tk-0003) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | Live after-window by process start: receipt at 03:40Z, re-run with at least 1h post-restart | — | ph-1b0d | [ ] unchecked | — | — | [ ] 0/1 [tk-0004](#tk-0004) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Live after-window by process start: receipt at 03:40Z, re-run with at least 1h post-restart | — | ph-1b0d | [x] checked | — | — | [x] 1/1 [tk-0004](#tk-0004) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | Workstream 004 s07 and changelog row | — | ph-1b0d | [x] checked | — | — | [x] 1/1 [tk-0005](#tk-0005) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -68,7 +68,7 @@ _Empty._
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0005 | The after-window is split by process start and re-run with at least 1h of post-restart data | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+| dw-0005 | The after-window is split by process start and re-run with at least 1h of post-restart data | [x] checked | [bp-0005](../../backpressure.dd.md#rows) |
 
 ### tk-0005
 

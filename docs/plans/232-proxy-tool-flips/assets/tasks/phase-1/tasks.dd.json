@@ -54,7 +54,7 @@
           "id": "tk-0004",
           "title": "Live after-window by process start: receipt at 03:40Z, re-run with at least 1h post-restart",
           "phase": "ph-1b0d",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0005"
           ],
@@ -109,7 +109,7 @@
           {
             "id": "dw-0005",
             "assertion": "The after-window is split by process start and re-run with at least 1h of post-restart data",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0005"
           }
         ],

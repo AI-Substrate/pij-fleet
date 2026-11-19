@@ -78,9 +78,13 @@ def load(want=None):
             p = rs[i - 1] if i else None
             r["gap"] = None if p is None else (r["t"] - p["t"]) / 60
             # A flip is any change to the tool definitions: the count, or (count unchanged) their
-            # token size, which is what extensions_reload changes under toolSearch=false.
-            r["count_flip"] = p is not None and r["tools"] != p["tools"]
-            r["token_flip"] = p is not None and not r["count_flip"] and r["tool_tokens"] != p["tool_tokens"]
+            # token size, which is what extensions_reload changes under toolSearch=false. A change across a
+            # restart (the process start differs) compares two processes and is counted apart.
+            r["restart"] = p is not None and p["start"] != r["start"]
+            changed = p is not None and (r["tools"] != p["tools"] or r["tool_tokens"] != p["tool_tokens"])
+            r["restart_flip"] = changed and r["restart"]
+            r["count_flip"] = changed and not r["restart"] and r["tools"] != p["tools"]
+            r["token_flip"] = changed and not r["restart"] and r["tools"] == p["tools"]
             r["flip"] = r["count_flip"] or r["token_flip"]
             r["delta"] = None if p is None or r["tools"] is None or p["tools"] is None else r["tools"] - p["tools"]
     return recs, by
@@ -96,17 +100,17 @@ def summary(recs):
          lambda r: r["byok"] and r["ts"] >= SETTING and (r["start"] or "") >= SETTING),
         ("plain (CAPI), same span", lambda r: not r["byok"]),
     ])
-    print("| regime | sessions | hot requests | tool count changed | tool tokens changed, count same | flip rate | of flips, re-wrote >50% | hot no-flip re-wrote >50% | hot write tokens per request | distinct tool counts |")
-    print("|---|---|---|---|---|---|---|---|---|---|")
+    print("| regime | sessions | hot requests | same-process tool count changed | same-process tool tokens changed, count same | same-process flip rate | across a restart | of same-process flips, re-wrote >50% | hot no-flip re-wrote >50% | hot write tokens per request | distinct tool counts |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|")
     for name, sel in regimes.items():
         rs = [r for r in recs if sel(r) and r["gap"] is not None and r["gap"] < 5 and not r["after_compaction"]]
         flips = [r for r in rs if r["flip"]]
-        same = [r for r in rs if not r["flip"]]
+        same = [r for r in rs if not r["flip"] and not r["restart_flip"]]
         big = lambda xs: sum(1 for r in xs if r["P"] and r["W"] / r["P"] > 0.5)
         counts = collections.Counter(r["tools"] for r in rs)
         top = ", ".join(f"{k}:{v}" for k, v in counts.most_common(6))
         n = len(rs)
-        print(f"| {name} | {len({r['sid'] for r in rs})} | {n:,} | {sum(r['count_flip'] for r in rs):,} | {sum(r['token_flip'] for r in rs):,} | {len(flips) / n if n else 0:.2%} | "
+        print(f"| {name} | {len({r['sid'] for r in rs})} | {n:,} | {sum(r['count_flip'] for r in rs):,} | {sum(r['token_flip'] for r in rs):,} | {len(flips) / n if n else 0:.2%} | {sum(r['restart_flip'] for r in rs):,} | "
               f"{big(flips)} ({big(flips) / len(flips) if flips else 0:.0%}) | {big(same)} ({big(same) / len(same) if same else 0:.1%}) | "
               f"{sum(r['W'] for r in rs) / n if n else 0:,.0f} | {top} |")
 

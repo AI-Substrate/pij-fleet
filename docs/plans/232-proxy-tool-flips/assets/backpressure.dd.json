@@ -20,7 +20,7 @@
           "phase": "ph-1b0d",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "Live canary: proxied opus seat pij-apparent-rabbit (Copilot session 23fd00ea, COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:7471, started 03:29:12Z) driven through 4 user turns: 4 bash calls; an async bash with read_bash, then bash; extensions_reload, then bash; bash, bash, extensions_reload, bash, bash. Then `python3 assets/flip_window.py --session 23fd00ea-…` gives assets/canary-sessions.md: availableToolCount 49 on all 18 requests, hot writes 96-423 tokens. The prime's haiku canary e6499e1f is in the same file.",
+          "proof": "Live canary: proxied opus seat pij-apparent-rabbit (Copilot session 23fd00ea, COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:7471, started 03:29:12Z) driven through 4 user turns: 4 bash calls; an async bash with read_bash, then bash; extensions_reload, then bash; bash, bash, extensions_reload, bash, bash. Then `python3 assets/flip_window.py --session 23fd00ea-…` gives assets/canary-sessions.md: availableToolCount 49 on all 18 requests, hot writes 96-423 tokens. The prime's haiku canary e6499e1f is in the same file. Fleet qualification: the live-window table in sim232.md and flip-window.md, split into same-process count flips, token-only flips and flips across a restart, for processes started after the setting.",
           "state": "checked",
           "probe": "assets/flip_window.py"
         },
@@ -40,7 +40,7 @@
           "phase": "ph-1b0d",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "`python3 assets/sim232.py > assets/sim232.md`. Calibration lines: token classes × listed prices equals billed over every Claude record, and proxied records re-priced unchanged by class_cost equal their billed total. The egret-method tables reproduce sim.md's plain and proxied columns, with proxied-fixed and both single-part counterfactuals beside them.",
+          "proof": "`python3 assets/sim232.py > assets/sim232.md`. Calibration lines: token classes × listed prices equals billed over every historical Claude record, and proxied records re-priced unchanged by class_cost equal their billed total. The `Check (F255-001)` line re-prices with a proxied record moved past END and requires identical tables; the run fails otherwise, and removing the END guard in rates() makes it fail. The achievable and optimistic-bound tables sit beside the two single-part counterfactuals.",
           "state": "checked",
           "probe": "assets/sim232.py"
         },
@@ -50,7 +50,7 @@
           "phase": "ph-1b0d",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "sim232.md § Per-seat TTL: every Claude main-agent session in both windows through the segment-cache sim, under 5m for all, 1h for all, five last-N rules, two cost-based rules and a per-seat hindsight bound. The sim is calibrated against the billed proxied sessions as they ran (within +5.3%).",
+          "proof": "sim232.md § Per-seat TTL: every Claude main-agent session in both windows through the segment-cache sim on the achievable regime, where residual flips, compactions and process restarts clear the cache. The policies are 5m for all, 1h for all, five last-N rules, two cost-based rules and a per-seat hindsight bound. The sim is calibrated against the billed proxied sessions as they ran (within +5.3%).",
           "state": "checked",
           "probe": "assets/sim232.py ttl_sim"
         },
@@ -60,8 +60,8 @@
           "phase": "ph-1b0d",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "`python3 assets/flip_window.py > assets/flip-window.md` and the live-window table in sim232.md, split by Copilot process start (the latest session.start or session.resume) before or after 03:27:46Z. The first receipt is dated 03:40Z; it is re-run with at least an hour of post-restart data.",
-          "state": "unchecked",
+          "proof": "`python3 assets/flip_window.py > assets/flip-window.md` and `python3 assets/sim232.py > assets/sim232.md`, run at 04:28Z: the live window split by Copilot process start (the latest session.start or session.resume) before or after 03:27:46Z, flips across a restart counted apart, and the measured cost against plain per cell. The first receipt was 03:40Z (PR head c68ac8f7).",
+          "state": "checked",
           "probe": "assets/flip_window.py"
         },
         {
