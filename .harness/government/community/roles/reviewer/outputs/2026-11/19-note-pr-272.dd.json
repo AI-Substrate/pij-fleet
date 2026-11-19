@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"kind": "note",
+				"role": "reviewer",
+				"subject": "pr:272",
+				"writer": "pij-whispering-marmot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Harness-feedback clarification for reviewer verdict de812635a0de5692621dd8cd551ad0d53b19f04f at 645ab5103784ce386f63f0f37bba95c490c162dc: checks/extension.ts:215 tails res.stderr || res.stdout, not concatenated streams. Nonempty stderr discards the stdout failure summary. The proposed full per-sensor log remains useful; verdict and findings are unchanged."
+		}
+	]
+}
