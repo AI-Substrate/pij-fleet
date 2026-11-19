@@ -177,24 +177,76 @@ pub fn find(repo: &Path) -> Result<GovernanceRoot, Refusal> {
     })
 }
 
+/// Where a folder sits in git, read from the files git itself reads: no
+/// launch (F202).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Place {
+    /// The repository's canonical common git directory, shared by every
+    /// worktree of one repository.
+    Repo(PathBuf),
+    /// The folder is missing, or nothing from it up to `/` is a repository.
+    NotARepo,
+    /// A layout this reader does not decide (a bare repository, a garbled or
+    /// dangling `.git`, a `.git` directory with no `HEAD`): ask git.
+    Unknown,
+}
+
+/// Walk up from `start` as git's discovery does: at each level a `.git`
+/// directory is the common dir (main checkout), a `.git` file names the
+/// gitdir (`gitdir: <path>`, relative to its folder), whose `commondir`
+/// (relative to the gitdir) names the common dir if present. A level that is
+/// itself a git directory (bare, or inside `.git`) is left to git. One
+/// difference, stated: the walk does not stop at a filesystem boundary.
+pub(crate) fn place(start: &Path) -> Place {
+    if !start.is_dir() {
+        return Place::NotARepo;
+    }
+    for level in start.ancestors() {
+        let dotgit = level.join(".git");
+        let Ok(meta) = std::fs::metadata(&dotgit) else {
+            if looks_like_git_dir(level) {
+                return Place::Unknown;
+            }
+            continue;
+        };
+        if meta.is_dir() {
+            return if dotgit.join("HEAD").is_file() {
+                Place::Repo(canonical(&dotgit))
+            } else {
+                Place::Unknown
+            };
+        }
+        let Some(gitdir) = std::fs::read_to_string(&dotgit).ok().and_then(|text| {
+            let named = text.trim().strip_prefix("gitdir:")?.trim().to_string();
+            (!named.is_empty()).then(|| level.join(named))
+        }) else {
+            return Place::Unknown;
+        };
+        let common = match std::fs::read_to_string(gitdir.join("commondir")) {
+            Ok(named) if !named.trim().is_empty() => gitdir.join(named.trim()),
+            Ok(_) => return Place::Unknown,
+            Err(_) => gitdir,
+        };
+        return if common.is_dir() {
+            Place::Repo(canonical(&common))
+        } else {
+            Place::Unknown
+        };
+    }
+    Place::NotARepo
+}
+
+/// A folder git would take as a git directory itself.
+fn looks_like_git_dir(dir: &Path) -> bool {
+    dir.join("HEAD").is_file() && dir.join("objects").is_dir() && dir.join("refs").is_dir()
+}
+
 /// The repository's common git directory, found by walking up from `start`.
 pub(crate) fn common_dir(start: &Path) -> Option<PathBuf> {
-    let mut dir = Some(start);
-    while let Some(current) = dir {
-        let dotgit = current.join(".git");
-        if dotgit.is_dir() {
-            return Some(canonical(&dotgit));
-        }
-        if let Ok(text) = std::fs::read_to_string(&dotgit) {
-            let gitdir = current.join(text.trim().strip_prefix("gitdir:")?.trim());
-            let common = std::fs::read_to_string(gitdir.join("commondir"))
-                .map(|relative| gitdir.join(relative.trim()))
-                .unwrap_or(gitdir);
-            return Some(canonical(&common));
-        }
-        dir = current.parent();
+    match place(start) {
+        Place::Repo(dir) => Some(dir),
+        Place::NotARepo | Place::Unknown => None,
     }
-    None
 }
 
 fn read(dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -344,5 +396,95 @@ mod tests {
         assert_eq!(refusal.code, E_GOV_ABSENT);
         assert_eq!(refusal.next.as_deref(), Some(BOOTSTRAP));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn git_says(scratch: &Scratch, dir: &Path) -> PathBuf {
+        let printed = scratch.git(
+            dir,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        );
+        PathBuf::from(printed.trim()).canonicalize().unwrap()
+    }
+
+    /// F202: the in-process read names the common dir git names, for the
+    /// main checkout, a folder inside a worktree, and a linked worktree
+    /// whose gitdir is absolute (as git writes it) or relative.
+    #[test]
+    fn place_names_the_common_dir_git_names() {
+        let scratch = Scratch::new("pij-community-place");
+        let common = scratch.main.join(".git");
+        let inside = scratch.gov.join(".harness/government");
+        for dir in [&scratch.main, &inside, &scratch.gov] {
+            assert_eq!(place(dir), Place::Repo(common.clone()), "{dir:?}");
+            assert_eq!(place(dir), Place::Repo(git_says(&scratch, dir)), "{dir:?}");
+        }
+        let pointer = std::fs::read_to_string(scratch.gov.join(".git")).unwrap();
+        let gitdir = PathBuf::from(pointer.trim().strip_prefix("gitdir:").unwrap().trim());
+        assert!(gitdir.is_absolute(), "git wrote {pointer}");
+        let commondir = std::fs::read_to_string(gitdir.join("commondir")).unwrap();
+        assert!(
+            !Path::new(commondir.trim()).is_absolute(),
+            "relative commondir: {commondir}"
+        );
+
+        std::fs::write(
+            scratch.gov.join(".git"),
+            "gitdir: ../main/.git/worktrees/gov\n",
+        )
+        .unwrap();
+        assert_eq!(place(&scratch.gov), Place::Repo(common.clone()));
+        assert_eq!(
+            place(&scratch.gov),
+            Place::Repo(git_says(&scratch, &scratch.gov))
+        );
+    }
+
+    /// A folder no repository holds, or one that is gone, is no repository.
+    /// Each layout the reader does not decide goes to git; none panics.
+    #[test]
+    fn place_leaves_what_it_cannot_read_to_git() {
+        let scratch = Scratch::bare_main("pij-community-place-odd");
+        let dir = |name: &str| {
+            let path = scratch.root.join(name);
+            std::fs::create_dir_all(&path).unwrap();
+            path
+        };
+        assert_eq!(place(&dir("plain")), Place::NotARepo);
+        assert_eq!(place(&scratch.root.join("gone")), Place::NotARepo);
+
+        let gitfile = |name: &str, contents: &[u8]| {
+            let path = dir(name);
+            std::fs::write(path.join(".git"), contents).unwrap();
+            path
+        };
+        let worktrees = scratch.main.join(".git/worktrees/half");
+        std::fs::create_dir_all(&worktrees).unwrap();
+        std::fs::write(worktrees.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(worktrees.join("commondir"), "../missing\n").unwrap();
+        let undecided = [
+            gitfile("garbled", b"not a pointer\n"),
+            gitfile("empty-pointer", b"gitdir:   \n"),
+            gitfile("not-utf8", &[0x67, 0xff, 0xfe]),
+            gitfile("dangling", b"gitdir: ../nowhere\n"),
+            gitfile(
+                "dangling-commondir",
+                format!("gitdir: {}\n", worktrees.display()).as_bytes(),
+            ),
+        ];
+        for path in &undecided {
+            assert_eq!(place(path), Place::Unknown, "{path:?}");
+        }
+
+        let hollow = dir("hollow");
+        std::fs::create_dir_all(hollow.join(".git")).unwrap();
+        assert_eq!(place(&hollow), Place::Unknown);
+
+        let bare = scratch.root.join("bare.git");
+        scratch.git(
+            &scratch.root,
+            &["init", "-q", "--bare", bare.to_str().unwrap()],
+        );
+        assert_eq!(place(&bare), Place::Unknown);
+        assert_eq!(place(&bare.join("refs/heads")), Place::Unknown);
     }
 }

@@ -49,6 +49,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::community::root::{self, Place};
 use pij_core::BG_ACTOR;
 use pij_core::anomalies::{
     ANOMALY_ACK_KIND, ANOMALY_CLEAR_KIND, AnomalyThresholds, AnomalyView, Detector,
@@ -92,9 +93,13 @@ const STATUS_WAIT: Duration = Duration::from_secs(3);
 /// How long `git rev-parse` may take to name a folder's repository.
 const GIT_WAIT: Duration = Duration::from_secs(2);
 
-/// How long a folder git could not place keys as itself before it is asked
-/// again.
-const UNPLACED_TTL: Duration = Duration::from_secs(600);
+/// How long git's answer for a folder the in-process read could not decide
+/// is kept (F202). A TTL, not a file identity: these are exactly the layouts
+/// (bare, garbled or dangling `.git`) with no file this reader trusts to key
+/// on. Every call reads the folder in process first, so a folder re-created
+/// readable is placed at once; the TTL only bounds git to one launch per such
+/// folder per 10 minutes.
+const GIT_ANSWER_TTL: Duration = Duration::from_secs(600);
 
 /// How long one transcript's quota read may take before it counts as none.
 const LIMIT_READ_WAIT: Duration = Duration::from_secs(2);
@@ -251,7 +256,8 @@ struct PaTrackers {
     prime: PrimeActive,
 }
 
-/// Per-PA trackers, the reset schedule, and a folder → repository cache. In
+/// Per-PA trackers, the reset schedule, and git's answers for folders read
+/// in process could not place. In
 /// memory only: a restart re-arms every tracker (no nudge for a fleet already
 /// idle, no prime-active wake before a new episode), and the store's
 /// `limit_wakes` claim keeps reset wakes single.
@@ -260,9 +266,9 @@ pub struct PaWatchdog {
     trackers: Mutex<HashMap<SeatId, PaTrackers>>,
     /// When each `(scope, resetsAt)` was first seen, epoch ms.
     limits_seen: Mutex<HashMap<(String, u64), u64>>,
-    repos: Mutex<HashMap<String, String>>,
-    /// Folders git could not place, and when: retried after [`UNPLACED_TTL`].
-    unplaced: Mutex<HashMap<String, std::time::Instant>>,
+    /// Git's answer for folders the in-process read left undecided, and when:
+    /// asked again after [`GIT_ANSWER_TTL`].
+    asked_git: Mutex<HashMap<String, (String, std::time::Instant)>>,
     /// Plan 217's presence and large-seat trackers.
     presence: Mutex<presence::Trackers>,
     /// When each opted-in seat was last nudged, in seconds.
@@ -1096,48 +1102,51 @@ impl PaWatchdog {
     }
 
     /// The repository a folder belongs to: its absolute git common dir, so
-    /// every worktree of one repository shares a key. A folder git cannot
-    /// place keys as itself, so it matches only seats in exactly that folder.
+    /// every worktree of one repository shares a key. A folder that is no
+    /// repository keys as itself, so it matches only seats in exactly that
+    /// folder. Read in process every call, never cached (F202): git runs only
+    /// for a layout that read cannot decide, at most once per folder per
+    /// [`GIT_ANSWER_TTL`].
     pub(crate) async fn repo(&self, folder: &str) -> String {
-        if let Some(known) = self.repos.lock().await.get(folder) {
-            return known.clone();
+        match root::place(Path::new(folder)) {
+            Place::Repo(dir) => return dir.display().to_string(),
+            Place::NotARepo => return folder.to_string(),
+            Place::Unknown => {}
         }
-        if self
-            .unplaced
+        if let Some((key, at)) = self.asked_git.lock().await.get(folder)
+            && at.elapsed() < GIT_ANSWER_TTL
+        {
+            return key.clone();
+        }
+        let key = git_common_dir(folder)
+            .await
+            .unwrap_or_else(|| folder.to_string());
+        self.asked_git
             .lock()
             .await
-            .get(folder)
-            .is_some_and(|at| at.elapsed() < UNPLACED_TTL)
-        {
-            return folder.to_string();
-        }
-        match git_common_dir(folder).await {
-            Some(dir) => {
-                self.unplaced.lock().await.remove(folder);
-                self.repos
-                    .lock()
-                    .await
-                    .insert(folder.to_string(), dir.clone());
-                dir
-            }
-            // Remembered for UNPLACED_TTL only: a folder that becomes a
-            // repository later is found, and a folder git cannot place costs
-            // one launch per lifetime, not one per round.
-            None => {
-                self.unplaced
-                    .lock()
-                    .await
-                    .insert(folder.to_string(), std::time::Instant::now());
-                folder.to_string()
-            }
+            .insert(folder.to_string(), (key.clone(), std::time::Instant::now()));
+        key
+    }
+
+    /// [`Self::repo`] without a launch: the in-process read, else git's
+    /// cached answer, else `None`.
+    pub(crate) async fn placed(&self, folder: &str) -> Option<String> {
+        match root::place(Path::new(folder)) {
+            Place::Repo(dir) => Some(dir.display().to_string()),
+            Place::NotARepo => Some(folder.to_string()),
+            Place::Unknown => self
+                .asked_git
+                .lock()
+                .await
+                .get(folder)
+                .filter(|(_, at)| at.elapsed() < GIT_ANSWER_TTL)
+                .map(|(key, _)| key.clone()),
         }
     }
 }
 
+/// Git's answer, for a folder [`root::place`] left undecided.
 async fn git_common_dir(folder: &str) -> Option<String> {
-    if !Path::new(folder).is_dir() {
-        return None;
-    }
     pij_core::spawns::record("git.pa-watchdog-common-dir");
     let output = tokio::time::timeout(
         GIT_WAIT,

@@ -3537,3 +3537,49 @@ async fn a_held_large_seat_notice_flushes_marked_when_the_seat_has_compacted() {
         "still over the line: as held: {body}"
     );
 }
+
+/// F202: a folder's repository is read in process every call, so a worktree
+/// removed and re-created in another repository is placed in the new one at
+/// once, and a folder left to git is placed in process as soon as it becomes
+/// readable, without waiting out git's cached answer.
+#[tokio::test]
+async fn a_recreated_worktree_is_placed_in_its_new_repository_at_once() {
+    let repos = Repos::new();
+    let other = Repos::new();
+    let git = |dir: &str, args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .expect("git runs");
+        assert!(output.status.success(), "git {args:?}: {output:?}");
+    };
+    let common = |repos: &Repos| format!("{}/.git", repos.path("main"));
+    let watchdog = PaWatchdog::default();
+    let feature = repos.path("feature");
+    assert_eq!(watchdog.repo(&feature).await, common(&repos));
+
+    git(&repos.path("main"), &["worktree", "remove", &feature]);
+    git(
+        &other.path("main"),
+        &["worktree", "add", "-q", &feature, "-b", "moved"],
+    );
+    assert_eq!(watchdog.repo(&feature).await, common(&other));
+
+    let elsewhere = repos.path("elsewhere");
+    std::fs::write(Path::new(&elsewhere).join(".git"), "not a pointer\n").unwrap();
+    assert_eq!(
+        watchdog.repo(&elsewhere).await,
+        elsewhere,
+        "git cannot place it"
+    );
+    assert_eq!(watchdog.placed(&elsewhere).await, Some(elsewhere.clone()));
+    std::fs::remove_file(Path::new(&elsewhere).join(".git")).unwrap();
+    git(&elsewhere, &["init", "-q"]);
+    assert_eq!(
+        watchdog.repo(&elsewhere).await,
+        format!("{elsewhere}/.git"),
+        "placed in process, not git's kept answer"
+    );
+}
