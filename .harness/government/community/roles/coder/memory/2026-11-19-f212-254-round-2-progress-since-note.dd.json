@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open with the 0a651ab note when resuming #254 round 2. This note supersedes its DONE list",
+				"tags": [
+					"f212",
+					"handover",
+					"review"
+				],
+				"title": "F212 #254 round 2: progress since note 0a651ab"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Since 0a651ab (worktree ~/pi-hacking/fleet-f212, all uncommitted, not built):\n- Fixed the two LSP errors in auth_recovery::handle. `settled` now goes through `pending_restart` (in_window filtered to Restart with the same incarnation, msg_id cloned), then `control_live(.., &msg_id)`.\n- lib.rs has `pub(crate) auth_recovery: Arc<auth_recovery::Ledger>` on Services, built at the lib.rs constructor. Check whether http/tests.rs:291 also builds Services literally; if it does, add the field there too.\n- APIs verified to exist: spine.latest_matching(&SeatId, &[&str]); watchdogs().project(&str) -> Option<record{prime_id: Option<SeatId>}>; delivery.accept_control (pub(crate)); the real queue live_payloads returns state IN (pending, running) and also covers held/deferred controls; queue.claim(&[String], worker) and ack(JobId, pij_core::model::Outcome::{Done, Failed{reason}}) settle a control (that is how the tests simulate \"typed but same pid\" and \"control failed\").\n- http/auth_error.rs is rewritten: it requires pid and proc_start, and if they don't match seat.proc it returns 409 E-RS-AUTH-STALE. Check that `ProcIdentity` field names and `Envelope::refused`/`ErrorKind::Refused` exist; the build will tell.\n- store.mjs sends `{...this.tuple(), kind}`. In store.test.mjs the expectation now includes pid and proc_start, and the test is renamed to \"F212: a lost login is reported once its run ends, after the idle, with its process and no text\". Both F212 node tests pass.\n- Still to do: rewrite auth_recovery_tests.rs (the old file uses the removed RECOVERY_WINDOW_MS, Recorded and handle with no reporter, so it won't compile). Plan is in 0a651ab.\n- Small text fix to make: the generic Notify notice says \"busy or had text in its composer\", but Notify now also covers a refused or failed queue. Reword it to \"...or the restart could not be queued\". `pij revive` exists (cli), so the NotRestarted text is valid.\n"
+		}
+	]
+}
