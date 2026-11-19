@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "When reviewing request counters, lock-free telemetry or concurrent snapshot tests.",
+				"tags": [
+					"review",
+					"telemetry",
+					"concurrency",
+					"cost",
+					"f222"
+				],
+				"title": "HTTP telemetry: fixed tables and concurrent snapshot proof"
+			}
+		},
+		{
+			"name": "body",
+			"value": "From #266: keep route telemetry bounded with a sorted, deduplicated immutable table built from Endpoint::ALL. Binary search must use the constructor's string ordering; absent templates share unmatched. Inline atomics avoid a per-response mutex and per-route Arc clone. Count outside bearer middleware AND separately authenticated job-token routes. GET /v1/seats performs two increments, not one.\n\nRelaxed atomics prevent lost increments but do not make route/shape snapshots transactional. Derive total from the values actually read and use explicit wrapping arithmetic if counter wrap is the contract; ordinary additions can panic under overflow checks.\n\nConcurrency-proof trap: spawning writers, looping while any is unfinished, then asserting snapshots > 0 is scheduler-dependent: all writers may finish before the reader runs. Require an explicit reader/writer rendezvous to guarantee observation during recording. Joining writers before asserting exact final totals is sound. This was a nonblocking C34 follow-up in round 2, not a reason for a third round.\n"
+		}
+	]
+}
