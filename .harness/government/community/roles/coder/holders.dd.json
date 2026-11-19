@@ -1239,6 +1239,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-compact-bat",
 					"why": "F222 daemon CPU: per-route counter, then /v1/seats filter-before-project/cache"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T08:42:25.994Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f197",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F197 omp -p child registers on parent pane; then F203 __omp_worker_* attribution"
 				}
 			]
 		}
