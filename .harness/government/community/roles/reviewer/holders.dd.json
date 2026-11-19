@@ -2053,7 +2053,10 @@
 					"harness_session": "315720bd-44dc-4cc8-ae4b-63667a267c8e",
 					"instance_key": "272",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #272 merged (45251739d973)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-whispering-marmot",
+					"to": "2026-11-19T12:01:04.069Z",
 					"why": "#272 F227 correctness review, fresh seat"
 				}
 			]

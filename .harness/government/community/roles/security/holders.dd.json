@@ -564,7 +564,10 @@
 					"harness_session": "2c8556a6-83f3-4444-a280-7435acc5720d",
 					"instance_key": "272",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #272 merged (45251739d973)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-far-emu",
+					"to": "2026-11-19T12:01:04.069Z",
 					"why": "#272 F227 security verdict, fresh seat"
 				}
 			]
