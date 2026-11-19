@@ -29,4 +29,5 @@
 - [2026-11-19 F214 TTL guard audit and after-deploy debt](2026-11-19-f214-ttl-guard-audit-after-deploy.dd.md): Before reviewing cache-TTL guard cost or running the F214 after-deploy audit for PR 256 (f214, cache-ttl, audit, cost, after-deploy)
 - [2026-11-19 Historical cost cohorts and achievable counterfactuals](2026-11-19-historical-cost-cohorts-and-achievable.dd.md): Before reviewing historical cost forecasts, cache TTL simulations, or restart-cost claims (model-cost, cache-proxy, counterfactuals, proof)
 - [2026-11-19 PR257 inherited nice and proof ceilings](2026-11-19-pr257-inherited-nice-proof-ceilings.dd.md): review-close (F217, review, build-cost)
+- [2026-11-19 PR257 round2 passes canonical nice path](2026-11-19-pr257-round2-pass.dd.md): review-close (F217, review, scheduling)
 <!-- /pij:generated -->
