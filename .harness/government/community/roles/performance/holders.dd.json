@@ -129,6 +129,16 @@
 					"seat": "pij-identical-wolf",
 					"to": "2026-11-19T00:53:40.591Z",
 					"why": "F207 #247 cost: activity hooks + settle timer (OMP gpt-6.1-sol)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T01:15:53.747Z",
+					"harness": "omp",
+					"harness_session": "01a1f15f-842f-773e-94e3-5bc54ec11dcb",
+					"instance_key": "248",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-vast-silkworm",
+					"why": "F202 #248 cost: launch-site change (OMP gpt-6.1-sol)"
 				}
 			]
 		}
