@@ -1666,7 +1666,10 @@
 					"harness": "copilot",
 					"harness_session": "c30a370f-eb00-4bbb-8c2c-220ccfa18b5e",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "dead seat (F227)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-experienced-penguin",
+					"to": "2026-11-19T09:47:44.311Z",
 					"why": "pm-004: verdict on #243 (ws004 s05)"
 				},
 				{
