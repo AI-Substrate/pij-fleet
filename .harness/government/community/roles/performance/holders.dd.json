@@ -201,7 +201,10 @@
 					"harness_session": "01a1f247-4f29-751d-8849-f77c26569f15",
 					"instance_key": "257",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #257 merged (9543d9ada766)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-public-cobra",
+					"to": "2026-11-19T05:46:26.952Z",
 					"why": "F217 #257 build cost and disk (OMP gpt-6.1-sol)"
 				}
 			]

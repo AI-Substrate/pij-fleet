@@ -370,7 +370,10 @@
 					"harness_session": "62dda8ac-73c4-4f85-bdd1-5f7de7b72c06",
 					"instance_key": "257",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #257 merged (9543d9ada766)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-deliberate-orca",
+					"to": "2026-11-19T05:46:26.952Z",
 					"why": "F217 #257 security (shell scripts, recipes)"
 				}
 			]

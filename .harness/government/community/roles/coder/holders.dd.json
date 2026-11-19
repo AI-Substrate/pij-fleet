@@ -1159,7 +1159,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f217",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #257 merged (9543d9ada766)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-19T05:46:26.952Z",
 					"why": "F217: tests build pij-rs into per-worktree target dirs (~15 GB/lane)"
 				},
 				{

@@ -1856,7 +1856,10 @@
 					"harness_session": "4b0db837-7643-466e-b89f-a8ec3a6fb6bc",
 					"instance_key": "257",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #257 merged (9543d9ada766)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-compulsory-junglefowl",
+					"to": "2026-11-19T05:46:26.952Z",
 					"why": "F217 #257 correctness"
 				}
 			]
