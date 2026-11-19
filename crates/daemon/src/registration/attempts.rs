@@ -150,6 +150,12 @@ pub enum Outcome {
     Unchanged,
     /// Refused outright.
     Refused,
+    /// Refused: the pane is recorded for a seat whose process pij cannot
+    /// check (`E-RS-PANE-HELD`, F196).
+    PaneHeld,
+    /// Refused: the claim runs inside the pane's live seat, as its child or
+    /// its launcher (`E-RS-PANE-HOLDER-CHILD`, F197, F224).
+    PaneHolderChild,
     /// The claimed address is retired and this session may not take it.
     Retired,
     /// Refused for now; the client may retry.
@@ -170,6 +176,8 @@ impl Outcome {
             Self::Rebound => "rebound",
             Self::Unchanged => "unchanged",
             Self::Refused => "refused",
+            Self::PaneHeld => "pane-held",
+            Self::PaneHolderChild => "pane-holder-child",
             Self::Retired => "retired",
             Self::Retryable => "retryable",
             Self::SessionHold => "session-hold",

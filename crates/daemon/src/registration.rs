@@ -45,7 +45,9 @@ pub(crate) enum RegistrationError {
     },
     /// F197: the claim's process descends from `holder`'s live process on
     /// `holder`'s own pane: a one-shot child (`omp -p`, `claude -p`, `copilot
-    /// -p`) that inherited the pane. A brake: refused, the holder untouched.
+    /// -p`) that inherited the pane. F224: or the claim resolved to that
+    /// process's own launcher under another id. A brake: refused, the holder
+    /// untouched.
     PaneHolderChild {
         holder: SeatId,
         pane: String,
@@ -286,10 +288,11 @@ impl RegistrationService {
             ),
             Err(error) => (
                 match error {
-                    RegistrationError::Refused(_)
-                    | RegistrationError::InvalidSeatId(_)
-                    | RegistrationError::PaneHeld { .. }
-                    | RegistrationError::PaneHolderChild { .. } => Outcome::Refused,
+                    RegistrationError::Refused(_) | RegistrationError::InvalidSeatId(_) => {
+                        Outcome::Refused
+                    }
+                    RegistrationError::PaneHeld { .. } => Outcome::PaneHeld,
+                    RegistrationError::PaneHolderChild { .. } => Outcome::PaneHolderChild,
                     RegistrationError::Retired { .. } => Outcome::Retired,
                     RegistrationError::Retryable(_) => Outcome::Retryable,
                     RegistrationError::NativeSessionHold(_) => Outcome::SessionHold,
@@ -300,7 +303,8 @@ impl RegistrationService {
                     RegistrationError::Retired { seat, .. }
                     | RegistrationError::NativeSessionHold(seat)
                     | RegistrationError::NativeHolderCurrent(seat)
-                    | RegistrationError::PaneHeld { holder: seat, .. } => seat.to_string(),
+                    | RegistrationError::PaneHeld { holder: seat, .. }
+                    | RegistrationError::PaneHolderChild { holder: seat, .. } => seat.to_string(),
                     _ => claimed.to_string(),
                 },
                 matches!(
@@ -309,6 +313,7 @@ impl RegistrationService {
                         | RegistrationError::NativeSessionHold(_)
                         | RegistrationError::NativeHolderCurrent(_)
                         | RegistrationError::PaneHeld { .. }
+                        | RegistrationError::PaneHolderChild { .. }
                 ),
             ),
         };
@@ -766,8 +771,15 @@ impl RegistrationService {
                 holders.unknown.push(seat.id);
                 continue;
             };
+            // F224: the ordinary path re-resolves a claim to the pane's nearest
+            // harness process, which can be the live holder's own launcher (a
+            // Copilot seat's `node …/bin/copilot` above its registered CLI), so
+            // a process inside the seat registered beside it. A claim that
+            // resolves to an ancestor of a live holder on its pane, under
+            // another id, is that seat over again.
+            let launcher = self.descends_from(previous.pid, identity.pid);
             match pij_core::liveness::alive(previous, self.liveness.as_ref()).await {
-                Ok(Liveness::Active) if child => {
+                Ok(Liveness::Active) if child || launcher => {
                     return Err(RegistrationError::PaneHolderChild {
                         holder: seat.id,
                         pane: pane.clone(),
@@ -2975,6 +2987,72 @@ mod tests {
             .await
             .expect("a sibling registers");
         assert_eq!(registry.get(&parent.id).await.unwrap(), Some(parent));
+    }
+
+    /// F224: the ordinary path resolves a claim to the pane's nearest harness
+    /// process. For a Copilot seat that is its launcher (`node …/bin/copilot`),
+    /// the parent of the CLI it registered, so a shell inside the seat claimed
+    /// a new id on its pane and registered beside it (seen live). That claim is
+    /// refused and counted by its code, and the seat is unchanged. The seat's
+    /// own id, or its own conversation, from the same launcher is the seat.
+    #[tokio::test]
+    async fn a_claim_resolved_to_the_live_seats_launcher_never_registers() {
+        // The seat's CLI (OTHER_HOST) runs under its launcher (HOST), under the
+        // pane shell (SHELL); the claim resolved to the launcher.
+        let mut seat = SeatDescriptor::new("pij-copilot-seat", Harness::Copilot, "/isolated");
+        seat.pane = Some("%137".into());
+        seat.proc = Some(OTHER_HOST);
+        seat.harness_session = Some("seat-session".into());
+        let tree = |pid: u32| match pid {
+            p if p == OTHER_HOST.pid => Some(HOST.pid),
+            p if p == HOST.pid => Some(SHELL.pid),
+            p if p == SHELL.pid => Some(1),
+            _ => None,
+        };
+        let (service, registry) = native_service(vec![seat.clone()], native_liveness()).await;
+        let service = service.with_parents(Arc::new(tree));
+        let refused = service
+            .register_via(
+                super::attempts::Path::Unspecified,
+                native_claim("pij-f224-probe"),
+                None,
+                None,
+            )
+            .await
+            .expect_err("a claim on the seat's own launcher is refused");
+        match &refused {
+            RegistrationError::PaneHolderChild { holder, pane } => {
+                assert_eq!((holder, pane.as_str()), (&seat.id, "%137"));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(registry.get(&seat.id).await.unwrap(), Some(seat.clone()));
+        assert_eq!(registry.get(&"pij-f224-probe".into()).await.unwrap(), None);
+        let counts = service.attempts().snapshot();
+        assert_eq!(counts.by_key["unspecified.pane.pane-holder-child"].count, 1);
+        assert_eq!(counts.by_seat["pij-copilot-seat"].count, 1);
+
+        // The seat itself, by id or by its own conversation, is not this
+        // brake's to refuse (other guards judge an active incarnation).
+        for (id, session) in [
+            ("pij-copilot-seat", None),
+            ("pij-copilot-renamed", Some("seat-session")),
+        ] {
+            let (service, _) = native_service(vec![seat.clone()], native_liveness()).await;
+            let service = service.with_parents(Arc::new(tree));
+            let result = service
+                .register_inner(
+                    native_claim(id),
+                    session.map(str::to_string),
+                    super::RegistrationMode::Ordinary,
+                )
+                .await;
+            assert!(
+                !matches!(result, Err(RegistrationError::PaneHolderChild { .. })),
+                "{id}: {:?}",
+                result.err()
+            );
+        }
     }
 
     #[tokio::test]
