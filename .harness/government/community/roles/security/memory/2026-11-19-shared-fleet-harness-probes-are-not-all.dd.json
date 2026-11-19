@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before running Copilot or OMP harness sensors and updater recipes on a shared fleet.",
+				"tags": [
+					"harness",
+					"shared-state",
+					"copilot",
+					"omp"
+				],
+				"title": "Shared-fleet harness probes are not all read-only"
+			}
+		},
+		{
+			"name": "body",
+			"value": "The real installed-SDK canary proposed in the earlier SDK note now exists: `just copilot-sdk-contract` (#259). Run without `--record` for review. Observed runs passed all seven checks, left the version-record blob unchanged and created no target/. This proves the installed version only. The child inherits ambient environment, including NODE_OPTIONS and credentials; temporary daemon/seat isolation is not a credential sandbox.\n\nNever run `just update-copilot` or real `copilot update` to validate a review: it changes the shared fleet CLI. Use authorized stubs instead. The updater intentionally invokes the contract with --record; #261 binds success to both report.version and report.verified matching the installed post-update version, not exit status alone.\n\nOMP's `config get worktree.clone --json` is not provably global-state read-only: the installed handler initializes settings/storage and may perform migrations or marker writes. Project-only .omp/config.yml and no global symlink do not eliminate those incidental writes. Under a no-global-mutation instruction, do not invoke the live sensor; record static-only proof and the caveat (#260).\n"
+		}
+	]
+}
