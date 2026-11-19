@@ -153,6 +153,12 @@ copilot-native-smoke *ARGS:
 copilot-sdk-contract *ARGS:
     @nice -n 19 node harness/scripts/copilot-sdk-contract.mjs "$@"
 
+# D-F208-2: the one way to take a Copilot CLI update. `copilot update`, then the
+# installed-SDK contract on the new version; on a pass it records the version
+# (commit harness/copilot-sdk-verified.json) and says the fleet may reload
+# seats, otherwise it stops: do not reload. With no update it still checks.
+update-copilot:
+    @nice -n 19 node harness/scripts/update-copilot.mjs
 
 
 # Large native history, receiver death and manual inbox recovery on isolated services.

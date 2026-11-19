@@ -244,6 +244,36 @@ otherwise re-runs it only on its own events and kept showing the phantom.
 Sessions already running when the daemon writes that setting pick it up on
 their next launch.
 
+## On a Copilot update (D-F208-2)
+
+A new Copilot CLI can change its SDK without a word, as 1.0.113 did (F208): every
+seat that reloads onto it loses `pij_send` and its hooks. Check before any seat
+reloads.
+
+**Take updates with `just update-copilot`.** It runs `copilot update`, then the
+[installed SDK contract](#installed-sdk-contract-d-f208-1) on the version now
+installed, and:
+
+- on a pass, records that version in `harness/copilot-sdk-verified.json` (commit
+  it) and says the fleet may reload Copilot seats;
+- on any failure, exits 1 with `do not reload: the SDK would drop pij_send/hooks`
+  and the failing checks: leave seats on the old process and fix the extension
+  for the new shape first;
+- with no update available, says so and still runs the contract.
+
+**Copilot also updates itself.** By default it checks for updates at startup and
+applies a download at the next launch, and 17 Nov's 1.0.113 arrived that way, so
+a seat's `/restart` or relaunch can be the update. Then the first sign is the
+contract's version warning in `just doctor` and `harness checks` (`copilot-sdk`):
+`Copilot is <new>, but the last verified version is <old>: run just
+copilot-sdk-contract before reloading seats; after a pass, run just
+copilot-sdk-contract --record and commit harness/copilot-sdk-verified.json.`
+Treat it as the same step: no more seat reloads until the contract has passed
+and is recorded.
+
+Cost: on demand only. No loop, hook or timer; one run is the update plus one
+contract run.
+
 ## In-place CLI upgrade
 
 On Linux, replacing the installed Copilot executable can leave a live host's

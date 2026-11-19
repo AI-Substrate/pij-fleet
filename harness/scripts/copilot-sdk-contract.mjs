@@ -21,13 +21,14 @@
 // report; `--record` writes the version it passed on to
 // harness/copilot-sdk-verified.json, which a later run compares against (a
 // different installed version is a `warn` until recorded).
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
+import { installedVersion } from "./copilot-cli.mjs";
+import { verdict } from "./copilot-sdk-verdict.mjs";
 
 const repo = join(import.meta.dirname, "..", "..");
 const EXTENSION = join(repo, ".copilot", "extensions", "pij", "extension.mjs");
@@ -52,24 +53,6 @@ function finish(report) {
 		console.log(`copilot-sdk-contract: ${report.status}: ${report.summary}`);
 	}
 	process.exit(report.status === "fail" ? 1 : 0);
-}
-
-/** The CLI version `copilot` runs now, or undefined when it is not installed. */
-async function installedVersion() {
-	const binary = process.env.COPILOT_BIN || "copilot";
-	try {
-		const { stdout } = await promisify(execFile)(binary, ["--version"], {
-			env: { ...process.env, COPILOT_OFFLINE: "true" },
-			encoding: "utf8",
-			timeout: 10_000,
-		});
-		const version = /^GitHub Copilot CLI (\S+)\.$/m.exec(stdout)?.[1];
-		if (!version) throw new Error(`${binary} --version printed no version`);
-		return version;
-	} catch (error) {
-		if (error.code === "ENOENT") return undefined;
-		throw error;
-	}
 }
 
 /** Content-Length framed JSON-RPC, as vscode-jsonrpc speaks it over stdio. */
@@ -413,35 +396,17 @@ try {
 const verified = await readFile(RECORD, "utf8")
 	.then((text) => JSON.parse(text).version)
 	.catch(() => undefined);
-const failed = checks.filter((one) => !one.ok);
-if (failed.length > 0)
-	finish({
-		status: "fail",
-		version,
-		verified,
-		checks,
-		diagnostic,
-		summary: `Copilot ${version}'s SDK would not register pij's ${failed.map((one) => one.name).join(", ")} (last verified ${verified ?? "never"}); compare its copilot-sdk/extension.js resumeSessionForExtension with ${verified ?? "the last good version"}'s`,
-	});
-if (record) {
+// --record writes only after every check passed.
+const recorded = record && checks.every((one) => one.ok);
+if (recorded)
 	await writeFile(
 		RECORD,
 		`${JSON.stringify({ version, checks: checks.map((one) => one.name) }, null, "\t")}\n`,
 	);
-	finish({
-		status: "pass",
-		version,
-		verified: version,
-		checks,
-		summary: `passed on Copilot ${version}; recorded`,
-	});
-}
-if (verified !== version)
-	finish({
-		status: "warn",
-		version,
-		verified,
-		checks,
-		summary: `passed on Copilot ${version}, but the last recorded pass is ${verified ?? "none"}: run \`just copilot-sdk-contract --record\` and commit harness/copilot-sdk-verified.json`,
-	});
-finish({ status: "pass", version, verified, checks, summary: `passed on Copilot ${version}` });
+finish({
+	...verdict({ version, verified, checks, recorded }),
+	version,
+	verified: recorded ? version : verified,
+	checks,
+	...(checks.some((one) => !one.ok) ? { diagnostic } : {}),
+});
