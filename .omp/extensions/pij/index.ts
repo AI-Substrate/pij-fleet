@@ -25,7 +25,7 @@ import {
 } from "./adapters/rust-runtime.js";
 import { TmuxAdapter } from "./adapters/tmux.js";
 import { ALLOWED_COMMANDS } from "./core/commands.js";
-import { detectPiRuntime, isSubagentChild } from "./core/discovery.js";
+import { detectPiRuntime, isOneShotRun, isSubagentChild } from "./core/discovery.js";
 import { guardInvariantNineModal } from "./core/invariant-guard.js";
 import { loadModels } from "./core/models/registry.js";
 import {
@@ -72,10 +72,20 @@ export default function (pi: ExtensionAPI): void {
 				entries: ctx.sessionManager.getEntries(),
 			},
 		);
+	// F197: a one-shot run (`omp -p`, `pi -p`, `--mode json`) inherits TMUX_PANE
+	// and the pij env from the seat whose shell started it. It never registers:
+	// its row would outlive it and hold that seat's pane.
+	const isPeerless = (ctx: ExtensionContext): boolean =>
+		isEmbeddedOmpChild(ctx) || isOneShotRun(ctx.mode);
 	const requirePeerContext = (ctx: ExtensionContext): void => {
 		if (isEmbeddedOmpChild(ctx)) {
 			throw new Error(
 				"E-NOREG: Pij is disabled in an OMP in-process subagent; return results through the parent task instead of using its peer identity.",
+			);
+		}
+		if (isOneShotRun(ctx.mode)) {
+			throw new Error(
+				'E-NOREG: a one-shot (print/json) run is not a pij seat. To message a peer from here, run `pij send <to> "<message>"` in the shell: it sends as the seat whose pane this is.',
 			);
 		}
 	};
@@ -411,9 +421,10 @@ export default function (pi: ExtensionAPI): void {
 	// (startup/reload/new/resume/fork). Boot is idempotent — reload reuses the
 	// descriptor (no duplicate, no replay) and refreshes the live ctx.
 	pi.on("session_start", async (event, ctx: ExtensionContext) => {
-		// Native OMP task sessions share process.env and TMUX_PANE with Main.
-		// Exclude them before discovery, registration, announcements or inbox ownership.
-		if (isEmbeddedOmpChild(ctx)) return;
+		// Native OMP task sessions share process.env and TMUX_PANE with Main, and a
+		// one-shot run inherits them from its parent seat's shell (F197). Exclude
+		// both before discovery, registration, announcements or inbox ownership.
+		if (isPeerless(ctx)) return;
 		// Derive a stable self-id from pi's OWN session identity (changes on /new
 		// and /fork, stable across /reload and /resume) so a /new session becomes a
 		// new peer instead of reusing this process's id (D-041). Falls back to the
@@ -555,7 +566,7 @@ export default function (pi: ExtensionAPI): void {
 	// block format; it is passed through verbatim. A claim failure resolves to
 	// undefined inside claimFyi, so it never blocks the human's turn.
 	pi.on("before_agent_start", async (_event, ctx) => {
-		if (isEmbeddedOmpChild(ctx)) return undefined;
+		if (isPeerless(ctx)) return undefined;
 		const block = await rustRuntime?.claimFyi(runtimeBin === "omp" ? "hook:omp" : "hook:pi");
 		return block === undefined
 			? undefined
@@ -592,7 +603,7 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("turn_end", () => session?.onTurnEnd());
 
 	pi.on("session_shutdown", async (event, ctx: ExtensionContext) => {
-		if (isEmbeddedOmpChild(ctx)) return;
+		if (isPeerless(ctx)) return;
 		commandControl = undefined;
 		ompSessionNameGeneration += 1;
 		ompSessionNamePublication = undefined;

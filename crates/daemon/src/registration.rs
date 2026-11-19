@@ -43,6 +43,13 @@ pub(crate) enum RegistrationError {
         pane: String,
         harness: String,
     },
+    /// F197: the claim's process descends from `holder`'s live process on
+    /// `holder`'s own pane: a one-shot child (`omp -p`, `claude -p`, `copilot
+    /// -p`) that inherited the pane. A brake: refused, the holder untouched.
+    PaneHolderChild {
+        holder: SeatId,
+        pane: String,
+    },
     Runtime(PijError),
 }
 
@@ -50,6 +57,18 @@ pub(crate) enum RegistrationError {
 /// explicit answer to a pane held by a seat whose liveness is unknown.
 pub(crate) fn take_over_command(pane: &str, harness: &str) -> String {
     format!("pij-rs adopt {pane} --harness {harness} --take-over --why <reason>")
+}
+
+/// F197: the stable code for a registration refused because its process is a
+/// child of the pane's live seat.
+pub(crate) const PANE_HOLDER_CHILD_CODE: &str = "E-RS-PANE-HOLDER-CHILD";
+
+/// Reads one process's parent pid in-process (no launch). Injected so tests can
+/// draw a process tree.
+pub(crate) type ParentReader = Arc<dyn Fn(u32) -> Option<u32> + Send + Sync>;
+
+fn real_parent(pid: u32) -> Option<u32> {
+    pij_harnesses::proc::parent_and_host_name(pid).map(|(parent, _)| parent)
 }
 
 impl std::fmt::Display for RegistrationError {
@@ -78,6 +97,15 @@ impl std::fmt::Display for RegistrationError {
                 pij_core::render::seat(holder.as_str()),
                 take_over_command(pane, harness),
             ),
+            Self::PaneHolderChild { holder, pane } => write!(
+                f,
+                "{PANE_HOLDER_CHILD_CODE} this process runs under seat `{}` on its own pane {pane}: \
+                 a child of a seat is not a seat. Nothing was registered and `{}` is unchanged; \
+                 `pij send` from here sends as `{}`.",
+                pij_core::render::seat(holder.as_str()),
+                pij_core::render::seat(holder.as_str()),
+                pij_core::render::seat(holder.as_str()),
+            ),
             Self::Runtime(error) => error.fmt(f),
         }
     }
@@ -99,6 +127,8 @@ pub(crate) struct RegistrationService {
     /// F211: launches whose hand-off to their caller is not settled; absent
     /// in services that never bind a spawned seat.
     spawn_waits: Option<Arc<SpawnWaits>>,
+    /// F197: parent pids, read in-process, for the pane-holder-child brake.
+    parents: ParentReader,
 }
 
 /// What a native claim carries into the locked registration: a verified
@@ -153,6 +183,7 @@ impl RegistrationService {
             native_receivers: None,
             attempts: Arc::default(),
             spawn_waits: None,
+            parents: Arc::new(real_parent),
         }
     }
 
@@ -257,7 +288,8 @@ impl RegistrationService {
                 match error {
                     RegistrationError::Refused(_)
                     | RegistrationError::InvalidSeatId(_)
-                    | RegistrationError::PaneHeld { .. } => Outcome::Refused,
+                    | RegistrationError::PaneHeld { .. }
+                    | RegistrationError::PaneHolderChild { .. } => Outcome::Refused,
                     RegistrationError::Retired { .. } => Outcome::Retired,
                     RegistrationError::Retryable(_) => Outcome::Retryable,
                     RegistrationError::NativeSessionHold(_) => Outcome::SessionHold,
@@ -293,6 +325,13 @@ impl RegistrationService {
     /// Signal bound spawned seats to the launches that wait for them (F211).
     pub(crate) fn with_spawn_waits(mut self, waits: Arc<SpawnWaits>) -> Self {
         self.spawn_waits = Some(waits);
+        self
+    }
+
+    /// Draw the process tree the pane-holder-child brake walks (F197).
+    #[cfg(test)]
+    pub(crate) fn with_parents(mut self, parents: ParentReader) -> Self {
+        self.parents = parents;
         self
     }
 
@@ -671,6 +710,14 @@ impl RegistrationService {
     /// Only `dead` can retire a row, and only a `Dead` or `Recycled` verdict
     /// puts one there. A failed probe, a row with no process and a remote row
     /// are `unknown`, which can only refuse (a brake).
+    ///
+    /// F197, also a brake: a claim whose process runs under a live seat's
+    /// process on that seat's own pane is that seat's child (`omp -p` and its
+    /// kin inherit `TMUX_PANE` and the pij env), whatever id or session it
+    /// names, and is refused before anything is written. Removing this check
+    /// registers more claims; it never retires or rebinds anything. The walk is
+    /// in-process (no launch) and runs only for other local live rows on the
+    /// claimed pane.
     async fn observe_pane_holders(
         &self,
         claim: &Registration,
@@ -694,27 +741,60 @@ impl RegistrationService {
         for seat in seats {
             if seat.tombstoned_at.is_some()
                 || seat.pane.as_ref() != Some(pane)
-                || seat.id.as_str() == claim.id
-                || claim.supersedes.as_ref() == Some(&seat.id)
                 || seat.proc == Some(identity)
-                || session.is_some_and(|session| seat.harness_session.as_deref() == Some(session))
             {
                 continue;
             }
-            let Some(previous) = seat
+            let previous = seat
                 .proc
-                .filter(|proc| proc.pid > 0 && proc.proc_start > 0 && seat.machine.is_none())
-            else {
+                .filter(|proc| proc.pid > 0 && proc.proc_start > 0 && seat.machine.is_none());
+            let child =
+                previous.is_some_and(|previous| self.descends_from(identity.pid, previous.pid));
+            // F213: a Copilot `/restart` runs the new CLI as a child of the
+            // seat's first CLI, which stays alive, and continues the same
+            // conversation. A claim continuing the holder's own conversation is
+            // the seat itself; a one-shot child starts a session of its own.
+            let same_conversation =
+                session.is_some_and(|session| seat.harness_session.as_deref() == Some(session));
+            let own = seat.id.as_str() == claim.id
+                || claim.supersedes.as_ref() == Some(&seat.id)
+                || same_conversation;
+            if own && (!child || same_conversation) {
+                continue;
+            }
+            let Some(previous) = previous else {
                 holders.unknown.push(seat.id);
                 continue;
             };
             match pij_core::liveness::alive(previous, self.liveness.as_ref()).await {
+                Ok(Liveness::Active) if child => {
+                    return Err(RegistrationError::PaneHolderChild {
+                        holder: seat.id,
+                        pane: pane.clone(),
+                    });
+                }
                 Ok(Liveness::Active) => {}
+                // The claim's own rows are the locked checks' to judge.
+                _ if own => {}
                 Ok(Liveness::Dead { .. } | Liveness::Recycled { .. }) => holders.dead.push(seat),
                 Err(_) => holders.unknown.push(seat.id),
             }
         }
         Ok(holders)
+    }
+
+    /// F197: whether `pid` runs under `ancestor` (a strict descendant), through
+    /// at most 64 in-process parent reads.
+    fn descends_from(&self, pid: u32, ancestor: u32) -> bool {
+        let mut current = pid;
+        for _ in 0..64 {
+            match (self.parents)(current) {
+                Some(parent) if parent == ancestor => return true,
+                Some(parent) if parent > 1 && parent != current => current = parent,
+                _ => return false,
+            }
+        }
+        false
     }
 
     async fn verify_native_host<F, Fut>(
@@ -2614,7 +2694,9 @@ mod tests {
         );
         (
             RegistrationService::new(registry.clone(), liveness, bus, Vec::new(), roles)
-                .with_native_delivery(delivery),
+                .with_native_delivery(delivery)
+                // Fake pids never walk the real process tree (F197's brake).
+                .with_parents(Arc::new(|_| None)),
             registry,
         )
     }
@@ -2829,6 +2911,70 @@ mod tests {
                 .starts_with("superseded: pane %137 taken by `pij-omp-in-pane`")
         );
         assert_eq!(registry.get(&live.id).await.unwrap(), Some(live));
+    }
+
+    /// F197: a one-shot child (`omp -p`) of the pane's live seat, run in that
+    /// seat's own pane, never registers: not under a new id, not under the
+    /// seat's own inherited id. The seat is untouched. A process that does not
+    /// descend from the seat still shares the pane as before.
+    #[tokio::test]
+    async fn a_child_of_the_panes_live_seat_never_registers_and_leaves_it_unchanged() {
+        let mut parent = SeatDescriptor::new("pij-parent-seat", Harness::Omp, "/isolated");
+        parent.pane = Some("%137".into());
+        parent.proc = Some(OTHER_HOST);
+        parent.harness_session = Some("parent-session".into());
+        // The child (HOST) runs in a bash tool call (SHELL) of the seat (OTHER_HOST).
+        let tree = |pid: u32| match pid {
+            p if p == HOST.pid => Some(SHELL.pid),
+            p if p == SHELL.pid => Some(OTHER_HOST.pid),
+            p if p == OTHER_HOST.pid => Some(1),
+            _ => None,
+        };
+        let (service, registry) = native_service(vec![parent.clone()], native_liveness()).await;
+        let service = service.with_parents(Arc::new(tree));
+        for id in ["pij-omp-print-child", "pij-parent-seat"] {
+            let mut claim = native_claim(id);
+            claim.harness = "omp".into();
+            let refused = service
+                .register_inner(
+                    claim,
+                    Some("child-session".into()),
+                    super::RegistrationMode::Ordinary,
+                )
+                .await
+                .expect_err("a child of the pane's seat is refused");
+            match &refused {
+                RegistrationError::PaneHolderChild { holder, pane } => {
+                    assert_eq!((holder, pane.as_str()), (&parent.id, "%137"));
+                }
+                other => panic!("{id}: {other:?}"),
+            }
+            assert!(
+                refused
+                    .to_string()
+                    .starts_with(super::PANE_HOLDER_CHILD_CODE)
+            );
+            assert_eq!(
+                registry.get(&parent.id).await.unwrap(),
+                Some(parent.clone())
+            );
+            assert_eq!(
+                registry.get(&"pij-omp-print-child".into()).await.unwrap(),
+                None
+            );
+        }
+
+        // Not a descendant (a second harness started from the pane's shell):
+        // it shares the pane and the seat stays as it was.
+        let (service, registry) = native_service(vec![parent.clone()], native_liveness()).await;
+        let service = service.with_parents(Arc::new(|pid: u32| (pid == HOST.pid).then_some(1)));
+        let mut claim = native_claim("pij-pane-sibling");
+        claim.harness = "omp".into();
+        service
+            .register_inner(claim, None, super::RegistrationMode::Ordinary)
+            .await
+            .expect("a sibling registers");
+        assert_eq!(registry.get(&parent.id).await.unwrap(), Some(parent));
     }
 
     #[tokio::test]
@@ -3420,7 +3566,9 @@ mod tests {
 
     /// The seat `row` re-registered by `claim` from `new`, whose observed
     /// parent is `parent` (4242 is [`HOST`] under the pane shell; 41 is the
-    /// shell). Only `new`, [`HOST`] and [`SHELL`] are alive.
+    /// shell). Only `new`, [`HOST`] and [`SHELL`] are alive. The same tree
+    /// feeds F197's pane-holder-child brake, so a restart is a real child of
+    /// the seat's live first CLI, as Copilot runs it.
     async fn restart_claimed(
         row: SeatDescriptor,
         new: ProcIdentity,
@@ -3433,7 +3581,14 @@ mod tests {
                 .with_proc(SHELL)
                 .with_proc(new),
         );
+        let tree = move |pid: u32| match pid {
+            p if p == new.pid => Some(parent),
+            p if p == HOST.pid => Some(SHELL.pid),
+            p if p == SHELL.pid => Some(1),
+            _ => None,
+        };
         let (service, _) = native_service(vec![row], liveness).await;
+        let service = service.with_parents(Arc::new(tree));
         claim.pid = Some(new.pid);
         claim.proc_start = Some(new.proc_start);
         let line = format!("{parent} /opt/copilot/copilot /opt/copilot/copilot --model gpt-5\n");

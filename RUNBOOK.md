@@ -72,7 +72,8 @@ other panes.
 ## OMP peer delivery
 
 OMP task children do not own pij inboxes or peer controls; independently hosted
-OMP roots (including headless roots) still register. See the
+OMP roots in `tui` or `rpc` mode still register. One-shot runs (`omp -p`, `--mode json`)
+never register (F197). See the
 [API contract](docs/how/pij-rs-api.md) for delivery and receipt semantics.
 
 Opt-in real-client proof (owned daemon, tmux server, and scratch workspace):

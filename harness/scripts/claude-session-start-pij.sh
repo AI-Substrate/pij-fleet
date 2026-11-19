@@ -16,6 +16,18 @@ if [ -z "${TMUX_PANE:-}" ]; then
     log_line "skip:no-tmux"
     exit 0
 fi
+# F197: a one-shot `claude -p` (or an SDK host) inherits TMUX_PANE from the
+# seat whose shell started it, and its row would outlive it and hold that
+# pane. Claude names its own mode in the hooks' environment: `cli` for the
+# interactive TUI, `sdk-cli` for -p, `sdk-ts`/`sdk-py` for the SDKs. Only `cli`
+# (or an older Claude that sets nothing) adopts.
+case "${CLAUDE_CODE_ENTRYPOINT:-cli}" in
+    cli) ;;
+    *)
+        log_line "skip:non-interactive entrypoint=${CLAUDE_CODE_ENTRYPOINT}"
+        exit 0
+        ;;
+esac
 # The payload's session_id is only a cross-check: the daemon derives the
 # conversation from this Claude process's own record (plan 156 ruling 2).
 IFS= read -r input 2>/dev/null || input=""

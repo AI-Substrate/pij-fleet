@@ -281,16 +281,13 @@ describe("pij index — footer status bar", () => {
 		}
 	});
 
-	it.each([
-		"print",
-		"rpc",
-	])("preserves an independently hosted headless OMP %s root", async (mode) => {
+	it("preserves an independently hosted headless OMP rpc root", async () => {
 		process.env.OMPCODE = "1";
 		const detect = vi
 			.spyOn(daemonHttp, "detectDaemonGeneration")
 			.mockResolvedValue(fakeRustGeneration());
 		const { pi, handlers, sentMessages } = makeFakePi();
-		const { ctx } = makeFakeCtx("native-headless-omp", { mode });
+		const { ctx } = makeFakeCtx("native-headless-omp", { mode: "rpc" });
 		ctx.hasUI = false;
 		pijExtension(pi);
 		try {
@@ -302,24 +299,33 @@ describe("pij index — footer status bar", () => {
 		}
 	});
 
-	it("retains headless Pi registration with session metadata", async () => {
+	// F197: `omp -p` (the cost canary pij-selected-alpaca) inherited its parent
+	// seat's TMUX_PANE, registered on that pane and held it after it exited.
+	it.each([
+		["omp", "print"],
+		["omp", "json"],
+		["pi", "print"],
+		["pi", "json"],
+	] as const)("never registers a one-shot %s %s run, and its tools say how to send", async (runtime, mode) => {
+		if (runtime === "omp") process.env.OMPCODE = "1";
+		else delete process.env.OMPCODE;
 		const detect = vi
 			.spyOn(daemonHttp, "detectDaemonGeneration")
 			.mockResolvedValue(fakeRustGeneration());
-		const { pi, handlers, sentMessages } = makeFakePi();
-		const { ctx } = makeFakeCtx("native-headless-pi", {
-			mode: "print",
-			entries: [{ type: "session_init" }],
-		});
+		const { pi, handlers, sentMessages, sessionNames, tools } = makeFakePi();
+		const { ctx } = makeFakeCtx(`one-shot-${runtime}-${mode}`, { mode });
 		ctx.hasUI = false;
 		pijExtension(pi);
-		try {
-			await handlers.get("session_start")?.({ reason: "startup" }, ctx);
-			expect(detect).toHaveBeenCalledOnce();
-			expect(sentMessages).toHaveLength(1);
-		} finally {
-			await handlers.get("session_shutdown")?.({ reason: "quit" }, ctx);
-		}
+		await handlers.get("session_start")?.({ reason: "startup" }, ctx);
+		await handlers.get("session_shutdown")?.({ reason: "quit" }, ctx);
+		expect(detect).not.toHaveBeenCalled();
+		expect(sentMessages).toEqual([]);
+		expect(sessionNames).toEqual([]);
+		const send = tools.get("pij_send");
+		if (!send) throw new Error("pij_send was not registered");
+		await expect(
+			send.execute("probe", { to: "peer", message: "hello" }, undefined, undefined, ctx),
+		).rejects.toThrow("E-NOREG: a one-shot (print/json) run is not a pij seat");
 	});
 
 	it("marks the selected default Rust generation in Pi's status segment", async () => {
