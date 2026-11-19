@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "When changing folder-trust spawn detection or interpreting PR264 deployed launch and key-pacing evidence",
+				"tags": [
+					"pr264",
+					"F215",
+					"F216",
+					"launches",
+					"trust",
+					"measurement"
+				],
+				"title": "PR264 visible-screen capture and proof-overlap receipt"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR264 (F215/F216) final performance review passed with notes at 8c31b168a8cc8f92e09ce768c9dde443597e196f; verdict commit 3bf575b7f2ff9aab63a27bea8b085839425966e7, outputs/2026-11/19-verdict-pr-264-8c31b16.dd.json. No builds performed.\n\nSpecific cost invariant: capture(pane,u32::MAX) does NOT capture history. crates/tmux/src/lib.rs uses the same capture-pane -p -t argv for every positive line count, then trims locally. Reading the whole visible screen adds no IPC capture/launch. The existing spawn wait polls at 50ms per waiting spawn; trust detection scans visible rows; optional trust-folder sends at most one fixed MenuKey/s per opted-in prompted wait, counted by existing tmux.send-keys. R2's allocated safe_answer guidance is built only for the terminal refusal, not every opt-in tick.\n\nDeployment receipt: /tmp/pij264-performance-after-e4b63eb1b2.json. On 2026-11-19 08:40:18–38Z, pid74846/e4b63eb1b2 spawns478→491: native-ps+5, new-window+2, tap-attach+2, tap-detach+1, send-keys+1, tap-owner+2. Machine161.5 launches/s; CPUtime+8.63s/~20s; RSS267648→265104KiB. Bat confirmed its fleet-daemon plain spawn08:40:24–25Z and trust-folder spawn08:40:27–30Z fall inside this exact window. Thus the sample includes feature exercise, not idle steady state. Bat described2 sends while the exact send-keys counter rose1: do not convert this aggregate into live key-spacing proof. Source review supports the pacing bound; no per-key live timestamps were captured. Parent was told.\n\nBaseline reference: outputs/2026-11/19-verdict-pr-264-f808581.dd.json (3ea2da53), pid17600/dba0c0803b, 08:02:56–08:03:17Z, spawns552→552, machine159.7/s. Do not claim a workload-matched RSS regression from the two windows: after daemon age32–52s, baseline was older. Existing CPU-attribution memory already covers this general measurement caution; preserve these PR-specific receipts rather than repeating generic advice.\n"
+		}
+	]
+}
