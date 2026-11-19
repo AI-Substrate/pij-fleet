@@ -5,6 +5,7 @@
 
 pub mod anomalies;
 pub(crate) mod auth;
+mod auth_error;
 pub(crate) mod background;
 mod claims;
 mod client;
@@ -209,6 +210,8 @@ enum Endpoint {
     FyiRead,
     /// Busy/idle publication from a harness's own turn events (plan 158, addendum 3).
     Activity,
+    /// A Copilot seat's own extension reporting a lost login (F212).
+    SeatAuthError,
     Role,
     Link,
     /// Opt-in watchdog control (`pij watchdog on|off|status`).
@@ -254,7 +257,7 @@ enum Endpoint {
 }
 
 impl Endpoint {
-    const ALL: [Self; 61] = [
+    const ALL: [Self; 62] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -315,6 +318,7 @@ impl Endpoint {
         Self::Delivered,
         Self::Requests,
         Self::TurnEnd,
+        Self::SeatAuthError,
         Self::BackgroundEmit,
     ];
 
@@ -375,6 +379,7 @@ impl Endpoint {
             Self::Delivered => "/v1/delivered",
             Self::Requests => "/v1/requests",
             Self::TurnEnd => "/v1/turn-end",
+            Self::SeatAuthError => "/v1/seat/auth-error",
             Self::BackgroundEmit => background::EMIT_PATH,
             // PLAN 119 — a DISTINCT, VERSIONED path for shim-originated calls, never
             // an overload of `/v1/send` / `/v1/inbox`. Those structs tolerate
@@ -434,6 +439,7 @@ impl Endpoint {
             | Self::Delivered
             | Self::Requests
             | Self::TurnEnd
+            | Self::SeatAuthError
             | Self::BackgroundEmit => Method::POST,
             Self::ShimSend | Self::ShimCompactSelf | Self::ShimInbox | Self::ShimInboxAck => {
                 Method::POST
@@ -678,6 +684,7 @@ fn router_with_optional_federation(
                     | Endpoint::Delivered
                     | Endpoint::Requests
                     | Endpoint::TurnEnd
+                    | Endpoint::SeatAuthError
                     | Endpoint::BackgroundEmit
             ) {
                 Method::POST
@@ -759,6 +766,7 @@ fn router_with_optional_federation(
             }
             Endpoint::Requests => router.route(endpoint.path(), post(requests::handle)),
             Endpoint::TurnEnd => router.route(endpoint.path(), post(turn_end::handle)),
+            Endpoint::SeatAuthError => router.route(endpoint.path(), post(auth_error::handle)),
             Endpoint::ShimSend => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimCompactSelf => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimInbox => router.route(endpoint.path(), post(shim::shim_inbox)),

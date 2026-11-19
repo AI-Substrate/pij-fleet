@@ -42,6 +42,32 @@ export const STANDBY_STOPPED_RETRY_MS = 600000;
 export const TURN_END_ROUTE = "/v1/turn-end";
 /** A block of up to 20 commands runs in order; a wedged daemon must not hold the stop forever. */
 export const TURN_END_TIMEOUT_MS = 30000;
+/** F212: the daemon route a lost Copilot login is reported to. */
+export const AUTH_ERROR_ROUTE = "/v1/seat/auth-error";
+/**
+ * The one Copilot error with no code: its enterprise login's credential
+ * authority refusing (CLI 1.0.114). Matched by prefix; the text is never sent.
+ */
+const CREDENTIAL_AUTHORITY_PREFIXES = [
+	"GitHub credential authority error:",
+	"Execution failed: GitHub credential authority error:",
+];
+/**
+ * F212: which lost-login error a native event is, or undefined. A 401
+ * `authorization` by its type and status; the credential-authority refusal,
+ * which has no code, by its message prefix. Any agent: a sub-agent's 401 is the
+ * process's login too.
+ * @returns {"authorization" | "credential-authority" | undefined}
+ */
+export function copilotAuthErrorKind(event) {
+	if (event?.type !== "session.error") return undefined;
+	const data = event.data ?? {};
+	if (data.errorType === "authorization" && data.statusCode === 401) return "authorization";
+	const message = typeof data.message === "string" ? data.message : "";
+	return CREDENTIAL_AUTHORITY_PREFIXES.some((prefix) => message.startsWith(prefix))
+		? "credential-authority"
+		: undefined;
+}
 /** F174: how long a refused connection is tried again (a bounce closes the port for about a second). */
 const RESTART_WAIT_MS = 20000;
 const RESTART_FIRST_PAUSE_MS = 250;
@@ -2216,8 +2242,14 @@ export class NativeBridge {
 	 * 00:02:06Z: idle, then working 4 ms after), and that blip closed two seats
 	 * mid memory turn. The turn ends at `session.idle`, which Copilot emits once
 	 * its run is no longer processing.
+	 *
+	 * F212: a lost login (see `copilotAuthErrorKind`) is reported once the run
+	 * ends, after that run's idle publication, so the daemon decides on a seat
+	 * whose turn is over.
 	 */
 	observeActivity(event) {
+		const lostLogin = copilotAuthErrorKind(event);
+		if (lostLogin) this.lostLogin = lostLogin;
 		if (event?.agentId) return;
 		if (event?.type === "session.usage_info") this.observeContext(event.data);
 		// A fused turn that ends without a commit ends at its aggregate completion
@@ -2228,9 +2260,38 @@ export class NativeBridge {
 				: ["session.idle", "session.fusion_completed", "abort"].includes(event?.type)
 					? "idle"
 					: undefined;
-		if (!state || state === this.activityState || this.activityUnsupported) return;
-		this.activityState = state;
-		this.activity = this.activity.then(() => this.publishActivity(state));
+		if (state && state !== this.activityState && !this.activityUnsupported) {
+			this.activityState = state;
+			this.activity = this.activity.then(() => this.publishActivity(state));
+		}
+		if (state === "idle" && this.lostLogin) {
+			const kind = this.lostLogin;
+			this.lostLogin = undefined;
+			this.activity = this.activity.then(() => this.reportLostLogin(kind));
+		}
+	}
+	/**
+	 * F212: tell the daemon this seat's Copilot lost its login. It decides
+	 * (restart, or a notice to the parent and prime); this only reports. Never
+	 * throws, carries no error text, and an older daemon's 404 is ignored.
+	 */
+	async reportLostLogin(kind) {
+		if (!this.registered || this.controller.signal.aborted) return;
+		try {
+			const answer = await this.client.request(
+				AUTH_ERROR_ROUTE,
+				{ seat: this.registration.id, native_session: this.registration.harness_session, kind },
+				AbortSignal.any([this.controller.signal, AbortSignal.timeout(HOOK_REQUEST_TIMEOUT_MS)]),
+			);
+			this.emit("lost-login-reported", { lostLogin: kind, action: answer?.action ?? null });
+		} catch (error) {
+			if (this.controller.signal.aborted) return;
+			this.emit("lost-login-unreported", {
+				lostLogin: kind,
+				status: error?.status ?? null,
+				safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : null,
+			});
+		}
 	}
 	/**
 	 * Plan 217: Copilot's `session.usage_info` is ephemeral (never in

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { setImmediate as flush } from "node:timers/promises";
 import {
+	AUTH_ERROR_ROUTE,
 	chooseRegistration,
 	createNativeReporter,
 	DaemonClient,
@@ -1481,6 +1482,116 @@ test("activity: foreground turns publish working then idle in order; failures ne
 	f.event({ type: "assistant.turn_start", id: "turn-3", data: {} });
 	await flush();
 	assert.deepEqual(published, ["working", "idle", "working"]);
+	f.bridge.stop();
+	await run;
+});
+
+test("F212: a lost login is reported once its run ends, after the idle, by kind only", async () => {
+	const f = fixture();
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	const calls = [];
+	const request = f.client.request;
+	f.client.request = async (path, body, signal) => {
+		if (path === "/v1/activity") {
+			calls.push(["activity", body.state]);
+			return { seat: body.seat, state: body.state, changed: true };
+		}
+		if (path !== AUTH_ERROR_ROUTE) return request(path, body, signal);
+		calls.push(["lost-login", body]);
+		return { action: "restart" };
+	};
+	const secret = "Authorization error. Your credentials may be expired or invalid. (Request ID: X)";
+
+	f.event({ type: "assistant.turn_start", id: "t1", data: {} });
+	f.event({
+		type: "session.error",
+		id: "e1",
+		data: { errorType: "authorization", statusCode: 401, message: secret },
+	});
+	f.event({
+		type: "session.error",
+		id: "e2",
+		data: { errorType: "authorization", statusCode: 401, message: secret },
+	});
+	await flush();
+	assert.deepEqual(calls, [["activity", "working"]], "nothing is reported mid-run");
+	f.event({ type: "session.idle", id: "i1", data: {} });
+	await flush();
+	assert.deepEqual(calls, [
+		["activity", "working"],
+		["activity", "idle"],
+		[
+			"lost-login",
+			{
+				seat: registration.id,
+				native_session: registration.harness_session,
+				kind: "authorization",
+			},
+		],
+	]);
+	assert.ok(!JSON.stringify(calls).includes("credentials"), "no error text leaves the extension");
+
+	// A sub-agent's credential-authority refusal is the process's login too; it
+	// is reported at the next idle even when the seat was already idle.
+	f.event({
+		type: "session.error",
+		id: "e3",
+		agentId: "sub-agent-1",
+		data: {
+			errorType: "query",
+			message: "Execution failed: GitHub credential authority error: sign in again",
+		},
+	});
+	f.event({ type: "session.idle", id: "i2", data: {} });
+	await flush();
+	assert.equal(calls.at(-1)[1].kind, "credential-authority");
+
+	// Any other error, or a 401 that is not `authorization`, reports nothing.
+	const before = calls.length;
+	for (const data of [
+		{ errorType: "quota", statusCode: 402, message: "You have exceeded your monthly quota" },
+		{
+			errorType: "authentication",
+			statusCode: 401,
+			message: "Authentication failed with provider",
+		},
+		{ errorType: "query", message: "No response was returned. GitHub credential authority error:" },
+	])
+		f.event({ type: "session.error", id: `x-${data.errorType}`, data });
+	f.event({ type: "assistant.turn_start", id: "t2", data: {} });
+	f.event({ type: "session.idle", id: "i3", data: {} });
+	await flush();
+	assert.deepEqual(
+		calls.slice(before).map(([kind]) => kind),
+		["activity", "activity"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+test("F212: an unreachable or older daemon never breaks the turn that lost its login", async () => {
+	const f = fixture();
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	const request = f.client.request;
+	f.client.request = async (path, body, signal) => {
+		if (path === "/v1/activity") return { seat: body.seat, state: body.state, changed: true };
+		if (path === AUTH_ERROR_ROUTE) throw Object.assign(new Error("Pij HTTP 404"), { status: 404 });
+		return request(path, body, signal);
+	};
+	f.event({
+		type: "session.error",
+		id: "e1",
+		data: { errorType: "authorization", statusCode: 401 },
+	});
+	f.event({ type: "session.idle", id: "i1", data: {} });
+	await flush();
+	assert.deepEqual(
+		f.reports.filter(({ kind }) => kind === "lost-login-unreported").map(({ status }) => status),
+		[404],
+	);
+	assert.equal((await f.bridge.send({ to: "pij-peer", message: "still usable" })).ok, true);
 	f.bridge.stop();
 	await run;
 });

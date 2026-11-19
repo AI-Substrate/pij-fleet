@@ -3,14 +3,22 @@
 use crate::model::{Harness, SeatDescriptor, SeatId};
 use serde::{Deserialize, Serialize};
 
-/// The complete set of supported remote controls.
+/// The remote controls every harness can take.
 pub const ALLOWED_COMMANDS: [&str; 3] = ["compact", "new", "reload"];
 /// The controls pij types into a Copilot pane (plan 186). Copilot messages stay
-/// on its native extension; only these ride the pane control path.
-pub const COPILOT_COMMANDS: [&str; 1] = ["compact"];
+/// on its native extension; only these ride the pane control path. `restart`
+/// is Copilot's own `/restart`, which swaps the CLI process and restores the
+/// same live session (F212); no other harness takes it.
+pub const COPILOT_COMMANDS: [&str; 2] = ["compact", "restart"];
 /// Every other control is left to Copilot's native, user-operated controls.
 pub const COPILOT_CONTROL_REFUSAL: &str =
     "E-RS-CONTROL-UNSUPPORTED: use Copilot's native user controls";
+/// A Copilot-only control sent to another harness.
+pub const COPILOT_ONLY_REFUSAL: &str = "E-RS-CONTROL-UNSUPPORTED: `restart` is Copilot's /restart; other harnesses have no such control";
+
+fn known(command: &str) -> bool {
+    ALLOWED_COMMANDS.contains(&command) || COPILOT_COMMANDS.contains(&command)
+}
 
 /// What the recipient runtime observed after handling a control command.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,9 +38,9 @@ pub enum ControlOutcome {
 /// # Errors
 /// Returns a decodable refusal code for an unknown name or non-empty body.
 pub fn validate_command(command: &str, body: &str) -> Result<(), String> {
-    if !ALLOWED_COMMANDS.contains(&command) {
+    if !known(command) {
         return Err(format!(
-            "E-RS-CONTROL-INVALID: unknown command `{command}`; allowed: {}",
+            "E-RS-CONTROL-INVALID: unknown command `{command}`; allowed: {} (Copilot also: restart)",
             ALLOWED_COMMANDS.join(", ")
         ));
     }
@@ -53,6 +61,9 @@ pub fn validate_command(command: &str, body: &str) -> Result<(), String> {
 pub fn validate_target(command: &str, target: &SeatDescriptor) -> Result<(), String> {
     if target.harness == Harness::Copilot && !COPILOT_COMMANDS.contains(&command) {
         return Err(COPILOT_CONTROL_REFUSAL.to_string());
+    }
+    if target.harness != Harness::Copilot && !ALLOWED_COMMANDS.contains(&command) {
+        return Err(COPILOT_ONLY_REFUSAL.to_string());
     }
     if target
         .pane
@@ -104,10 +115,13 @@ mod tests {
     }
 
     #[test]
-    fn copilot_allows_compact_only_and_paneless_copilot_refuses_by_name() {
+    fn copilot_allows_compact_and_restart_only_and_paneless_copilot_refuses_by_name() {
         let mut copilot = SeatDescriptor::new("copilot", Harness::Copilot, "/tree");
         copilot.pane = Some("%1".into());
-        assert_eq!(validate_target("compact", &copilot), Ok(()));
+        for command in ["compact", "restart"] {
+            assert_eq!(validate_command(command, ""), Ok(()));
+            assert_eq!(validate_target(command, &copilot), Ok(()));
+        }
         for command in ["new", "reload"] {
             assert_eq!(
                 validate_target(command, &copilot),
@@ -117,6 +131,21 @@ mod tests {
         copilot.pane = None;
         let refusal = validate_target("compact", &copilot).expect_err("paneless");
         assert!(refusal.starts_with("E-RS-CONTROL-PANELESS"), "{refusal}");
+    }
+
+    /// F212: `restart` is Copilot's `/restart`. Typed into an OMP, Claude or
+    /// Codex pane it would be a prompt, so every other harness refuses it.
+    #[test]
+    fn restart_is_refused_for_every_other_harness() {
+        for harness in [Harness::Omp, Harness::Claude, Harness::Codex, Harness::Pi] {
+            let mut seat = SeatDescriptor::new("seat", harness, "/tree");
+            seat.pane = Some("%1".into());
+            assert_eq!(
+                validate_target("restart", &seat),
+                Err(COPILOT_ONLY_REFUSAL.to_string()),
+                "{harness:?}"
+            );
+        }
     }
 
     #[test]

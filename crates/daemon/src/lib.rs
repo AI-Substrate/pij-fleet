@@ -9,6 +9,7 @@
 
 pub mod admission;
 pub mod auth;
+mod auth_recovery;
 pub mod background;
 pub mod bg_routing;
 pub mod cache_proxy;

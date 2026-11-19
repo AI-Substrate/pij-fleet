@@ -118,6 +118,7 @@ async fn fixture_with_lease(state: SystemState, draft: bool, claim_lease_secs: u
         tmux.arrange_clear_composer(PANE);
     }
     services.tmux = Arc::clone(&tmux) as Arc<dyn TmuxPort>;
+    services.interaction = Arc::new(InteractionGate::new(Arc::clone(&tmux) as Arc<dyn TmuxPort>));
     services.liveness = Arc::new(FakeLiveness::new().with_proc(ProcIdentity {
         pid: 920_001,
         proc_start: 7,
@@ -257,6 +258,53 @@ async fn copilot_compact_waits_for_a_working_seat_and_runs_once_it_is_idle() {
     tokio::time::sleep(Duration::from_millis(2_100)).await;
     assert_eq!(fixture.worker.drain_once().await.expect("idle"), 1);
     assert_eq!(submissions(&fixture), [format!("submit:{PANE}:/compact")]);
+    fixture.server.abort();
+}
+
+async fn report_lost_login(fixture: &Fixture, native_session: &str) -> serde_json::Value {
+    reqwest::Client::new()
+        .post(format!("http://{}/v1/seat/auth-error", fixture.addr))
+        .bearer_auth("key")
+        .json(
+            &json!({"seat": "copilot", "native_session": native_session, "kind": "authorization"}),
+        )
+        .send()
+        .await
+        .expect("post")
+        .json()
+        .await
+        .expect("envelope")
+}
+
+/// F212: the extension's lost-login report on an idle seat with an empty
+/// composer types Copilot's own `/restart` through the same pane gate.
+#[tokio::test]
+async fn a_lost_login_restarts_an_idle_copilot_seat_through_the_pane_gate() {
+    let fixture = fixture(SystemState::Idle, false).await;
+    let answer = report_lost_login(&fixture, "native-186").await;
+    assert_eq!(answer["ok"], true, "{answer}");
+    assert_eq!(answer["data"]["action"], "restart", "{answer}");
+
+    assert_eq!(fixture.worker.drain_once().await.expect("drain"), 1);
+    assert_eq!(submissions(&fixture), [format!("submit:{PANE}:/restart")]);
+    fixture.server.abort();
+}
+
+/// F212: a report must come from the native session the seat is bound to; any
+/// other is refused and nothing is restarted.
+#[tokio::test]
+async fn a_lost_login_report_from_another_session_restarts_nothing() {
+    let fixture = fixture(SystemState::Idle, false).await;
+    let answer = report_lost_login(&fixture, "some-other-session").await;
+    assert_eq!(answer["ok"], false, "{answer}");
+    assert!(
+        queued(
+            &fixture.services.queue,
+            control_kind(&SeatId::from("copilot"))
+        )
+        .await
+        .is_none()
+    );
     fixture.server.abort();
 }
 

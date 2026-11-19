@@ -78,6 +78,29 @@ next packet to a Copilot seat. The signal is the `delivery.outcome` event with
 is on the send receipt), or "Compaction completed" in the seat's pane. `pij
 state` lists the compact only while it is held.
 
+`restart` is the other control pij types into a Copilot pane (F212): `pij send
+<seat> --command restart` types Copilot's own `/restart`, through the same path
+and brakes as `compact` (self or parent only). `/restart` swaps the CLI process
+and restores the same live session. A throwaway 1.0.114 seat kept its seat id,
+native session, spawn id, role holding and held FYI across two restarts; only
+its pid changed. It needs the CLI started through its npm loader
+(`COPILOT_LOADER_PID`, which every pij-spawned seat has); otherwise Copilot prints
+"Restart is not available". Every other harness refuses `restart`.
+
+A lost login is recovered the same way. Copilot's CLI can start answering
+`session.error` `authorization` 401, or `Execution failed: GitHub credential
+authority error: …` (no code), and keeps failing until it is restarted; a fresh
+process re-links the login with no one signing in. The extension recognizes
+both forms (by `errorType` and `statusCode`; the second by its message prefix)
+and, once the failed run ends and its idle is published, posts
+`{seat, native_session, kind}` to `/v1/seat/auth-error`: no error text. The
+daemon then queues one `restart` when the seat is idle with an empty composer,
+and otherwise tells its live parent and the designated prime how to restart it.
+One restart per seat per 30 min: if the restarted process loses its login too,
+they are told the login needs renewing (`/login`); while the old process is
+still the one running, nothing more happens. Each decision that acts is a
+`seat.auth_recovery` spine event.
+
 New manual sessions receive an ordinary memorable Pij ID from the daemon, just
 like spawned seats. The native session ID remains the internal resume key.
 Existing addresses, including earlier hash-style IDs, are preserved; this does
