@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f268-547d-7262-a20b-24e4edc3d12c",
+				"date": "2026-11-19",
+				"head": "c270201970dbd55bf1f11c9ed3d7d2491c5be8e6",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:260",
+				"writer": "pij-public-cobra",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #260 performance verdict\n\n**PASS WITH NOTES** at `c270201970dbd55bf1f11c9ed3d7d2491c5be8e6`.\nRequest: `01a1f268-547d-7262-a20b-24e4edc3d12c`.\n\nThe new sensor is cheap enough for `--quick`: **0.86 s wall** for the canonical sensor recipe under nice 19 on this machine. No added idle, daemon or per-seat polling cost. Static-parser coverage and session/project-cwd boundaries remain correctness-review subjects; the parser concern below was handed to that reviewer rather than hidden in a cost approval.\n\n## Executed receipts\n\nVerified the detached worktree HEAD equals the full subject SHA and consumed the PR diff/body plus green exact-head CI statuses. Worktree dependencies were initially absent; `/usr/bin/nice -n 19 just worktree-deps` linked the existing canonical installation (165 links), with no install, build or source edit.\n\n```sh\n/usr/bin/nice -n 19 /usr/bin/time -lp just omp-config-check\n```\n\nExit **0**, output `omp-config-check: new worktrees are plain checkouts (worktree.clone false)`. Real **0.86 s**, user **0.61 s**, system **0.12 s**; time-reported maximum resident set size **229,851,136 bytes** (~219.2 MiB). This is a transient command resource statistic, not persistent fleet RSS or a sum of every simultaneous child. One measurement under current load, not a median benchmark.\n\n```sh\n/usr/bin/nice -n 19 just test harness/scripts/omp-config-check.test.ts skills/flow-pair/test/cli-learning.test.ts\n```\n\nExit **0**: config **7/7**, cli-learning **3/3**, **10/10 total**, two files, **1.78 s**. The live repo-config case took **411 ms**. The caller environment still produced the FORCE_COLOR/NO_COLOR warning in the test runner, while the changed CLI subprocess assertion passed; no warning-output suppression or test repinning was performed by this review. A niced shell check confirmed the worktree has no target directory.\n\n## Launch and rate accounting\n\n| Path | Added cost / scaling |\n|---|---|\n| `omp-config-check.ts:36-50` | One synchronous `omp config get worktree.clone --json` attempt per sensor call; no shell eval. ENOENT skips only the live half. |\n| `just omp-config-check` | Finite TS/tsx driver overhead plus that one OMP query. `omp` uses PATH discovery, not an absolute path; it is not a repeated timer path. |\n| `omp-config-check.test.ts:29-30` | One additional live OMP query per test-suite invocation when OMP is installed; remaining fixture cases use injected functions and launch no OMP. |\n| Complete `harness checks --quick` / `just self-check` | Normally **two** OMP queries in total: one explicit stage and one inside the normal Vitest suite. The PR's one-query claim is true per standalone stage, not for the whole composite including tests. |\n| New sensor scheduling | One stage in the existing finite sequential SENSORS loop; no `heavy` flag, watcher registration, interval, session hook or daemon entry point. |\n| Idle / fleet scaling | Zero launches/s at rest. R standalone stage runs/s contribute R OMP query attempts/s; K complete gates/s contribute approximately 2K when both stage and live unit case run. No multiplier from live seat count except seats explicitly running gates. |\n\nOnly one new explicit production subprocess site is added by the sensor. The resource numbers above include startup overhead; this is not a claim that the entire recipe consists of only one OS process. No daemon source/launch site changed, so daemon spawn-site coverage is unaffected. No loop, timer or on-tick path was introduced, and no new repeated-path bare launch needs an absolute-path conversion for this scope.\n\nThe live query has no explicit timeout in this patch. It completed within the measured budget; an abnormal OMP startup hang could stall this on-demand sensor. No normal-use hang was observed, and no recurring resource leak is evidenced.\n\n## Resource benefit and scope\n\nProject `worktree.clone: false` avoids inheriting ignored target/dependency artifacts into future OMP worktrees under the applicable project settings. This prevents later copy-on-write divergence and old-block pinning; it does **not** instantly reclaim existing lane directories or prove an immediate 15 GiB physical saving per worktree. No lane cleanup, global config change, disk-savings benchmark or cargo build ran in this review.\n\nThe installed OMP bash rewrite checks `cfgWorktreeClone.get(this.session.settings)` (`src/tools/bash.ts:1134-1135`), so a root-started session with false does not start rewriting merely because one shell command changes its cwd to crates. Direct `omp worktree add` separately initializes settings from its actual cwd (`src/cli/worktree-cli.ts:103-114,150-154`). Subdirectory-started sessions remain the disclosed boundary; this note is not a new guarantee beyond the project-layer scope.\n\n## Correctness handoff, not a cost blocker\n\n`setsCloneFalse` at sensor line 31 accepts arbitrary indentation under a remembered worktree block. By source inspection, `worktree:\\n  other:\\n    clone: false\\n` passes that static check although clone is wrongly nested. The installed-OMP live half would reject the effective setting; CI without OMP only gets the static half. Sent this concrete case to `pij-compulsory-junglefowl`, who owns the requested parser review. It does not change the measured cost or the current committed valid config, and this performance verdict must not be read as clearing that separate correctness concern.\n\nNo local builds, cargo, full gates, worktree creation, mutation of source/settings, or writes to the global OMP home ran. No fleet-wide before/after improvement is claimed from this one-shot query measurement.\n"
+		}
+	]
+}
