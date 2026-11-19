@@ -305,6 +305,16 @@ A verified native claim for a session with no existing seat is held when its pan
 
 Same-process supersede is gated by `native_precedence` (plan 168): an optional `{last_user_message_at: ms|null, loaded_at: ms, history_unknown?: true}` on `/v1/register` and on the native receiver heartbeat. When a native claim would retire a live, attested same-process seat of another session, and the claim reports precedence, the claim must outrank the holder. That means a newer `last_user_message_at`, where `null` loses to any value, or an equal one with a later `loaded_at`. Otherwise the daemon answers HTTP 409, v2 `command:"pij register"`, `error:"refused"`, `details:{retryable:true,hold:"native-holder"}`, naming the holder, and writes nothing. The holder is spared only while its receiver lease is live. A lapsed lease, a claim without the field, or a holder whose heartbeat reports no field all keep the earlier newest-registrant supersede. A holder with no report since daemon start keeps the seat until it reports. This check is a **brake**, not a policy: removing it makes registration retire the same seats or more, never different ones. Reports live in daemon memory, on the receiver lease of the reporting incarnation. They are written under the same native lock as the lease decision, and they are monotonic per incarnation, so a delayed or out-of-order heartbeat never lowers them. A committed native registration installs its lease and report inside that lock; a takeover starts the lease afresh, and a repeat registration of the current holder never moves its expiry. An extension that cannot read its history sends `history_unknown: true`, never `null` (observed none) and never an omitted field (old extension). The daemon ranks it as having no prompt: held behind a live holder with history, the later load wins against a blank or unknown holder, and a lapsed lease is taken over. Contract and `/new` behaviour: `docs/how/copilot-native-extension.md` § Several sessions in one Copilot process.
 
+### The rows a registration reads: `GET /v1/seats/related` (F222)
+
+A native Copilot extension does not read the roster to register. It asks `GET /v1/seats/related?id=<PIJ_SESSION_ID>&session=<native session>&pid=<host pid>` (each parameter optional, at least one required, else HTTP 400) and gets `data: {seats: [...]}`: every local row whose id, native session or process id matches, **tombstoned rows included**, in seat-id order, as bare descriptors (no role join, badge or federation). The registration checks read only the open rows, exactly as they read the roster, so a closed same-session row is never re-taken. The closed rows answer one question: was the requested id closed?
+
+- **Closed means final.** When `PIJ_SESSION_ID` names a closed row and no open row corroborates it, the extension stops registering for good and shows `[pij native] unavailable: extension-unavailable; this Pij seat (<id>) was closed; pij delivery is off and no retry is scheduled; spawn a new seat to rejoin pij; ordinary Copilot remains usable`. A `/restart` inherits the same `PIJ_SESSION_ID`, so only a new seat rejoins.
+- **Not written yet means retry.** With no row for the requested id at all, a spawn may still be writing its prebind, so the extension retries as before (250 ms doubling to 5 s).
+- **A daemon without the route** answers 404, which the extension waits out like an outage until the daemon is restarted on current code.
+
+Before this route, a closed seat whose Copilot kept running retried every 5 s for good, each pass reading the whole roster: on 2026-11-19, 7 such seats made 1.37 roster reads a second at about 64 ms of daemon CPU each.
+
 ## Codex seats (plan 181)
 
 **What a Codex seat's identity is.** Since Codex 0.157 the TUI can run its
@@ -587,7 +597,7 @@ pane/session still refuses; paneless readers retain their exact host tuple check
 
 ## Seat roster rows and absence
 
-`GET /v1/seats` returns the v2 `pij seats` envelope with `data: {seats: [...], unavailable: [...]}`, not a bare row array. Each unavailable peer is `{machine, reason}`; retained rows from that peer are stale last-known data, so an empty `unavailable` list and an empty roster are different facts. Active results exclude tombstoned rows. Local rows are role-joined, stamped with the serving machine alias, and projected with `generation: "rs"`.
+`GET /v1/seats` returns the v2 `pij seats` envelope with `data: {seats: [...], unavailable: [...]}`, not a bare row array. Each unavailable peer is `{machine, reason}`; retained rows from that peer are stale last-known data, so an empty `unavailable` list and an empty roster are different facts. Active results exclude tombstoned rows; the store query never selects them (F222: retired rows outnumbered live ones about 20 to 1, and their per-row subqueries and decoding were most of a read). Local rows are role-joined, stamped with the serving machine alias, and projected with `generation: "rs"`.
 
 | Row fields | Wire contract |
 |---|---|

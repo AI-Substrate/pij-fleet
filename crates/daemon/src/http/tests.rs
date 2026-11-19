@@ -3362,6 +3362,75 @@ async fn ping_counts_requests_by_route_and_seats_reads_by_query_shape() {
     server.abort();
 }
 
+/// F222: `GET /v1/seats/related` answers the rows a registration reads about
+/// itself, by id, native session or pid, and nothing else. Its own closed row is
+/// among them, though the roster leaves closed rows out: that row is how a closed
+/// seat's extension learns to stop retrying.
+#[tokio::test]
+async fn related_seats_answer_own_rows_closed_ones_included_and_nothing_else() {
+    let mut closed = SeatDescriptor::new("pij-closed-own", Harness::Copilot, "/abs/tree");
+    closed.harness_session = Some("closed-session".into());
+    closed.tombstoned_at = Some(10);
+    closed.tombstone_reason = Some("owner-close".into());
+    let mut same_session = SeatDescriptor::new("pij-same-session", Harness::Copilot, "/abs/tree");
+    same_session.harness_session = Some("native-session".into());
+    let mut same_process = SeatDescriptor::new("pij-same-process", Harness::Omp, "/abs/tree");
+    same_process.proc = Some(ProcIdentity {
+        pid: 4242,
+        proc_start: 7,
+    });
+    let mut unrelated = SeatDescriptor::new("pij-unrelated", Harness::Copilot, "/abs/tree");
+    unrelated.harness_session = Some("another-session".into());
+    unrelated.proc = Some(ProcIdentity {
+        pid: 4343,
+        proc_start: 7,
+    });
+    let registry = Arc::new(
+        FakeRegistry::new()
+            .with_seat(closed)
+            .with_seat(same_session)
+            .with_seat(same_process)
+            .with_seat(unrelated),
+    );
+    let services = test_services(
+        registry,
+        Arc::new(FakeQueue::new(1_024).unwrap()),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let client = reqwest::Client::new();
+    let related = client
+        .get(format!(
+            "http://{addr}/v1/seats/related?id=pij-closed-own&session=native-session&pid=4242"
+        ))
+        .bearer_auth("key")
+        .send()
+        .await
+        .expect("related");
+    assert_eq!(related.status(), reqwest::StatusCode::OK);
+    let related: serde_json::Value = related.json().await.expect("related envelope");
+    let seats = related["data"]["seats"].as_array().expect("seats");
+    let ids: Vec<&str> = seats
+        .iter()
+        .filter_map(|seat| seat["id"].as_str())
+        .collect();
+    assert_eq!(
+        ids,
+        ["pij-closed-own", "pij-same-process", "pij-same-session"],
+        "{related}"
+    );
+    assert_eq!(seats[0]["tombstoned_at"], 10, "{related}");
+    let unnamed = client
+        .get(format!("http://{addr}/v1/seats/related"))
+        .bearer_auth("key")
+        .send()
+        .await
+        .expect("unnamed");
+    assert_eq!(unnamed.status(), reqwest::StatusCode::BAD_REQUEST);
+    server.abort();
+}
+
 #[tokio::test]
 async fn retired_harness_override_launches_and_records_policy_exception() {
     let policy = pij_core::config::Config {

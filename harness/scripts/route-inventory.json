@@ -218,6 +218,18 @@
 		},
 		{
 			"method": "GET",
+			"path": "/v1/seats/related",
+			"authority": "machine-public",
+			"reason": "Roster rows by id, native session or pid (F222), readable by any key holder as the roster is; grants nothing."
+		},
+		{
+			"method": "HEAD",
+			"path": "/v1/seats/related",
+			"authority": "machine-public",
+			"reason": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Roster rows by id, native session or pid (F222), readable by any key holder as the roster is; grants nothing."
+		},
+		{
+			"method": "GET",
 			"path": "/v1/events",
 			"authority": "machine-public",
 			"reason": "The local or federated event stream for any key holder."

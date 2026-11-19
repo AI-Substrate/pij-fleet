@@ -65,7 +65,7 @@ use pij_core::model::{
     SeatDescriptor, SeatId, SemanticState, Seq,
 };
 use pij_core::names::memorable_pij_id_candidates;
-use pij_core::ports::Registry;
+use pij_core::ports::{Registry, RelatedSeats};
 use pij_core::wire;
 use pij_harnesses::{
     SpawnPlanInput, build_spawn_plan, observed_launch_command, usable_observer_executable,
@@ -164,6 +164,10 @@ enum Endpoint {
     Hold,
     Release,
     Seats,
+    /// `GET /v1/seats/related` — the rows one registration reads about itself
+    /// (F222): its requested id, its native session and its process, closed
+    /// rows included. A native extension asks this instead of the whole roster.
+    SeatsRelated,
     Events,
     /// Producer for the three sidecar consumers. The consumers are queue-backed,
     /// so a sidecar job must be ENQUEUED by something; without this route the
@@ -263,7 +267,7 @@ enum Endpoint {
 }
 
 impl Endpoint {
-    const ALL: [Self; 62] = [
+    const ALL: [Self; 63] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -280,6 +284,7 @@ impl Endpoint {
         Self::Hold,
         Self::Release,
         Self::Seats,
+        Self::SeatsRelated,
         Self::Events,
         Self::Sidecar,
         Self::Report,
@@ -346,6 +351,7 @@ impl Endpoint {
             Self::Hold => "/v1/hold",
             Self::Release => "/v1/release",
             Self::Seats => "/v1/seats",
+            Self::SeatsRelated => "/v1/seats/related",
             Self::Events => "/v1/events",
             Self::Sidecar => "/v1/sidecar",
             Self::Report => "/v1/report",
@@ -455,6 +461,7 @@ impl Endpoint {
             | Self::BackgroundTail
             | Self::InboxTyping
             | Self::Seats
+            | Self::SeatsRelated
             | Self::Cards
             | Self::Events
             | Self::ShimSessions => Method::GET,
@@ -729,6 +736,7 @@ fn router_with_optional_federation(
             Endpoint::Hold => router.route(endpoint.path(), post(hold_inbox)),
             Endpoint::Release => router.route(endpoint.path(), post(release_inbox)),
             Endpoint::Seats => router.route(endpoint.path(), get(seats).post(seats_post)),
+            Endpoint::SeatsRelated => router.route(endpoint.path(), get(related_seats)),
             Endpoint::Events => router.route(endpoint.path(), get(events)),
             Endpoint::Sidecar => router.route(endpoint.path(), post(sidecar)),
             Endpoint::Report => router.route(endpoint.path(), post(report)),
@@ -3704,7 +3712,10 @@ async fn seat_state(State(state): State<AppState>, Json(request): Json<StateRequ
     let seat = match state
         .services
         .status
-        .read(state.services.registry.as_ref(), Some(&id))
+        .read(
+            state.services.registry.as_ref(),
+            pij_store::status::StatusRows::One(&id),
+        )
         .await
         .map(|rows| {
             rows.into_iter()
@@ -3765,13 +3776,15 @@ async fn seat_cards(State(state): State<AppState>) -> Response {
     let listed = state
         .services
         .status
-        .read(state.services.registry.as_ref(), None)
+        .read(
+            state.services.registry.as_ref(),
+            pij_store::status::StatusRows::Live,
+        )
         .await;
     let mut seats = match listed {
         Ok(rows) => rows
             .into_iter()
             .map(pij_store::status::SeatStatus::into_projection)
-            .filter(|seat| seat.tombstoned_at.is_none())
             .collect::<Vec<_>>(),
         Err(error) => return internal("pij cards", error),
     };
@@ -4366,7 +4379,10 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
     let listed = state
         .services
         .status
-        .read(state.services.registry.as_ref(), None)
+        .read(
+            state.services.registry.as_ref(),
+            pij_store::status::StatusRows::Live,
+        )
         .await;
     let mut local = match listed {
         Ok(seats) => seats
@@ -4458,6 +4474,48 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
         unavailable: &roster.unavailable,
     };
     envelope(StatusCode::OK, &Envelope::ok("pij seats", projection))
+}
+
+#[derive(Deserialize)]
+struct RelatedSeatQuery {
+    id: Option<SeatId>,
+    session: Option<String>,
+    pid: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct RelatedSeatsProjection {
+    seats: Vec<SeatDescriptor>,
+}
+
+/// The rows one registration reads about itself (F222): every seat whose id is
+/// `id`, whose native session is `session` or whose process id is `pid`,
+/// tombstoned rows included, so a closed seat's own row can say it was closed.
+/// A Copilot seat's extension registering used to read the whole roster for
+/// these few rows, every 5 s for as long as it retried.
+async fn related_seats(
+    State(state): State<AppState>,
+    Query(query): Query<RelatedSeatQuery>,
+) -> Response {
+    if query.id.is_none() && query.session.is_none() && query.pid.is_none() {
+        return refused(
+            "pij seats related",
+            "name at least one of `id`, `session` or `pid`",
+        );
+    }
+    let related = RelatedSeats {
+        ids: query.id.into_iter().collect(),
+        harness_session: query.session,
+        pane: None,
+        pid: query.pid,
+    };
+    match state.services.registry.list_related(&related).await {
+        Ok(seats) => envelope(
+            StatusCode::OK,
+            &Envelope::ok("pij seats related", RelatedSeatsProjection { seats }),
+        ),
+        Err(error) => internal("pij seats related", error),
+    }
 }
 
 #[derive(Default, Deserialize)]

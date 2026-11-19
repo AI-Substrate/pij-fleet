@@ -20,6 +20,8 @@ import {
 	NativePrecedence,
 	normalizeExecutable,
 	parseProcessStart,
+	registrationRows,
+	relatedSeatsPath,
 	resolveNativeHost,
 	resolveRegistration,
 	TurnEndTracker,
@@ -228,14 +230,23 @@ async function startExtension() {
 						safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : null,
 					});
 				});
-				const roster = await client.request("/v1/seats?scope=local", undefined, signal);
+				// F222: only this registration's own rows, never the whole roster.
+				const related = await client.request(
+					relatedSeatsPath({
+						requestedId: process.env.PIJ_SESSION_ID,
+						sessionId: session.sessionId,
+						pid: host.pid,
+					}),
+					undefined,
+					signal,
+				);
 				const registration = await resolveRegistration(
 					client,
 					chooseRegistration({
 						sessionId: session.sessionId,
 						host,
 						folder: process.cwd(),
-						seats: roster?.seats,
+						...registrationRows(related?.seats),
 						env: process.env,
 						extension,
 					}),
@@ -299,6 +310,7 @@ async function startExtension() {
 				kind: "extension-unavailable",
 				safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : undefined,
 				takeOver: error instanceof NativeError ? error.takeOver : undefined,
+				closed: error instanceof NativeError ? error.closed : undefined,
 			});
 		else
 			console.error(
