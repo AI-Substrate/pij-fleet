@@ -3671,12 +3671,19 @@ async fn a_folder_trust_prompt_refuses_the_spawn_at_once_naming_its_safe_key() {
         (
             Harness::Copilot,
             "copilot-1.0.114-folder-trust.txt",
-            "press Enter: its default, `1. Yes`",
+            "press Enter to choose the highlighted `1. Yes`, which trusts the folder for \
+             this session only",
+        ),
+        // R264-001: the guidance follows the highlighted row, not the default.
+        (
+            Harness::Copilot,
+            "copilot-1.0.114-folder-trust-second-row.txt",
+            "press Up once, then Enter, to choose `1. Yes`",
         ),
         (
             Harness::Claude,
             "claude-2.1.328-folder-trust.txt",
-            "press Down, then Enter: its default is `No, exit`",
+            "press Down once, then Enter, to choose `Yes, I trust this folder`",
         ),
     ] {
         let tmux = Arc::new(FakeTmux::new().with_standing_capture(trust_fixture(fixture)));

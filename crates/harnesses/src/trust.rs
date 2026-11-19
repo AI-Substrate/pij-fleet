@@ -8,9 +8,11 @@
 //! highlight to the row that trusts the folder and choosing it.
 //!
 //! A prompt is matched only on whole rows, after the box drawing around them
-//! is stripped: the question row (where the harness has one that fits in a
-//! pane's bottom rows) and the menu's own rows. Prose that quotes a row sits
-//! on a row with other words, so it never matches.
+//! is stripped: a heading row (Copilot's question, Claude's `Accessing
+//! workspace:`) and the menu's own rows below it. Prose that quotes a row
+//! sits on a row with other words, so it never matches. The refusal's
+//! guidance, like `--trust-folder`'s key, comes from the row highlighted on
+//! the screen, never from the prompt's default.
 //!
 //! **Adding a harness.** Capture the prompt's real screen (`tmux
 //! capture-pane -p -t <pane>`), with its default highlight and with the
@@ -26,9 +28,8 @@ struct Chrome {
     harness: Harness,
     /// Named in refusals, never text read from the pane.
     label: &'static str,
-    /// A row the options must follow, when the prompt has one that stays in
-    /// a short pane's view.
-    question: Option<&'static str>,
+    /// A row the options must follow: Copilot's question, Claude's heading.
+    heading: &'static str,
     /// The menu's rows, top to bottom, without the highlight marker.
     options: &'static [&'static str],
     /// How many of `options` must be visible. Copilot's menu scrolls in a
@@ -36,8 +37,8 @@ struct Chrome {
     shown: usize,
     /// The row that trusts the folder and starts the harness.
     trust: usize,
-    /// The safe answer for a person at the pane, with its default.
-    safe_answer: &'static str,
+    /// What choosing the trust row does, as the prompt itself says.
+    trusts: &'static str,
 }
 
 /// Every folder-trust prompt pij knows. Fixtures:
@@ -46,7 +47,7 @@ const PROMPTS: &[Chrome] = &[
     Chrome {
         harness: Harness::Copilot,
         label: "Copilot's folder-trust prompt",
-        question: Some("Do you trust the files in this folder?"),
+        heading: "Do you trust the files in this folder?",
         options: &[
             "1. Yes",
             "2. Yes, and remember this folder for future sessions",
@@ -54,17 +55,16 @@ const PROMPTS: &[Chrome] = &[
         ],
         shown: 1,
         trust: 0,
-        safe_answer: "press Enter: its default, `1. Yes`, trusts the folder for this session only",
+        trusts: "trusts the folder for this session only",
     },
     Chrome {
         harness: Harness::Claude,
         label: "Claude's folder-trust prompt",
-        question: None,
+        heading: "Accessing workspace:",
         options: &["No, exit", "Yes, I trust this folder"],
         shown: 2,
         trust: 1,
-        safe_answer: "press Down, then Enter: its default is `No, exit`, so a bare Enter \
-                      closes the seat; `Yes, I trust this folder` is the row below",
+        trusts: "trusts the folder",
     },
 ];
 
@@ -86,11 +86,42 @@ impl TrustPrompt {
         self.chrome.label
     }
 
-    /// What a person at the pane presses to trust the folder, from the
-    /// prompt's default.
+    /// What a person at the pane presses to trust the folder, from the row
+    /// highlighted on this screen (R264-001): Enter only when the trust row is
+    /// highlighted, else the moves to it and then Enter. With no highlighted
+    /// row in view it names the row and no key.
     #[must_use]
-    pub fn safe_answer(&self) -> &'static str {
-        self.chrome.safe_answer
+    pub fn safe_answer(&self) -> String {
+        let chrome = self.chrome;
+        let choose = format!(
+            "`{}`, which {}",
+            chrome.options[chrome.trust], chrome.trusts
+        );
+        let Some(highlighted) = self.highlighted else {
+            return format!(
+                "move the highlight to {choose}, then press Enter (no highlighted row is \
+                 visible, so pij names no key)"
+            );
+        };
+        let steps = highlighted.abs_diff(chrome.trust);
+        if steps == 0 {
+            return format!("press Enter to choose the highlighted {choose}");
+        }
+        let key = if highlighted < chrome.trust {
+            "Down"
+        } else {
+            "Up"
+        };
+        let times = if steps == 1 {
+            "once".to_string()
+        } else {
+            format!("{steps} times")
+        };
+        format!(
+            "press {key} {times}, then Enter, to choose {choose}; Enter now would choose the \
+             highlighted `{}`",
+            chrome.options[highlighted]
+        )
     }
 
     /// The one key that moves this screen toward trusting the folder: Enter
@@ -113,10 +144,7 @@ impl TrustPrompt {
 pub fn folder_trust_prompt(harness: Harness, screen: &str) -> Option<TrustPrompt> {
     let chrome = PROMPTS.iter().find(|chrome| chrome.harness == harness)?;
     let rows: Vec<&str> = screen.lines().map(unboxed).collect();
-    let start = match chrome.question {
-        Some(question) => rows.iter().position(|row| *row == question)? + 1,
-        None => 0,
-    };
+    let start = rows.iter().position(|row| *row == chrome.heading)? + 1;
     let mut shown = 0;
     let mut highlighted = None;
     for row in &rows[start..] {
@@ -160,15 +188,18 @@ mod tests {
         .expect("read a harness fixture")
     }
 
-    fn next_key(harness: Harness, name: &str) -> Option<MenuKey> {
-        folder_trust_prompt(harness, &fixture(name))
-            .unwrap_or_else(|| panic!("{name} shows a trust prompt"))
-            .next_key()
+    /// The next key and the refusal's guidance for a captured screen.
+    fn answer(harness: Harness, name: &str) -> (Option<MenuKey>, String) {
+        let prompt = folder_trust_prompt(harness, &fixture(name))
+            .unwrap_or_else(|| panic!("{name} shows a trust prompt"));
+        (prompt.next_key(), prompt.safe_answer())
     }
 
+    const COPILOT_DEFAULT: &str = "press Enter to choose the highlighted `1. Yes`, which \
+                                   trusts the folder for this session only";
+
     /// The captured Copilot prompt matches at its default and in a short
-    /// pane that shows one menu row, and its default (`1. Yes`) is chosen
-    /// with Enter.
+    /// pane that shows one menu row: `1. Yes` is highlighted, so Enter.
     #[test]
     fn copilot_trust_prompt_matches_and_its_default_is_enter() {
         for name in [
@@ -176,8 +207,8 @@ mod tests {
             "copilot-1.0.114-folder-trust-short.txt",
         ] {
             assert_eq!(
-                next_key(Harness::Copilot, name),
-                Some(MenuKey::Enter),
+                answer(Harness::Copilot, name),
+                (Some(MenuKey::Enter), COPILOT_DEFAULT.to_string()),
                 "{name}"
             );
         }
@@ -187,7 +218,6 @@ mod tests {
         )
         .expect("prompt");
         assert_eq!(prompt.label(), "Copilot's folder-trust prompt");
-        assert!(prompt.safe_answer().starts_with("press Enter"));
     }
 
     /// The daemon reads the whole screen: Copilot's bottom 20 rows lose the
@@ -201,35 +231,49 @@ mod tests {
         assert!(folder_trust_prompt(Harness::Copilot, &tail).is_some());
     }
 
-    /// Never Enter on a row that is not the trust row: with `2. Yes, and
-    /// remember …` highlighted the next key is Up.
+    /// R264-001: with `2. Yes, and remember …` highlighted, Enter would
+    /// remember the folder for good. The key is Up and the guidance says Up
+    /// first, naming what Enter would choose now.
     #[test]
     fn copilot_second_row_highlight_moves_up() {
         assert_eq!(
-            next_key(
+            answer(
                 Harness::Copilot,
                 "copilot-1.0.114-folder-trust-second-row.txt"
             ),
-            Some(MenuKey::Up)
+            (
+                Some(MenuKey::Up),
+                "press Up once, then Enter, to choose `1. Yes`, which trusts the folder for \
+                 this session only; Enter now would choose the highlighted `2. Yes, and \
+                 remember this folder for future sessions`"
+                    .to_string()
+            )
         );
     }
 
-    /// D-226-6: Claude's default is `No, exit`, so its next key is Down, and
-    /// Enter only once `Yes, I trust this folder` is highlighted.
+    /// D-226-6 and R264-001: Claude's default is `No, exit`, so the key and
+    /// the guidance are Down first; with `Yes, I trust this folder` already
+    /// highlighted, both are Enter alone.
     #[test]
     fn claude_trust_prompt_moves_down_before_enter() {
         assert_eq!(
-            next_key(Harness::Claude, "claude-2.1.328-folder-trust.txt"),
-            Some(MenuKey::Down)
+            answer(Harness::Claude, "claude-2.1.328-folder-trust.txt"),
+            (
+                Some(MenuKey::Down),
+                "press Down once, then Enter, to choose `Yes, I trust this folder`, which \
+                 trusts the folder; Enter now would choose the highlighted `No, exit`"
+                    .to_string()
+            )
         );
         assert_eq!(
-            next_key(Harness::Claude, "claude-2.1.328-folder-trust-yes-row.txt"),
-            Some(MenuKey::Enter)
+            answer(Harness::Claude, "claude-2.1.328-folder-trust-yes-row.txt"),
+            (
+                Some(MenuKey::Enter),
+                "press Enter to choose the highlighted `Yes, I trust this folder`, which \
+                 trusts the folder"
+                    .to_string()
+            )
         );
-        let prompt =
-            folder_trust_prompt(Harness::Claude, &fixture("claude-2.1.328-folder-trust.txt"))
-                .expect("prompt");
-        assert!(prompt.safe_answer().starts_with("press Down, then Enter"));
     }
 
     /// No prompt, no match: each harness's normal screens, the other
@@ -255,14 +299,23 @@ mod tests {
                       ● Claude shows No, exit and Yes, I trust this folder";
         assert_eq!(folder_trust_prompt(Harness::Copilot, quoted), None);
         assert_eq!(folder_trust_prompt(Harness::Claude, quoted), None);
+        // Claude's menu rows alone, without its heading above them.
+        let menu = "❯ No, exit\n  Yes, I trust this folder";
+        assert_eq!(folder_trust_prompt(Harness::Claude, menu), None);
     }
 
-    /// A prompt whose highlighted row has scrolled out of view names no key:
-    /// nothing is chosen blind.
+    /// A prompt whose highlighted row has scrolled out of view names no key,
+    /// and its guidance names the trust row but no key: nothing is chosen
+    /// blind.
     #[test]
     fn no_visible_highlight_names_no_key() {
         let screen = "│ Do you trust the files in this folder? │\n│   3. No (Esc) │";
         let prompt = folder_trust_prompt(Harness::Copilot, screen).expect("prompt");
         assert_eq!(prompt.next_key(), None);
+        assert_eq!(
+            prompt.safe_answer(),
+            "move the highlight to `1. Yes`, which trusts the folder for this session only, \
+             then press Enter (no highlighted row is visible, so pij names no key)"
+        );
     }
 }
