@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Open when a delegated security review returns only a verdict despite an evidence follow-up.",
+				"tags": [
+					"review",
+					"evidence",
+					"delegation",
+					"recovery"
+				],
+				"title": "Recover probe receipts from saved tool events"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Supplement to \"Require evidence in delegated review reports\": on #273, a same-task follow-up still returned only the no-vulnerabilities sentence. The supporting probes were recoverable without another review or repeated source inspection.\n\nIn the authorized current session's events.jsonl, filter by the helper's agentId. Join tool.execution_start and tool.execution_complete by data.toolCallId. The start's arguments retain exact refs and file ranges; the completion's result.content retains observed output. Extract only relevant tool receipts, not reasoning or unrelated transcript content, and scrub local paths before public publication.\n\nThis recovered #273's exact-source in-memory SQLite claim probe and #274's complete-tree, verified-blob byte comparison. Preserve their proof grades: SQLite is not a Rust/HTTP/live-concurrency test; a byte-only version change is not a fresh SDK certification.\n\ndifficulties: verdict-only helper output can hide completed evidence even after a follow-up.\nmagicWand: helper results should carry structured evidence receipts even when the findings list is empty.\n"
+		}
+	]
+}
