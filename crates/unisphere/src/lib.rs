@@ -367,14 +367,12 @@ pub fn seat_status(status: &SessionStatus) -> SeatStatus {
         last_call_cache_read_tokens: native_u64(last_call.and_then(|call| call.cache_read)),
         last_call_cache_write_5m_tokens: native_u64(last_call.and_then(|call| call.cache_write_5m)),
         last_call_cache_write_1h_tokens: native_u64(last_call.and_then(|call| call.cache_write_1h)),
+        // Any recorded lifetime, not just 5m/1h: Copilot's GPT models record
+        // 1800 s, which the SDK labels `30m` (F214).
         cache_ttl: fact(
             last_call.and_then(|call| call.ttl_bucket.as_ref()),
             None,
-            |bucket: &String| match bucket.as_str() {
-                "5m" => Some(CacheTtl::FiveMinutes),
-                "1h" => Some(CacheTtl::OneHour),
-                _ => None,
-            },
+            |bucket: &String| CacheTtl::from_label(bucket),
         ),
         compactions: status
             .compaction
@@ -453,22 +451,37 @@ mod tests {
             "a recorded 0 is a fact"
         );
         assert_eq!(mapped.last_call_cache_write_5m_tokens, Fact::Unknown);
-        assert_eq!(mapped.cache_ttl, Fact::derived(CacheTtl::OneHour));
+        assert_eq!(mapped.cache_ttl, Fact::derived(CacheTtl::ONE_HOUR));
         assert_eq!(mapped.compactions, Fact::native(3));
         assert_eq!(mapped.reset.as_deref(), Some("rotated"));
     }
 
     #[test]
-    fn an_unversioned_table_or_unknown_bucket_is_unknown_not_guessed() {
+    fn an_unversioned_table_or_unreadable_bucket_is_unknown_not_guessed() {
         let mut status = empty();
         status.context.window_tokens = Some(UniFact::new(200_000, UniBasis::Table));
         status.last_call = Some(LastCall {
-            ttl_bucket: Some(UniFact::new("30m".into(), UniBasis::Derived)),
+            ttl_bucket: Some(UniFact::new("five-ish".into(), UniBasis::Derived)),
             ..LastCall::default()
         });
         let mapped = seat_status(&status);
         assert_eq!(mapped.context_window_tokens, Fact::Unknown);
         assert_eq!(mapped.cache_ttl, Fact::Unknown);
+    }
+
+    /// F214: Copilot records 1800 s for GPT models; the SDK labels it `30m`
+    /// natively. It is a 30-minute TTL, never "unknown".
+    #[test]
+    fn a_native_thirty_minute_ttl_is_thirty_minutes() {
+        let mut status = empty();
+        status.last_call = Some(LastCall {
+            ttl_bucket: Some(UniFact::new("30m".into(), UniBasis::Native)),
+            ..LastCall::default()
+        });
+        assert_eq!(
+            seat_status(&status).cache_ttl,
+            Fact::native(CacheTtl::from_seconds(1_800).expect("30m"))
+        );
     }
 
     fn record(uuid: &str, parent: &str, kind: &str, at: &str, usage: &str) -> String {

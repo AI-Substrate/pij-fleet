@@ -720,7 +720,7 @@ fn last_call(session: &str, ago_ms: u64) -> Arc<dyn SessionStatusPort> {
             model: Fact::native("claude-opus-5-5".to_string()),
             context_used_tokens: Fact::derived(420_000),
             last_call_at_ms: Fact::native(now_ms() - ago_ms),
-            cache_ttl: Fact::native(CacheTtl::OneHour),
+            cache_ttl: Fact::native(CacheTtl::ONE_HOUR),
             ..SeatStatus::unknown()
         }),
     ))

@@ -3648,13 +3648,7 @@ async fn seat_card(
     // only the descriptor would report a blocked seat with no reason, which is
     // the half of the answer nobody needs.
     let state_record = reports.latest_state(&id).await?;
-    let read = session_status_block(
-        state.services.session_status.as_ref(),
-        &seat.id,
-        seat.harness,
-        seat.harness_session.clone(),
-        clock,
-    );
+    let read = session_status_block(state.services.session_status.as_ref(), &seat, clock);
     let session_status = match session_wait {
         None => read.await,
         // The source detaches a read that runs over and keeps its cursor, so
@@ -3735,33 +3729,51 @@ fn receiver_age(ago: Duration) -> String {
 /// Read one seat's session facts into the `sessionStatus` block.
 ///
 /// A source failure fills the block and never fails the card, because the rest
-/// of `pij state` stays true without it.
+/// of `pij state` stays true without it. A TTL the seat's records do not carry
+/// is filled from the rungs below them (F214, `fill_cache_ttl`): the seat's
+/// cache-proxy route, then the versioned table. Both are in-memory reads of the
+/// descriptor, so the block costs no more than the source's read.
 pub(crate) async fn session_status_block(
     source: &dyn pij_core::ports::SessionStatusPort,
-    seat: &SeatId,
-    harness: Harness,
-    session: Option<String>,
+    seat: &SeatDescriptor,
     now_ms: u64,
 ) -> pij_core::session_status::SessionStatusBlock {
-    use pij_core::session_status::{SessionStatusBlock, SessionStatusReply, SessionTarget};
-    let Some(session) = session else {
+    use pij_core::session_status::{
+        SessionStatusBlock, SessionStatusReply, SessionTarget, TtlSeat, fill_cache_ttl,
+    };
+    let Some(session) = seat.harness_session.clone() else {
         return SessionStatusBlock::Unbound;
     };
     let target = SessionTarget {
-        seat: seat.clone(),
-        harness,
+        seat: seat.id.clone(),
+        harness: seat.harness,
         session,
     };
     let started = std::time::Instant::now();
     let reply = source.status(&target).await;
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     match reply {
-        Ok(SessionStatusReply::Status(status)) => SessionStatusBlock::Known {
-            cache_state: pij_core::session_status::cache_state(&status, now_ms),
-            status: Box::new(status),
-            elapsed_ms,
+        Ok(SessionStatusReply::Status(mut status)) => {
+            fill_cache_ttl(
+                &mut status,
+                &TtlSeat {
+                    harness: seat.harness,
+                    proxied: seat.cache_proxy.as_ref().is_some_and(|proxy| {
+                        proxy.state == pij_core::model::CacheProxyRoute::Proxied
+                    }),
+                    model: seat.model.as_deref(),
+                    provider: seat.provider.as_deref(),
+                },
+            );
+            SessionStatusBlock::Known {
+                cache_state: pij_core::session_status::cache_state(&status, now_ms),
+                status: Box::new(status),
+                elapsed_ms,
+            }
+        }
+        Ok(SessionStatusReply::Unsupported) => SessionStatusBlock::Unsupported {
+            harness: seat.harness,
         },
-        Ok(SessionStatusReply::Unsupported) => SessionStatusBlock::Unsupported { harness },
         Ok(SessionStatusReply::NotFound { detail }) => SessionStatusBlock::NotFound { detail },
         Err(error) => SessionStatusBlock::Failed {
             error: error.to_string(),
@@ -4044,24 +4056,18 @@ async fn list_sizes(
             continue;
         }
         let source = Arc::clone(&state.services.session_status);
-        let (id, harness, session, seat_state, seat_model) = (
-            seat.id.clone(),
-            seat.harness,
-            seat.harness_session.clone(),
-            seat.state,
-            seat.model.clone(),
-        );
+        let seat = seat.clone();
         reads.spawn(async move {
             let block = tokio::time::timeout(
                 LIST_STATUS_WAIT,
-                session_status_block(source.as_ref(), &id, harness, session, now_ms),
+                session_status_block(source.as_ref(), &seat, now_ms),
             )
             .await
             .unwrap_or_else(|_| pij_core::session_status::SessionStatusBlock::Failed {
                 error: format!("no answer within {} ms", LIST_STATUS_WAIT.as_millis()),
             });
             let size =
-                pij_core::cold_wake::seat_size(seat_state, &block, now_ms, seat_model.as_deref());
+                pij_core::cold_wake::seat_size(seat.state, &block, now_ms, seat.model.as_deref());
             (index, block, size)
         });
     }

@@ -96,7 +96,7 @@ export interface QueueReceipt {
 	readonly msg_id: string;
 	readonly outcome: unknown;
 	readonly at: number;
-	/** The cold-wake guard's verdict: `clear`, `busy`, `forced` or `unknown: <why>`.
+	/** The cold-wake guard's verdict: `clear`, `busy`, `forced`, `warn: <why>` or `unknown: <why>`.
 	 *  Absent when the guard did not run (FYIs, controls, forwarded sends). */
 	readonly cold_check?: string;
 	/** Plan 159: set only when a held FYI's body contains `?`; the send is still held. */

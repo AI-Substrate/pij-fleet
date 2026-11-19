@@ -38,8 +38,10 @@ export function renderRosterTable(payload: unknown): string {
 		const key = str(record(seat.dialog).key);
 		const state = key !== undefined ? `blocked on a dialog (${key})` : (str(seat.state) ?? "-");
 		const lapse = str(seat.nativeReceiver);
+		// The marker is one of the guard's two (❄ refuse, ⚠ warn, F214), never other text.
+		const marker = columns?.[3];
 		return {
-			cold: columns?.[3] === "❄",
+			mark: marker === "❄" || marker === "⚠" ? `${marker} ` : "  ",
 			cells: [
 				machine !== undefined && columns === undefined ? `${id}@${machine}` : id,
 				str(seat.harness) ?? "-",
@@ -62,10 +64,7 @@ export function renderRosterTable(payload: unknown): string {
 				)
 				.join("")
 		).trimEnd();
-	const lines = [
-		line("  ", HEADERS),
-		...rows.map((row) => line(row.cold ? "❄ " : "  ", row.cells)),
-	];
+	const lines = [line("  ", HEADERS), ...rows.map((row) => line(row.mark, row.cells))];
 	const unavailable = Array.isArray(data.unavailable) ? data.unavailable : [];
 	for (const peer of unavailable) {
 		const entry = record(peer);

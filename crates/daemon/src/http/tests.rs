@@ -6522,7 +6522,7 @@ async fn state_reads_the_bound_sessions_facts_and_derives_cache_state() {
         context_used_tokens: Fact::derived(142_000),
         // Epoch ms 1 with a 5-minute TTL has long expired at any real clock.
         last_call_at_ms: Fact::native(1),
-        cache_ttl: Fact::derived(CacheTtl::FiveMinutes),
+        cache_ttl: Fact::derived(CacheTtl::FIVE_MINUTES),
         ..SeatStatus::unknown()
     };
     let source = Arc::new(
@@ -6829,8 +6829,9 @@ async fn a_send_to_a_cold_seat_is_refused_with_its_price() {
     assert_eq!(reply["ok"], false);
     let message = reply["meta"].as_str().unwrap_or_default();
     assert!(
-        message.starts_with("E-RS-COLD-WAKE: ❄ pij-cold is cold (720k, idle 2h). Options:")
-            && message.contains("~$6.45")
+        message.starts_with(
+            "E-RS-COLD-WAKE: ❄ pij-cold is cold (720k, idle 2h, cache 1h table@v1). Options:"
+        ) && message.contains("~$6.45")
             && message.contains("--fyi")
             && message.contains("--force --reason"),
         "{reply}"
@@ -8134,29 +8135,36 @@ const FIVE_MIN_MS: u64 = 5 * 60 * 1_000;
 #[tokio::test]
 async fn five_fyis_flush_only_on_a_last_call_inside_the_cache_lifetime() {
     use pij_core::model::SystemState::Idle;
-    use pij_core::session_status::CacheTtl::{FiveMinutes, OneHour};
+    use pij_core::session_status::CacheTtl;
     let rows = [
         (
             "1h cache, called 5 min ago",
-            flush_facts(FIVE_MIN_MS, Some(OneHour)),
+            flush_facts(FIVE_MIN_MS, Some(CacheTtl::ONE_HOUR)),
             1,
         ),
         (
             "5m cache, called 1 min ago",
-            flush_facts(60_000, Some(FiveMinutes)),
+            flush_facts(60_000, Some(CacheTtl::FIVE_MINUTES)),
             1,
         ),
         // Review finding 4: past its real (5-minute) lifetime, inside 60 min.
         (
             "5m cache, called 30 min ago",
-            flush_facts(6 * FIVE_MIN_MS, Some(FiveMinutes)),
+            flush_facts(6 * FIVE_MIN_MS, Some(CacheTtl::FIVE_MINUTES)),
             0,
         ),
         (
             "1h cache, called 2 h ago",
-            flush_facts(24 * FIVE_MIN_MS, Some(OneHour)),
+            flush_facts(24 * FIVE_MIN_MS, Some(CacheTtl::ONE_HOUR)),
             0,
         ),
+        // F214: GPT's recorded 30 minutes is evidence; 20 minutes in is warm.
+        (
+            "30m cache, called 20 min ago",
+            flush_facts(4 * FIVE_MIN_MS, CacheTtl::from_seconds(1_800)),
+            1,
+        ),
+        // The table's TTL is no evidence for a flush, which is an action.
         ("unknown cache lifetime", flush_facts(60_000, None), 0),
     ];
     for (name, source, flushed) in rows {
@@ -8181,11 +8189,11 @@ async fn five_fyis_flush_only_on_a_last_call_inside_the_cache_lifetime() {
 #[tokio::test]
 async fn a_working_state_alone_never_flushes() {
     use pij_core::model::SystemState::Working;
-    use pij_core::session_status::CacheTtl::OneHour;
+    use pij_core::session_status::CacheTtl;
     let rows = [
         (
             "stale working, cold 2 h",
-            flush_facts(24 * FIVE_MIN_MS, Some(OneHour)),
+            flush_facts(24 * FIVE_MIN_MS, Some(CacheTtl::ONE_HOUR)),
         ),
         (
             "working, no facts",
@@ -8214,7 +8222,7 @@ async fn facts_that_never_arrive_never_flush() {
 async fn the_shim_fyi_path_warns_and_flushes() {
     let source = flush_facts(
         FIVE_MIN_MS,
-        Some(pij_core::session_status::CacheTtl::OneHour),
+        Some(pij_core::session_status::CacheTtl::ONE_HOUR),
     );
     let (addr, server, queue, _) = cold_daemon(pij_core::model::SystemState::Idle, source).await;
     for n in 1..=5 {
@@ -8251,7 +8259,7 @@ async fn the_shim_fyi_path_warns_and_flushes() {
 async fn a_turn_boundary_never_flushes_even_when_warm() {
     let source = flush_facts(
         FIVE_MIN_MS,
-        Some(pij_core::session_status::CacheTtl::OneHour),
+        Some(pij_core::session_status::CacheTtl::ONE_HOUR),
     );
     let (addr, server, queue, spine) =
         cold_daemon(pij_core::model::SystemState::Idle, source).await;
@@ -8346,12 +8354,15 @@ async fn a_size_posted_at_a_turn_boundary_reaches_the_state_card() {
 /// no size known it is never refused.
 #[tokio::test]
 async fn a_reported_copilot_size_meets_the_cold_guard_like_any_harness() {
-    use pij_core::session_status::{Fact, SessionStatusReply};
-    // The Copilot transcript knows the model and last call, never the size.
-    let mut copilot_facts = match cold_status() {
+    use pij_core::session_status::{CacheTtl, Fact, SessionStatusReply};
+    // One recorded TTL for both, so the table's per-harness rows play no part.
+    let mut claude_facts = match cold_status() {
         SessionStatusReply::Status(status) => status,
         other => panic!("{other:?}"),
     };
+    claude_facts.cache_ttl = Fact::native(CacheTtl::ONE_HOUR);
+    // The Copilot transcript knows the model and last call, never the size.
+    let mut copilot_facts = claude_facts.clone();
     copilot_facts.context_used_tokens = Fact::Unknown;
     let daemon = |harness: Harness, reply: SessionStatusReply| async move {
         let mut seat = cold_seat(pij_core::model::SystemState::Idle);
@@ -8374,7 +8385,8 @@ async fn a_reported_copilot_size_meets_the_cold_guard_like_any_harness() {
         let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
         (addr, server, reports)
     };
-    let (claude, claude_server, _) = daemon(Harness::Claude, cold_status()).await;
+    let (claude, claude_server, _) =
+        daemon(Harness::Claude, SessionStatusReply::Status(claude_facts)).await;
     let (copilot, copilot_server, reports) =
         daemon(Harness::Copilot, SessionStatusReply::Status(copilot_facts)).await;
 
@@ -8411,7 +8423,7 @@ async fn a_reported_copilot_size_meets_the_cold_guard_like_any_harness() {
         copilot_reply["meta"]
             .as_str()
             .unwrap_or_default()
-            .starts_with("E-RS-COLD-WAKE: ❄ pij-cold is cold (720k, idle 2h)"),
+            .starts_with("E-RS-COLD-WAKE: ❄ pij-cold is cold (720k, idle 2h, cache 1h native)"),
         "{copilot_reply}"
     );
     claude_server.abort();
@@ -8470,9 +8482,11 @@ async fn the_state_card_shows_size_coldness_and_the_guard() {
         .iter()
         .map(|line| line.as_str().unwrap())
         .collect();
+    // F214: the transcript recorded no TTL, so the table's Claude row (1 h)
+    // fills it, and the line names that basis.
     assert_eq!(
         lines[0],
-        "context 720k / ? · last call 2h ago · cache ? · ? compactions"
+        "context 720k / ? · last call 2h ago · cache 1h table@v1 (cold 1h) · ? compactions"
     );
     assert_eq!(
         lines[1],
@@ -8504,7 +8518,7 @@ async fn the_roster_carries_sizes_only_when_asked() {
     let cold = row(&sized, "pij-cold");
     assert_eq!(
         cold["sizeColumns"],
-        serde_json::json!(["720k", "2h", "?", "❄"]),
+        serde_json::json!(["720k", "2h", "cold 1h", "❄"]),
         "{cold}"
     );
     assert_eq!(cold["contextUsed"], 720_000);
