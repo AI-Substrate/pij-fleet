@@ -82,6 +82,14 @@ if (report?.status !== "pass" || contract.code !== 0) {
 		`${DO_NOT_RELOAD}. The contract on Copilot ${after} was ${report?.status ?? `unreadable (exit ${contract.code})`}${report?.summary ? `: ${report.summary}` : ""}`,
 	);
 }
+// R261-001: a pass approves a reload only for the version it checked and
+// recorded, and only if that is the version installed now. The contract reads
+// the version itself, a separate snapshot from `after`, and Copilot can replace
+// itself in between.
+if (report.version !== after || report.verified !== after)
+	stop(
+		`${DO_NOT_RELOAD}. The contract passed on Copilot ${report.version ?? "(no version named)"} and recorded ${report.verified ?? "(nothing)"}, but Copilot ${after} is installed: run just update-copilot again`,
+	);
 console.log(
-	`update-copilot: the contract passed on Copilot ${after} and recorded it in harness/copilot-sdk-verified.json (commit it). The fleet may reload Copilot seats.`,
+	`update-copilot: the contract passed on Copilot ${report.version} and recorded it in harness/copilot-sdk-verified.json (commit it). The fleet may reload Copilot seats.`,
 );
