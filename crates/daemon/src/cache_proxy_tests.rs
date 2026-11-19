@@ -310,6 +310,21 @@ fn seat_split_reads_a_missing_route_as_plain() {
     );
 }
 
+/// F213 (d): a seat whose route was carried through a Copilot restart counts
+/// as proxied, for the outage notice and for the doctor's seat lists.
+#[test]
+fn a_carried_seat_counts_as_proxied() {
+    let mut carried = SeatDescriptor::new("pij-carried", Harness::Copilot, "/w");
+    carried.cache_proxy = Some(pij_core::model::SeatCacheProxy::carried());
+    let split = SeatSplit::of(std::slice::from_ref(&carried));
+    assert_eq!(split.proxied, ["pij-carried"]);
+    assert!(split.plain.is_empty());
+    let notice = CacheProxy::new(URL.to_string())
+        .record(refused(), &[carried], 1)
+        .expect("a dead sidecar under a carried seat is told at once");
+    assert!(notice.contains("Proxied seats: 1"), "{notice}");
+}
+
 async fn stub(router: Router) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
