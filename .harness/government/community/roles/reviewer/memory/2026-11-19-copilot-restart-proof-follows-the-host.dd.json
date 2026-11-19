@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "When reviewing Copilot restart or auth recovery, stale reports, or whether a submitted control actually took effect.",
+				"tags": [
+					"review",
+					"copilot",
+					"restart",
+					"identity",
+					"proof"
+				],
+				"title": "Copilot restart proof follows the host incarnation"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Copilot /restart can preserve the seat ID, native session and spawn ID while replacing the host process. Session binding alone therefore cannot reject a replaced process's late error. Carry the registration tuple's verified Copilot-host PID plus proc_start, not the extension child's PID, and compare both with the registry before recovery.\n\nCommand submission is not restart completion. Count both pending and running control jobs as live; only then return pending. After the specific control settles, another error from the same incarnation means the restart did not take, while an error from a replacement incarnation means login renewal may be needed. Cover settled Done and Failed outcomes and notify once rather than silently retrying an unavailable command.\n\nActive cooldowns use monotonic elapsed time. Restoring an entry from wall-clock age after a daemon bounce is a separate proof boundary, not a strict cross-daemon monotonic guarantee. In #254 this combined clock-correction/bounce edge was retained as nonblocking C34 follow-up R254-C34-01.\n"
+		}
+	]
+}
