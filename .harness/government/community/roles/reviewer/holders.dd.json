@@ -1913,6 +1913,16 @@
 					"seat": "pij-compulsory-junglefowl",
 					"to": "2026-11-19T06:56:16.219Z",
 					"why": "F220 idempotent nice19 wrapper #262"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T07:42:30.001Z",
+					"harness": "copilot",
+					"harness_session": "0fca0720-6e09-44c3-bb64-34c82d935ddc",
+					"instance_key": "263",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-main-prawn",
+					"why": "F213 proxied seat route from stamped-ancestor lineage #263"
 				}
 			]
 		}
