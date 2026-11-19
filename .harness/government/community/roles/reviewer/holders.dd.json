@@ -1952,6 +1952,16 @@
 					"seat": "pij-main-prawn",
 					"to": "2026-11-19T08:39:49.364Z",
 					"why": "F213 round 2: restart anchor #265"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T08:42:00.971Z",
+					"harness": "copilot",
+					"harness_session": "8dd9d46b-fbe0-4787-ba19-cbcf852446b5",
+					"instance_key": "266",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-agreeable-piranha",
+					"why": "F222 step 1: per-route request counter #266"
 				}
 			]
 		}
