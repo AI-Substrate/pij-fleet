@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f28e-c6d5-75f3-bf2f-3694c863f98d",
+				"date": "2026-11-19",
+				"head": "f9cb2d15c8b0adab09d0dcb46182fcd3e19c466d",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:262",
+				"writer": "pij-deliberate-orca",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git --no-pager range-diff --no-color 93ede914..affdf009 origin/main..f9cb2d15c8b0adab09d0dcb46182fcd3e19c466d",
+					"exit_code": 0
+				},
+				{
+					"command": "just pr-freeze 262",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "ROUND 1 security PASS for PR #262 at f9cb2d15c8b0adab09d0dcb46182fcd3e19c466d. This publishes the held original-request review after replacement-head confirmation.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerabilities found | - |\n\nThe security-review specialist found no vulnerabilities in the original affdf009bf6f79d05d4e4234716cf6159b406506 review, scoped to nice19.sh argument/exec quoting, ps and numeric handling, executable/PATH resolution, changed recipe/shared-build integration and public-source hygiene. Publication was held as requested while the coder rebased.\n\nI directly verified the replacement range-diff against origin/main, which resolves to the stated 4c899c0ac5400ea075bb3bb83199054283a5cbc4. Commit 1 changes only surrounding context, commit 2 is identical (=), and commit 3 changes exactly one recipe line: update-copilot now invokes harness/scripts/nice19.sh instead of bare nice -n 19, retaining fixed node and script arguments. That line introduces no new expansion or argument parsing. No unchanged-code re-review was needed; the held security result carries forward to this exact head under C33 trusted-user assumptions.\n\nThe reviewer-owned R257-002 ps-failure behavior remains the named C34 follow-up described in the replacement packet, not a new security finding or reopened blocker from this confirmation.\n\nValidation: exact detached HEAD verified clean. just pr-freeze 262 returned FINAL/exit 0 with remote/GitHub agreement, main base, CLEAN merge, ready, unchanged migration numbering and passing CI check (22), check (24), rust-lint, rust-test and Delivers. No local tests, builds, cargo commands, dependency installations, updater/deploy execution, credential-file reads or global-config changes were performed. The coder-reported 47 tests were not independently rerun.\n\nKnown limit: static security review plus rebase/one-line-delta and CI/finality verification, not runtime niceness/signal proof or live-fleet cost measurement."
+		}
+	]
+}
