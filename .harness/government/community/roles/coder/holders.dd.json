@@ -1172,7 +1172,10 @@
 					"harness_session": "01a1f172-b316-72df-af40-40261d587094",
 					"instance_key": "d-f208-1",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-printed-egret",
+					"to": "2026-11-19T07:01:59.730Z",
 					"why": "D-F208-1: real-SDK registration canary"
 				},
 				{
@@ -1195,7 +1198,10 @@
 					"harness_session": "01a1f172-b316-72df-af40-40261d587094",
 					"instance_key": "d-f208-2",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-printed-egret",
+					"to": "2026-11-19T07:01:59.730Z",
 					"why": "D-F208-2 just update-copilot + mismatch-warn wording"
 				}
 			]
