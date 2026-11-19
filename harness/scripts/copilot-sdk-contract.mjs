@@ -25,6 +25,7 @@ import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -132,16 +133,20 @@ async function contract(sdkPath) {
 	});
 	const facts = [];
 	const factSeen = new Set();
-	let stderr = "";
-	child.stderr.on("data", (chunk) => {
-		stderr += chunk;
-		for (const line of String(chunk).split("\n")) {
-			if (!line.startsWith("SDK_CONTRACT ")) continue;
+	// stderr is read by line: a chunk boundary is not a record boundary (R259-001).
+	const stderrLines = [];
+	createInterface({ input: child.stderr, crlfDelay: Number.POSITIVE_INFINITY }).on(
+		"line",
+		(line) => {
+			if (!line.startsWith("SDK_CONTRACT ")) {
+				stderrLines.push(line);
+				return;
+			}
 			const fact = JSON.parse(line.slice("SDK_CONTRACT ".length));
 			facts.push(fact);
 			for (const listener of factSeen) listener(fact);
-		}
-	});
+		},
+	);
 	const exited = new Promise((resolve) =>
 		child.once("exit", (code, signal) => resolve({ code, signal })),
 	);
@@ -186,6 +191,43 @@ async function contract(sdkPath) {
 			}),
 			`the SDK to send ${method}`,
 		);
+	const awaitFact = (match, what) =>
+		within(
+			new Promise((resolve) => {
+				const listener = (fact) => {
+					if (!match(fact)) return;
+					factSeen.delete(listener);
+					resolve(fact);
+				};
+				factSeen.add(listener);
+				const seen = facts.find(match);
+				if (seen) listener(seen);
+			}),
+			what,
+		);
+	// Facts ride stderr; answers ride stdout. A stdout answer does not prove the
+	// facts written before it have arrived, so after each answer the parent sends a
+	// barrier event and waits for the shim's barrier fact on stderr: every fact
+	// written before it has arrived by then. A wait on the pipe's own order, not a
+	// sleep, and an absent fact costs nothing extra (R259-001).
+	let barriers = 0;
+	const barrier = async () => {
+		const id = `contract-barrier-${++barriers}`;
+		send({
+			method: "session.event",
+			params: {
+				sessionId,
+				event: {
+					id,
+					timestamp: new Date().toISOString(),
+					parentId: null,
+					type: "contract.barrier",
+					data: {},
+				},
+			},
+		});
+		await awaitFact((fact) => fact.barrier === id, "the child's stderr to catch up");
+	};
 	// Which of pij's functions ran, by name, wherever the config nests it: the
 	// config path is the extension's choice and the SDK's to read, not this check's.
 	const calledNamed = (name) =>
@@ -200,7 +242,7 @@ async function contract(sdkPath) {
 				awaitRequest("session.resume"),
 				exited.then(({ code, signal }) => {
 					throw new Error(
-						`the extension exited (${code ?? signal}) before joining: ${stderr.slice(-600)}`,
+						`the extension exited (${code ?? signal}) before joining: ${stderrLines.slice(-8).join("\n")}`,
 					);
 				}),
 			]),
@@ -225,6 +267,7 @@ async function contract(sdkPath) {
 			`the SDK told the CLI its hooks have handlers: ${hooksDeclared}`,
 		);
 
+		await awaitFact((fact) => fact.joined === true, "the extension to finish joining");
 		const now = Date.now();
 		for (const [hookType, handler, input] of [
 			["userPromptSubmitted", "onUserPromptSubmitted", { prompt: "contract" }],
@@ -235,6 +278,7 @@ async function contract(sdkPath) {
 				hookType,
 				input: { sessionId, timestamp: now, cwd: home, ...input },
 			});
+			await barrier();
 			const reached = calledNamed(handler);
 			check(
 				`hook ${hookType}`,
@@ -269,6 +313,7 @@ async function contract(sdkPath) {
 			},
 		});
 		const answered = await toolResult.catch(() => undefined);
+		await barrier();
 		const toolHandler = calledNamed("pij_send");
 		check(
 			"tool call",
@@ -313,7 +358,7 @@ async function contract(sdkPath) {
 					: `the ${type} event never reached pij's listeners`,
 			);
 	} catch (error) {
-		check("session join", false, error.message);
+		check("contract run", false, error.message);
 	} finally {
 		child.stdin.end();
 		const timer = setTimeout(() => child.kill("SIGKILL"), 3000);
@@ -322,15 +367,8 @@ async function contract(sdkPath) {
 		await rm(home, { recursive: true, force: true });
 	}
 	// The extension's own stderr ([pij-native] JSON lines, never bodies or keys).
-	const diagnostic = stderr
-		.split("\n")
-		.filter(
-			(line) =>
-				line.trim() &&
-				!line.startsWith("SDK_CONTRACT ") &&
-				!line.startsWith("(node:") &&
-				!line.startsWith("(Use `node"),
-		)
+	const diagnostic = stderrLines
+		.filter((line) => line.trim() && !line.startsWith("(node:") && !line.startsWith("(Use `node"))
 		.slice(-8)
 		.join("\n");
 	return { checks, diagnostic };

@@ -185,15 +185,18 @@ const checks: HarnessVerb = {
 					// An unavailable advisory must remain visible, never block delivery.
 				}
 			}
-			let reported: SensorResult["status"] = "pass";
+			// Only an explicit, recognized status is taken as given: `{}`, an unknown
+			// status or unreadable output is a visible warn, never a silent pass (R259-002).
+			let reported: "pass" | "warn" | "skipped" = "pass";
 			if (s.reports && res.ok) {
+				let status: unknown;
 				try {
-					const report = JSON.parse(res.stdout) as { status?: unknown };
-					if (report.status === "warn" || report.status === "skipped") reported = report.status;
+					const report: unknown = JSON.parse(res.stdout);
+					if (report && typeof report === "object" && "status" in report) status = report.status;
 				} catch {
-					// A report that cannot be read is visible, never a silent pass.
-					reported = "warn";
+					status = undefined;
 				}
+				reported = status === "pass" || status === "warn" || status === "skipped" ? status : "warn";
 			}
 			results.push({
 				name: s.name,
@@ -207,9 +210,17 @@ const checks: HarnessVerb = {
 
 		const failed = results.filter((r) => r.status === "fail");
 		const skipped = results.filter((r) => r.status === "skipped").map((r) => r.name);
-		const advisoryGuidance = results.some((r) => r.status === "warn")
-			? " Review advisory attribution findings with `just pij-commit-trailers`; JSON details are in results[].output."
-			: "";
+		const warnedSensors = results
+			.filter((r) => r.status === "warn")
+			.map((r) => SENSORS.find((s) => s.name === r.name));
+		const reportsWarned = warnedSensors.filter((s) => s?.reports).map((s) => s?.name);
+		const advisoryGuidance =
+			(warnedSensors.some((s) => s?.advisory)
+				? " Review advisory attribution findings with `just pij-commit-trailers`; JSON details are in results[].output."
+				: "") +
+			(reportsWarned.length > 0
+				? ` ${reportsWarned.join(", ")} warned: its report, with the next step, is in results[].output.`
+				: "");
 
 		if (failed.length > 0) {
 			const names = failed.map((r) => r.name).join(", ");

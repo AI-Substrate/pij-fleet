@@ -487,12 +487,21 @@ reads. The child's daemon address is unreachable, its state dir empty and it has
 no `TMUX_PANE`, so no handler can do more than answer "not ready". No daemon,
 pane or Copilot process is touched.
 
+The calls are reported on the child's stderr, one line each, while answers come
+back on stdout, and the two pipes have no order between them. So after each hook
+or tool answer the check sends a `contract.barrier` event and waits for the
+shim's barrier line on stderr: every call reported before it has arrived by then.
+It reads stderr by line, never by chunk. `copilot-sdk-contract.test.ts` replays
+the run with each stderr event 50 ms late and cut mid-line (R259-001).
+
 It skips (exit 0) when no Copilot CLI is installed, as in CI, so it guards the
 machines that run seats. It runs in `just doctor` (a failure is reported there,
 as every doctor line is), `just self-check`, and `harness checks` as the `copilot-sdk`
 sensor. `harness/copilot-sdk-verified.json` records the version it last passed
 on: a pass on another version is `warn` until `just copilot-sdk-contract --record`
-updates the record. Any failure fails. Pass `--copilot-version <v>` or `--sdk <path>`
+updates the record. Any failure fails, and the `copilot-sdk` sensor takes only an
+explicit `pass`, `warn` or `skipped` from the report (anything else is a `warn`
+carrying the output). Pass `--copilot-version <v>` or `--sdk <path>`
 to check another installed runtime. The pre-F208 flat shape passes on 1.0.112-0
 and fails on 1.0.113+, and the current shape fails on 1.0.112-0, so the check
 follows the SDK, not a shape written into it.

@@ -7,6 +7,11 @@
 // config path it was found at, then hands the copy to the REAL joinSession.
 // Every lookup (tools.definitions, hooks.handlers, ...) is the SDK's own, so a
 // shape the SDK ignores is a callback that is never called.
+//
+// Facts travel on stderr, a pipe independent of the JSON-RPC stdout, so the
+// parent cannot take a stdout answer as proof that earlier facts arrived. Once
+// joined, the shim answers a `contract.barrier` session event with a barrier
+// fact on the same stderr, after every fact written before it (R259-001).
 import { registerHooks } from "node:module";
 import { pathToFileURL } from "node:url";
 
@@ -33,8 +38,12 @@ function spy(value, path) {
 export async function joinSession(config) {
   const session = await real.joinSession(spy(config, ""));
   const on = session.on.bind(session);
+  on((event) => { if (event?.type === "contract.barrier") say({ barrier: event.id }); });
   const heard = (label, handler) => (event) => { say({ event: event?.type, listener: label }); return handler(event); };
   session.on = (type, handler) => typeof type === "function" ? on(heard("*", type)) : on(type, heard(type, handler));
+  // The extension registers its own listeners as soon as this returns, before it
+  // can read another message.
+  say({ joined: true });
   return session;
 }
 `;
