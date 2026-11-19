@@ -14,8 +14,19 @@ pub fn composer_region(capture: &str, cursor_x: u32, cursor_y: u32) -> ComposerR
 
 fn rendered_composer(capture: &str, cursor_x: u32, cursor_y: u32) -> Option<String> {
     let lines: Vec<&str> = capture.lines().collect();
-    if let Some((row, first_column, payload)) = copilot_v1_composer(&lines) {
-        return clip_payload(payload, row, first_column, cursor_x, cursor_y);
+    if let Some(found) = copilot_v1_composer(&lines) {
+        // BRAKE, not a policy: a frame with a running activity is never read
+        // as a composer, by this or any later recognizer (F210).
+        if found.activity {
+            return None;
+        }
+        return clip_payload(
+            found.payload,
+            found.row,
+            found.first_column,
+            cursor_x,
+            cursor_y,
+        );
     }
 
     for (row, line) in lines.iter().enumerate().rev() {
@@ -93,7 +104,18 @@ fn rendered_composer(capture: &str, cursor_x: u32, cursor_y: u32) -> Option<Stri
     clip_multiline(&lines[prompt.0..composer_end], prompt.0, cursor_x, cursor_y)
 }
 
-fn copilot_v1_composer<'a>(lines: &'a [&'a str]) -> Option<(usize, usize, &'a str)> {
+/// Copilot's `╻▄▄` / `┃` / `╹▀▀` composer box.
+struct CopilotBox<'a> {
+    row: usize,
+    first_column: usize,
+    payload: &'a str,
+    /// Copilot 1.0.114 shows a running activity
+    /// (`○ Compacting conversation history (0s)`) at column 0 just above the
+    /// cwd row while the box stays empty (F210).
+    activity: bool,
+}
+
+fn copilot_v1_composer<'a>(lines: &'a [&'a str]) -> Option<CopilotBox<'a>> {
     for (top_row, window) in lines.windows(3).enumerate().rev() {
         if !is_copilot_box_rule(window[0], '╻', '▄')
             || !is_copilot_box_rule(window[2], '╹', '▀')
@@ -118,7 +140,14 @@ fn copilot_v1_composer<'a>(lines: &'a [&'a str]) -> Option<(usize, usize, &'a st
                 (after_border, 0)
             }
         });
-        return Some((top_row + 1, leading + 1 + padding, payload));
+        return Some(CopilotBox {
+            row: top_row + 1,
+            first_column: leading + 1 + padding,
+            payload,
+            activity: lines[top_row.saturating_sub(2)..top_row]
+                .iter()
+                .any(|line| line.starts_with('○')),
+        });
     }
     None
 }
@@ -188,10 +217,25 @@ fn is_plain_rule(line: &str) -> bool {
 fn is_copilot_footer(line: &str) -> bool {
     let lower = line.trim().to_lowercase();
     lower.starts_with("/ commands")
-        || lower.starts_with("← open sidebar · / commands · ? help · tab next tab")
+        || is_copilot_sidebar_hint(&lower)
         || lower.starts_with("@ files · # issues")
         || lower.contains("esc interrupt")
         || lower.contains("context")
+}
+
+/// Copilot's hint row: `← open sidebar · / commands · ? help · tab next tab`,
+/// which 1.0.114 renders with mode segments in between
+/// (`← open sidebar · Interactive · Allow All · / commands · …`) and an
+/// update notice can precede (`v1.0.82 downloaded · run /restart to apply ·
+/// ← open sidebar · …`). Without a right-aligned `… context` it was the only
+/// footer row, and an exact-prefix match missed it, so every control was held
+/// `unrecognized` (F210). Each hint is a whole `·` segment, so prose that
+/// mentions them is not a footer.
+fn is_copilot_sidebar_hint(lower: &str) -> bool {
+    let segments: Vec<&str> = lower.split('·').map(str::trim).collect();
+    ["← open sidebar", "/ commands", "? help"]
+        .iter()
+        .all(|hint| segments.contains(hint))
 }
 
 /// The parts of a Codex footer line.
@@ -648,5 +692,70 @@ mod codex_0_164_warning_lines {
             ComposerRegion::Recognized(String::new()),
             "in-process layout with a session title"
         );
+    }
+}
+
+#[cfg(test)]
+mod copilot_1_0_114_wide {
+    use super::{ComposerRegion, composer_region, is_copilot_footer};
+
+    /// Recorded 2026-11-19 from pane %189 (Copilot 1.0.114, 250x70, idle,
+    /// cursor (2, 66)); transcript text and the cwd scrubbed to the same width.
+    /// Neither footer row says `context`, and the hint row carries mode
+    /// segments (`Interactive · Allow All`) before `/ commands`, so
+    /// `/compact` was held `unrecognized` to the hold limit (F210).
+    const IDLE: &str =
+        include_str!("../tests/fixtures/2026-11-19-copilot-v1.0.114-wide-pane-189-idle.txt");
+    /// The same pane mid-compaction, cursor (2, 66): an empty composer under
+    /// a `○ Compacting conversation history (0s)` activity row.
+    const COMPACTING: &str =
+        include_str!("../tests/fixtures/2026-11-19-copilot-v1.0.114-wide-pane-189-compacting.txt");
+
+    #[test]
+    fn idle_wide_pane_is_an_empty_composer() {
+        assert_eq!(
+            composer_region(IDLE, 2, 66),
+            ComposerRegion::Recognized(String::new())
+        );
+    }
+
+    #[test]
+    fn a_draft_in_the_wide_pane_is_read_as_text() {
+        let draft = IDLE.replacen("\n┃\n", "\n┃ hello draft\n", 1);
+        assert_ne!(draft, IDLE, "the fixture's composer row is a bare border");
+        assert_eq!(
+            composer_region(&draft, 13, 66),
+            ComposerRegion::Recognized("hello draft".to_string())
+        );
+    }
+
+    #[test]
+    fn a_compacting_pane_is_not_an_empty_composer() {
+        assert_eq!(
+            composer_region(COMPACTING, 2, 66),
+            ComposerRegion::Unrecognized
+        );
+    }
+
+    #[test]
+    fn hint_row_with_mode_segments_is_a_footer() {
+        let hint = IDLE.lines().nth(68).expect("fixture has the hint row");
+        assert!(hint.contains("Interactive · Allow All"), "{hint:?}");
+        assert!(is_copilot_footer(hint), "{hint:?}");
+        // The 1.0.82 update notice ahead of the same hints, with no `context`.
+        let notice = " v1.0.82 downloaded · run /restart to apply · ← open sidebar · Interactive · / commands · ? help · tab next tab      claude-opus-5.5";
+        assert!(is_copilot_footer(notice), "{notice:?}");
+    }
+
+    #[test]
+    fn sidebar_hint_words_in_prose_are_not_a_footer() {
+        for line in [
+            "← open sidebar to find / commands and ? help",
+            "← open sidebar · / commands",
+            "← open sidebar · ? help",
+            "See ← open sidebar · / commands · ? help for details",
+        ] {
+            assert!(!is_copilot_footer(line), "{line:?}");
+        }
     }
 }
