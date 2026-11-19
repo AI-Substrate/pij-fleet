@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before scoring any warm/cold or refusal audit, changing cold_wake::PAST_TTL after Jordan's ruling, or picking up the #256 follow-up PR or the F214 after-audit (f214, audit, review, cold-wake, handover)",
+				"tags": [
+					"f214",
+					"audit",
+					"review",
+					"cold-wake",
+					"handover"
+				],
+				"title": "F214 #256 wind-up: guard outcomes not cache view, PAST_TTL switch, open follow-ups"
+			}
+		},
+		{
+			"name": "body",
+			"value": "**Score what the guard did, never what a view said (R256-001 BLOCK).** My first audit counted cache-state mismatches (`new_warm`) as guard errors, so small seats the guard never acts on inflated \"false cold\" (221). Derive each rule's disposition from size plus idle (old: >400k and >60 min refuses) or from `cold_wake::check`, put it in `guard_*` columns, and keep view disagreement in separately named `cache_*` columns. Count warns with refusals (\"stopped warm\"). The fix is `old_guard`/`new_guard`/`stats`/`replay` in `harness/scripts/cache-ttl-audit.py`, with a vitest regression in `cache-ttl-audit.test.ts` that loads the .py via importlib, following the `copilot-models.test.ts` pattern. Corrected numbers (7 days, 9,402 decided): allowed-but-cold 970→710 (large 265→5), refused-or-warned-but-warm 4→56.\n\n**The switch.** `cold_wake::PAST_TTL` is `Warn` (b, the prime's interim ruling) or `RefuseAt { ttl_percent }` (100 is a; 150 and 200 are c). `decide(rule, ..)` tests every value at the boundaries, so a ruling changes only the constant; don't add tests that read the default. Replay (large cold allowed / warm stopped / large refusals): a 5/56/436, b 265(260 warned)/56/124, x1.5 59/56/357, x2 103/56/296. Keep the 60-min ceiling: lifting it for 1 h seats lets through mostly cold sends (27 of 30 at x2).\n\n**The 52 warm refusals are real.** Own 300 s seats whose cache outlived the TTL: past Copilot's own `cacheExpiresAt` (median +2.8 min), no other call in between, read share 0.997. The previous call's duration was ≤11 s, so measurement lag isn't the cause. The lever is a grace on the TTL, not the TTL source.\n\n**Open (as of d94fa60, FINAL, awaiting security and merge):** (1) after the merge, one small PR: `cache_old_said_*` scores the fixed-hour heuristic, not the old CACHE view, so rename it `heuristic_old_hour_*` and add a true `cache_old_*` from `old_cache` (37/179/427 unknown), plus the F214 docs/retros entry; (2) after deploy plus a few days: `pij-rs fleet-report ~ --since <deploy> --threads 2 --out <dir>; just cache-ttl-audit <dir>`, and send note `f214-audit-after` to pm-001.\n\n**Hygiene security flagged (C19/C21).** Never put a home path in a PR body or output note: write `~`. Fix the body with `gh pr edit --body-file` (the head doesn't move) and supersede notes with a new one; never rewrite history. CI: `separate_adapters_cannot_both_reserve_one_pane` (pij-tmux) flaked once; `gh run rerun <id> --failed` fixed it. A fixture change also needs its sha256/bytes re-recorded in `crates/testkit/fixtures/MANIFEST.toml` (the corpus test), so run `-p pij-testkit` locally too.\n"
+		}
+	]
+}
