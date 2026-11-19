@@ -150,7 +150,10 @@
 					"harness_session": "01a1f15f-842f-773e-94e3-5bc54ec11dcb",
 					"instance_key": "249",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #249 merged (f06f00f56b30)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-vast-silkworm",
+					"to": "2026-11-19T02:23:55.586Z",
 					"why": "F209 #249 cost: the daemon CPU bug it measured"
 				},
 				{
