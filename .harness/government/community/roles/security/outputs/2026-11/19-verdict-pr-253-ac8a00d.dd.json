@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f1dd-a2e8-7802-95ca-6ce1c94fd22b",
+				"date": "2026-11-19",
+				"head": "ac8a00daf5c0ca017d4fc858e4a0eee5ae72e913",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:253",
+				"writer": "pij-dear-walrus",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C34 follow-up: shell_word both seat and pane in suggested close commands.",
+				"C34 follow-up: correlate unreported notification consumption with the original launch seat, pane and parent."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 253",
+					"exit_code": 0,
+					"log": "FINAL at ac8a00daf5c0ca017d4fc858e4a0eee5ae72e913; clean; all five checks pass"
+				},
+				{
+					"command": "gh run view 44451614497 --job 135316685425 --log",
+					"exit_code": 0,
+					"log": "2534 Rust tests passed, 6 skipped; successful upload identifies JUnit artifact 14496016419"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14496016419/zip",
+					"exit_code": 0,
+					"log": "Exact successful-job JUnit XML parsed; eight relevant spawn/registration regressions passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security review: PR #253\n\nHead: ac8a00daf5c0ca017d4fc858e4a0eee5ae72e913\nResult: pass-with-notes\n\nNo introduced exploitable vulnerability was established under C33's user-account trust boundary. This verdict does not certify per-seat isolation or end-to-end notification delivery.\n\n## Nonblocking findings\n\n1. LOW, confidence 9/10: the suggested close commands interpolate seat and pane directly, rather than calling shell_word. See crates/daemon/src/http/mod.rs:1923 and crates/daemon/src/registration.rs:320. Newly supplied spawn seat IDs are grammar-checked (http/mod.rs:1419), and ordinary launched pane IDs come from tmux's pane-id format, so no external injection path was demonstrated. Existing-ID revive remains a separate input path. C34 follow-up: quote both complete arguments with the existing helper and pin nontrivial inputs. Current tests assert ordinary IDs only (http/tests.rs:3897).\n\n2. LOW, confidence 8/10: unreported notification consumption is keyed only by spawn_id, then the recipient is taken from the registering descriptor's committed parent. See crates/daemon/src/registration.rs:309,324,1513,1833. A different accepted registration sharing that spawn_id can consume the pending notice; the existing different-pane/shared-spawn-id test (http/tests.rs:4375) does not activate inherited waits. No normal-use accidental collision or external exploit was demonstrated, so this is not a same-user impersonation blocker under C33. C34 follow-up: correlate the original launch seat/pane/parent tuple to preserve the stated attribution guarantee.\n\n## Covered contracts and limits\n\n- The new failure details are the eight documented launch/repair fields (http/mod.rs:2076; shape test http/tests.rs:3524). The detached notice/event does not copy environment, argv or captured startup output (registration.rs:328).\n- Raw startup output in spawn.failed.last_output and the HTTP diagnostic is retained behavior: merge base 408418a18c1d47b09f77c56059a2f30a1bed64ee already had both sinks (http/mod.rs:1969,1979 at base; :2058,2071 at head). Three additional watch-error branches reach the existing reporter. This review therefore does not promise that arbitrary startup diagnostics are secret-free; the initial introduced-disclosure alert was withdrawn.\n- Notification is spawned with cloned services and descriptor, not caller lock guards; the waiter mutex is released when take_unreported returns (registration.rs:309-312; spawn_waits.rs:78).\n- Missing, unreadable or tombstoned parent is recorded as withheld: \"no live parent\"; there is no prime fallback (registration.rs:324-357). Here live means a non-tombstoned registry entry, not freshly proved process liveness.\n- Mutex removal gives at-most-once consumption within this daemon, and sequential re-registration deduplication is tested (http/tests.rs:3764). It is not a crash-safe exactly-once delivery transaction.\n- Boot inheritance and restart-before-bind reporting are tested (spawn_waits.rs:145; http/tests.rs:3825). The documented --no-wait restart notice is acknowledged noise, not evidence that the spawn failed (docs/how/pij-rs-api.md:187).\n- Correctness handoff, not a security finding: registration can observe Waiting, then a timeout using an earlier unbound descriptor can mark Unreported after the only registration hook already ran. See http/mod.rs:1749,1866,1893 and spawn_waits.rs:85,113. The correctness reviewer is being asked to assess this interleaving; it has not been exercised locally.\n- No new periodic poll or process launch is claimed. Boot adds one registry scan; registrations add a map check, with detached reporting only for consumed unreported entries. Live resource-cost approval belongs to the performance review.\n\n## Verification\n\n- just pr-freeze 253: PASS, exact requested head, clean detached worktree, remote/GitHub agreement, main base, all five latest checks green.\n- GitHub Actions run 44451614497: SUCCESS at this exact head. rust-lint passed fmt and clippy; both Node 22/24 check jobs passed typecheck, lint, tests and native contracts. rust-test reported 2534 passed and 6 skipped.\n- Successful rust-test job 135316685425's upload log identifies JUnit artifact 14496016419. Downloaded that exact artifact ID and parsed its XML: the timeout/late-bind, adapter-error, restart-bind, child-exit diagnostics, unchanged success, model-mismatch, boot-filtering and SpawnWaits answer/drop regressions all passed.\n- No local build, test, mutation run, harness boot or harness checks was executed, as explicitly required by the review packet. CI proof is not represented as a local harness run. Post-merge live restart proof remains the PR's documented operational step.\n\n## Harness feedback\n\nRead-only review still requires hand-assembling exact-head CI evidence and the successful job's JUnit artifact ID. Observation INS-001 captures a candidate read-only CI-evidence mode that preserves the distinction from local harness checks. No product files were changed for this review.\n"
+		}
+	]
+}
