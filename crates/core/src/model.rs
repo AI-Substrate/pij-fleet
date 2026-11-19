@@ -594,6 +594,12 @@ pub struct SeatCacheProxy {
     /// What to do about a plain seat, when there is something to do.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fix: Option<String>,
+    /// F213: on a carried route, the stamped launch process it was carried
+    /// from (pid and start time). The daemon writes it at registration, only
+    /// from the row's own verified process, and copies it unchanged on every
+    /// later carry; a route that turns plain is replaced, anchor and all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<ProcIdentity>,
 }
 
 /// The reason recorded for a seat spawned with `--no-cache-proxy`. Revive
@@ -614,6 +620,7 @@ impl SeatCacheProxy {
             state: CacheProxyRoute::Plain,
             reason: reason.into(),
             fix,
+            anchor: None,
         }
     }
 
@@ -622,13 +629,14 @@ impl SeatCacheProxy {
         self.state == CacheProxyRoute::Plain && self.reason == CACHE_PROXY_OPTED_OUT
     }
 
-    /// F213: proxied, carried from a stamped launch to a process that
-    /// descends from it.
-    pub fn carried() -> Self {
+    /// F213: proxied, carried to a process that descends from `anchor`, the
+    /// stamped launch process.
+    pub fn carried(anchor: ProcIdentity) -> Self {
         Self {
             state: CacheProxyRoute::Proxied,
             reason: CACHE_PROXY_CARRIED.to_string(),
             fix: None,
+            anchor: Some(anchor),
         }
     }
 }

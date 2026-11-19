@@ -3227,6 +3227,7 @@ async fn native_sqlite_http_new_session_supersedes_seat_without_stranding_new_wo
         state: pij_core::model::CacheProxyRoute::Proxied,
         reason: "1-hour cache through http://127.0.0.1:7471 as claude-opus-5.5".into(),
         fix: None,
+        anchor: None,
     };
     let mut stamped = registry.get(&first.id).await.unwrap().unwrap();
     stamped.cache_proxy = Some(proxied.clone());
