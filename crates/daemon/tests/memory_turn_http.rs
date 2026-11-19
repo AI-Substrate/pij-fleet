@@ -1388,3 +1388,77 @@ async fn the_seats_memory_note_ends_its_turn() {
     assert!(tombstoned(&rig, "holder").await);
     rig.server.abort();
 }
+
+/// The seat's open holdings in project fleet, as `role` or `role/instance`.
+async fn open_holdings(rig: &Rig, seat: &str) -> Vec<String> {
+    pij_store::SqliteOrchestration::new(pij_store::open(&rig._store.path()).await.expect("store"))
+        .open_assignments(seat)
+        .await
+        .expect("holdings")
+        .into_iter()
+        .map(|row| match row.instance.as_str() {
+            "" => row.role,
+            instance => format!("{}/{instance}", row.role),
+        })
+        .collect()
+}
+
+/// F227: a held close's answer tells the closer to kill the pane, so the pane
+/// is often gone before the turn ends and the observer has retired the seat
+/// (`observed-dead`). The close still lands, as its owner's, and ends every
+/// holding the seat had, an instance's too: `pij close` ends every holding.
+#[tokio::test]
+async fn a_held_close_whose_pane_dies_during_the_turn_still_ends_every_holding() {
+    let rig = rig(Duration::from_secs(30), &[]).await;
+    set_holdings(
+        &rig,
+        &[("holder", "pm-001", None), ("holder", "reviewer/271", None)],
+    )
+    .await;
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "holder").await;
+    deliver(&rig, "holder", &prompt).await;
+    rig.registry
+        .tombstone(&"holder".into(), "observed-dead")
+        .await
+        .unwrap();
+    note_written(&rig, "holder", "pm-001", now_ms()).await;
+    let turn = turn_event_for(&rig, "holder", &prompt).await;
+    assert_eq!(turn["then"], "closed", "{turn}");
+    assert!(open_holdings(&rig, "holder").await.is_empty());
+    let closed = rig.registry.get(&"holder".into()).await.unwrap().unwrap();
+    assert_eq!(
+        closed.tombstone_reason.as_deref(),
+        Some("owner-close: done"),
+        "closed as its owner's, so its own session can't lift it"
+    );
+    rig.server.abort();
+}
+
+/// F227's brake: a seat its owner closed during the turn was closed then, its
+/// holdings with it, so the held close skips and writes nothing more.
+#[tokio::test]
+async fn a_held_close_skips_a_seat_its_owner_closed_during_the_turn() {
+    let rig = rig(Duration::from_secs(30), &["holder"]).await;
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "holder").await;
+    deliver(&rig, "holder", &prompt).await;
+    rig.registry
+        .tombstone(&"holder".into(), "owner-close: by hand")
+        .await
+        .unwrap();
+    note_written(&rig, "holder", "pm-001", now_ms()).await;
+    let turn = turn_event_for(&rig, "holder", &prompt).await;
+    assert!(
+        turn["then"].as_str().unwrap().contains("closed during"),
+        "{turn}"
+    );
+    let closed = rig.registry.get(&"holder".into()).await.unwrap().unwrap();
+    assert_eq!(
+        closed.tombstone_reason.as_deref(),
+        Some("owner-close: by hand")
+    );
+    rig.server.abort();
+}

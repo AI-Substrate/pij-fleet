@@ -292,13 +292,18 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
             }),
     };
     let mut live = Vec::new();
+    // F227: an open holding on a retired or unknown seat is no holder; a
+    // queued send names it, with the release that ends it.
+    let mut dead = Vec::new();
     for row in open
         .iter()
         .copied()
         .filter(|row| send.address.instance.is_empty() || row.instance == send.address.instance)
     {
-        if let Some(seat) = live_seat(services.registry.as_ref(), &row.seat).await? {
-            live.push((row, seat));
+        match live_seat(services.registry.as_ref(), &row.seat).await? {
+            Some(seat) => live.push((row, seat)),
+            None if !is_prime => dead.push(row),
+            None => {}
         }
     }
     let mut request = RoleRequest {
@@ -336,10 +341,11 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
                 msg_id: request.id.clone(),
                 outcome: DeliveryOutcome::Queued {
                     reason: Some(format!(
-                        "no live holder of {} in project {}: queued as request {} until a seat is assigned",
+                        "no live holder of {} in project {}: queued as request {} until a seat is assigned{}",
                         send.address.display(),
                         send.project,
-                        request.id
+                        request.id,
+                        dead_holders(&send.project, &dead)
                     )),
                     next_retry_at: None,
                     draft_sha: None,
@@ -371,6 +377,41 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
         }
         several => Err(several_holders(&send, several)),
     }
+}
+
+/// F227: each open holding of the addressed role on a seat that is not live,
+/// which no send reaches, as `; <seat> holds <role>[/<instance>] but its seat
+/// is not live (end it: <release>)`. Every word is quoted (#149); a stored key
+/// that does not print is left out (F132): the directory names it.
+fn dead_holders(project: &str, dead: &[&Assignment]) -> String {
+    dead.iter()
+        .filter(|row| {
+            pij_core::model::is_canonical_seat_id(&row.seat)
+                && (row.instance.is_empty() || render::is_name(&row.instance))
+        })
+        .map(|row| {
+            let holding = if row.instance.is_empty() {
+                row.role.clone()
+            } else {
+                format!("{}/{}", row.role, row.instance)
+            };
+            format!(
+                "; {} holds {holding} but its seat is not live (end it: {})",
+                row.seat,
+                command(&[
+                    "pij",
+                    "directory",
+                    "release",
+                    &holding,
+                    &row.seat,
+                    "--why",
+                    "<why>",
+                    "--project",
+                    project,
+                ])
+            )
+        })
+        .collect()
 }
 
 /// The role that is designated, never assigned (C24).

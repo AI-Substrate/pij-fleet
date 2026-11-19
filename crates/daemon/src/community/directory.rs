@@ -453,15 +453,42 @@ impl DirectoryService {
                     })
                 })
                 .collect();
+            // F227: an open holding on a retired or unknown seat stays open (a
+            // revive lifts the tombstone and the seat holds it again) but is
+            // no holder: it is listed apart, with the release that ends it.
             let live: Vec<Value> = mine
                 .iter()
-                .filter(|row| row.to.is_none() || row.end_pending)
+                .filter(|row| {
+                    (row.to.is_none() && live_seats.contains(&row.seat)) || row.end_pending
+                })
                 .map(|row| {
                     serde_json::json!({
                         "seat": row.seat, "instance": row.instance, "since": row.from,
                         "machine": row.machine, "end_pending": row.end_pending,
                         "seat_live": live_seats.contains(&row.seat),
                         "cache_proxy": cache_proxy.get(&row.seat),
+                    })
+                })
+                .collect();
+            let dead: Vec<Value> = mine
+                .iter()
+                .filter(|row| row.to.is_none() && !live_seats.contains(&row.seat))
+                .map(|row| {
+                    let printable = pij_core::model::is_canonical_seat_id(&row.seat)
+                        && (row.instance.is_empty() || pij_core::render::is_name(&row.instance));
+                    serde_json::json!({
+                        "seat": row.seat, "instance": row.instance, "since": row.from,
+                        "command": printable.then(|| picture::command(&[
+                            "pij",
+                            "directory",
+                            "release",
+                            &holding(id, &row.instance),
+                            &row.seat,
+                            "--why",
+                            "<why>",
+                            "--project",
+                            project,
+                        ])),
                     })
                 })
                 .collect();
@@ -583,6 +610,7 @@ impl DirectoryService {
                     .map(|(from, _)| from.clone())
                     .collect::<Vec<_>>(),
                 "live": live,
+                "dead": dead,
                 "designated": designated.map(|seat| serde_json::json!({
                     "seat": seat, "seat_live": live_seats.contains(seat),
                 })),
