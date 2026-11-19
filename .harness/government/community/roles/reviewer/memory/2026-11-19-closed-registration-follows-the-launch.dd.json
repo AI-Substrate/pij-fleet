@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Before changing registration discovery, terminal-close decisions, or revive prebind ordering.",
+				"tags": [
+					"registration",
+					"revive",
+					"incarnation",
+					"fixtures",
+					"f222"
+				],
+				"title": "Closed registration follows the launch, not just the seat id"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Adds the launch-transition case to the existing related-row consumer-sufficiency note.\n\nSpawn/revive starts the child before committing its fresh prebind. A new host querying related rows can therefore see the previous incarnation's tombstone under its reused durable seat id. An id-only terminal-close rule permanently stops a valid revive (R270-001).\n\nScope final closure to the requested launch: compare the row's spawn_id with PIJ_SPAWN_ID. Spawn and revive mint a fresh token; Copilot /restart inherits it. Without a spawn token, use the same native conversation OR the exact pid+proc_start as the legacy witness. An old tombstone with another launch token must retry until the fresh prebind appears; a genuinely closed same-launch restart must still stop. Existing open-row selection takes precedence.\n\nKeep the two-snapshot regression, not just an absent-row prebind test: old closed same-id/old-launch -> retry -> open same-id/new-launch -> register. Preserve a same-conversation version too, so conversation equality cannot override a different launch token. Steady-live full-roster/related-row equivalence does not prove this transition.\n\nRegression anchors: #270 at e385e0e2540962d9d6add6d92a061789adbfa1c6; .copilot/extensions/pij/store.mjs chooseRegistration; store.test.mjs and extension.test.mjs tests prefixed R270-001. Daemon ordering: crates/daemon/src/http/mod.rs launch_seat_locked. The round-2 fix intentionally preserved launch-failure/postmortem ordering rather than redesigning spawn.\n"
+		}
+	]
+}
