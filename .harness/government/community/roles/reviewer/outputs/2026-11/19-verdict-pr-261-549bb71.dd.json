@@ -1,0 +1,56 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f280-ab2d-7292-863d-1744097c4423",
+				"date": "2026-11-19",
+				"head": "549bb717d539bd8bb37a981274497d18d7a217af",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:261",
+				"writer": "pij-compulsory-junglefowl",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just test harness/scripts/update-copilot.test.ts harness/scripts/copilot-sdk-contract.test.ts harness/scripts/checks-copilot-sdk-sensor.test.ts",
+					"exit_code": 0,
+					"log": "3 files, 15 tests pass; no real updater invoked"
+				},
+				{
+					"command": "just copilot-sdk-contract --json",
+					"exit_code": 0,
+					"log": "Real installed Copilot 1.0.114-0 SDK: all seven checks pass; no record write requested"
+				},
+				{
+					"command": "just update-copilot (all executable seams stubbed)",
+					"exit_code": 0,
+					"log": "Fake installed CLI 1.0.115-0 plus pass report version/verified 1.0.114-0 incorrectly prints contract passed on 1.0.115-0 and fleet may reload; no real update; probe files removed"
+				},
+				{
+					"command": "just pr-freeze 261",
+					"exit_code": 0,
+					"log": "FINAL at 549bb717d539bd8bb37a981274497d18d7a217af; latest checks pass; clean worktree; no builds/cargo/target"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #261: round-1 correctness review\n\nHead: 549bb717d539bd8bb37a981274497d18d7a217af\nBase: 31f9ef20884f66accf8c787d61d56d45367182ea\nVerdict: BLOCK\n\n## R261-001: reload approval is not bound to the version the contract checked\n\n`harness/scripts/update-copilot.mjs:55-86` reads an installed version into after, then accepts the contract using only status=pass and exit code 0. It never compares report.version or report.verified with after. Its success message substitutes after rather than the version actually returned by the contract.\n\nA safe stub-only reproduction used:\n\n- COPILOT_BIN: an executable reporting 1.0.115-0;\n- PIJ_COPILOT_UPDATE_CMD: /usr/bin/true, so no update or installation occurs;\n- PIJ_COPILOT_SDK_CONTRACT_CMD: an executable returning exit 0 and a complete seven-check passing report, with version=1.0.114-0 and verified=1.0.114-0.\n\nThe real updater printed:\n\n```\nupdate-copilot: no update available: Copilot is still 1.0.115-0; running the contract anyway\nupdate-copilot: the contract passed on Copilot 1.0.115-0 and recorded it in harness/copilot-sdk-verified.json (commit it). The fleet may reload Copilot seats.\n```\n\nExit status was 0. The evidence established only a pass for 1.0.114-0, yet the updater authorized reloading 1.0.115-0.\n\nRequire the successful report to name the post-update version and confirm that version was recorded before printing may reload. Missing or mismatched version/verified fields must take the named do-not-reload path. Add a focused stale-version case and a missing-version case to the existing stub tests; the current pass stub omits these fields entirely, so it cannot prove the \"on the new version\" claim in its test title.\n\nThis is a report-correlation correctness guard, not a defense against a trusted same-user executable lying. The normal implementation does spawn a fresh contract process and does not read cached report files. Its own version lookup is nevertheless a separate snapshot from after, and self-updates/concurrent CLI replacement are explicitly part of this feature's operating context. The reproduction checks how the consumer handles discrepant evidence without attempting a real fleet update or claiming such a replacement was performed.\n\n## Contract refactor and warning wording\n\nThe refactor preserves the installed-version query's behavior and leaves the seven behavioral probes, stderr barriers, readline framing and SDK module hook unchanged. Recording remains after successful checks only: recorded is record && checks.every(ok), and any failed check wins over a prior verified version or recorded=true in the pure verdict.\n\n`just copilot-sdk-contract --json` passed all seven checks against installed Copilot 1.0.114-0. Its report still contains version, verified and the individual checks. No --record invocation was made by the reviewer against the real contract.\n\nThe pure verdict tests pin both requested warning phrases and the fail-before-record decision. Unknown/missing statuses and a nonzero contract exit do not pass the updater's existing guard; R261-001 is about the missing version binding on an otherwise successful report, not a loss of those checks.\n\n## Executed evidence\n\nThe dependency helper prepared this review worktree before running tests. Just recipes supplied their own nice wrappers, without an outer nice.\n\n| Command/probe | Result |\n|---|---|\n| just test harness/scripts/update-copilot.test.ts harness/scripts/copilot-sdk-contract.test.ts harness/scripts/checks-copilot-sdk-sensor.test.ts | 3 files, 15 tests passed; the delayed/split-stderr real-SDK regression ran |\n| just copilot-sdk-contract --json | pass, all 7 checks, version and verified 1.0.114-0 |\n| just update-copilot with all CLI/update/contract seams replaced as above | incorrectly exit 0 and may reload for a mismatched older passing report |\n| git diff --check 31f9ef20884f66accf8c787d61d56d45367182ea...HEAD | passed |\n| just pr-freeze 261, twice | FINAL at the requested full head, CLEAN, latest checks passing |\n\nCI run 44472071323 is successful at the exact reviewed head; both Node matrix jobs and Rust gates passed, and Delivers passed. The review worktree remains tracked-file clean, and target/ remains absent.\n\nNo real copilot update was run. No builds, cargo, general test suites, global configuration edits, pane mutations or real version-record writes were performed. The private stub files were removed after the reproduction.\n\n## Launch and trust boundary\n\nThe two seams are executable paths passed to spawn as separate command/argument arrays, with no shell. They are trusted same-user test/configuration ports under C33, not a new privilege or identity boundary. The record still contains only version and check names, not home paths or account data.\n\nThe workflow is on demand only: one initial CLI version query, one update command, one post-update query, and one contract process. The contract itself makes another CLI version query and starts its extension child, which performs the existing process inspections. Thus there are three version queries in the composed default workflow, not just the two directly in update-copilot.mjs. There is no daemon, per-seat loop, polling timer or steady-state background cost added.\n\nHarness feedback: the wording and real-SDK regressions survive the extraction. magicWand: make the reload receipt name the same exact version as the contract and record, so a green status for a different version cannot authorize the fleet.\n"
+		}
+	]
+}
