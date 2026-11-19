@@ -1871,6 +1871,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-compulsory-junglefowl",
 					"why": "D-F208-1 real-SDK registration canary #259"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T06:04:44.797Z",
+					"harness": "copilot",
+					"harness_session": "4b0db837-7643-466e-b89f-a8ec3a6fb6bc",
+					"instance_key": "260",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-compulsory-junglefowl",
+					"why": "F219 OMP worktree.clone off + sensor; F218 #260"
 				}
 			]
 		}
