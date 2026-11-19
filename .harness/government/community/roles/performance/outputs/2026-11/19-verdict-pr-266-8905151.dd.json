@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f2f8-5062-7dd0-ba84-15abc9beaa26",
+				"date": "2026-11-19",
+				"head": "890515121f3d8f38cc96947847e7178ce42e1cc9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "performance",
+				"subject": "pr:266",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"P266-001: remove per-matched-request shared mutex/first-use allocation using router-built immutable counter mapping; move snapshot formatting off any accounting lock; correct cost docs."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git rev-parse HEAD; git diff --exit-code 890515121f3d8f38cc96947847e7178ce42e1cc9^ 890515121f3d8f38cc96947847e7178ce42e1cc9 -- crates/testkit/tests/spawn_sites.rs",
+					"exit_code": 0,
+					"log": "HEAD 890515121f3d8f38cc96947847e7178ce42e1cc9; spawn_sites diff: no output."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "BLOCK — performance/266 round 1, exact head 890515121f3d8f38cc96947847e7178ce42e1cc9.\n\nP266-001: the requested no-lock hot-path cost is not implemented. crates/daemon/src/http/route_counts.rs:125-134 acquires one shared std::sync::Mutex for EVERY answered matched request, performs BTreeMap lookup and clones an Arc before its outcome fetch_add. The cold path (:132) also allocates the path String, map entry and counter Arc. GET /v1/seats performs an additional seat-shape fetch_add (:136-137); it is not just one atomic increment. MatchedPath and PathCounts Arc cloning/drop add refcount traffic as well.\n\nMore importantly, snapshot (:156-166), called for every ping (http/mod.rs:908), holds the SAME global mutex while formatting all eight method/path names per touched path and inserting active entries into the result BTreeMap. Formatting occurs before checking whether a method slot is zero. Request completion can therefore wait behind snapshot allocation/formatting and other requests. The commit/API words 'uncontended map lookup' are not guaranteed and omit the global lock. This is a source-observed cost-contract mismatch, not a claim that a measured slowdown already occurred; the patch is not deployed in the baseline.\n\nRequired change: build the finite route-template -> PathCounts mapping once during router construction from the existing endpoint inventory, keep it immutable for requests/snapshots, and record into inline atomic slots without the shared mutable-map mutex/per-route Arc clone or first-request allocation. Keep fixed unmatched/method/query-shape buckets. Snapshot can allocate its public projection, but must not block request accounting behind those allocations. Correct the docs/cost row to distinguish one outcome increment from the extra seats-query increment, method/template lookup and query-byte scan. No new timer or background aggregation is needed.\n\n| Cost surface at this head | Trigger / scaling | Added launches |\n| --- | --- | --- |\n| Matched request accounting | One global mutex acquisition + O(log P) path lookup per answered request, method scan <=7, outcome atomic; seats GET additionally O(query bytes) scan and second atomic. Scales with request rate, not directly seats. | 0 by source inspection |\n| First request to template | Bounded String/map/counter allocation, serialized by same mutex. | 0 |\n| Ping snapshot | O(8P+128) visits, eight formatted keys per touched path under shared mutex, result allocations; P bounded by router templates. | 0 |\n\nPositive findings: no launch, log, event or store write is introduced by this counter implementation; no poll/timer is added. Storage is bounded by trusted MatchedPath templates, eight method slots, one unmatched bucket and 128 fixed seat-shape atomics. Query values/unknown parameters do not create keys. Standard-method warmed record lookup itself does not allocate after that template is inserted, but that is weaker than a no-lock/allocation hot path. spawn_sites.rs is unchanged: exact-head parent diff returned exit 0/no output. The outermost placement includes bearer refusals/job-token routes/fallback; correctness/security verdicts are independently owned.\n\nBaseline carried forward, not rerun or attributed to this patch: note1196f630 on PID74846 e4b63eb1b2, 08:40:35–08:44:35Z, +84.49CPU-s/240.009wall-s=35.20% of one core; previous PID17600 was31.86%. It includes two Copilot restarts and early proof traffic. Machine20s probe123.9 launches/s; full4min counted launches+89. Detailed receipts /tmp/f222-after-265-cpu-counters.json. Thus the counter should be low-perturbation before it is used to attribute the already-high CPU.\n\nVerification: detached HEAD matched full requested SHA; all six changed-file diffs read, new319-line module read in full, integration/docs inspected, launch inventory diff checked. No builds, tests, mutations, restarts or configuration changes performed by this review seat. CI/mutation passes are supplied by requester, not independently reproduced. Re-review corrected exact head; post-deploy counter and CPU measurements remain necessary before the instrument's runtime overhead is established.\n"
+		}
+	]
+}
