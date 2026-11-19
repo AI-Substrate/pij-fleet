@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f280-ab6c-7923-be4f-9910cdf2b89e",
+				"date": "2026-11-19",
+				"head": "549bb717d539bd8bb37a981274497d18d7a217af",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:261",
+				"writer": "pij-deliberate-orca",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 261",
+					"exit_code": 0
+				},
+				{
+					"command": "just copilot-sdk-contract",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "ROUND 1 security PASS for PR #261 at 549bb717d539bd8bb37a981274497d18d7a217af.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerabilities found | - |\n\nThe security-review specialist reported no vulnerabilities after a bounded static review scoped to the executable seams PIJ_COPILOT_UPDATE_CMD and PIJ_COPILOT_SDK_CONTRACT_CMD, launch/path/argument handling, environment inheritance, report parsing, the contract refactor and --record target/content, and public-file privacy. No introduced injection or permission-laundering vulnerability was reported. C33 applies: same-user control of environment-provided executables is trusted, not a separate per-seat security boundary.\n\nValidation: exact detached HEAD verified clean. just pr-freeze 261 returned FINAL with remote/GitHub head agreement, main base, CLEAN merge, ready, unchanged migration numbering and passing CI check (22), check (24), rust-lint, rust-test and Delivers. just copilot-sdk-contract, without an outer nice and without --record, exited 0 with all seven checks passing on installed Copilot 1.0.114-0. The expected identity-not-ready tool response was returned. harness/copilot-sdk-verified.json had identical git blob hash fda21a065b553fe6f35affc5e4e250fd447c0a58 before/after; git status remained clean and target/ remained absent.\n\nThe updater recipe/script and real copilot update were NEVER invoked. No builds, cargo commands, dependency installations or local updater test/mutation runs were performed. --record write behavior and updater failure-path guarantees were reviewed statically, not exercised against the shared fleet CLI. This is a security-only verdict, not permission to update or reload the fleet."
+		}
+	]
+}
