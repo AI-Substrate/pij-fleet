@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f280-abaf-7262-a405-4ee2fc99da45",
+				"date": "2026-11-19",
+				"head": "549bb717d539bd8bb37a981274497d18d7a217af",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "performance",
+				"subject": "pr:261",
+				"writer": "pij-public-cobra",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #261 performance verdict\n\n**PASS** at `549bb717d539bd8bb37a981274497d18d7a217af`.\nRequest: `01a1f280-abaf-7262-a405-4ee2fc99da45`.\n\nNo new performance blocker. `update-copilot` is an explicit, finite operator command, not a startup/seat hook or polling path. **No real Copilot update ran in this review.** Actual update download time, bytes and any CLI-internal subprocesses remain deliberately unmeasured.\n\n## Executed proof\n\nVerified the detached worktree HEAD equals the full subject SHA and consumed the exact-head green CI statuses. Reviewed the full nine-file diff, updater, shared version helper, pure verdict module and test isolation. Existing dependencies resolved through `just worktree-deps`; no install/build.\n\n```sh\n/usr/bin/time -lp just copilot-sdk-contract --json\n```\n\nExit **0**, report **pass**, installed/verified Copilot **1.0.114-0**, **7/7 checks passed**. Real **0.25 s**, user **0.16 s**, system **0.05 s**; time-reported maximum resident set size **59,129,856 bytes** (not a sum of simultaneous child RSS). No --record used. This confirms the refactored real-SDK contract still exercises its existing path at this head; it does not prove a future CLI update's duration.\n\n```sh\njust test harness/scripts/update-copilot.test.ts harness/scripts/copilot-sdk-contract.test.ts\n```\n\nExit **0**, **8/8 passed**, two files, **3.25 s**. Updater file **7/7**, **3104 ms**; installed-SDK delayed/split-stderr regression **1/1**, **502 ms**. The four updater-process scenarios set **all three executable paths** to isolated temporary stubs: COPILOT_BIN, PIJ_COPILOT_UPDATE_CMD and PIJ_COPILOT_SDK_CONTRACT_CMD. They cannot invoke the real update or write the real verification record. Three verdict-only cases launch nothing. The recipe applied nice 19 itself; no outer nice.\n\nWorktree target remained absent. No builds, cargo, full gates, --record writes, global CLI update or seat reload ran.\n\n## Launch accounting (source-derived, not an update execution trace)\n\n| Stage on a successful/default no-change run | Launch calls |\n|---|---|\n| Updater's before-version query | 1 Copilot `--version`, offline, 10 s timeout |\n| Explicit updater action | 1 `copilot update` |\n| Updater's after-version query | 1 Copilot `--version`, offline, 10 s timeout |\n| Contract driver | 1 Node via absolute `process.execPath` |\n| Contract's own current-version query | 1 Copilot `--version`, offline, 10 s timeout |\n| Real-extension SDK child | 1 Node via absolute `process.execPath` |\n| Existing extension ancestry inspection | 2 ps calls were observed in prior normal canary proof; count can grow along the unchanged bounded ancestry walk |\n\nUsing the previously observed two-ps path, this is **eight child-launch calls across updater and contract**, plus the updater driver Node started by just, plus shell/just/nice and any CLI-internal update overhead. Do not describe the entire command as merely two version checks: there are **three**, counting the contract's own lookup. The PR's wording is accurate if its two refers only to the outer updater.\n\nThe new updater itself directly awaits four subprocess calls (before, update, after, contract); descendants belong to the existing contract. Failures before later stages stop launching those stages. `copilot update` is awaited, not detached; the explicit update and wrapper run have no new retry/poll loop or timeout. This can be a long foreground operator task; no cheap-update duration is claimed from stub timing.\n\n## Rate, entry points and scope\n\n- Runtime call-site search including hidden source paths finds the updater called only by its explicit just recipe. `doctor` / `harness checks` still run the SDK **contract**, not the updater. Shared helper imports have no eager update side effect.\n- **Zero added launches/s at rest**. Cost scales with requested update commands, not live seats/panes or elapsed time. At R successful update requests/s, the source-derived normal shape contributes about 8R child launches/s before CLI-internal work; this is a scaling description, not a measured operating rate.\n- Absolute executable paths are used for spawned Node drivers. Copilot is COPILOT_BIN or a one-off PATH lookup; seams are executable names with fixed args and no shell. No new repeated-path launch exists requiring a per-tick absolute-path conversion.\n- The extracted `installedVersion` preserves the old offline version-query behavior. The extracted verdict computes over the contract's seven checks in process. Standalone doctor/contract launch count is unchanged by the refactor.\n- New tests add four finite updater-process runs with shell stubs (including stub-local cat commands) and three pure verdict cases per suite invocation. No test schedules a real update or permanent background worker.\n- No daemon source, timer, launch site or spawn_sites.rs change. Existing canary step deadlines and child cleanup remain.\n\nThis is a cost approval, not independent evidence that a real network update completed or a fleet reload is authorized now. No fleet-wide before/after improvement is claimed from an intentionally unexecuted update.\n"
+		}
+	]
+}
