@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f205-3ceb-71b3-a578-b0e3c10fb696",
+				"date": "2026-11-19",
+				"head": "ffb3b3739459679593cde029cabeee11999f21c9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:254",
+				"writer": "pij-respective-pike",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 254",
+					"exit_code": 0,
+					"log": "FINAL immediately before publication at ffb3b3739459679593cde029cabeee11999f21c9; clean detached worktree, CLEAN merge state, latest CI checks pass. Delivers verified by CI, not parsed locally. No local builds/tests."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS\nPR: #254, final-round R254-001 repair\nHead: ffb3b3739459679593cde029cabeee11999f21c9\nAnswers round-2 request: 01a1f205-3ceb-71b3-a578-b0e3c10fb696\nReviewed delta: 0d62f23bc6a24546c481a7d12fa7d7ed62c783e7..ffb3b3739459679593cde029cabeee11999f21c9\n\nNo security vulnerabilities or normal-use bugs were found in this delta. Scope is exactly four files, +10/-7: the repair notice, its regression assertion, and two documentation updates. No broader third review round was opened under C34. The prior security PASS at 0d62f23 remains the basis for unchanged behavior.\n\n- crates/daemon/src/auth_recovery.rs:447-451 now instructs /exit, then native pij-rs revive with shell_word(&seat.id.0). Native Revive is present at crates/cli/src/main.rs:360; this does not rely on the unsupported shim revive path.\n- The existing shell_word implementation, crates/core/src/directory.rs:32-40, quotes the seat as one shell argument; no new interpolation/injection path was found.\n- crates/daemon/src/auth_recovery_tests.rs:268-283 applies the updated command assertion to both Outcome::Done and Outcome::Failed.\n- docs/how/copilot-native-extension.md:102-103 and docs/how/pij-rs-api.md:945 agree with the corrected native command.\n- No additional runtime/process changes, authority changes, raw error text, credential reads/logging, or privacy leaks were found. There is no new loop, timer, poll or process-launch site.\n\nValidation: just pr-freeze 254 passed at this full head, with a clean detached worktree, CLEAN merge state and passing latest CI checks (Node 22/24, Rust lint/test and Delivers). Delivers proof came from CI because the local parser was unavailable. No local builds/tests, dependency installation, product edits, seat restarts or destructive probes ran.\n\nThis verdict extends the previous round-2 security assessment to this notice-only repair. R254-001 through R254-005 remain closed from the security review; no unrelated hardening requirements are introduced.\n"
+		}
+	]
+}
