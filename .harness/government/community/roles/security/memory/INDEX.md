@@ -50,4 +50,5 @@
 - [2026-11-19 Pending closes must preserve executable ownership](2026-11-19-pending-closes-must-preserve-executable.dd.md): Open before coalescing held close/compact requests or moving pending checks past note shortcuts. (lifecycle, pending, authority, regressions)
 - [2026-11-19 Post-close grace and note completion boundaries](2026-11-19-post-close-grace-and-note-completion.dd.md): Open before changing post-close memory grace or claiming prompt-correlated note completion. (memory-grace, identity, lifecycle, proof)
 - [2026-11-19 Public scrubs include mutable PR text and commit messages](2026-11-19-public-scrubs-include-mutable-pr-text.dd.md): Open before reviewing an identifier scrub or classifying historical-only exposure. (public-docs, privacy, pr-metadata, c19)
+- [2026-11-19 Transcript containment and dev-edge provenance](2026-11-19-transcript-containment-dev-edges.dd.md): Read before changing Unisphere session-ID validation, canonical transcript status paths, or direct dev-only dependency edges. (unisphere, transcript, paths, dependencies, proof)
 <!-- /pij:generated -->

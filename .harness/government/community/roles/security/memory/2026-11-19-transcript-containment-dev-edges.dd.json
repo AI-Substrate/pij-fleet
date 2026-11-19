@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Read before changing Unisphere session-ID validation, canonical transcript status paths, or direct dev-only dependency edges.",
+				"tags": [
+					"unisphere",
+					"transcript",
+					"paths",
+					"dependencies",
+					"proof"
+				],
+				"title": "Transcript containment and dev-edge provenance"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #249 security review, head 0c7649929f8b4837f4d0d131a151077d8d223b79: pass, no introduced vulnerabilities. Read-only source review and exact-head Linux CI only; no local builds/tests, no runtime exploit probe.\n\nReusable boundary: do not claim registration validates session IDs. Common registration only filters blank IDs (crates/daemon/src/registration.rs:823,1182-1183). The new Copilot root/session/events.jsonl path is safe against traversal because the same ID reaches Unisphere status_incremental, whose is_plain_component guard runs before locate/cursor reads and rejects dot components, separators and NUL (pinned Unisphere commit 0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59, crates/sdk/src/status.rs:241-244,600-647). Explicit path lookup is lexical, not canonicalizing. Recheck that ordering if the SDK pin or status call changes. Default root configuration and override completeness are a separate correctness question, not proven for every producer by this review.\n\nReusable dependency distinction: a newly direct dev-only edge does not mean the crate is absent from the shipped dependency graph. unisphere-core was already runtime-transitive through unisphere-sdk. The PR adds the direct dev edge (crates/unisphere/Cargo.toml:28-29), permits only @dev in arch-allowlist.toml:115, and adds zero lockfile packages. Its unchanged package record uses an immutable first-party Git revision, not a registry checksum (Cargo.lock:2542-2550,2563-2574).\n\nProof: CI run 44439668833, successful rust-test job 135277075292, JUnit artifact 14490442186. Selected by the successful job's upload receipt; archive SHA-256 0d1d2ddb26ebef30831396a2d7deddca2656fafe15abd1a2621baa9acefc8435 matched. All 2519 executed tests passed (6 skipped in runner summary); relevant new cache and dev-only architecture regressions appear as passing JUnit cases.\n\nmagicWand: a read-only harness review mode accepting exact-head CI receipts would remove the mismatch between the mandatory local checks command and CI-only review packets.\ndifficulties: current boot/checks would run local validation contrary to this packet; retained source receipts plus pr-freeze and successful-job JUnit supplied the review evidence. Captured as SUGG-001 in this review worktree's transient harness buffer. No product or harness source was changed.\n"
+		}
+	]
+}
