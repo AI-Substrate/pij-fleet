@@ -59,6 +59,9 @@ async fn rig_with(
         .await
         .expect("services");
     services.memory_turn_bound = bound;
+    // F207: an idle must hold this long to end a turn; short, so the tests
+    // that play a turn end it quickly. The blip test sleeps past it.
+    services.memory_turn_settle = Duration::from_millis(100);
     let mut tmux = FakeTmux::new();
     let mut liveness = FakeLiveness::new();
     for (index, id) in ["prime", "holder", "plain"].into_iter().enumerate() {
@@ -171,6 +174,15 @@ async fn prompt_for(rig: &Rig, seat: &str) -> Msg {
 
 /// Play the seat's harness: it takes the prompt, works, and goes idle.
 async fn take_turn(rig: &Rig, seat: &str, prompt: &Msg) {
+    deliver(rig, seat, prompt).await;
+    rig.registry
+        .set_activity(&SeatId::from(seat), SystemState::Idle, None)
+        .await
+        .unwrap();
+}
+
+/// The seat's harness takes the prompt and starts working on it.
+async fn deliver(rig: &Rig, seat: &str, prompt: &Msg) {
     let (job, claimed) = rig
         .queue
         .claim(&[delivery_kind(&seat.into())], "test-harness")
@@ -199,13 +211,8 @@ async fn take_turn(rig: &Rig, seat: &str, prompt: &Msg) {
         })
         .await
         .unwrap();
-    let id = SeatId::from(seat);
     rig.registry
-        .set_activity(&id, SystemState::Working, None)
-        .await
-        .unwrap();
-    rig.registry
-        .set_activity(&id, SystemState::Idle, None)
+        .set_activity(&SeatId::from(seat), SystemState::Working, None)
         .await
         .unwrap();
 }
@@ -1285,34 +1292,99 @@ async fn a_close_of_a_revived_seat_during_a_held_close_is_refused_by_name_then_l
     rig.server.abort();
 }
 
-/// #245 review: the one-turn rule holds whatever the seat writes meanwhile. A
-/// note written while a turn is pending never lets a close skip past it: a
-/// repeat of the held close is answered as pending, and a close while a
-/// compact is held is refused, so neither closes the seat at once.
+/// #245 review and F207: while a turn is pending, a repeat of the held close
+/// is answered as pending and a close during a held compact is refused, never
+/// a direct close; the seat's note then ends that turn, and the held action
+/// runs.
 #[tokio::test]
-async fn a_note_written_while_a_turn_is_pending_never_skips_past_it() {
+async fn a_pending_turn_answers_repeats_first_and_the_seats_note_ends_it() {
     let held_close = rig(Duration::from_secs(30), &["holder"]).await;
     let first = post(held_close.addr, "/v1/close", close("holder", "prime")).await;
     assert_eq!(first["data"]["held"], "memory-turn", "{first}");
     let prompt = prompt_for(&held_close, "holder").await;
-    note_written(&held_close, "holder", "pm-001", now_ms()).await;
     let again = post(held_close.addr, "/v1/close", close("holder", "prime")).await;
     assert_eq!(again["data"]["memory_turn"]["pending"], true, "{again}");
     assert!(!tombstoned(&held_close, "holder").await);
-    take_turn(&held_close, "holder", &prompt).await;
-    assert_eq!(
-        turn_event_for(&held_close, "holder", &prompt).await["then"],
-        "closed"
-    );
+    deliver(&held_close, "holder", &prompt).await;
+    note_written(&held_close, "holder", "pm-001", now_ms()).await;
+    let turn = turn_event_for(&held_close, "holder", &prompt).await;
+    assert_eq!(turn["ended"], "note-written", "{turn}");
+    assert_eq!(turn["then"], "closed", "{turn}");
     held_close.server.abort();
 
     let rig = rig(Duration::from_secs(30), &["holder"]).await;
     let held = post(rig.addr, "/v1/send", compact("holder", "prime")).await;
     assert_eq!(held["data"]["held"], "memory-turn", "{held}");
     let deadline = held["data"]["memory_turn"]["deadline_ms"].clone();
-    note_written(&rig, "holder", "pm-001", now_ms()).await;
+    let prompt = prompt_for(&rig, "holder").await;
     let closed = post(rig.addr, "/v1/close", close("holder", "prime")).await;
     refused_as_pending(&closed, "another-action", &deadline);
     assert!(!tombstoned(&rig, "holder").await);
+    deliver(&rig, "holder", &prompt).await;
+    note_written(&rig, "holder", "pm-001", now_ms()).await;
+    let turn = turn_event_for(&rig, "holder", &prompt).await;
+    assert_eq!(turn["ended"], "note-written", "{turn}");
+    assert_eq!(turn["then"], "compact admitted", "{turn}");
+    rig.server.abort();
+}
+
+/// F207, wallaby and opossum at 00:02:06Z: mid-turn, the seat's harness
+/// publishes idle and then working 4 ms later (Copilot's per-tool
+/// `assistant.turn_end`/`turn_start`). That blip is not the end of the turn:
+/// the close waits. An idle that stays idle is, and the close then lands.
+#[tokio::test]
+async fn an_idle_blip_mid_turn_never_ends_it_and_a_settled_idle_does() {
+    let rig = rig(Duration::from_secs(30), &["holder"]).await;
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "holder").await;
+    deliver(&rig, "holder", &prompt).await;
+    let id = SeatId::from("holder");
+    rig.registry
+        .set_activity(&id, SystemState::Idle, None)
+        .await
+        .unwrap();
+    rig.registry
+        .set_activity(&id, SystemState::Working, None)
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(
+        !tombstoned(&rig, "holder").await,
+        "an idle blip mid-turn closed the seat before its note"
+    );
+    assert!(
+        rig.bus
+            .latest_matching(&id, &["memory.turn"])
+            .await
+            .unwrap()
+            .is_none(),
+        "the turn is still open"
+    );
+    rig.registry
+        .set_activity(&id, SystemState::Idle, None)
+        .await
+        .unwrap();
+    let turn = turn_event_for(&rig, "holder", &prompt).await;
+    assert_eq!(turn["ended"], "turn-end", "{turn}");
+    assert_eq!(turn["then"], "closed", "{turn}");
+    assert!(tombstoned(&rig, "holder").await);
+    rig.server.abort();
+}
+
+/// F207: the seat's memory note ends its turn, whatever its activity says:
+/// the close lands without waiting for an idle.
+#[tokio::test]
+async fn the_seats_memory_note_ends_its_turn() {
+    let rig = rig(Duration::from_secs(30), &["holder"]).await;
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "holder").await;
+    deliver(&rig, "holder", &prompt).await;
+    note_written(&rig, "holder", "pm-001", now_ms()).await;
+    let turn = turn_event_for(&rig, "holder", &prompt).await;
+    assert_eq!(turn["ended"], "note-written", "{turn}");
+    assert_eq!(turn["then"], "closed", "{turn}");
+    assert!(tombstoned(&rig, "holder").await);
     rig.server.abort();
 }

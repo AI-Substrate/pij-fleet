@@ -483,6 +483,7 @@ describe("pij extension — fyi and turn activity (plan 158)", () => {
 			seat = await bootSeat(daemon);
 			await seat.turnStart();
 			await seat.turnEnd();
+			await seat.agentEnd(false);
 			await vi.waitFor(() => expect(pathed(daemon, "/v1/activity")).toHaveLength(1));
 			gate.resolve();
 			await vi.waitFor(() => expect(daemon.applied).toEqual(["working", "idle"]));
@@ -492,18 +493,20 @@ describe("pij extension — fyi and turn activity (plan 158)", () => {
 			]);
 		});
 
-		it("agent_end repairs idle when turn_end's idle publication failed", async () => {
+		// F207: turn_end closes one iteration of a still-running agent; only
+		// agent_end without a continuation is idle.
+		it("a turn_end publishes no idle; agent_end does", async () => {
 			const daemon = fakeDaemon({ pendingFyis: 0 });
 			const current = await bootSeat(daemon);
 			seat = current;
 			await current.turnStart();
 			await vi.waitFor(() => expect(daemon.applied).toEqual(["working"]));
-			daemon.state.activity = "down";
 			await current.turnEnd();
+			await current.turnStart();
 			await vi.waitFor(() => expect(pathed(daemon, "/v1/activity")).toHaveLength(2));
-			daemon.state.activity = "up";
+			expect(daemon.applied).toEqual(["working", "working"]);
 			await current.agentEnd(false);
-			await vi.waitFor(() => expect(daemon.applied).toEqual(["working", "idle"]));
+			await vi.waitFor(() => expect(daemon.applied).toEqual(["working", "working", "idle"]));
 		});
 
 		it("agent_end publishes nothing while the agent will continue", async () => {
@@ -547,6 +550,7 @@ describe("pij extension — fyi and turn activity (plan 158)", () => {
 			const current = await bootSeat(daemon);
 			await current.turnStart();
 			await current.turnEnd();
+			await current.agentEnd(false);
 			await vi.waitFor(() => expect(daemon.applied).toEqual(["working", "idle"]));
 			await current.shutdown();
 			expect(pathed(daemon, "/v1/activity")).toHaveLength(2);

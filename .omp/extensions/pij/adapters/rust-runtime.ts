@@ -798,9 +798,14 @@ export class RustRuntimeSession {
 		void this.flush();
 	}
 
+	/**
+	 * One model/tool iteration ended; the agent goes on to the next ms later.
+	 * F207: not idle. Publishing idle here made a blip on every tool call (94%
+	 * of a day's OMP idles flipped back to working within 1 s) that a held close
+	 * read as the end of the seat's memory turn. Idle is `onAgentEnd`'s.
+	 */
 	onTurnEnd(): void {
 		this.session.onTurnEnd();
-		this.publishActivity("idle");
 		if (this.pi.isIdle()) this.idleSince ??= this.clock();
 		this.queueBoundaryResend();
 	}
@@ -860,7 +865,7 @@ export class RustRuntimeSession {
 	/** Boundaries grant one grace-delayed resend; later retries still require idle. */
 	onAgentEnd(willContinue = false): void {
 		if (!willContinue && this.pi.isIdle()) this.idleSince ??= this.clock();
-		// Idempotent idle repair for a turn_end that never published.
+		// The agent's work is done: the one idle a turn publishes (F207).
 		if (!willContinue) this.publishActivity("idle");
 		this.repollAfterCompaction("agent_end");
 		this.queueBoundaryResend();

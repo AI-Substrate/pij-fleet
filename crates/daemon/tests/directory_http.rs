@@ -8966,3 +8966,63 @@ async fn a_failed_close_notice_names_its_cause_in_a_closed_vocabulary() {
     }
     rig.server.abort();
 }
+
+/// [`call`] from another pane.
+async fn call_from(addr: SocketAddr, pane: &str, argv: &[&str], cwd: &Path) -> Value {
+    reqwest::Client::new()
+        .post(format!("http://{addr}/v1/directory"))
+        .bearer_auth(KEY)
+        .json(&json!({"argv": argv, "caller": {"TMUX_PANE": pane, "cwd": cwd}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+/// F207: a seat its own held close has just tombstoned can still write the
+/// note that close asked for, from its own pane and process; an unregistered
+/// pane is still refused.
+#[tokio::test]
+async fn memory_add_right_after_its_own_held_close_still_writes_the_note() {
+    let repo = repo("pij-directory-memory-grace");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let assigned = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "assign", "reviewer", SEAT, "--why", "review"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    let closed = close_landed(&rig, &repo.main, SEAT).await;
+    assert!(closed["tombstoned_at"].is_number(), "{closed}");
+    let add = [
+        "directory",
+        "memory",
+        "add",
+        "reviewer",
+        "--title",
+        "What the close asked for",
+        "--hook",
+        "open after a close",
+        "--body",
+        "the note\n",
+    ];
+    let added = call(rig.addr, "/v1/directory", &add, &repo.main).await;
+    assert_eq!(added["ok"], true, "{added}");
+    assert_eq!(added["data"]["role"], "reviewer", "{added}");
+    let stranger = call_from(rig.addr, "%99", &add, &repo.main).await;
+    assert_eq!(stranger["ok"], false, "{stranger}");
+    let other_verb = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "view"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(other_verb["ok"], false, "only memory add: {other_verb}");
+    rig.server.abort();
+}

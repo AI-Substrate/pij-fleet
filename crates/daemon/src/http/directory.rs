@@ -565,12 +565,32 @@ pub(crate) async fn handle(
     )
     .await
     {
-        Resolved::Seat(seat, _) => seat,
-        Resolved::Refusal(response) => return response,
+        Resolved::Seat(seat, _) => seat.id,
+        // F207: a seat its own held close has just tombstoned may still write
+        // the note that close asked for, from its own pane and process. Only
+        // `memory add`; every other verb, and every other caller, is refused.
+        Resolved::Refusal(response) => {
+            let memory_add =
+                call.leaf == "memory" && call.positions.first().is_some_and(|verb| verb == "add");
+            let graced = if memory_add {
+                super::memory_turn::note_grace(
+                    &state,
+                    request.caller.pane.as_deref(),
+                    request.caller.session_id.as_deref(),
+                )
+                .await
+            } else {
+                None
+            };
+            match graced {
+                Some(seat) => seat,
+                None => return response,
+            }
+        }
     };
     if call
         .get("actor")
-        .is_some_and(|claimed| claimed != actor.id.as_str())
+        .is_some_and(|claimed| claimed != actor.as_str())
     {
         return refused(&Refusal::new(
             "E-RS-OWNERSHIP",
@@ -578,12 +598,12 @@ pub(crate) async fn handle(
         ));
     }
     let result = match call.leaf.as_str() {
-        "assign" | "release" => hold(&state, &actor.id, &request.caller, &call).await,
-        "external" => external(&state, &actor.id, &request.caller, &call).await,
-        "edit" => edit(&state, &actor.id, &request.caller, &call).await,
-        "retire" | "merge" => reshape(&state, &actor.id, &request.caller, &call).await,
-        "routes" => routes_leaf(&state, &actor.id, &request.caller, &call).await,
-        "lineage" => lineage(&state, &actor.id, &request.caller, &call).await,
+        "assign" | "release" => hold(&state, &actor, &request.caller, &call).await,
+        "external" => external(&state, &actor, &request.caller, &call).await,
+        "edit" => edit(&state, &actor, &request.caller, &call).await,
+        "retire" | "merge" => reshape(&state, &actor, &request.caller, &call).await,
+        "routes" => routes_leaf(&state, &actor, &request.caller, &call).await,
+        "lineage" => lineage(&state, &actor, &request.caller, &call).await,
         "templates" => match call.get("show") {
             Some(spec) => state.services.directory.templates().show(&spec),
             None => Ok(json!({"templates": state.services.directory.templates().listing()})),
@@ -601,7 +621,7 @@ pub(crate) async fn handle(
                 Err(refusal) => Err(refusal),
             }
         }
-        "memory" => memory(&state, &actor.id, &request.caller, &call).await,
+        "memory" => memory(&state, &actor, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
@@ -618,7 +638,7 @@ pub(crate) async fn handle(
                 Err(refusal) => Err(refusal),
             }
         }
-        _ => add(&state, actor.id.as_str(), &request.caller, &call).await,
+        _ => add(&state, actor.as_str(), &request.caller, &call).await,
     };
     match result {
         Ok(data) => envelope(StatusCode::OK, &Envelope::ok(COMMAND, data)),

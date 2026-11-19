@@ -835,8 +835,8 @@ The request is `{seat, pane?, native_session?, state: "working"|"idle", context_
 It changes only the seat's mechanical `state` (a targeted write that never rewrites or revives the row), so `pij state` shows `working` during a turn and `idle` after it. Each change publishes a `seat.activity` event. `data` is `{seat, state, changed}`.
 - `working` never outlives its process: a tombstone resets it to `idle`, and so does a new incarnation registering the seat.
 
-- The OMP/Pi extension publishes `working` at `turn_start`, and `idle` at `turn_end`, at `agent_end` and on shutdown.
-- The Copilot native extension publishes on `assistant.turn_start`, and on `assistant.turn_end`, `session.idle` or shutdown. Each post carries the latest `session.usage_info` (`currentTokens`, `tokenLimit`) as `context_tokens` and `context_window_tokens`: that event is ephemeral and never reaches `events.jsonl`. It sends them only with the grant its registration returned; a refused report (an older daemon, or a grant from before a daemon restart) makes it resend the state alone and wait for its next registration's grant. At `onAgentStop` (plan 226) it hands the run's last root `assistant.message` to `/v1/turn-end` when that reply ends with a pij fence, shows the summary with `session.log`, and on failure returns `{decision: "block", reason}` unless `stopHookActive`; an aborted run fires no `onAgentStop`, so it runs nothing.
+- The OMP/Pi extension publishes `working` at `turn_start`, and `idle` at `agent_end` without a continuation and on shutdown. A `turn_end` closes one model/tool iteration of a still-running agent, so it is not idle (F207: 94% of a day's OMP idles published at `turn_end` flipped back to working within 1 s).
+- The Copilot native extension publishes `working` on `assistant.turn_start`, and `idle` on `session.idle`, `session.fusion_completed`, `abort` or shutdown. A root `assistant.turn_end` is not idle: Copilot emits it at every tool boundary and starts the next phase ms later (F207). Each post carries the latest `session.usage_info` (`currentTokens`, `tokenLimit`) as `context_tokens` and `context_window_tokens`: that event is ephemeral and never reaches `events.jsonl`. It sends them only with the grant its registration returned; a refused report (an older daemon, or a grant from before a daemon restart) makes it resend the state alone and wait for its next registration's grant. At `onAgentStop` (plan 226) it hands the run's last root `assistant.message` to `/v1/turn-end` when that reply ends with a pij fence, shows the summary with `session.log`, and on failure returns `{decision: "block", reason}` unless `stopHookActive`; an aborted run fires no `onAgentStop`, so it runs nothing.
 - Publications are serialized per session, and a failure never breaks a turn. A route-absent 404 from an older daemon stops publishing.
 - Claude seats publish through their managed hooks (plan 157): `UserPromptSubmit` sends `working`, and `Stop` and `StopFailure` send `idle`. `StopFailure` covers a turn that ends on an API error, which does not fire `Stop`. The seat is resolved by pane, via `pij-rs activity`, with the same 3 s bound and silent failure as the FYI claim. Only a prompt submitted to Claude fires `UserPromptSubmit`, so a turn opened another way stays `idle` until the next typed or pasted prompt.
 - When the Stop input holds a pij fence (plan 226), the same single launch is `pij-rs hook claude-stop --pane <P>` instead, reading the Stop input on stdin (which the script keeps in a private `mktemp -d` directory under `umask 077`) and bounded at 35 s: it hands a reply that ends with a pij block to `/v1/turn-end` as the pane's seat, publishes `idle` unless the block failed and the seat gets its one follow-up turn (it keeps working), and prints the hook's answer, `{systemMessage}` or `{decision: "block", reason, systemMessage}`. A managed `MessageDisplay` hook hides the block on screen: its script execs `pij-rs hook claude-display` once per streamed flush, which keeps each message's fence state in `<state dir>/claude-display/<message_id>` (a 0700 directory and 0600 files: the state holds the hidden lines), processes flushes in index order (Claude runs consecutive flushes' hooks concurrently; each waits at most 1 s for the one before), and never calls the daemon. `pij-rs doctor claude-hooks` reports every managed hook missing or stale with its fix, and `pij-rs claude-hooks --remove` (`just unlink`) takes them all out, leaving other settings alone.
@@ -1750,8 +1750,9 @@ were more than 32 and asks for notes on the ones the seat remembers. A seat that
 held nothing in this context is compacted or
 closed exactly as before. The daemon delivers one prompt from `pij-bg` naming
 each role and project, a released one as `released HH:MM` (local time), and
-the `pij directory memory add` command, then holds the action until the prompt
-is delivered and the seat next publishes `idle`, or until the bound passes,
+the `pij directory memory add` command, then holds the action until the seat
+writes its memory note, or its turn really ends (an idle after the prompt's
+delivery that stays idle for 5 s), or until the bound passes,
 after which it proceeds anyway. The bound is one constant, 5 minutes
 (`memory_turn::BOUND`), and it runs from the moment the request is held, not
 from the prompt's admission. The prompt's admission is itself under the bound:
@@ -1837,22 +1838,45 @@ answer carries `memory_turn.deadline_ms`, the time (Unix ms) the bound ends the
 turn.
 
 Every turn records one `memory.turn` spine event on the seat: `action`,
-`holdings`, `prompt` (the prompt's msg_id), `ended` (`turn-end`, `bound`, or
-`undelivered` when the prompt was refused or could not be sent), `waited_ms`,
+`holdings`, `prompt` (the prompt's msg_id), `ended` (`note-written`,
+`turn-end`, `bound`, or `undelivered` when the prompt was refused or could not
+be sent), `waited_ms`,
 `bound_ms`, a `note` whenever the action proceeded without the turn, and `then`
 (`closed`, `compact admitted`, `skipped: …` or `failed: …`). When the bound
 passed while the prompt was still being admitted, the action runs at the bound
 and the turn keeps the admission: the event is recorded once it settles and
 adds `admission`, `delivered-late`, `queued`, `refused` or `failed: …` (plan
 209). Nothing is withdrawn. The wait is a live
-subscription to the seat's `delivery.outcome` and `seat.activity` events with one
-deadline: no poll, no timer, no launch. The turn starts at the prompt's own
+subscription to the seat's `delivery.outcome`, `seat.activity` and `memory.note`
+events with one deadline: no poll, no launch. The turn starts at the prompt's own
 `delivery.outcome` in the event stream, never at the send's receipt, so an idle
 that was published before the prompt was delivered (and is still buffered when
-a direct delivery returns) belongs to the previous turn and is ignored. An idle
-is only published on a change from working, so the first idle after that
-boundary ends the turn that read the prompt, whether the prompt started that
-turn or arrived during it.
+a direct delivery returns) belongs to the previous turn and is ignored.
+
+**How the turn ends (F207).** The reading of the end of the turn is the policy
+that decides when a held close or compact runs, so it reads only facts that mean
+the work is done:
+
+- The seat's own `memory.note` (from `pij directory memory add`) ends the turn at
+  once, `ended: note-written`: it is what the turn asked for.
+- An idle after delivery starts a settle of 5 s (`memory_turn::SETTLE`); a
+  `working` before it passes cancels it, and only an idle that held for the
+  whole settle ends the turn, `ended: turn-end`. Copilot and OMP used to publish
+  idle at every tool boundary and working again ms later (83% and 94% of a
+  day's idles), and one such blip closed wallaby and opossum mid-turn
+  (2026-11-19 00:02:06Z). Both extensions now publish idle only at the real end
+  (Copilot `session.idle`, OMP `agent_end`); the settle covers seats still
+  running an older extension, and Claude's `Stop` needs no change.
+- The bound still ends it, as above.
+
+A seat that a held close has just tombstoned may still run `pij directory
+memory add` for 2 minutes (`memory_turn::NOTE_GRACE`), so a note it was writing
+as the close landed is not lost. The grace is keyed to that close: the caller
+must be in the closed seat's pane, assert no other seat id, and the seat's
+recorded process must still be alive with the same start. It authorizes that
+one verb as that seat and nothing else; every other verb, and any other
+unregistered pane, is refused as before. It lives in the daemon's memory and ends
+with a restart.
 
 Cost: one live subscription per pending memory turn (only for seats that
 held a role in this context, being compacted or closed), one delivery, one
@@ -1865,6 +1889,15 @@ client, in-process process-start checks, and, when that path reaches it, one
 registry list over the fleet), and the tombstone compare-and-set with its
 receipt reads. Attempts after the first happen only when the seat's own writes
 raced the one before. None of them launches anything.
+
+F207 adds no timer task and no poll: the settle is a second deadline on the
+same wait, armed by an idle and cleared by a working, so per pending turn it
+costs nothing until an idle arrives and then one deadline (per held close or
+compact, not per tick or per seat). The note grace is one in-memory entry per
+held close that lands, pruned when the next one is granted, and one in-process
+process-start read when an unregistered caller runs `memory add`. The extension
+changes remove publications: about one fewer `/v1/activity` post per tool call
+on Copilot and OMP seats.
 
 ## Number claims and delivery at merge (plan 196)
 
