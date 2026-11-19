@@ -24,4 +24,5 @@
 - [2026-11-18 Shared status watches: rate versus work](2026-11-18-shared-status-watches-rate-versus-work.dd.md): Before reviewing shared polling, cached health, or inherited launch metadata (cost, polling, cache-proxy, review)
 - [2026-11-18 Single-flight readiness: admission before task creation](2026-11-18-single-flight-readiness-admission-before.dd.md): Before reviewing async cached checks, task admission, TTL rate claims or CI-only performance proof (cost, polling, single-flight, cache-proxy, review)
 - [2026-11-19 F207 activity boundaries and deployed cost receipt](2026-11-19-f207-activity-boundaries-and-deployed.dd.md): When changing held-close settling, grace authorization, or Copilot/OMP activity hooks (cost, activity, memory-turn, F207)
+- [2026-11-19 F209 expiring misses and kept card folds](2026-11-19-f209-misses-and-card-projections.dd.md): When a short adapter miss TTL meets an idle consumer cache, or reviewing F209 cards replay and live proof (F209, cache, consumer-freshness, spine, deployment)
 <!-- /pij:generated -->
