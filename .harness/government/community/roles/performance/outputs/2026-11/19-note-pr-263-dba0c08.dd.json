@@ -1,0 +1,48 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"head": "dba0c0803b",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:263",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "pij-rs --json ping (two readings bracketing the machine probe)",
+					"exit_code": 0,
+					"log": "{\"subject\": \"pr:263\", \"merged_commit\": \"dba0c080\", \"phase\": \"live-after\", \"started_at\": \"2026-11-19T07:54:04.407137+00:00\", \"overlap\": \"Falcon /restart live proof was reported in progress at measurement dispatch; exact overlap requires its proof timestamps.\", \"elapsed_s\": 20.238, \"ended_at\": \"2026-11-19T07:54:24.645311+00:00\", \"pid_before\": 17600, \"pid_after\": 17600, \"running_commit_before\": \"dba0c0803b\", \"running_commit_after\": \"dba0c0803b\", \"spawns_before\": {\"total\": 471, \"by_op\": {\"ddocs.community\": 8, \"gh.delivered\": 1, \"git.community\": 7, \"ps.registration-native-process\": 179, \"ps.sidecar-process-group\": 1, \"ps.tmux-harness-process-tree\": 2, \"tmux.control-client\": 1, \"tmux.new-window\": 1, \"tmux.pipe-pane attach\": 134, \"tmux.rename-window\": 3, \"tmux.set-options tap owner\": 134}}, \"spawns_after\": {\"total\": 471, \"by_op\": {\"ddocs.community\": 8, \"gh.delivered\": 1, \"git.community\": 7, \"ps.registration-native-process\": 179, \"ps.sidecar-process-group\": 1, \"ps.tmux-harness-process-tree\": 2, \"tmux.control-client\": 1, \"tmux.new-window\": 1, \"tmux.pipe-pane attach\": 134, \"tmux.rename-window\": 3, \"tmux.set-options tap owner\": 134}}, \"spawn_delta\": {\"total\": 0, \"by_op\": {\"ddocs.community\": 0, \"gh.delivered\": 0, \"git.community\": 0, \"ps.registration-native-process\": 0, \"ps.sidecar-process-group\": 0, \"ps.tmux-harness-process-tree\": 0, \"tmux.control-client\": 0, \"tmux.new-window\": 0, \"tmux.pipe-pane attach\": 0, \"tmux.rename-window\": 0, \"tmux.set-options tap owner\": 0}}}"
+				},
+				{
+					"command": "just spawn-rate --seconds 20 --json",
+					"exit_code": 0,
+					"log": "{\n  \"seconds\": 20.0,\n  \"daemon_pid\": 17600,\n  \"total_new_per_s\": 88.2,\n  \"polls\": 197617,\n  \"sampled_per_s\": 82.0,\n  \"attributed_per_s_lower_bound\": {\n    \"other\": 49.9,\n    \"<gone before seen>\": 32.0\n  },\n  \"daemon_children_per_s_lower_bound\": {},\n  \"statusline_runs_seen_per_s\": 0.0,\n  \"pij_claude_hook_runs_seen_per_s_lower_bound\": {\n    \"display\": 0.0,\n    \"stop\": 0.0\n  },\n  \"top_commands_per_s_lower_bound\": {\n    \"bash\": 24.9,\n    \"sh\": 5.6,\n    \"tmux\": 5.4,\n    \"copilot\": 4.6,\n    \"adapter-10c1cbd\": 1.9,\n    \"cargo\": 1.2,\n    \"gc\": 1.2,\n    \"flowspace3\": 1.0,\n    \"bun.exe\": 0.7,\n    \"pij-rs\": 0.6,\n    \"build_stamps-e2\": 0.4,\n    \"bd\": 0.4\n  }\n}\n"
+				},
+				{
+					"command": "/bin/ps -p 17600 -o pid=,lstart=,%cpu=,rss=,comm=",
+					"exit_code": 0,
+					"log": "17600 Thu 19 Nov 17:53:30 2026       7.9 261952 /Users/jordanknight/.npm-global/bin/pij-rs\n"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "#263 post-deployment performance receipt\nRunning daemon commit dba0c0803b, PID 17600 unchanged across both ping readings. Window: 2026-11-19T07:54:04.407137Z–07:54:24.645311Z, monotonic span 20.238 s.\n\n| Metric | Before (a70cace40b, PID36530) | After (dba0c0803b, PID17600) |\n| --- | --- | --- |\n| Daemon counted launches in window | 0 / 20.249 s | 0 / 20.238 s |\n| Whole-machine launches/s (20 s probe) | 117.2 | 88.2 |\n| Daemon ps %CPU snapshot | 8.3 | 7.9 |\n| Daemon RSS, KiB | 154160 | 261952 |\n\nAfter totals stayed 471→471, with every by_op delta zero, including ps.registration-native-process at 179. Before totals stayed 2582→2582. Absolute totals cannot be compared across the daemon restart. Whole-machine load and CPU/RSS snapshots are not controlled attribution of the patch; after daemon had just restarted. RSS is higher in this sample; this does not establish a patch-caused increase. Sampler saw ambient cargo/build_stamps processes; this review seat launched no build or test.\n\nFalcon was running /restart proof concurrently according to the parent's dispatch; exact interval overlap not yet established. Zero ancestry-launch deltas do not prove this window exercised /restart. Falcon has been asked for timestamps. No new steady-state launch activity observed; the registration cost delta remains zero by source review. Detailed machine probe and both per-site counter readings are embedded below.\n"
+		}
+	]
+}
