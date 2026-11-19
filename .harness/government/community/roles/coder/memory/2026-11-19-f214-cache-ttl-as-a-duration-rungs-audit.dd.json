@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before touching CacheTtl, cold_wake::check/PAST_TTL, fill_cache_ttl or session_status_block, or auditing warm/cold verdicts against real cache reads (f214, cold-wake, ttl, audit, copilot, smoke)",
+				"tags": [
+					"f214",
+					"cold-wake",
+					"ttl",
+					"audit",
+					"smoke"
+				],
+				"title": "F214 cache TTL as a duration: rungs, audit rig, smoke limits"
+			}
+		},
+		{
+			"name": "body",
+			"value": "**Where the TTL lives (F214, #256).** `session_status::CacheTtl { seconds }` (wire `cacheTtlSeconds`, SEAT_STATUS_VERSION 2, missing field reads as Unknown for v1 cards). Rungs: the seat's record (native, or derived from the 1h/5m split) > `Basis::Proxy` (proxied Claude, 1h) > `CACHE_TTL_TABLE` v1 (`table@v1`). `fill_cache_ttl` runs in `http::session_status_block(source, &SeatDescriptor, now)`; every caller now passes the descriptor. `cold_wake::decide(rule, ...)` with `PAST_TTL` (Refuse|Warn) as the one constant; `ColdCheck::Warn` → receipt `warn: <why>`, ⚠ in list/state. `cache_known` refuses table-only TTLs (actions need seat evidence).\n\n**Audit rig that worked.** `pij-rs fleet-report ~ --since 7d --threads 2 --out <dir>` (18 s for the whole fleet) gives sessions→seat and claude/OMP calls with native cw split; its `cache_ttl_s` is ASSUMED (3600 for Copilot), so read Copilot `session.usage_record` directly (`cachePolicyTtlSeconds`, `cacheExpiresAt`, `isByok`, `interactionType == conversation-agent`; Copilot `inputTokens` already includes cache read+write). Join to spine `delivery.outcome` delivered; truth = next call's cacheRead share. `just cache-ttl-audit <dir>` is the committed form. Finding: 727/785 silent cold wakes were 5m seats the old fixed-60m guard ignored; cacheExpiresAt never disagreed with last call + native TTL.\n\n**Private-daemon smoke on real transcripts.** `/v1/register` with no pane/pid refuses (\"no bind evidence\"); give each smoke seat a `sleep` pane on a private tmux server and pass `HARNESS_SESSION_ID` of a live session. Copilot seats there have no context size (size comes from the native extension's grant; a `sleep` pid is refused as \"not an actual Copilot host\"), so Copilot guard refusals can only be shown by daemon tests. Send with `env -u TMUX_PANE -u TMUX PIJ_SESSION_ID=<smoke sender>` or the CLI resolves you by your real pane.\n\n**Traps hit.** (1) A relative path in `edit` landed in the main checkout again; moved with `git diff > patch; git -C <worktree> apply; git checkout -- <file>` in main. Always absolute worktree paths. (2) `harness checks` fails `flow-pair cli-learning` and `shared-build` tests when the shell has both NO_COLOR and FORCE_COLOR set (node prints a warning on stderr); run `env -u NO_COLOR harness checks --quick`. (3) Piping `shared-build` to `tail` hides cargo's exit and failures; redirect to a log and grep `^test result|FAILED|panicked`.\n"
+		}
+	]
+}
