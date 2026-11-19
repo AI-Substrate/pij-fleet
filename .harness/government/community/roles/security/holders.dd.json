@@ -315,7 +315,10 @@
 					"harness": "copilot",
 					"harness_session": "d1e5ce80-753d-4f2c-aaf7-b1267c0ef920",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-mass-pony",
+					"to": "2026-11-19T04:46:39.931Z",
 					"why": "pm-004: verdict on #255 (ws004 s07)"
 				},
 				{
