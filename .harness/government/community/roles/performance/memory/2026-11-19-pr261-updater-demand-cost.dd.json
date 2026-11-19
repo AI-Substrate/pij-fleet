@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "review-close",
+				"tags": [
+					"F208",
+					"review",
+					"update"
+				],
+				"title": "PR261 updater on-demand source cost only"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR261549bb717d539bd8bb37a981274497d18d7a217af performancePASS output887b31df2f8f3934f56aef8ca568235f7e96cb53 answers01a1f280-abaf-7262-a405-4ee2fc99da45. NEVERrealcopilotupdate executed. Safe real justcopilot-sdk-contract7/7pass SDK1.0.114-0 real0.25,user0.16,sys0.05,maxRSS59129856(time stat). justtest updater7+lateSDK1=8/8pass3.25s;all updaterthreeexecutablesstubs:copilotversion,update,contract;four subprocesscases+threepureverdict. No recordwrite/build/cargo/fullgate/reload,targetabsent. Source normalrun4outercalls(beforeversion,update,afterversion,contractdriver);contract adds version+extensionNode+existingpsprobes. TotalTHREEversionqueries,notjusttwoincludingcontract;withpriorobserved2ps8childlaunches+updaterdriver+shell/CLIinternaloverhead. Realupdate downloadtime/bytes/nativechildren unmeasured byexplicitprohibition. On-demandrecipeonly,doctor/checksneverupdate;helperimportsnoeageraction;zero idle/perseatpoll,daemonunchanged. CopilotoneoffPATHlookuporCOPILOT_BIN;Nodesabsoluteprocess.execPath;seamsfixedargsnoshell. No new retryloop,updatewrappernoown timeout(normaloperatorforeground). Costapprovalnotfleetreloadauthorization. magicWand: retain explicit launch accounting acrossnestedcontract so outertwoqueriesarenotmistakenforwholepipeline;difficulties:none new."
+		}
+	]
+}
