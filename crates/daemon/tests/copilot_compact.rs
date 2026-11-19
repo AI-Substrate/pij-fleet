@@ -261,19 +261,28 @@ async fn copilot_compact_waits_for_a_working_seat_and_runs_once_it_is_idle() {
     fixture.server.abort();
 }
 
-async fn report_lost_login(fixture: &Fixture, native_session: &str) -> serde_json::Value {
-    reqwest::Client::new()
+/// The extension's report, from `native_session` and the process `pid`
+/// (started at the fixture's `proc_start`): the status and envelope.
+async fn report_lost_login(
+    fixture: &Fixture,
+    native_session: &str,
+    pid: u32,
+) -> (reqwest::StatusCode, serde_json::Value) {
+    let response = reqwest::Client::new()
         .post(format!("http://{}/v1/seat/auth-error", fixture.addr))
         .bearer_auth("key")
-        .json(
-            &json!({"seat": "copilot", "native_session": native_session, "kind": "authorization"}),
-        )
+        .json(&json!({
+            "seat": "copilot",
+            "native_session": native_session,
+            "pid": pid,
+            "proc_start": 9,
+            "kind": "authorization",
+        }))
         .send()
         .await
-        .expect("post")
-        .json()
-        .await
-        .expect("envelope")
+        .expect("post");
+    let status = response.status();
+    (status, response.json().await.expect("envelope"))
 }
 
 /// F212: the extension's lost-login report on an idle seat with an empty
@@ -281,7 +290,7 @@ async fn report_lost_login(fixture: &Fixture, native_session: &str) -> serde_jso
 #[tokio::test]
 async fn a_lost_login_restarts_an_idle_copilot_seat_through_the_pane_gate() {
     let fixture = fixture(SystemState::Idle, false).await;
-    let answer = report_lost_login(&fixture, "native-186").await;
+    let (_, answer) = report_lost_login(&fixture, "native-186", 920_002).await;
     assert_eq!(answer["ok"], true, "{answer}");
     assert_eq!(answer["data"]["action"], "restart", "{answer}");
 
@@ -295,8 +304,33 @@ async fn a_lost_login_restarts_an_idle_copilot_seat_through_the_pane_gate() {
 #[tokio::test]
 async fn a_lost_login_report_from_another_session_restarts_nothing() {
     let fixture = fixture(SystemState::Idle, false).await;
-    let answer = report_lost_login(&fixture, "some-other-session").await;
+    let (_, answer) = report_lost_login(&fixture, "some-other-session", 920_002).await;
     assert_eq!(answer["ok"], false, "{answer}");
+    assert!(
+        queued(
+            &fixture.services.queue,
+            control_kind(&SeatId::from("copilot"))
+        )
+        .await
+        .is_none()
+    );
+    fixture.server.abort();
+}
+
+/// F212 R254-004: a report from a process that is not the seat's current one
+/// (the one a `/restart` replaced, reporting late) is refused and restarts
+/// nothing.
+#[tokio::test]
+async fn a_lost_login_report_from_a_replaced_process_restarts_nothing() {
+    let fixture = fixture(SystemState::Idle, false).await;
+    let (status, answer) = report_lost_login(&fixture, "native-186", 920_001).await;
+    assert_eq!(status, reqwest::StatusCode::CONFLICT, "{answer}");
+    assert!(
+        answer["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.starts_with("E-RS-AUTH-STALE")),
+        "{answer}"
+    );
     assert!(
         queued(
             &fixture.services.queue,

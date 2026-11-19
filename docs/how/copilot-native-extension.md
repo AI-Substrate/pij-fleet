@@ -93,13 +93,15 @@ authority error: …` (no code), and keeps failing until it is restarted; a fres
 process re-links the login with no one signing in. The extension recognizes
 both forms (by `errorType` and `statusCode`; the second by its message prefix)
 and, once the failed run ends and its idle is published, posts
-`{seat, native_session, kind}` to `/v1/seat/auth-error`: no error text. The
-daemon then queues one `restart` when the seat is idle with an empty composer,
-and otherwise tells its live parent and the designated prime how to restart it.
-One restart per seat per 30 min: if the restarted process loses its login too,
-they are told the login needs renewing (`/login`); while the old process is
-still the one running, nothing more happens. Each decision that acts is a
-`seat.auth_recovery` spine event.
+`{seat, native_session, pid, proc_start, kind}` to `/v1/seat/auth-error`: no
+error text, and a report from a process `/restart` already replaced is refused.
+The daemon then queues one `restart` when the seat is idle with an empty
+composer, and otherwise tells its live parent and the designated primes of its
+projects how to restart it. One restart per seat per 30 min: while that restart
+is still queued, nothing more happens; once it has run, a report from the same
+process means the restart did not take (they are told to `/exit` and
+`pij revive`), and one from the new process means the login needs renewing
+(`/login`). Each decision that acts is a `seat.auth_recovery` spine event.
 
 New manual sessions receive an ordinary memorable Pij ID from the daemon, just
 like spawned seats. The native session ID remains the internal resume key.

@@ -2280,7 +2280,9 @@ export class NativeBridge {
 		try {
 			const answer = await this.client.request(
 				AUTH_ERROR_ROUTE,
-				{ seat: this.registration.id, native_session: this.registration.harness_session, kind },
+				// R254-004: the process it ran in, so a late report from a process
+				// a /restart replaced is refused, never read as the new one's.
+				{ ...this.tuple(), kind },
 				AbortSignal.any([this.controller.signal, AbortSignal.timeout(HOOK_REQUEST_TIMEOUT_MS)]),
 			);
 			this.emit("lost-login-reported", { lostLogin: kind, action: answer?.action ?? null });

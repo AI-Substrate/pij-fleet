@@ -5,37 +5,50 @@
 //! restarted: a fresh process re-links its enterprise login with no one
 //! signing in, the old one never does (46 such errors over three days, the same
 //! process failing for up to six hours). The pij Copilot extension reports the
-//! lost login once the failed run has ended (`POST /v1/seat/auth-error`); this
-//! module decides what pij does about it.
+//! lost login once the failed run has ended (`POST /v1/seat/auth-error`), naming
+//! the process it runs in; this module decides what pij does about it.
 //!
 //! POLICY, and what decides it: one `/restart` per seat per
-//! [`RECOVERY_WINDOW_MS`], typed through the same pane control path as a
-//! compact, so the control path's own brakes still hold it (a settled idle, an
-//! empty composer, the hold limit). Copilot's `/restart` swaps the CLI process
-//! and restores the same live session: same seat id, native session, holdings
-//! and held FYIs (proved on a throwaway seat, F212).
+//! [`RECOVERY_WINDOW`], typed through the same pane control path as a compact,
+//! so the control path's own brakes still hold it (a settled idle, an empty
+//! composer, the hold limit). Copilot's `/restart` swaps the CLI process and
+//! restores the same live session: same seat id, native session, holdings and
+//! held FYIs (proved on a throwaway seat, F212).
 //!
 //! BRAKES, each of which can only turn a restart into a notice or nothing:
 //! - the seat is not idle, or its composer is not empty or not readable (a
-//!   draft, a human typing, a layout pij cannot read): no restart; its parent
-//!   and the prime are told how to restart it instead;
-//! - a restart already happened inside the window: never a second one. If the
-//!   process it started lost its login too, parent and prime are told the login
-//!   needs renewing; while the old process is still the one running, nothing.
-//! - parent and prime are told at most once per window.
+//!   draft, a human typing, a layout pij cannot read): no restart; its live
+//!   parent and its projects' designated primes are told how to restart it;
+//! - a restart already happened inside the window: never a second one. While
+//!   its control is still queued, nothing more; once it has settled with the
+//!   same process still running (Copilot refused `/restart`, or it was never
+//!   typed), they are told the restart did not take; if the process it started
+//!   lost its login too, they are told the login needs renewing;
+//! - they are told at most once per window.
 //!
 //! Removing any brake types the same `/restart` sooner or more often; none of
-//! them chooses a different action. A report from a seat whose native session
-//! is not the one it is bound to is refused before this runs (the route's
-//! binding evidence), so a restart never reaches a seat the error did not
-//! come from.
+//! them chooses a different action.
+//!
+//! The window is measured on the daemon's monotonic clock, never the wall
+//! clock, so a clock correction cannot end it early. Decisions for one seat run
+//! one at a time under that seat's lock, so two reports in flight together
+//! still make one decision each, in turn. Each decision that acts is also a
+//! `seat.auth_recovery` spine event; after a daemon restart, when this
+//! process has no memory of the seat, a recent event is the brake instead
+//! (the only use of its wall-clock stamp, and it can only spare a seat).
 //!
 //! Cost: the route runs only on an auth error. It reads the seat's latest
-//! recovery event (one indexed read) and, when it may restart, one composer
-//! capture through the existing interaction gate; it launches nothing. The
-//! restart is one queued control; a notice is one or two messages.
+//! recovery event once per daemon lifetime, the live payloads of the seat's
+//! control kind while a restart may be pending, its holdings when someone is
+//! told, and one composer capture through the existing interaction gate when a
+//! restart is possible; it launches nothing. The restart is one queued control;
+//! a notice is one message per recipient.
 
-use pij_core::model::{Event, Msg, SeatDescriptor, SeatId, SystemState};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use pij_core::model::{DeliveryOutcome, Event, Msg, SeatDescriptor, SeatId, SystemState};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -45,7 +58,7 @@ use crate::pa_watchdog::{bg_msg, outcome_text};
 /// The spine event that records each recovery decision that acted.
 pub(crate) const AUTH_RECOVERY_KIND: &str = "seat.auth_recovery";
 /// One restart, and one notice, per seat inside this window.
-pub(crate) const RECOVERY_WINDOW_MS: u64 = 30 * 60 * 1_000;
+pub(crate) const RECOVERY_WINDOW: Duration = Duration::from_secs(30 * 60);
 
 /// Which lost login the extension saw.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,52 +70,91 @@ pub enum LostLogin {
     CredentialAuthority,
 }
 
+/// The process a report speaks for: the Copilot CLI's pid and start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Incarnation {
+    /// Process id.
+    pub pid: u32,
+    /// The process's observed start, as the registry records it.
+    pub proc_start: u64,
+}
+
 /// What pij did about one report.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Action {
     /// `/restart` was queued on the seat's control path.
     Restart,
-    /// The seat was busy or held a draft: parent and prime were told how to
-    /// restart it.
+    /// The seat was busy or held a draft, or the restart could not be queued:
+    /// its parent and primes were told how to restart it.
     Notify,
-    /// The process pij restarted lost its login too: parent and prime were
-    /// told the login needs renewing.
+    /// The restart settled and the same process still runs: they were told it
+    /// did not take.
+    NotRestarted,
+    /// The process pij restarted lost its login too: they were told the
+    /// login needs renewing.
     Relogin,
-    /// A restart is queued and the old process is still the one running.
+    /// A restart is queued and has not run yet.
     Pending,
-    /// Parent and prime were already told inside the window.
+    /// They were already told inside the window.
     Told,
 }
 
-/// A recovery that acted, as recorded on the spine.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Recorded {
+/// The last decision that acted for one seat.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Entry {
     pub(crate) action: Action,
-    pub(crate) at: u64,
-    /// The process the seat ran when the recovery was decided.
-    #[serde(default)]
-    pub(crate) pid: Option<u32>,
+    pub(crate) since: Instant,
+    pub(crate) incarnation: Incarnation,
+    pub(crate) msg_id: Option<String>,
 }
 
-/// The decision, from the last recovery and the seat now. `free` is read
-/// only when the answer depends on it.
+/// Each seat's last acting decision, behind that seat's own lock.
+#[derive(Default)]
+pub struct Ledger {
+    seats: Mutex<HashMap<SeatId, Arc<tokio::sync::Mutex<Option<Entry>>>>>,
+}
+
+impl Ledger {
+    /// An empty ledger: nothing decided yet in this daemon.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn slot(&self, seat: &SeatId) -> Arc<tokio::sync::Mutex<Option<Entry>>> {
+        Arc::clone(
+            self.seats
+                .lock()
+                .expect("auth recovery ledger mutex")
+                .entry(seat.clone())
+                .or_default(),
+        )
+    }
+}
+
+/// The decision, from the last acting one and the report now. `settled`
+/// (the queued restart is no longer live) and `free` (idle, composer empty)
+/// are read only when the answer depends on them.
 pub(crate) fn decide(
-    last: Option<&Recorded>,
-    now_ms: u64,
-    pid: Option<u32>,
+    last: Option<&Entry>,
+    now: Instant,
+    reporter: Incarnation,
+    settled: impl FnOnce() -> bool,
     free: impl FnOnce() -> bool,
 ) -> Action {
-    match last.filter(|last| now_ms.saturating_sub(last.at) < RECOVERY_WINDOW_MS) {
-        Some(Recorded {
+    match last.filter(|last| now.saturating_duration_since(last.since) < RECOVERY_WINDOW) {
+        Some(Entry {
             action: Action::Restart,
-            pid: restarted,
+            incarnation,
             ..
         }) => {
-            if pid.is_some() && pid == *restarted {
-                Action::Pending
-            } else {
+            if *incarnation != reporter {
                 Action::Relogin
+            } else if settled() {
+                Action::NotRestarted
+            } else {
+                Action::Pending
             }
         }
         Some(_) => Action::Told,
@@ -123,42 +175,69 @@ pub(crate) struct Outcome {
     pub(crate) told: Vec<(SeatId, String)>,
 }
 
-/// Act on one lost-login report from `seat`'s own extension.
+/// Act on one lost-login report from `seat`'s own extension, running in
+/// `reporter` (the route has checked it is the seat's current process).
 ///
 /// # Errors
 /// Store failures reading or recording the decision: nothing was sent.
 pub(crate) async fn handle(
     services: &Services,
     seat: &SeatDescriptor,
+    reporter: Incarnation,
     kind: LostLogin,
     now_ms: u64,
 ) -> pij_core::error::Result<Outcome> {
-    let last = services
-        .spine
-        .latest_matching(&seat.id, &[AUTH_RECOVERY_KIND])
-        .await?
-        .and_then(|event| serde_json::from_str::<Recorded>(&event.payload).ok());
-    let pid = seat.proc.map(|proc| proc.pid);
-    let free = if last
+    let slot = services.auth_recovery.slot(&seat.id);
+    let mut last = slot.lock().await;
+    let now = Instant::now();
+    if last.is_none() {
+        *last = remembered(services, &seat.id, now, now_ms).await?;
+    }
+    let in_window = last
         .as_ref()
-        .is_some_and(|last| now_ms.saturating_sub(last.at) < RECOVERY_WINDOW_MS)
-    {
-        false
-    } else {
-        composer_free(services, seat).await
+        .filter(|entry| now.saturating_duration_since(entry.since) < RECOVERY_WINDOW);
+    let pending_restart = in_window
+        .filter(|entry| entry.action == Action::Restart && entry.incarnation == reporter)
+        .and_then(|entry| entry.msg_id.clone());
+    let settled = match pending_restart {
+        Some(msg_id) => !control_live(services, &seat.id, &msg_id).await,
+        None => false,
     };
-    let mut action = decide(last.as_ref(), now_ms, pid, || free);
+    let free = if in_window.is_none() {
+        composer_free(services, seat).await
+    } else {
+        false
+    };
+    let mut action = decide(last.as_ref(), now, reporter, || settled, || free);
     let mut msg_id = None;
     if action == Action::Restart {
         let id = format!("auth-restart:{}:{now_ms}", seat.id);
         // Persist before mutate: the window starts before the control exists.
-        record(services, seat, Action::Restart, kind, now_ms, Some(&id)).await?;
+        record(
+            services,
+            seat,
+            reporter,
+            Action::Restart,
+            kind,
+            now_ms,
+            Some(&id),
+        )
+        .await?;
+        *last = Some(Entry {
+            action: Action::Restart,
+            since: now,
+            incarnation: reporter,
+            msg_id: Some(id.clone()),
+        });
         let control = Msg {
             command: Some("restart".to_string()),
             ..bg_msg(&seat.id, String::new(), id.clone())
         };
         match services.delivery.accept_control(control).await {
-            Ok(_) => msg_id = Some(id),
+            Ok(receipt) if !matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) => {
+                msg_id = Some(id);
+            }
+            Ok(_) => action = Action::Notify,
             Err(cause) => {
                 eprintln!("auth recovery: restart of {} not queued: {cause}", seat.id);
                 action = Action::Notify;
@@ -166,8 +245,14 @@ pub(crate) async fn handle(
         }
     }
     let told = match action {
-        Action::Notify | Action::Relogin => {
-            record(services, seat, action, kind, now_ms, None).await?;
+        Action::Notify | Action::NotRestarted | Action::Relogin => {
+            record(services, seat, reporter, action, kind, now_ms, None).await?;
+            *last = Some(Entry {
+                action,
+                since: now,
+                incarnation: reporter,
+                msg_id: None,
+            });
             tell(services, seat, action, kind, now_ms).await
         }
         Action::Restart | Action::Pending | Action::Told => Vec::new(),
@@ -177,6 +262,62 @@ pub(crate) async fn handle(
         msg_id,
         told,
     })
+}
+
+/// The seat's last acting decision from the spine, for a daemon that has none
+/// in memory (it restarted). Its wall-clock age places it on this daemon's
+/// monotonic clock; that only ever spares the seat.
+async fn remembered(
+    services: &Services,
+    seat: &SeatId,
+    now: Instant,
+    now_ms: u64,
+) -> pij_core::error::Result<Option<Entry>> {
+    #[derive(Deserialize)]
+    struct Recorded {
+        action: Action,
+        at: u64,
+        pid: Option<u32>,
+        proc_start: Option<u64>,
+        msg_id: Option<String>,
+    }
+    let Some(event) = services
+        .spine
+        .latest_matching(seat, &[AUTH_RECOVERY_KIND])
+        .await?
+    else {
+        return Ok(None);
+    };
+    let Ok(recorded) = serde_json::from_str::<Recorded>(&event.payload) else {
+        return Ok(None);
+    };
+    let (Some(pid), Some(proc_start)) = (recorded.pid, recorded.proc_start) else {
+        return Ok(None);
+    };
+    let age = Duration::from_millis(now_ms.saturating_sub(recorded.at));
+    let Some(since) = now.checked_sub(age.min(RECOVERY_WINDOW)) else {
+        return Ok(None);
+    };
+    Ok(Some(Entry {
+        action: recorded.action,
+        since,
+        incarnation: Incarnation { pid, proc_start },
+        msg_id: recorded.msg_id,
+    }))
+}
+
+/// Whether the restart control `msg_id` is still queued for `seat`. A read
+/// that fails counts as queued: it can only hold a notice back.
+async fn control_live(services: &Services, seat: &SeatId, msg_id: &str) -> bool {
+    let kind = format!("delivery-control:{seat}");
+    match services.queue.live_payloads(&[kind]).await {
+        Ok(payloads) => payloads.iter().any(|payload| {
+            serde_json::from_str::<serde_json::Value>(payload)
+                .ok()
+                .is_some_and(|value| value["msg_id"] == msg_id)
+        }),
+        Err(_) => true,
+    }
 }
 
 /// Idle in the registry, and the composer recognized and empty now. Any read
@@ -198,6 +339,7 @@ async fn composer_free(services: &Services, seat: &SeatDescriptor) -> bool {
 async fn record(
     services: &Services,
     seat: &SeatDescriptor,
+    reporter: Incarnation,
     action: Action,
     kind: LostLogin,
     at: u64,
@@ -214,7 +356,8 @@ async fn record(
             payload: json!({
                 "action": action,
                 "at": at,
-                "pid": seat.proc.map(|proc| proc.pid),
+                "pid": reporter.pid,
+                "proc_start": reporter.proc_start,
                 "kind": kind,
                 "msg_id": msg_id,
             })
@@ -224,19 +367,27 @@ async fn record(
         .map(|_| ())
 }
 
-/// The seat's live parent and the machine's designated prime, once each.
+/// The seat's live parent, and the designated prime of each project it holds
+/// a role in, once each and never the seat itself (as the idle nudge resolves
+/// them, `idle_nudge.rs`).
 async fn recipients(services: &Services, seat: &SeatDescriptor) -> Vec<SeatId> {
+    let mut candidates: Vec<SeatId> = seat.parent.iter().cloned().collect();
+    match crate::http::memory_turn::try_holdings_of(services, &seat.id).await {
+        Ok(holdings) => {
+            let projects: std::collections::BTreeSet<String> =
+                holdings.into_iter().map(|held| held.project).collect();
+            for project in projects {
+                match services.watchdogs().project(&project).await {
+                    Ok(Some(record)) => candidates.extend(record.prime_id),
+                    Ok(None) => {}
+                    Err(cause) => eprintln!("auth recovery: project {project}: {cause}"),
+                }
+            }
+        }
+        Err(cause) => eprintln!("auth recovery: holdings of {}: {cause}", seat.id),
+    }
     let mut told: Vec<SeatId> = Vec::new();
-    let prime = services
-        .directory
-        .store()
-        .prime()
-        .await
-        .ok()
-        .flatten()
-        .filter(|designation| designation.state == pij_core::orchestration::PrimeState::Current)
-        .map(|designation| designation.seat);
-    for candidate in seat.parent.iter().cloned().chain(prime) {
+    for candidate in candidates {
         if candidate == seat.id || told.contains(&candidate) {
             continue;
         }
@@ -292,8 +443,11 @@ pub(crate) fn notice(seat: &SeatDescriptor, action: Action, kind: LostLogin) -> 
         Action::Relogin => format!(
             "{id}'s Copilot lost its login again ({what}) after pij restarted it, so a restart is not enough: its login needs renewing. Type /login in {pane}, then /restart."
         ),
+        Action::NotRestarted => format!(
+            "{id}'s Copilot lost its login ({what}); pij typed /restart in {pane} but the same process is still running, so the restart did not take (Copilot may not offer /restart there). Quit it with /exit in {pane}, then run `pij revive {id}`: it resumes the same session."
+        ),
         _ => format!(
-            "{id}'s Copilot lost its login ({what}), and pij did not restart it because it was busy or had text in its composer. When it is free, type /restart in {pane}, or run `pij send {id} --command restart`. Its session, roles and queue survive a /restart."
+            "{id}'s Copilot lost its login ({what}), and pij did not restart it: it was busy, had text in its composer, or the restart could not be queued. When it is free, type /restart in {pane}, or run `pij send {id} --command restart`. Its session, roles and queue survive a /restart."
         ),
     }
 }

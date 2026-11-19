@@ -1486,7 +1486,7 @@ test("activity: foreground turns publish working then idle in order; failures ne
 	await run;
 });
 
-test("F212: a lost login is reported once its run ends, after the idle, by kind only", async () => {
+test("F212: a lost login is reported once its run ends, after the idle, with its process and no text", async () => {
 	const f = fixture();
 	const run = f.bridge.run();
 	await f.accepted.promise;
@@ -1526,6 +1526,8 @@ test("F212: a lost login is reported once its run ends, after the idle, by kind 
 			{
 				seat: registration.id,
 				native_session: registration.harness_session,
+				pid: registration.pid,
+				proc_start: registration.proc_start,
 				kind: "authorization",
 			},
 		],
