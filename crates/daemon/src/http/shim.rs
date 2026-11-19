@@ -127,42 +127,10 @@ pub(crate) async fn shim_sessions(State(state): State<AppState>) -> Response {
 }
 
 fn git_common_dir(folder: &Path) -> String {
-    discover_git_common_dir(folder)
+    crate::community::root::common_dir(folder)
         .unwrap_or_else(|| folder.to_path_buf())
         .to_string_lossy()
         .into_owned()
-}
-
-fn discover_git_common_dir(folder: &Path) -> Option<PathBuf> {
-    for directory in folder.ancestors() {
-        let dot_git = directory.join(".git");
-        if dot_git.is_dir() {
-            return Some(std::fs::canonicalize(&dot_git).unwrap_or(dot_git));
-        }
-        if !dot_git.is_file() {
-            continue;
-        }
-        let pointer = std::fs::read_to_string(&dot_git).ok()?;
-        let git_dir = pointer.trim().strip_prefix("gitdir:")?.trim();
-        let git_dir = resolve_path(directory, Path::new(git_dir));
-        let common = std::fs::read_to_string(git_dir.join("commondir"))
-            .ok()
-            .and_then(|value| {
-                let value = value.trim();
-                (!value.is_empty()).then(|| resolve_path(&git_dir, Path::new(value)))
-            })
-            .unwrap_or(git_dir);
-        return Some(std::fs::canonicalize(&common).unwrap_or(common));
-    }
-    None
-}
-
-fn resolve_path(base: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        base.join(path)
-    }
 }
 
 /// The one body every shim-originated route accepts.

@@ -1,11 +1,15 @@
 //! Plan 217's presence checks cost no process launch (AGENTS.md § Resource
-//! cost, ac-0008).
+//! cost, ac-0008), and neither does placing a seat's folder in its
+//! repository (F202).
 //!
-//! Over 45 simulated minutes the round sends all four presence messages (a
+//! Over 46 simulated minutes the round sends all four presence messages (a
 //! missing-PA wake, a dormant wake, an unresponsive alert and a large-seat
-//! FYI). After the first round has placed each folder in its repository,
-//! the launch counter does not move. A seat in a new repository then moves
-//! it by exactly one, so the instrument can read a launch when there is one.
+//! FYI) to seats in a main checkout, a linked worktree and a second
+//! repository, and a seat joins a third: the launch counter never moves, not
+//! even on the first round. Seats in folders the in-process read cannot
+//! decide fall back to git: one launch per folder, however many seats, then
+//! none while git's answer is kept. That also shows the instrument reads a
+//! launch when there is one.
 //!
 //! ONE test on purpose: it reads the process-wide launch counter.
 
@@ -25,20 +29,53 @@ use pij_testkit::fakes::FakeSessionStatus;
 
 const GIT_SITE: &str = "git.pa-watchdog-common-dir";
 
+fn git(dir: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .output()
+        .expect("git runs");
+    assert!(output.status.success(), "git {args:?}: {output:?}");
+}
+
+fn canonical(dir: &Path) -> String {
+    std::fs::canonicalize(dir)
+        .expect("canonical folder")
+        .display()
+        .to_string()
+}
+
 fn repo(root: &Path, name: &str) -> String {
     let dir = root.join(name);
     std::fs::create_dir_all(&dir).expect("repo dir");
-    let init = Command::new("git")
-        .arg("-C")
-        .arg(&dir)
-        .args(["init", "-q"])
-        .output()
-        .expect("git init");
-    assert!(init.status.success(), "{init:?}");
-    std::fs::canonicalize(dir)
-        .expect("canonical repo")
-        .display()
-        .to_string()
+    git(&dir, &["init", "-q"]);
+    canonical(&dir)
+}
+
+/// A linked worktree of `main`, as a sibling folder named `name`.
+fn worktree(root: &Path, main: &str, name: &str) -> String {
+    git(
+        Path::new(main),
+        &["commit", "-q", "--allow-empty", "-m", "init"],
+    );
+    let dir = root.join(name);
+    git(
+        Path::new(main),
+        &[
+            "worktree",
+            "add",
+            "-q",
+            dir.to_str().expect("utf-8"),
+            "-b",
+            name,
+        ],
+    );
+    canonical(&dir)
 }
 
 fn seat(id: &str, folder: &str, parent: Option<&str>, state: SystemState) -> SeatDescriptor {
@@ -57,10 +94,13 @@ fn sized(tokens: u64) -> SessionStatusReply {
 }
 
 #[tokio::test]
-async fn the_presence_checks_launch_nothing_once_folders_are_placed() {
+async fn the_presence_checks_and_placing_folders_launch_nothing() {
     let root = std::env::temp_dir().join(format!("pij-presence-launches-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("root");
+    let root = std::fs::canonicalize(&root).expect("canonical root");
     let fleet = repo(&root, "fleet");
+    let feature = worktree(&root, &fleet, "feature");
     let lonely = repo(&root, "lonely");
     let store = FreshStore::new();
     let config = Config {
@@ -83,13 +123,19 @@ async fn the_presence_checks_launch_nothing_once_folders_are_placed() {
     }
     services.session_status = Arc::new(sizes.with_reply("session-pij-big", sized(700_000)));
 
-    // A designated prime with a PA and two workers (a third, large, joins
-    // later); and a `prime`-role seat whose two workers have no PA.
+    // A designated prime with a PA in the main checkout and two workers in a
+    // linked worktree (a third, large, joins later); and a `prime`-role seat
+    // in another repository whose two workers have no PA.
     let seats = [
         seat("pij-prime", &fleet, None, SystemState::Idle),
         seat("pij-pa", &fleet, Some("pij-prime"), SystemState::Idle),
-        seat("pij-busy", &fleet, Some("pij-prime"), SystemState::Working),
-        seat("pij-idle", &fleet, Some("pij-prime"), SystemState::Idle),
+        seat(
+            "pij-busy",
+            &feature,
+            Some("pij-prime"),
+            SystemState::Working,
+        ),
+        seat("pij-idle", &feature, Some("pij-prime"), SystemState::Idle),
         seat("pij-other", &lonely, None, SystemState::Idle),
         seat("pij-w1", &lonely, Some("pij-other"), SystemState::Working),
         seat("pij-w2", &lonely, Some("pij-other"), SystemState::Idle),
@@ -150,15 +196,15 @@ async fn the_presence_checks_launch_nothing_once_folders_are_placed() {
             _ => None,
         }));
     };
+    let cold = snapshot();
     collect(round(0).await, &mut sent);
-    let warm = snapshot();
     for minute in 1..=45 {
         if minute == 5 {
             services
                 .registry
                 .put(seat(
                     "pij-big",
-                    &fleet,
+                    &feature,
                     Some("pij-prime"),
                     SystemState::Idle,
                 ))
@@ -167,6 +213,19 @@ async fn the_presence_checks_launch_nothing_once_folders_are_placed() {
         }
         collect(round(minute).await, &mut sent);
     }
+    // A seat joins a third repository: placed in process too.
+    let fresh = repo(&root, "fresh");
+    services
+        .registry
+        .put(seat(
+            "pij-new",
+            &fresh,
+            Some("pij-prime"),
+            SystemState::Idle,
+        ))
+        .await
+        .expect("new seat");
+    round(46).await;
     let after = snapshot();
     sent.sort();
     assert_eq!(
@@ -180,29 +239,36 @@ async fn the_presence_checks_launch_nothing_once_folders_are_placed() {
         "every check sent once"
     );
     assert_eq!(
-        after.total, warm.total,
-        "no launch in 45 rounds: {:?} -> {:?}",
-        warm.by_op, after.by_op
+        after.total, cold.total,
+        "no launch in 47 rounds, the first included: {:?} -> {:?}",
+        cold.by_op, after.by_op
     );
 
-    // Positive control: a seat in a repository the round has not placed.
-    let fresh = repo(&root, "fresh");
-    services
-        .registry
-        .put(seat(
-            "pij-new",
-            &fresh,
-            Some("pij-prime"),
-            SystemState::Idle,
-        ))
-        .await
-        .expect("new seat");
-    round(46).await;
-    let placed = snapshot();
-    assert_eq!(
-        placed.by_op.get(GIT_SITE).copied().unwrap_or(0),
-        after.by_op.get(GIT_SITE).copied().unwrap_or(0) + 1,
-        "the counter reads the one launch that places a new folder"
-    );
+    // The fallback's bound, and the positive control: four seats in two
+    // folders the in-process read cannot decide (a garbled `.git`) cost one
+    // launch per folder on the first round, then none while git's answer is
+    // kept.
+    for (index, name) in ["odd-a", "odd-a", "odd-b", "odd-b"].into_iter().enumerate() {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).expect("odd folder");
+        std::fs::write(dir.join(".git"), "not a gitdir pointer\n").expect("garbled .git");
+        services
+            .registry
+            .put(seat(
+                &format!("pij-odd-{index}"),
+                &canonical(&dir),
+                Some("pij-prime"),
+                SystemState::Idle,
+            ))
+            .await
+            .expect("odd seat");
+    }
+    let git_launches = || snapshot().by_op.get(GIT_SITE).copied().unwrap_or(0);
+    let before = git_launches();
+    round(47).await;
+    assert_eq!(git_launches(), before + 2, "one git per undecided folder");
+    round(48).await;
+    round(49).await;
+    assert_eq!(git_launches(), before + 2, "git's answer is kept");
     let _ = std::fs::remove_dir_all(&root);
 }
