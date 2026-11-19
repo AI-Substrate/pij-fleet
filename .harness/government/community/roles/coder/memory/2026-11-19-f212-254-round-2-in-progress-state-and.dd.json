@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open first when resuming #254 (F212 round 2, review findings R254-001..005) after a compact or handover",
+				"tags": [
+					"f212",
+					"handover",
+					"review",
+					"auth"
+				],
+				"title": "F212 #254 round 2 in progress: state and remaining steps"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#254 (F212) round 2 of 2 (C34): the reviewer BLOCKed head 92ce117 with R254-001..005 (verdict: pij-governance/.harness/government/community/roles/reviewer/outputs/2026-11/19-verdict-pr-254-92ce117.dd.json). Worktree ~/pi-hacking/fleet-f212, branch fix/f212-copilot-auth-restart. All five fixes go out in ONE push, then pr-freeze, then FINAL to pij-steady-otter with the new head and the regression test names.\n\nDONE (uncommitted, not built):\n- auth_recovery.rs rewritten:\n  - Ledger in Services (`pub(crate) auth_recovery: Arc<auth_recovery::Ledger>`, built in lib.rs) holds a per-seat tokio Mutex<Option<Entry>> (R254-003).\n  - The window is an Instant RECOVERY_WINDOW of 30 min (R254-002). After a daemon restart, remembered() rebuilds the entry from the latest seat.auth_recovery spine event; its wall-clock age is used only to spare.\n  - New Action::NotRestarted: the restart control is no longer live (queue.live_payloads of delivery-control:<seat> has no row with its msg_id) and the same incarnation reports again, so tell parent+primes it didn't take (/exit then `pij revive`) (R254-001). A Refused receipt from accept_control becomes Notify.\n  - decide(last, now: Instant, reporter: Incarnation, settled, free).\n  - recipients = live parent + designated prime of each project from try_holdings_of → watchdogs().project(p).prime_id, deduped, never the seat; machine singleton prime removed (R254-005).\n- http/auth_error.rs: the request now requires pid + proc_start; it must equal seat.proc, else 409 E-RS-AUTH-STALE (R254-004).\n- store.mjs sends {...this.tuple(), kind}; the store.test.mjs expectation is updated (F212 extension tests pass).\n\nTODO:\n1. Rewrite crates/daemon/src/auth_recovery_tests.rs for the new API, handle(services, seat, reporter: Incarnation{pid:4100, proc_start:7}, kind, now_ms). Tests:\n   - idle restart; busy notify; draft notify;\n   - same incarnation while the control is live → Pending;\n   - after claiming and acking the control job (queue.claim + ack Outcome::Done/Failed) → NotRestarted with a notice;\n   - new incarnation → Relogin, then Told;\n   - concurrent tokio::join! of two reports → exactly one Restart and one Pending, one control queued;\n   - a wall-clock jump (+2h now_ms) still Pending (monotonic);\n   - project prime told (insert projects row via services.store_pools[0] like idle_nudge_tests::the_projects_designated_prime_gets_the_fyi, plus a holding via watchdogs().record_assignment_committed), deduped against the parent;\n   - fresh Ledger (simulated daemon restart) + spine record → not a second Restart;\n   - update the decide() unit test to the Instant API.\n2. tests/copilot_compact.rs: report_lost_login must send pid 920_002, proc_start 9 (the copilot() fixture's proc). Add a stale-pid test (409, no control).\n3. Docs: pij-rs-api.md F212 section (request now has pid, proc_start; actions add not-restarted; window monotonic; recipients = parent + project primes); copilot-native-extension.md wording; D-F212-1 if needed.\n4. Build ONCE: `PIJ_SHARED_TARGET=<abs>/fleet-f212/target just shared-build -- fmt ... --then test -p pij-daemon --lib auth_recovery --then test -p pij-daemon --test copilot_compact`. fleet-f210/target was deleted at the PM's request, so it's a fresh build. Disk sits near the 25 GiB floor: check df first, never override, leave the rest to CI.\n5. biome format the .mjs files; just lint, just typecheck; `env -u NO_COLOR -u FORCE_COLOR harness checks --quick`; commit (Delivers: none / Fixes: F212); push; edit the PR body (round 2 section listing the R254 fixes and regression names); just pr-freeze 254; FINAL to pij-steady-otter.\n"
+		}
+	]
+}
