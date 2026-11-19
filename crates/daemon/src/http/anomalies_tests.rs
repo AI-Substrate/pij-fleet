@@ -91,6 +91,14 @@ impl Spine for GuardSpine {
     async fn all_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Vec<Event>> {
         self.inner.all_matching(seat, kinds).await
     }
+    async fn all_matching_after(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        after: Seq,
+    ) -> Result<Vec<Event>> {
+        self.inner.all_matching_after(seat, kinds, after).await
+    }
     async fn latest_matching_message(
         &self,
         seat: &SeatId,

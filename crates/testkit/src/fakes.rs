@@ -443,6 +443,34 @@ impl Spine for FakeSpine {
             .collect())
     }
 
+    async fn all_matching_after(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        after: Seq,
+    ) -> Result<Vec<Event>> {
+        if kinds.is_empty() {
+            return Err(PijError::Adapter {
+                adapter: "fake/spine".to_string(),
+                message: "all_matching_after requires at least one event kind".to_string(),
+            });
+        }
+        let state = self.state.lock().expect("fake spine mutex");
+        Ok(state
+            .events
+            .iter()
+            .filter(|(seq, _)| *seq > after)
+            .filter(|(_, event)| {
+                event.seat.as_ref() == Some(seat) && kinds.iter().any(|kind| *kind == event.kind)
+            })
+            .map(|(seq, event)| {
+                let mut event = event.clone();
+                event.seq = Some(*seq);
+                event
+            })
+            .collect())
+    }
+
     async fn latest_matching_message(
         &self,
         seat: &SeatId,
@@ -506,6 +534,7 @@ pub struct CountingSpine {
     inner: FakeSpine,
     latest_calls: AtomicUsize,
     tail_calls: AtomicUsize,
+    matching_rows: AtomicUsize,
     fail_on_tail: bool,
 }
 
@@ -516,8 +545,15 @@ impl CountingSpine {
             inner: FakeSpine::new(),
             latest_calls: AtomicUsize::new(0),
             tail_calls: AtomicUsize::new(0),
+            matching_rows: AtomicUsize::new(0),
             fail_on_tail: true,
         }
+    }
+
+    /// Rows returned by `all_matching` and `all_matching_after`: what a
+    /// projection read, which a bounded one keeps to what is new.
+    pub fn matching_rows(&self) -> usize {
+        self.matching_rows.load(Ordering::Relaxed)
     }
 
     /// Number of bounded latest-fact reads.
@@ -599,7 +635,21 @@ impl Spine for CountingSpine {
 
     async fn all_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Vec<Event>> {
         self.latest_calls.fetch_add(1, Ordering::Relaxed);
-        self.inner.all_matching(seat, kinds).await
+        let rows = self.inner.all_matching(seat, kinds).await?;
+        self.matching_rows.fetch_add(rows.len(), Ordering::Relaxed);
+        Ok(rows)
+    }
+
+    async fn all_matching_after(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        after: Seq,
+    ) -> Result<Vec<Event>> {
+        self.latest_calls.fetch_add(1, Ordering::Relaxed);
+        let rows = self.inner.all_matching_after(seat, kinds, after).await?;
+        self.matching_rows.fetch_add(rows.len(), Ordering::Relaxed);
+        Ok(rows)
     }
 
     async fn latest_matching_message(

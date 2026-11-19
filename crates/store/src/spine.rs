@@ -74,13 +74,29 @@ pub const TAIL_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_ev
 /// the seat has: 0.92 s for a seat with 3.59M `bg.lost` rows and a handful of
 /// deliveries, against 10 ms on the index (plan 188).
 pub fn all_matching_sql(kinds: usize) -> String {
+    matching_sql(kinds, false)
+}
+
+/// [`Spine::all_matching_after`]'s statement: [`all_matching_sql`] with
+/// `AND seq > ?{kinds + 2}`, so the `(seat, kind, seq)` index seeks past the
+/// caller's last read and the rows read are only the new ones (F209).
+pub fn all_matching_after_sql(kinds: usize) -> String {
+    matching_sql(kinds, true)
+}
+
+fn matching_sql(kinds: usize, after: bool) -> String {
     let placeholders = (2..kinds + 2)
         .map(|index| format!("?{index}"))
         .collect::<Vec<_>>()
         .join(", ");
+    let past = if after {
+        format!(" AND seq > ?{}", kinds + 2)
+    } else {
+        String::new()
+    };
     format!(
         "SELECT seq, v, at, kind, seat, payload FROM spine_events \
-         INDEXED BY spine_by_seat_kind WHERE seat = ?1 AND kind IN ({placeholders}) ORDER BY seq"
+         INDEXED BY spine_by_seat_kind WHERE seat = ?1 AND kind IN ({placeholders}){past} ORDER BY seq"
     )
 }
 
@@ -158,6 +174,49 @@ impl SqliteSpine {
     /// Wrap an open pool.
     pub fn new(pool: Pool<Sqlite>) -> Self {
         SqliteSpine { pool }
+    }
+
+    /// [`Spine::all_matching`], past `after` when given.
+    async fn matching(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        after: Option<Seq>,
+    ) -> Result<Vec<Event>> {
+        if kinds.is_empty() {
+            return Err(PijError::Adapter {
+                adapter: "store/spine".to_string(),
+                message: "all_matching requires at least one event kind".to_string(),
+            });
+        }
+        require_current_schema(&self.pool).await?;
+        let after = after
+            .map(|after| {
+                i64::try_from(after.0).map_err(|_| PijError::Adapter {
+                    adapter: "store/spine".to_string(),
+                    message: "all_matching_after cursor exceeds a signed 64-bit integer"
+                        .to_string(),
+                })
+            })
+            .transpose()?;
+        let sql = match after {
+            Some(_) => all_matching_after_sql(kinds.len()),
+            None => all_matching_sql(kinds.len()),
+        };
+        let mut query = sqlx::query(&sql).bind(seat.as_str());
+        for kind in kinds {
+            query = query.bind(*kind);
+        }
+        if let Some(after) = after {
+            query = query.bind(after);
+        }
+        query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?
+            .iter()
+            .map(decode_event)
+            .collect()
     }
 }
 
@@ -240,25 +299,16 @@ impl Spine for SqliteSpine {
     }
 
     async fn all_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Vec<Event>> {
-        if kinds.is_empty() {
-            return Err(PijError::Adapter {
-                adapter: "store/spine".to_string(),
-                message: "all_matching requires at least one event kind".to_string(),
-            });
-        }
-        require_current_schema(&self.pool).await?;
-        let sql = all_matching_sql(kinds.len());
-        let mut query = sqlx::query(&sql).bind(seat.as_str());
-        for kind in kinds {
-            query = query.bind(*kind);
-        }
-        query
-            .fetch_all(&self.pool)
-            .await
-            .map_err(adapter_error)?
-            .iter()
-            .map(decode_event)
-            .collect()
+        self.matching(seat, kinds, None).await
+    }
+
+    async fn all_matching_after(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        after: Seq,
+    ) -> Result<Vec<Event>> {
+        self.matching(seat, kinds, Some(after)).await
     }
 
     async fn tail_page(&self, since: Seq, limit: usize) -> Result<Vec<Event>> {

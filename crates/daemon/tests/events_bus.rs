@@ -155,6 +155,25 @@ impl Spine for TestSpine {
             .cloned()
             .collect())
     }
+    async fn all_matching_after(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        after: Seq,
+    ) -> Result<Vec<Event>> {
+        assert!(!kinds.is_empty(), "test spine kinds must be non-empty");
+        Ok(self
+            .events
+            .lock()
+            .expect("test spine mutex")
+            .iter()
+            .filter(|event| event.seq.is_some_and(|seq| seq > after))
+            .filter(|event| {
+                event.seat.as_ref() == Some(seat) && kinds.iter().any(|kind| *kind == event.kind)
+            })
+            .cloned()
+            .collect())
+    }
 
     async fn latest_matching_message(
         &self,
