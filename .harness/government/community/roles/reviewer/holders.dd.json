@@ -1750,7 +1750,10 @@
 					"harness_session": "ae2f2add-28cb-4bf5-9190-98563a036ea2",
 					"instance_key": "250",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #250 merged (f99a1f9e03d5)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-near-coral",
+					"to": "2026-11-19T02:05:31.379Z",
 					"why": "F208 #250 correctness (Copilot gpt-6.1-sol)"
 				}
 			]
