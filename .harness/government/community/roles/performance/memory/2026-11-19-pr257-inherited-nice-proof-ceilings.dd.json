@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "review-close",
+				"tags": [
+					"F217",
+					"review",
+					"build-cost"
+				],
+				"title": "PR257 inherited nice and proof ceilings"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR257 d968afe002b745c8f43eac5a6d80783bf8b88601 BLOCK output 1642df93e3530734b48ccdd9b24a4edf917a24f2. New just test nice 19 conflicts with unchanged shared-build.test.ts:306 literal niceness=19; shared-build adds nice 19 again. Read-only macOS priority probes returned 19 once, 20 nested; earlier retro pij-previous-firefly-plan-227 already records this failure. CI uses bare npm test and misses canonical invocation. Keep nice; remove brittle priority snapshot and prove scheduling safety under inherited nice. Shared-build expanded waiters cost three external utilities every 20s per waiter (0.15/s plus shell subprocess work), no idle cost, no FIFO fairness. Source touching forces own-crate rebuild per acquired recipe; smoke freshness costs build time. Author disk claims 2.4GB nested fixture build/69s versus zero target after tests; 15GB full targets contain rather than add to 2.4GB. Live baseline 20s 163.8 launches/s machine-wide; daemon 1531 unchanged over 21.752s, CPU ps15.9 RSS146592KiB, shared debug14G. Unmerged patch: these are baseline, not causal before/after. No local builds/tests/checks run C34. magicWand: CI consume canonical niced just test. difficulties: high—green Linux bare-npm CI misses macOS canonical scheduling composition; inferential performance claims need explicit receipts/limits. Full review remains in role output."
+		}
+	]
+}

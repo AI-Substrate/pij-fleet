@@ -28,4 +28,5 @@
 - [2026-11-19 F214 final Warn policy and sole after-deploy ownership](2026-11-19-f214-r2-warn-after-deploy-owner.dd.md): Before running the post-deploy F214 audit or interpreting final PR256 Warn replay (f214, cache-ttl, audit, round2, after-deploy)
 - [2026-11-19 F214 TTL guard audit and after-deploy debt](2026-11-19-f214-ttl-guard-audit-after-deploy.dd.md): Before reviewing cache-TTL guard cost or running the F214 after-deploy audit for PR 256 (f214, cache-ttl, audit, cost, after-deploy)
 - [2026-11-19 Historical cost cohorts and achievable counterfactuals](2026-11-19-historical-cost-cohorts-and-achievable.dd.md): Before reviewing historical cost forecasts, cache TTL simulations, or restart-cost claims (model-cost, cache-proxy, counterfactuals, proof)
+- [2026-11-19 PR257 inherited nice and proof ceilings](2026-11-19-pr257-inherited-nice-proof-ceilings.dd.md): review-close (F217, review, build-cost)
 <!-- /pij:generated -->
