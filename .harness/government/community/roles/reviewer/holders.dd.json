@@ -2136,6 +2136,16 @@
 					"seat": "pij-functional-pony",
 					"to": "2026-11-19T23:24:11.433Z",
 					"why": "#274 one-line SDK record, after #273"
+				},
+				{
+					"assigned_by": "pij-cultural-falcon",
+					"from": "2026-11-19T23:27:18.078Z",
+					"harness": "omp",
+					"harness_session": "01a1f622-6f3a-7307-8a97-343ba234ce62",
+					"instance_key": "f273-proof",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-reliable-meerkat",
+					"why": "F193 #273 live proof (throwaway)"
 				}
 			]
 		}
