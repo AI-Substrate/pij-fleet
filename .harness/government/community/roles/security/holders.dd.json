@@ -280,7 +280,10 @@
 					"harness_session": "7297da28-241a-4fd5-bc53-ea2548577214",
 					"instance_key": "251",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #251 merged (66c82a4bb358)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-formidable-vicuna",
+					"to": "2026-11-19T02:34:41.186Z",
 					"why": "F209 part 2 #251 security"
 				}
 			]

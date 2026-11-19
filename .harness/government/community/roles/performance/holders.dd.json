@@ -163,7 +163,10 @@
 					"harness_session": "01a1f15f-842f-773e-94e3-5bc54ec11dcb",
 					"instance_key": "251",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #251 merged (66c82a4bb358)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-vast-silkworm",
+					"to": "2026-11-19T02:34:41.186Z",
 					"why": "F209 part 2 #251 cost (cards history read)"
 				}
 			]
