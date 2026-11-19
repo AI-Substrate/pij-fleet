@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f268-53fa-7c22-9f2d-3e0cbfa1cb91",
+				"date": "2026-11-19",
+				"head": "c270201970dbd55bf1f11c9ed3d7d2491c5be8e6",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:260",
+				"writer": "pij-compulsory-junglefowl",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just test harness/scripts/omp-config-check.test.ts harness/scripts/link-global.test.ts skills/flow-pair/test/cli-learning.test.ts",
+					"exit_code": 0,
+					"log": "Niced run with FORCE_COLOR=1 NO_COLOR=1: all 47 tests pass; no cargo, builds or target created"
+				},
+				{
+					"command": "ompConfigFindings(privateFixture, noOmp); omp config get worktree.clone --json",
+					"exit_code": 0,
+					"log": "Private fixture worktree.unrelated.clone:false: static findings [] but actual installed OMP value true; fixture removed"
+				},
+				{
+					"command": "just pr-freeze 260",
+					"exit_code": 0,
+					"log": "FINAL at c270201970dbd55bf1f11c9ed3d7d2491c5be8e6 with latest checks passing"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #260: round-1 correctness review\n\nHead: c270201970dbd55bf1f11c9ed3d7d2491c5be8e6\nBase: 9543d9ada76614b59ffd06507d46c68497cbd4b8\nVerdict: BLOCK\n\n## R260-001: the static sensor accepts clone under the wrong parent\n\n`harness/scripts/omp-config-check.ts:22-34` stays in the worktree block until the next unindented line, then accepts clone at any whitespace depth. It consequently accepts:\n\n```yaml\nworktree:\n  unrelated:\n    clone: false\n```\n\nThis sets worktree.unrelated.clone, not worktree.clone. Reproduced without editing the checkout:\n\n- setsCloneFalse on this input returned true.\n- ompConfigFindings against a private fixture, with the no-OMP port used to model CI, returned [].\n- The actual installed OMP, queried from the same fixture with config get worktree.clone --json, returned value: true.\n\nThus an ordinary wrongly nested config edit can restore cloning while the static CI sensor still reports success. The live half catches it where OMP is installed, but CI explicitly lacks OMP, so that does not repair the static half's stated guarantee.\n\nRestrict the match to a direct child of worktree, rather than any descendant, and add this one negative fixture. No general YAML framework or dependency expansion is required. Existing missing-file, true-value and commented-out-key cases work; this is the uncovered parent/child case, not a request for exhaustive format support. Performance reviewer pij-public-cobra independently reported the same parser defect.\n\n## The cwd limitation does not break the normal root-session Git path\n\nVerified against the installed OMP source, not inferred from a config query in a different directory:\n\n- src/tools/bash.ts:1134-1135 consults cfgWorktreeClone.get(this.session.settings) before calling rewriteGitWorktreeAdd.\n- The command's own cwd is resolved later. The installed rewrite helper only rewrites when invoked; it does not independently reload settings.\n- Therefore, a session started at the repo root with clone=false does not rewrite git worktree add, even when the bash command runs in crates/ or uses Git's -C option. Plain Git creates a plain worktree.\n- An explicitly invoked omp worktree add is different: src/cli/worktree-cli.ts:103-114 initializes Settings with that invocation's effective cwd and passes cfgWorktreeClone to worktreeAdd at lines 150-154.\n\nAn OMP session initialized below the project root, or an explicit OMP worktree invocation there, still needs the documented root-scope limitation respected. That is not a second blocker for the stated root-started-seat workflow. The committed config itself is correctly nested and effective at the repo root today.\n\n## F218 and global linking\n\nThe F218 change removes only FORCE_COLOR and NO_COLOR from the subprocess environment. It does not discard CLI stderr or relax the stdout/status/error assertions. With both variables present on the test runner, all three cli-learning cases passed, including the empty-stderr success case and the invalid-cluster stderr assertion. The existing npm-warning filter is unchanged.\n\nAll 37 link-global cases passed with the new project config in their fixture. The explicit config.yml non-link assertion and doctor check passed. The production linker remains unchanged and links named assets rather than enumerating .omp, so the new project config is not promoted into the global OMP configuration.\n\nThe project setting is a policy governing creation, not a deletion brake. Nothing in the diff deletes existing artifacts or changes the global clone setting.\n\n## Verification\n\nCommands ran under /usr/bin/nice -n 19. The linked-worktree dependency helper was run before the TS recipe and tests; no builds or cargo were run.\n\n| Check | Result |\n|---|---|\n| just omp-config-check | passed against the committed file and installed OMP |\n| FORCE_COLOR=1 NO_COLOR=1 just test harness/scripts/omp-config-check.test.ts harness/scripts/link-global.test.ts skills/flow-pair/test/cli-learning.test.ts | 3 files, 47 tests passed: 7 sensor, 37 link-global, 3 CLI-learning |\n| Static direct clone:false / commented clone:false probes | true / false, as intended |\n| Static wrongly nested clone:false probe and no-OMP findings | incorrectly true / [] |\n| Real OMP config get against the wrongly nested private fixture | worktree.clone=true |\n| /usr/bin/time -p just omp-config-check, niced | passed; real 0.60 s, user 0.58 s, sys 0.09 s |\n| git diff --check origin/main...HEAD | passed |\n| CI run 44468882901 | successful at the exact reviewed head; both Node jobs and Rust gates passed; Delivers also passed |\n| just pr-freeze 260 | FINAL at the requested head, CLEAN, latest checks passing |\n\nNo real worktrees or clones were created for this review. The private config probe was removed afterward. Tracked checkout files were not edited; the version under review remains unchanged and target/ remains absent.\n\n## Cost, launch boundary and harness feedback\n\nThe new live sensor performs one fixed-argument omp config get per stage invocation, through execFileSync without a shell, from a resolved repo-root cwd. It intentionally discovers omp on inherited PATH; absence leaves the static check in force, whereas other launch errors and nonboolean JSON fail rather than becoming false. The new stage is on-demand in checks/self-check, not heavy and therefore included in quick checks. It adds no daemon loop, hook, timer or per-seat polling rate: idle steady-state launch cost is zero. The measured 0.60-second stage is suitable for the quick path.\n\nThe committed config and new tests contain no account names, secrets or machine-specific home paths. Review probes queried only the one boolean setting and did not edit global OMP configuration.\n\nmagicWand: a direct-child negative fixture that makes the static CI proof agree with the real setting being protected.\n\ndifficulties: accepting a matching key anywhere under a block looked like semantic validation, but a live query of the same small fixture proved that it protected a different key.\n"
+		}
+	]
+}
