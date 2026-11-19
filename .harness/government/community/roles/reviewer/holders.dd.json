@@ -1999,7 +1999,10 @@
 					"harness_session": "a1942b0f-0653-4e84-b2a7-f9fd85f7488d",
 					"instance_key": "269",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #269 merged (7a540577ed92)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-uniform-butterfly",
+					"to": "2026-11-19T09:43:14.067Z",
 					"why": "F224 register-path launcher escapes the F197 brake #269"
 				}
 			]
