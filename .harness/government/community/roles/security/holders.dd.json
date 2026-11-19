@@ -595,6 +595,16 @@
 					"seat": "pij-distinctive-wolf",
 					"to": "2026-11-19T23:24:11.433Z",
 					"why": "#274 one-line SDK record, after #273"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T23:29:38.788Z",
+					"harness": "copilot",
+					"harness_session": "b9fe94d7-4c83-4917-b3c5-04a5c551f264",
+					"instance_key": "275",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-remarkable-horse",
+					"why": "#275 F200 security verdict, fresh seat"
 				}
 			]
 		}
