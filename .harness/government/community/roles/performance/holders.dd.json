@@ -206,6 +206,16 @@
 					"seat": "pij-public-cobra",
 					"to": "2026-11-19T05:46:26.952Z",
 					"why": "F217 #257 build cost and disk (OMP gpt-6.1-sol)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T05:47:57.986Z",
+					"harness": "omp",
+					"harness_session": "01a1f247-4f29-751d-8849-f77c26569f15",
+					"instance_key": "259",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-public-cobra",
+					"why": "D-F208-1 real-SDK registration canary #259 (adds on-demand process launches to doctor/self-check/harness checks)"
 				}
 			]
 		}
