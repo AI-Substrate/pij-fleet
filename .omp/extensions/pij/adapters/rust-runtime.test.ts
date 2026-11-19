@@ -91,6 +91,7 @@ async function bootPushedEvent(
 	const sends: Array<Record<string, unknown>> = [];
 	const sendSignals: Array<AbortSignal | null | undefined> = [];
 	const claimRequests: string[] = [];
+	const activities: string[] = [];
 	let eventStreams = 0;
 	const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
 		const path = new URL(String(url)).pathname;
@@ -137,7 +138,11 @@ async function bootPushedEvent(
 			return envelope("pij send", { msg_id: sent.msg_id, ...sendReceipt });
 		}
 		if (path === "/v1/state") return envelope("pij state", { id: registeredId, pendingFyis: 0 });
-		if (path === "/v1/activity") return envelope("pij activity", { changed: false });
+		if (path === "/v1/activity") {
+			const posted = JSON.parse(String(init?.body)) as Record<string, unknown>;
+			activities.push(String(posted.state));
+			return envelope("pij activity", { changed: true });
+		}
 		throw new Error(`unexpected path ${path}`);
 	});
 	const deps: DaemonHttpDeps = {
@@ -165,7 +170,7 @@ async function bootPushedEvent(
 		resetRuntimeState: true,
 		reason: "startup",
 	});
-	return { acknowledgements, claimRequests, runtime, sends, sendSignals };
+	return { acknowledgements, activities, claimRequests, runtime, sends, sendSignals };
 }
 
 function announceRuntime(
@@ -293,6 +298,28 @@ describe("RustRuntimeSession", () => {
 			expect(pi.compactCount).toBe(command === "compact" ? 1 : 0);
 			expect(pi.controlCalls).toEqual(command === "compact" ? [] : [command]);
 			expect(pi.injects.some(({ text }) => text.includes(`/${command}`))).toBe(false);
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
+
+	// F207: OMP's turn_end closes one model/tool iteration, and turn_start opens
+	// the next ms later (94% of a day's OMP idles flipped back within 1 s). The
+	// agent is still working; only agent_end without a continuation is idle.
+	it("publishes no idle at a turn_end between iterations, and idle at agent_end", async () => {
+		const pi = new FakePiRuntime();
+		const { runtime, activities } = await bootPushedEvent(PUSHED_EVENT_WIRE, pi, []);
+		try {
+			runtime.onTurnStart("2026-11-19T00:02:05.000Z");
+			runtime.onTurnEnd();
+			runtime.onTurnStart("2026-11-19T00:02:06.000Z");
+			runtime.onTurnEnd();
+			runtime.onAgentEnd(true);
+			await vi.waitFor(() => expect(activities).toContain("working"));
+			expect(activities).not.toContain("idle");
+			runtime.onAgentEnd(false);
+			await vi.waitFor(() => expect(activities.at(-1)).toBe("idle"));
+			expect(activities.filter((state) => state === "idle")).toHaveLength(1);
 		} finally {
 			runtime.shutdown("quit");
 		}

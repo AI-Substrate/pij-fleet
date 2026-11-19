@@ -2210,19 +2210,22 @@ export class NativeBridge {
 	 * Foreground turns only: sub-agent turns never flip the seat's busy/idle state.
 	 * A HydraFusion turn emits no root turn_start until its commit, so its routing
 	 * is the start of work (plan 169).
+	 *
+	 * F207: a root `assistant.turn_end` is NOT idle. Copilot emits it at every
+	 * tool boundary and starts the next phase ms later (wallaby and opossum at
+	 * 00:02:06Z: idle, then working 4 ms after), and that blip closed two seats
+	 * mid memory turn. The turn ends at `session.idle`, which Copilot emits once
+	 * its run is no longer processing.
 	 */
 	observeActivity(event) {
 		if (event?.agentId) return;
 		if (event?.type === "session.usage_info") this.observeContext(event.data);
-		// A fused turn that ends without a commit has no root turn_end, so its
-		// aggregate completion and abort end the work too. A failed route does not:
-		// its fallback model still runs the turn.
+		// A fused turn that ends without a commit ends at its aggregate completion
+		// or abort. A failed route does not: its fallback model still runs the turn.
 		const state =
 			event?.type === "assistant.turn_start" || event?.type === "session.fusion_route_started"
 				? "working"
-				: ["assistant.turn_end", "session.idle", "session.fusion_completed", "abort"].includes(
-							event?.type,
-						)
+				: ["session.idle", "session.fusion_completed", "abort"].includes(event?.type)
 					? "idle"
 					: undefined;
 		if (!state || state === this.activityState || this.activityUnsupported) return;

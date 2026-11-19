@@ -1454,13 +1454,13 @@ test("activity: foreground turns publish working then idle in order; failures ne
 
 	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
 	f.event({ type: "assistant.turn_end", id: "sub-end", agentId: "sub-agent-9", data: {} });
-	f.event({ type: "assistant.turn_end", id: "turn-1-end", data: {} });
+	f.event({ type: "session.idle", id: "idle-1", data: {} });
 	await flush();
 	assert.deepEqual(published, ["working"], "idle waits for the in-flight working publication");
 	gates[0].resolve("ok");
 	await flush();
 	assert.deepEqual(published, ["working", "idle"]);
-	f.event({ type: "session.idle", id: "idle-1", data: {} });
+	f.event({ type: "session.idle", id: "idle-2", data: {} });
 	await flush();
 	assert.deepEqual(published, ["working", "idle"], "an unchanged state is not republished");
 
@@ -1477,10 +1477,37 @@ test("activity: foreground turns publish working then idle in order; failures ne
 	await flush();
 	gates[2].resolve(httpError(404));
 	await flush();
-	f.event({ type: "assistant.turn_end", id: "turn-2-end", data: {} });
+	f.event({ type: "session.idle", id: "turn-2-idle", data: {} });
 	f.event({ type: "assistant.turn_start", id: "turn-3", data: {} });
 	await flush();
 	assert.deepEqual(published, ["working", "idle", "working"]);
+	f.bridge.stop();
+	await run;
+});
+
+test("F207: a tool boundary (root assistant.turn_end, then turn_start) publishes no idle; session.idle does", async () => {
+	const f = fixture();
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	const published = [];
+	const request = f.client.request;
+	f.client.request = (path, body, signal) => {
+		if (path !== "/v1/activity") return request(path, body, signal);
+		published.push(body.state);
+		return Promise.resolve({ seat: body.seat, state: body.state, changed: true });
+	};
+	// wallaby at 00:02:06Z: a shell tool finished, then Copilot's per-tool boundary.
+	f.event({ type: "assistant.turn_start", id: "phase-1", data: {} });
+	f.event({ type: "assistant.turn_end", id: "phase-1-end", data: {} });
+	f.event({ type: "assistant.turn_start", id: "phase-2", data: {} });
+	await flush();
+	assert.deepEqual(published, ["working"], "no idle between a tool's phases");
+	f.event({ type: "assistant.turn_end", id: "phase-2-end", data: {} });
+	await flush();
+	assert.deepEqual(published, ["working"], "a root turn_end alone is not the end of the turn");
+	f.event({ type: "session.idle", id: "session-idle", data: {} });
+	await flush();
+	assert.deepEqual(published, ["working", "idle"]);
 	f.bridge.stop();
 	await run;
 });
@@ -1534,6 +1561,7 @@ test("activity: a HydraFusion turn is working from routing, not only at its comm
 	assert.deepEqual(states(), ["working"]);
 	f.event({ type: "assistant.turn_start", id: "commit-start", data: {} });
 	f.event({ type: "assistant.turn_end", id: "commit-end", data: {} });
+	f.event({ type: "session.idle", id: "commit-idle", data: {} });
 	await flush();
 	assert.deepEqual(states(), ["working", "idle"]);
 });
@@ -1604,7 +1632,7 @@ test("activity: the latest session.usage_info size rides the next post with the 
 	await flush();
 	usage("u-sub", 9, { agentId: "sub-agent-9" });
 	usage("u-1", 640000);
-	f.event({ type: "assistant.turn_end", id: "turn-1-end", data: {} });
+	f.event({ type: "session.idle", id: "turn-1-idle", data: {} });
 	await flush();
 	assert.deepEqual(sent(), [
 		["working", undefined, undefined, undefined],
@@ -1615,7 +1643,7 @@ test("activity: the latest session.usage_info size rides the next post with the 
 	refuseContext = true;
 	f.event({ type: "assistant.turn_start", id: "turn-2", data: {} });
 	await flush();
-	f.event({ type: "assistant.turn_end", id: "turn-2-end", data: {} });
+	f.event({ type: "session.idle", id: "turn-2-idle", data: {} });
 	await flush();
 	assert.deepEqual(sent().slice(2), [
 		["working", 640000, 952000, "grant-1"],
@@ -1648,7 +1676,7 @@ test("activity: working and idle still publish while receiving is held", async (
 	await flush();
 	assert.equal(f.reports.filter(({ kind }) => kind === "receive-held").length, 1);
 	f.event({ type: "assistant.turn_start", id: "held-turn", data: {} });
-	f.event({ type: "assistant.turn_end", id: "held-turn-end", data: {} });
+	f.event({ type: "session.idle", id: "held-turn-idle", data: {} });
 	await flush();
 	assert.deepEqual(states(), ["working", "idle"], "the seat must not read working while idle");
 });
@@ -1667,7 +1695,7 @@ test("activity: stop settles a seat left working to idle once, outside the stopp
 test("activity: stop publishes nothing for a seat already idle", async (t) => {
 	const { f, states } = await activityBridge(t);
 	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
-	f.event({ type: "assistant.turn_end", id: "turn-1-end", data: {} });
+	f.event({ type: "session.idle", id: "turn-1-idle", data: {} });
 	await flush();
 	await f.bridge.stop();
 	assert.deepEqual(states(), ["working", "idle"]);

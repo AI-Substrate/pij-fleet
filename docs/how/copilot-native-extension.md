@@ -143,8 +143,10 @@ early completion is not. Uncommitted phase output is never the final message,
 and the next queued Pij message waits.
 
 The seat publishes `working` from `session.fusion_route_started`, because the
-phases emit no root turn start, and `idle` at a root turn end, `session.idle`,
-`abort` or `session.fusion_completed`. A failed route stays `working`: its
+phases emit no root turn start, and `idle` at `session.idle`, `abort` or
+`session.fusion_completed`. Never at a root `assistant.turn_end` (F207): Copilot
+emits one at every tool boundary and the next `assistant.turn_start` ms later,
+so it is not the end of the turn. A failed route stays `working`: its
 fallback model still runs the turn. The `critique` pattern was not observed in
 the plan-169 canary; synthetic draft → critic → revision replay passes.
 

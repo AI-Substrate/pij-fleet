@@ -126,12 +126,36 @@ pub enum Action {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum Ended {
-    /// The seat's turn ended after it got the prompt.
+    /// The seat's turn ended after it got the prompt: an idle that stayed
+    /// idle for [`SETTLE`].
     TurnEnd,
+    /// The seat wrote a memory note (F207): what the turn asked for.
+    NoteWritten,
     /// [`BOUND`] passed first; the action proceeded without the turn.
     Bound,
     /// The prompt was refused or could not be sent; the action proceeded.
     Undelivered,
+}
+
+/// How long an idle must stay idle before it ends a memory turn (F207).
+/// Copilot and OMP publish idle at every tool boundary and working again a
+/// few ms later (Copilot's `assistant.turn_end`/`turn_start`); on the live
+/// spine, 83% of Copilot idles and 94% of OMP idles over a day flipped back
+/// within 1 s, and nearly all the rest within 5 s. A blip never closes a
+/// seat; a real end costs this much more wait.
+pub const SETTLE: Duration = Duration::from_secs(5);
+
+/// How long after its own held close a seat may still `pij directory memory
+/// add`, from its own pane and live process (F207): a note it was writing as
+/// the close landed still lands. Only that verb; nothing else is authorized.
+pub const NOTE_GRACE: Duration = Duration::from_secs(120);
+
+/// A seat its own held close has just tombstoned, for [`NOTE_GRACE`].
+#[derive(Clone, Debug)]
+pub struct NoteGrace {
+    seat: SeatId,
+    proc: ProcIdentity,
+    until: Instant,
 }
 
 /// One seat's role holding, as the prompt names it.
@@ -336,6 +360,9 @@ pub(crate) fn hold(
         let (mut report, late) =
             run(&state, &seat.id, turn, action, bound, held_at, deadline).await;
         let (then, closed) = proceed(&state, &seat, then, report.note.as_deref()).await;
+        if closed.is_some() {
+            grant_note_grace(&state, &seat);
+        }
         // Free the seat before the event is visible, so a reader of the event
         // can always take the next turn.
         drop(pending);
@@ -349,6 +376,64 @@ pub(crate) fn hold(
         record(&state, &seat.id, &report).await;
     });
     Ok(answer)
+}
+
+/// F207: the seat a held close just tombstoned may still write its memory
+/// note from its own pane and live process for [`NOTE_GRACE`]. Expired
+/// entries go as each new one comes, so the map holds at most the closes of
+/// the last [`NOTE_GRACE`].
+fn grant_note_grace(state: &AppState, seat: &SeatDescriptor) {
+    let (Some(pane), Some(proc)) = (seat.pane.clone(), seat.proc) else {
+        return;
+    };
+    let now = Instant::now();
+    let mut graces = state
+        .services
+        .memory_note_grace
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    graces.retain(|_, grace| grace.until > now);
+    graces.insert(
+        pane,
+        NoteGrace {
+            seat: seat.id.clone(),
+            proc,
+            until: now + NOTE_GRACE,
+        },
+    );
+}
+
+/// The seat whose own held close tombstoned it moments ago, when the caller
+/// is in its pane, asserts no other id, and the seat's recorded process is
+/// still alive with the same start (F207). `pij directory memory add` alone
+/// asks this: a narrow authority, so the closed seat can finish the note its
+/// close asked for, and nothing else.
+pub(crate) async fn note_grace(
+    state: &AppState,
+    pane: Option<&str>,
+    asserted: Option<&str>,
+) -> Option<SeatId> {
+    let grace = {
+        let graces = state
+            .services
+            .memory_note_grace
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        graces.get(pane?)?.clone()
+    };
+    if grace.until <= Instant::now()
+        || asserted.is_some_and(|asserted| asserted != grace.seat.as_str())
+    {
+        return None;
+    }
+    let start = state
+        .services
+        .liveness
+        .proc_start(grace.proc.pid)
+        .await
+        .ok()
+        .flatten()?;
+    (start == grace.proc.proc_start).then_some(grace.seat)
 }
 
 /// The seats with a memory turn pending, one entry each; the entry goes when
@@ -818,6 +903,9 @@ pub(crate) fn prompt(action: Action, turn: &Turn, bound: Duration) -> String {
 pub(crate) struct Watch {
     prompt: String,
     delivered: bool,
+    /// The seat's last activity after delivery was idle: the turn ends once
+    /// it has stayed idle for [`SETTLE`] (F207).
+    idle: bool,
 }
 
 impl Watch {
@@ -828,11 +916,13 @@ impl Watch {
         Self {
             prompt: prompt.to_string(),
             delivered: false,
+            idle: false,
         }
     }
 
-    /// `Some` once `event` ends the turn: the first idle after the prompt is
-    /// delivered, or the prompt's refusal.
+    /// `Some` once `event` ends the turn: the seat's memory note, or the
+    /// prompt's refusal. An idle after delivery only starts the settle
+    /// ([`Self::settling`]); a working cancels it.
     pub(crate) fn on(&mut self, event: &Event) -> Option<Ended> {
         let payload: Value = serde_json::from_str(&event.payload).unwrap_or(Value::Null);
         match event.kind.as_str() {
@@ -844,9 +934,19 @@ impl Watch {
                 }
                 None
             }
-            ACTIVITY if self.delivered && payload["state"] == "idle" => Some(Ended::TurnEnd),
+            NOTE_EVENT_KIND => Some(Ended::NoteWritten),
+            ACTIVITY if self.delivered => {
+                self.idle = payload["state"] == "idle";
+                None
+            }
             _ => None,
         }
+    }
+
+    /// Whether the seat is idle after the prompt's delivery, so the turn ends
+    /// if it stays that way for [`SETTLE`].
+    pub(crate) fn settling(&self) -> bool {
+        self.delivered && self.idle
     }
 }
 
@@ -881,10 +981,11 @@ async fn run(
     deadline: tokio::time::Instant,
 ) -> (Report, Option<Admission>) {
     let services = &state.services;
-    // Subscribed before the send, so neither fact can slip past.
-    let mut events = services
-        .event_bus
-        .subscribe_live(EventFilter::kinds([OUTCOME_EVENT_KIND, ACTIVITY]).for_seat(seat.clone()));
+    // Subscribed before the send, so no fact can slip past: the prompt's
+    // delivery, the seat's activity, and its memory note (F207).
+    let mut events = services.event_bus.subscribe_live(
+        EventFilter::kinds([OUTCOME_EVENT_KIND, ACTIVITY, NOTE_EVENT_KIND]).for_seat(seat.clone()),
+    );
     let at = now_ms();
     let msg_id = format!("memory-turn-{seat}-{at}");
     // Admission runs under the same deadline as the wait: a transport hold
@@ -931,8 +1032,11 @@ async fn run(
                 )
             } else {
                 let mut watch = Watch::new(&msg_id);
+                // When an idle that has held since then ends the turn (F207).
+                let mut settles: Option<tokio::time::Instant> = None;
                 loop {
-                    match tokio::time::timeout_at(deadline, events.next()).await {
+                    let wake = settles.map_or(deadline, |settles| settles.min(deadline));
+                    match tokio::time::timeout_at(wake, events.next()).await {
                         Ok(Some(event)) => {
                             if let Some(ended) = watch.on(&event) {
                                 break (
@@ -941,6 +1045,17 @@ async fn run(
                                         .then(|| "the seat refused the memory prompt".to_string()),
                                 );
                             }
+                            settles = if watch.settling() {
+                                settles.or_else(|| {
+                                    tokio::time::Instant::now()
+                                        .checked_add(services.memory_turn_settle)
+                                })
+                            } else {
+                                None
+                            };
+                        }
+                        Err(_) if settles.is_some_and(|settles| settles < deadline) => {
+                            break (Ended::TurnEnd, None);
                         }
                         Ok(None) | Err(_) => break (Ended::Bound, None),
                     }
@@ -950,7 +1065,7 @@ async fn run(
     };
     let waited_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     let note = match ended {
-        Ended::TurnEnd => None,
+        Ended::TurnEnd | Ended::NoteWritten => None,
         Ended::Bound => Some(format!(
             "the seat's turn did not end within {}s{}; the {} proceeded without its memory turn",
             bound.as_secs(),
@@ -1057,12 +1172,13 @@ mod tests {
     }
 
     #[test]
-    fn the_turn_ends_on_the_first_idle_after_the_prompt_is_delivered() {
+    fn the_turn_settles_on_an_idle_after_the_prompt_is_delivered() {
         let mut watch = Watch::new("p");
         let idle = event(ACTIVITY, json!({"state": "idle"}));
-        assert_eq!(
-            watch.on(&idle),
-            None,
+        let working = event(ACTIVITY, json!({"state": "working"}));
+        assert_eq!(watch.on(&idle), None);
+        assert!(
+            !watch.settling(),
             "an idle before delivery is the previous turn"
         );
         let queued = event(
@@ -1075,9 +1191,9 @@ mod tests {
             json!({"msg_id": "x", "outcome": {"outcome": "delivered"}}),
         );
         assert_eq!(watch.on(&other), None);
-        assert_eq!(
-            watch.on(&idle),
-            None,
+        assert_eq!(watch.on(&idle), None);
+        assert!(
+            !watch.settling(),
             "another message's delivery is not the prompt's"
         );
         let delivered = event(
@@ -1085,11 +1201,26 @@ mod tests {
             json!({"msg_id": "p", "outcome": {"outcome": "delivered", "origin": "x"}}),
         );
         assert_eq!(watch.on(&delivered), None);
+        assert_eq!(watch.on(&working), None);
+        assert!(!watch.settling());
         assert_eq!(
-            watch.on(&event(ACTIVITY, json!({"state": "working"}))),
-            None
+            watch.on(&idle),
+            None,
+            "an idle settles, it never ends at once"
         );
-        assert_eq!(watch.on(&idle), Some(Ended::TurnEnd));
+        assert!(watch.settling());
+        assert_eq!(watch.on(&working), None);
+        assert!(!watch.settling(), "F207: a working cancels the settle");
+    }
+
+    /// F207: the seat's memory note ends its turn at once, delivered or not.
+    #[test]
+    fn a_memory_note_ends_the_turn() {
+        let note = event(
+            NOTE_EVENT_KIND,
+            json!({"project": "fleet", "role": "pm-001"}),
+        );
+        assert_eq!(Watch::new("p").on(&note), Some(Ended::NoteWritten));
     }
 
     #[test]
@@ -1113,8 +1244,10 @@ mod tests {
             json!({"msg_id": "p", "outcome": {"outcome": "delivered", "origin": "injected_to_transport"}}),
         );
         assert_eq!(watch.on(&idle), None, "the old turn's idle");
+        assert!(!watch.settling(), "the old turn's idle");
         assert_eq!(watch.on(&delivered), None);
-        assert_eq!(watch.on(&idle), Some(Ended::TurnEnd), "the prompt's turn");
+        assert_eq!(watch.on(&idle), None);
+        assert!(watch.settling(), "the prompt's turn");
     }
 
     #[test]

@@ -229,6 +229,14 @@ pub struct Services {
     pub memory_turns: Arc<
         std::sync::Mutex<std::collections::BTreeMap<String, crate::http::memory_turn::PendingTurn>>,
     >,
+    /// How long an idle must hold before it ends a memory turn (F207):
+    /// [`http::memory_turn::SETTLE`]; tests shorten it.
+    pub memory_turn_settle: std::time::Duration,
+    /// Seats a held close has just tombstoned, by pane: each may still write
+    /// its memory note for [`http::memory_turn::NOTE_GRACE`] (F207).
+    pub memory_note_grace: Arc<
+        std::sync::Mutex<std::collections::BTreeMap<String, crate::http::memory_turn::NoteGrace>>,
+    >,
     /// Whether this daemon is running entirely on fakes.
     pub offline: bool,
     /// The cache-proxy status client and watch memory (plan 229); its URL is
@@ -699,6 +707,8 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
             bound
         },
         memory_turns: Arc::default(),
+        memory_turn_settle: http::memory_turn::SETTLE,
+        memory_note_grace: Arc::default(),
         offline: config.is_fully_offline(),
         cache_proxy: Arc::new(cache_proxy::CacheProxy::from_env()),
     };
