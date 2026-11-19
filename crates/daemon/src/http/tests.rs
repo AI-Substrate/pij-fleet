@@ -1393,7 +1393,7 @@ async fn typing_release_wakes_an_already_waiting_inbox_reader() {
         typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
         federation: None,
         held: Default::default(),
-        route_counts: Default::default(),
+        route_counts: route_counts_table(),
     };
     let held = hold_inbox(
         State(state.clone()),
@@ -2015,7 +2015,7 @@ async fn typing_hold_projections_follow_terminal_outcomes_and_sequence() {
             typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
             federation: None,
             held: Default::default(),
-            route_counts: Default::default(),
+            route_counts: route_counts_table(),
         };
         let seat = SeatId::from("pij-held");
         let other_seat = SeatId::from("pij-other");

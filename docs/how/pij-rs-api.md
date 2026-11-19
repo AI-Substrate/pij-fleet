@@ -85,9 +85,14 @@ non-standard method under `OTHER`, so a client can't add keys.
 `seats_queries` counts `GET /v1/seats` by which of `harness`, `folder`,
 `parent`, `scope` (`scope=local` named apart), `here` and `sizes` it carried
 (`"(none)"` for none). A ping is counted once it is answered, so a reading
-leaves itself out. Cost: one atomic increment and one uncontended map lookup
-per request, no launch, no log, no write. Two readings a known interval apart
-give requests a second per route.
+leaves itself out. The route table is built once from the endpoint inventory
+and never changes. Cost per request: a binary search of that table and one
+atomic increment, with no lock and no allocation; a `GET /v1/seats` adds one
+scan of its query bytes and a second increment. No launch, no log, no write.
+A reading takes each counter on its own while requests go on, so it is not
+transactional (`total` is the sum of the route counts it read), and counters
+wrap at `u64::MAX`. Two readings a known interval apart give requests a
+second per route.
 `data.registrations:{total,ps,by_key,by_seat}` counts registration
 attempts since start (plan 211, issue #145): `by_key` is per
 `<path>.<mode>.<outcome>` with `{count,ps}`, where `ps` is the ancestry `ps`

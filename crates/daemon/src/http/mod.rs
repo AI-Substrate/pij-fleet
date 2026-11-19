@@ -606,6 +606,14 @@ pub fn resolve_typing_grace_ms() -> u64 {
         .unwrap_or(DEFAULT_TYPING_GRACE_MS)
 }
 
+/// The request counters' fixed table: every route template the router
+/// serves, from the endpoint inventory (F222, P266-001).
+fn route_counts_table() -> Arc<route_counts::RouteCounts> {
+    Arc::new(route_counts::RouteCounts::new(
+        Endpoint::ALL.map(Endpoint::path),
+    ))
+}
+
 fn router_with_optional_federation(
     services: Services,
     config: HttpConfig,
@@ -631,7 +639,7 @@ fn router_with_optional_federation(
         federation,
         registration,
         held: HeldProjections::default(),
-        route_counts: Arc::default(),
+        route_counts: route_counts_table(),
     };
     let route_counts = Arc::clone(&state.route_counts);
     let mut router = Router::new();
@@ -5288,6 +5296,6 @@ pub(crate) fn test_state(services: Services) -> AppState {
         typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
         federation: None,
         held: HeldProjections::default(),
-        route_counts: Arc::default(),
+        route_counts: route_counts_table(),
     }
 }

@@ -4,17 +4,25 @@
 //! give requests a second per route, and the route names the caller.
 //!
 //! In-process counters only: no launch, no event, no store write, no log per
-//! request. Bounded by construction: a route is the router's own path
-//! template (`MatchedPath`), never the request path, so a client can't add
-//! keys; a path the router doesn't serve counts under one key, and so does a
-//! method outside the standard set. `GET /v1/seats` is also counted by query
-//! shape (which of its known parameters were present), because one route
-//! serves the extension roster, peer fan-in and `pij list` alike. Nothing
-//! reads the counts to decide anything, so they can't change behaviour.
+//! request. The table of route templates is built once, from the endpoint
+//! inventory, when the router is built, and never changes: recording a
+//! request is a lookup in that immutable table and one atomic increment,
+//! with no lock, no allocation and nothing shared to wait on (P266-001). A
+//! template outside the table and a path the router doesn't serve count under
+//! one key, and so does a method outside the standard set, so a client can't
+//! add keys. `GET /v1/seats` is also counted by query shape (which of its
+//! known parameters were present), because one route serves the extension
+//! roster, peer fan-in and `pij list` alike: a second increment, after one
+//! scan of its query bytes. Nothing reads the counts to decide anything, so
+//! they can't change behaviour.
+//!
+//! A snapshot reads each counter on its own, without stopping recording, so
+//! it is not transactional: a request answered mid-read can show in one
+//! count and not yet in another. `total` is the sum of the route counts it
+//! read. Counters wrap at `u64::MAX`.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::extract::{MatchedPath, Request, State};
@@ -37,7 +45,8 @@ const METHODS: [Method; 7] = [
 /// The key for a method outside [`METHODS`].
 const OTHER_METHOD: &str = "OTHER";
 
-/// The key for a request the router has no route for.
+/// The key for a request the router has no route for, or one whose template
+/// is not in the table.
 pub const UNMATCHED: &str = "(unmatched)";
 
 /// The `GET /v1/seats` query parameters counted by shape, in bit order. The
@@ -45,6 +54,7 @@ pub const UNMATCHED: &str = "(unmatched)";
 const SEAT_PARAMS: [&str; 6] = ["harness", "folder", "parent", "scope", "here", "sizes"];
 const SCOPE_LOCAL_BIT: usize = SEAT_PARAMS.len();
 const SEAT_SHAPES: usize = 1 << (SEAT_PARAMS.len() + 1);
+const SEATS_PATH: &str = "/v1/seats";
 
 /// One route's answers: success (2xx and 3xx) and refusal (4xx and 5xx).
 #[derive(Default)]
@@ -58,6 +68,13 @@ impl Outcomes {
         let counter = if success { &self.ok } else { &self.refused };
         counter.fetch_add(1, Ordering::Relaxed);
     }
+
+    fn read(&self) -> RouteCount {
+        RouteCount {
+            ok: self.ok.load(Ordering::Relaxed),
+            refused: self.refused.load(Ordering::Relaxed),
+        }
+    }
 }
 
 /// One path template's outcomes, per method (the last slot is any other).
@@ -68,21 +85,11 @@ struct PathCounts {
 
 /// The daemon's request counts.
 pub struct RouteCounts {
-    /// Keyed by the router's path template; a key is allocated once, on the
-    /// template's first request.
-    paths: Mutex<BTreeMap<String, Arc<PathCounts>>>,
+    /// Every route template, sorted for a binary search, each with its
+    /// counters inline. Fixed when the router is built.
+    paths: Box<[(&'static str, PathCounts)]>,
     unmatched: Outcomes,
     seat_shapes: [AtomicU64; SEAT_SHAPES],
-}
-
-impl Default for RouteCounts {
-    fn default() -> Self {
-        Self {
-            paths: Mutex::new(BTreeMap::new()),
-            unmatched: Outcomes::default(),
-            seat_shapes: std::array::from_fn(|_| AtomicU64::new(0)),
-        }
-    }
 }
 
 /// One route's counts as `ping` reports them.
@@ -95,6 +102,7 @@ pub struct RouteCount {
 /// Every count, read in one pass. Routes never requested are left out.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RequestCounts {
+    /// The sum of the route counts below, as read.
     pub total: u64,
     /// `"<METHOD> <path template>"`, e.g. `"GET /v1/seats"`.
     pub routes: BTreeMap<String, RouteCount>,
@@ -105,6 +113,22 @@ pub struct RequestCounts {
 }
 
 impl RouteCounts {
+    /// The table for these route templates. Built once, when the router is.
+    #[must_use]
+    pub fn new(templates: impl IntoIterator<Item = &'static str>) -> Self {
+        let mut templates: Vec<&'static str> = templates.into_iter().collect();
+        templates.sort_unstable();
+        templates.dedup();
+        Self {
+            paths: templates
+                .into_iter()
+                .map(|template| (template, PathCounts::default()))
+                .collect(),
+            unmatched: Outcomes::default(),
+            seat_shapes: std::array::from_fn(|_| AtomicU64::new(0)),
+        }
+    }
+
     /// Count one answered request. `seat_shape` is its [`seat_shape`] when it
     /// was a `GET /v1/seats`.
     fn record(
@@ -114,7 +138,13 @@ impl RouteCounts {
         seat_shape: Option<usize>,
         success: bool,
     ) {
-        let Some(path) = path else {
+        let counts = path.and_then(|path| {
+            self.paths
+                .binary_search_by(|(template, _)| (*template).cmp(path))
+                .ok()
+                .map(|index| &self.paths[index].1)
+        });
+        let Some(counts) = counts else {
             self.unmatched.record(success);
             return;
         };
@@ -122,50 +152,33 @@ impl RouteCounts {
             .iter()
             .position(|known| known == method)
             .unwrap_or(METHODS.len());
-        let counts = {
-            let mut paths = self
-                .paths
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            match paths.get(path) {
-                Some(counts) => Arc::clone(counts),
-                None => Arc::clone(paths.entry(path.to_string()).or_default()),
-            }
-        };
         counts.by_method[slot].record(success);
         if let Some(shape) = seat_shape {
             self.seat_shapes[shape].fetch_add(1, Ordering::Relaxed);
         }
     }
 
-    /// Every count, read in one pass.
+    /// Every count, each read on its own while recording goes on.
     #[must_use]
     pub fn snapshot(&self) -> RequestCounts {
         let mut routes = BTreeMap::new();
-        let mut total = 0;
-        let mut add = |key: String, outcomes: &Outcomes| {
-            let count = RouteCount {
-                ok: outcomes.ok.load(Ordering::Relaxed),
-                refused: outcomes.refused.load(Ordering::Relaxed),
-            };
-            if count.ok + count.refused > 0 {
-                total += count.ok + count.refused;
+        let mut total: u64 = 0;
+        let mut add = |key: String, count: RouteCount| {
+            if count.ok != 0 || count.refused != 0 {
+                total = total.wrapping_add(count.ok).wrapping_add(count.refused);
                 routes.insert(key, count);
             }
         };
-        {
-            let paths = self
-                .paths
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for (path, counts) in paths.iter() {
-                for (slot, outcomes) in counts.by_method.iter().enumerate() {
+        for (path, counts) in &self.paths {
+            for (slot, outcomes) in counts.by_method.iter().enumerate() {
+                let count = outcomes.read();
+                if count.ok != 0 || count.refused != 0 {
                     let method = METHODS.get(slot).map_or(OTHER_METHOD, Method::as_str);
-                    add(format!("{method} {path}"), outcomes);
+                    add(format!("{method} {path}"), count);
                 }
             }
         }
-        add(UNMATCHED.to_string(), &self.unmatched);
+        add(UNMATCHED.to_string(), self.unmatched.read());
         let seats_queries = self
             .seat_shapes
             .iter()
@@ -232,7 +245,7 @@ pub(crate) async fn count_request(
     let shape = (method == Method::GET
         && path
             .as_ref()
-            .is_some_and(|path| path.as_str() == "/v1/seats"))
+            .is_some_and(|path| path.as_str() == SEATS_PATH))
     .then(|| seat_shape(request.uri().query()));
     let response = next.run(request).await;
     let success = response.status().is_success() || response.status().is_redirection();
@@ -249,9 +262,13 @@ pub(crate) async fn count_request(
 mod tests {
     use super::*;
 
+    fn table() -> RouteCounts {
+        RouteCounts::new(["/v1/whoami", SEATS_PATH, "/health"])
+    }
+
     #[test]
     fn counts_by_route_method_and_outcome_and_leaves_unrequested_routes_out() {
-        let counts = RouteCounts::default();
+        let counts = table();
         counts.record(&Method::POST, Some("/v1/whoami"), None, true);
         counts.record(&Method::POST, Some("/v1/whoami"), None, true);
         counts.record(&Method::POST, Some("/v1/whoami"), None, false);
@@ -280,9 +297,54 @@ mod tests {
         assert!(snapshot.seats_queries.is_empty());
     }
 
+    /// P266-001: the table is fixed when built. A template it doesn't hold
+    /// never becomes a key: it counts as unmatched.
+    #[test]
+    fn a_template_outside_the_table_counts_as_unmatched_and_adds_no_key() {
+        let counts = table();
+        counts.record(&Method::GET, Some("/v1/not-in-the-inventory"), None, true);
+        let snapshot = counts.snapshot();
+        assert_eq!(
+            snapshot.routes.keys().collect::<Vec<_>>(),
+            vec![UNMATCHED],
+            "{snapshot:?}"
+        );
+        assert_eq!(snapshot.routes[UNMATCHED], RouteCount { ok: 1, refused: 0 });
+    }
+
+    /// P266-001: snapshots taken while requests are recorded on other
+    /// threads neither block nor lose them: every recorded request is in
+    /// the last snapshot.
+    #[test]
+    fn snapshots_during_recording_lose_nothing() {
+        let counts = Arc::new(table());
+        let recorders: Vec<_> = (0..4)
+            .map(|_| {
+                let counts = Arc::clone(&counts);
+                std::thread::spawn(move || {
+                    for _ in 0..10_000 {
+                        counts.record(&Method::GET, Some(SEATS_PATH), Some(0), true);
+                    }
+                })
+            })
+            .collect();
+        let mut snapshots = 0;
+        while recorders.iter().any(|recorder| !recorder.is_finished()) {
+            let _ = counts.snapshot();
+            snapshots += 1;
+        }
+        for recorder in recorders {
+            recorder.join().expect("recorder");
+        }
+        let snapshot = counts.snapshot();
+        assert!(snapshots > 0);
+        assert_eq!(snapshot.total, 40_000);
+        assert_eq!(snapshot.seats_queries["(none)"], 40_000);
+    }
+
     #[test]
     fn seats_reads_are_counted_by_query_shape_and_unknown_parameters_add_no_keys() {
-        let counts = RouteCounts::default();
+        let counts = table();
         for query in [
             None,
             Some("scope=local"),
@@ -294,12 +356,12 @@ mod tests {
         ] {
             counts.record(
                 &Method::GET,
-                Some("/v1/seats"),
+                Some(SEATS_PATH),
                 Some(seat_shape(query)),
                 true,
             );
         }
-        counts.record(&Method::POST, Some("/v1/seats"), None, true);
+        counts.record(&Method::POST, Some(SEATS_PATH), None, true);
         let snapshot = counts.snapshot();
         let expected: BTreeMap<String, u64> = [
             ("(none)", 2),
