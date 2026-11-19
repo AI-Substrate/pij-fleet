@@ -448,7 +448,10 @@
 					"harness_session": "1e46c12d-494f-4ad5-aef6-fba9e82aea8c",
 					"instance_key": "264",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #264 merged (01b363e3f3a7)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-industrial-chickadee",
+					"to": "2026-11-19T08:24:22.926Z",
 					"why": "F215 spawn trust-prompt refusal + F216 pij_close by id #264"
 				},
 				{
