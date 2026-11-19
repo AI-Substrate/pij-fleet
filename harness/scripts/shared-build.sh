@@ -13,7 +13,12 @@
 # (plan 209, F28; AGENTS.md, resource cost item 5).
 #
 #   PIJ_SHARED_TARGET=<absolute target dir> \
-#     just shared-build [--timeout <minutes>|<seconds>s] -- <cargo args> [--then <cargo args>]...
+#     just shared-build [--timeout <minutes>|<seconds>s] [--copy-out <artifact> <dest>] -- <cargo args> [--then <cargo args>]...
+#
+# --copy-out copies <artifact> (relative to the target) to <dest> after every
+# cargo command succeeded, still holding the lock, so the copy is the bytes this
+# run built: no other tree's build into the same target can land in between
+# (F226, R271-001). <dest> must not exist yet.
 #
 # Environment:
 #   PIJ_SHARED_TARGET   required, absolute; exported as CARGO_TARGET_DIR
@@ -24,7 +29,8 @@
 #   PIJ_ID              seat id for the owner line; else $PIJ_SESSION_ID (set in
 #                       every harness seat), else `pij-rs whoami`, else $USER
 #
-# Exit: cargo's status, or 2 usage, 3 disk floor, 4 --timeout, 5 stale lock.
+# Exit: cargo's status, or 2 usage, 3 disk floor, 4 --timeout, 5 stale lock,
+# 6 the --copy-out copy failed.
 # A stale lock (its owner pid is gone) is reported with the command that clears
 # it and never cleared here: whether that build is really over is the caller's
 # call, not this script's.
@@ -70,10 +76,12 @@ refuse() {
 }
 
 usage() {
-	printf '%s\n' "usage: PIJ_SHARED_TARGET=<absolute dir> just shared-build [--timeout <minutes>] -- <cargo args> [--then <cargo args>]..."
+	printf '%s\n' "usage: PIJ_SHARED_TARGET=<absolute dir> just shared-build [--timeout <minutes>] [--copy-out <artifact> <dest>] -- <cargo args> [--then <cargo args>]..."
 }
 
 timeout_min=""
+copy_artifact=""
+copy_dest=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--timeout)
@@ -84,6 +92,16 @@ while [ $# -gt 0 ]; do
 	--timeout=*)
 		timeout_min=${1#--timeout=}
 		shift
+		;;
+	--copy-out)
+		[ $# -ge 3 ] || refuse 2 "--copy-out needs an artifact (relative to the target) and a destination"
+		case "$2" in
+		"" | /* | ../* | */../* | */..) refuse 2 "--copy-out takes an artifact path inside the target, not '$2'" ;;
+		esac
+		[ -n "$3" ] || refuse 2 "--copy-out needs a destination"
+		copy_artifact=$2
+		copy_dest=$3
+		shift 3
 		;;
 	-h | --help)
 		usage
@@ -369,3 +387,10 @@ for command in "${commands[@]}"; do
 	eval "set -- $command"
 	run_cargo "$@" || exit $?
 done
+# F226: the artifact this run built, copied while the lock is still held.
+if [ -n "$copy_artifact" ]; then
+	[ ! -e "$copy_dest" ] && [ ! -L "$copy_dest" ] ||
+		refuse 6 "--copy-out: $copy_dest already exists; nothing copied"
+	/bin/cp "$target/$copy_artifact" "$copy_dest" ||
+		refuse 6 "--copy-out: could not copy $target/$copy_artifact to $copy_dest"
+fi

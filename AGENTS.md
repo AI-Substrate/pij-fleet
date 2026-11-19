@@ -178,12 +178,17 @@ citation disputes, all of which resolved as neither party being wrong.)
   **`just bounce-rs`** rebuilds, installs and restarts the daemon;
   **`just rs-autostart`** registers a macOS LaunchAgent. Both deploy recipes
   and `pij-rs daemon bounce` build through **`harness/scripts/release-build.sh`**
-  (F226): shared-build into the checkout's one target (its lock, this tree's own
-  sources, so another worktree's release artifacts can't be linked), stamped
-  with HEAD, and the binary's `pij-rs --version` must read
-  `pij-rs <version> (<HEAD, 10 chars>)`. A failed build exits with cargo's
-  status and an unstamped or other-commit binary is refused, both before
-  anything is installed or the daemon is stopped.
+  (F226): it refuses build inputs that differ from HEAD (tracked or untracked
+  under `crates/`, `Cargo.*`, `.cargo/` and the stamped extension trees; other
+  local changes don't block), builds through shared-build into the checkout's
+  one target (its lock, this tree's own sources, so another worktree's release
+  artifacts can't be linked), stamped with HEAD, copies the binary out while
+  still holding the lock (`shared-build --copy-out`), and hands on that private
+  copy only if its `pij-rs --version` reads `pij-rs <version> (<HEAD, 10 chars>)`.
+  The copy is what gets installed, so another tree's later build can't swap it.
+  A failed build, dirty inputs or a wrong stamp stop the deploy before anything
+  is installed or the daemon is stopped (failures after the daemon is signalled
+  have no rollback, as before).
 - **`just shared-build`**: any seat building into a cargo target another
   worktree also uses runs cargo through it, never bare:
   `PIJ_SHARED_TARGET=<abs dir> just shared-build -- <cargo args> [--then <cargo args>]`.

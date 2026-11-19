@@ -98,13 +98,14 @@ fn try_run_seeded(name: &str, env: &[(&str, &str)], seed: &[(&str, &str)]) -> (P
     std::fs::create_dir_all(&bin).expect("scratch bin");
     std::fs::create_dir_all(global.join("bin")).expect("scratch global bin");
     let out = scratch.display();
-    // The ids rev-parse names, and the scratch as the checkout (F226: the deploy
-    // build resolves its target through git).
+    // The ids rev-parse names, the scratch as the checkout and a clean status
+    // (F226: the deploy build resolves its target through git and refuses dirty
+    // build inputs).
     fake(
         &bin,
         "git",
         &format!(
-            "case \"$*\" in *--show-toplevel*) echo '{out}';; *--git-common-dir*) echo '{out}/.git';; \
+            "case \"$*\" in status*) ;; *--show-toplevel*) echo '{out}';; *--git-common-dir*) echo '{out}/.git';; \
              *) for id in 1111111111aaaa 2222222222bbbb 3333333333cccc 4444444444dddd; do echo $id; done;; esac"
         ),
     );

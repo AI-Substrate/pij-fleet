@@ -69,10 +69,20 @@ pub fn reproducible_repo(cwd: &Path) -> Result<PathBuf> {
 /// best-effort and are returned as output lines rather than gating the bounce.
 pub async fn run(repo_root: &Path, state_dir: &Path) -> Result<BounceReport> {
     let built = build(repo_root)?;
-    let home = std::env::var_os("HOME")
+    let installed = std::env::var_os("HOME")
         .filter(|home| !home.is_empty())
-        .ok_or_else(|| failure("HOME is not set, so the built pij-rs has nowhere to install"))?;
-    let artifact = install(repo_root, &built, Path::new(&home))?;
+        .ok_or_else(|| failure("HOME is not set, so the built pij-rs has nowhere to install"))
+        .and_then(|home| install(repo_root, &built, Path::new(&home)));
+    // The verified copy is private to this deploy: drop its directory whatever
+    // the install did (F226).
+    if let Some(snapshot) = built.parent().filter(|dir| {
+        dir.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("pij-release."))
+    }) {
+        let _ = std::fs::remove_dir_all(snapshot);
+    }
+    let artifact = installed?;
     let old = store::read_runtime(state_dir)?;
     corroborate(old.process).await?;
     let announcements = announce(state_dir, &old).await;
@@ -97,9 +107,10 @@ pub async fn run(repo_root: &Path, state_dir: &Path) -> Result<BounceReport> {
 }
 
 /// Build through the repository's one deploy build (F226): shared-build into
-/// the checkout's target, stamped, and refused unless the binary carries this
-/// checkout's commit. Returns the built binary; a failed or wrongly stamped
-/// build returns the script's refusal, before anything is installed or stopped.
+/// the checkout's target from clean build inputs, stamped, copied out under the
+/// lock, and refused unless that private copy carries this checkout's commit.
+/// Returns the copy; a failed or wrongly stamped build returns the script's
+/// refusal, before anything is installed or stopped.
 fn build(repo_root: &Path) -> Result<PathBuf> {
     let output = Command::new("/bin/bash")
         .arg(repo_root.join("harness/scripts/release-build.sh"))

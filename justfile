@@ -64,13 +64,15 @@ rs-install:
     #!/bin/sh
     set -eu
     npm run link -- --check-only
-    # F226: built through shared-build (lock, this tree's own sources), stamped,
-    # and refused unless the binary carries this checkout's commit. A failed
-    # build stops here: nothing is installed.
+    # F226: built through shared-build (lock, this tree's own sources, clean
+    # build inputs), stamped, and copied out under the lock; that private copy is
+    # refused unless it carries this checkout's commit, and it is what is
+    # installed. A failed build stops here: nothing is installed.
     built="$(bash harness/scripts/release-build.sh)"
+    trap 'rm -rf "${built%/*}"' EXIT
     bin="$(npm prefix -g)/bin"
     copy="$(sh harness/scripts/install-pij-rs.sh "$built" "$bin")"
-    echo "✓ $bin/pij-rs → $copy (copied from $built: $("$built" --version))"
+    echo "✓ $bin/pij-rs → $copy ($("$copy" --version))"
 
 # Read-only audit of the installed surfaces: CLI shim, pij-rs, OMP policy,
 # skill link, pij-managed Claude hooks, the Copilot extension, daemon health
@@ -712,10 +714,13 @@ bounce-rs:
       0|off|false) idle_nudge=0 ;;
       *) echo "bounce-rs: PIJ_IDLE_NUDGE must be 1, on, true, 0, off or false (case-insensitive); nothing was changed" >&2; exit 2 ;;
     esac
-    # F226: built through shared-build (lock, this tree's own sources), stamped,
-    # and refused unless the binary carries this checkout's commit. A failed
-    # build stops here, before anything is installed or the daemon is stopped.
+    # F226: built through shared-build (lock, this tree's own sources, clean
+    # build inputs), stamped, and copied out under the lock; that private copy is
+    # refused unless it carries this checkout's commit, and it is what is
+    # installed. A failed build stops here, before anything is installed or the
+    # daemon is stopped.
     built="$(bash harness/scripts/release-build.sh)"
+    trap 'rm -rf "${built%/*}"' EXIT
     # F187: refresh the installed copy (and the PATH link) from this build and
     # launch that, never target/. The running daemon keeps its own file.
     bin="$(npm prefix -g)/bin"

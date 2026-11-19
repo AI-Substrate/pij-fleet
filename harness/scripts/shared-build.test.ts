@@ -533,4 +533,24 @@ describe("just shared-build", () => {
 		expect(log(f)).toEqual([]);
 		expect(existsSync(join(f.lock, "owner"))).toBe(true);
 	});
+
+	// F226, R271-001: the deploy build installs the bytes it built, so the copy
+	// is taken before the lock lets another tree build into the target.
+	it("copies an artifact out only after every command succeeded, then releases", async () => {
+		const f = fixture();
+		mkdirSync(join(f.target, "release"), { recursive: true });
+		writeFileSync(join(f.target, "release", "pij-rs"), "built\n");
+		const dest = join(f.root, "copy");
+		const ok = await run(f, ["--copy-out", "release/pij-rs", dest, "--", "build"]);
+		expect(ok.code, ok.stderr).toBe(0);
+		expect(readFileSync(dest, "utf8")).toBe("built\n");
+		expect(existsSync(f.lock)).toBe(false);
+		const again = await run(f, ["--copy-out", "release/pij-rs", dest, "--", "build"]);
+		expect(again.code, "an existing destination is never overwritten").toBe(6);
+		expect(existsSync(f.lock)).toBe(false);
+		const never = join(f.root, "never");
+		const failed = await run(f, ["--copy-out", "release/pij-rs", never, "--", "fail"]);
+		expect(failed.code).toBe(7);
+		expect(existsSync(never), "a failed build copies nothing").toBe(false);
+	});
 });

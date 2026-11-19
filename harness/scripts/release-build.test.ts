@@ -4,6 +4,7 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	realpathSync,
 	rmSync,
@@ -34,43 +35,51 @@ function binary(path: string, stamp: string): void {
 }
 
 interface Fixture {
+	root: string;
 	repo: string;
 	home: string;
-	built: string;
+	tmp: string;
+	target: string;
 	log: string;
 	commit: string;
 	env: NodeJS.ProcessEnv;
 }
 
-function fixture(): Fixture {
-	const root = realpathSync(mkdtempSync(join(tmpdir(), "pij-release-build-")));
-	roots.push(root);
-	const repo = join(root, "repo");
+const git = (repo: string, ...args: string[]) =>
+	spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], {
+		cwd: repo,
+		encoding: "utf8",
+	});
+
+/** A checkout with the paths the stamp names; `marker` makes its commit its own. */
+function checkout(root: string, name: string, marker: string): { repo: string; commit: string } {
+	const repo = join(root, name);
 	for (const file of [
 		".copilot/extensions/pij/extension.mjs",
 		".omp/extensions/pij/index.ts",
 		"crates/core/tests/fixtures/control-commands.json",
 		"crates/core/src/lib.rs",
+		".omp/models.yml",
 	]) {
 		mkdirSync(join(repo, file, ".."), { recursive: true });
-		writeFileSync(join(repo, file), `${file}\n`);
+		writeFileSync(join(repo, file), `${file} ${marker}\n`);
 	}
-	const git = (...args: string[]) =>
-		spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], {
-			cwd: repo,
-			encoding: "utf8",
-		});
-	git("init", "-q");
-	git("add", ".");
-	git("commit", "-q", "-m", "fixture");
-	const commit = git("rev-parse", "HEAD").stdout.trim().slice(0, 10);
+	git(repo, "init", "-q");
+	git(repo, "add", ".");
+	git(repo, "commit", "-q", "-m", marker);
+	return { repo, commit: git(repo, "rev-parse", "HEAD").stdout.trim().slice(0, 10) };
+}
+
+function fixture(): Fixture {
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "pij-release-build-")));
+	roots.push(root);
+	const { repo, commit } = checkout(root, "repo", "a");
 	const bin = join(root, "bin");
 	mkdirSync(bin);
 	const target = join(root, "target");
-	const built = join(target, "release", "pij-rs");
 	mkdirSync(join(target, "release"), { recursive: true });
 	// A binary another tree built earlier, unstamped: what the F226 bounce installed.
-	binary(built, "unstamped");
+	binary(join(target, "release", "pij-rs"), "unstamped");
 	const log = join(root, "cargo.log");
 	// ok: builds a binary carrying the stamp it was given. fail: exits 101 and
 	// builds nothing. foreign: succeeds without rebuilding, leaving a binary
@@ -96,11 +105,15 @@ function fixture(): Fixture {
 		].join("\n"),
 	);
 	const home = join(root, "home");
+	const tmp = join(root, "tmp");
 	mkdirSync(home);
+	mkdirSync(tmp);
 	return {
+		root,
 		repo,
 		home,
-		built,
+		tmp,
+		target,
 		log,
 		commit,
 		env: {
@@ -111,72 +124,120 @@ function fixture(): Fixture {
 			PIJ_SHARED_BUILD_DF: df,
 			PIJ_ID: "pij-test-seat",
 			PIJ_BUILD_COMMIT: undefined,
+			TMPDIR: tmp,
 			LOG: log,
 			HOME: home,
 		},
 	};
 }
 
-/** The deploy recipes' own composition: build, then install what it named. */
+function build(f: Fixture, mode: string, repo = f.repo) {
+	return spawnSync("bash", [SCRIPT], {
+		cwd: repo,
+		env: { ...f.env, FAKE_CARGO: mode },
+		encoding: "utf8",
+	});
+}
+
+/** The deploy recipes' own composition: build, then install what it handed on. */
 function deploy(f: Fixture, mode: string) {
 	return spawnSync(
 		"/bin/sh",
-		["-c", 'set -eu; built="$(bash "$1")"; sh "$2" "$built"', "deploy", SCRIPT, INSTALL],
+		[
+			"-c",
+			'set -eu; built="$(bash "$1")"; trap \'rm -rf "${built%/*}"\' EXIT; sh "$2" "$built"',
+			"deploy",
+			SCRIPT,
+			INSTALL,
+		],
 		{ cwd: f.repo, env: { ...f.env, FAKE_CARGO: mode }, encoding: "utf8" },
 	);
 }
 
 const installed = (f: Fixture) => join(f.home, ".local/share/pij/bin/pij-rs");
+const version = (path: string) => spawnSync(path, ["--version"], { encoding: "utf8" }).stdout;
+/** Snapshot directories left in the fixture's TMPDIR. */
+const snapshots = (f: Fixture) =>
+	readdirSync(f.tmp).filter((name) => name.startsWith("pij-release."));
 
 describe("release-build.sh, the one deploy build (F226)", () => {
-	it("builds through shared-build, stamped, and hands on only this commit's binary", () => {
+	it("builds through shared-build, stamped, and hands on a private copy of this commit's binary", () => {
 		const f = fixture();
-		const run = spawnSync("bash", [SCRIPT], {
-			cwd: f.repo,
-			env: { ...f.env, FAKE_CARGO: "ok" },
-			encoding: "utf8",
-		});
+		const run = build(f, "ok");
 		expect(run.status, run.stderr).toBe(0);
-		expect(run.stdout).toBe(`${f.built}\n`);
+		const copy = run.stdout.trim();
+		expect(copy).toMatch(new RegExp(`^${f.tmp}/pij-release\\.\\w+/pij-rs$`));
+		expect(version(copy)).toBe(`pij-rs 0.1.0 (${f.commit})\n`);
 		const log = readFileSync(f.log, "utf8");
 		expect(log).toContain(
-			`cargo build --release --locked -p pij-cli --bin pij-rs target=${resolve(f.built, "../..")} incremental=0 commit=${f.commit} copilot=`,
+			`cargo build --release --locked -p pij-cli --bin pij-rs target=${f.target} incremental=0 commit=${f.commit} copilot=`,
 		);
 		expect(log).toMatch(/omp=\w{10}\+\w{10}/);
 		expect(log).toContain("locked");
+		rmSync(join(copy, ".."), { recursive: true });
 		const done = deploy(f, "ok");
 		expect(done.status, done.stderr).toBe(0);
-		expect(spawnSync(installed(f), ["--version"], { encoding: "utf8" }).stdout).toBe(
+		expect(version(installed(f))).toBe(`pij-rs 0.1.0 (${f.commit})\n`);
+		expect(snapshots(f), "the deploy removes its copy").toEqual([]);
+	});
+
+	// R271-001: A builds and checks, B builds into the same target, A installs.
+	it("installs the bytes it checked, whatever builds into the shared target after", () => {
+		const f = fixture();
+		const b = checkout(f.root, "repo-b", "b");
+		expect(b.commit).not.toBe(f.commit);
+		const a = build(f, "ok");
+		expect(a.status, a.stderr).toBe(0);
+		const other = build(f, "ok", b.repo);
+		expect(other.status, other.stderr).toBe(0);
+		expect(version(join(f.target, "release", "pij-rs"))).toBe(`pij-rs 0.1.0 (${b.commit})\n`);
+		const install = spawnSync("sh", [INSTALL, a.stdout.trim()], { env: f.env, encoding: "utf8" });
+		expect(install.status, install.stderr).toBe(0);
+		expect(version(installed(f)), "A installs A's binary, never B's").toBe(
 			`pij-rs 0.1.0 (${f.commit})\n`,
 		);
 	});
 
 	it("a failed build exits with cargo's status and installs nothing", () => {
 		const f = fixture();
-		const run = spawnSync("bash", [SCRIPT], {
-			cwd: f.repo,
-			env: { ...f.env, FAKE_CARGO: "fail" },
-			encoding: "utf8",
-		});
+		const run = build(f, "fail");
 		expect(run.status).toBe(101);
 		expect(run.stdout).toBe("");
 		const done = deploy(f, "fail");
 		expect(done.status).not.toBe(0);
 		expect(existsSync(installed(f)), "the stale binary must never be installed").toBe(false);
+		expect(snapshots(f)).toEqual([]);
 	});
 
 	it("refuses a binary stamped with another commit, and installs nothing", () => {
 		const f = fixture();
-		const run = spawnSync("bash", [SCRIPT], {
-			cwd: f.repo,
-			env: { ...f.env, FAKE_CARGO: "foreign" },
-			encoding: "utf8",
-		});
+		const run = build(f, "foreign");
 		expect(run.status).toBe(1);
 		expect(run.stdout).toBe("");
 		expect(run.stderr).toContain(`not this checkout's commit ${f.commit}`);
 		const done = deploy(f, "foreign");
 		expect(done.status).not.toBe(0);
 		expect(existsSync(installed(f)), "a foreign binary must never be installed").toBe(false);
+		expect(snapshots(f)).toEqual([]);
+	});
+
+	it("refuses build inputs that differ from the HEAD it stamps; other local changes don't block", () => {
+		const f = fixture();
+		for (const [file, change] of [
+			["crates/core/src/lib.rs", "uncommitted source\n"],
+			["crates/core/src/new.rs", "untracked source\n"],
+		] as const) {
+			const dirty = fixture();
+			writeFileSync(join(dirty.repo, file), change);
+			const run = build(dirty, "ok");
+			expect(run.status, file).toBe(1);
+			expect(run.stdout).toBe("");
+			expect(run.stderr).toContain("build inputs differ from HEAD");
+			expect(run.stderr).toContain(file);
+			expect(existsSync(dirty.log), "nothing was built").toBe(false);
+		}
+		writeFileSync(join(f.repo, ".omp/models.yml"), "a local model override\n");
+		const run = build(f, "ok");
+		expect(run.status, run.stderr).toBe(0);
 	});
 });
