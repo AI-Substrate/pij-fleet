@@ -2110,6 +2110,16 @@
 					"seat": "pij-regulatory-snipe",
 					"to": "2026-11-19T22:24:15.313Z",
 					"why": "F190 repro"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T23:01:52.065Z",
+					"harness": "copilot",
+					"harness_session": "3a7c075e-a9cd-487b-9746-0c8468f93a8f",
+					"instance_key": "273",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-functional-pony",
+					"why": "#273 F193 correctness review, fresh seat"
 				}
 			]
 		}
