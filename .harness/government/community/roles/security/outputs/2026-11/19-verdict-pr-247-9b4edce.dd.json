@@ -1,0 +1,56 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f13c-6ede-7882-b6ae-a153e21693b9",
+				"date": "2026-11-19",
+				"head": "9b4edcecb50cec1f12ace63060e9a1d762b7be25",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44429730440",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:247",
+				"writer": "pij-pleased-pike",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C34 follow-up: preserve contradictory live pane-owner refusal in note-grace fallback; low-severity attribution consistency, not a C33 security block.",
+				"Clarify that grace preserves existing cross-role/project memory-add permission, and own notes after subscription can finish the wait before prompt delivery.",
+				"After deploy, repeat exact spawn-counter pair, just spawn-rate --seconds 20, daemon CPU/RSS and the planned plain-close note-persistence proof."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 247",
+					"exit_code": 0,
+					"log": "FINAL at 9b4edcecb50cec1f12ace63060e9a1d762b7be25; prior transient GitHub UNKNOWN was retried before publication."
+				},
+				{
+					"command": "gh run view 44429730440; gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14486725645/zip; parse junit.xml",
+					"exit_code": 0,
+					"log": "Exact-head successful rust-test job 135243708924: 2511 passed, 6 skipped; six targeted regressions passed. directory_http 112, memory_turn_http 24, spawn_sites 6 passed. Linux only."
+				},
+				{
+					"command": "pij-rs --json ping; just spawn-rate --seconds 20; pij-rs --json ping",
+					"exit_code": 0,
+					"log": "2026-11-19T00:37:52Z..00:38:12Z: spawns 592->592, all by_op unchanged; machine 176.6 launches/s. Separate daemon PID23167 CPU80.2%, RSS164112KiB snapshot. After-deploy measurement owed."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES at 9b4edcecb50cec1f12ace63060e9a1d762b7be25. No blocking security regression under C33. Read-only review of all 13 changed-file diffs and the caller, registration, memory-writer and lifecycle paths; no local builds, tests, mutations, dependency installs or credential reads.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | ⚪ LOW | crates/daemon/src/http/directory.rs | 572-586 | Grace fallback can suppress a contradictory live pane-owner refusal | 9/10 |\n\n1. C34 follow-up: preserve contradictory-owner refusals. The fallback handles every identity refusal. If closed A's host remains alive and a fresh native session B registers in its pane within 120 seconds, an old memory command retaining A's assertion can pass A's grace even though identity resolution rejects that assertion against live B. Source receipts: http/identity.rs:1513-1526; http/memory_turn.rs:411-436; registration.rs:913-924,1068-1074,1842-1847; Copilot store.mjs:368-440. Registration does not clear the grace. With no asserted ID, the live B resolves normally and the fallback is not used. This is a cheap-guard/attribution consistency issue, not demonstrated cross-account unauthorized access. The composed rollover/grace case was not executed.\n\nAuthorization checks:\n- Only a successful landed held close grants grace: http/memory_turn.rs:359-365,570-619. Failed/skipped closes and compacts grant none. Close authority/incarnation is rechecked at 592-615,641-660; lifecycle.rs:629-650 performs the tombstone CAS.\n- Grant lookup is keyed to the recorded pane. The requested session assertion must match the closed seat, the grant must be unexpired, and the original process must remain alive with its exact recorded start: http/memory_turn.rs:151,385-436. Grants are in-memory and restart-cleared (lib.rs:709-711). A different pane with no grant, dead/recycled process, expired grant or different asserted ID cannot use this grace.\n- Grace is available only after parsing an exact memory-add command (http/directory.rs:416-469,556-587); other verbs retain refusal. A contradictory explicit actor is independently rejected at 591-598. Existing bearer authentication and paired-machine write restrictions remain (http/mod.rs:482-516,768-792).\n- Scope qualification requested in the packet: memory add is NOT restricted to roles/projects the seat held. This is also the pre-existing live-caller contract, not a new held-role authorization guarantee. Selected registered project and existing role flow through http/directory.rs:1822-1834,1870-1874,1926-1968 to community/directory.rs:943-974 and community/memory.rs:177-180,363-379 without a holding check. The grace restores one verb as that author. Clarify this expectation; do not claim never-held-role rejection or silently introduce a new holding policy.\n\nMemory-turn checks:\n- memory.note is published after the note commits and identifies the actor (http/directory.rs:1870-1912). The live subscription filters both seat and kind and replays no historical events (http/memory_turn.rs:984-988; core/events.rs:43-50; events/mod.rs:259-269).\n- Temporal qualification: an own-seat note after subscription can end the wait BEFORE prompt delivery; it is not prompt-ID matched or delivery-gated. This is explicitly tested as the delivered-or-not note policy (http/memory_turn.rs:929-939,1216-1223). Thus strict \"written after this prompt\" is not established; only activity endings require matching prompt delivery.\n- A delivered idle arms settle, working clears it, and a later idle restarts it. The next deadline is capped by the overall bound. Note, settle and bound leave the same loop and reach one proceed/record path (http/memory_turn.rs:1034-1060,359-376). Mutex-protected pending insertion prevents a second action task for that seat (448-470).\n- The turn-end interpretation is the policy; settle is a brake that only delays the action within the bound. NOTE_GRACE is new narrow authorization, not a brake.\n\nPublic-data and injection review:\nNo added credentials, authentication captures, sensitive transcript content, external dependency sources, shell interpolation sinks or outbound privacy-leak path found in the changed code, tests or docs. No manifest, lockfile, CI definition or fixture-file change. Rendering is unchanged; existing role/slug grammar, writer confinement and argv-based git invocation remain.\n\nIndependent CI/finality evidence:\n- just pr-freeze 247 initially returned FINAL at this exact head with a clean detached worktree. A pre-publication refresh saw the same head and all checks green but GitHub temporarily reported mergeability UNKNOWN; the final publication command carries the refreshed result.\n- CI run 44429730440 is at the reviewed full head: Node 22/24, rust-lint, rust-test and delivers passed. Linux ubuntu-24.04 only; no macOS runtime claim.\n- Successful rust-test job 135243708924 uploaded artifact ID 14486725645 (zip SHA256 54f570eeb836d9f5b91c22272cf4548b7394b0189a05b1ed4f8583ec1d9bddc1). Downloaded that exact ID and parsed JUnit: 2511 Rust tests passed, 6 skipped; directory_http 112 passed, memory_turn_http 24 passed, spawn_sites 6 passed. The idle-blip, own-note, late-note grace, pending-note and bound regressions all passed. These do not individually prove grace expiry, PID recycling, never-held-role rejection or the composed rollover case.\n- Node 24: 2307 Vitest tests passed, 6 skipped; native Copilot suites 356+2 passed, including the F207 tool-boundary/session.idle regression. Typecheck and lint passed; dependency audit reported no unallowed high findings.\n- harness boot returned advisory NOT-READY because this review worktree has no node_modules; no compilation/test stage ran. Full harness checks were not rerun under the packet's CI-only/one-build rule.\n\nCost and deployment proof:\nSettle is another deadline on the existing per-pending-turn wait, not a poll or additional task. One existing seat-filtered subscription accepts memory.note. Grace is one pane-keyed map entry per landed close, pruned on the next grant, plus a request-driven process-start read. No new launch site or per-seat/per-tick launch is added. Normal process-start reads are in-process, but the existing counted absolute /bin/ps fallback remains (harnesses/src/proc.rs:90-104); do not promise an unconditional zero-launch attempt. Existing note persistence launches are unchanged. Removing intermediate Copilot/OMP idles reduces activity posts; Copilot's deduplication can also avoid the following working post.\n\nIndependent live baseline, 2026-11-19T00:37:52Z to 00:38:12Z:\npij-rs --json ping, just spawn-rate --seconds 20, pij-rs --json ping: daemon spawns 592 -> 592, all per-operation counters unchanged, whole-machine 176.6 launches/s (sampled 170.2/s). Separate /bin/ps snapshot for PID 23167: CPU 80.2%, RSS 164112 KiB, elapsed 36:49; this is a snapshot, not an interval CPU benchmark or candidate measurement.\n\nOwed after merge/bounce: paired exact spawn counters, 20-second whole-machine sampler and daemon CPU/RSS on the deployed head; the planned plain-close proof with note persistence. Context is retained and no memory note has been prewritten for that proof.\n\nHarness feedback: captured MW-001 in the transient pleased-pike-247 observation bucket. A read-only review-evidence verb should combine exact-head freeze, successful-job artifact selection and named-test results with cost receipts, without rebuilding. This repeats the existing security role's review-readiness lesson and is an encoding candidate, not another gate for this PR.\n"
+		}
+	]
+}
