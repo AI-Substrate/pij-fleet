@@ -1908,7 +1908,10 @@
 					"harness_session": "4b0db837-7643-466e-b89f-a8ec3a6fb6bc",
 					"instance_key": "262",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #262 merged (cc77bc0c163d)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-compulsory-junglefowl",
+					"to": "2026-11-19T06:56:16.219Z",
 					"why": "F220 idempotent nice19 wrapper #262"
 				}
 			]
