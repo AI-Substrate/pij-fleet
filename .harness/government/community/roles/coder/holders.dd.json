@@ -1086,6 +1086,16 @@
 					"seat": "pij-printed-egret",
 					"to": "2026-11-19T03:07:43.844Z",
 					"why": "F210: Copilot /compact parks unrecognized on a wide pane (salamander %189)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T03:11:35.724Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f211",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F211: a failed spawn leaves an orphan live seat"
 				}
 			]
 		}
