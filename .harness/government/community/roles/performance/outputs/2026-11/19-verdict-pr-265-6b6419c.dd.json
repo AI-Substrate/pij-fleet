@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f2f2-2aef-7713-9369-8d02b36415c6",
+				"date": "2026-11-19",
+				"head": "6b6419caadafa5b0926c8df92550ce39dc6116ff",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:265",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Post-deploy launch counters, whole-machine spawn-rate and CPU/RSS paired with sibling restart live-proof timestamps."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git rev-parse HEAD && git range-diff dba0c080..9e665af8 01b363e3..6b6419caadafa5b0926c8df92550ce39dc6116ff",
+					"exit_code": 0,
+					"log": "HEAD 6b6419caadafa5b0926c8df92550ce39dc6116ff; range-diff 1: 9e665af8 ! 1: 6b6419ca; only docs/difficulties.md context changes around the added D-F213-2 row (D-F215-1 from #264). Production and tests unchanged."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES — performance/265, exact head 6b6419caadafa5b0926c8df92550ce39dc6116ff, base 01b363e3 (#264).\n\nReissued round-1 performance verdict after rebase-only confirmation. Detached worktree HEAD equals the requested full SHA. Executed git range-diff dba0c080..9e665af8 01b363e3..6b6419caadafa5b0926c8df92550ce39dc6116ff: one commit maps 9e665af8 to 6b6419ca; only docs/difficulties.md surrounding context differs (D-F215-1 now precedes D-F213-2). No production or test patch-content change. Original exact-head review and embedded baseline: output 85f8a68ce7d61f89593f021634eb2c07299cca79, community/roles/performance/outputs/2026-11/19-verdict-pr-265-9e665af.dd.json.\n\nCost conclusion unchanged: zero incremental launches, process observations, polls or timers. Under !same_launch, route.anchor.or(descriptor.proc) is selected by value and checked once against at most 31 already-verified ancestors. One optional fixed-size ProcIdentity per route; no growing sibling/restart history or per-tick/per-seat work. Existing route serialization acquires bounded extra fields on a carried seat, with absent anchors omitted. The observer/walk and launch-site inventory remain unchanged by this PR. Existing macOS ancestry validation's cached /bin/ps reads are pre-existing, not a launch-free claim about all registration.\n\nOriginal before-only baseline remains historical, not remeasured or relabeled as this head's runtime proof: PID17600 running dba0c0803b, 2026-11-19T08:18:57.096917Z–08:19:17.359234Z, 20.262 s, counters 655→655/all by_op deltas zero, machine 115.8 launches/s, CPU snapshot 63.7%, RSS 156992 KiB. F222 separately measured that old daemon's CPU-time slope at 31.86%; this is not attributed to the anchor patch.\n\nNote owed remains post-deployment counters, whole-machine spawn rate and CPU/RSS paired with sibling restart live-proof timestamps. No performance code change requested. No builds, tests, mutations, restarts or configuration changes performed for this confirmation.\n"
+		}
+	]
+}
