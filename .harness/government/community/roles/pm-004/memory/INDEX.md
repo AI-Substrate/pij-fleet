@@ -5,4 +5,5 @@
 - [2026-11-18 takin is reachable directly again \(F196 live\); lanes and contract owners](2026-11-18-takin-is-reachable-directly-again-f196.dd.md): Open before sending to takin, or when picking up s02/s03 of workstream 004 (ws004, takin, delivery, lanes)
 - [2026-11-18 Workstream 004 closed: what worked, what to do differently](2026-11-18-workstream-004-closed-what-worked-what.dd.md): Open before running another workstream with parallel lanes, live-fleet acceptance or a shared sidecar (ws004, retro, acceptance, lanes, reviews)
 - [2026-11-18 Workstream 004 start: where everything lives, and the takin delivery trap](2026-11-18-workstream-004-start-where-everything.dd.md): Open when picking up pm-004, dispatching to takin, or before planning cache-proxy lanes (ws004, cache-proxy, takin, delivery)
+- [2026-11-19 s07 \(\#255\): the proxy's real cost, toolSearch=false, and where the review stands](2026-11-19-s07-255-the-proxy-s-real-cost-toolsearch.dd.md): Open when resuming workstream 004 s07 / PR \#255, or before any proxy cost or TTL change (ws004, s07, cost, toolsearch, ttl)
 <!-- /pij:generated -->

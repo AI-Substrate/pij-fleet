@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open when resuming workstream 004 s07 / PR #255, or before any proxy cost or TTL change",
+				"tags": [
+					"ws004",
+					"s07",
+					"cost",
+					"toolsearch",
+					"ttl"
+				],
+				"title": "s07 (#255): the proxy's real cost, toolSearch=false, and where the review stands"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Why s07 exists: egret's re-pricing (scratch/proxy-survey/ sim.md, report.md) showed the proxy cost MORE than plain Copilot. Cause: on the BYOK route Copilot uses client-side generic tool search, which adds and drops deferred tools, so the tools prefix changes and the whole prompt is re-written at the 1h price. Evidence: usage_record.availableToolCount, and toolTokenCount for token-only changes.\nFix applied (not code): `toolSearch: false` in user-wide ~/.copilot/settings.json, set by far-jackal on Jordan's go at 03:27:46Z on 19 Nov. It can't be set per repo or per seat. Copilot reads settings only at start, so seats need a restart, which costs one whole-prompt write each; restart big seats when they'd cold-wake anyway.\nResiduals under toolSearch=false: the first extensions_reload does a token-only flip; session e69a6a28 did a real count flip (44→49) after the setting. Cause still being traced by sailfish.\nTTL: keep 1h for everyone. Per-seat TTL loses 6–26% because a 1h marker never upgrades a 5m entry; a perfect-hindsight per-seat policy saves at most ~4%. Nothing gets built in the proxy.\nPR #255 (sailfish, coder/232, docs + sim232.py) status at compaction: round 1 is open. Reviewers: antlion (correctness), pony (security; R1 baseline clean), stingray (cost). One refresh commit is pending from sailfish (due ~04:55Z) carrying:\n- the after-window data, split by process start;\n- F255-001 / PERF255-02: bound the rate fit to END=03:20Z;\n- F255-002 / PERF255-01: keep the residual flips in the achievable estimate;\n- PERF255-03: split ttl_sim at restarts;\n- the e69a6a28 trigger and every remaining flip, priced as residuals.\nWhen the head arrives, send it to all three reviewers for range-diff against c68ac8f7, then pr-freeze, then FINAL to far-jackal.\nThe fleet-232 worktree's target/ was removed for disk; nobody builds there. Seats to close after merge (F194 procedure): sailfish, antlion, pony, stingray.\n"
+		}
+	]
+}
