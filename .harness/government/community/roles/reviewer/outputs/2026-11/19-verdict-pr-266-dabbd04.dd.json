@@ -1,0 +1,48 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f305-e92f-7f20-95fa-08950f84ca3e",
+				"date": "2026-11-19",
+				"head": "dabbd04062d73a12ffef2a831bd7e2f2030c8f8a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:266",
+				"writer": "pij-agreeable-piranha",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C34 follow-up: make snapshots_during_recording_lose_nothing scheduler-independent; not a merge block."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 266",
+					"exit_code": 0,
+					"log": "FINAL at dabbd04062d73a12ffef2a831bd7e2f2030c8f8a; all five latest named checks successful"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14512742291/zip | verify SHA-256 and parse junit.xml",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44491243773/job/135447109921; all five counter tests passed, none skipped"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Round 2/2 correctness verdict: PASS WITH NOTES.\nSubject: pr:266\nHead: dabbd04062d73a12ffef2a831bd7e2f2030c8f8a\nDelta reviewed: 890515121f3d8f38cc96947847e7178ce42e1cc9..dabbd04062d73a12ffef2a831bd7e2f2030c8f8a\n\nNo normal-use product correctness blocker. The structural P266-001 mutex issue is removed; the performance role owns its independent cost verdict. This final round does not require another review round.\n\nFix verification:\n- route_counts_table() constructs the immutable counter table from Endpoint::ALL in production and test states (http/mod.rs:611). Constructor sort_unstable/dedup and binary_search_by use the same ascending str ordering (route_counts.rs:120-143). Inline atomic counters stay at stable indices; recording does not grow the table or allocate/clone a per-path Arc.\n- A missing MatchedPath or template absent from that table increments unmatched once and returns (route_counts.rs:147-150). Known templates retain the same method buckets and fixed seat-shape slots. The outside-table test checks both fallback accounting and absence of a new output key.\n- Snapshots only load the counters and build output maps/strings; they hold no lock against recording. Explicit wrapping_add removes the prior debug-overflow panic in aggregate totals and matches the now-documented wrapping semantics. Nontransactional reads are clearly documented.\n- The outermost middleware placement, response classification, bearer/job-token authentication and ping's additive JSON contract are unchanged. Recording costs a bounded route binary search plus one outcome fetch_add, with a query-byte scan and second fetch_add for GET /v1/seats. No added timer, poll, per-seat loop or process launch; work scales with requests and the fixed endpoint table.\n- The concurrency test joins all four writers before its final snapshot, so the exact 40,000 route and shape totals are valid checks for lost increments.\n\nC34 follow-up (non-blocking; new in round 2):\nroute_counts.rs:319-342, snapshots_during_recording_lose_nothing assumes the reader is scheduled before all writers finish. If the reader is descheduled after spawning, all four 10,000-iteration writers may finish before the first is_finished check; snapshots stays zero and line 340 fails despite correct counters. Use an explicit reader/writer rendezvous so workers cannot all finish before one snapshot is acknowledged. This is a test determinism/proof improvement, not a normal-use daemon bug; do not hold merge or request a third review round for it.\n\nEvidence:\n- git diff --check 890515121f3d8f38cc96947847e7178ce42e1cc9 dabbd04062d73a12ffef2a831bd7e2f2030c8f8a: PASS.\n- just pr-freeze 266, from the new clean detached worktree: FINAL at the exact subject head; all five latest named checks successful.\n- CI run 44491243773: completed/success; API head_sha is the full subject head.\n- Successful rust-test job 135447109921 uploaded artifact 14512742291. Its downloaded ZIP SHA-256 matches the upload log: 561da69490a7e550e3ef0dfe2bce9d762cf7ab332d639acf543e69222a66a0c1.\n- Parsed that artifact's junit.xml: all four http::route_counts::tests cases and ping_counts_requests_by_route_and_seats_reads_by_query_shape ran without failure, error or skip, including both new round-2 cases.\n- No local builds, cargo, mutation runs or harness boot/checks were run, as instructed. CI provides Rust execution proof; the scheduler-dependent follow-up is from source review, not a locally reproduced failure.\n"
+		}
+	]
+}
