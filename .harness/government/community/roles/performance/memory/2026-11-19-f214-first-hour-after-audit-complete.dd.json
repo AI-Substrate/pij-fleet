@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Before interpreting PR256 after-deploy outcomes or designing a guard receipt audit",
+				"tags": [
+					"f214",
+					"audit",
+					"after-deploy",
+					"proof-limits"
+				],
+				"title": "F214 first-hour deployed audit complete and proof limits"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F214 / PR256 requested first-hour after-deploy audit COMPLETE. Merge a70cace40b002e9940b230b5ca27d6763a72977c, Warn(b), production PID36530. Confirmed same PID/revision near05:09Z and06:10:44Z; process started05:07:56Z. PM requested a05:08:00–06:10:00Z window instead of waiting for the earlier three-day proposal. No longitudinal effectiveness or savings claim follows from this short sample.\n\nPublished public-safe report: https://github.com/AI-Substrate/pij-fleet/pull/256#issuecomment-7001369640 . Performance note subject f:214-audit-after, head mergeSHA above, commit ce6adb0292b00dfae16332e57095a9c3b22c8c44; generated basename19-note-f-214-audit-after-a70cace. Role had already been released at merge, so output truthfully records writer_holds_role=false; PM explicitly assigned this audit afterward. No holding changes made.\n\nWindow:261delivered,233paired,151decided;76busy+6nonbusy-partial excluded. Report1507calls,307turns,54sessions,14unseated. ShippedWarn modeled guard outcomes: largecoldallowed1,warned0;warmrefused/warned1,refused0;large-refusals2. All233new_guard rows agree with independent computation. Per harness/model/route before-vs-after table in public report includes all15before groups; no-sample after rows marked rather than treated as risk-free. Before7days9402decided is not directly rate-comparable with62minutes151decided.\n\nExposure gap: no decided large cold5m-TTL case afterdeploy. One5m warm warning: plainCopilotClaude,idle6.37min,nextcallread99.8%. Remaininglargecoldallow: proxiedClaude,idle~26min,native1h,nextcallread8.6%. Do not claim original high-volume5m silent-cold problem empirically solved from this sample.\n\nActual receipt gap: no send.cold-wake-forced/watchdog.nudge/watchdog.idle-nudge events in window. Direct ordinary-send cold_check attaches AFTER delivery outcome persistence (http/mod.rs and delivery/mod.rs), so delivery spine records do not prove actual warning/refusal issuance. Two reconstructed Cold outcomes are on DELIVERED pairs, not actual request refusals. Daemon restart also clears native context availability; replay uses previous-call prompt sizes, not recorded send-time availability. Pre-window predecessors missing from scoped Claude/OMP reports also exclude pairings. Magic wand: persist compact structured guard outcome/TTL/basis with delivery audit so a future audit compares actual receipts to next-call cache behavior without reading message bodies. This is a proof-gap observation, not an implemented change or blocker added after C34.\n\nLive surfaces05:09Z: CopilotGPT30m native,plainCopilotClaude5m native,proxiedClaude1h proxy. Paired counters05:09:33.189–05:09:53.698Z20.5094s:571->581,+10all existing ps.registration-native-process,other sites0. Machine148.1launches/s; olderbefore284.6/s not controlled or attributable. Do not say zero fleet launches. CPU/RSS snapshots16.9%/111504KiB then13.6%/145744KiB are shared-daemon snapshots,not isolated CPU/leak proof.\n\nOne-shot timer bg_8 completed; no jobs/services left by this task. Report2threads/nice19; audit nice19,2.26s wall,2.14CPU-s,maxRSS82198528B,0swaps. No local builds/tests,bounce,install,synthetic wakes or source edits. Audit script advanced during wait to70d01ba27a6258efa69b66d30ba5671ee1d30b68 (legacy cache diagnostic correction ONLY; guard policy unchanged), SHA2569dafb2b618980a7833c3748d45925ababe0fadd27a02c5e97a0a0a4557cf74e5. Daemon stayedata70cace40b. Public report explicitly distinguishes tool vs runtime provenance and contains no home paths/account names. Final requested receipts delivered to pm-001; seat can close.\n"
+		}
+	]
+}
