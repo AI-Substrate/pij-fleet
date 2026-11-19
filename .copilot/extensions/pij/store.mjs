@@ -381,8 +381,46 @@ export async function extensionBuildIdentity(directory) {
 	return { extension_build: `hash:${digest.digest("hex").slice(0, 12)}`, extension_path };
 }
 
-/** Native runtime identity is authoritative; launch environment is only corroborated intent. */
-export function chooseRegistration({ sessionId, host, folder, seats, env, extension }) {
+/**
+ * The rows one registration reads about itself (F222): its requested id, its
+ * native session and its process. A closed row is among them, so a closed seat
+ * can tell it was closed instead of retrying against a roster that omits it.
+ */
+export function relatedSeatsPath({ requestedId, sessionId, pid }) {
+	const query = new URLSearchParams();
+	if (nonempty(requestedId)) query.set("id", requestedId.trim());
+	if (nonempty(sessionId)) query.set("session", sessionId);
+	if (positiveInteger(pid)) query.set("pid", String(pid));
+	return `/v1/seats/related?${query}`;
+}
+
+/**
+ * Split the related rows into the open rows registration has always read (the
+ * roster omits closed rows) and the closed rows, which only say a requested id
+ * was closed. A closed same-session row is never re-taken.
+ */
+export function registrationRows(related) {
+	if (!Array.isArray(related)) return { seats: related, closed: [] };
+	return {
+		seats: related.filter((seat) => seat.tombstoned_at == null),
+		closed: related.filter((seat) => seat.tombstoned_at != null),
+	};
+}
+
+/**
+ * Native runtime identity is authoritative; launch environment is only corroborated intent.
+ * `closed` (F222) are closed rows the daemon answered for this registration;
+ * only the requested id's own closed row is read from them, to stop for good.
+ */
+export function chooseRegistration({
+	sessionId,
+	host,
+	folder,
+	seats,
+	closed = [],
+	env,
+	extension,
+}) {
 	if (
 		!nonempty(sessionId) ||
 		!positiveInteger(host.pid) ||
@@ -444,8 +482,33 @@ export function chooseRegistration({ sessionId, host, folder, seats, env, extens
 		requestedSpawn &&
 		prior.spawn_id === requestedSpawn &&
 		sameProcess(prior, host);
-	if (requestedId && (!prior || prior.id !== requestedId) && !correlatedSuccessor)
+	if (requestedId && (!prior || prior.id !== requestedId) && !correlatedSuccessor) {
+		// F222: no open row yet is a spawn still writing its prebind, so retry. A
+		// closed row of THIS launch never reopens, so stop: its owner closed it. The
+		// launch is its spawn id, minted afresh for every spawn and revive; a closed
+		// row of another spawn id is a prior incarnation whose id a revive or respawn
+		// is reusing, and its fresh prebind comes after the child starts (R270-001).
+		// Without a spawn id, only the same native session or process is this launch.
+		const thisLaunch = (seat) =>
+			requestedSpawn
+				? seat.spawn_id === requestedSpawn
+				: seat.session === sessionId || sameProcess(seat, host);
+		if (
+			!prior &&
+			closed.some(
+				(seat) => seat.id === requestedId && seat.tombstoned_at != null && thisLaunch(seat),
+			)
+		) {
+			const error = new NativeError(
+				`Pij seat ${requestedId} was closed; native registration stopped`,
+				false,
+				`this Pij seat (${requestedId}) was closed`,
+			);
+			error.closed = true;
+			throw error;
+		}
 		throw new NativeError("Spawn prebind identity is not corroborated by the host process", !prior);
+	}
 	if (requestedSpawn && (!prior || prior.spawn_id !== requestedSpawn))
 		throw new NativeError("Spawn correlation does not match observed process identity");
 	const replacing = prior && nonempty(prior.session) && prior.session !== sessionId;
@@ -772,11 +835,15 @@ export class DaemonClient {
 				envelope.error === "refused" &&
 				typeof envelope.meta === "string" &&
 				envelope.meta.startsWith(`${COLD_WAKE_CODE}:`);
+			// F222: a daemon older than this route answers 404; it serves the route
+			// once restarted on current code, so registration waits for that.
+			const routeAhead = path.startsWith("/v1/seats/related?") && response.status === 404;
 			const projected = hostRefusal || coldWake ? envelope.meta.replaceAll(key, "[redacted]") : "";
 			const error = new NativeError(
 				coldWake ? projected : `Pij HTTP ${response.status}: ${diagnostic}`,
 				nativeUnavailable ||
 					registrationRetry ||
+					routeAhead ||
 					response.status === 401 ||
 					response.status === 429 ||
 					response.status >= 500,
@@ -2686,10 +2753,13 @@ export function createNativeReporter({ log, capture }) {
 						? "queued work targets another native session; resume that native session or use a new seat and intentionally reissue the message; receiving stopped without acknowledgement; outgoing pij_send remains available"
 						: "receiving held; inspect native history and acceptance before recovery, do not blindly resend or acknowledge"
 					: event.kind === "extension-unavailable"
-						? event.takeOver
-							? // F196: a restart alone meets the same holder; the take-over clears it.
-								`native registration failed: ${event.safeDiagnostic}; take the pane over with \`${event.takeOver}\` (from this pane, or ask the prime), then /restart; ordinary Copilot remains usable`
-							: `native registration failed: ${event.safeDiagnostic ?? "native initialization failed"}; no retry is scheduled — restart the Copilot CLI (/restart or relaunch) to recover; ordinary Copilot remains usable`
+						? event.closed
+							? // F222: a /restart inherits this launch's ids and stops again; a revive or new spawn mints a new launch.
+								`${event.safeDiagnostic}; pij delivery is off and no retry is scheduled; revive this seat or spawn a new one to rejoin pij; ordinary Copilot remains usable`
+							: event.takeOver
+								? // F196: a restart alone meets the same holder; the take-over clears it.
+									`native registration failed: ${event.safeDiagnostic}; take the pane over with \`${event.takeOver}\` (from this pane, or ask the prime), then /restart; ordinary Copilot remains usable`
+								: `native registration failed: ${event.safeDiagnostic ?? "native initialization failed"}; no retry is scheduled — restart the Copilot CLI (/restart or relaunch) to recover; ordinary Copilot remains usable`
 						: event.kind === "reconnecting" && event.holdKind === "receiver-gap"
 							? "native receiver progress is temporarily lagging behind a live turn; retrying in place, not a Pij daemon issue; ordinary Copilot remains usable"
 							: "check the Pij daemon and PIJ_RS_ADDR/PIJ_RS_STATE_DIR; retrying when available; ordinary Copilot remains usable";

@@ -26,15 +26,30 @@ macro_rules! status_query {
             " AND json_extract(payload,'$.assignment_id')=assignment.id ORDER BY seq DESC LIMIT 1)",
             " WHERE assignment.node_id=seats.id AND assignment.closed_at IS NULL ",
             " AND json_extract(event.payload,'$.state') IS NOT NULL) AS assignment_states ",
-            "FROM (", $source, ") AS seats WHERE (?2 IS NULL OR seats.id=?2) ORDER BY seats.id"
+            "FROM (", $source, ") AS seats ",
+            "WHERE (?2 IS NULL OR seats.id=?2) AND (?3 = 0 OR seats.tombstoned_at IS NULL) ",
+            "ORDER BY seats.id"
         )
     };
 }
 
 const TABLE_QUERY: &str = status_query!("SELECT *, NULL AS descriptor FROM seats");
 const ADAPTER_QUERY: &str = status_query!(
-    "SELECT value AS descriptor, json_extract(value,'$.id') AS id FROM json_each(?1)"
+    "SELECT value AS descriptor, json_extract(value,'$.id') AS id, \
+     json_extract(value,'$.tombstoned_at') AS tombstoned_at FROM json_each(?1)"
 );
+
+/// Which rows a status read returns.
+#[derive(Clone, Copy, Debug)]
+pub enum StatusRows<'a> {
+    /// Every seat that is not tombstoned: the roster and the cards. Retired rows
+    /// outnumber live ones many times over and the roster drops them anyway, so
+    /// the query never selects them (F222: their per-row subqueries and decoding
+    /// were most of a roster read).
+    Live,
+    /// One seat, tombstoned or not.
+    One(&'a SeatId),
+}
 
 /// A row and the declaration/freshness facts selected in its SQL snapshot.
 pub struct SeatStatus {
@@ -100,22 +115,33 @@ impl SqliteStatus {
         })?
     }
 
-    /// Read all rows or one id; one SQL snapshot supplies every status field.
+    /// Read the live rows or one id; one SQL snapshot supplies every status field.
     ///
     /// # Errors
     /// Schema, registry, SQL and malformed durable state errors are surfaced.
     pub async fn read(
         &self,
         registry: &dyn Registry,
-        id: Option<&SeatId>,
+        rows: StatusRows<'_>,
     ) -> Result<Vec<SeatStatus>> {
+        let (id, live_only) = match rows {
+            StatusRows::Live => (None, true),
+            StatusRows::One(id) => (Some(id), false),
+        };
         require_current_schema(&self.pool).await?;
         let (query, descriptors) = if self.registry_in_pool {
             (TABLE_QUERY, None)
         } else {
             let seats = match id {
                 Some(id) => registry.get(id).await?.into_iter().collect(),
-                None => registry.list(SeatFilter::default()).await?,
+                None => {
+                    registry
+                        .list(SeatFilter {
+                            live_only: true,
+                            ..SeatFilter::default()
+                        })
+                        .await?
+                }
             };
             (
                 ADAPTER_QUERY,
@@ -125,6 +151,7 @@ impl SqliteStatus {
         let rows = sqlx::query(query)
             .bind(descriptors)
             .bind(id.map(SeatId::as_str))
+            .bind(live_only)
             .fetch_all(&self.pool)
             .await
             .map_err(error)?;

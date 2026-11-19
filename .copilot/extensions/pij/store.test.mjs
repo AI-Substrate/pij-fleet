@@ -17,6 +17,7 @@ import {
 	NativeError,
 	NativePrecedence,
 	parseProcessStart,
+	registrationRows,
 	resolveRegistration,
 	STANDBY_REFUSAL_LIMIT,
 	STANDBY_RETRY_MS,
@@ -2779,7 +2780,7 @@ test("F174: a reset is never sent again, and only pij_send's route waits", async
 		["/v1/turn-end", refused],
 		["/v1/activity", refused],
 		["/v1/register", refused],
-		["/v1/seats?scope=local", refused],
+		["/v1/seats/related?session=native-shell-137", refused],
 	]) {
 		let sent = 0;
 		const client = new DaemonClient({
@@ -2846,6 +2847,111 @@ test("only typed HTTP 409 registration refusals permit retry", async () => {
 			return true;
 		});
 	}
+});
+
+test("F222: a daemon without the related-rows route is waited out; other 404s are not", async () => {
+	for (const [path, retryable] of [
+		["/v1/seats/related?session=native-shell-137", true],
+		["/v1/seats?scope=local", false],
+		["/v1/inbox/typing?seat=pij-a", false],
+	]) {
+		const client = new DaemonClient({
+			addr: "127.0.0.1:13700",
+			stateDir: "/isolated",
+			readKey: async () => "fixture-key",
+			fetch: async () => new Response("", { status: 404 }),
+		});
+		await assert.rejects(client.request(path), (error) => {
+			assert.equal(error.retryable, retryable, path);
+			return true;
+		});
+	}
+});
+
+test("F222: a requested id the daemon names closed stops for good; one not written yet is retried", () => {
+	const closedRow = {
+		id: "pij-closed-child",
+		harness: "copilot",
+		proc: null,
+		pane: "%2",
+		spawn_id: "spawn-closed",
+		tombstoned_at: 5,
+	};
+	const input = {
+		sessionId: "native-session",
+		host: { pid: 999, proc_start: 20260905120000, pane: "%2" },
+		folder: "/work",
+		env: { PIJ_SESSION_ID: closedRow.id, PIJ_SPAWN_ID: closedRow.spawn_id },
+	};
+	assert.throws(
+		() => chooseRegistration({ ...input, ...registrationRows([closedRow]) }),
+		(error) =>
+			error.closed === true &&
+			error.retryable === false &&
+			error.safeDiagnostic === "this Pij seat (pij-closed-child) was closed",
+	);
+	assert.throws(
+		() => chooseRegistration({ ...input, ...registrationRows([]) }),
+		(error) => /not corroborated/.test(error.message) && error.retryable === true && !error.closed,
+	);
+});
+
+test("R270-001: a closed row of another launch is a prior incarnation, retried until this launch's prebind registers", () => {
+	// A revive (or a respawn reusing the id) mints a new spawn id and starts the
+	// child before it writes the fresh prebind; until then the old closed row is all
+	// the daemon has for the id.
+	const stale = {
+		id: "pij-revived-child",
+		harness: "copilot",
+		session: "old-native-session",
+		proc: { pid: 555, proc_start: 20260905110000 },
+		pane: "%2",
+		spawn_id: "old-launch",
+		tombstoned_at: 5,
+	};
+	const fresh = {
+		id: stale.id,
+		harness: "copilot",
+		session: null,
+		proc: null,
+		pane: "%2",
+		spawn_id: "new-launch",
+	};
+	const input = {
+		sessionId: "native-session",
+		host: { pid: 999, proc_start: 20260905120000, pane: "%2" },
+		folder: "/work",
+		env: { PIJ_SESSION_ID: stale.id, PIJ_SPAWN_ID: fresh.spawn_id },
+	};
+	assert.throws(
+		() => chooseRegistration({ ...input, ...registrationRows([stale]) }),
+		(error) => /not corroborated/.test(error.message) && error.retryable === true && !error.closed,
+	);
+	const registration = chooseRegistration({ ...input, ...registrationRows([fresh]) });
+	assert.equal(registration.id, stale.id);
+	assert.equal(registration.spawn_id, fresh.spawn_id);
+	// Without a spawn id, only the same native session or process is this launch.
+	const unspawned = { ...input, env: { PIJ_SESSION_ID: stale.id } };
+	assert.throws(
+		() => chooseRegistration({ ...unspawned, ...registrationRows([stale]) }),
+		(error) => error.retryable === true && !error.closed,
+	);
+	assert.throws(
+		() =>
+			chooseRegistration({
+				...unspawned,
+				...registrationRows([{ ...stale, session: input.sessionId }]),
+			}),
+		(error) => error.closed === true && error.retryable === false,
+	);
+	assert.throws(
+		() =>
+			chooseRegistration({
+				...unspawned,
+				...registrationRows([{ ...stale, proc: { pid: 999, proc_start: 20260905120000 } }]),
+			}),
+		(error) => error.closed === true && error.retryable === false,
+	);
 });
 
 test("plan 211: only a typed E-RS-SEAT-RETIRED registration refusal marks the seat retired", async () => {
@@ -3102,7 +3208,7 @@ test("HTTP non-wait deadlines, body stalls and connection failures remain retrya
 		["/v1/register", registration],
 		["/v1/send", { to: "pij-peer", body: "test" }],
 		["/v1/inbox/ack", { ...tuple, job_id: claim.job_id }],
-		["/v1/seats?scope=local", undefined],
+		["/v1/seats/related?session=native-shell-137", undefined],
 		["/v1/inbox?wait=false", undefined],
 	])
 		await assert.rejects(client.request(path, body), { retryable: true }, path);

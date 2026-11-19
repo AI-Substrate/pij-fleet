@@ -199,7 +199,6 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 			inboxPages = [],
 			typingSnapshots = [],
 			seats = [],
-			remoteSeats = [],
 			pane,
 			requestedId,
 			requestedSpawn,
@@ -235,14 +234,20 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 				let meta;
 				let refusal;
 				let status;
-				if (url.pathname === "/v1/seats") {
+				if (url.pathname === "/v1/seats/related") {
 					const local = rosters.length
 						? rosters.shift()
 						: registeredView
 							? [...seats.filter((seat) => seat.id !== registeredView.id), registeredView]
 							: seats;
+					// The daemon's RelatedSeats: by id, native session or pid; never a peer's rows.
+					const id = url.searchParams.get("id");
+					const nativeSession = url.searchParams.get("session");
+					const pid = Number(url.searchParams.get("pid"));
 					data = {
-						seats: url.searchParams.get("scope") === "local" ? local : [...local, ...remoteSeats],
+						seats: local.filter(
+							(seat) => seat.id === id || seat.session === nativeSession || seat.proc?.pid === pid,
+						),
 					};
 				} else if (request.url === "/v1/register") {
 					const next = registerResponses.shift();
@@ -1077,7 +1082,7 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		assert.equal(f.requests.find((r) => r.path === "/v1/register").body.pid, process.pid);
 	});
 
-	test("actual shell discovers local seats without remote pane collisions", async (t) => {
+	test("actual shell asks for its own rows, never the roster", async (t) => {
 		const local = {
 			id: "pij-local-native",
 			harness: "copilot",
@@ -1086,19 +1091,11 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 			proc: { pid: process.pid + 2, proc_start: 20260905115900 },
 			native_extension_delivery: true,
 		};
-		const remote = {
-			id: "pij-remote-same-pane",
-			harness: "omp",
-			session: "remote-session",
-			pane: "%2",
-			proc: { pid: process.pid + 1, proc_start: 20260905115900 },
-			native_extension_delivery: false,
-		};
-		const f = await launch(t, { pane: "%2", seats: [local], remoteSeats: [remote] });
+		const f = await launch(t, { pane: "%2", seats: [local] });
 		await f.waitFor("completion-wait");
 		assert.deepEqual(
 			f.requests.filter((r) => r.path.startsWith("/v1/seats")).map((r) => r.path),
-			["/v1/seats?scope=local"],
+			[`/v1/seats/related?session=native-shell-137&pid=${process.pid}`],
 		);
 		const registration = f.requests.find((r) => r.path === "/v1/register").body;
 		assert.equal(registration.id, local.id);
@@ -1253,7 +1250,7 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		assert.equal(f.requests.filter((r) => r.path === "/v1/register").length, 0);
 		assert.equal(f.events.filter((e) => e.kind === "native-send").length, 0);
 		await f.waitFor("completion-wait");
-		assert.equal(f.requests.filter((r) => r.path === "/v1/seats?scope=local").length, 3);
+		assert.equal(f.requests.filter((r) => r.path.startsWith("/v1/seats/related?")).length, 3);
 		assert.equal(f.requests.filter((r) => r.path === "/v1/register").length, 1);
 		assert.equal(f.requests.find((r) => r.path === "/v1/register").body.id, candidate.id);
 		// R8: the startup banner is closed by exactly one recovery line once registered.
@@ -1309,7 +1306,110 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		assert.equal(f.stdout(), "");
 	});
 
-	test("retired native attachment retains its durable id across dropped registration response", async (t) => {
+	test("a closed spawned seat stops registering for good and says a new seat rejoins", async (t) => {
+		// F222: its owner closed it; the closed row never reopens, so no retry.
+		const closed = {
+			id: "pij-closed-child",
+			harness: "copilot",
+			session: null,
+			proc: null,
+			pane: "%2",
+			spawn_id: "closed-spawn",
+			native_extension_delivery: false,
+			tombstoned_at: 5,
+			state: "idle",
+		};
+		const f = await launch(t, {
+			seats: [closed],
+			pane: closed.pane,
+			requestedId: closed.id,
+			requestedSpawn: closed.spawn_id,
+		});
+		const log = await f.waitFor("native-log", (e) => e.message.includes("was closed"));
+		assert.equal(
+			log.message,
+			"[pij native] unavailable: extension-unavailable; this Pij seat (pij-closed-child) was closed; pij delivery is off and no retry is scheduled; revive this seat or spawn a new one to rejoin pij; ordinary Copilot remains usable",
+		);
+		// Retries start at 250 ms and double: a second ask would come within a second.
+		await new Promise((resolve) => setTimeout(resolve, 1000));
+		assert.deepEqual(
+			f.requests.filter((r) => r.path.startsWith("/v1/seats")).map((r) => r.path),
+			[`/v1/seats/related?id=pij-closed-child&session=native-shell-137&pid=${process.pid}`],
+		);
+		assert.equal(f.requests.filter((r) => r.path === "/v1/register").length, 0);
+		const exited = once(f.child, "exit");
+		f.child.stdin.end();
+		assert.equal((await exited)[0], 0);
+	});
+
+	test("a spawned seat whose prebind row is not written yet retries until it is", async (t) => {
+		const prebind = {
+			id: "pij-allocated-child",
+			harness: "copilot",
+			session: null,
+			proc: null,
+			pane: "%2",
+			spawn_id: "allocated-spawn",
+			native_extension_delivery: false,
+		};
+		const f = await launch(t, {
+			rosters: [[]],
+			seats: [prebind],
+			pane: prebind.pane,
+			requestedId: prebind.id,
+			requestedSpawn: prebind.spawn_id,
+		});
+		await f.waitFor("completion-wait");
+		assert.equal(f.requests.filter((r) => r.path.startsWith("/v1/seats/related?")).length, 2);
+		assert.equal(f.requests.find((r) => r.path === "/v1/register").body.id, prebind.id);
+		const exited = once(f.child, "exit");
+		f.child.stdin.end();
+		assert.equal((await exited)[0], 0);
+	});
+
+	test("R270-001: a revived seat retries past its old closed row until its fresh prebind registers", async (t) => {
+		// The revive starts the child before it writes the fresh prebind, so the
+		// first answer for the id is the previous launch's closed row.
+		const stale = {
+			id: "pij-revived-child",
+			harness: "copilot",
+			session: "old-native-session",
+			proc: { pid: process.pid + 7, proc_start: 20260905110000 },
+			pane: "%2",
+			spawn_id: "old-launch",
+			native_extension_delivery: false,
+			tombstoned_at: 5,
+			state: "idle",
+		};
+		const fresh = {
+			id: stale.id,
+			harness: "copilot",
+			session: null,
+			proc: null,
+			pane: "%2",
+			spawn_id: "new-launch",
+			native_extension_delivery: false,
+		};
+		const f = await launch(t, {
+			rosters: [[stale]],
+			seats: [fresh],
+			pane: fresh.pane,
+			requestedId: fresh.id,
+			requestedSpawn: fresh.spawn_id,
+		});
+		await f.waitFor("completion-wait");
+		assert.equal(f.requests.filter((r) => r.path.startsWith("/v1/seats/related?")).length, 2);
+		const registered = f.requests.find((r) => r.path === "/v1/register").body;
+		assert.equal(registered.id, fresh.id);
+		assert.equal(registered.spawn_id, fresh.spawn_id);
+		const exited = once(f.child, "exit");
+		f.child.stdin.end();
+		assert.equal((await exited)[0], 0);
+	});
+
+	test("a closed same-session row is never re-taken, and a dropped registration response keeps the minted id", async (t) => {
+		// F222: the related rows carry closed rows the roster never did; registration
+		// still reads only the open ones, so a closed seat is not reopened by its session.
 		const retired = {
 			id: "pij-copilot-0123456789abcdef01234567",
 			harness: "copilot",
@@ -1322,10 +1422,9 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		const f = await launch(t, { seats: [retired], dropRegistrations: 1 });
 		await f.waitFor("completion-wait");
 		const attempts = f.requests.filter((r) => r.path === "/v1/register");
-		assert.equal(attempts.length, 2);
 		assert.deepEqual(
 			attempts.map((attempt) => attempt.body.id),
-			[retired.id, retired.id],
+			["", "pij-bright-otter"],
 		);
 		assert.equal(f.requests.filter((r) => r.path === "/v1/inbox/ack").length, 1);
 		assert.equal(f.events.filter((e) => e.kind === "native-send").length, 1);
