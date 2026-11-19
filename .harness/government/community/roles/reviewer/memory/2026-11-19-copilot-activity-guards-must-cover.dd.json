@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "When reviewing a terminal activity brake or a screenshot-derived composer guard.",
+				"tags": [
+					"review",
+					"copilot",
+					"composer",
+					"activity",
+					"ci"
+				],
+				"title": "Copilot activity guards must cover animation phases"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Review #252 at c6a05846a4bd7f7af65ad08a7ab76d55dc53ea40: BLOCK, F252-001. A newly accepted Copilot footer exposes the empty composer during manual compaction, but the activity brake catches only the captured hollow-circle phase. The actual running 1.0.114 renderer cycles through four distinct glyphs, so this is a normal-use hole, not optional exhaustive hardening. The extension publishes working on assistant/fusion starts, not compaction starts; settled idle does not close it. Check the real renderer and the downstream state publisher together before trusting a screenshot-shaped activity guard.\n\nC34 scope: pre-caret-only extraction already hides a Home-position draft on main's recognized layouts. The new synthetic draft test keeps an idle footer, whereas the real 1.0.114 renderer removes those hints when input exists. Do not promote that synthetic combination to proof of a new live draft regression.\n\nScrub audit: both supplied source captures exactly reconstruct the committed fixtures with CSI removal, trailing-space trim, transcript ASCII alphanumeric replacement and same-width generic cwd replacement. Four retained ESC bytes per fixture are sanitized OSC sequences, not private-data leaks; \"ANSI stripped\" overstates the transform.\n\nProof: no local builds/tests/pane input. Exact-head CI run 44445612065 passed 2,528 Rust tests; successful job 135296931821 uploaded artifact 14491889852. All five new tests and older Copilot fixture tests passed. The new blocker is source-traced, not an executed mutation.\n\nmagicWand: have activity-brake regressions cover the actual renderer's animation family, not only one captured frame.\ndifficulties: the npm launcher's JavaScript bundle is stale even when the running binary self-updated; use the version-qualified extracted package and its current-process inuse marker. A green captured-frame regression can miss ordinary intermediate animation states. Precise raw-capture scrub verification required source pointers; keep a reproducible scrub transform with future fixtures.\n"
+		}
+	]
+}
