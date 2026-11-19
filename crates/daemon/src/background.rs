@@ -2292,6 +2292,7 @@ mod tests {
                     model: None,
                     estimate_usd: None,
                     not_estimable: None,
+                    cache_ttl: None,
                 },
                 None => ColdCheck::Clear,
             }

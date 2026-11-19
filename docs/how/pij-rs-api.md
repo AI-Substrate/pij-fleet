@@ -729,19 +729,30 @@ transcript through `SessionStatusPort` (plan 157, adapter `pij-unisphere` over
   miss is sized once the miss expires, even if it is idle by then (R249-001).
 - `failed` (`error`): the rest of the card is still served.
 
-Each fact is `{"value":V,"basis":"native|derived|table@vN|mtime-fallback"}` or
+Each fact is `{"value":V,"basis":"native|derived|table@vN|mtime-fallback|proxy"}` or
 `{"basis":"unknown"}`. There is never a null, and never a 0 standing in for unknown.
 `status` covers:
 - `model`
 - `contextUsedTokens` and `contextWindowTokens`
 - `lastCallAtMs`
 - the last call's input, cache-read, 5-minute and 1-hour cache-write tokens
-- `cacheTtl` (`five-minutes|one-hour`)
+- `cacheTtlSeconds` (F214, `SEAT_STATUS_VERSION` 2): the prompt cache's real
+  lifetime in seconds, e.g. 300, 1800 (Copilot's GPT models) or 3600. Its
+  source order is a policy, and its basis names the rung: the seat's own record
+  (`native`, or `derived` from the last call's native 1 h/5 m write split), then
+  the pij cache proxy (`proxy`: a proxied Claude seat's main chain writes 1 h),
+  then the versioned `CACHE_TTL_TABLE` (`table@v1`: Claude Code Claude 1 h,
+  Copilot and OMP-on-github-copilot Claude 5 m, their GPT 30 m). A card from a
+  v1 daemon has no such field and reads as unknown. Not used, by measurement
+  (F214 audit, 2026-11-12 to 19): Copilot's `cacheExpiresAt` (it agreed with
+  last call + native TTL on 3,667 of 3,667 deliveries) and OMP's
+  `models.yml` cache retention (it would have decided 0 of 9,402).
 - `compactions`
 - `reset`: why the source re-read from the start. It is absent on the warm path.
 
 `cacheState` is derived on the daemon clock as `warm` (`expiresInMs`) or `cold`
-(`expiredForMs`). It is unknown when the last call time or the TTL is unknown.
+(`expiredForMs`), from the last call time plus `cacheTtlSeconds`. It is unknown
+when either is unknown.
 The source keeps one read position per seat, so a warm read folds only appended bytes.
 Busy/idle is `state`, never this block. The human CLI prints one `session:` line.
 
@@ -749,13 +760,16 @@ Busy/idle is `state`, never this block. The human CLI prints one `session:` line
 - `contextUsed`: context tokens in use.
 - `idleMs`: milliseconds since the last API call.
 - `cacheState`: `{state: warm|cold, expiresInMs|expiredForMs}`.
-- `coldWake`: `{wouldRefuse, estimateUsd?, notEstimable?}`. This is `cold_wake::check` itself, so it is exactly what the guard would do with a normal send now. A HydraFusion router seat (plan 169 R7, bound model `hydrafusion`/`hydrafusion-max`) refuses on the same size and idle rules but never carries `estimateUsd`: `notEstimable` reads `not estimable: router, per-call models`, because the router picks the model per call and no single model's price describes the wake. Its refusal and `pij state` line show the price as `? (not estimable: router, per-call models)`.
+- `coldWake`: `{wouldRefuse, estimateUsd?, notEstimable?, warning?}`. This is `cold_wake::check` itself, so it is exactly what the guard would do with a normal send now. For a seat over 400k context (`COLD_CONTEXT_TOKENS`) whose last call is past its cache TTL, the one switch `PAST_TTL` decides: `Warn` (the default until Jordan rules) allows it with `warning` until an hour, and `RefuseAt { ttl_percent }` refuses at that share of the TTL (100 refuses at the TTL; 150 and 200 grant a grace) and warns before it. Past an hour (`COLD_IDLE_MS`, the ceiling on every TTL) it always refuses. A large seat with no TTL from any rung, idle past 5 minutes (`UNKNOWN_TTL_WARN_MS`, the shortest TTL in the table), is allowed with `warning` set and the receipt's `cold_check` reading `warn: <why>`; it is never silent. A HydraFusion router seat (plan 169 R7, bound model `hydrafusion`/`hydrafusion-max`) refuses on the same size and idle rules but never carries `estimateUsd`: `notEstimable` reads `not estimable: router, per-call models`, because the router picks the model per call and no single model's price describes the wake. Its refusal and `pij state` line show the price as `? (not estimable: router, per-call models)`.
+
+The FYI flush and `revive --cheap` are actions, so they need the seat's own evidence: a TTL from the table alone is unknown to them (`cache TTL from the table only`). The guard, a brake, uses every rung.
 
 `sizeLines` holds the rendered human lines, which every client prints verbatim:
-- `context 720k / 1M · last call 2h ago · cache 1h (cold 1h) · 3 compactions`;
-- when the guard would refuse, `❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi only if it has nothing to do; wakes no one)`.
+- `context 720k / 1M · last call 2h ago · cache 1h derived (cold 1h) · 3 compactions` (the TTL names its basis);
+- when the guard would refuse, `❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi only if it has nothing to do; wakes no one)`;
+- when it would warn, `⚠ cold-wake guard: a normal send goes through with a warning: <why>`.
 
-`GET`/`POST /v1/seats?sizes=true` adds the same `sessionStatus` and derived fields to each **local** row, plus `sizeColumns` (`[CTX, IDLE, CACHE, ❄-or-empty]`). It is opt-in, so federation fan-in and extension rosters don't pay for it. The local seats are read in parallel with a 200 ms wait each. A seat that does not answer in time shows `?`, and its read keeps going in the background, so the next list is warm. Both `pij list` (shim) and `pij-rs list` ask for sizes. Their human output is one table (golden [`cli/list-sized.txt`](../../crates/testkit/fixtures/golden/cli/list-sized.txt) from [`cli/list-sized.json`](../../crates/testkit/fixtures/golden/cli/list-sized.json)):
+`GET`/`POST /v1/seats?sizes=true` adds the same `sessionStatus` and derived fields to each **local** row, plus `sizeColumns` (`[CTX, IDLE, CACHE, ❄-or-⚠-or-empty]`). It is opt-in, so federation fan-in and extension rosters don't pay for it. The local seats are read in parallel with a 200 ms wait each. A seat that does not answer in time shows `?`, and its read keeps going in the background, so the next list is warm. Both `pij list` (shim) and `pij-rs list` ask for sizes. Their human output is one table (golden [`cli/list-sized.txt`](../../crates/testkit/fixtures/golden/cli/list-sized.txt) from [`cli/list-sized.json`](../../crates/testkit/fixtures/golden/cli/list-sized.json)):
 ```
   SEAT             HARNESS  STATE    CTX   IDLE  CACHE
 ❄ pij-cold-claude  claude   idle     720k  2h    cold 1h
@@ -887,7 +901,7 @@ Cost: no new launch. One primary-key read per native claim (the switch) and one 
 
 ### Cold-wake guard (plan 157 phase 2)
 
-Waking a seat whose prompt cache has expired re-writes its whole context at cache-write prices. The daemon therefore refuses a waking send to a **cold** recipient. The constants, the price table and the pure rule live in [`cold_wake.rs`](../../crates/core/src/cold_wake.rs): context over `COLD_CONTEXT_TOKENS`, last API call older than `COLD_IDLE_MS`, and the daemon does not see the seat working. The guard is a brake: it only ever refuses, and it never changes what is delivered.
+Waking a seat whose prompt cache has expired re-writes its whole context at cache-write prices. The daemon therefore refuses a waking send to a **cold** recipient. The constants, the price table and the pure rule live in [`cold_wake.rs`](../../crates/core/src/cold_wake.rs): context over `COLD_CONTEXT_TOKENS`, last API call past `COLD_IDLE_MS`, and the daemon does not see the seat working. Between the seat's cache TTL (`cacheTtlSeconds`, F214) and that hour, `PAST_TTL` warns (the default) or refuses at a share of the TTL. The guard is a brake: it only ever refuses or warns, and it never changes what is delivered. The TTL that feeds it is a policy: the seat's own record, then the cache proxy, then the versioned table, each named by its basis (see `sessionStatus`).
 
 **Copilot seats** (plan 217). Copilot's transcript carries no context size, so until plan 217 the guard read Copilot seats as `unknown: context size unknown` and never refused them. Copilot seats now report their size at each turn boundary ([`/v1/activity`](#busyidle-publication-post-v1activity)), so once a Copilot seat has reported its size, a normal send to it while it is idle, cold and over the threshold is refused with `E-RS-COLD-WAKE`, as it already is for other harnesses: the sender resends with `--fyi`, or with `--force --reason '<why>'`. The threshold and idle time are unchanged. A Copilot seat whose size is not yet known (none reported since the daemon started) is still never refused. The price shown is the same Anthropic list-price estimate: it does not model Copilot billing, which charges AI credits per token type and writes a 5-minute cache, not a 1-hour one (a known gap, not a rule).
 
@@ -900,8 +914,9 @@ pij-rs send --to <seat> --force --reason '<why>' --body 'text'   # native form
 |---|---|
 | Refusal | HTTP 400, `{ok:false, error:"refused", meta:…}`. Nothing is sent. Since plan 160 the meta lists the sender's options, each priced (golden [`cold-wake/refusal.txt`](../../crates/testkit/fixtures/golden/cold-wake/refusal.txt)):<br>`E-RS-COLD-WAKE: ❄ pij-x is cold (720k, idle 1h52m). Options:`<br>`  --fyi                  only if they need do nothing; wakes no one  $0 now`<br>`  --force --reason "…"   wake on its current model                   ~$6.45`<br>`Estimates at list price: a 1-hour cache write of the whole context, plus about 5 calls.`<br>The wake estimate is `cold_wake::wake_estimate_usd`. The first call writes the whole context to the 1-hour cache. Each of the 4 further calls reads the context so far, writes ~1,585 new tokens and outputs ~590, which are the 2026-09-28 usage study's means. Every call outputs ~590. Prices come from the `PRICES_USD_PER_MTOK` table (Opus 5.5, Sonnet 5.5, Haiku 4.5, list prices checked 2026-10-01). Model ids are normalised first, and an unpriced model says `price unknown`. The shim prints the meta alone on stderr; the OMP/Pi and Copilot `pij_send` tools return it verbatim as the tool error. |
 | POST `/v1/send` `"force": true, "reason": "<why>"` | Wakes a cold recipient anyway. `force` without a non-empty `reason` is refused with a meta starting `E-RS-COLD-WAKE:` that names `--reason`. The tools refuse it too, before any request. |
-| Spine `send.cold-wake-forced` | The audit of every forced cold wake, persisted before the wake. `seat` is the recipient; payload `{from, from_machine, msg_id, reason, context_tokens, idle_ms, model, estimate_usd, not_estimable}`; `from_machine` is null for a local sender and the paired machine's alias for a forwarded one. |
-| Receipt `data.cold_check` | `clear`, `busy`, `forced` or `unknown: <why>` on every guarded send; absent when the guard did not run. The shim prints `— cold-check: <verdict>`; the OMP/Pi tool appends `(cold-check: <verdict>)`. |
+| Spine `send.cold-wake-forced` | The audit of every forced cold wake, persisted before the wake. `seat` is the recipient; payload `{from, from_machine, msg_id, reason, context_tokens, idle_ms, model, estimate_usd, not_estimable, cache_ttl}`; `from_machine` is null for a local sender and the paired machine's alias for a forwarded one; `cache_ttl` is the TTL and its basis (`5m native`), null when unknown. |
+| Receipt `data.cold_check` | `clear`, `busy`, `forced`, `warn: <why>` or `unknown: <why>` on every guarded send; absent when the guard did not run. The shim prints `— cold-check: <verdict>`; the OMP/Pi tool appends `(cold-check: <verdict>)`. |
+| Warn ⇒ allow, never silent (F214) | A large seat whose TTL no rung supplies, idle past `UNKNOWN_TTL_WARN_MS` (5 min), is allowed as `warn: cache TTL unknown; <size> idle <time> may be cold`. Under `PAST_TTL = Warn` (the default), a large seat past its known TTL but under the hour is allowed as `warn: <size> idle <time>, past its <ttl> cache; …`; under `RefuseAt` it is warned like that until the refusal point. |
 | Unknown ⇒ allow | Any fact the rule needs but cannot establish (unbound or unsupported harness, no transcript, a source error, unknown context or last-call time) allows the send as `unknown: <why>`. The guard waits 3 s for the recipient's session facts; after that the send is allowed as `unknown: no answer within 3s`. |
 | Never guarded | FYIs (`fyi:true` opens no turn) and controls (`command`). |
 | One recipient per send | rs has no multi-recipient send, and the shim refuses broadcasts, so the per-recipient rule is met by one recipient per send. |

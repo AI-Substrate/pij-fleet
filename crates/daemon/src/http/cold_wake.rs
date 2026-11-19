@@ -1,10 +1,11 @@
 //! The cold-wake guard on `pij send` (plan 157 phase 2, ruling #446).
 //!
-//! A BRAKE: it can only refuse. It reads the recipient's session facts through
-//! `SessionStatusPort` and the daemon's own busy/idle state, and it never
-//! changes what is delivered. Anything it cannot establish in time allows the
-//! send and says why in the receipt's `cold_check`. The decision itself is
-//! `pij_core::cold_wake::check`, pure and tested there.
+//! A BRAKE: it can only refuse, or warn on the receipt (F214). It reads the
+//! recipient's session facts through `SessionStatusPort` and the daemon's own
+//! busy/idle state, and it never changes what is delivered. Anything it cannot
+//! establish in time allows the send and says why in the receipt's
+//! `cold_check`. The decision itself is `pij_core::cold_wake::check`, pure and
+//! tested there; the cache TTL it reads is filled by `session_status_block`.
 
 use std::time::Duration;
 
@@ -75,13 +76,7 @@ async fn pane_is_idle(services: &Services, seat: &pij_core::model::SeatDescripto
 pub(crate) async fn is_known_warm(state: &AppState, seat: &SeatDescriptor, now_ms: u64) -> bool {
     let Ok(block) = tokio::time::timeout(
         STATUS_WAIT,
-        session_status_block(
-            state.services.session_status.as_ref(),
-            &seat.id,
-            seat.harness,
-            seat.harness_session.clone(),
-            now_ms,
-        ),
+        session_status_block(state.services.session_status.as_ref(), seat, now_ms),
     )
     .await
     else {
@@ -100,13 +95,7 @@ pub(crate) async fn known_cache(
 ) -> Result<bool, &'static str> {
     let Ok(block) = tokio::time::timeout(
         STATUS_WAIT,
-        session_status_block(
-            state.services.session_status.as_ref(),
-            &seat.id,
-            seat.harness,
-            seat.harness_session.clone(),
-            now_ms,
-        ),
+        session_status_block(state.services.session_status.as_ref(), seat, now_ms),
     )
     .await
     else {
@@ -137,13 +126,7 @@ pub(crate) async fn verdict(
 ) -> pij_core::error::Result<ColdCheck> {
     let block = tokio::time::timeout(
         STATUS_WAIT,
-        session_status_block(
-            services.session_status.as_ref(),
-            &seat.id,
-            seat.harness,
-            seat.harness_session.clone(),
-            now_ms,
-        ),
+        session_status_block(services.session_status.as_ref(), seat, now_ms),
     )
     .await
     .unwrap_or_else(|_| SessionStatusBlock::Failed {
@@ -250,6 +233,7 @@ pub(crate) async fn guard(
         model,
         estimate_usd,
         not_estimable,
+        cache_ttl,
     } = &verdict
     {
         // Persist the audit before the wake it records.
@@ -269,6 +253,7 @@ pub(crate) async fn guard(
                 "model": model,
                 "estimate_usd": estimate_usd,
                 "not_estimable": not_estimable,
+                "cache_ttl": cache_ttl,
             })
             .to_string(),
         };

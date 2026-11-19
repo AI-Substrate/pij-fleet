@@ -1,6 +1,7 @@
 //! `pij list`'s human table (plan 160): who is on the roster, how big each
 //! seat's context is, how long since its last call, whether its cache is warm,
-//! and ❄ on a row the cold-wake guard would refuse right now. A seat stalled on
+//! ❄ on a row the cold-wake guard would refuse right now, and ⚠ on one it
+//! would warn about (F214). A seat stalled on
 //! its harness's own dialog shows `blocked on a dialog (<key>)` (plan 219); a
 //! native Copilot seat whose receiver lease lapsed adds `receiver lapsed <age>`
 //! to its state (F195).
@@ -20,7 +21,7 @@ pub fn render_table(data: &Value) -> String {
         .as_array()
         .map(Vec::as_slice)
         .unwrap_or_default();
-    let mut rows: Vec<(bool, [String; 6])> = Vec::with_capacity(seats.len());
+    let mut rows: Vec<(&str, [String; 6])> = Vec::with_capacity(seats.len());
     for seat in seats {
         let text = |key: &str| seat[key].as_str().unwrap_or("-").to_string();
         let id = match seat["machine"].as_str() {
@@ -35,7 +36,12 @@ pub fn render_table(data: &Value) -> String {
                 .unwrap_or("-")
                 .to_string()
         };
-        let cold = seat["sizeColumns"][3].as_str() == Some("❄");
+        // The marker is one of the guard's two, never other text.
+        let mark = match seat["sizeColumns"][3].as_str() {
+            Some("❄") => "❄ ",
+            Some("⚠") => "⚠ ",
+            _ => "  ",
+        };
         // Plan 219: a seat on its harness's own dialog reads working; say so.
         // F195: a lapsed native receiver is appended, since the process runs on.
         let state = match seat["dialog"]["key"].as_str() {
@@ -47,7 +53,7 @@ pub fn render_table(data: &Value) -> String {
             None => state,
         };
         rows.push((
-            cold,
+            mark,
             [id, text("harness"), state, column(0), column(1), column(2)],
         ));
     }
@@ -69,8 +75,8 @@ pub fn render_table(data: &Value) -> String {
         text.trim_end().to_string()
     };
     let mut lines = vec![line("  ", &HEADERS.map(str::to_string))];
-    for (cold, row) in &rows {
-        lines.push(line(if *cold { "❄ " } else { "  " }, row));
+    for (mark, row) in &rows {
+        lines.push(line(mark, row));
     }
     for peer in data["unavailable"]
         .as_array()

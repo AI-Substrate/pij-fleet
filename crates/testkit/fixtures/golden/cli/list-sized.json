@@ -2,6 +2,7 @@
   "seats": [
     {"id": "pij-cold-claude", "machine": "studio", "harness": "claude", "state": "idle", "contextUsed": 720000, "idleMs": 7200000, "coldWake": {"wouldRefuse": true, "estimateUsd": 6.44889}, "sizeColumns": ["720k", "2h", "cold 1h", "❄"]},
     {"id": "pij-warm-omp", "machine": "studio", "harness": "omp", "state": "working", "contextUsed": 57092, "idleMs": 180000, "coldWake": {"wouldRefuse": false}, "sizeColumns": ["57k", "3m", "warm", ""]},
+    {"id": "pij-gpt-unknown", "machine": "studio", "harness": "copilot", "state": "idle", "contextUsed": 512000, "idleMs": 720000, "coldWake": {"wouldRefuse": false, "warning": "cache TTL unknown; 512k idle 12m may be cold"}, "sizeColumns": ["512k", "12m", "?", "⚠"]},
     {"id": "pij-copilot", "machine": "studio", "harness": "copilot", "state": "idle", "coldWake": {"wouldRefuse": false}, "sizeColumns": ["?", "14m", "warm", ""]},
     {"id": "pij-lapsed", "machine": "studio", "harness": "copilot", "state": "idle", "coldWake": {"wouldRefuse": false}, "sizeColumns": ["?", "40m", "warm", ""], "nativeReceiver": "receiver lapsed 39m"},
     {"id": "pij-asking", "machine": "studio", "harness": "copilot", "state": "working", "contextUsed": 133000, "idleMs": 6780000, "coldWake": {"wouldRefuse": false}, "sizeColumns": ["133k", "1h53m", "warm", ""], "dialog": {"dialog": "Copilot selection dialog (ctrl+d declines)", "key": "ctrl+d", "clears": "ctrl+d declines (enter would accept the highlighted option, esc cancels)", "since_ms": 1794046800000}},

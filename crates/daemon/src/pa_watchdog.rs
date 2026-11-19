@@ -343,6 +343,7 @@ pub(crate) async fn audit_cold_wake(
         model,
         estimate_usd,
         not_estimable,
+        cache_ttl,
     } = &verdict
     {
         services
@@ -363,6 +364,7 @@ pub(crate) async fn audit_cold_wake(
                     "model": model,
                     "estimate_usd": estimate_usd,
                     "not_estimable": not_estimable,
+                    "cache_ttl": cache_ttl,
                 })
                 .to_string(),
             })
@@ -1060,17 +1062,9 @@ impl PaWatchdog {
                     continue;
                 }
                 let source = Arc::clone(&services.session_status);
-                let (id, harness, session) =
-                    (seat.id.clone(), seat.harness, seat.harness_session.clone());
+                let seat = seat.clone();
                 handles.push(Some(tokio::spawn(async move {
-                    crate::http::session_status_block(
-                        source.as_ref(),
-                        &id,
-                        harness,
-                        session,
-                        now_ms,
-                    )
-                    .await
+                    crate::http::session_status_block(source.as_ref(), &seat, now_ms).await
                 })));
             }
         }

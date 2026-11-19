@@ -89,13 +89,7 @@ impl ColdRouting for DaemonColdRouting {
         };
         let block = tokio::time::timeout(
             STATUS_WAIT,
-            session_status_block(
-                self.session_status.as_ref(),
-                &seat.id,
-                seat.harness,
-                seat.harness_session.clone(),
-                now,
-            ),
+            session_status_block(self.session_status.as_ref(), seat, now),
         )
         .await
         .unwrap_or_else(|_| SessionStatusBlock::Failed {

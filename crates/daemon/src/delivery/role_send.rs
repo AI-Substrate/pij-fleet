@@ -903,13 +903,7 @@ async fn context_tokens(services: &Services, seat: &SeatId, now_ms: u64) -> Opti
     let descriptor = services.registry.get(seat).await.ok()??;
     let block = tokio::time::timeout(
         STATUS_WAIT,
-        crate::http::session_status_block(
-            services.session_status.as_ref(),
-            &descriptor.id,
-            descriptor.harness,
-            descriptor.harness_session.clone(),
-            now_ms,
-        ),
+        crate::http::session_status_block(services.session_status.as_ref(), &descriptor, now_ms),
     )
     .await
     .ok()?;

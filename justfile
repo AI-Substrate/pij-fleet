@@ -220,6 +220,12 @@ _copilot-native-install-check:
 spawn-rate *ARGS:
     @python3 harness/scripts/spawn-rate.py {{ARGS}}
 
+# F214: pij's warm/cold verdict at each delivery vs the seat's next call's cache
+# reads, per harness x model x route, old rule and new. Read-only. Make the
+# report first: pij-rs fleet-report ~ --since 7d --threads 2 --out <dir>
+cache-ttl-audit *ARGS:
+    @nice -n 19 python3 harness/scripts/cache-ttl-audit.py {{ARGS}}
+
 # Plan 220 (F92). Run by hand before each verdict request and before READY.
 # FINAL (exit 0) only when ls-remote and gh agree on the head, base is main,
 # CLEAN, every check's latest run passed, not draft, migrations above main's

@@ -1,26 +1,59 @@
-//! The cold-wake guard (plan 157 phase 2, ruling #446).
+//! The cold-wake guard (plan 157 phase 2, ruling #446; F214).
 //!
 //! Waking a seat whose prompt cache has expired re-writes its whole context at
 //! cache-write prices. On a large seat that costs dollars per message, and the
 //! 2026-09-28 usage blowout was made of exactly these wakes. So `pij send`
-//! refuses a message to a seat that is cold (large, idle past the cache TTL,
-//! and not working), unless the sender forces it with a reason.
+//! refuses a message to a seat that is cold (large, idle past its cache's real
+//! lifetime, and not working), unless the sender forces it with a reason.
 //!
-//! **This is a brake, not a policy.** It can only refuse. It never changes what
-//! is delivered or how. Every fact it cannot establish (unsupported harness,
-//! source failure, no transcript, unknown context or last-call time) allows the
-//! send and says so. Removing the guard delivers the same messages or more.
+//! **This is a brake, not a policy.** It can only refuse or warn. It never
+//! changes what is delivered or how. Every fact it cannot establish (unsupported
+//! harness, source failure, no transcript, unknown context or last-call time)
+//! allows the send and says so. Removing the guard delivers the same messages
+//! or more.
+//!
+//! **The TTL feeding it is a policy** (F214): the seat's own record first
+//! (native, or derived from its native write split), then the pij cache proxy,
+//! then a versioned table ([`crate::session_status::fill_cache_ttl`]). A wrong
+//! TTL makes the brake refuse a warm seat or let a cold one through, so the
+//! TTL's basis is shown wherever the verdict is.
 
 use serde::{Deserialize, Serialize};
 
 use crate::model::{SeatId, SystemState, is_copilot_fusion_model};
-use crate::session_status::{CacheState, CacheTtl, Fact, SessionStatusBlock};
+use crate::session_status::{Basis, CacheState, CacheTtl, Fact, SessionStatusBlock};
 
 /// A seat holding more than this many context tokens is large enough to guard.
 pub const COLD_CONTEXT_TOKENS: u64 = 400_000;
 
-/// A seat whose last API call is older than this has lost its prompt cache.
+/// A seat whose last API call is older than this has lost its prompt cache,
+/// whatever TTL it reports: the ceiling on every cache lifetime.
 pub const COLD_IDLE_MS: u64 = 60 * 60 * 1_000;
+
+/// What the guard does with a large seat idle past its cache TTL but not yet
+/// past [`COLD_IDLE_MS`] (F214). One switch; every value is tested through
+/// `decide`, so a ruling changes [`PAST_TTL`] and nothing else.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PastTtl {
+    /// Allow it with a warning; refuse only past [`COLD_IDLE_MS`] (option b).
+    Warn,
+    /// Refuse once idle reaches `ttl_percent`% of the TTL, warn before that
+    /// (from the TTL on). `100` refuses at the TTL itself (option a); `150`
+    /// and `200` give a provider's cache that outlives its stated TTL a grace
+    /// (option c). [`COLD_IDLE_MS`] stays the ceiling whatever the product.
+    RefuseAt {
+        /// The refusal point as a percentage of the TTL.
+        ttl_percent: u32,
+    },
+}
+
+/// The rule in force: option (b) until Jordan rules (prime, 2026-11-19). The
+/// F214 audit replays every option in the PR (#256) body.
+pub const PAST_TTL: PastTtl = PastTtl::Warn;
+
+/// A large seat whose cache TTL is unknown, idle longer than this, is warned
+/// about: the shortest TTL in [`crate::session_status::CACHE_TTL_TABLE`].
+pub const UNKNOWN_TTL_WARN_MS: u64 = 5 * 60 * 1_000;
 
 /// The refusal's stable code.
 pub const COLD_WAKE_CODE: &str = "E-RS-COLD-WAKE";
@@ -118,7 +151,7 @@ pub enum ColdCheck {
     Clear,
     /// The daemon sees the seat working, so it is warm by definition.
     Busy,
-    /// Large and idle past the TTL: refuse unless forced.
+    /// Large and idle past its cache lifetime: refuse unless forced.
     #[serde(rename_all = "camelCase")]
     Cold {
         /// Tokens the wake would re-write.
@@ -136,6 +169,21 @@ pub enum ColdCheck {
         /// a single model that is merely unpriced.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         not_estimable: Option<String>,
+        /// The cache TTL and its basis (`5m native`), when known (F214).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_ttl: Option<String>,
+    },
+    /// Large and idle long enough that the wake may be cold, but not refused
+    /// (F214): the TTL is unknown, or [`PAST_TTL`] warns past the TTL. The
+    /// send goes through and the receipt says why.
+    #[serde(rename_all = "camelCase")]
+    Warn {
+        /// Tokens the wake may re-write.
+        context_tokens: u64,
+        /// Milliseconds since the seat's last API call.
+        idle_ms: u64,
+        /// Why it may be cold.
+        why: String,
     },
     /// A fact the rule needs is unknown, so the send is allowed.
     Unknown {
@@ -145,22 +193,44 @@ pub enum ColdCheck {
 }
 
 impl ColdCheck {
-    /// The receipt's `cold_check` line: `clear`, `busy`, `forced` or `unknown: <why>`.
+    /// The receipt's `cold_check` line: `clear`, `busy`, `forced`, `cold`,
+    /// `warn: <why>` or `unknown: <why>`.
     pub fn receipt_label(&self, forced: bool) -> String {
         match self {
             Self::Clear => "clear".to_string(),
             Self::Busy => "busy".to_string(),
             Self::Cold { .. } if forced => "forced".to_string(),
             Self::Cold { .. } => "cold".to_string(),
+            Self::Warn { why, .. } => format!("warn: {why}"),
             Self::Unknown { why } => format!("unknown: {why}"),
         }
     }
 }
 
-/// Decide one recipient. `state` is the daemon's own busy/idle observation;
-/// `status` is the `pij state` session block; `now_ms` is the daemon clock;
-/// `seat_model` is the model the seat was bound with.
+/// `5m native`, `30m native`, `1h proxy`, `5m table@v1`: a TTL with its basis.
+pub fn ttl_text(ttl: &Fact<CacheTtl>) -> Option<String> {
+    match ttl {
+        Fact::Known { value, basis } => Some(format!("{} {}", value.label(), basis.to_wire())),
+        Fact::Unknown => None,
+    }
+}
+
+/// Decide one recipient under [`PAST_TTL`]. `state` is the daemon's own
+/// busy/idle observation; `status` is the `pij state` session block; `now_ms`
+/// is the daemon clock; `seat_model` is the model the seat was bound with.
 pub fn check(
+    state: SystemState,
+    status: &SessionStatusBlock,
+    now_ms: u64,
+    seat_model: Option<&str>,
+) -> ColdCheck {
+    decide(PAST_TTL, state, status, now_ms, seat_model)
+}
+
+/// [`check`] under either [`PastTtl`] rule, so both stay tested whichever is
+/// in force.
+fn decide(
+    rule: PastTtl,
     state: SystemState,
     status: &SessionStatusBlock,
     now_ms: u64,
@@ -189,8 +259,41 @@ pub fn check(
     };
     // A last call stamped in the future (clock skew) counts as just made.
     let idle_ms = now_ms.saturating_sub(last_call);
+    let cache_ttl = ttl_text(&status.cache_ttl);
     if idle_ms <= COLD_IDLE_MS {
-        return ColdCheck::Clear;
+        let warn = |why: String| ColdCheck::Warn {
+            context_tokens,
+            idle_ms,
+            why,
+        };
+        match (status.cache_ttl.value(), &cache_ttl) {
+            // Inside its lifetime: warm. `cache_state` calls it cold at the TTL.
+            (Some(ttl), _) if idle_ms < ttl.as_ms() => return ColdCheck::Clear,
+            (Some(ttl), Some(text)) => {
+                let refuse_at = match rule {
+                    PastTtl::Warn => None,
+                    PastTtl::RefuseAt { ttl_percent } => {
+                        Some(ttl.as_ms().saturating_mul(u64::from(ttl_percent)) / 100)
+                    }
+                };
+                if refuse_at.is_none_or(|refuse_at| idle_ms < refuse_at) {
+                    return warn(format!(
+                        "{} idle {}, past its {text} cache; the wake re-writes it",
+                        human_tokens(context_tokens),
+                        human_duration(idle_ms),
+                    ));
+                }
+            }
+            (Some(_), None) => {}
+            (None, _) if idle_ms > UNKNOWN_TTL_WARN_MS => {
+                return warn(format!(
+                    "cache TTL unknown; {} idle {} may be cold",
+                    human_tokens(context_tokens),
+                    human_duration(idle_ms),
+                ));
+            }
+            (None, _) => return ColdCheck::Clear,
+        }
     }
     let model = match &status.model {
         Fact::Known { value, .. } => Some(value.clone()),
@@ -210,6 +313,7 @@ pub fn check(
             model: Some(router.to_string()),
             estimate_usd: None,
             not_estimable: Some(ROUTER_NOT_ESTIMABLE.to_string()),
+            cache_ttl,
         };
     }
     let estimate_usd = model
@@ -221,6 +325,7 @@ pub fn check(
         model,
         estimate_usd,
         not_estimable: None,
+        cache_ttl,
     }
 }
 
@@ -243,7 +348,8 @@ fn unknown(why: &str) -> ColdCheck {
 /// wake nobody asked for, so this needs POSITIVE evidence: the last API call is
 /// known and within the seat's real cache lifetime, `min(cache TTL, COLD_IDLE_MS)`.
 /// A `working` state is not evidence (it can be stale after an Esc or an API
-/// error), and an unknown last call or unknown TTL is not warm.
+/// error), and an unknown last call, an unknown TTL or a TTL from the table
+/// alone is not warm.
 pub fn is_warm(status: &SessionStatusBlock, now_ms: u64) -> bool {
     cache_known(status, now_ms) == Ok(true)
 }
@@ -251,7 +357,9 @@ pub fn is_warm(status: &SessionStatusBlock, now_ms: u64) -> bool {
 /// The prompt cache's state at `now_ms` when the facts establish it: `Ok(true)`
 /// warm, `Ok(false)` cold. Otherwise `Err` names, from a closed vocabulary, the
 /// fact that is missing, for a caller that must act only on a known state
-/// (plan 225's `revive --cheap`).
+/// (plan 225's `revive --cheap`, plan 159's FYI flush). An action needs the
+/// seat's own evidence, so a TTL only the table supplies (F214) is unknown
+/// here; the guard, a brake, may still use it.
 ///
 /// # Errors
 /// The cache state is unknown: the named fact could not be established.
@@ -266,8 +374,13 @@ pub fn cache_known(status: &SessionStatusBlock, now_ms: u64) -> Result<bool, &'s
     let Some(&last_call) = status.last_call_at_ms.value() else {
         return Err("last call unknown");
     };
-    let Some(&ttl) = status.cache_ttl.value() else {
-        return Err("cache TTL unknown");
+    let ttl = match &status.cache_ttl {
+        Fact::Known {
+            basis: Basis::Table { .. },
+            ..
+        } => return Err("cache TTL from the table only"),
+        Fact::Known { value, .. } => *value,
+        Fact::Unknown => return Err("cache TTL unknown"),
     };
     let lifetime_ms = ttl.as_ms().min(COLD_IDLE_MS);
     Ok(now_ms < last_call.saturating_add(lifetime_ms))
@@ -281,6 +394,7 @@ pub fn refusal(recipient: &SeatId, check: &ColdCheck) -> Option<String> {
         idle_ms,
         estimate_usd,
         not_estimable,
+        cache_ttl,
         ..
     } = check
     else {
@@ -297,8 +411,12 @@ pub fn refusal(recipient: &SeatId, check: &ColdCheck) -> Option<String> {
         ),
         ("--force --reason \"…\"", "wake on its current model", wake),
     ];
+    let cache = cache_ttl
+        .as_deref()
+        .map(|ttl| format!(", cache {ttl}"))
+        .unwrap_or_default();
     let mut text = format!(
-        "{COLD_WAKE_CODE}: ❄ {recipient} is cold ({}, idle {}). Options:",
+        "{COLD_WAKE_CODE}: ❄ {recipient} is cold ({}, idle {}{cache}). Options:",
         human_tokens(*context_tokens),
         human_duration(*idle_ms),
     );
@@ -364,6 +482,9 @@ pub struct ColdWakeView {
     /// Why no estimate can exist, e.g. [`ROUTER_NOT_ESTIMABLE`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub not_estimable: Option<String>,
+    /// Why a normal send would go through with a warning ([`ColdCheck::Warn`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
 }
 
 /// Derive a seat's [`SeatSize`]. The refusal verdict is [`check`] itself, so
@@ -383,6 +504,11 @@ pub fn seat_size(
             would_refuse: true,
             estimate_usd,
             not_estimable,
+            warning: None,
+        },
+        ColdCheck::Warn { why, .. } => ColdWakeView {
+            warning: Some(why),
+            ..ColdWakeView::default()
         },
         _ => ColdWakeView::default(),
     };
@@ -408,7 +534,8 @@ pub fn seat_size(
     }
 }
 
-/// The list columns CTX, IDLE and CACHE, `?` where unknown, and the ❄ marker.
+/// The list columns CTX, IDLE and CACHE, `?` where unknown, and the marker:
+/// ❄ the guard would refuse, ⚠ it would warn.
 pub fn size_columns(size: &SeatSize) -> [String; 4] {
     [
         size.context_used
@@ -419,6 +546,8 @@ pub fn size_columns(size: &SeatSize) -> [String; 4] {
             .map_or_else(|| "?".to_string(), cache_text),
         if size.cold_wake.would_refuse {
             "❄"
+        } else if size.cold_wake.warning.is_some() {
+            "⚠"
         } else {
             ""
         }
@@ -433,21 +562,18 @@ fn cache_text(state: &CacheState) -> String {
     }
 }
 
-/// `pij state`'s size line and, when the guard would refuse, its ❄ line:
-/// `context 375k / 1M · last call 14m ago · cache 5m (cold 9m) · 3 compactions`.
-/// Nothing when the facts could not be read (the `session:` line says why).
+/// `pij state`'s size line and, when the guard would refuse or warn, its ❄ or
+/// ⚠ line: `context 375k / 1M · last call 14m ago · cache 5m native (cold 9m) ·
+/// 3 compactions`. The TTL names its basis (F214). Nothing when the facts
+/// could not be read (the `session:` line says why).
 pub fn size_lines(status: &SessionStatusBlock, size: &SeatSize) -> Vec<String> {
     let SessionStatusBlock::Known { status, .. } = status else {
         return Vec::new();
     };
     let known = |value: Option<String>| value.unwrap_or_else(|| "?".to_string());
-    let ttl = status.cache_ttl.value().map(|ttl| match ttl {
-        CacheTtl::FiveMinutes => "5m",
-        CacheTtl::OneHour => "1h",
-    });
-    let cache = match (ttl, &size.cache_state) {
+    let cache = match (ttl_text(&status.cache_ttl), &size.cache_state) {
         (Some(ttl), Some(state)) => format!("{ttl} ({})", cache_text(state)),
-        (Some(ttl), None) => ttl.to_string(),
+        (Some(ttl), None) => ttl,
         (None, _) => "?".to_string(),
     };
     let mut lines = vec![format!(
@@ -470,6 +596,11 @@ pub fn size_lines(status: &SessionStatusBlock, size: &SeatSize) -> Vec<String> {
         );
         lines.push(format!(
             "❄ cold-wake guard: a normal send is refused; waking it costs {price} (--fyi only if it has nothing to do; wakes no one)"
+        ));
+    }
+    if let Some(why) = &size.cold_wake.warning {
+        lines.push(format!(
+            "⚠ cold-wake guard: a normal send goes through with a warning: {why}"
         ));
     }
     lines
@@ -532,7 +663,7 @@ mod tests {
             context_used_tokens: Fact::derived(720_000),
             context_window_tokens: Fact::derived(1_000_000),
             last_call_at_ms: Fact::native(NOW - ago),
-            cache_ttl: Fact::derived(CacheTtl::OneHour),
+            cache_ttl: Fact::derived(CacheTtl::ONE_HOUR),
             compactions: Fact::native(3),
             ..SeatStatus::unknown()
         };
@@ -586,7 +717,7 @@ mod tests {
         assert_eq!(
             size_lines(&block, &size),
             [
-                "context 720k / 1M · last call 2h ago · cache 1h (cold 1h) · 3 compactions",
+                "context 720k / 1M · last call 2h ago · cache 1h derived (cold 1h) · 3 compactions",
                 "❄ cold-wake guard: a normal send is refused; waking it costs ~$6.45 (--fyi only if it has nothing to do; wakes no one)",
             ]
             .map(String::from)
@@ -595,7 +726,7 @@ mod tests {
         assert_eq!(
             size_lines(&warm, &seat_size(SystemState::Idle, &warm, NOW, None)),
             [
-                "context 720k / 1M · last call 1m ago · cache 1h (warm) · 3 compactions"
+                "context 720k / 1M · last call 1m ago · cache 1h derived (warm) · 3 compactions"
                     .to_string()
             ]
         );
@@ -606,24 +737,46 @@ mod tests {
 
     #[test]
     fn warm_needs_a_known_last_call_inside_the_real_cache_lifetime() {
-        use crate::session_status::CacheTtl::{FiveMinutes, OneHour};
-        let at = |ago: u64, ttl| SessionStatusBlock::Known {
+        let at = |ago: u64, ttl: Fact<CacheTtl>| SessionStatusBlock::Known {
             status: Box::new(SeatStatus {
                 last_call_at_ms: Fact::native(NOW - ago),
-                cache_ttl: Fact::derived(ttl),
+                cache_ttl: ttl,
                 ..SeatStatus::unknown()
             }),
             cache_state: Fact::Unknown,
             elapsed_ms: 0,
         };
-        let five = FiveMinutes.as_ms();
-        assert!(is_warm(&at(five - 1, FiveMinutes), NOW));
+        let five = CacheTtl::FIVE_MINUTES;
+        let hour = CacheTtl::ONE_HOUR;
+        assert!(is_warm(&at(five.as_ms() - 1, Fact::derived(five)), NOW));
         assert!(
-            !is_warm(&at(five, FiveMinutes), NOW),
+            !is_warm(&at(five.as_ms(), Fact::derived(five)), NOW),
             "expired at its lifetime"
         );
-        assert!(is_warm(&at(COLD_IDLE_MS - 1, OneHour), NOW));
-        assert!(!is_warm(&at(COLD_IDLE_MS, OneHour), NOW));
+        assert!(is_warm(&at(COLD_IDLE_MS - 1, Fact::derived(hour)), NOW));
+        assert!(!is_warm(&at(COLD_IDLE_MS, Fact::derived(hour)), NOW));
+        // F214: a GPT seat's own 30-minute TTL is evidence; a 2-minute idle is warm.
+        let thirty = CacheTtl::from_seconds(1_800).expect("30m");
+        assert!(is_warm(&at(2 * 60_000, Fact::native(thirty)), NOW));
+        assert_eq!(
+            cache_known(&at(31 * 60_000, Fact::native(thirty)), NOW),
+            Ok(false)
+        );
+        // The proxy rung is the seat's own route; the table is not its evidence,
+        // so an action (flush, revive --cheap) never acts on it.
+        let proxy = Fact::Known {
+            value: hour,
+            basis: Basis::Proxy,
+        };
+        assert!(is_warm(&at(60_000, proxy), NOW));
+        let table = Fact::Known {
+            value: hour,
+            basis: Basis::Table { version: 1 },
+        };
+        assert_eq!(
+            cache_known(&at(60_000, table), NOW),
+            Err("cache TTL from the table only")
+        );
         // Unknown TTL, unknown last call, or no facts: never warm.
         assert!(!is_warm(&known(None, Some(NOW - 1), None), NOW));
         assert!(!is_warm(&known(Some(10), None, None), NOW));
@@ -645,6 +798,7 @@ mod tests {
             model,
             estimate_usd,
             not_estimable: None,
+            cache_ttl: None,
         } = &check
         else {
             panic!("expected cold: {check:?}");
@@ -678,15 +832,16 @@ mod tests {
 
     #[test]
     fn the_thresholds_are_strict_boundaries() {
-        let at_ttl = known(
+        // Unknown TTL at the hour: not refused, but warned about (F214).
+        let at_hour = known(
             Some(COLD_CONTEXT_TOKENS + 1),
             Some(NOW - COLD_IDLE_MS),
             None,
         );
-        assert_eq!(
-            check(SystemState::Idle, &at_ttl, NOW, None),
-            ColdCheck::Clear
-        );
+        assert!(matches!(
+            check(SystemState::Idle, &at_hour, NOW, None),
+            ColdCheck::Warn { .. }
+        ));
         let at_size = known(
             Some(COLD_CONTEXT_TOKENS),
             Some(NOW - COLD_IDLE_MS - 1),
@@ -721,14 +876,170 @@ mod tests {
             check(SystemState::Idle, &just_over, NOW, None),
             ColdCheck::Cold { .. }
         ));
+        // Under the hour with an unknown TTL: allowed, with a warning (F214).
         let recent = known(Some(900_000), Some(NOW - 59 * 60 * 1_000), None);
-        assert_eq!(
+        assert!(matches!(
             check(SystemState::Idle, &recent, NOW, None),
-            ColdCheck::Clear
-        );
+            ColdCheck::Warn { .. }
+        ));
         // Jordan 2026-10-13: "long" is 400k, so a 350k seat idle for hours is clear.
         let mid = known(Some(350_000), Some(NOW - 3 * 3_600_000), None);
         assert_eq!(check(SystemState::Idle, &mid, NOW, None), ColdCheck::Clear);
+    }
+
+    /// A large seat whose last call carried `ttl`, idle `ago` ms.
+    fn large_with_ttl(ago: u64, model: &str, ttl: Fact<CacheTtl>) -> SessionStatusBlock {
+        SessionStatusBlock::Known {
+            status: Box::new(SeatStatus {
+                model: Fact::native(model.to_string()),
+                context_used_tokens: Fact::derived(500_000),
+                last_call_at_ms: Fact::native(NOW - ago),
+                cache_ttl: ttl,
+                ..SeatStatus::unknown()
+            }),
+            cache_state: Fact::Unknown,
+            elapsed_ms: 0,
+        }
+    }
+
+    const MIN: u64 = 60_000;
+
+    /// Option (a), refuse at the TTL.
+    const AT_TTL: PastTtl = PastTtl::RefuseAt { ttl_percent: 100 };
+    /// Option (c), refuse at 1.5 x the TTL.
+    const AT_150: PastTtl = PastTtl::RefuseAt { ttl_percent: 150 };
+    /// Option (c), refuse at 2 x the TTL.
+    const AT_200: PastTtl = PastTtl::RefuseAt { ttl_percent: 200 };
+
+    fn verdict_kind(check: &ColdCheck) -> &'static str {
+        match check {
+            ColdCheck::Clear => "clear",
+            ColdCheck::Busy => "busy",
+            ColdCheck::Cold { .. } => "cold",
+            ColdCheck::Warn { .. } => "warn",
+            ColdCheck::Unknown { .. } => "unknown",
+        }
+    }
+
+    /// F214: Copilot records 1800 s for its GPT models. Before, `30m` read as
+    /// unknown and the fixed hour let the wake through in silence; now every
+    /// value of the switch either warns or refuses past the 30 minutes, and
+    /// all of them refuse past the hour.
+    #[test]
+    fn a_large_gpt_seat_past_its_thirty_minutes_is_warned_or_refused_by_every_rule() {
+        let thirty = Fact::native(CacheTtl::from_seconds(1_800).expect("30m"));
+        let idle = |ago| large_with_ttl(ago, "gpt-6.1-sol", thirty.clone());
+        let minutes = [29, 31, 44, 46, 59, 61];
+        for (rule, want) in [
+            (
+                PastTtl::Warn,
+                ["clear", "warn", "warn", "warn", "warn", "cold"],
+            ),
+            (AT_TTL, ["clear", "cold", "cold", "cold", "cold", "cold"]),
+            (AT_150, ["clear", "warn", "warn", "cold", "cold", "cold"]),
+            (AT_200, ["clear", "warn", "warn", "warn", "warn", "cold"]),
+        ] {
+            for (minute, want) in minutes.iter().zip(want) {
+                let got = decide(rule, SystemState::Idle, &idle(minute * MIN), NOW, None);
+                assert_eq!(
+                    verdict_kind(&got),
+                    want,
+                    "{rule:?} at {minute} min: {got:?}"
+                );
+            }
+        }
+        let refused = decide(AT_TTL, SystemState::Idle, &idle(45 * MIN), NOW, None);
+        let ColdCheck::Cold { cache_ttl, .. } = &refused else {
+            panic!("expected cold: {refused:?}");
+        };
+        assert_eq!(cache_ttl.as_deref(), Some("30m native"));
+        let text = refusal(&SeatId("pij-gpt".into()), &refused).expect("refused");
+        assert!(
+            text.contains("is cold (500k, idle 45m, cache 30m native)"),
+            "{text}"
+        );
+        let warned = decide(PastTtl::Warn, SystemState::Idle, &idle(45 * MIN), NOW, None);
+        assert_eq!(
+            warned.receipt_label(false),
+            "warn: 500k idle 45m, past its 30m native cache; the wake re-writes it"
+        );
+    }
+
+    /// F214: the seat's own TTL decides over the table's. A Copilot Claude seat
+    /// that recorded a 1-hour cache is warm at 20 min although the table says 5
+    /// min; a seat only the table covers is past its TTL at 20 min.
+    #[test]
+    fn the_seats_own_ttl_decides_over_the_tables() {
+        let own = large_with_ttl(
+            20 * MIN,
+            "claude-opus-5.5",
+            Fact::native(CacheTtl::ONE_HOUR),
+        );
+        let table = large_with_ttl(
+            20 * MIN,
+            "claude-opus-5.5",
+            Fact::Known {
+                value: CacheTtl::FIVE_MINUTES,
+                basis: Basis::Table { version: 1 },
+            },
+        );
+        for rule in [PastTtl::Warn, AT_TTL, AT_150, AT_200] {
+            assert_eq!(
+                decide(rule, SystemState::Idle, &own, NOW, None),
+                ColdCheck::Clear,
+                "{rule:?}"
+            );
+        }
+        let ColdCheck::Cold { cache_ttl, .. } =
+            decide(AT_200, SystemState::Idle, &table, NOW, None)
+        else {
+            panic!("a table-only 5m seat idle 20 min is past 2 x its TTL");
+        };
+        assert_eq!(cache_ttl.as_deref(), Some("5m table@v1"));
+    }
+
+    /// F214: a large seat with no TTL from any rung is warned about once idle
+    /// past the shortest TTL; never refused before the hour, never silent.
+    #[test]
+    fn an_unknown_ttl_on_a_large_idle_seat_warns() {
+        let unknown_ttl = |ago| large_with_ttl(ago, "some-new-model", Fact::Unknown);
+        for rule in [PastTtl::Warn, AT_TTL, AT_150, AT_200] {
+            assert_eq!(
+                decide(
+                    rule,
+                    SystemState::Idle,
+                    &unknown_ttl(UNKNOWN_TTL_WARN_MS),
+                    NOW,
+                    None
+                ),
+                ColdCheck::Clear,
+                "{rule:?}: not past the shortest TTL"
+            );
+            let warned = decide(rule, SystemState::Idle, &unknown_ttl(10 * MIN), NOW, None);
+            assert_eq!(
+                warned.receipt_label(false),
+                "warn: cache TTL unknown; 500k idle 10m may be cold",
+                "{rule:?}"
+            );
+            assert!(refusal(&SeatId("pij-x".into()), &warned).is_none());
+        }
+        // Small seats are never warned about: "large" is COLD_CONTEXT_TOKENS.
+        assert_eq!(
+            check(
+                SystemState::Idle,
+                &known(Some(COLD_CONTEXT_TOKENS), Some(NOW - 30 * MIN), None),
+                NOW,
+                None
+            ),
+            ColdCheck::Clear
+        );
+        let size = seat_size(SystemState::Idle, &unknown_ttl(10 * MIN), NOW, None);
+        assert!(!size.cold_wake.would_refuse);
+        assert_eq!(size_columns(&size)[3], "⚠");
+        assert_eq!(
+            size_lines(&unknown_ttl(10 * MIN), &size)[1],
+            "⚠ cold-wake guard: a normal send goes through with a warning: cache TTL unknown; 500k idle 10m may be cold"
+        );
     }
 
     /// A last call stamped after the daemon's clock (skew) is recent, never
