@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before adding a Services field that holds registry/event_bus/delivery, adding a spine event to a spawn/revive/registration path, or running a live spawn-failure proof",
+				"tags": [
+					"f211",
+					"testing",
+					"spine",
+					"test_services",
+					"live-proof",
+					"rebase"
+				],
+				"title": "Adding a daemon service or spine event: rebuild it in test_services, run the integration tests too (F211 round 2)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Four traps from F211 round 2 (PR #253):\n\n1. http/tests.rs `test_services` swaps registry, bus and delivery AFTER build_services, then rebuilds each service that holds them. A new service that holds those parts must be rebuilt there too, or it publishes to the original fakes. The symptom is silent: 0 events where you expected 1, with no error.\n\n2. `test -p pij-daemon --lib` is not the suite. Integration tests such as crates/daemon/tests/revive_http.rs pin EXACT spine kind sequences, so a new event on the spawn path breaks them, and CI found it, not me. Also, cargo stops at the first failing target, so when one lib test fails the integration tests never run. Rerun them with `--test '*'`.\n\n3. An event written detached (tokio::spawn after the answer) races the test's read. Assert other kinds by presence, or filter the detached kind; never assert it is \"last\".\n\n4. Live spawn-failure proof: an OMP throwaway binds about 1.4 s after launch, so `pij-rs --json spawn --harness omp --parent <you> --wait-seconds 1` reliably reproduces \"failed, then bound late\". Read the spine with sqlite3 -readonly on spine_events where seat=<id>. Clean up with the close command from the answer, then `/bin/ps -p <pid>` and `tmux list-panes -a`. Never bounce the shared daemon; the prime owns bounces.\n\nRebase tip: when your branch's later commit REPLACES its own ledger row, a `@both` resolve on the second commit leaves both versions of the row. Fold the deletion back in with `git commit --fixup` plus `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash`. Then compare `git diff oldbase oldhead` with `git diff newbase newhead` to prove the patch did not change.\n"
+		}
+	]
+}
