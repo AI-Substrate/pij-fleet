@@ -1714,7 +1714,10 @@
 					"harness_session": "5eeaa1a3-3fae-4e4f-b362-b69f7ce5408c",
 					"instance_key": "247",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #247 merged (88636516859d)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-smiling-parrotfish",
+					"to": "2026-11-19T00:53:40.591Z",
 					"why": "F207 #247 correctness (Copilot gpt-6.1-sol)"
 				}
 			]
