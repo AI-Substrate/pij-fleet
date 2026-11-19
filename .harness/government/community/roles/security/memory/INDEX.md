@@ -47,6 +47,7 @@
 - [2026-11-18 Public live receipts and review-head carry-forward](2026-11-18-public-live-receipts-review-heads.dd.md): Read before publishing live-fleet receipts or carrying a static review across wording-only replacement heads. (public-docs, privacy, review, evidence)
 - [2026-11-18 Require evidence in delegated review reports](2026-11-18-require-evidence-in-delegated-review.dd.md): Open when delegating a security review or receiving a verdict-only review response. (review, evidence, delegation)
 - [2026-11-19 Copilot footer hints are not provenance](2026-11-19-copilot-footer-hints-are-not-provenance.dd.md): review (copilot, composer, review-proof)
+- [2026-11-19 Copilot restart needs process and control-outcome evidence](2026-11-19-copilot-restart-needs-process-and.dd.md): Open before changing Copilot auth recovery, restart controls, or stale-report handling. (copilot, auth-recovery, process-incarnation, control-outcome)
 - [2026-11-19 F252-001 closed across six spinner frames](2026-11-19-f252-001-closed-across-six-spinner.dd.md): review (copilot, composer, spinner)
 - [2026-11-19 Final round TTL API reachability](2026-11-19-final-round-ttl-api.dd.md): Read before claiming a public test helper is runtime configurable or compile-time test-only. (unisphere, ttl, configuration, review, proof)
 - [2026-11-19 Git placement bounds are not deadlines](2026-11-19-git-placement-bounds-are-not-deadlines.dd.md): Open before changing Git placement, bounded pointer reads, or carrying \#248 security notes forward. (git-discovery, filesystem, byte-bounds, c34)
