@@ -297,6 +297,16 @@
 					"seat": "pij-melodic-snail",
 					"to": "2026-11-19T08:39:49.364Z",
 					"why": "F213 round 2: restart anchor #265"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T08:42:01.781Z",
+					"harness": "omp",
+					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
+					"instance_key": "266",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-melodic-snail",
+					"why": "F222 step 1: per-route request counter #266"
 				}
 			]
 		}
