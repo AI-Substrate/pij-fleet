@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f34b-13e6-71c3-9671-05ef18fd8102",
+				"date": "2026-11-19",
+				"head": "1759a6297b9a18eb301b87e8c1ec995be21ea330",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:271",
+				"writer": "pij-concrete-antelope",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R271-001: bind the checked stamp to the immutable bytes installed; add the two-worktree build/check/install interleaving regression."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# BLOCK — #271 round 1 of 2\n\nHead: `1759a6297b9a18eb301b87e8c1ec995be21ea330`.\n\n## R271-001 — P1: the verified artifact can change before installation\n\n`harness/scripts/release-build.sh:44-53` waits for shared-build to exit, which releases the target lock, then checks and returns the shared `target/release/pij-rs` pathname. Every caller copies that pathname later (`crates/cli/src/bounce/mod.rs:71-75` and both deploy recipes). Nothing binds the bytes copied to the bytes verified.\n\nA normal interleaving is sufficient: A builds and verifies its commit; B completes another release build through the same shared-build lock; A installs the path returned by A. A succeeds but installs B's binary. This directly leaves F226's wrong-worktree deployment possible; no hostile caller or bare cargo is involved.\n\n**Local deterministic reproduction:** Python stdlib fixture, two real Git worktrees with different commits, the unchanged release-build/shared-build/installer scripts, fake cargo only, private temporary target and HOME, paths containing spaces. A verified `pij-rs 0.1.0 (f2a9e8d77b)`; the lock was absent after A's helper returned; B built `af6c1462fb`; A's installer exited 0 and its installed copy answered `pij-rs 0.1.0 (af6c1462fb)`.\n\n**Required fix/proof:** bind verification to the immutable copy being installed, not the shared pathname. For example, validate the installer's private temporary copy against A's expected stamp before renaming it, or create a private verified snapshot while still holding the existing shared-build lock. Add the A-build/check -> B-build -> A-install interleaving to the fake-cargo regression. No separate cargo target is needed.\n\n## Requested checks and limits\n\n- **Dirty sources:** the helper accepts dirty tracked sources and stamps them with clean HEAD. Reproduced by changing the fixture's tracked source marker to `uncommitted-source`: helper exit 0 with A's HEAD stamp and the dirty marker in the fake artifact. Both just recipes lack a cleanliness guard; native CLI bounce retains `reproducible_repo`'s existing clean/main check (`bounce/mod.rs:41-62`). This recipe behavior predates the PR, so it is a provenance limitation rather than an additional blocker. A HEAD stamp is not proof of a clean HEAD build; either narrow that claim or explicitly refuse/identify dirty deploys.\n- **Failure ordering:** fake cargo exit 101 propagated through the actual build-then-install composition; stdout stayed empty and the existing installed bytes were unchanged. Build/stamp/install failures precede shutdown. “Every failure leaves the old daemon up” is broader than the code: the existing post-signal launch/health failures have no rollback; this PR does not introduce that limitation.\n- **Native bounce behavior:** repository validation, installation-before-announcement, runtime corroboration, drain, launch, health/version observation and environment behavior remain otherwise unchanged.\n- **Version/shell:** CLI and daemon inherit the same workspace package version. New documented output is `pij-rs 0.1.0 (<stamp>)`, with `(unstamped)` absent a stamp. Shell syntax passed; the isolated space-containing paths passed. The stamp is a compile-time self-report, not a byte digest or cleanliness attestation. Install paths and privilege are unchanged. No new private content found in changed documentation.\n- **Cost:** no new steady-state daemon loop, timer or per-seat work. Deployment is on demand; shared-build's existing contention loop costs one df, mkdir and sleep per 20 seconds per waiting invocation, not per seat. No live deploy or fleet measurement was attempted by this reviewer.\n\n## Evidence\n\n`just pr-freeze 271`: FINAL at the exact head; all listed checks passed. GitHub CI head and successful rust/TS checks independently inspected.\n\n`bash -n harness/scripts/release-build.sh harness/scripts/shared-build.sh harness/scripts/cargo-target.sh`: passed.\n\nDependency-free Node execution of `recipeCostFindings` against the real justfile: passed, zero findings.\n\nIsolated fake-cargo proof: passed its assertions for the foreign-artifact handoff, dirty-stamp acceptance, and cargo-failure preservation. No real cargo, install into the user's HOME, fleet daemon operation, dependency restoration or repository source edits.\n\n**Harness gift / magicWand:** test ownership through the final install handoff, not only build completion. Captured as observation `review-271/DL-001`; the requested regression encodes it.\n"
+		}
+	]
+}
