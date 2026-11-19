@@ -1393,6 +1393,7 @@ async fn typing_release_wakes_an_already_waiting_inbox_reader() {
         typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
         federation: None,
         held: Default::default(),
+        route_counts: Default::default(),
     };
     let held = hold_inbox(
         State(state.clone()),
@@ -2014,6 +2015,7 @@ async fn typing_hold_projections_follow_terminal_outcomes_and_sequence() {
             typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
             federation: None,
             held: Default::default(),
+            route_counts: Default::default(),
         };
         let seat = SeatId::from("pij-held");
         let other_seat = SeatId::from("pij-other");
@@ -3278,6 +3280,84 @@ async fn ping_reports_the_daemon_pid() {
     assert!(
         health["data"].get("ddocs").is_some(),
         "ping names the ddocs it resolved, or null"
+    );
+    server.abort();
+}
+
+/// F222: ping counts the requests the daemon has answered, by route template
+/// and outcome, and `GET /v1/seats` by query shape. A request with no key and
+/// a path the router doesn't serve are counted too, without adding keys.
+#[tokio::test]
+async fn ping_counts_requests_by_route_and_seats_reads_by_query_shape() {
+    let services = crate::build_services(
+        &pij_core::config::Config::default(),
+        std::path::Path::new("/tmp/pij-test-ping-route-counts"),
+    )
+    .await
+    .expect("fake services");
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let client = reqwest::Client::new();
+    let get = |path: &str| {
+        client
+            .get(format!("http://{addr}{path}"))
+            .bearer_auth("key")
+    };
+    for path in [
+        "/v1/seats?scope=local",
+        "/v1/seats?scope=local",
+        "/v1/seats",
+        "/v1/no-such-route",
+    ] {
+        get(path).send().await.expect("request");
+    }
+    // No caller evidence: whoami refuses.
+    let whoami = client
+        .post(format!("http://{addr}/v1/whoami"))
+        .bearer_auth("key")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .expect("whoami");
+    assert!(!whoami.status().is_success());
+    client
+        .get(format!("http://{addr}/v1/seats"))
+        .bearer_auth("wrong")
+        .send()
+        .await
+        .expect("unauthenticated");
+    let health: serde_json::Value = get("/health")
+        .send()
+        .await
+        .expect("health")
+        .json()
+        .await
+        .expect("health envelope");
+    let requests = &health["data"]["requests"];
+    assert_eq!(
+        requests["routes"]["GET /v1/seats"],
+        serde_json::json!({"ok": 3, "refused": 1}),
+        "{requests}"
+    );
+    assert_eq!(
+        requests["routes"]["POST /v1/whoami"],
+        serde_json::json!({"ok": 0, "refused": 1}),
+        "{requests}"
+    );
+    assert_eq!(
+        requests["routes"]["(unmatched)"],
+        serde_json::json!({"ok": 0, "refused": 1}),
+        "{requests}"
+    );
+    assert_eq!(
+        requests["seats_queries"],
+        serde_json::json!({"scope=local": 2, "(none)": 2}),
+        "{requests}"
+    );
+    // The ping reading itself is counted once it is answered.
+    assert_eq!(requests["total"], 6, "{requests}");
+    assert!(
+        requests["routes"].get("GET /health").is_none(),
+        "{requests}"
     );
     server.abort();
 }

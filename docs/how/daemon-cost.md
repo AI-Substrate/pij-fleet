@@ -39,6 +39,7 @@ Take every reading twice, a known interval apart, on the same fleet before and a
 pid=$(pgrep -f 'pij-rs daemon$')
 ps -o %cpu=,rss= -p "$pid"                              # CPU and RSS; repeat at +15 s, +60 s, +10 min
 pij-rs --json ping | jq .data.spawns                    # launches by call site; diff two readings
+pij-rs --json ping | jq .data.requests                  # requests by route and outcome; diff two readings (F222)
 just spawn-rate --seconds 20                            # machine-wide launches and the daemon's share
 du -sh ~/.pij-rs/pane-signals                           # tap files
 sqlite3 -readonly ~/.pij-rs/pij.sqlite 'select max(seq) from spine_events'   # spine growth; diff two readings

@@ -26,6 +26,7 @@ mod requests;
 mod revive;
 pub mod role;
 mod role_send;
+pub(crate) mod route_counts;
 mod routes;
 pub(crate) use routes::notify_primes;
 mod shim;
@@ -100,6 +101,8 @@ pub(crate) struct AppState {
     registration: RegistrationService,
     /// Each seat's held deliveries, kept in step with its delivery events.
     held: HeldProjections,
+    /// Requests served, by route (F222).
+    route_counts: Arc<route_counts::RouteCounts>,
 }
 
 /// One seat's held deliveries as of its delivery events up to `after` (F209).
@@ -628,7 +631,9 @@ fn router_with_optional_federation(
         federation,
         registration,
         held: HeldProjections::default(),
+        route_counts: Arc::default(),
     };
+    let route_counts = Arc::clone(&state.route_counts);
     let mut router = Router::new();
     let mut job_token_routes = Vec::new();
     for endpoint in Endpoint::ALL {
@@ -797,7 +802,14 @@ fn router_with_optional_federation(
     for (path, method_router) in job_token_routes {
         router = router.route(path, method_router);
     }
-    router.with_state(state)
+    // Outermost, over every route including the job-token ones and the
+    // fallback, so each request is counted once, refusals included (F222).
+    router
+        .layer(axum::middleware::from_fn_with_state(
+            route_counts,
+            route_counts::count_request,
+        ))
+        .with_state(state)
 }
 
 async fn require_bearer(
@@ -855,6 +867,8 @@ struct Health<'a> {
     /// The cache proxy as the watch last read it, with the live Copilot seats
     /// proxied and plain (plan 229).
     cache_proxy: crate::cache_proxy::HealthView,
+    /// Requests served since this daemon started, by route (F222).
+    requests: route_counts::RequestCounts,
 }
 
 #[derive(serde::Serialize)]
@@ -891,6 +905,7 @@ async fn health(State(state): State<AppState>) -> Response {
         spawns: pij_core::spawns::snapshot(),
         registrations: state.registration.attempts().snapshot(),
         cache_proxy: state.services.cache_proxy.health(),
+        requests: state.route_counts.snapshot(),
     };
     match checked {
         Ok(()) => envelope(StatusCode::OK, &Envelope::ok("pij ping", data)),
@@ -5273,5 +5288,6 @@ pub(crate) fn test_state(services: Services) -> AppState {
         typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
         federation: None,
         held: HeldProjections::default(),
+        route_counts: Arc::default(),
     }
 }

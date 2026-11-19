@@ -76,7 +76,19 @@ nothing: the socket transport reads the peer's start in-process, once per
 resolution, and `deliver` reuses the endpoint its own probe resolved after a fresh
 start re-read (plan 218, retiring `ps.uds-peer-start`). `data.pid` is the daemon's own process
 id (plan 190): the spawn counter resets on restart, so two readings compare only
-when their pids match. `data.registrations:{total,ps,by_key,by_seat}` counts registration
+when their pids match. `data.requests:{total,routes,seats_queries}` counts the
+requests this daemon has answered since it started (F222): `routes` is per
+`"<METHOD> <route template>"` (`"GET /v1/seats"`, `"POST /v1/whoami"`), each
+`{ok,refused}` where `refused` is any 4xx or 5xx, a missing or wrong key
+included. A path the router doesn't serve counts under `(unmatched)`, and a
+non-standard method under `OTHER`, so a client can't add keys.
+`seats_queries` counts `GET /v1/seats` by which of `harness`, `folder`,
+`parent`, `scope` (`scope=local` named apart), `here` and `sizes` it carried
+(`"(none)"` for none). A ping is counted once it is answered, so a reading
+leaves itself out. Cost: one atomic increment and one uncontended map lookup
+per request, no launch, no log, no write. Two readings a known interval apart
+give requests a second per route.
+`data.registrations:{total,ps,by_key,by_seat}` counts registration
 attempts since start (plan 211, issue #145): `by_key` is per
 `<path>.<mode>.<outcome>` with `{count,ps}`, where `ps` is the ancestry `ps`
 reads those attempts paid. `path` is the client's advisory `attempt` on
