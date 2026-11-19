@@ -538,7 +538,10 @@
 					"harness_session": "6822a621-fecc-4d87-bdfa-86e6881f0f0e",
 					"instance_key": "270",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #270 merged (98c572a84e59)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-minimal-stoat",
+					"to": "2026-11-19T10:18:19.816Z",
 					"why": "F222 step 2: closed seats stop the registration loop; /v1/seats live-rows-only #270"
 				},
 				{
