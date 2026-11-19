@@ -1701,7 +1701,10 @@
 					"harness_session": "be9dc8aa-fdf7-49f8-9cc6-69879490dd9f",
 					"instance_key": "246",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #246 merged (f04d197107e6)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-small-swift",
+					"to": "2026-11-19T00:47:36.358Z",
 					"why": "review of #246 (plan 231)"
 				},
 				{

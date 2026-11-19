@@ -35,5 +35,5 @@
 | — | pij-supposed-gazelle | copilot | 570f725f-c47b-45c3-86fc-4e00b4a731b8 | JordansacStudio.localdomain | — | 2026-11-18T05:46:54.709Z | — | pij-outstanding-silkworm | — | pm-004: verdict on #243 (ws004 s05) | — |
 | — | pij-eventual-boar | copilot | 54c155a3-d090-4fad-9ac4-1397958f4a3b | JordansacStudio.localdomain | — | 2026-11-18T23:15:20.426Z | — | pij-far-jackal | — | PR #244 close-out + scrub | — |
 | — | pij-integrated-opossum | copilot | 5e4c9289-4a70-4d9f-87a2-83601dac85fc | JordansacStudio.localdomain | 245 | 2026-11-18T23:30:29.001Z | 2026-11-19T00:01:40.224Z | pij-steady-otter | pij-far-jackal | F194 #245 security (gpt-6.1-sol) | PR #245 merged (577a6c7a13f6) |
-| — | pij-autonomous-guppy | copilot | f9acef2d-685d-4694-947d-23eff09700f1 | JordansacStudio.localdomain | 246 | 2026-11-19T00:14:37.649Z | — | pij-far-jackal | — | security review of #246 (plan 231) | — |
+| — | pij-autonomous-guppy | copilot | f9acef2d-685d-4694-947d-23eff09700f1 | JordansacStudio.localdomain | 246 | 2026-11-19T00:14:37.649Z | 2026-11-19T00:47:36.358Z | pij-far-jackal | pij-far-jackal | security review of #246 (plan 231) | PR #246 merged (f04d197107e6) |
 | — | pij-pleased-pike | copilot | 291276aa-7423-4bcb-acd1-bf4abdd64df8 | JordansacStudio.localdomain | 247 | 2026-11-19T00:36:51.409Z | — | pij-steady-otter | — | F207 #247 security (Copilot gpt-6.1-sol) | — |
