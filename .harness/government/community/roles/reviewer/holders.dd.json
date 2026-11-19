@@ -2094,6 +2094,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-essential-dove",
 					"why": "F193 repro"
+				},
+				{
+					"assigned_by": "pij-cultural-falcon",
+					"from": "2026-11-19T22:23:14.916Z",
+					"harness": "copilot",
+					"harness_session": "f9fd96aa-a56d-43fc-a3d2-da5cfefef4e2",
+					"instance_key": "f190-proof",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-regulatory-snipe",
+					"why": "F190 repro"
 				}
 			]
 		}

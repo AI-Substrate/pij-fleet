@@ -180,3 +180,4 @@
 | — | pij-quaint-roadrunner | omp | 01a1f5da-c3e8-744a-9865-9053f9bd8ba3 | JordansacStudio.localdomain | f227-proof-a | 2026-11-19T22:08:43.439Z | 2026-11-19T22:08:56.044Z | pij-cultural-falcon | pij-cultural-falcon | F227 live proof A | close |
 | — | pij-gentle-tern | omp | 01a1f5da-c87d-757d-b3ad-389b3381b827 | JordansacStudio.localdomain | f227-proof-b | 2026-11-19T22:08:43.886Z | 2026-11-19T22:09:31.345Z | pij-cultural-falcon | pij-cultural-falcon | F227 live proof B | F227 live proof B: dead seat holding |
 | — | pij-essential-dove | omp | 01a1f5e5-92b6-7467-a16b-1861d9ce9b0a | JordansacStudio.localdomain | f193-proof | 2026-11-19T22:22:03.562Z | — | pij-cultural-falcon | — | F193 repro | — |
+| — | pij-regulatory-snipe | copilot | f9fd96aa-a56d-43fc-a3d2-da5cfefef4e2 | JordansacStudio.localdomain | f190-proof | 2026-11-19T22:23:14.916Z | — | pij-cultural-falcon | — | F190 repro | — |
