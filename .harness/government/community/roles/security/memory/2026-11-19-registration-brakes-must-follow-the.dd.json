@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open before changing registration ancestry brakes or Copilot closed-row retry decisions.",
+				"tags": [
+					"registration",
+					"process-ancestry",
+					"launch-correlation",
+					"proof"
+				],
+				"title": "Registration brakes must follow the resolved launch"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#267's descendant-only brake missed an ordinary registration: HTTP resolved the submitted child to the Copilot loader, an ANCESTOR of the registered CLI. #269 adds the reverse ancestry check. Test the resolver-to-brake composition with the real loader/CLI/shell tree, not only a hand-selected process: #269's fixture injects native_claim and does not exercise HTTP/tmux resolution. Own-id/supersedes and same-conversation exemptions preserve continuity; these are refusal brakes, not authentication. Cost is <=64 ADDED parent reads per examined non-exempt same-pane row per registration, <=128 including the existing forward walk; zero new launches.\n\n#270 adds another incarnation trap: own-id tombstone alone cannot mean stop, because revive can start before its fresh prebind is written. Final logic stops only when the closed row matches this launch's spawn_id; without PIJ_SPAWN_ID, native-session OR PID-plus-process-start correlation applies. Another spawn id remains retryable. /restart inherits spawn_id, so a genuinely closed launch still stops. Launch correlation does not grant caller authority.\n\nAnchors: #269 at 9ec68d399c7cba523beece047c0c9c0152598dc5, registration.rs:747-809,2999-3053; #270 at e385e0e2540962d9d6add6d92a061789adbfa1c6, .copilot/extensions/pij/store.mjs:486-510, extension.test.mjs:1309-1408. Reviews were static with exact-head CI verified; no local builds, mutants or live lifecycle probes were run. Do not upgrade fixture coverage into live proof.\n\nmagicWand: a deterministic HTTP-resolution-to-registration fixture reproducing the loader/CLI topology before asserting the brake.\n"
+		}
+	]
+}
