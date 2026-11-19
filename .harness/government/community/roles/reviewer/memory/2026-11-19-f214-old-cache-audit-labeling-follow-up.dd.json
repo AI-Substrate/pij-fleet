@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "Open when checking R256-N1 closure or interpreting heuristic_old_hour_* versus cache_old_*.",
+				"tags": [
+					"review",
+					"cache-ttl",
+					"audit",
+					"f214",
+					"closure"
+				],
+				"title": "F214 old-cache audit labeling follow-up closed"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#258 at d8aad07bdc0df8fd486e367f329ed59e24598b8e resolves the open R256-N1 and magicWand in the PR256 final reviewer note. Do not carry that labeling debt forward.\n\nThe fixed-hour estimate is now heuristic_old_hour_*; cache_old_* uses old_cache, which knows only the seat's recorded 5m/1h TTL, is warm strictly before expiry, and excludes/counts unknown TTLs separately. The regression deliberately makes the pairs disagree: heuristic errors 2/0 versus old-cache errors 0/2, with 1 unknown. Guard scoring and policy replay are unchanged. This distinction, rather than a green count alone, is the useful future regression oracle.\n\nReviewer PASS output commit 1e237531b41424a20760121709d1a1fa052163db; security PASS output commit 6e8dd78b27c692cea96b42c971284ed8dcee05e8. Exact-head CI run 44463656179 passed, including both audit tests. Security covered all 47 added lines; no local builds/tests or live fleet scan. Existing security notes already cover the privacy and delegation lessons, so no duplicate note was added there. Performance-only ownership of the later F214 after-deploy audit remains unchanged.\n"
+		}
+	]
+}
