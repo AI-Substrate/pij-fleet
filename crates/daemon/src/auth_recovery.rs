@@ -443,9 +443,12 @@ pub(crate) fn notice(seat: &SeatDescriptor, action: Action, kind: LostLogin) -> 
         Action::Relogin => format!(
             "{id}'s Copilot lost its login again ({what}) after pij restarted it, so a restart is not enough: its login needs renewing. Type /login in {pane}, then /restart."
         ),
-        Action::NotRestarted => format!(
-            "{id}'s Copilot lost its login ({what}); pij typed /restart in {pane} but the same process is still running, so the restart did not take (Copilot may not offer /restart there). Quit it with /exit in {pane}, then run `pij revive {id}`: it resumes the same session."
-        ),
+        Action::NotRestarted => {
+            let revive = pij_core::directory::shell_word(&seat.id.0);
+            format!(
+                "{id}'s Copilot lost its login ({what}); pij typed /restart in {pane} but the same process is still running, so the restart did not take (Copilot may not offer /restart there). Quit it with /exit in {pane}, then run `pij-rs revive {revive}`: it resumes the same session."
+            )
+        }
         _ => format!(
             "{id}'s Copilot lost its login ({what}), and pij did not restart it: it was busy, had text in its composer, or the restart could not be queued. When it is free, type /restart in {pane}, or run `pij send {id} --command restart`. Its session, roles and queue survive a /restart."
         ),

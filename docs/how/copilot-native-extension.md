@@ -99,8 +99,8 @@ The daemon then queues one `restart` when the seat is idle with an empty
 composer, and otherwise tells its live parent and the designated primes of its
 projects how to restart it. One restart per seat per 30 min: while that restart
 is still queued, nothing more happens; once it has run, a report from the same
-process means the restart did not take (they are told to `/exit` and
-`pij revive`), and one from the new process means the login needs renewing
+process means the restart did not take (they are told to `/exit`, then
+`pij-rs revive <seat>`), and one from the new process means the login needs renewing
 (`/login`). Each decision that acts is a `seat.auth_recovery` spine event.
 
 New manual sessions receive an ordinary memorable Pij ID from the daemon, just

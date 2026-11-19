@@ -280,7 +280,7 @@ async fn a_restart_that_settles_without_a_new_process_is_reported_once() {
         assert_eq!(stuck.told.len(), 1, "{outcome:?}");
         let body = told(&fleet, PARENT).await.join("\n");
         assert!(body.contains("the restart did not take"), "{body}");
-        assert!(body.contains("pij revive pij-copilot-coder"), "{body}");
+        assert!(body.contains("pij-rs revive pij-copilot-coder"), "{body}");
         assert_eq!(
             report(&fleet, FIRST, start + 2 * MINUTE).await.action,
             Action::Told,
