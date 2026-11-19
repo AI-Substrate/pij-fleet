@@ -31,18 +31,25 @@ pub const COLD_CONTEXT_TOKENS: u64 = 400_000;
 pub const COLD_IDLE_MS: u64 = 60 * 60 * 1_000;
 
 /// What the guard does with a large seat idle past its cache TTL but not yet
-/// past [`COLD_IDLE_MS`] (F214).
+/// past [`COLD_IDLE_MS`] (F214). One switch; every value is tested through
+/// `decide`, so a ruling changes [`PAST_TTL`] and nothing else.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PastTtl {
-    /// Refuse it like any cold seat: the TTL is the lifetime.
-    Refuse,
-    /// Allow it with a warning; refuse only past [`COLD_IDLE_MS`].
+    /// Allow it with a warning; refuse only past [`COLD_IDLE_MS`] (option b).
     Warn,
+    /// Refuse once idle reaches `ttl_percent`% of the TTL, warn before that
+    /// (from the TTL on). `100` refuses at the TTL itself (option a); `150`
+    /// and `200` give a provider's cache that outlives its stated TTL a grace
+    /// (option c). [`COLD_IDLE_MS`] stays the ceiling whatever the product.
+    RefuseAt {
+        /// The refusal point as a percentage of the TTL.
+        ttl_percent: u32,
+    },
 }
 
-/// The rule in force. The F214 audit (2026-11-12 to 19) found 727 of 785
-/// silent cold wakes on seats whose 5-minute TTL pij already knew.
-pub const PAST_TTL: PastTtl = PastTtl::Refuse;
+/// The rule in force: option (b) until Jordan rules (prime, 2026-11-19). The
+/// F214 audit replays every option in the PR (#256) body.
+pub const PAST_TTL: PastTtl = PastTtl::Warn;
 
 /// A large seat whose cache TTL is unknown, idle longer than this, is warned
 /// about: the shortest TTL in [`crate::session_status::CACHE_TTL_TABLE`].
@@ -167,7 +174,7 @@ pub enum ColdCheck {
         cache_ttl: Option<String>,
     },
     /// Large and idle long enough that the wake may be cold, but not refused
-    /// (F214): the TTL is unknown, or [`PAST_TTL`] is [`PastTtl::Warn`]. The
+    /// (F214): the TTL is unknown, or [`PAST_TTL`] warns past the TTL. The
     /// send goes through and the receipt says why.
     #[serde(rename_all = "camelCase")]
     Warn {
@@ -262,14 +269,22 @@ fn decide(
         match (status.cache_ttl.value(), &cache_ttl) {
             // Inside its lifetime: warm. `cache_state` calls it cold at the TTL.
             (Some(ttl), _) if idle_ms < ttl.as_ms() => return ColdCheck::Clear,
-            (Some(_), Some(text)) if rule == PastTtl::Warn => {
-                return warn(format!(
-                    "{} idle {}, past its {text} cache; the wake re-writes it",
-                    human_tokens(context_tokens),
-                    human_duration(idle_ms),
-                ));
+            (Some(ttl), Some(text)) => {
+                let refuse_at = match rule {
+                    PastTtl::Warn => None,
+                    PastTtl::RefuseAt { ttl_percent } => {
+                        Some(ttl.as_ms().saturating_mul(u64::from(ttl_percent)) / 100)
+                    }
+                };
+                if refuse_at.is_none_or(|refuse_at| idle_ms < refuse_at) {
+                    return warn(format!(
+                        "{} idle {}, past its {text} cache; the wake re-writes it",
+                        human_tokens(context_tokens),
+                        human_duration(idle_ms),
+                    ));
+                }
             }
-            (Some(_), _) => {}
+            (Some(_), None) => {}
             (None, _) if idle_ms > UNKNOWN_TTL_WARN_MS => {
                 return warn(format!(
                     "cache TTL unknown; {} idle {} may be cold",
@@ -889,27 +904,51 @@ mod tests {
 
     const MIN: u64 = 60_000;
 
-    /// F214: Copilot records 1800 s for its GPT models. A large GPT seat idle
-    /// 45 min is cold (the audit's case); before, `30m` read as unknown and the
-    /// fixed hour let the wake through in silence.
+    /// Option (a), refuse at the TTL.
+    const AT_TTL: PastTtl = PastTtl::RefuseAt { ttl_percent: 100 };
+    /// Option (c), refuse at 1.5 x the TTL.
+    const AT_150: PastTtl = PastTtl::RefuseAt { ttl_percent: 150 };
+    /// Option (c), refuse at 2 x the TTL.
+    const AT_200: PastTtl = PastTtl::RefuseAt { ttl_percent: 200 };
+
+    fn verdict_kind(check: &ColdCheck) -> &'static str {
+        match check {
+            ColdCheck::Clear => "clear",
+            ColdCheck::Busy => "busy",
+            ColdCheck::Cold { .. } => "cold",
+            ColdCheck::Warn { .. } => "warn",
+            ColdCheck::Unknown { .. } => "unknown",
+        }
+    }
+
+    /// F214: Copilot records 1800 s for its GPT models. Before, `30m` read as
+    /// unknown and the fixed hour let the wake through in silence; now every
+    /// value of the switch either warns or refuses past the 30 minutes, and
+    /// all of them refuse past the hour.
     #[test]
-    fn a_large_gpt_seat_idle_past_its_thirty_minutes_is_cold() {
+    fn a_large_gpt_seat_past_its_thirty_minutes_is_warned_or_refused_by_every_rule() {
         let thirty = Fact::native(CacheTtl::from_seconds(1_800).expect("30m"));
         let idle = |ago| large_with_ttl(ago, "gpt-6.1-sol", thirty.clone());
-        for rule in [PastTtl::Refuse, PastTtl::Warn] {
-            assert_eq!(
-                decide(rule, SystemState::Idle, &idle(29 * MIN), NOW, None),
-                ColdCheck::Clear,
-                "{rule:?}"
-            );
+        let minutes = [29, 31, 44, 46, 59, 61];
+        for (rule, want) in [
+            (
+                PastTtl::Warn,
+                ["clear", "warn", "warn", "warn", "warn", "cold"],
+            ),
+            (AT_TTL, ["clear", "cold", "cold", "cold", "cold", "cold"]),
+            (AT_150, ["clear", "warn", "warn", "cold", "cold", "cold"]),
+            (AT_200, ["clear", "warn", "warn", "warn", "warn", "cold"]),
+        ] {
+            for (minute, want) in minutes.iter().zip(want) {
+                let got = decide(rule, SystemState::Idle, &idle(minute * MIN), NOW, None);
+                assert_eq!(
+                    verdict_kind(&got),
+                    want,
+                    "{rule:?} at {minute} min: {got:?}"
+                );
+            }
         }
-        let refused = decide(
-            PastTtl::Refuse,
-            SystemState::Idle,
-            &idle(45 * MIN),
-            NOW,
-            None,
-        );
+        let refused = decide(AT_TTL, SystemState::Idle, &idle(45 * MIN), NOW, None);
         let ColdCheck::Cold { cache_ttl, .. } = &refused else {
             panic!("expected cold: {refused:?}");
         };
@@ -924,18 +963,11 @@ mod tests {
             warned.receipt_label(false),
             "warn: 500k idle 45m, past its 30m native cache; the wake re-writes it"
         );
-        // Past the hour both rules refuse.
-        for rule in [PastTtl::Refuse, PastTtl::Warn] {
-            assert!(matches!(
-                decide(rule, SystemState::Idle, &idle(61 * MIN), NOW, None),
-                ColdCheck::Cold { .. }
-            ));
-        }
     }
 
     /// F214: the seat's own TTL decides over the table's. A Copilot Claude seat
     /// that recorded a 1-hour cache is warm at 20 min although the table says 5
-    /// min; a seat only the table covers is cold past 5 min.
+    /// min; a seat only the table covers is past its TTL at 20 min.
     #[test]
     fn the_seats_own_ttl_decides_over_the_tables() {
         let own = large_with_ttl(
@@ -951,14 +983,17 @@ mod tests {
                 basis: Basis::Table { version: 1 },
             },
         );
-        assert_eq!(
-            decide(PastTtl::Refuse, SystemState::Idle, &own, NOW, None),
-            ColdCheck::Clear
-        );
+        for rule in [PastTtl::Warn, AT_TTL, AT_150, AT_200] {
+            assert_eq!(
+                decide(rule, SystemState::Idle, &own, NOW, None),
+                ColdCheck::Clear,
+                "{rule:?}"
+            );
+        }
         let ColdCheck::Cold { cache_ttl, .. } =
-            decide(PastTtl::Refuse, SystemState::Idle, &table, NOW, None)
+            decide(AT_200, SystemState::Idle, &table, NOW, None)
         else {
-            panic!("a table-only 5m seat idle 20 min is cold");
+            panic!("a table-only 5m seat idle 20 min is past 2 x its TTL");
         };
         assert_eq!(cache_ttl.as_deref(), Some("5m table@v1"));
     }
@@ -968,7 +1003,7 @@ mod tests {
     #[test]
     fn an_unknown_ttl_on_a_large_idle_seat_warns() {
         let unknown_ttl = |ago| large_with_ttl(ago, "some-new-model", Fact::Unknown);
-        for rule in [PastTtl::Refuse, PastTtl::Warn] {
+        for rule in [PastTtl::Warn, AT_TTL, AT_150, AT_200] {
             assert_eq!(
                 decide(
                     rule,

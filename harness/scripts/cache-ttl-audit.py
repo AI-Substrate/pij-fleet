@@ -171,14 +171,6 @@ def classify(args):
             new_ttl = table_ttl(harness, prev[1], info.get("provider"))
             basis = "table" if new_ttl else "unknown"
         large = ctx > COLD_CONTEXT
-        if busy:
-            new = "busy"
-        elif large and (idle > COLD_IDLE_MS or (new_ttl is not None and idle >= new_ttl)):
-            new = "cold"
-        elif large and new_ttl is None and idle > UNKNOWN_TTL_WARN_MS:
-            new = "warn"
-        else:
-            new = "clear"
         share = nxt[3] / nxt[2]
         rows.append(
             {
@@ -191,12 +183,13 @@ def classify(args):
                 "ctx": ctx,
                 "large": large,
                 "busy": busy,
+                "old_guard": old_guard(busy, ctx, idle),
+                "new_guard": new_guard(busy, ctx, idle, new_ttl),
                 "old_warm": idle <= COLD_IDLE_MS,
                 "old_cache": None if old_ttl is None else idle < old_ttl,
                 "new_ttl_ms": new_ttl,
                 "ttl_basis": basis,
                 "new_warm": None if new_ttl is None else idle < min(new_ttl, COLD_IDLE_MS),
-                "new_guard": new,
                 "share": round(share, 3),
                 "actual": "warm" if share >= WARM_SHARE else "cold" if share < COLD_SHARE else "partial",
             }
@@ -204,26 +197,91 @@ def classify(args):
     return since, until, len(deliveries), rows
 
 
+def old_guard(busy, ctx, idle):
+    """The pre-F214 guard's disposition: `busy`, `cold` (refused) or `clear`."""
+    if busy:
+        return "busy"
+    return "cold" if ctx > COLD_CONTEXT and idle > COLD_IDLE_MS else "clear"
+
+
+# cold_wake::PastTtl values: None is Warn (refuse only past the hour), a
+# number is RefuseAt { ttl_percent } as a multiple of the TTL.
+POLICIES = {"a": 1.0, "b": None, "c x1.5": 1.5, "c x2": 2.0}
+SHIPPED = "b"  # cold_wake::PAST_TTL
+
+
+def new_guard(busy, ctx, idle, ttl, policy=SHIPPED):
+    """cold_wake::check under a PAST_TTL value: `busy`, `cold`, `warn` or `clear`."""
+    if busy:
+        return "busy"
+    if ctx <= COLD_CONTEXT:
+        return "clear"
+    if idle > COLD_IDLE_MS:
+        return "cold"
+    if ttl is None:
+        return "warn" if idle > UNKNOWN_TTL_WARN_MS else "clear"
+    if idle < ttl:
+        return "clear"
+    factor = POLICIES[policy]
+    return "cold" if factor is not None and idle >= ttl * factor else "warn"
+
+
+def replay(rows):
+    """Every PAST_TTL value over the same decided deliveries: large cold sends
+    let through (silently or with a warning), warm sends refused or warned, and
+    large refusals."""
+    decided = [r for r in rows if r["actual"] != "partial" and not r["busy"]]
+    table = {}
+    for policy in POLICIES:
+        verdicts = [(r, new_guard(False, r["ctx"], r["idle_ms"], r["new_ttl_ms"], policy)) for r in decided]
+        table[policy] = {
+            "large_cold_allowed": sum(1 for r, v in verdicts if r["large"] and v != "cold" and r["actual"] == "cold"),
+            "of_which_warned": sum(1 for r, v in verdicts if v == "warn" and r["actual"] == "cold"),
+            "warm_refused_or_warned": sum(1 for r, v in verdicts if v in ("cold", "warn") and r["actual"] == "warm"),
+            "of_which_refused": sum(1 for r, v in verdicts if v == "cold" and r["actual"] == "warm"),
+            "large_refusals": sum(1 for _, v in verdicts if v == "cold"),
+        }
+    old = [(r, old_guard(False, r["ctx"], r["idle_ms"])) for r in decided]
+    table["before F214"] = {
+        "large_cold_allowed": sum(1 for r, v in old if r["large"] and v != "cold" and r["actual"] == "cold"),
+        "of_which_warned": 0,
+        "warm_refused_or_warned": sum(1 for r, v in old if v == "cold" and r["actual"] == "warm"),
+        "of_which_refused": sum(1 for r, v in old if v == "cold" and r["actual"] == "warm"),
+        "large_refusals": sum(1 for _, v in old if v == "cold"),
+    }
+    return table
+
+
 def stats(rows):
+    """Guard outcomes and cache-state views, in separately named columns
+    (review R256-001), over decided deliveries (not busy, not partial).
+
+    guard_*: what the cold-wake guard did with the send, from each rule's
+    disposition: allowed in silence (`clear`) yet the next call was cold;
+    refused (`cold`) or warned (`warn`) yet the next call read the cache.
+    cache_*: what the cache-state view (`pij state`, the CACHE column, the FYI
+    flush) said, for every size; it decides no send.
+    """
     decided = [r for r in rows if r["actual"] != "partial" and not r["busy"]]
     cold = lambda r: r["actual"] == "cold"
     warm = lambda r: r["actual"] == "warm"
+    out = {"n": len(rows), "decided": len(decided), "actual_cold": sum(map(cold, decided))}
+    for rule in ("old", "new"):
+        verdict = lambda r, rule=rule: r[f"{rule}_guard"]
+        out[f"guard_{rule}_allowed_cold"] = sum(1 for r in decided if verdict(r) == "clear" and cold(r))
+        out[f"guard_{rule}_allowed_cold_large"] = sum(
+            1 for r in decided if verdict(r) == "clear" and cold(r) and r["large"]
+        )
+        out[f"guard_{rule}_stopped_warm"] = sum(1 for r in decided if verdict(r) in ("cold", "warn") and warm(r))
+        out[f"guard_{rule}_refused"] = sum(1 for r in decided if verdict(r) == "cold")
+        out[f"guard_{rule}_warned"] = sum(1 for r in decided if verdict(r) == "warn")
     new_known = [r for r in decided if r["new_warm"] is not None]
-    return {
-        "n": len(rows),
-        "decided": len(decided),
-        "actual_cold": sum(map(cold, decided)),
-        "old_silent_cold": sum(1 for r in decided if r["old_warm"] and cold(r)),
-        "old_silent_cold_large": sum(1 for r in decided if r["old_warm"] and cold(r) and r["large"]),
-        "old_false_cold": sum(1 for r in decided if not r["old_warm"] and warm(r)),
-        "new_silent_cold": sum(1 for r in decided if r["new_warm"] is not False and cold(r) and r["new_guard"] != "warn"),
-        "new_silent_cold_large": sum(1 for r in decided if r["large"] and r["new_guard"] == "clear" and cold(r)),
-        "new_false_cold": sum(1 for r in new_known if not r["new_warm"] and warm(r)),
-        "new_ttl_unknown": len(decided) - len(new_known),
-        "large_refused_old": sum(1 for r in decided if r["large"] and not r["old_warm"]),
-        "large_refused_new": sum(1 for r in decided if r["new_guard"] == "cold"),
-        "large_warned_new": sum(1 for r in decided if r["new_guard"] == "warn"),
-    }
+    out["cache_old_said_warm_was_cold"] = sum(1 for r in decided if r["old_warm"] and cold(r))
+    out["cache_old_said_cold_was_warm"] = sum(1 for r in decided if not r["old_warm"] and warm(r))
+    out["cache_new_said_warm_was_cold"] = sum(1 for r in new_known if r["new_warm"] and cold(r))
+    out["cache_new_said_cold_was_warm"] = sum(1 for r in new_known if not r["new_warm"] and warm(r))
+    out["cache_new_ttl_unknown"] = len(decided) - len(new_known)
+    return out
 
 
 def main():
@@ -245,6 +303,13 @@ def main():
         s = stats(groups[key])
         print("| " + " | ".join(str(k) for k in key) + " | " + " | ".join(str(s[c]) for c in cols) + " |")
     print("| TOTAL | | | " + " | ".join(str(total[c]) for c in cols) + " |")
+    print("\nPAST_TTL replay over the decided deliveries (shipped: " + SHIPPED + ")")
+    policies = replay(rows)
+    cols = list(next(iter(policies.values())))
+    print("| policy | " + " | ".join(cols) + " |")
+    print("|" + "---|" * (len(cols) + 1))
+    for policy, row in policies.items():
+        print(f"| {policy} | " + " | ".join(str(row[c]) for c in cols) + " |")
     if args.json:
         with open(args.json, "w") as out:
             json.dump({"window": [since, until], "rows": rows, "total": total}, out)
