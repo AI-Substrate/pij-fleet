@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f2d3-9a65-76b1-b237-b64ed94d14e7",
+				"date": "2026-11-19",
+				"head": "f808581187bf33c0513a637304264e9e4029ecb3",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:264",
+				"writer": "pij-industrial-chickadee",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 264",
+					"exit_code": 0,
+					"log": "FINAL at f808581187bf33c0513a637304264e9e4029ecb3; clean detached worktree; all five checks pass; no migration"
+				},
+				{
+					"command": "gh run view 44483637105 --json headSha,status,conclusion,workflowName",
+					"exit_code": 0,
+					"log": "ci completed success on f808581187bf33c0513a637304264e9e4029ecb3"
+				},
+				{
+					"command": "gh run view 44483637164 --json headSha,status,conclusion,workflowName",
+					"exit_code": 0,
+					"log": "delivers completed success on f808581187bf33c0513a637304264e9e4029ecb3"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS -- security review, round 1 of 2 (C34)\nPR #264 at f808581187bf33c0513a637304264e9e4029ecb3.\n\nNo high-confidence security vulnerability found in the complete 32-file diff.\n\nTrust automation: MenuKey is the closed Up/Down/Enter enum\n(crates/core/src/ports.rs:976,988). Tmux executes fixed key arguments without a\nshell (crates/tmux/src/lib.rs:338,1094). trust_folder defaults false, and both\nCLI and HTTP reject combining it with no_wait\n(crates/daemon/src/http/types.rs:192; crates/cli/src/main.rs:363;\ncrates/daemon/src/http/mod.rs:1447). Enter requires the highlighted trust row;\nClaude's deny row yields Down, and an absent highlight yields no key\n(crates/harnesses/src/trust.rs:100,113). Each loop iteration must recognize the\nprompt again. The target is this spawn's allocated pane/requested cwd, not a\nseparately supplied pane; the displayed folder is not parsed or compared\n(crates/daemon/src/http/mod.rs:1782). Default refusal sends no key and leaves\nthe pane and F211 wait live. No new steady-state launch loop: recognition uses\nthe existing capture; explicit trust automation adds at most one send-keys\nper second per outstanding spawn. Live cost measurement belongs to the\nperformance verdict and was not performed for this security review.\n\nClose-by-ID: runtime posts /v1/close with its caller context, not a boot-roster\ntarget lookup (.omp/extensions/pij/adapters/rust-runtime.ts:817). Authentication,\ncaller derivation/contradiction checks, and self/recorded-parent/designated-prime\ndead-parentless-seat guards remain in the daemon\n(crates/daemon/src/http/mod.rs:473,791;\ncrates/daemon/src/http/identity.rs:1411;\ncrates/daemon/src/http/lifecycle.rs:336,346,506). No PA exception. Held close\ncoalescing binds action, closer, process identity and pane, and rechecks authority\n(crates/daemon/src/http/memory_turn.rs:508,601). Teardown uses only validated,\nnon-held data.kill_pane, never prose; the daemon retains process ownership and\nother-live-holder vetoes (crates/daemon/src/http/lifecycle.rs:319;\n.omp/extensions/pij/core/daemon-wire.ts:259;\n.omp/extensions/pij/adapters/tmux.ts:175). Ownership is the authorization policy;\nprocess/pane incarnation and shared-holder vetoes are one-directional safety\ninterlocks (brakes). The pre-existing S220-N003 registry-read residual is not\nintroduced here and is not re-raised.\n\nPublic-content inspection: all five new live fixtures and the full added\ntest/document content contain no real credential, home path, or account\nidentifier. No dependency manifest, lockfile, workflow/action, or supply-chain\nreference changed. This was manual full-diff inspection, not a secret-scanning\nproduct.\n\nEvidence: independently reran just pr-freeze 264: FINAL at the exact head,\nclean detached worktree, all five checks passed, no migration. Independently\nverified successful exact-head workflows ci 44483637105 and delivers\n44483637164. The delegated security reviewer inspected the complete diff and\ndownloaded Rust JUnit artifact 14510261401 in memory: trust selection/default\nrefusal, close caller/parent/prime restrictions, reused panes, and held-close\nreparent/revive witnesses passed. Rust summary: 2576 passed, 6 skipped.\nNode 22 CI logged 120 passing rust-runtime adapter tests, including inspected\nlate-child, denied-close and held-close cases; aggregate 2350 passed, 7 skipped.\n\nProof limits: no local builds/tests, dependency installation/linking, mutation\nchecks, live trust acceptance, or pane-kill probes. UI behavior is fixture/CI\nevidence, not a repeated live session. C33's user-account trust boundary applies.\nNo new per-seat authentication requirement is asserted.\n\nHarness feedback: the existing dependency-free review-readiness gap recurred.\nharness checks has no read-only/no-build evidence mode. Reuse the existing\nsecurity role-memory follow-up rather than treating this as a PR defect.\n"
+		}
+	]
+}
