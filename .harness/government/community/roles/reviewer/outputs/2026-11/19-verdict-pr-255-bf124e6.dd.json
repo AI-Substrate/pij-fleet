@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"head": "bf124e64f1297601cba277ce4d1eea3709a0a272",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/255",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:255",
+				"writer": "pij-visual-antlion",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"P3 C34 follow-up N255-001: show the same-process rate denominator (5/457, not 5/470) and align the plan/PR prose; non-blocking."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 255",
+					"exit_code": 0,
+					"log": "FINAL at bf124e64f1297601cba277ce4d1eea3709a0a272; remote and GitHub heads agree; main base; CLEAN; all latest checks pass; detached review tree clean"
+				},
+				{
+					"command": "gh pr checks 255 --watch --interval 30",
+					"exit_code": 0,
+					"log": "CI 44459696651: check (22), check (24), rust-lint, rust-test passed; delivers 44459696625 passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "reviewer: pass-with-notes (head bf124e64f1297601cba277ce4d1eea3709a0a272)\n\n## A) Verdict\n\nBoth round-1 P2 findings are closed. No remaining blocking correctness\nfindings. N255-001 below is a **P3 C34 follow-up**, not another review gate.\n\nContent reviewed at be735f65e73b96f758e3a09248bf4b4d6662cff9 against\nc68ac8f7fb8adb84af2fe0372276cef51686c802. The rebase onto main 2f269126\nis confirmed by `git range-diff c68ac8f7~1..be735f65 2f269126..bf124e64`:\ncommit 1 changes only the difficulty-ledger context to retain main's\nD-F212-1; commit 2 is identical. Every reviewed plan, script, output,\nworkstream, retro and velocity file is byte-identical across the rebase.\n\n## B) Summary\n\nThe achievable estimate now preserves the residuals actually observed\nunder toolSearch=false, while the all-flips-removed estimate is explicitly\nan optimistic bound. Historical rate fitting, calibration and TTL figures\nstop at END. Process restarts clear the mechanistic cache. The evidence\nsupports completing this measurement step, not a universal claim that the\nproxy saves money or a decision to retain it.\n\n## C) Checklist\n\n- Read-only review of the exact detached content; no product edits or builds.\n- Both analysis scripts independently rerun, with outputs confined to reviewer scratch.\n- Nine isolated pricing, residual, expiry, restart, hindsight and mutation-control groups pass.\n- Four canonical documents validate with zero errors/warnings; all four generated faces have no drift.\n- AC5's dated observations independently reconstructed; s07 and Delivers agree.\n- Final rebased-head range-diff: passed. All five exact-head checks pass;\n  `just pr-freeze 255` returned FINAL with agreeing remote/GitHub heads,\n  main base, CLEAN merge state and a clean detached review tree.\n\n## D) Findings\n\n| ID | Severity | Disposition | Finding and concrete fix |\n|---|---|---|---|\n| F255-001 | P2 | Closed | Historical figures are bounded to END; adding a future observation leaves every historical table unchanged. Removing the guard is detected by history_is_closed. |\n| F255-002 | P2 | Closed | The achievable estimate keeps token-only, reload-adjacent and first-resume residuals. Both actual canary reload records retain their billed cost; only the labelled optimistic bound removes them. |\n| N255-001 | P3 | C34 follow-up | `plan.dd.json:102` and PR prose describe 1.09% as 5 flips out of 470. `assets/sim232.py:387-401` correctly divides by the 457 same-process comparisons; 470 includes restart comparisons. Display the actual same-process denominator and align the prose, including the analogous before-window description. No cost estimate or decision changes. |\n\nPaths above are under `docs/plans/232-proxy-tool-flips/`.\n\n## E) Detailed evidence\n\nEvery historical table, calibration line, partial counterfactual,\nsensitivity and TTL result reproduces byte-for-byte, excluding the run\ntimestamp and live window. The token-class identity also holds separately\nfor every one of the 43,138 historical records, rather than only in aggregate.\n\nAchievable savings against plain reproduce as **+8.5% / -11.2%**;\nthe optimistic bound is **+26.3% / +7.3%**; the reload sensitivity is\n**+13.1% / -6.3%**. The after-#243 achievable result is explicitly a loss.\n\nThe dated live population independently reproduces:\n\n| Population | n | Billed AIU | As plain AIU | Saving |\n|---|---|---|---|---|\n| New processes, excluding first requests | 457 | 3,539.2 | 4,010.7 | +11.8% |\n| New processes, including 17 first requests | 474 | 5,716.4 | 5,328.9 | -7.3% |\n| Old processes | 209 | 2,540.7 | 3,521.9 | +27.9% |\n\nThe new-process observations span 3,602.897 seconds from the earliest\nprocess start. The comparable main-agent population has one count flip\nand four token-only flips, as documented. AC5 is supported.\n\nThe never-upgrade control passes: a 1h marker refreshes a 5m segment only\nfor 5m, and the later miss pays the 1h write. Hindsight correctly sums\neach session's cheaper fixed TTL. Restart and residual controls clear the\ncache. The policy ranking still favours 1h for all among the tested\nbuildable policies. The hindsight bound is only for a constant TTL per\nsession, not all conceivable adaptive policies.\n\n## F) Acceptance coverage\n\n| AC | Evidence |\n|---|---|\n| AC1 | Canary retained; fleet count/reload residuals explicitly qualify it. |\n| AC2 | Prefix growth is charged as reads on hits and writes on misses. |\n| AC3 | Historical closure mutation, per-record calibration, achievable/bound separation. |\n| AC4 | Never-upgrade, restart/residual clearing, constant-TTL hindsight controls and reproduced policy table. |\n| AC5 | Independently reconstructed dated populations and 3,602.897-second post-start span. |\n| AC6 | s07 complete; req-01/req-07 and Delivers match; existing shipped requirement states unchanged; schemas/rendering clean. |\n\nThin cells, the single-hour observation window, residual flips and the\nmechanistic model's +5.3% calibration error remain explicit limitations.\nSecurity and performance verdicts remain separately owned.\n\n## G) Validation\n\nRead-only reruns of `assets/sim232.py` and `assets/flip_window.py`: passed.\nReviewer scratch controls and independent receipt audit: passed.\n`ddocs validate` and `ddocs build --check` on the plan, backpressure,\nphase tasks and workstream: all eight calls passed.\nLocal product builds, dependency operations and the local composite\nbuild/test gate were not run under the packet's no-build/read-only\ncontract; exact-head CI is the product-build proof.\nCI run 44459696651 passes check (22), check (24), rust-lint and rust-test;\ndelivers run 44459696625 passes. `gh pr checks 255 --watch --interval 30`\nexited 0. `just pr-freeze 255` exited 0 and returned FINAL at\nbf124e64f1297601cba277ce4d1eea3709a0a272.\n\nNo runtime loop, poll, timer, hook, sweep, status line or launch is added\nor changed. The scripts are manually invoked analysis, not a per-seat\nsteady-state activity.\n\n## H) Handover\n\nNo blocking changes owed. Carry N255-001 as the named P3 C34 follow-up.\nCompleting s07 closes the requested investigation; whether to keep the\nproxy remains the prime/operator's separate decision.\n\nHarness contribution: the review produced an executable historical-input\nclosure guard, independently mutation-checked, rather than a reminder to\nfreeze inputs manually. The remaining small improvement is to emit the\nactual rate denominator beside the rate.\n"
+		}
+	]
+}
