@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f38e-6c21-73f2-8359-250bc583402b",
+				"date": "2026-11-19",
+				"head": "645ab5103784ce386f63f0f37bba95c490c162dc",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:272",
+				"writer": "pij-whispering-marmot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 272",
+					"exit_code": 0
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib -- http::memory_turn::tests registration::tests::an_owner_close_is_final_for_registration_continuity registration::tests::an_owner_close_between_the_snapshot_and_the_put_stands registration::tests::a_reclaim_lifts_an_owner_close_through_the_store",
+					"exit_code": 0
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --test directory_http a_dead_seats_open_holding_is_named_never_counted_and_a_revive_restores_it -- --exact --nocapture (scratch production-HTTP-revive probe)",
+					"exit_code": 0
+				},
+				{
+					"command": "harness checks --json",
+					"exit_code": 1
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Review: PR #272\n\n**PASS WITH NOTES**, round 1, at `645ab5103784ce386f63f0f37bba95c490c162dc`. No blocking correctness or security finding. This verdict covers only this head, not the announced test-only follow-up. Review worktree source remained unchanged.\n\n## Correctness and authority\n\n- The caller's `pij close` is the destructive **policy**. Incarnation and already-owner-closed checks are **brakes**: removing them only allows more closes. A missing tombstone reason also conservatively spares the seat.\n- `memory_turn.rs:592-620,666-689`: every close attempt rereads the descriptor, compares process identity and pane with the held incarnation, rechecks the original actor's authority, and passes the checked row to the close CAS. A process-only or pane-only replacement is spared. `registry.rs:60-74` compares the complete descriptor in the write transaction, so a change during the authorization/close gap retries these checks.\n- Compact still skips every tombstone, independently of its reason. Owner-close tombstones are spared. Ordinary registration cannot clear an owner-close, including a registration snapshot taken before the close; explicit revive installs a fresh launch binding. Public reclaim refuses an active recorded process. No newly introduced normal-use owner-close/re-registration bypass was found.\n- Only an already-authorized held `Then::Close` reaches the observed-dead-to-owner-close conversion. Initial caller derivation and ownership admission remain in `lifecycle.rs:464-507,558-569`; authority is rechecked in `memory_turn.rs:604-620`. Observer retirement alone schedules no close and ends no holdings. No permission laundering found under C33.\n- `directory.rs:459-494` partitions every open non-prime holding by membership in the same live-seat set. The predicates are complementary; unknown seats fall into `dead`. Pending ends remain visible separately and already have `to` set (`directory.rs:2197-2204`), so they do not overlap open dead holdings. Legacy prime rows retain their explicit C24 handling.\n- `routes.rs:81-113` filters both ordinary open holdings and the designated prime against one live registry listing. Views perform no release.\n- Release commands assemble role/instance as one argument and pass every word, including seat, why and project, through `picture::command` and `shell_word` (`picture.rs:98-103`, `core/directory.rs:32-40`). Unsafe stored keys do not produce a command. No injection or newly added private home paths/secrets found in changed source, tests, ledger or PR text.\n\n## Verification\n\nAll local cargo executions used the canonical shared-build lock, niceness 19, four jobs and `CARGO_INCREMENTAL=0`.\n\n| Evidence | Result |\n|---|---|\n| `just pr-freeze 272` | FINAL at the full reviewed SHA; clean detached worktree |\n| CI run `44512193005`; delivers run `44512880282` | Both successful, independently checked to have this exact `head_sha` |\n| `just shared-build -- test --locked -p pij-daemon --lib -- http::memory_turn::tests registration::tests::an_owner_close_is_final_for_registration_continuity registration::tests::an_owner_close_between_the_snapshot_and_the_put_stands registration::tests::a_reclaim_lifts_an_owner_close_through_the_store` | 17 passed |\n| `just shared-build -- test --locked -p pij-cli the_directory_view_renders_the_picture_in_local_time -- --nocapture` | One matching render test passed |\n| Reviewer mutation: change revive guard from process-change OR pane-change to AND; run `a_held_action_skips_a_seat_closed_or_revived_during_the_turn` | Caught: one executed test failed at the missing revive skip; exit 101 |\n| Reviewer mutation: remove the ordinary routes live-seat filter; run `a_dead_seats_open_holding_is_named_never_counted_and_a_revive_restores_it` | Caught: one executed test failed because the dead holder remained in the routing table; exit 101 |\n| Restore both production files and compare bytes with the reviewed commit | Both exact matches |\n| Scratch-only extension of the directory regression: replace direct registry restoration with real `POST /v1/revive`, assert tombstone cleared and the complete open assignment unchanged | Passed through the production HTTP revive path |\n| `git diff --check origin/main...HEAD` | Passed |\n| `harness checks --json` | Non-green: nine failing sensors; see limitations below. Native contracts, SDK contract, route inventory, smoke and pij-skill passed |\n\nThe committed directory regression restores through the real store's `put` seam, not through the revive HTTP endpoint. The separate reviewer probe above closes that proof gap without changing the review worktree.\n\n## Notes and limits\n\n- C25 applies: the review worktree has no local TS dependencies. TS/tooling sensors were unavailable or picked up incompatible ambient tools; no dependencies were installed or symlinked. Exact-head CI supplies their proof. The local gate is **not** claimed green.\n- The full local Rust gate reached the unchanged `pij-tmux --test adapter` failure. pm-001 identified `separate_adapters_cannot_both_reserve_one_pane` as a known flake also reproduced on main by the author; CI's exact-head workspace Rust test passed. This is out of this PR's scope. Further isolation and the redundant standalone larger-suite run were stopped at pm-001's request.\n- No live-fleet post-deploy proof was claimed. No new loop, poll, timer or process launch exists: routes add one registry list per existing on-demand/assign/compact/revive call; the directory view adds one registry get per distinct dead holder seat, only on request. No per-tick/per-seat launch cost is introduced.\n- C34: no extra hardening or fixture is a merge condition. The forthcoming test-only head still needs its separate delta check.\n\n## Harness feedback\n\n`magicWand`: emit a full per-sensor log path from `harness checks`. Its concatenated-output tail hid the individual Rust test failure and encouraged a redundant isolation run. Preserve cargo failure summaries or chronological full logs rather than requiring another suite execution. A second useful improvement is a canonical read-only mutation recipe that archives a SHA into session scratch and emits exact test receipts.\n"
+		}
+	]
+}
