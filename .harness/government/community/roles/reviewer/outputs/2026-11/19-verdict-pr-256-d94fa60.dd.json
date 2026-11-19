@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f22c-26e9-7521-8e5e-470ccd42641b",
+				"date": "2026-11-19",
+				"head": "d94fa60ff4a214f6101987a64939e1e361d17c85",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:256",
+				"writer": "pij-obliged-lark",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C34 follow-up R256-N1 (coder accepted): rename fixed-hour cache_old_* pair to heuristic_old_hour_* and score actual old CACHE from old_cache with unknowns excluded/counted. This does not block the repaired guard metrics or policy replay."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 256",
+					"exit_code": 0,
+					"log": "FINAL at d94fa60ff4a214f6101987a64939e1e361d17c85; clean detached worktree; latest checks pass."
+				},
+				{
+					"command": "gh run view 44460835051 --job 135348753492 --log",
+					"exit_code": 0,
+					"log": "Exact-head successful CI: two cache-ttl-audit Vitest regressions pass; Node22 total2309passed6skipped. Node24 and rust-lint also green."
+				},
+				{
+					"command": "gh run view 44460835051 --job 135348751127 --log",
+					"exit_code": 0,
+					"log": "Successful attempt2 artifact14500715194 selected by upload ID and inspected:2551passing JUnit cases, zero failure/error/skip entries; nextest reports6additional skipped cases."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "#256 round 2 (final under C34): PASS-WITH-NOTES\nHead: d94fa60ff4a214f6101987a64939e1e361d17c85\nBasis: 695aae4a4033941c44dfead656ef070febf9fef9..d94fa60ff4a214f6101987a64939e1e361d17c85\nRequest: 01a1f22c-26e9-7521-8e5e-470ccd42641b\n\nR256-001 CLOSED. No blocking runtime correctness defect found in the delta.\nThe guard metrics now use old_guard (size plus idle) and new_guard\n(disposition), not estimated cache warmth. Unknown-TTL warnings count\ntoward stopped-warm even without a known TTL. The two new Vitest cases\nexercise the Python implementation and cover the original small-seat\nmisclassification, warning accounting, policy replay and boundaries.\n\nIndependent aggregation of the previously saved 13,404 metadata rows\n(9,402 decided), without another live-store/transcript scan, agrees with\nthe corrected guard results and performance's final-head command run:\n\nGuard metric                            Before       Shipped Warn\nClear, actually cold                       970                710\n  of which large                           265                  5\nRefused or warned, actually warm              4                 56\nRefused                                    124                124\nWarned                                       0                312\n\nThe 56 warm flags now comprise four refusals and 52 warnings. Under\nRefuseAt 100/150/200, warm refusals are 56/31/14 and total refusals\n436/357/296; these match independent aggregation and the corrected\nnote at governance e94ab1e73bfb1763d65f9075abcfb428ad3644a8.\n\nImportant meaning: Warn still ALLOWS 265 actually-cold large deliveries,\n260 with warnings and five silently. The change removes silence, not the\ncost of those permitted wakes. No 128M-token saving is claimed by this\nreview under the shipped default.\n\nPolicy boundaries and action consumers\n\nSource inspection of cold_wake.rs:260-298 and the CI cases agree:\n- Within the hour ceiling and below the known TTL, every option is clear.\n- At the TTL, Warn warns, RefuseAt 100 refuses, and 150/200 warn.\n- At 1.5x and 2x, the corresponding RefuseAt refuses inclusively.\n- Idle strictly greater than 60 minutes refuses under every option,\n  even for a longer TTL. At exactly 60 minutes, Warn still warns when\n  the TTL has elapsed; RefuseAt acts on its own threshold. Thus a 1h\n  TTL at exactly 60m is refused under 100 but warned under Warn/150/200.\n- Unknown TTL is clear at exactly five minutes, warns after five\n  through the hour, and refuses after the hour. Small and busy seats\n  retain their previous admission behavior.\n\nThe Rust table tests every policy around its transition points; the\nPython regression additionally pins exact TTL, 1.5x/2x and unknown-TTL\nboundaries. This is source plus exact-head CI evidence, not a local run.\n\nForce still requires a nonblank reason and audits Cold overrides before\ndelivery. A short-TTL send that now returns Warn no longer needs force;\nits normal receipt contains the warning rather than a forced-Cold audit.\nThe unknown-TTL warning path and its roster/state presentation are intact.\n\ncache_known/is_warm are unchanged: FYI flush and revive --cheap continue\nto require known, non-table TTL evidence inside the real lifetime.\nIdle nudge still admits only Clear|Busy at idle_nudge.rs:362-363:\nWarn does NOT wake the seat. The change from Refuse to Warn therefore\ndoes not loosen that admission. HTTP override/action wiring is unchanged.\n\nCost/security scope\n\nThe policy delta is pure, bounded arithmetic and matching: no new\nper-send launch, read, loop, timer or poll. Warn no longer enters the\nCold-only stale-working probe for a short-TTL as-idle result. The test\nadds two on-demand Python subprocesses to Vitest, not the daemon.\nFixtures contain synthetic token/time facts and no real seats, account\nnames, message bodies or credentials. Wire shape and TTL sources are\nunchanged from round 1. No edits to fleet_report* or prompt-cache-cost.md.\n\nPerformance alone ran the final on-demand audit smoke: exit 0,\n9.85s wall, 5.47 CPU-seconds, 187,613,184 bytes peak RSS, zero swaps.\nIts guard/replay totals match the independent saved-row aggregation.\nThis is the before-window smoke, not the after-deploy audit.\n\nC34 follow-up R256-N1 (nonblocking; coder acknowledged)\n\nharness/scripts/cache-ttl-audit.py:279-280 labels the old fixed-hour\nheuristic as cache_old_said_*. Those two fields still read old_warm,\nnot old_cache. They report 785/33, whereas the actual old CACHE view\nhas 37 warm-but-cold and 179 cold-but-warm among 8,975 known rows,\nwith 427 unknown. These are secondary reporting columns: neither\nguard_* nor the PAST_TTL replay reads them, so they do not invalidate\nR256-001's guard repair or the current policy decision inputs.\n\nThe coder accepted a ledger follow-up: rename the fixed-hour pair to\nheuristic_old_hour_* and derive true cache_old_* from old_cache,\nexcluding and counting unknowns. Keep it a C34 follow-up, not a third\nreview round or an additional gate on the frozen head. Until repaired,\ndo not use cache_old_* as proof of the old CACHE view.\n\nValidation receipts\n\njust pr-freeze 256: PASS at the exact head above, clean detached tree.\nCI run 44460835051, successful attempt 2: PASS, exact head; Node 22/24,\nrust-lint, rust-test. Node 22 log explicitly shows\nharness/scripts/cache-ttl-audit.test.ts: two tests passed; the broader\nVitest run has 2,309 passed and six skipped.\n\nSuccessful rust-test job 135348751127 uploaded artifact 14500715194.\nI selected that ID from its upload log, not by the reused artifact name.\nJUnit contains 2,551 passing cases, zero failure/error/skip entries;\nnextest additionally reports six unrun/skipped cases. Verified cases\ninclude all-policy GPT classification, unknown-TTL warning, TTL source\nprecedence, positive warm evidence, forced reason/audit, warm FYI flush\nand idle-nudge regressions.\n\nNo local build, test, smoke or harness-check run. No dependency changes\nor installation. This review does not attest a post-deploy observation.\n\nOwnership correction / supersession\n\nThe round-2 PM packet supersedes round 1's reviewer audit assignment:\nPERFORMANCE ONLY owns f214-audit-after, after at least three days of\nmerged deployment and using its actual deploy timestamp. Reviewer and\nsecurity must not run duplicate after-deploy audits. The old reviewer\nverdict/memory's after-audit obligation is historical, not current work.\n\nHarness feedback: the focused CI predicate regression is the encoded\nimprovement requested in round 1. magicWand = extend the same fixture\nwith old_cache/unknown rows when R256-N1 is repaired. difficulties =\nrenaming a metric does not establish that its predicate changed.\n"
+		}
+	]
+}
