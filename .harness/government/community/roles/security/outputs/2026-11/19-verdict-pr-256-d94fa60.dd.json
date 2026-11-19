@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f22c-2733-7683-b898-4d981fd57e89",
+				"date": "2026-11-19",
+				"head": "d94fa60ff4a214f6101987a64939e1e361d17c85",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:256",
+				"writer": "pij-perfect-cicada",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 256",
+					"exit_code": 0,
+					"log": "FINAL at d94fa60ff4a214f6101987a64939e1e361d17c85; exact remote head, main, CLEAN, all checks green, clean detached worktree. No local builds/tests/audit."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS WITH NOTES -- round 2, final under C34\nPR: #256\nBase: 695aae4a4033941c44dfead656ef070febf9fef9\nHead: d94fa60ff4a214f6101987a64939e1e361d17c85\n\nNo introduced runtime security vulnerabilities or unfixed round-1 security blockers found. This is a delta review, not another baseline review or an independent audit aggregation. One nonblocking public-receipt hygiene follow-up is named below. No further security review round is requested.\n\nCoverage:\nAll delta hunks read across five files (+309/-75): crates/core/src/cold_wake.rs, docs/how/pij-rs-api.md, harness/scripts/cache-ttl-audit.py, the complete new 134-line harness/scripts/cache-ttl-audit.test.ts, and skills/pij/references/routes/peer.md. The role holder additionally read the updated PR body and complete corrected audit note at governance e94ab1e. No live store, credentials, or account-profile files were opened.\n\nSecurity evidence:\n- New fixtures are synthetic numeric context/idle/TTL values and classification strings, not real seat records, account names, transcript text, or credentials (harness/scripts/cache-ttl-audit.test.ts:1-134, especially 32-47,100-114; crates/core/src/cold_wake.rs:905-1024).\n- The test helper launches Python through an argument array without a shell; Python bodies are literal test callers. Importing the audit module does not invoke its live-audit entry point (harness/scripts/cache-ttl-audit.test.ts:8-25,30,98; harness/scripts/cache-ttl-audit.py:318-319). Tests were inspected, not executed.\n- Guard outcomes and cache-state columns are now separate in row construction and aggregation; warnings count as stopped-warm. Replay is in-memory (harness/scripts/cache-ttl-audit.py:186-192,229-283, especially 275). This confirms source structure, not the correctness reviewer's independent numerical aggregation.\n- PAST_TTL selects Warn as a compile-time constant; private decide receives it, not a request-controlled selector. The new percentage arithmetic is saturating, warning rendering uses numeric/typed facts, and the hour ceiling remains (crates/core/src/cold_wake.rs:37-52,210-227,263-284; crates/core/src/session_status.rs:29-57,177-228).\n- Force/reason and audit-before-delivery implementations are byte-unchanged in this delta. Empty force reasons still fail validation before the verdict; an actual Cold override still requires successful audit publication before delivery (crates/daemon/src/http/cold_wake.rs:185-195,211-264; crates/daemon/src/http/mod.rs:2494-2508).\n- A deliberately allowed Warn is not a forced Cold override: it carries a warning receipt and does not create a forced-cold audit event. This is the intended new default, not an audit or reason-validation bypass (crates/core/src/cold_wake.rs:204,263-284).\n- The prior privacy qualifications remain: the audit physically scans raw transcript lines but extracts/emits metadata, not message bodies or credential/account objects. Optional local JSON includes seat identifiers and obeys umask; the delta adds disposition/count fields, not new identity/content exports (harness/scripts/cache-ttl-audit.py:66-136,175-195,313-315).\n- Exact-delta quiet comparisons returned 0 for crates/cli/src/fleet_report* and docs/how/prompt-cache-cost.md, and separately for the force/status implementation files above.\n\nCost:\nNo new production process launch, timer, poll, per-send transcript read, or event-write site. The switch adds in-memory matching/arithmetic only (crates/core/src/cold_wake.rs:269-285); existing status reads remain unchanged (crates/daemon/src/http/cold_wake.rs:128-150). Added runtime launches/second: zero; added scheduled per-seat work: none. Audit replay loops are on-demand, and the new Python child is test-only. These are source conclusions, not live resource measurements.\n\nC34 follow-up, nonblocking, LOW:\nThe updated public PR body's command receipt and governance community/roles/coder/outputs/2026-11/19-note-f-214-audit-corrected.dd.md:42 repeat a user-specific absolute home-directory argument. The same receipt pattern predates this delta, but repetition in the corrected note should be forward-scrubbed to \"~\" under C19/C21. Owner: pm-001/coder; amend the mutable PR text and regenerate the note through its writer, not by hand-editing generated Markdown. Do not rewrite history. No account name or actual private path is repeated in this verdict. This is not a merge block, a runtime vulnerability, or grounds for another review round.\n\nValidation:\n- Independently ran just pr-freeze 256 in the new detached worktree, twice: exit 0, FINAL at the full head above; gh and ls-remote match, main/CLEAN/not draft, all five checks pass, worktree clean. No migrations added; schema remains 47.\n- Finality reports delivers, ci/check (22), ci/check (24), rust-lint and rust-test passing. The packet reports one rerun of a known pij-tmux flake; this review did not independently diagnose that flake or enumerate individual CI test cases.\n- Delegated read-only source evidence was recovered in the same context after a verdict-only initial response. Actual probes were Git inventory/diff/status/quiet comparisons and scoped source searches/numbered reads. Parent additionally used gh pr view and git show for public-text inspection.\n- No local builds, tests, harness boot/checks, runtime probes, mutation runs, live-store audit, or numerical aggregation were executed. Runtime and provider-expiry correctness are not independently established by this security verdict.\n\nAudit ownership correction:\nPERFORMANCE ONLY owns f214-audit-after after merge and deployment. This explicitly supersedes the security-owned after-audit note in the round-1 verdict at governance bd7a68fc93de6140b1ecf475fbe5806178f75746. Security ran no audit and owes no duplicate post-deploy audit.\n\nHarness feedback:\nmagicWand: require a separate structured proof report with full head, reviewed delta inventory, file:line evidence, actual probes and limits alongside security findings.\ndifficulties: findings-only delegation again omitted retained evidence until one same-context report-completion follow-up. Captured as DL-001 in this review worktree's transient harness buffer. No source was changed.\n"
+		}
+	]
+}
