@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"head": "f3784caab656c1665c2daa469b283f60b2aa0065",
+				"kind": "verdict",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:246",
+				"writer": "pij-autonomous-guppy",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"S246-001: forward-scrub the identifying absolute path from plan JSON and regenerate its Markdown view.",
+				"S246-002: make human cache reason and fix identity-free; cover account/path-bearing failures without changing JSON."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 246 --worktree",
+					"exit_code": 0,
+					"log": "FINAL at f3784caab656c1665c2daa469b283f60b2aa0065; clean detached worktree; all five checks pass"
+				},
+				{
+					"command": "gh run view 44425864565 --repo AI-Substrate/pij-fleet --job 135230417759 --log",
+					"exit_code": 0,
+					"log": "Run associated with requested head succeeded; rust-test reported 2508 passed and six skipped"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "Detached review: pij-skill and copilot-native pass; dependency-dependent checks fail without node_modules; heavy stages skipped; no full local gate claimed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "BLOCK / security - round 1 under C34\n\nPR #246 at f3784caab656c1665c2daa469b283f60b2aa0065.\nTwo privacy-contract failures require forward fixes. Neither finding claims\ncredential theft or a new authorization bypass. Matched identifying values\nare deliberately withheld.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | ⚪ LOW | docs/plans/231-spawn-cache-line/plan.dd.json; plan.dd.md | 147; 171 | Added public plan text contains an account-bearing absolute worktree path | 10/10 |\n| 2 | ⚪ LOW | crates/cli/src/main.rs | 4592-4595 | New human cache reason/fix can disclose account identifiers and machine-local paths | 10/10 |\n\nS246-001: The identifying path is present in newly added current-head plan\nsource and its generated Markdown. This is not a historical-only exposure.\nReplace it with a portable repository-relative reference, using the document\nwriter and regenerated view. C19 calls for a forward scrub, never a history\nrewrite; C21 does not permit the private machine identity in this public text.\n\nS246-002: Escaping is not redaction. The new helper renders the daemon's raw\nreason and fix. Ordinary missing-account and readiness failures can embed\nthe configured account identifier, and configuration failures can embed\nlocal paths. One ordinary chain is a configured account with no usable gh\ntoken: token.rs generates the account-bearing reason, proxy.rs generates\nan account-bearing repair, the daemon returns a successful plain-route\ndescriptor, and the CLI displays both. Producer locations:\ncrates/cache-proxy/src/token.rs:101-103;\ncrates/cache-proxy/src/readiness.rs:103,181,185;\ncrates/cache-proxy/src/proxy.rs:187,215-217. The daemon forwards these fields\nat crates/daemon/src/cache_proxy.rs:248-255.\nUse identity-free human display descriptions for both reason and fix, and\ncover representative account-bearing and path-bearing failures. Preserve\nthe existing JSON envelope. This is a new human presentation of data already\navailable in the envelope, not a new credential-access boundary; it still\nviolates the requested identity-free receipt.\nThe new tests assert benign verbatim displays (main.rs:4840-4851) and newline\nfencing (:4859-4865), but do not cover account/path-bearing failures.\n\nPositive checks:\n- Both dynamic fields pass through render::line. Existing control-character,\n  line-separator and frame-text fencing remains at\n  crates/core/src/render.rs:169-220.\n- The new line requires human output, a successful envelope and a Copilot\n  descriptor (crates/cli/src/main.rs:4608-4615;\n  crates/core/src/model.rs:698-707). Setup refusals bypass it\n  (main.rs:1390-1399); cheap revive prints it after revive and before the\n  separately fallible compact (main.rs:1618-1630). JSON remains unchanged.\n- No token or upstream-credential propagation was found. Token stdout is\n  separate from error text (token.rs:92-104), and readiness errors omit URLs\n  (readiness.rs:171-187). The added API documentation contains no credentials.\n- All ten changed files, the complete two-sided diff, current PR title/body\n  and complete PR commit messages were reviewed. Title/body and commit\n  messages had no detected private identifier, email or machine-home leak.\n  The current source has the two identifying documentation locations above.\n- The case-insensitive exact-head git grep included tracked hidden files\n  and reported locations only. Added-line results: two machine-home matches\n  at S246-001; zero email or token-pattern matches. No identifying value is\n  reproduced in this verdict.\n  The full-tree account-like pattern was\n  (account[_ -]?(login|name|id)|github[_ -]?(user|login)|\"login\"[[:space:]]*:|github\\.com/[[:alnum:]_-]+|@[[:alnum:]_-]{3,}).\n  The plan scan used\n  (/Users/|/home/|[[:alnum:]._%+-]+@[[:alnum:].-]+\\.[[:alpha:]]{2,}).\n  Both ran with git grep -n -i -I -E at the requested head; matched output\n  was captured and reduced to locations, not published.\n\nValidation:\n- just pr-freeze 246 --worktree: passed, FINAL at the requested full head;\n  detached worktree clean; both remote head probes agree; all five checks pass.\n- CI run 44425864565 is associated with the requested head and succeeded.\n  Its rust-test job 135230417759 reported 2,508 passed and six skipped.\n  Rust lint and both Node jobs passed; delivers also passed.\n- harness checks --quick in the detached review: exit 1. pij-skill and\n  native Copilot contracts passed; dependency-dependent checks failed in\n  the node_modules-less worktree. Heavy Rust, route-inventory and smoke\n  stages were skipped. This is not a full local harness pass. No dependency\n  symlink was created.\n\nLimits: source review and CI evidence, not a live spawn/revive exercise or\nan exact-head macOS Rust build. No product files were changed. No new loop,\ntimer, poll or process launch was identified in the presentation change;\nthe existing spawn/revive operations are not new steady-state work.\n\nHarness feedback: the detached-review quick gate again cannot distinguish\nmissing dependencies from scoped review proof. Observation DL-002 was\ncaptured through harness observe. magicWand: a dependency-free review gate\nthat reports native-contract and exact-head CI evidence separately and\nroutes any local Rust work through the serialized nice-only build surface.\nThis harness gap is not a defect introduced by #246.\n"
+		}
+	]
+}
