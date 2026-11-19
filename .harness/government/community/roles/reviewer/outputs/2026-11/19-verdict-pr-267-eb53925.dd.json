@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f305-9907-7a60-b2c6-6bf848aa23f5",
+				"date": "2026-11-19",
+				"head": "eb5392555c017177d984844d558c89d15e5c83ad",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:267",
+				"writer": "pij-uniform-butterfly",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 267",
+					"exit_code": 0,
+					"log": "FINAL at eb5392555c017177d984844d558c89d15e5c83ad; all five exact-head checks pass"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14513316253/zip",
+					"exit_code": 0,
+					"log": "Successful Rust job 135446824638, run 44491161665; parsed JUnit: nine selected F197/F213 and continuity regressions PASS, none skipped"
+				},
+				{
+					"command": "/bin/sh -n harness/scripts/claude-session-start-pij.sh",
+					"exit_code": 0,
+					"log": "Shell syntax passed; no builds invoked"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR 267 correctness review, round 1 of 2\n\nHead: eb5392555c017177d984844d558c89d15e5c83ad\nBase: e4b63eb1b2834951b8927ee36925217d5566c97b\nVerdict: PASS WITH NOTES. No blocking correctness findings.\n\n## Assessment\n\n- **Directional brake:** `registration.rs:741-781` only adds an early refusal for a verified descendant of an active local holder on the same pane. It runs before mutation (`:956-958`). Same-process and same-conversation exclusions preserve the previous path; the exemption does not grant registration or bypass the subsequent native, collision, supersedes, retirement, or reclaim checks. Removing the new refusal admits the same claims or more, not fewer.\n- **Copied session:** yes, a same-user child deliberately naming the holder's `harness_session` passes this brake. Existing native continuity can then resume that address; the string is not an authenticity proof. This is not new authority relative to the baseline. C33 explicitly trusts same-user processes and retains correctness guards against accidental misattribution, not per-seat isolation. Ordinary one-shot runtime sessions are distinct; the existing shell `pij send` path intentionally acts as the enclosing seat.\n- **Normal continuity:** `/new` in the same process bypasses the descendant check by exact process identity. Same-conversation Copilot restarts bypass only this brake, including the first restart below the still-live initial CLI. Later sibling restarts retain the existing continuity path. Revive prebinds have no previous process; confirmed-dead/recycled holders do not trigger this refusal. Reclaim retains its existing authority/death checks. Interactive Claude resume keeps adoption and daemon-derived conversation verification.\n- **OMP/pi:** `core/discovery.ts:95-97` excludes print/json, not tui/rpc. `index.ts:427,569,606` suppresses registration, FYI claims, and shutdown; all three mutating peer tools call the same context guard (`:196,361,407`). Existing in-process subagent exclusion remains.\n- **Claude:** `claude-session-start-pij.sh:24-30` exits before ping, adoption, or retry setup for SDK entrypoints, while cli/unset retain previous behavior. The case value and log argument are quoted and not evaluated as shell code. The regression checks sdk-cli/sdk-ts/sdk-py versus cli/unset. No private identity, content, or out-of-layout machine path found in the changed docs.\n- **Cost:** no new background loop, poll, timer, or process launch. There is a new bounded ancestry loop (`registration.rs:788-800`): at most 64 in-process reads per relevant local co-pane row per registration, zero when idle. The parent reader uses the existing in-process macOS/Linux implementation.\n\n## Evidence\n\nRead-only review of all 11 changed files and the dependent registration/adoption/session-selection paths. Product worktree remained clean at the requested SHA.\n\n- `just pr-freeze 267`: PASS, FINAL at the exact head, checked twice.\n- `git diff --check origin/main...HEAD`: PASS.\n- `/bin/sh -n harness/scripts/claude-session-start-pij.sh`: PASS.\n- CI run 44491161665, attempt 1: SUCCESS at the exact head. Rust job 135446824638: `cargo nextest run --locked --workspace --profile ci`, 2,579 passed, 6 skipped.\n- Downloaded JUnit artifact **14513316253**, selected from that successful job's upload log, by ID. Confirmed PASS, not skipped: F197 child refusal/unchanged-holder regression; sibling restarts; opted-out restart; revived launch; owner-close reclaim; native reconnect/explicit-new-session; fast restart; first-prompt session handoff; Claude one-shot SessionStart regression.\n- CI check (22), job 135446824724: `.omp/extensions/pij/index.test.ts`, all 18 passed; full Vitest result 2,352 passed, 7 skipped. Check (24), rust-lint, and delivers also passed.\n\nNo cargo, builds, dependency installs, or local TS runners were invoked. Boot/full harness checks would build and were not run under the explicit no-build reviewer contract. C25 also keeps TS proof CI-only in this dependency-free checkout. Coder mutation claims were inspected for relevance, not independently rerun.\n\n## Non-blocking operational note\n\nRetain the PR's planned live proof after merge/bounce: an OMP print child and a Copilot print child leave no new seat or changed holder; two Copilot restarts still register and retain their carried route. In particular, actual Copilot print-session uniqueness remains a live-runtime check, not something the injected unit fixtures prove.\n\n## Harness feedback\n\nmagicWand: a read-only review-evidence command combining pr-freeze, exact-head successful CI jobs, and artifact-ID-based scoped JUnit results, without builds or dependencies.\n\ndifficulties: build-backed boot/checks are incompatible with read-only reviewer admission; CI evidence extraction currently requires several manual commands. Captured as harness observation MW-001. No product-code or shared governance-ledger edits made by this review.\n"
+		}
+	]
+}
