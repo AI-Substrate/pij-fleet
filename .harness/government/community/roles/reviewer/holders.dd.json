@@ -1703,6 +1703,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-small-swift",
 					"why": "review of #246 (plan 231)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T00:36:50.934Z",
+					"harness": "copilot",
+					"harness_session": "5eeaa1a3-3fae-4e4f-b362-b69f7ce5408c",
+					"instance_key": "247",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-smiling-parrotfish",
+					"why": "F207 #247 correctness (Copilot gpt-6.1-sol)"
 				}
 			]
 		}
