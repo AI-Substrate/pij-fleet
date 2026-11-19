@@ -1174,6 +1174,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-printed-egret",
 					"why": "D-F208-1: real-SDK registration canary"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T05:54:29.299Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f219",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F219 OMP worktree.clone off (project layer) + sensor; F218 row"
 				}
 			]
 		}
