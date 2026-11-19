@@ -2040,7 +2040,10 @@
 					"harness_session": "a3739038-9369-4cef-9ab6-4b5159b17ef3",
 					"instance_key": "271",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #271 merged (3b54e69485f7)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-concrete-antelope",
+					"to": "2026-11-19T10:46:16.225Z",
 					"why": "F226 deploy builds through release-build.sh (shared-build, status, stamp check) #271"
 				}
 			]
