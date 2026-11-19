@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f2f8-4fea-7262-8a87-7383b82fa5e4",
+				"date": "2026-11-19",
+				"head": "890515121f3d8f38cc96947847e7178ce42e1cc9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:266",
+				"writer": "pij-agreeable-piranha",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 266",
+					"exit_code": 0,
+					"log": "FINAL at 890515121f3d8f38cc96947847e7178ce42e1cc9; all five checks pass"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14512171702/zip | parse junit.xml and verify upload SHA-256",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44489032862/job/135439657640; all three new tests passed, none skipped"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Round 1/2 correctness review: PASS WITH NOTES.\nSubject: pr:266\nHead: 890515121f3d8f38cc96947847e7178ce42e1cc9\n\nNo normal-use correctness blocker. Reviewed all six changed files and traced router composition, bearer authentication, endpoint templates, seat query handling, existing counter conventions and CLI ping decoding. No product files changed and no builds or cargo commands run.\n\nCounts and coverage:\n- The last Router::layer is installed after the bearer layer and after the separately authenticated BackgroundEmit route (crates/daemon/src/http/mod.rs:797-812). It wraps the fallback too. Each completed handler response passes one record call; wrong/missing bearer tokens and handler/extractor/method refusals are not bypasses.\n- MatchedPath supplies the router's fixed template, including {job}, not a raw URL. Unknown paths share (unmatched); methods outside the seven named methods share OTHER. Seat shapes use fixed bit slots and discard unknown parameter names and arbitrary values. Neither route keys nor query-shape keys grow with client-controlled identifiers.\n- HTTP 2xx/3xx count as ok; 4xx/5xx count as refused. A ping snapshots before its own response is recorded, as documented and tested.\n- Ping is additive: existing fields/status/authentication are unchanged; DaemonClient::ping still uses Envelope<Value> (crates/cli/src/client.rs:214).\n\nNon-blocking qualifications:\n1. Cost is NOT lock-free. Every matched response takes the paths Mutex and clones an Arc; first use of a template allocates. GET /v1/seats increments both the route outcome and its shape counter, not just one counter. Ping also formats route keys while holding that mutex (route_counts.rs:123-171). The PR body acknowledges the mutex; use that actual cost model rather than an atomic-only/no-lock description. There is no added timer, poll, per-seat loop or process launch; work scales with requests and the fixed route table. Live before/after cost judgement remains with performance.\n2. Relaxed atomics are appropriate for independent telemetry counts, not a transactional snapshot: route and shape totals can briefly disagree under concurrent completions. Overflow is not hardened: fetch_add wraps, and snapshot's ordinary u64 additions can panic with overflow checks or wrap without them (route_counts.rs:59,137,151-152). This is an astronomically remote counter-lifetime limit, not a normal-use blocker or a request for new saturation machinery.\n\nEvidence:\n- git diff --check origin/main...HEAD: PASS.\n- just pr-freeze 266: FINAL, exact requested head, clean detached worktree, all five latest checks successful.\n- CI run 44489032862: completed/success, API head_sha equals the full subject head.\n- Successful rust-test job 135439657640 uploaded artifact 14512171702. Downloaded that ID, not just its name; ZIP SHA-256 matches the upload log: 9a64e7c3701a8d2a6d3d0166f1e2e2bbd52eb99276ba26e7d9c359fefe955053.\n- Parsed its junit.xml: all three new tests executed, none failed/errored/skipped:\n  http::route_counts::tests::counts_by_route_method_and_outcome_and_leaves_unrequested_routes_out\n  http::route_counts::tests::seats_reads_are_counted_by_query_shape_and_unknown_parameters_add_no_keys\n  http::tests::ping_counts_requests_by_route_and_seats_reads_by_query_shape\n- Local harness boot/checks and mutation builds were NOT RUN: this is a read-only review with an explicit no-build instruction. CI supplies Rust execution proof; coder-reported mutations were not independently rerun.\n\nHarness gift: captured MW-001 in the review-266 observe bucket. Proposed encoding is a read-only harness review-proof command that binds an exact head to successful CI checks, the successful job's artifact ID/digest and selected JUnit cases without building. This also addresses the deps-less review friction recorded in the plan-185 retro. No implementation is included in this read-only review.\n"
+		}
+	]
+}
