@@ -1130,7 +1130,10 @@
 					"harness_session": "01a1f1d8-52bb-7492-bb2c-e92eae596aa0",
 					"instance_key": "232",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-outstanding-silkworm",
 					"seat": "pij-joyous-sailfish",
+					"to": "2026-11-19T04:45:27.778Z",
 					"why": "pm-004: workstream 004 s07 (plan 232, proxied tool-list flips)"
 				},
 				{
