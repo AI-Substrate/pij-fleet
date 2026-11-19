@@ -34,6 +34,7 @@
 - [2026-11-19 PR259 final barriers add no launch site](2026-11-19-pr259-final-barriers-cost.dd.md): review-close (F208, review, barrier)
 - [2026-11-19 PR259 pass and merged PR257 live receipts](2026-11-19-pr259-pass-pr257-merged-proof.dd.md): review-close (F208, F217, review, tool-friction)
 - [2026-11-19 PR260 final parser delta cost unchanged](2026-11-19-pr260-final-parser-cost-unchanged.dd.md): review-close (F219, review, sensor)
+- [2026-11-19 PR260 merged proof old session creates plain tree](2026-11-19-pr260-merged-old-session-plain.dd.md): review-close (F219, live-proof, settings)
 - [2026-11-19 PR260 project clone sensor cost](2026-11-19-pr260-project-clone-sensor-cost.dd.md): review-close (F219, F218, review, sensor)
 - [2026-11-19 PR260 rebase-only approval at1139cfca](2026-11-19-pr260-rebase-1139cfca.dd.md): review-close (F219, review, rebase)
 <!-- /pij:generated -->
