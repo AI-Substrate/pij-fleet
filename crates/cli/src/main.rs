@@ -1603,20 +1603,23 @@ async fn run(cli: Cli) -> ExitCode {
             cli.json,
         ),
         Command::Spawn { .. } => {
-            let response = client
-                .spawn(prepared_spawn.as_ref().expect("spawn request was prepared"))
-                .await;
-            emit(&spawn_cli_response(response), cli.json)
+            let response = spawn_cli_response(
+                client
+                    .spawn(prepared_spawn.as_ref().expect("spawn request was prepared"))
+                    .await,
+            );
+            let seat = response.data.as_ref().map(|data| &data.seat);
+            emit_seat_receipt(&response, seat, cli.json)
         }
         Command::Revive { cheap, .. } => {
             let request = prepared_revive
                 .as_ref()
                 .expect("revive request was prepared");
             let revived = client.revive(request).await;
+            let code = emit_seat_receipt(&revived, revived.data.as_ref(), cli.json);
             if !(cheap && revived.ok) {
-                return emit(&revived, cli.json);
+                return code;
             }
-            let _ = emit(&revived, cli.json);
             // Plan 225b: the daemon switches the seat back once THIS compact
             // starts, so it goes under the id the daemon armed.
             let msg_id = revived
@@ -4575,6 +4578,43 @@ fn spawn_cli_response(response: Envelope<SeatDescriptor>) -> Envelope<SpawnCliRe
     }
 }
 
+/// Plan 231: the spawn gate's decision for a Copilot seat, as one receipt
+/// line: `cache: proxied (<reason>)`, or `cache: plain (<reason>) — <fix>`.
+/// `None` for any other harness. The text is the sidecar's and the daemon's,
+/// so it goes through `render::line` and can never add a line of its own.
+fn cache_route_line(seat: &SeatDescriptor) -> Option<String> {
+    use pij_core::render;
+    let route = seat.cache_proxy_view()?;
+    let state = match route.state {
+        pij_core::model::CacheProxyRoute::Proxied => "proxied",
+        pij_core::model::CacheProxyRoute::Plain => "plain",
+    };
+    let mut line = format!("cache: {state} ({})", render::line(&route.reason));
+    if let Some(fix) = &route.fix {
+        line.push_str(" — ");
+        line.push_str(&render::line(fix));
+    }
+    Some(line)
+}
+
+/// Emit a spawn or revive receipt; a human reading a successful one also gets
+/// the seat's cache line (plan 231). `--json` is unchanged: its envelope
+/// already carries `data.cache_proxy`.
+fn emit_seat_receipt<T: serde::Serialize>(
+    envelope: &Envelope<T>,
+    seat: Option<&SeatDescriptor>,
+    json: bool,
+) -> ExitCode {
+    let code = emit(envelope, json);
+    if !json
+        && envelope.ok
+        && let Some(line) = seat.and_then(cache_route_line)
+    {
+        println!("{line}");
+    }
+    code
+}
+
 fn prepare_revive_request(command: &Command) -> Result<Option<ReviveRequest>, PijError> {
     let Command::Revive {
         id,
@@ -4777,6 +4817,52 @@ mod tests {
         for kept in ["", "-1", "1.5", "20s", "1234567890"] {
             assert_eq!(wait(Some(kept)), Duration::from_secs(20), "{kept:?}");
         }
+    }
+
+    /// Plan 231: a Copilot seat's spawn or revive receipt says its cache
+    /// route on one line, with the fix only when there is one; a seat with
+    /// nothing recorded reads as before the gate; other harnesses get none.
+    /// Sidecar text never adds a line.
+    #[test]
+    fn a_copilot_receipt_line_says_the_cache_route_and_never_breaks_the_line() {
+        use pij_core::model::{Harness, SeatCacheProxy, SeatDescriptor};
+        let seat = |harness, route: Option<SeatCacheProxy>| {
+            let mut seat = SeatDescriptor::new("pij-a", harness, "/abs");
+            seat.cache_proxy = route;
+            super::cache_route_line(&seat)
+        };
+        let proxied = SeatCacheProxy {
+            state: pij_core::model::CacheProxyRoute::Proxied,
+            reason: "1-hour cache through http://127.0.0.1:7471 as claude-opus-5.5".to_string(),
+            fix: None,
+        };
+        assert_eq!(
+            seat(Harness::Copilot, Some(proxied)).as_deref(),
+            Some("cache: proxied (1-hour cache through http://127.0.0.1:7471 as claude-opus-5.5)")
+        );
+        let fixable = SeatCacheProxy::plain("proxy not listening", Some("start it".to_string()));
+        assert_eq!(
+            seat(Harness::Copilot, Some(fixable)).as_deref(),
+            Some("cache: plain (proxy not listening) — start it")
+        );
+        let unfixable = SeatCacheProxy::plain("model gpt-6 is not Claude", None);
+        assert_eq!(
+            seat(Harness::Copilot, Some(unfixable)).as_deref(),
+            Some("cache: plain (model gpt-6 is not Claude)")
+        );
+        let before = seat(Harness::Copilot, None).unwrap();
+        assert!(
+            before.starts_with("cache: plain (launched before the cache proxy) — revive"),
+            "{before}"
+        );
+        assert_eq!(seat(Harness::Omp, None), None);
+        let forged = SeatCacheProxy::plain(
+            "down\ncache: proxied (fake)",
+            Some("fix\npij spawn: ok".to_string()),
+        );
+        let line = seat(Harness::Copilot, Some(forged)).unwrap();
+        assert!(!line.contains('\n'), "{line}");
+        assert!(line.starts_with("cache: plain (\"down\\n"), "{line}");
     }
 
     /// Review of #126, F001: the drift hint names the viewed project.

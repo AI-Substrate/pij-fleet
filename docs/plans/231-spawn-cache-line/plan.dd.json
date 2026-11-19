@@ -1,0 +1,154 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Spawn and revive receipts say the cache route",
+        "slug": "spawn-cache-line",
+        "ordinal": 231,
+        "status": "ready",
+        "summary": "A human `pij-rs spawn` or `pij-rs revive` of a Copilot seat prints one more receipt line with the spawn gate's decision: `cache: proxied (<reason>)` or `cache: plain (<reason>) \u2014 <fix>`. The daemon already records it (`cache_proxy` on the seat, plan 229) and the `--json` receipt already carries it; the human receipt buried it in a one-line JSON dump. CLI only.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "On 2026-11-19 two Copilot workers spawned from a plain seat were reported as running plain. They were proxied: the daemon recorded `proxied` at spawn and their Copilot logs show BYOK calls to 127.0.0.1:7471. The report came from an `env | grep` inside the seat, which cannot see `COPILOT_PROVIDER_*` because Copilot drops them from the processes it starts. The spawn receipt did hold the gate's decision, but as part of a JSON dump nobody reads (`pij spawn: ok \u2014 {...}`). porcupine asked that the receipt show the gate reason. This plan prints it as one line after the receipt for Copilot seats, and documents where the route can and cannot be read."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Whoever spawns or revives a Copilot seat sees at once whether it runs through the cache proxy and, when it doesn't, why and what to do.",
+        "Nobody judges a seat's route from an env check inside the seat again: the docs say where the route is recorded and why an in-seat check reads plain."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "No daemon, gate, store or `--json` change: the envelope already carries `data.cache_proxy`.",
+        "No change to `pij directory`, `pij state` or `just doctor` renderings.",
+        "Not exposing the provider variables to the seat's tool shells (Copilot's behaviour, not pij's)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "A successful human `pij-rs spawn` or `pij-rs revive` (including `--cheap` and `--no-wait`) of a Copilot seat prints, after its receipt line, exactly one line: `cache: proxied (<reason>)` when the recorded route is proxied, `cache: plain (<reason>) \u2014 <fix>` when plain with a fix, and `cache: plain (<reason>)` when plain without one. A Copilot seat with no recorded route reads as plain with the before-gate reason and its revive fix (`SeatDescriptor::cache_proxy_view`).",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "No cache line for a non-Copilot seat, for a refused or failed spawn or revive, or under `--json`. The `--json` output is unchanged and still carries `data.cache_proxy`.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "The reason and the fix pass through `pij_core::render::line`: text that is multi-line, overlong or carries the frame marker is fenced, so sidecar or daemon text can never add a line or forge another receipt line.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "`docs/how/pij-rs-api.md` \u00a7 Copilot cache proxy gate shows the receipt line and says where a seat's route is read (the receipt, the recorded `cache_proxy`, `just doctor`, or `ps -Eww -p <copilot pid>`), and that an env check from a tool shell inside a Copilot seat reads plain on every seat because Copilot drops `COPILOT_PROVIDER_*` from its child processes.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-5bb9",
+          "title": "Receipt line shipped",
+          "brief": "All four ACs, one PR (coder, pij-cultural-falcon). One CLI helper for the line, called from the spawn and revive arms; unit tests on the helper; docs; live smoke on a real spawn.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code map (origin/main 44ec05e9). The CLI's `Command::Spawn` arm emits `spawn_cli_response(response)` and `Command::Revive` emits the revive envelope (both `Envelope<SeatDescriptor>` from `client.spawn` / `client.revive`), through `emit` \u2192 `pij_cli::render`, which prints `<command>: ok \u2014 <data as JSON>`. `SeatDescriptor::cache_proxy_view()` (crates/core/src/model.rs) already gives the route to show: the recorded `cache_proxy`, or plain `launched before the cache proxy` for a Copilot seat with none; `None` for other harnesses. `pij directory` holder rows render `cache proxied` / `cache plain (<reason>)` with `render::line` (crates/cli/src/main.rs). Diagnosis of 2026-11-19: the gate recorded proxied at seq 4643813 and 4643819; the Copilot process logs show `is_byok: true` and 127.0.0.1:7471; a live proxied copilot (pid 5617) carries the five `COPILOT_PROVIDER_*` while its child copilot process (6296) carries none."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A script parses the human spawn output and trips on the extra line.",
+          "likelihood": "Low",
+          "impact": "Low",
+          "mitigation": "Scripts use `--json`, which is unchanged; the extra line follows the receipt line, so a reader of the first line is unaffected."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Worktree /Users/jordanknight/pi-hacking/pij-231, branch plan-231-spawn-cache-line; edits by absolute path.",
+        "Builds only via `PIJ_SHARED_TARGET=$HOME/pi-hacking/pij/target just shared-build -- <cargo args>`, one at a time; CI is the build.",
+        "No account names in anything written (public repo)."
+      ]
+    }
+  ],
+  "references": []
+}
