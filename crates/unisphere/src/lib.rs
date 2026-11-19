@@ -11,13 +11,21 @@
 //! cursor. A cursor resumes once, so reads of one seat are serialized: a
 //! concurrent `pij state` for the same seat waits and then uses the latest
 //! cursor, rather than handing the SDK a spent one that would refold cold.
+//!
+//! **A missing transcript is looked for once per [`MISS_TTL`] (F209).** A
+//! Copilot seat names its transcript's one path, so a miss is one `stat`,
+//! never a walk of every session. Harnesses whose path needs more than the
+//! session id (Claude's project folder, OMP's timestamp, Codex's date) are
+//! still found by the SDK's walk of their roots, and the kept miss bounds
+//! that walk to one per seat per lifetime. Reads of one seat queue on its
+//! slot, so concurrent reads of a missing seat share the first one's answer.
 
 pub mod fleet;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use pij_core::error::{PijError, Result};
@@ -57,10 +65,26 @@ pub struct SessionRoots {
     pub copilot_sessions: Option<PathBuf>,
 }
 
+/// How long a seat's "no transcript" answer is kept before the next look
+/// (F209). A TTL, not a root's mtime: every root's mtime moves with every
+/// other session on a busy fleet, so it would expire on nearly every read. A
+/// transcript that appears is found within this long.
+pub const MISS_TTL: Duration = Duration::from_secs(30);
+
 /// Session facts from harness transcripts, read through `unisphere-sdk`.
 pub struct UnisphereSessionStatus {
     service: Arc<StatusService>,
-    cursors: Mutex<HashMap<SeatId, Arc<tokio::sync::Mutex<Option<StatusCursor>>>>>,
+    copilot_sessions: Option<PathBuf>,
+    miss_ttl: Duration,
+    cursors: Mutex<HashMap<SeatId, Arc<tokio::sync::Mutex<SeatRead>>>>,
+}
+
+/// One seat's read state, held across a read.
+#[derive(Default)]
+struct SeatRead {
+    cursor: Option<StatusCursor>,
+    /// The last read found no transcript: for which target, when, and why.
+    missed: Option<(StatusTarget, Instant, String)>,
 }
 
 impl UnisphereSessionStatus {
@@ -75,8 +99,22 @@ impl UnisphereSessionStatus {
 
     /// A source over every readable harness's session directories.
     pub fn with_roots(roots: SessionRoots) -> Self {
+        Self::from_parts(bindings(), roots, MISS_TTL)
+    }
+
+    /// The same source, keeping a miss for `ttl` instead of [`MISS_TTL`]:
+    /// for tests that need a miss to expire.
+    #[must_use]
+    pub fn with_miss_ttl(mut self, ttl: Duration) -> Self {
+        self.miss_ttl = ttl;
+        self
+    }
+
+    fn from_parts(bindings: Vec<PrepBinding>, roots: SessionRoots, miss_ttl: Duration) -> Self {
         Self {
-            service: Arc::new(StatusService::new(bindings(), source_sets(roots))),
+            copilot_sessions: roots.copilot_sessions.clone(),
+            service: Arc::new(StatusService::new(bindings, source_sets(roots))),
+            miss_ttl,
             cursors: Mutex::new(HashMap::new()),
         }
     }
@@ -162,7 +200,7 @@ impl UnisphereSessionStatus {
             .get(seat)
             .cloned();
         match slot {
-            Some(slot) => slot.lock().await.is_some(),
+            Some(slot) => slot.lock().await.cursor.is_some(),
             None => false,
         }
     }
@@ -174,10 +212,19 @@ impl SessionStatusPort for UnisphereSessionStatus {
         let Some(harness) = unisphere_harness(target.harness) else {
             return Ok(SessionStatusReply::Unsupported);
         };
+        // Copilot's one accepted layout is `<session-state>/<id>/events.jsonl`:
+        // name it, so a miss is one stat and never a walk of every session.
+        let transcript = match target.harness {
+            Harness::Copilot => self
+                .copilot_sessions
+                .as_ref()
+                .map(|root| root.join(&target.session).join("events.jsonl")),
+            Harness::Claude | Harness::Omp | Harness::Codex | Harness::Pi => None,
+        };
         let request = StatusTarget {
             harness: harness.to_string(),
             session_id: target.session.clone(),
-            transcript: None,
+            transcript,
         };
         let slot = Arc::clone(
             self.cursors
@@ -188,17 +235,28 @@ impl SessionStatusPort for UnisphereSessionStatus {
         );
         let now_ms = now_ms()?;
         let service = Arc::clone(&self.service);
+        let miss_ttl = self.miss_ttl;
         // The whole take -> fold -> store runs in a detached task that owns the
         // seat's slot. A caller that stops waiting (the cold-wake guard's bound)
         // drops only the handle; the fold still finishes and keeps its cursor,
         // and a later read of the seat queues behind it and resumes warm.
         let read = tokio::spawn(async move {
-            // Held across the read: one reader per seat, always the latest cursor.
-            let mut cursor = slot.lock_owned().await;
-            let previous = cursor.take();
+            // Held across the read: one reader per seat, always the latest
+            // cursor, and a queued reader sees the miss the one before it kept.
+            let mut seat = slot.lock_owned().await;
+            if let Some((missed, at, detail)) = &seat.missed
+                && *missed == request
+                && at.elapsed() < miss_ttl
+            {
+                return Ok(SessionStatusReply::NotFound {
+                    detail: detail.clone(),
+                });
+            }
+            let previous = seat.cursor.take();
+            let asked = request.clone();
             // A cold fold reads a whole transcript: keep it off the reactor.
             let (answer, previous) = tokio::task::spawn_blocking(move || {
-                let answer = service.status_incremental(&request, previous.as_ref(), now_ms);
+                let answer = service.status_incremental(&asked, previous.as_ref(), now_ms);
                 (answer, previous)
             })
             .await
@@ -206,21 +264,24 @@ impl SessionStatusPort for UnisphereSessionStatus {
                 adapter: ADAPTER.to_string(),
                 message: format!("status read task failed: {error}"),
             })?;
+            seat.missed = None;
             match answer {
                 Ok((status, next)) => {
-                    *cursor = Some(next);
+                    seat.cursor = Some(next);
                     Ok(SessionStatusReply::Status(seat_status(&status)))
                 }
                 Err(failure) => {
                     // The SDK leaves a failed read's cursor valid: keep it.
-                    *cursor = previous;
+                    seat.cursor = previous;
                     match failure.kind {
                         StatusFailureKind::UnsupportedHarness => {
                             Ok(SessionStatusReply::Unsupported)
                         }
-                        StatusFailureKind::TranscriptNotFound => Ok(SessionStatusReply::NotFound {
-                            detail: format!("{}: {}", failure.code(), failure.message),
-                        }),
+                        StatusFailureKind::TranscriptNotFound => {
+                            let detail = format!("{}: {}", failure.code(), failure.message);
+                            seat.missed = Some((request, Instant::now(), detail.clone()));
+                            Ok(SessionStatusReply::NotFound { detail })
+                        }
                         _ => Err(PijError::Adapter {
                             adapter: ADAPTER.to_string(),
                             message: format!("{}: {}", failure.code(), failure.message),
@@ -650,5 +711,280 @@ mod tests {
                 .expect("status");
             assert_eq!(reply, SessionStatusReply::Unsupported, "{harness:?}");
         }
+    }
+
+    /// The real JSONL loader, counting its stats and its walks.
+    #[derive(Default)]
+    struct Counting {
+        stats: std::sync::atomic::AtomicUsize,
+        walks: std::sync::atomic::AtomicUsize,
+    }
+
+    impl Counting {
+        fn stats(&self) -> usize {
+            self.stats.load(std::sync::atomic::Ordering::SeqCst)
+        }
+        fn walks(&self) -> usize {
+            self.walks.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl unisphere_core::prep::PrepLoader for Counting {
+        fn kind(&self) -> unisphere_core::prep::PrepSourceKind {
+            unisphere_loader_jsonl::FileSessionLoader.kind()
+        }
+        fn discover(
+            &self,
+            root: &std::path::Path,
+            accept: &dyn Fn(&str) -> bool,
+            previous: &unisphere_core::prep::PrepDirIndex,
+        ) -> std::result::Result<unisphere_core::prep::PrepDiscovery, unisphere_core::PipelineError>
+        {
+            self.walks.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            unisphere_loader_jsonl::FileSessionLoader.discover(root, accept, previous)
+        }
+        fn stat(
+            &self,
+            root: &std::path::Path,
+            path: &std::path::Path,
+        ) -> std::result::Result<unisphere_core::prep::PrepSourceStat, unisphere_core::PipelineError>
+        {
+            self.stats.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            unisphere_loader_jsonl::FileSessionLoader.stat(root, path)
+        }
+        fn read(
+            &self,
+            stat: &unisphere_core::prep::PrepSourceStat,
+            from: Option<&unisphere_core::ReadCursor>,
+            limits: unisphere_core::prep::PrepReadLimits,
+        ) -> std::result::Result<unisphere_core::prep::PrepBatch, unisphere_core::PipelineError>
+        {
+            unisphere_loader_jsonl::FileSessionLoader.read(stat, from, limits)
+        }
+        fn anchor(
+            &self,
+            stat: &unisphere_core::prep::PrepSourceStat,
+            offset: u64,
+        ) -> std::result::Result<String, unisphere_core::PipelineError> {
+            unisphere_loader_jsonl::FileSessionLoader.anchor(stat, offset)
+        }
+        fn record_at(
+            &self,
+            path: &std::path::Path,
+            address: &unisphere_core::prep::NativeAddress,
+            max_bytes: usize,
+        ) -> std::result::Result<Vec<u8>, unisphere_core::PipelineError> {
+            unisphere_loader_jsonl::FileSessionLoader.record_at(path, address, max_bytes)
+        }
+    }
+
+    /// A source whose every binding reads through `loader`.
+    fn counted(
+        loader: &Arc<Counting>,
+        roots: SessionRoots,
+        ttl: Duration,
+    ) -> UnisphereSessionStatus {
+        let bindings = bindings()
+            .into_iter()
+            .map(|binding| PrepBinding {
+                fold: binding.fold,
+                loader: Arc::clone(loader) as Arc<dyn unisphere_core::prep::PrepLoader>,
+            })
+            .collect();
+        UnisphereSessionStatus::from_parts(bindings, roots, ttl)
+    }
+
+    /// A fresh scratch directory for one test.
+    fn scratch(name: &str) -> PathBuf {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "pij-unisphere-{name}-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn copilot_transcript(dir: &std::path::Path, session: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        let start = format!(
+            r#"{{"type":"session.start","id":"e0","parentId":null,"timestamp":"2026-09-08T00:00:00.000Z","data":{{"sessionId":"{session}","version":1,"producer":"copilot-agent","copilotVersion":"0.0.0","startTime":"2026-09-08T00:00:00.000Z","selectedModel":"claude-opus-5.5","context":{{"cwd":"/work/demo"}}}}}}"#
+        );
+        std::fs::write(dir.join("events.jsonl"), start + "\n").unwrap();
+    }
+
+    fn copilot(seat: &str, session: &str) -> SessionTarget {
+        SessionTarget {
+            seat: SeatId(seat.into()),
+            harness: Harness::Copilot,
+            session: session.into(),
+        }
+    }
+
+    /// F209: a Copilot seat's transcript is `<root>/<id>/events.jsonl` and
+    /// nowhere else. One copied anywhere deeper is reachable only by a walk
+    /// of every session, so a seat that has only that one is not found.
+    #[tokio::test]
+    async fn a_missing_copilot_transcript_is_not_found_by_walking_every_session() {
+        let sessions = scratch("copilot-walk");
+        copilot_transcript(&sessions.join("nested").join("sess-gone"), "sess-gone");
+        let source = UnisphereSessionStatus::with_roots(SessionRoots {
+            copilot_sessions: Some(sessions.clone()),
+            ..SessionRoots::default()
+        });
+        let reply = source
+            .status(&copilot("pij-gone", "sess-gone"))
+            .await
+            .expect("status");
+        assert!(
+            matches!(reply, SessionStatusReply::NotFound { .. }),
+            "found by a walk: {reply:?}"
+        );
+        std::fs::remove_dir_all(&sessions).unwrap();
+    }
+
+    /// F209: a missing Copilot transcript costs one stat and no walk; the
+    /// miss is kept for its lifetime, so concurrent and repeated reads look
+    /// no further, and a transcript that appears is found once it expires.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_copilot_miss_is_one_stat_per_lifetime_shared_by_concurrent_reads() {
+        let sessions = scratch("copilot-miss");
+        let loader = Arc::new(Counting::default());
+        let ttl = Duration::from_millis(500);
+        let source = Arc::new(counted(
+            &loader,
+            SessionRoots {
+                copilot_sessions: Some(sessions.clone()),
+                ..SessionRoots::default()
+            },
+            ttl,
+        ));
+        let target = copilot("pij-missing", "sess-late");
+        let reads: Vec<_> = (0..8)
+            .map(|_| {
+                let (source, target) = (Arc::clone(&source), target.clone());
+                tokio::spawn(async move { source.status(&target).await.expect("status") })
+            })
+            .collect();
+        for read in reads {
+            let reply = read.await.unwrap();
+            assert!(
+                matches!(reply, SessionStatusReply::NotFound { .. }),
+                "{reply:?}"
+            );
+        }
+        assert_eq!(
+            (loader.stats(), loader.walks()),
+            (1, 0),
+            "eight reads, one stat"
+        );
+
+        copilot_transcript(&sessions.join("sess-late"), "sess-late");
+        let kept = source.status(&target).await.expect("status");
+        assert!(
+            matches!(kept, SessionStatusReply::NotFound { .. }),
+            "{kept:?}"
+        );
+        assert_eq!(loader.stats(), 1, "within the lifetime, no look");
+
+        tokio::time::sleep(ttl + Duration::from_millis(100)).await;
+        let found = source.status(&target).await.expect("status");
+        assert!(matches!(found, SessionStatusReply::Status(_)), "{found:?}");
+        assert_eq!(loader.walks(), 0);
+        std::fs::remove_dir_all(&sessions).unwrap();
+    }
+
+    /// F209: a Claude transcript's folder is named for the launch directory,
+    /// so a miss still walks the projects: once per lifetime, not per read.
+    #[tokio::test]
+    async fn a_claude_miss_walks_once_per_lifetime() {
+        let home = scratch("claude-miss");
+        std::fs::create_dir_all(home.join("projects")).unwrap();
+        let loader = Arc::new(Counting::default());
+        let ttl = Duration::from_millis(300);
+        let source = counted(
+            &loader,
+            SessionRoots {
+                claude_homes: vec![home.clone()],
+                ..SessionRoots::default()
+            },
+            ttl,
+        );
+        let target = SessionTarget {
+            seat: SeatId("pij-claude-missing".into()),
+            harness: Harness::Claude,
+            session: "s-1".into(),
+        };
+        for _ in 0..5 {
+            let reply = source.status(&target).await.expect("status");
+            assert!(
+                matches!(reply, SessionStatusReply::NotFound { .. }),
+                "{reply:?}"
+            );
+        }
+        assert_eq!(loader.walks(), 1, "five reads, one walk");
+
+        let project = home.join("projects").join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            project.join("s-1.jsonl"),
+            record("u1", "null", "user", "2026-09-08T00:00:00Z", ""),
+        )
+        .unwrap();
+        tokio::time::sleep(ttl + Duration::from_millis(100)).await;
+        let found = source.status(&target).await.expect("status");
+        assert!(matches!(found, SessionStatusReply::Status(_)), "{found:?}");
+        assert_eq!(loader.walks(), 2);
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    /// R249-001: a kept miss answers only the target it was kept for. A seat
+    /// whose session changes is looked up at once, and a hit clears the old
+    /// miss, so going back to the old session looks again rather than
+    /// answering a miss from before the hit.
+    #[tokio::test]
+    async fn a_kept_miss_answers_only_its_own_target_and_a_hit_clears_it() {
+        let sessions = scratch("copilot-target");
+        let loader = Arc::new(Counting::default());
+        let source = counted(
+            &loader,
+            SessionRoots {
+                copilot_sessions: Some(sessions.clone()),
+                ..SessionRoots::default()
+            },
+            Duration::from_secs(60),
+        );
+        let old = copilot("pij-moving", "sess-old");
+        let new = copilot("pij-moving", "sess-new");
+        copilot_transcript(&sessions.join("sess-new"), "sess-new");
+
+        let missed = source.status(&old).await.expect("status");
+        assert!(
+            matches!(missed, SessionStatusReply::NotFound { .. }),
+            "{missed:?}"
+        );
+        assert_eq!(loader.stats(), 1);
+
+        let found = source.status(&new).await.expect("status");
+        assert!(
+            matches!(found, SessionStatusReply::Status(_)),
+            "a new target is looked up: {found:?}"
+        );
+        let after_hit = loader.stats();
+        assert!(after_hit > 1, "the new session was stat'd");
+
+        let again = source.status(&old).await.expect("status");
+        assert!(
+            matches!(again, SessionStatusReply::NotFound { .. }),
+            "{again:?}"
+        );
+        assert!(
+            loader.stats() > after_hit,
+            "the hit cleared the old miss, so the old session is looked up again"
+        );
+        assert_eq!(loader.walks(), 0);
+        std::fs::remove_dir_all(&sessions).unwrap();
     }
 }

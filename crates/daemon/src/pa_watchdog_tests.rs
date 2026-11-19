@@ -3583,3 +3583,68 @@ async fn a_recreated_worktree_is_placed_in_its_new_repository_at_once() {
         "placed in process, not git's kept answer"
     );
 }
+
+/// R249-001: the session source keeps a transcript miss for a while (F209). A
+/// seat whose transcript appears, and whose turn then ends, is read by the PA
+/// inside that window and answered "not found". The PA retries a not-found
+/// seat next round, so once the kept miss expires the idle seat's size is
+/// known, with no further activity; it never stays unknown until it next works.
+#[tokio::test]
+async fn an_idle_seat_read_during_a_kept_miss_is_sized_once_it_expires() {
+    let repos = Repos::new();
+    let (mut services, _store) = services().await;
+    let home = std::path::PathBuf::from(repos.path("elsewhere")).join("claude-home");
+    std::fs::create_dir_all(home.join("projects")).unwrap();
+    let ttl = std::time::Duration::from_millis(300);
+    let source =
+        Arc::new(pij_unisphere::UnisphereSessionStatus::new(vec![home.clone()]).with_miss_ttl(ttl));
+    services.session_status = source.clone();
+    let [_, _, idle] = active_fleet(&services, &repos).await;
+
+    // A status read misses before the seat's first turn writes its transcript.
+    let target = pij_core::session_status::SessionTarget {
+        seat: idle.id.clone(),
+        harness: idle.harness,
+        session: idle.harness_session.clone().unwrap(),
+    };
+    let missed = pij_core::ports::SessionStatusPort::status(source.as_ref(), &target)
+        .await
+        .unwrap();
+    assert!(
+        matches!(missed, SessionStatusReply::NotFound { .. }),
+        "{missed:?}"
+    );
+    let project = home.join("projects").join("proj");
+    std::fs::create_dir_all(&project).unwrap();
+    let user = r#"{"uuid":"u1","parentUuid":null,"sessionId":"session-pij-idle","type":"user","timestamp":"2026-09-08T00:00:00Z","message":{"role":"user","content":"x"}}"#;
+    let usage = r#"{"input_tokens":1,"output_tokens":2,"cache_read_input_tokens":699997,"cache_creation_input_tokens":0}"#;
+    let assistant = format!(
+        r#"{{"uuid":"a1","parentUuid":"u1","sessionId":"session-pij-idle","type":"assistant","timestamp":"2026-09-08T00:00:01Z","message":{{"id":"a1-r","role":"assistant","model":"claude-fixture","content":[{{"type":"text","text":"y"}}],"usage":{usage}}}}}"#
+    );
+    std::fs::write(
+        project.join("session-pij-idle.jsonl"),
+        format!("{user}\n{assistant}\n"),
+    )
+    .unwrap();
+
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+    let large = |outcomes: &[RoundOutcome]| {
+        presence(outcomes).into_iter().any(|(kind, _, subjects)| {
+            kind == "large-seat" && subjects.contains(&"pij-idle".to_string())
+        })
+    };
+    let inside = watchdog.round(&services, INTERVAL, start).await.unwrap();
+    assert!(!large(&inside), "inside the kept miss the size is unknown");
+
+    tokio::time::sleep(ttl + std::time::Duration::from_millis(100)).await;
+    let after = watchdog
+        .round(&services, INTERVAL, start + MINUTE)
+        .await
+        .unwrap();
+    assert!(
+        large(&after),
+        "the idle seat is re-read once the miss expires: {:?}",
+        presence(&after)
+    );
+}

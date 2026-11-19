@@ -389,6 +389,10 @@
           "kind": null
         },
         {
+          "name": "unisphere-core",
+          "kind": "dev"
+        },
+        {
           "name": "unisphere-loader-jsonl",
           "kind": null
         },
