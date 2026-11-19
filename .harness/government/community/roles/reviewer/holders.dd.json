@@ -1960,7 +1960,10 @@
 					"harness_session": "8dd9d46b-fbe0-4787-ba19-cbcf852446b5",
 					"instance_key": "266",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #266 merged (4f4dd199f7e5)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-agreeable-piranha",
+					"to": "2026-11-19T09:01:22.303Z",
 					"why": "F222 step 1: per-route request counter #266"
 				},
 				{
