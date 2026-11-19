@@ -109,10 +109,25 @@ struct CopilotBox<'a> {
     row: usize,
     first_column: usize,
     payload: &'a str,
-    /// Copilot 1.0.114 shows a running activity
-    /// (`○ Compacting conversation history (0s)`) at column 0 just above the
-    /// cwd row while the box stays empty (F210).
+    /// A running activity (`◉ Compacting conversation history (1s)`) sits
+    /// above the cwd row while the box stays empty (F210).
     activity: bool,
+}
+
+/// Every glyph in Copilot 1.0.114's spinner tables (`cli-main.js`: `frames`
+/// `[∙ ◉ ◎]`, `pulseFrames` `[● ◉ ◎ ○ ◎ ◉]`, `framesAltScreen`
+/// `[∙ ∘ ○ ◎ ◉ ◎ ○ ∘]`). A live `/compact` cycled through `● ◉ ◎ ○` (F210 r2).
+const COPILOT_SPINNER_FRAMES: [char; 6] = ['∙', '∘', '●', '◉', '◎', '○'];
+
+/// An activity row: a spinner frame at column 0, a space, then text. Copilot
+/// indents transcript rows (` ● DONE`), so a column-0 frame is never one.
+fn is_copilot_activity_row(line: &str) -> bool {
+    let mut chars = line.chars();
+    chars
+        .next()
+        .is_some_and(|glyph| COPILOT_SPINNER_FRAMES.contains(&glyph))
+        && chars.next() == Some(' ')
+        && !chars.as_str().trim().is_empty()
 }
 
 fn copilot_v1_composer<'a>(lines: &'a [&'a str]) -> Option<CopilotBox<'a>> {
@@ -146,7 +161,7 @@ fn copilot_v1_composer<'a>(lines: &'a [&'a str]) -> Option<CopilotBox<'a>> {
             payload,
             activity: lines[top_row.saturating_sub(2)..top_row]
                 .iter()
-                .any(|line| line.starts_with('○')),
+                .any(|line| is_copilot_activity_row(line)),
         });
     }
     None
@@ -710,6 +725,13 @@ mod copilot_1_0_114_wide {
     /// a `○ Compacting conversation history (0s)` activity row.
     const COMPACTING: &str =
         include_str!("../tests/fixtures/2026-11-19-copilot-v1.0.114-wide-pane-189-compacting.txt");
+    /// A throwaway Copilot 1.0.114 seat on the same model, 250x70, with
+    /// `hello draft` typed (caret (13, 66); Home moves it to (2, 66)). With
+    /// input, Copilot drops the `← open sidebar · / commands · ? help` hints:
+    /// `Interactive · Allow All · @ files/sessions · # issues`. Transcript and
+    /// cwd scrubbed to the same width.
+    const DRAFT: &str =
+        include_str!("../tests/fixtures/2026-11-19-copilot-v1.0.114-wide-draft.txt");
 
     #[test]
     fn idle_wide_pane_is_an_empty_composer() {
@@ -719,21 +741,49 @@ mod copilot_1_0_114_wide {
         );
     }
 
+    /// A draft is never read as an empty composer, wherever the caret is: its
+    /// hint row is not a footer, so the frame is unrecognized and held.
     #[test]
-    fn a_draft_in_the_wide_pane_is_read_as_text() {
-        let draft = IDLE.replacen("\n┃\n", "\n┃ hello draft\n", 1);
-        assert_ne!(draft, IDLE, "the fixture's composer row is a bare border");
-        assert_eq!(
-            composer_region(&draft, 13, 66),
-            ComposerRegion::Recognized("hello draft".to_string())
-        );
+    fn a_draft_in_the_wide_pane_is_never_empty() {
+        let hint = DRAFT.lines().nth(68).expect("fixture has the hint row");
+        assert!(hint.contains("@ files/sessions · # issues"), "{hint:?}");
+        assert!(!is_copilot_footer(hint), "{hint:?}");
+        for caret in [13, 2] {
+            assert_eq!(
+                composer_region(DRAFT, caret, 66),
+                ComposerRegion::Unrecognized,
+                "caret column {caret}"
+            );
+        }
     }
 
+    /// Every spinner frame Copilot can draw on the activity row holds the
+    /// frame (review r2: the pulse cycles `● ◉ ◎ ○`).
     #[test]
-    fn a_compacting_pane_is_not_an_empty_composer() {
+    fn a_compacting_pane_is_not_an_empty_composer_in_any_spinner_frame() {
+        assert!(COMPACTING.contains("\n○ Compacting"));
+        for frame in super::COPILOT_SPINNER_FRAMES {
+            let capture =
+                COMPACTING.replacen("\n○ Compacting", &format!("\n{frame} Compacting"), 1);
+            assert_eq!(
+                composer_region(&capture, 2, 66),
+                ComposerRegion::Unrecognized,
+                "frame {frame}"
+            );
+        }
+    }
+
+    /// A transcript row is indented, so a message bullet above the cwd row is
+    /// not an activity (the idle fixture would otherwise depend on its text).
+    #[test]
+    fn an_indented_bullet_above_the_cwd_row_is_not_an_activity() {
+        let rows: Vec<&str> = IDLE.lines().collect();
+        assert_eq!(rows[63], "", "the idle fixture has a blank row there");
+        let capture = IDLE.replacen("\n\n ~/workspace", "\n ● Done.\n ~/workspace", 1);
+        assert_ne!(capture, IDLE);
         assert_eq!(
-            composer_region(COMPACTING, 2, 66),
-            ComposerRegion::Unrecognized
+            composer_region(&capture, 2, 66),
+            ComposerRegion::Recognized(String::new())
         );
     }
 
