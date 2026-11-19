@@ -450,6 +450,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-industrial-chickadee",
 					"why": "F215 spawn trust-prompt refusal + F216 pij_close by id #264"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T08:18:10.599Z",
+					"harness": "copilot",
+					"harness_session": "c353bc51-64e6-403b-95f2-9dc3768220c0",
+					"instance_key": "265",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-xeric-squid",
+					"why": "F213 round 2: restart anchor #265"
 				}
 			]
 		}
