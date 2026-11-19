@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f28e-c692-7190-8d21-05d7656c41c8",
+				"date": "2026-11-19",
+				"head": "f9cb2d15c8b0adab09d0dcb46182fcd3e19c466d",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:262",
+				"writer": "pij-compulsory-junglefowl",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R257-002 C34 follow-up: diagnose failed ps reads and validate signed integers instead of silently substituting zero; nonblocking."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git range-diff 93ede9146a57d4d10d03448f5a9bccafa7bdd874..affdf009bf6f79d05d4e4234716cf6159b406506 4c899c0a..f9cb2d15c8b0adab09d0dcb46182fcd3e19c466d",
+					"exit_code": 0,
+					"log": "Commit 1 context-only; commit 2 identical; commit 3 migrates only update-copilot from bare nice to nice19.sh"
+				},
+				{
+					"command": "/usr/bin/nice -n 19 just test harness/scripts/nice19.test.ts harness/scripts/recipe-cost.test.ts harness/scripts/shared-build.test.ts",
+					"exit_code": 0,
+					"log": "37 tests passed on identical pre-rebase implementation; argument, exit37 and same-PID SIGTERM direct probes also passed; no builds or real cargo"
+				},
+				{
+					"command": "just pr-freeze 262",
+					"exit_code": 0,
+					"log": "FINAL at f9cb2d15c8b0adab09d0dcb46182fcd3e19c466d; clean, latest checks passing, no target"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #262: round-1 verdict after rebase confirmation\n\nHead: f9cb2d15c8b0adab09d0dcb46182fcd3e19c466d\nBase: 4c899c0ac5400ea075bb3bb83199054283a5cbc4\nVerdict: PASS WITH NOTES\n\nNo new normal-use blocking bug found. This publishes the held review at the refreshed head. R257-002 remains a nonblocking C34 follow-up.\n\n## Rebase and new commit verified\n\nIndependently ran:\n\n```\ngit range-diff 93ede9146a57d4d10d03448f5a9bccafa7bdd874..affdf009bf6f79d05d4e4234716cf6159b406506 4c899c0a..f9cb2d15c8b0adab09d0dcb46182fcd3e19c466d\n```\n\nCommit 1 differs only in surrounding hunk context beside the newly merged update-copilot recipe. Commit 2 is identical. New commit 3 changes exactly one recipe line, from bare nice -n 19 to harness/scripts/nice19.sh for update-copilot. It adds no updater invocation, arguments or logic.\n\n`git grep 'nice -n' -- justfile` finds no remaining bare nice recipe. `just --show update-copilot` confirms the wrapper path without executing an update.\n\n## Wrapper and integration evidence\n\nThe shared wrapper reads inherited niceness through absolute /bin/ps and trims its padding in shell. For a valid current integer below 19 it execs absolute /usr/bin/nice with increment 19-current; at 19 or above it execs the command directly. Both branches preserve \"$@\".\n\nThe arithmetic handles negative niceness: -5 needs increment 24, and -20 needs 39, reaching 19 rather than raising priority. A harmless platform probe confirmed that nice accepts increment 39. No privileged negative-priority parent was created by this reviewer.\n\nOn the identical pre-rebase implementation, ran:\n\n```\n/usr/bin/nice -n 19 just test harness/scripts/nice19.test.ts harness/scripts/recipe-cost.test.ts harness/scripts/shared-build.test.ts\n```\n\nAll 37 tests passed: 5 wrapper, 10 recipe-cost and 22 shared-build cases. The latter use fake cargo and private targets, and include nested priority, process-group signal cleanup and serialization. This run covered the requested outer-nice condition.\n\nDirect niced probes also confirmed:\n\n- spaces, single/double quotes, an empty argument, a literal command substitution and an asterisk pass through unchanged;\n- a wrapped command exiting 37 returns 37;\n- the executed command retains the wrapper PID, and SIGTERM to it returns -15 with the child reaped.\n\nThe reviewed recipe migration preserves existing outputs, arguments and environment assignments. shared-build locates the wrapper relative to its own script and invokes it through /bin/sh, retaining its process-group ownership after exec. The Rust build-stamp fixture copies the wrapper into its scratch repo; local Rust execution was not performed.\n\nNo redundant test rerun was performed for the context-only rebase and one consistent wrapper call. The author's reported new-head 47-case run is not claimed as reviewer execution.\n\n## R257-002: nonblocking C34 follow-up, still present\n\nnice19.sh:12-18 carries forward the old fallback: ps stderr is suppressed, its exit status is not checked, and empty/unrecognized output silently becomes current=0. It does not fix R257-002.\n\nIf that own-PID read fails, the wrapper can resume relative +19 behavior rather than enforcing max(19, caller). The character whitelist is also not a complete signed-integer validator. Normal ps returned integers in all exercised paths; no normal-use failure of the read was observed. This was already an explicit nonblocking finding in the #257 review, not a new block here.\n\nThe follow-up remains to diagnose/refuse an unsuccessful scheduling read and validate an actual signed integer instead of treating failure as measured zero.\n\n## Cost, safety and finality\n\nAll explicit priority-setting recipes at this refreshed head use nice19.sh, including update-copilot; Rust test/build recipes use shared-build. Manual provider timing probes and nonbuilding cargo metadata/fmt retain their existing scope.\n\nEach wrapped call adds one shell and one absolute /bin/ps, then execs nice/command without retaining an extra wrapper. At 19+ the nice exec is skipped. shared-build now pays one ps per cargo command rather than one per batch: clippy+test is two probes, not one. There is no new daemon loop, per-seat poll, timer or hot-path launch. The fixed executable paths and quoted arguments add no shell-evaluation or privilege boundary.\n\n`just pr-freeze 262` returned FINAL at this full head: main base, CLEAN, matching heads and all latest checks passed. CI run 44474907284 succeeded at this exact head, with both Node matrix jobs and Rust gates passing; Delivers passed. `git diff --check 4c899c0a..HEAD` passed. The detached worktree is tracked-file clean, and target/ is absent.\n\nNo builds, real cargo, deployment recipes, real Copilot update or global configuration edits were run. The old review worktree was also confirmed clean with no target after its tests.\n\nHarness feedback: one executable priority convention plus a no-bare-nice sensor now protects every recipe, and the known scheduling-read failure remains explicitly tracked rather than being mistaken for resolved work.\n"
+		}
+	]
+}
