@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f23e-4731-7283-941a-5ba7303ee735",
+				"date": "2026-11-19",
+				"head": "d8aad07bdc0df8fd486e367f329ed59e24598b8e",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:258",
+				"writer": "pij-magnificent-reindeer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 258",
+					"exit_code": 0,
+					"log": "FINAL at d8aad07bdc0df8fd486e367f329ed59e24598b8e; clean exact-head review worktree; all five checks pass"
+				},
+				{
+					"command": "gh run view 44463656179 --job 135356151646 --log",
+					"exit_code": 0,
+					"log": "Exact-head CI check (22): harness/scripts/cache-ttl-audit.test.ts passed, 2 tests; full npm test passed; check (24), typecheck, lint, Rust lint/test also passed"
+				},
+				{
+					"command": "git diff --check origin/main...HEAD",
+					"exit_code": 0,
+					"log": "No whitespace errors"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS. Reviewed the exact-head audit Python and TS test diff in full, including classification, aggregation, guard scoring and replay. cache_old_* now reads old_cache, which uses only the prior call own 5m/1h TTL and idle < TTL; every other TTL is unknown and excluded from the error totals, counted separately. Cross-checked the pre-F214 core contract at a70cace4^: CacheTtl had only FiveMinutes/OneHour and cache_state was unknown without a TTL, cold at equality. heuristic_old_hour_* retains the former <=60m calculation under an honest name. The regression distinguishes heuristic 2/0 from cache view 0/2 with 1 unknown; guard_* inputs/scoring and replay are unchanged, including shipped Warn. No findings. CI is the build: exact-head run 44463656179 succeeded, including both audit tests; delivers run 44463656181 succeeded. No local builds, tests or harness checks run, per packet. Cost: no runtime loop, poll, timer, hook or launch changes; offline aggregation has two rule passes, O(rows), zero steady-state fleet launches. Harness feedback, non-blocking: captured a magicWand to surface changed-test CI receipts in pr-freeze rather than hand-joining logs; no extra gate requested."
+		}
+	]
+}
