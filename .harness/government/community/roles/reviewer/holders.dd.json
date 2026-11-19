@@ -1848,6 +1848,16 @@
 					"seat": "pij-magnificent-reindeer",
 					"to": "2026-11-19T05:22:47.349Z",
 					"why": "F214 follow-up #258 (audit labels, retro): correctness + C21 public check"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T05:29:03.292Z",
+					"harness": "copilot",
+					"harness_session": "4b0db837-7643-466e-b89f-a8ec3a6fb6bc",
+					"instance_key": "257",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-compulsory-junglefowl",
+					"why": "F217 #257 correctness"
 				}
 			]
 		}
