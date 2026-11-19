@@ -461,7 +461,10 @@
 					"harness_session": "c353bc51-64e6-403b-95f2-9dc3768220c0",
 					"instance_key": "265",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #265 merged (e4b63eb1b283)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-xeric-squid",
+					"to": "2026-11-19T08:39:49.364Z",
 					"why": "F213 round 2: restart anchor #265"
 				}
 			]

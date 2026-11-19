@@ -292,7 +292,10 @@
 					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
 					"instance_key": "265",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #265 merged (e4b63eb1b283)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-melodic-snail",
+					"to": "2026-11-19T08:39:49.364Z",
 					"why": "F213 round 2: restart anchor #265"
 				}
 			]
