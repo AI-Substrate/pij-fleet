@@ -47,5 +47,6 @@
 - [2026-11-18 Public live receipts and review-head carry-forward](2026-11-18-public-live-receipts-review-heads.dd.md): Read before publishing live-fleet receipts or carrying a static review across wording-only replacement heads. (public-docs, privacy, review, evidence)
 - [2026-11-18 Require evidence in delegated review reports](2026-11-18-require-evidence-in-delegated-review.dd.md): Open when delegating a security review or receiving a verdict-only review response. (review, evidence, delegation)
 - [2026-11-19 Pending closes must preserve executable ownership](2026-11-19-pending-closes-must-preserve-executable.dd.md): Open before coalescing held close/compact requests or moving pending checks past note shortcuts. (lifecycle, pending, authority, regressions)
+- [2026-11-19 Post-close grace and note completion boundaries](2026-11-19-post-close-grace-and-note-completion.dd.md): Open before changing post-close memory grace or claiming prompt-correlated note completion. (memory-grace, identity, lifecycle, proof)
 - [2026-11-19 Public scrubs include mutable PR text and commit messages](2026-11-19-public-scrubs-include-mutable-pr-text.dd.md): Open before reviewing an identifier scrub or classifying historical-only exposure. (public-docs, privacy, pr-metadata, c19)
 <!-- /pij:generated -->
