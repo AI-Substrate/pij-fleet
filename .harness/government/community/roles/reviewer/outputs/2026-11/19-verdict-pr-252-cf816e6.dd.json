@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f1bf-d9ba-78a0-b848-294c9cddd527",
+				"date": "2026-11-19",
+				"head": "cf816e679aac24e42a9e2d96d27de906bcb7fc61",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:252",
+				"writer": "pij-splendid-kite",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 252",
+					"exit_code": 0,
+					"log": "FINAL at cf816e679aac24e42a9e2d96d27de906bcb7fc61; CLEAN; five latest checks pass; detached clean review worktree"
+				},
+				{
+					"command": "gh run view 44447746299 --json headSha,conclusion,jobs",
+					"exit_code": 0,
+					"log": "Exact reviewed head; success. Rust job 135303907693 artifact 14494890500: 2529 passed, 6 skipped; 226 pij-harnesses lib tests pass, including six-frame brake, idle, indented bullet and draft/Home cases."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# #252 round 2: PASS WITH NOTES\n\nHead: `cf816e679aac24e42a9e2d96d27de906bcb7fc61`.\nReviewed delta: `c6a05846a4bd7f7af65ad08a7ab76d55dc53ea40..cf816e679aac24e42a9e2d96d27de906bcb7fc61`.\n\n**F252-001 is closed. No remaining blocking findings.**\n\nThe activity BRAKE now recognizes all six distinct glyphs in the installed Copilot 1.0.114 spinner tables: `∙ ∘ ● ◉ ◎ ○`, followed by an ASCII space and nonblank text, at column zero. The guard remains confined to the two rows immediately above the composer box and still returns before any fallback recognizer. All ordinary animation phases identified in round 1 are therefore refused. The footer POLICY itself is unchanged in this delta.\n\n## Idle false-refusal check\n\nThe committed idle fixture still reads empty in exact-head CI. The added indented-bullet case, ` ● Done.`, also remains empty rather than triggering the activity brake.\n\nRead-only live observations of three registry-idle Copilot seats corroborate that this does not veto every idle 1.0.114 pane:\n\n| Seat | Pane | Dimensions | Caret | Composer top | Row above cwd | Cwd starts | Composer |\n|---|---|---|---|---|---|---|---|\n| pij-public-salamander | %189 | 250x70 | (2,66) | 65 | blank (63) | space (64) | blank |\n| pij-aggregate-boa | %225 | 250x70 | (2,66) | 65 | blank (63) | space (64) | blank |\n| pij-appropriate-swordtail | %201 | 250x70 | (2,66) | 65 | blank (63) | space (64) | blank |\n\nEach also had the three required whole hint segments. None had an activity-shaped row in the two-row inspection window. These are capture/metadata observations plus a source trace, not local executions of the Rust classifier and not proof of post-merge control delivery. No private pane text, cwd or counters are reproduced.\n\nA genuine column-zero spinner-shaped line in that narrow window would conservatively veto even if its origin were transcript text. That is the brake's direction, not evidence that the actual idle layout is systematically blocked. No new normal-use regression was found.\n\n## Draft and privacy checks\n\nThe replacement draft test uses the real 1.0.114 draft footer, not an idle footer with text spliced into it. CI confirms `Unrecognized` both at the end caret `(13,66)` and Home `(2,66)`.\n\nEvery line of the new 70-row draft fixture was inspected. Transcript rows contain no ASCII letters/digits other than scrubbed `x`; the file has no ESC bytes or private machine/account/repository identifiers. Its cwd is a generic pij placeholder, and the footer names a random throwaway seat with zero AIU. Both box rules are 250 columns, the draft is on row 66 and the draft hint row on 68. The docs delta contains no private capture text or machine paths. The two round-1 fixtures are unchanged.\n\n**C34 follow-up, not a block:** pre-caret extraction on main's already-recognized `context`-footer layouts can still hide a draft after Home. This delta does not change it, and the PR records the limit.\n\n## Validation and cost\n\n- `just pr-freeze 252`: FINAL at the full head above, CLEAN, detached clean review worktree, all five latest check names passing. The cancelled older delivers attempt is superseded by successful job `135304019756`.\n- `git diff --check c6a05846a4bd7f7af65ad08a7ab76d55dc53ea40..cf816e679aac24e42a9e2d96d27de906bcb7fc61`: passed.\n- CI run `44447746299` is for the exact reviewed head. Its Rust job `135303907693` passed **2,529 tests, 6 skipped**. Artifact `14494890500` was selected from that successful job's upload log.\n- That JUnit artifact confirms **226 pij-harnesses lib tests passed**, including all six 1.0.114 cases, the six-frame activity loop, idle and indented-bullet controls, draft/Home refusal, and the existing 1.0.82/1.0.84 fixtures. Rust lint and Node 22/24 jobs also passed.\n- No local builds, tests, mutations, boot/checks execution, pane input or daemon changes were performed. The author's reported mutation and sampled live compact are not represented as reviewer-executed proof.\n- Cost: the same bounded two-row parse, six-character membership check and no new capture, loop, timer, poll or process launch. No new recurring mechanism requires before/after launch measurements.\n\nThe requested harness improvement is now encoded: the compaction regression covers the real animation family instead of one captured phase. Live end-to-end control delivery after installation/bounce remains the documented deployment check.\n"
+		}
+	]
+}
