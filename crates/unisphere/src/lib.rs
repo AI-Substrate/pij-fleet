@@ -102,6 +102,14 @@ impl UnisphereSessionStatus {
         Self::from_parts(bindings(), roots, MISS_TTL)
     }
 
+    /// The same source, keeping a miss for `ttl` instead of [`MISS_TTL`]:
+    /// for tests that need a miss to expire.
+    #[must_use]
+    pub fn with_miss_ttl(mut self, ttl: Duration) -> Self {
+        self.miss_ttl = ttl;
+        self
+    }
+
     fn from_parts(bindings: Vec<PrepBinding>, roots: SessionRoots, miss_ttl: Duration) -> Self {
         Self {
             copilot_sessions: roots.copilot_sessions.clone(),
@@ -930,5 +938,53 @@ mod tests {
         assert!(matches!(found, SessionStatusReply::Status(_)), "{found:?}");
         assert_eq!(loader.walks(), 2);
         std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    /// R249-001: a kept miss answers only the target it was kept for. A seat
+    /// whose session changes is looked up at once, and a hit clears the old
+    /// miss, so going back to the old session looks again rather than
+    /// answering a miss from before the hit.
+    #[tokio::test]
+    async fn a_kept_miss_answers_only_its_own_target_and_a_hit_clears_it() {
+        let sessions = scratch("copilot-target");
+        let loader = Arc::new(Counting::default());
+        let source = counted(
+            &loader,
+            SessionRoots {
+                copilot_sessions: Some(sessions.clone()),
+                ..SessionRoots::default()
+            },
+            Duration::from_secs(60),
+        );
+        let old = copilot("pij-moving", "sess-old");
+        let new = copilot("pij-moving", "sess-new");
+        copilot_transcript(&sessions.join("sess-new"), "sess-new");
+
+        let missed = source.status(&old).await.expect("status");
+        assert!(
+            matches!(missed, SessionStatusReply::NotFound { .. }),
+            "{missed:?}"
+        );
+        assert_eq!(loader.stats(), 1);
+
+        let found = source.status(&new).await.expect("status");
+        assert!(
+            matches!(found, SessionStatusReply::Status(_)),
+            "a new target is looked up: {found:?}"
+        );
+        let after_hit = loader.stats();
+        assert!(after_hit > 1, "the new session was stat'd");
+
+        let again = source.status(&old).await.expect("status");
+        assert!(
+            matches!(again, SessionStatusReply::NotFound { .. }),
+            "{again:?}"
+        );
+        assert!(
+            loader.stats() > after_hit,
+            "the hit cleared the old miss, so the old session is looked up again"
+        );
+        assert_eq!(loader.walks(), 0);
+        std::fs::remove_dir_all(&sessions).unwrap();
     }
 }

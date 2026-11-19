@@ -1037,8 +1037,15 @@ impl PaWatchdog {
                         true,
                     )
                 }
-                // Unbound, unsupported or no transcript: a completed read
-                // that knows no size, until the seat's activity changes.
+                // No transcript yet is retried next round, like a failure:
+                // the source keeps a miss for up to 30 s, and a seat whose
+                // transcript appears and whose turn then ends must not stay
+                // unknown until its next activity (R249-001). One status call
+                // per such seat per round; the source's kept miss answers it
+                // without a look while it lasts.
+                SessionStatusBlock::NotFound { .. } => read(None, None, true),
+                // Unbound or unsupported: a completed read that knows no
+                // size, until the seat's activity changes.
                 _ => read(None, None, false),
             };
             trackers.sizes.insert(seat.id.clone(), entry);

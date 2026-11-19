@@ -710,7 +710,10 @@ transcript through `SessionStatusPort` (plan 157, adapter `pij-unisphere` over
   Either way the miss is kept for 30 s (`MISS_TTL`) per seat: reads in that
   window, concurrent ones included, answer `not-found` without looking, so a
   missing transcript costs at most one look per seat per 30 s, and a
-  transcript that appears is seen within 30 s.
+  transcript that appears is seen within 30 s. A kept miss answers only the
+  session it was kept for, and a found transcript clears it. The PA watchdog
+  retries a `not-found` seat on its next round, so a seat read during a kept
+  miss is sized once the miss expires, even if it is idle by then (R249-001).
 - `failed` (`error`): the rest of the card is still served.
 
 Each fact is `{"value":V,"basis":"native|derived|table@vN|mtime-fallback"}` or
