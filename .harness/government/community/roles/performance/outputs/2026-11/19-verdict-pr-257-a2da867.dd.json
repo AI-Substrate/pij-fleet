@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f254-9051-7913-9739-2e93bcdb39e7",
+				"date": "2026-11-19",
+				"head": "a2da867f6ab0644db8b20f36ffe2ed7f6b39d4ac",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44466537257/job/135365563159",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "performance",
+				"subject": "pr:257",
+				"writer": "pij-public-cobra",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #257 performance review — round 2\n\n**PASS** at `a2da867f6ab0644db8b20f36ffe2ed7f6b39d4ac`.\nRequest: `01a1f254-9051-7913-9739-2e93bcdb39e7`.\n\nThe scheduling delta closes P257-1 / R257-001. No new normal-use performance bug found in the five-file delta from `d968afe002b745c8f43eac5a6d80783bf8b88601`.\n\n## Direct proof\n\nRan `just test harness/scripts/shared-build.test.ts` on macOS at this exact head. The recipe printed `/usr/bin/nice -n 19 npm run test -- \"$@\"`; **22/22 tests passed**, one file, **25.21 s** total. This includes the previously failing F186 exact-19 case and the three inherited-priority cases, which compare the fake cargo child's observed priority to `max(19, script priority)`. The suite drives the real shared-build script with fake cargo and temporary targets; no real cargo or build ran. After completion, `test ! -e target` passed: the review worktree has no target directory.\n\nThe first attempt could not load Vitest because review dependencies were absent; no tests were collected. `just worktree-deps --check` diagnosed the missing binary, and `just worktree-deps` linked the existing canonical installation (165 package links, no install/build). The successful run above followed that setup. No source was edited.\n\n## Scheduling and cost\n\n`harness/scripts/shared-build.sh:347-355` now reads the script's current niceness once. For ordinary numeric ps output, below 19 it adds `19 - current`; at 19 or above it adds nothing. On macOS **20 is possible** and is deliberately preserved, not raised back to 19. This avoids stacking, never increases scheduling priority, and preserves the existing cap, lock, disk floor and incremental policy. For negative niceness the arithmetic likewise requests a positive adjustment toward 19 (not exercised here). Empty output or output rejected by the character filter falls back to the old conservative `nice -n 19` adjustment: it may over-nice an already niced caller, but cannot elevate its priority. That degraded diagnostic case is not the normal-use path verified above.\n\n| Launch/cost | Round-two delta |\n|---|---|\n| Production external launch | At most one extra **`/bin/ps` per acquired shared-build invocation**, conditional on nice being available; path is absolute and invocation quoted |\n| Placement | After lock acquisition and source touch; outside both the 20-second lock-wait loop and per-cargo-command loop |\n| Scaling | For R successful wrapper runs per second, at most R added ps launches/s, not a per-seat timer; zero added work at rest |\n| Existing waiting | Unchanged: normal tick uses one df, mkdir and sleep every 20 s per waiter (0.15 utility launches/s/waiter, plus shell subprocess work) |\n| Already-niced caller | No additional nice exec at priority 19 or 20; child inherits the caller's priority |\n| Tests only | Added parent-priority ps/tr logging and nested nice test processes; bounded by regression-suite invocation, never daemon/runtime polling |\n| Daemon | No new launch site, timer, hook or per-tick work; no Rust daemon or spawn-site change |\n\nThis is the only new production external command in the scheduling delta. Shell substitution/process overhead is not represented as a separate external utility in that count. No new resource-cost blocker; shared-lock serialization, forced freshness rebuilds and the one-target disk tradeoff remain as assessed in round one.\n\nThe skip diagnostic adds one console warning per smoke test module evaluation when the binary is absent, plus an explicit skipped-suite title. It launches nothing and adds no polling.\n\n## Independent CI evidence\n\nConsumed actual exact-head CI log: https://github.com/AI-Substrate/pij-fleet/actions/runs/44466537257/job/135365563159 . It records shared-build **22/22**, recipe-cost **8/8**, cargo tripwire **4/4**, and watchdog smoke **9/9** with `PIJ_RS_BIN_REQUIRED=1`; overall **105 files passed, 1 skipped; 2324 tests passed, 6 skipped**, duration **53.99 s**. Linux CI alone does not distinguish macOS's 20 from Linux's 19 ceiling; the local canonical niced run supplies that missing platform proof.\n\nNo local builds, full-suite rerun, harness boot or harness checks ran. Fleet-wide before/after throughput and queue-latency effects were not remeasured or claimed for this one-shot scheduling delta. Round-one live values remain historical baselines, not causal proof of this PR.\n"
+		}
+	]
+}
