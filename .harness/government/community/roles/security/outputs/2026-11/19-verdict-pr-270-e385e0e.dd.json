@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f34b-9657-7d13-b494-4e27f2987f1a",
+				"date": "2026-11-19",
+				"head": "e385e0e2540962d9d6add6d92a061789adbfa1c6",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:270",
+				"writer": "pij-minimal-stoat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 270",
+					"exit_code": 0,
+					"log": "FINAL at e385e0e2540962d9d6add6d92a061789adbfa1c6; clean detached worktree, head agreement, CLEAN, all latest checks passed, no migrations"
+				},
+				{
+					"command": "gh pr view 270 --repo AI-Substrate/pij-fleet --json headRefOid,statusCheckRollup",
+					"exit_code": 0,
+					"log": "Exact head verified; check (22), check (24), rust-lint, rust-test in run 44502679729 all SUCCESS; latest delivers run 44502681766 SUCCESS supersedes CANCELLED run 44502679653"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict: #270, round 2\n\nHead: e385e0e2540962d9d6add6d92a061789adbfa1c6\nResult: pass. No introduced security vulnerabilities found in the round-2 delta.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No introduced vulnerabilities found | - |\n\nScope: d232b1e18aa7aa4505a77e6dcdfd9d4b9126d4fc to e385e0e2540962d9d6add6d92a061789adbfa1c6. Round-1 HTTP authentication, restricted-peer denial, enumeration and SQL conclusions are carried forward; unchanged endpoint/store code was not re-reviewed.\n\nAt .copilot/extensions/pij/store.mjs:486-510, spawn-id equality correlates a closed row to the current launch and controls terminal stopping, not authentication. Without a spawn id, native-session or PID-plus-process-start matching applies. A prior incarnation stays retryable; this branch does not admit registration or reopen a tombstone. No new caller authority or cross-peer data access is introduced.\n\nThe recovery banner at store.mjs:2757-2758 is wording only, not a new execution or injection sink. Added documentation matches the launch-correlation distinction (docs/how/pij-rs-api.md:311-314; docs/difficulties.md:181). No new privacy-sensitive material was identified.\n\nInspected source cases cover stale-launch retry, fresh-prebind selection, and no-spawn session/process fallbacks (store.test.mjs:2899-2955), plus same-launch stopping/banner, missing-prebind retry, and stale-to-fresh registration (extension.test.mjs:1309-1408). The latter is fixture-backed extension integration, not a live revive-lifecycle probe. The correctness reviewer owns R270-001 reproduction and lifecycle closure.\n\nNo dependencies, production launch sites, timers or retry-cadence changes. Prior-incarnation rows use the existing 250-ms-to-5-s backoff. Round-1 performance measurement limitations remain; no live cost measurements were made here.\n\nLocal HEAD matched the full requested SHA and the worktree was clean. `just pr-freeze 270` returned FINAL. The live exact-head CI rollup showed check (22), check (24), rust-lint and rust-test in run 44502679729 all COMPLETED SUCCESS, with the latest delivers run 44502681766 also SUCCESS. Earlier delivers run 44502679653 was CANCELLED and superseded.\n\nStatic inspection only: no local builds, installs, tests, mutations, live probes or fleet state changes. The packet's 362-test and four-mutant results were not independently reproduced. Governance C21 and C32/C33/C34 were checked at community/RULINGS.md:25,36-38 after resolving the registered standing governance worktree. No new blocking finding or C34 follow-up is raised.\n"
+		}
+	]
+}
