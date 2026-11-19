@@ -52,7 +52,7 @@ On 2026-11-19 two Copilot workers spawned from a plain seat were reported as run
 | --- | --- | --- | --- | --- | --- | --- |
 | ac-0001 | A successful human `pij-rs spawn` or `pij-rs revive` (including `--cheap` and `--no-wait`) of a Copilot seat prints, after its receipt line, exactly one line: `cache: proxied (&lt;reason&gt;)` when the recorded route is proxied, `cache: plain (&lt;reason&gt;) — &lt;fix&gt;` when plain with a fix, and `cache: plain (&lt;reason&gt;)` when plain without one. A Copilot seat with no recorded route reads as plain with the before-gate reason and its revive fix (`SeatDescriptor::cache_proxy_view`). | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
 | ac-0002 | No cache line for a non-Copilot seat, for a refused or failed spawn or revive, or under `--json`. The `--json` output is unchanged and still carries `data.cache_proxy`. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | The reason and the fix pass through `pij_core::render::line`: text that is multi-line, overlong or carries the frame marker is fenced, so sidecar or daemon text can never add a line or forge another receipt line. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | The human line never shows the configured account or a local path (S246-002): a sidecar state becomes its fixed description and fix, a transport failure shows only its head, the daemon's own reasons are kept, and anything else points at `pij-rs cache-proxy status`. The `pij directory` holder rows use the same words. What is shown passes through `pij_core::render::line`, so no text adds a line. `--json` is unchanged. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
 | ac-0004 | `docs/how/pij-rs-api.md` § Copilot cache proxy gate shows the receipt line and says where a seat's route is read (the receipt, the recorded `cache_proxy`, `just doctor`, or `ps -Eww -p &lt;copilot pid&gt;`), and that an env check from a tool shell inside a Copilot seat reads plain on every seat because Copilot drops `COPILOT_PROVIDER_*` from its child processes. | [x] checked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
@@ -168,6 +168,6 @@ _No entries._
 
 ## Execution Guardrails
 
-- Worktree /Users/jordanknight/pi-hacking/pij-231, branch plan-231-spawn-cache-line; edits by absolute path.
+- Worktree pij-231 (a sibling of the main checkout), branch plan-231-spawn-cache-line; edits by absolute path.
 - Builds only via `PIJ_SHARED_TARGET=$HOME/pi-hacking/pij/target just shared-build -- <cargo args>`, one at a time; CI is the build.
 - No account names in anything written (public repo).

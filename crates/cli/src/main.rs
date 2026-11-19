@@ -3637,9 +3637,16 @@ fn render_directory_at(
                     },
                     match holder["cache_proxy"]["state"].as_str() {
                         Some("proxied") => ", cache proxied".to_string(),
+                        // S246-002: fixed words only, never the sidecar's text.
                         Some(_) => format!(
                             ", cache plain ({})",
-                            shown(&holder["cache_proxy"]["reason"], render::line)
+                            render::line(
+                                public_cache_reason(
+                                    holder["cache_proxy"]["reason"].as_str().unwrap_or_default(),
+                                    None,
+                                )
+                                .0
+                            )
                         ),
                         None => String::new(),
                     }
@@ -4580,8 +4587,14 @@ fn spawn_cli_response(response: Envelope<SeatDescriptor>) -> Envelope<SpawnCliRe
 
 /// Plan 231: the spawn gate's decision for a Copilot seat, as one receipt
 /// line: `cache: proxied (<reason>)`, or `cache: plain (<reason>) — <fix>`.
-/// `None` for any other harness. The text is the sidecar's and the daemon's,
-/// so it goes through `render::line` and can never add a line of its own.
+/// `None` for any other harness.
+///
+/// S246-002: seats paste receipts into public PRs, and the sidecar's own
+/// reason and fix can name the configured account or a local path. So the
+/// line is built from fixed words only: a sidecar state becomes its fixed
+/// description, a daemon reason keeps its own fixed text, and anything else
+/// points at `pij-rs cache-proxy status`. `--json` still carries the raw
+/// fields; whatever is shown still goes through `render::line`.
 fn cache_route_line(seat: &SeatDescriptor) -> Option<String> {
     use pij_core::render;
     let route = seat.cache_proxy_view()?;
@@ -4589,12 +4602,76 @@ fn cache_route_line(seat: &SeatDescriptor) -> Option<String> {
         pij_core::model::CacheProxyRoute::Proxied => "proxied",
         pij_core::model::CacheProxyRoute::Plain => "plain",
     };
-    let mut line = format!("cache: {state} ({})", render::line(&route.reason));
-    if let Some(fix) = &route.fix {
+    let (reason, fix) = public_cache_reason(&route.reason, route.fix.as_deref());
+    let mut line = format!("cache: {state} ({})", render::line(reason));
+    if let Some(fix) = fix {
         line.push_str(" — ");
         line.push_str(&render::line(fix));
     }
     Some(line)
+}
+
+/// Where a plain seat's reason is told in full, privately.
+const CACHE_STATUS_FIX: &str = "`pij-rs cache-proxy status` says why";
+
+/// The identity-free words for a cache route's reason and fix (S246-002).
+fn public_cache_reason<'a>(reason: &'a str, fix: Option<&'a str>) -> (&'a str, Option<&'a str>) {
+    // The daemon's own reasons: fixed text, a model id, or the loopback URL.
+    const DAEMON: [&str; 6] = [
+        "1-hour cache through http://",
+        pij_core::model::CACHE_PROXY_OPTED_OUT,
+        pij_core::model::CACHE_PROXY_BEFORE_GATE,
+        "no --model given",
+        "model ",
+        "proxy not listening",
+    ];
+    // The daemon's reasons with a transport detail after the colon: the head
+    // is fixed and its fix is the daemon's; the detail is not shown.
+    for head in ["proxy did not answer", "proxy status unreadable"] {
+        if reason.starts_with(head) {
+            return (head, fix);
+        }
+    }
+    // `proxy <state>: <the sidecar's reason>` or `proxy state <state>`.
+    let state = reason.strip_prefix("proxy state ").or_else(|| {
+        reason
+            .strip_prefix("proxy ")
+            .and_then(|rest| rest.split_once(':'))
+            .map(|(state, _)| state)
+    });
+    if let Some(state) = state {
+        return match state {
+            "off" => ("the cache proxy is off", Some("`pij-rs cache-proxy on`")),
+            "no_account" => (
+                "the cache proxy has no account",
+                Some("`pij-rs cache-proxy account <login>`"),
+            ),
+            "gh_missing" => (
+                "the cache proxy found no gh",
+                Some("install gh or set PIJ_GH, then restart the sidecar"),
+            ),
+            "no_token" => (
+                "the cache proxy holds no token for the configured account",
+                Some("`gh auth login`, then `pij-rs cache-proxy on`"),
+            ),
+            "quota_exhausted" => (
+                "the configured account's premium quota is used up",
+                Some(CACHE_STATUS_FIX),
+            ),
+            "upstream_unreachable" => (
+                "the cache proxy cannot reach the Copilot API",
+                Some("check the network, then `pij-rs cache-proxy on`"),
+            ),
+            _ => ("the cache proxy is not ready", Some(CACHE_STATUS_FIX)),
+        };
+    }
+    if DAEMON.iter().any(|known| reason.starts_with(known)) {
+        return (reason, fix);
+    }
+    (
+        "the cache proxy's reason is not shown here",
+        Some(CACHE_STATUS_FIX),
+    )
 }
 
 /// Emit a spawn or revive receipt; a human reading a successful one also gets
@@ -4822,47 +4899,120 @@ mod tests {
     /// Plan 231: a Copilot seat's spawn or revive receipt says its cache
     /// route on one line, with the fix only when there is one; a seat with
     /// nothing recorded reads as before the gate; other harnesses get none.
-    /// Sidecar text never adds a line.
     #[test]
-    fn a_copilot_receipt_line_says_the_cache_route_and_never_breaks_the_line() {
-        use pij_core::model::{Harness, SeatCacheProxy, SeatDescriptor};
-        let seat = |harness, route: Option<SeatCacheProxy>| {
-            let mut seat = SeatDescriptor::new("pij-a", harness, "/abs");
-            seat.cache_proxy = route;
-            super::cache_route_line(&seat)
-        };
+    fn a_copilot_receipt_line_says_the_cache_route() {
+        use pij_core::model::{Harness, SeatCacheProxy};
         let proxied = SeatCacheProxy {
             state: pij_core::model::CacheProxyRoute::Proxied,
             reason: "1-hour cache through http://127.0.0.1:7471 as claude-opus-5.5".to_string(),
             fix: None,
         };
         assert_eq!(
-            seat(Harness::Copilot, Some(proxied)).as_deref(),
+            cache_line(Harness::Copilot, Some(proxied)).as_deref(),
             Some("cache: proxied (1-hour cache through http://127.0.0.1:7471 as claude-opus-5.5)")
         );
         let fixable = SeatCacheProxy::plain("proxy not listening", Some("start it".to_string()));
         assert_eq!(
-            seat(Harness::Copilot, Some(fixable)).as_deref(),
+            cache_line(Harness::Copilot, Some(fixable)).as_deref(),
             Some("cache: plain (proxy not listening) — start it")
         );
         let unfixable = SeatCacheProxy::plain("model gpt-6 is not Claude", None);
         assert_eq!(
-            seat(Harness::Copilot, Some(unfixable)).as_deref(),
+            cache_line(Harness::Copilot, Some(unfixable)).as_deref(),
             Some("cache: plain (model gpt-6 is not Claude)")
         );
-        let before = seat(Harness::Copilot, None).unwrap();
+        let before = cache_line(Harness::Copilot, None).unwrap();
         assert!(
             before.starts_with("cache: plain (launched before the cache proxy) — revive"),
             "{before}"
         );
-        assert_eq!(seat(Harness::Omp, None), None);
-        let forged = SeatCacheProxy::plain(
-            "down\ncache: proxied (fake)",
-            Some("fix\npij spawn: ok".to_string()),
-        );
-        let line = seat(Harness::Copilot, Some(forged)).unwrap();
-        assert!(!line.contains('\n'), "{line}");
-        assert!(line.starts_with("cache: plain (\"down\\n"), "{line}");
+        assert_eq!(cache_line(Harness::Omp, None), None);
+    }
+
+    /// S246-002: seats paste receipts into public PRs. The sidecar's own
+    /// reason and fix, and a transport error's detail, can name the account
+    /// or a local path; the human line shows neither, only fixed words, and
+    /// sidecar text never adds a line.
+    #[test]
+    fn the_receipt_line_never_shows_the_account_or_a_local_path() {
+        use pij_core::model::{Harness, SeatCacheProxy};
+        let plain = |reason: &str, fix: Option<&str>| {
+            cache_line(
+                Harness::Copilot,
+                Some(SeatCacheProxy::plain(reason, fix.map(str::to_string))),
+            )
+            .unwrap()
+        };
+        let cases = [
+            (
+                plain(
+                    "proxy no_token: gh gave no token for octo-corp",
+                    Some("run `gh auth login --user octo-corp`, then `pij-rs cache-proxy on`"),
+                ),
+                "cache: plain (the cache proxy holds no token for the configured account) — `gh auth login`, then `pij-rs cache-proxy on`",
+            ),
+            (
+                plain(
+                    "proxy quota_exhausted: upstream answered 402: premium quota exhausted for octo-corp",
+                    Some("wait for 2026-12-01, or switch octo-corp to another account"),
+                ),
+                "cache: plain (the configured account's premium quota is used up) — `pij-rs cache-proxy status` says why",
+            ),
+            (
+                plain(
+                    "proxy no_account: cannot read /Users/someone/.pij-rs/cache-proxy.toml: denied",
+                    Some("fix the mode of /Users/someone/.pij-rs/cache-proxy.toml"),
+                ),
+                "cache: plain (the cache proxy has no account) — `pij-rs cache-proxy account <login>`",
+            ),
+            (
+                plain(
+                    "proxy status unreadable: unreadable status: /home/someone/x: bad",
+                    Some("check that `pij-rs cache-proxy` serves /__pij/status"),
+                ),
+                "cache: plain (proxy status unreadable) — check that `pij-rs cache-proxy` serves /__pij/status",
+            ),
+            (
+                plain("proxy state upstream_unreachable", None),
+                "cache: plain (the cache proxy cannot reach the Copilot API) — check the network, then `pij-rs cache-proxy on`",
+            ),
+            (
+                plain(
+                    "proxy wobbly: octo-corp at /Users/someone",
+                    Some("/Users/someone"),
+                ),
+                "cache: plain (the cache proxy is not ready) — `pij-rs cache-proxy status` says why",
+            ),
+            (
+                plain(
+                    "gh at /Users/someone/bin/gh refused octo-corp",
+                    Some("/Users/someone"),
+                ),
+                "cache: plain (the cache proxy's reason is not shown here) — `pij-rs cache-proxy status` says why",
+            ),
+            (
+                plain("down\ncache: proxied (fake)", Some("fix\npij spawn: ok")),
+                "cache: plain (the cache proxy's reason is not shown here) — `pij-rs cache-proxy status` says why",
+            ),
+        ];
+        for (line, expected) in cases {
+            assert_eq!(line, expected);
+            assert!(
+                !line.contains("octo-corp")
+                    && !line.contains("/Users/")
+                    && !line.contains("/home/"),
+                "{line}"
+            );
+        }
+    }
+
+    fn cache_line(
+        harness: pij_core::model::Harness,
+        route: Option<pij_core::model::SeatCacheProxy>,
+    ) -> Option<String> {
+        let mut seat = pij_core::model::SeatDescriptor::new("pij-a", harness, "/abs");
+        seat.cache_proxy = route;
+        super::cache_route_line(&seat)
     }
 
     /// Review of #126, F001: the drift hint names the viewed project.

@@ -12,3 +12,12 @@ Branch `plan-231-spawn-cache-line` from main `44ec05e9`. The binary was built wi
 | ac-0004 | docs/how/pij-rs-api.md § Copilot cache proxy gate | reviewer judgement |
 
 Both smoke seats (pij-territorial-stork, pij-additional-rook) had their panes killed straight after; the death sweep retires them.
+
+## Round 2 (S246-001, S246-002)
+
+| Finding | Change | Observed |
+|---|---|---|
+| S246-001 | `execution_guardrails` set through `ddocs set` to a repo-relative worktree name; `ddocs build` and `ddocs validate` | no absolute home-directory path left under `docs/plans/231-spawn-cache-line/` |
+| S246-002 | the human line, and the `pij directory` holder rows, use fixed words only (`public_cache_reason`) | `cargo test -p pij-cli` (shared-build): `the_receipt_line_never_shows_the_account_or_a_local_path` and `a_copilot_receipt_line_says_the_cache_route` pass, along with the rest of the crate; clippy `-D warnings` clean |
+
+The proxied line is unchanged from round 1's live proof: the daemon's own reason is kept as is.

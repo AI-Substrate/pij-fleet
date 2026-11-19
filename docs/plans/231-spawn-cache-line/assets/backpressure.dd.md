@@ -11,7 +11,7 @@
 | --- | --- |
 | title | Plan 231 backpressure |
 | plan | [meta](../plan.dd.md#meta) |
-| basis_sha | bd37a11475c30b202673aef025ad1c443caa571182f9988aeaf45b2ecc3faaae |
+| basis_sha | d527cc9c9218e2671199dc3a0444f40d472bd0d60616b37844dd7fffa048e922 |
 | certainty | Confident |
 
 <a id="rows"></a>
@@ -22,7 +22,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | bp-0001 | AC1 | ph-5bb9 | BUILD | computational | BUILD→RUN: unit tests on the cache-line helper in crates/cli/src/main.rs (proxied; plain with and without fix; before-gate; non-Copilot); then `cargo test -p pij-cli` via shared-build. Live: a real Copilot spawn prints the line. | [x] checked | — | — | crates/cli/src/main.rs tests (the directory holder cache test is the existing pattern) |
 | bp-0002 | AC2 | ph-5bb9 | BUILD | computational | Live: a refused `pij-rs revive` prints no cache line; `pij-rs --json spawn` prints only the envelope (one line, carrying data.cache_proxy). The `!json && ok` condition is one line in emit_seat_receipt, so a unit test would only re-state it. | [x] checked | — | — | crates/cli/src/main.rs emit() |
-| bp-0003 | AC3 | ph-5bb9 | BUILD | computational | BUILD→RUN: a unit test with a multi-line reason shows it fenced on one line; then `cargo test -p pij-cli`. | [x] checked | — | — | crates/core/src/render.rs line() |
+| bp-0003 | AC3 | ph-5bb9 | BUILD | computational | Unit test the_receipt_line_never_shows_the_account_or_a_local_path: account-bearing (no_token, quota_exhausted), path-bearing (no_account, status unreadable), an unknown state, an unknown reason and a multi-line forged reason each render fixed words with no account or path; then `cargo test -p pij-cli`. | [x] checked | — | — | crates/core/src/render.rs line() |
 | bp-0004 | AC4 | ph-5bb9 | ABSENT | human-judgement | Reviewer reads docs/how/pij-rs-api.md § Copilot cache proxy gate against the shipped behaviour; no docs sensor covers prose. | [x] checked | — | — | docs/how/pij-rs-api.md |
 
 <a id="sensors"></a>

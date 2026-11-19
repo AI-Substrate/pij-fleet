@@ -9,7 +9,7 @@
         "title": "Plan 231 backpressure",
         "plan": "../plan.dd.json#meta",
         "certainty": "Confident",
-        "basis_sha": "bd37a11475c30b202673aef025ad1c443caa571182f9988aeaf45b2ecc3faaae"
+        "basis_sha": "d527cc9c9218e2671199dc3a0444f40d472bd0d60616b37844dd7fffa048e922"
       }
     },
     {
@@ -21,7 +21,7 @@
           "phase": "ph-5bb9",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "BUILD\u2192RUN: unit tests on the cache-line helper in crates/cli/src/main.rs (proxied; plain with and without fix; before-gate; non-Copilot); then `cargo test -p pij-cli` via shared-build. Live: a real Copilot spawn prints the line.",
+          "proof": "BUILD→RUN: unit tests on the cache-line helper in crates/cli/src/main.rs (proxied; plain with and without fix; before-gate; non-Copilot); then `cargo test -p pij-cli` via shared-build. Live: a real Copilot spawn prints the line.",
           "state": "checked",
           "probe": "crates/cli/src/main.rs tests (the directory holder cache test is the existing pattern)"
         },
@@ -41,7 +41,7 @@
           "phase": "ph-5bb9",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "BUILD\u2192RUN: a unit test with a multi-line reason shows it fenced on one line; then `cargo test -p pij-cli`.",
+          "proof": "Unit test the_receipt_line_never_shows_the_account_or_a_local_path: account-bearing (no_token, quota_exhausted), path-bearing (no_account, status unreadable), an unknown state, an unknown reason and a multi-line forged reason each render fixed words with no account or path; then `cargo test -p pij-cli`.",
           "state": "checked",
           "probe": "crates/core/src/render.rs line()"
         },
@@ -51,7 +51,7 @@
           "phase": "ph-5bb9",
           "mode": "ABSENT",
           "tier": "human-judgement",
-          "proof": "Reviewer reads docs/how/pij-rs-api.md \u00a7 Copilot cache proxy gate against the shipped behaviour; no docs sensor covers prose.",
+          "proof": "Reviewer reads docs/how/pij-rs-api.md § Copilot cache proxy gate against the shipped behaviour; no docs sensor covers prose.",
           "state": "checked",
           "probe": "docs/how/pij-rs-api.md"
         }
