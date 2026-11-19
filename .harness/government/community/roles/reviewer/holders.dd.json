@@ -2068,6 +2068,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-quaint-roadrunner",
 					"why": "F227 live proof A"
+				},
+				{
+					"assigned_by": "pij-cultural-falcon",
+					"from": "2026-11-19T22:08:43.886Z",
+					"harness": "omp",
+					"harness_session": "01a1f5da-c87d-757d-b3ad-389b3381b827",
+					"instance_key": "f227-proof-b",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-gentle-tern",
+					"why": "F227 live proof B"
 				}
 			]
 		}
