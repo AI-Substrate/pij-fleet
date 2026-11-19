@@ -1,0 +1,50 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f198-b82f-7613-b69e-9db2f9dcf16d",
+				"date": "2026-11-19",
+				"head": "6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:251",
+				"writer": "pij-daily-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git range-diff f99a1f9e..f2b8d0c2 f06f00f5..6ed8f1f7",
+					"exit_code": 0,
+					"log": "Only docs/difficulties.md ledger context differs; product patch unchanged"
+				},
+				{
+					"command": "git diff --check f06f00f5...6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5",
+					"exit_code": 0
+				},
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci (CI run 44444211355, job 135292259680, exact 6ed8f1f7 head)",
+					"exit_code": 0,
+					"log": "2523 passed, 6 skipped; artifact14492757970 verifies incremental-card, indexed-cursor, typing-order and PA recovery regressions"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Round 1: PASS-WITH-NOTES at 6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5. No new normal-use correctness bug found in the incremental fold or required port implementations.\n\nReviewed all 19 changed files at the original f2b8d0c2 head against base f99a1f9e03d5536fa1a893036abd217d12365c86, plus the existing sequence allocator, transaction boundary and held-state expectations. Publication was held when main moved and pr-freeze reported conflicts. At the converged head above, git range-diff f99a1f9e..f2b8d0c2 f06f00f5..6ed8f1f7 confirms the only patch difference is docs/difficulties.md ledger context: D-F209-1 and D-F209-2 are both kept. No product-code change was introduced by this rebase.\n\nOrdering and exactness:\n- The production insertion authority is store/src/spine.rs:129-146. It omits seq from INSERT and receives the allocated value from RETURNING seq. Ordinary appends commit that insert in begin_write's BEGIN IMMEDIATE transaction (migrate.rs:267-274); atomic registry/queue/governance writers share the same allocator. The generated-payload UPDATE is finalized inside its original transaction, before publication, not after a committed row has been projected.\n- spine_events.seq is INTEGER PRIMARY KEY AUTOINCREMENT (0001_init.sql:42-49). With the store's serialized SQLite writers, an uncommitted lower-sequence insertion prevents another writer from allocating and committing a higher one. A reader cannot observe a committed higher cursor while a lower insertion is still pending commit. Rollbacks cannot leave a later invisible committed event below an observed cursor. This is consistent with the official SQLite Isolation and Autoincrement documentation consulted during review.\n- all_matching_after uses the same mandatory seat/kind scope, explicit spine_by_seat_kind index and ORDER BY seq as all_matching, with an additional bound parameter for seq > after. Empty kinds and out-of-range cursors refuse explicitly.\n- active_holds keeps the previous fold rules unchanged: non-job held inserts, release removes, delivered/refused outcome removes, queued/held outcome does not resurrect. The existing constant-timestamp 12-event-order test exercises the incremental result after each step.\n\nConcurrency and failure:\n- The global map lock covers only slot lookup/insertion; each seat's async slot lock covers query, fold and commit. Two cards for one seat serialize and the second sees the new cursor; other seats do not share that slot lock.\n- A query/decode error returns before assigning the copied next projection, preserving both the prior holds and cursor. The next request retries the same suffix. Cancellation during the awaited query also leaves kept unchanged. The synchronous fold has no intermediate await exposing a partial commit.\n- EventBus, every wrapper and every fake implement the new required method. No default can silently fall back to a full history read.\n\nLifecycle note N251-001 (non-blocking):\nThe cache has no tombstone eviction or incarnation/session key. It keeps one entry per SeatId ever carded until AppState is dropped/restarted, as the PR's memory section states; it is not bounded by the current live roster. Memory is O(ever-carded seats + retained held records and their strings), not O(delivery history). A slot contains a sequence, held BTreeMap, mutex/Arc overhead and its SeatId; there is no history vector.\n\nHeld-state semantics are still those of the existing durable seat-history fold: neither the old full replay nor this incremental replay discards legacy no-job holds merely because a seat was rebound or revived. New terminal/release events remove them on the next read. Clearing the cache on incarnation change alone would immediately replay the same old holds. This PR therefore adds no incarnation inheritance that the previous full fold would avoid, but it does not implement a new incarnation-isolation policy either. Treat any desired lifecycle reset/eviction as an explicit follow-up, not a reason to silently change the delivery projection in this optimization.\n\nCost:\nBefore: replay approximately 42,915 delivery rows across the measured fleet on every cards request. After: the first card per seat per daemon lifetime still reads all its matching history once; subsequent reads return only new matching events (zero rows when unchanged), with the same per-seat indexed SQL request still performed. Applying a nonempty suffix copies the currently held set, and rendering copies its live held records. No new timer, poll, task or process launch. After-bounce CPU, RSS, repeated cards timings and hedgehog state latency remain performance/vast-silkworm's live proof, not claimed by this source review.\n\nValidation:\n- just pr-freeze 251: FINAL, CLEAN, all five checks pass at 6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5 after the convergence repair.\n- git diff --check f06f00f5...6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5: passed. The original review worktree remains clean; the new commit was inspected directly through git range-diff, with no checkout mutation.\n- Final-head CI run 44444211355 is directly attached to 6ed8f1f7acaba027db01e3cf47ffcbd697bed3d5 and succeeded on attempt 1. Both Node jobs, rust-lint and rust-test succeeded; delivers run 44444210846 also succeeded.\n- rust-test job 135292259680 reports cargo nextest run --locked --workspace --profile ci: 2,523 passed, 6 skipped. Its exact uploaded artifact is 14492757970.\n- Final-head JUnit explicitly confirms the incremental card row-count, indexed cursor, constant-timestamp typing-order and R249-001 PA recovery tests passed. The preceding exact-head run 44442228594/artifact 14492385489 also confirmed typing_state_projects_active_holds_only, a_card_read_never_tails_the_spine, bulk/single equality on the real store, events_bus (10) and spine_attach_cost (1) on the byte-identical PR251 product patch.\n- The new card test checks a first read of at least 600 history rows, then zero additional rows, then exactly one additional row; 603 is the author's observed fixture total, not a strict first-read equality assertion in the test.\n- Decode rollback and concurrent requests are source-proven here, not claimed to have dedicated new regression fixtures. Such extra fixtures are optional under C34.\n- No local build/test, dependency installation or code mutation. Linux CI is the build; the full local harness gate was not run under the packet's CI-only rule.\n\nHighest-value harness follow-up: a focused shared projection test covering malformed suffix retry and concurrent card readers would pin the copy/commit and slot-lock invariants without adding product machinery.\n"
+		}
+	]
+}
