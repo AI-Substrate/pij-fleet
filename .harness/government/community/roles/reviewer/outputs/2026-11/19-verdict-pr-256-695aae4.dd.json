@@ -1,0 +1,48 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f20e-3420-72b1-b233-a0e246928839",
+				"date": "2026-11-19",
+				"head": "695aae4a4033941c44dfead656ef070febf9fef9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:256",
+				"writer": "pij-obliged-lark",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"reviewer/256 owns f214-audit-after: at least three days after merged repair deployment and daemon bounce; audit since actual deploy time, use corrected guard/cache metrics, inspect warning receipts and forced-wake TTL/basis events, report to pm-001."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 256",
+					"exit_code": 0,
+					"log": "FINAL at 695aae4a4033941c44dfead656ef070febf9fef9; clean detached worktree; latest CI checks pass."
+				},
+				{
+					"command": "gh run view 44457705817 --json headSha,status,conclusion,jobs",
+					"exit_code": 0,
+					"log": "Exact-head CI SUCCESS; rust-test JUnit artifact 14497913524 from successful job 135336668132 independently inspected: 2536 cases, zero failure/error/skip."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "#256 round 1: BLOCK\nHead: 695aae4a4033941c44dfead656ef070febf9fef9\nRequest: 01a1f20e-3420-72b1-b233-a0e246928839\n\nR256-001 [P2] Audit guard outcomes, not cache warmth\nLocation: harness/scripts/cache-ttl-audit.py:216-221.\n\nThe committed audit labels cache-state mismatches as send-guard errors.\nnew_false_cold tests !new_warm, even when new_guard is clear because the seat\nis small. new_silent_cold similarly suppresses allowed cold deliveries when\ntheir estimated cache is cold. The old columns omit the size condition too.\nThis changes ordinary command results, not just report wording, and makes\nthe promised after-deploy guard audit misleading.\n\nIndependent aggregation of the saved 13,404 paired rows, corroborated by\nperformance's execution of the committed command over the same 9,402 decided\ndeliveries, gives:\n\nMetric                                  Before       Replayed after\nGuard allowed, actually cold                 970                  710\n  of which large                            265                    5\nGuard refused/warned, actually warm             4                   56\nLarge guard refusals                         124                  436\n\nThe advertised 785 -> 47 and 33 -> 221 are not the guard-outcome metrics.\nOf 221 advertised new false-cold cases, 165 are small/clear, including every\none of the 38 table-based cases. There are also 663 clear/cold cases omitted\nfrom the advertised new silent-cold total. The large-only 265 -> 5 remains\nvalid. Small cold sends are deliberately allowed by this guard; distinguish\nthat policy scope from failures to protect large seats.\n\nRepair: derive old guard disposition using size plus idle, and derive new\nguard metrics directly from new_guard. Keep cache-state disagreement as\nseparately named columns if useful. Include warnings even for unknown TTLs\nin refused-or-warned/warm accounting. Correct the PR body and durable audit\nsummary accordingly. Add a focused CI regression for small clear/warm,\nsmall clear/cold, large refused/warm and unknown warned cases. No new audit\nframework or exhaustive fixture inventory is needed. The coder acknowledged\nthis defect and is waiting for this verdict before the repair.\n\nWhy warm large seats would be refused\n\nThere are 52 newly refused-but-actually-warm deliveries: 32 Copilot and\n20 OMP, all with their own recorded/split-derived 300-second TTL. This is\nnot caused by the fallback table, a lost 30-minute GPT TTL, or proxy\nsubagents being assigned an hour.\n\nThe OMP cases have 5.64-8.92 minutes idle (median 7.54). The coder's raw\nmetadata investigation additionally reports that all 32 Copilot sends\nwere past the previous call's native cacheExpiresAt; previous call duration\nwas median 3.5 seconds, maximum 11 seconds, and all were still past five\nminutes measured from completion. The next-call read share was median\n0.997. The coder reports no intervening calls, including subagents.\nThose additional raw-transcript measurements are the coder's evidence,\nnot an independent transcript rescan by this reviewer.\n\nInterpretation: the recorded TTL/expiry is not proof of actual eviction;\nthese observed caches remained usable beyond it. Thus option (a) really\ndoes add warm-seat refusals in normal use. It implements the packet's\nchosen conservative brake correctly rather than demonstrating a bad TTL\nsource. The pending prime decision between Refuse and Warn must be made\nwith the corrected 4 -> 56 friction figure. No grace or policy change is\ninvented by this review.\n\nOther requested checks\n\n- TTL provenance: inspected the pinned Unisphere 0370cab source. Copilot\n  reads the current main-chain model's modelCacheState checkpoint; Claude\n  derives from native ephemeral_1h/5m splits; OMP derives from usage.cttl\n  splits, leaving absent splits unknown. The SDK's ttl_bucket maps through\n  CacheTtl::from_label; a native 30m is preserved.\n- Fallback order is native/derived, then proxy, then CACHE_TTL_TABLE v1.\n  The served model beats the bound model; OMP table rows require the\n  github-copilot route. Proxy's main-chain rewrite is one hour; its\n  conversation-subagent path remains five minutes and is not the seat's\n  main-chain status. Native evidence still takes precedence.\n- Wire v2 emits cacheTtlSeconds; missing data defaults to Fact::Unknown,\n  so a v1 card's legacy cacheTtl is ignored without refusing the card.\n  Current CLI/TS clients consume daemon-rendered sizeLines/sizeColumns,\n  not a closed TTL enum or version discriminator. Compatibility is\n  established by source inspection; no explicit v1 decoding test was\n  added. Both roster golden consumers cover the new warning marker.\n- Unknown TTL plus large and idle >5m warns until the existing >60m\n  ceiling, where refusal is intentional. Small seats remain clear.\n  Force still needs a nonempty reason, records its event before delivery\n  and includes TTL/basis in the audit. FYIs and controls remain exempt.\n- FYI flush/revive require positive non-table evidence via cache_known;\n  GPT's native 30m now qualifies. Idle nudge accepts only Clear/Busy,\n  so warning or cold results do not wake the seat.\n- Neither fleet_report* nor docs/how/prompt-cache-cost.md was edited.\n  The audit selects usage, timing, model, route, seat and activity metadata;\n  it outputs no message bodies, credentials or account information. Its\n  JSONL scan necessarily reads whole log lines to select usage records,\n  so \"metadata only\" describes extracted/retained/output data, not a\n  promise that the underlying transcript files contain no messages.\n\nCost and validation\n\nNo new daemon process launches, transcript/status reads, loops, timers or\npolls. Existing status reads remain on the delivery path and may read\nappended transcript bytes; F214 adds a bounded five-row in-memory lookup,\nnot an additional per-delivery transcript pass. Existing list/PA reads\nclone descriptors instead of selected fields. The PA's 60s round and the\nexisting F209 cursor/miss caching remain unchanged.\n\nPerformance's committed-command receipt: 12.18s wall, 5.73 CPU-seconds,\n175,128,576 bytes peak RSS, zero swaps. It scans three spine queries on a\n2.482GB store, 93.60MB calls, and 182 Copilot logs totaling 3.475GB.\nThis is on-demand whole-window work, not a tick or a per-seat background\ncost. No duplicate whole-fleet replay was run by this reviewer.\n\njust pr-freeze 256: PASS, exact head above, clean detached worktree.\nCI run 44457705817: PASS at that exact head, Node 22/24, rust-lint,\nrust-test. Successful rust-test job 135336668132 uploaded artifact\n14497913524: independently inspected JUnit has 2,536 cases, zero\nfailures/errors/skips, including the new TTL/source-order/unknown-warning\ntests, native 30m mapping, warm flush and forced-wake reason/audit.\n\nNo local builds, tests or harness checks were run, as instructed. The\ndependency readiness probe reports no worktree node_modules; nothing was\ninstalled or symlinked. Full live smoke is not claimed from CI.\n\nOwed after merge/deploy: reviewer/256 owns f214-audit-after, no earlier\nthan three days after the daemon is bounced onto the merged repair.\nUse a window starting at the actual deploy time, the corrected audit,\nand verify sender warn receipts plus forced-wake events with TTL/basis.\nReport corrected guard and cache metrics separately to pm-001.\n\nHarness feedback: magicWand = CI should prove audit metrics agree with\nthe actual guard disposition, independently of estimated cache warmth.\ndifficulties = a green Rust/TS suite did not exercise the new Python\naudit's central predicates. Captured as reviewer-256 observation DL-001;\nthe focused regression requested in R256-001 is the concrete encoding.\n"
+		}
+	]
+}
