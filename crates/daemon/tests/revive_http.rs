@@ -184,12 +184,19 @@ async fn revive_observed_dead_tombstones_before_relaunch_and_cites_seq() {
         .tail(Some(&prior.id), before)
         .await
         .unwrap();
+    // `spawn.answered` (F211) is written detached once the answer is built.
     assert_eq!(
         events
             .iter()
             .map(|event| event.kind.as_str())
+            .filter(|kind| *kind != "spawn.answered")
             .collect::<Vec<_>>(),
-        ["seat.tombstone", "seat.revive-postmortem", "seat.put"]
+        [
+            "seat.tombstone",
+            "spawn.launched",
+            "seat.revive-postmortem",
+            "seat.put"
+        ]
     );
     let tombstone: Value = serde_json::from_str(&events[0].payload).unwrap();
     assert_eq!(tombstone["reason"], "revive-observed-dead");
@@ -279,9 +286,11 @@ async fn revive_legacy_tombstone_records_audit_before_relaunch() {
             events
                 .iter()
                 .map(|event| event.kind.as_str())
+                .filter(|kind| *kind != "spawn.answered")
                 .collect::<Vec<_>>(),
             [
                 "revive.legacy-tombstone",
+                "spawn.launched",
                 "seat.revive-postmortem",
                 "seat.put"
             ]
