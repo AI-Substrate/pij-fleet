@@ -46,7 +46,8 @@ The extension joins with the CLI 1.0.113+ SDK shape: `pij_send` under
 `onAgentStop` (end-of-turn pij blocks, plan 226) under `hooks.handlers`. The SDK
 ignores the older flat `tools: [...]` and `hooks: {...}` without an error, so a
 wrong shape still registers and receives messages but loses the tool and both
-hooks (F208). Copilot CLI 1.0.113 or later is required.
+hooks (F208). Copilot CLI 1.0.113 or later is required. `just copilot-sdk-contract`
+checks this against the installed CLI (see [Installed SDK contract](#installed-sdk-contract-d-f208-1)).
 
 Remote `compact` works for Copilot (plan 186): `pij send <seat> --command compact`
 types `/compact` into the seat's pane through the same pane control path as
@@ -456,6 +457,48 @@ This is opt-in: default Rust-only tests do not require Node, and neither
 `harness checks` nor `just self-check` adds this invocation. A passing contract
 does not establish actual Copilot CLI attachment or real-provider inference;
 those still require the live witnesses below.
+
+### Installed SDK contract (D-F208-1)
+
+```sh
+just copilot-sdk-contract            # --json for one report, --record after a new version passes
+```
+
+The fake SDK in `extension.test.mjs` mirrors the real one by hand, and F208 is
+what happens when it stops mirroring it. This check uses no fake. It runs the real
+`extension.mjs` in a child process with `@microsoft/copilot-sdk/extension`
+resolved to the installed CLI's own `~/.copilot/pkg/<platform>-<arch>/<version>/copilot-sdk/extension.js`
+(the version `copilot --version` reports), and plays the CLI's side of that SDK's
+JSON-RPC wire on the child's stdio (`connect`, `session.resume`, `hooks.invoke`,
+`session.event`). It passes when, through the SDK's own lookups:
+
+- the SDK declares `pij_send` (with a handler) and hooks with handlers in
+  `session.resume`;
+- `hooks.invoke` for `userPromptSubmitted` and `agentStop` reaches pij's
+  `onUserPromptSubmitted` and `onAgentStop`;
+- an `external_tool.requested` for `pij_send` reaches pij's handler and its answer
+  comes back as `session.tools.handlePendingToolCall`;
+- `assistant.message` and `session.idle` events reach pij's `session.on`
+  listeners (the run's end and the idle publication ride these).
+
+A shim around the real `joinSession` wraps each function in the config where it
+sits, so a call names the handler that ran; it never changes the shape the SDK
+reads. The child's daemon address is unreachable, its state dir empty and it has
+no `TMUX_PANE`, so no handler can do more than answer "not ready". No daemon,
+pane or Copilot process is touched.
+
+It skips (exit 0) when no Copilot CLI is installed, as in CI, so it guards the
+machines that run seats. It runs in `just copilot-native-doctor` (and so
+`just doctor`), `just self-check`, and `harness checks` as the `copilot-sdk`
+sensor. `harness/copilot-sdk-verified.json` records the version it last passed
+on: a pass on another version is `warn` until `just copilot-sdk-contract --record`
+updates the record. Any failure fails. Pass `--copilot-version <v>` or `--sdk <path>`
+to check another installed runtime. The pre-F208 flat shape passes on 1.0.112-0
+and fails on 1.0.113+, and the current shape fails on 1.0.112-0, so the check
+follows the SDK, not a shape written into it.
+
+Cost: on demand only, never on a hot path. One run launches `copilot --version`,
+one `node` child and the extension's own two `ps` probes, in about a second.
 
 ## Real CLI witnesses
 

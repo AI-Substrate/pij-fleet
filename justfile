@@ -145,6 +145,13 @@ copilot-native-contract-test:
 copilot-native-smoke *ARGS:
     node_modules/.bin/tsx harness/scripts/copilot-native-smoke.ts "$@"
 
+# D-F208-1: does the INSTALLED Copilot SDK register pij's tools and hooks? Runs
+# the real extension against `copilot`'s own SDK over its JSON-RPC wire. Skips
+# when no Copilot CLI is installed (CI); warns when it passed on a version not
+# yet recorded in harness/copilot-sdk-verified.json (`--record` records it).
+copilot-sdk-contract *ARGS:
+    nice -n 19 node harness/scripts/copilot-sdk-contract.mjs "$@"
+
 
 
 # Large native history, receiver death and manual inbox recovery on isolated services.
@@ -211,6 +218,7 @@ step-on-probe *ARGS:
 copilot-native-doctor:
     copilot --version
     npm run link -- --doctor-copilot
+    just copilot-sdk-contract
 
 # Bootstrap reports an absent optional CLI; an installed but broken CLI still fails.
 _copilot-native-install-check:
@@ -338,6 +346,7 @@ self-check:
     just lint
     just test
     just copilot-native-test
+    just copilot-sdk-contract
     just route-inventory-check
     just rust-check
     just smoke

@@ -1,0 +1,12 @@
+{
+	"version": "1.0.114-0",
+	"checks": [
+		"tool declared",
+		"hooks declared",
+		"hook userPromptSubmitted",
+		"hook agentStop",
+		"tool call",
+		"event assistant.message",
+		"event session.idle"
+	]
+}

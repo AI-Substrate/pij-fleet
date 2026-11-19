@@ -18,6 +18,11 @@ interface Sensor {
 	heavy?: boolean;
 	/** Report-only sensor: preserve its output without failing the gate. */
 	advisory?: boolean;
+	/**
+	 * The command prints one JSON report whose `status` (`pass`, `warn` or
+	 * `skipped`) this sensor takes when it exits 0; a non-zero exit still fails.
+	 */
+	reports?: boolean;
 	/** Extra env for this sensor (merged into process.env for the child). */
 	env?: Record<string, string>;
 	/** One-line description of what it proves. */
@@ -79,6 +84,14 @@ const SENSORS: Sensor[] = [
 		proves: "native Copilot extension node:test contracts pass",
 	},
 	{
+		name: "copilot-sdk",
+		cmd: "just",
+		args: ["copilot-sdk-contract", "--json"],
+		reports: true,
+		proves:
+			"the installed Copilot CLI's own SDK registers pij_send and pij's hooks (D-F208-1); skipped without a Copilot CLI, warns on a version not yet recorded",
+	},
+	{
 		name: "route-inventory",
 		cmd: "just",
 		args: ["route-inventory-check"],
@@ -129,7 +142,7 @@ const checks: HarnessVerb = {
 		"Run pij's full deterministic gate (the signal inventory) and report a ship/done verdict.",
 	description:
 		'The single "are we done?" gate. Runs every sensor in the engineering-harness signal inventory ' +
-		"(mirrors `just self-check`: local-paths, ddocs, coverage, pij-skill, typecheck, lockfile, lint, test, copilot-native, route-inventory, rust, smoke, pij-commit-trailers) as individual " +
+		"(mirrors `just self-check`: local-paths, ddocs, coverage, pij-skill, typecheck, lockfile, lint, test, copilot-native, copilot-sdk, route-inventory, rust, smoke, pij-commit-trailers) as individual " +
 		"stages, reports a per-sensor verdict, and — unlike self-check — runs ALL of them so you see every " +
 		"failure in one pass. Run it before ship and before declaring any non-trivial task done. " +
 		"`--quick` skips heavy sensors (route-inventory, rust, smoke) for a fast static+unit gate.",
@@ -172,12 +185,22 @@ const checks: HarnessVerb = {
 					// An unavailable advisory must remain visible, never block delivery.
 				}
 			}
+			let reported: SensorResult["status"] = "pass";
+			if (s.reports && res.ok) {
+				try {
+					const report = JSON.parse(res.stdout) as { status?: unknown };
+					if (report.status === "warn" || report.status === "skipped") reported = report.status;
+				} catch {
+					// A report that cannot be read is visible, never a silent pass.
+					reported = "warn";
+				}
+			}
 			results.push({
 				name: s.name,
-				status: s.advisory ? advisoryStatus : res.ok ? "pass" : "fail",
+				status: s.advisory ? advisoryStatus : res.ok ? reported : "fail",
 				code: res.code,
 				proves: s.proves,
-				...(s.advisory ? { output: res.stdout || res.stderr } : {}),
+				...(s.advisory || (s.reports && reported !== "pass") ? { output: res.stdout || res.stderr } : {}),
 			});
 			if (!res.ok && !s.advisory) failureLogs.push({ name: s.name, output: tail(res.stderr || res.stdout) });
 		}
