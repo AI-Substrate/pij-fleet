@@ -219,6 +219,12 @@ impl CodexBinder {
         self
     }
 
+    /// Drain a returning seat's role queues (F193).
+    pub(crate) fn with_return_hook(mut self, hook: crate::registration::ReturnHook) -> Self {
+        self.registration = self.registration.with_return_hook(hook);
+        self
+    }
+
     pub(crate) async fn bind_once(&self) -> Result<usize> {
         let locks = self.facts.thread_locks();
         let pending: Vec<SeatDescriptor> = self

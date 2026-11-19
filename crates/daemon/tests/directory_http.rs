@@ -2288,6 +2288,81 @@ async fn an_instance_whose_holder_is_dead_queues_and_reaches_no_one() {
     rig.server.abort();
 }
 
+/// F193: a request queued while its role's only holder was dead goes to that
+/// holder when it is revived, with no release and re-assign. Before, it stayed
+/// `queued, no holder` beside a live holder, and an assign refused as held.
+#[tokio::test]
+async fn a_revived_holder_takes_what_its_role_queued_while_it_was_gone() {
+    let repo = repo("pij-role-queue-revive");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let assigned = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "assign",
+            "reviewer/7",
+            "pij-dormant",
+            "--why",
+            "review",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    rig.services
+        .registry
+        .tombstone(&"pij-dormant".into(), "observed-dead")
+        .await
+        .unwrap();
+    let queued = send_to(
+        rig.addr,
+        &repo.main,
+        "role:reviewer/7",
+        "req-back",
+        json!({}),
+    )
+    .await;
+    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
+
+    let revived: Value = reqwest::Client::new()
+        .post(format!("http://{}/v1/revive", rig.addr))
+        .bearer_auth(KEY)
+        .json(&json!({"id": "pij-dormant", "session": "fleet", "fresh": true}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(revived["ok"], true, "{revived}");
+    let mut request = None;
+    for _ in 0..200 {
+        request = rig.store.role_request("req-back").await.unwrap();
+        if request
+            .as_ref()
+            .is_some_and(|request| request.state != pij_store::RequestState::Queued)
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    let request = request.expect("the request");
+    assert_eq!(
+        request.holder.as_deref(),
+        Some("pij-dormant"),
+        "{request:?}"
+    );
+    assert_eq!(
+        request.state,
+        pij_store::RequestState::Delivered,
+        "{request:?}"
+    );
+    assert!(queued_for(&rig, "pij-dormant", "req-back").await);
+    rig.server.abort();
+}
+
 /// Plan 202 AC2: assign, a compact control and a revive each hold the table
 /// once for a role holder; a seat holding no role gets nothing.
 #[tokio::test]

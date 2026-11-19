@@ -431,7 +431,14 @@ pub fn actions_weighing(
     }
     for instance in instances {
         let held = |row: &&Assignment| instance.is_empty() || row.instance == instance;
-        if holding.iter().any(held) {
+        if let Some(holder) = holding.iter().copied().find(held) {
+            // F193: requests waiting beside a live holder that can take them.
+            // A holder that comes back drains its queue itself; this names the
+            // fix for anything that raced it (C24: the prime has no rows).
+            if role != "prime" {
+                let waiting = queued.iter().filter(|queued| **queued == instance).count();
+                out.push(waiting_with_live_holder(project, role, holder, waiting));
+            }
             continue;
         }
         let waiting = queued.iter().filter(|queued| **queued == instance).count();
@@ -531,6 +538,68 @@ pub fn actions_weighing(
         }));
     }
     out
+}
+
+/// F193: `waiting` requests for `holder`'s role (or its instance) queued while
+/// `holder` is live and can take them. A release and re-assign delivers them
+/// (the assign drains the queue), printed only for keys that print (F132).
+fn waiting_with_live_holder(
+    project: &str,
+    role: &str,
+    holder: &Assignment,
+    waiting: usize,
+) -> Value {
+    let holding = if holder.instance.is_empty() {
+        role.to_string()
+    } else {
+        format!("{role}/{}", holder.instance)
+    };
+    let printable = pij_core::model::is_canonical_seat_id(&holder.seat)
+        && (holder.instance.is_empty() || pij_core::render::is_name(&holder.instance));
+    let commands: Vec<String> = if printable {
+        vec![
+            command(&[
+                "pij",
+                "directory",
+                "release",
+                &holding,
+                &holder.seat,
+                "--why",
+                "requeue",
+                "--project",
+                project,
+            ]),
+            command(&[
+                "pij",
+                "directory",
+                "assign",
+                &holding,
+                &holder.seat,
+                "--why",
+                "requeue",
+                "--project",
+                project,
+            ]),
+        ]
+    } else {
+        Vec::new()
+    };
+    json!({
+        "role": role,
+        "instance": pij_core::render::name(&holder.instance),
+        "condition": "waiting-with-live-holder",
+        "says": format!(
+            "{} holds {} and is live, yet {waiting} request(s) still wait for it; release and re-assign it to deliver them (the assign drains the queue)",
+            pij_core::render::seat(&holder.seat),
+            if holder.instance.is_empty() {
+                std::borrow::Cow::Borrowed(role)
+            } else {
+                std::borrow::Cow::Owned(format!("{role}/{}", pij_core::render::name(&holder.instance)))
+            },
+        ),
+        "commands": commands,
+        "in_order": true,
+    })
 }
 
 /// Two or more live holders on a one-holder role (req-12). A second holder
@@ -1215,17 +1284,31 @@ mod tests {
             ])
         );
         assert!(actions("fleet", "reviewer", "one", &rows, &live(&[]), &[], None).is_empty());
+        // F193: the same requests beside a live holder name the fix that
+        // delivers them, a release and re-assign, in order.
+        let stuck = actions(
+            "fleet",
+            "reviewer",
+            "one",
+            &rows,
+            &live(&["pij-dead"]),
+            &["", ""],
+            None,
+        );
+        assert_eq!(conditions(&stuck), ["waiting-with-live-holder"]);
+        assert_eq!(
+            stuck[0]["commands"],
+            json!([
+                "pij directory release reviewer pij-dead --why requeue --project fleet",
+                "pij directory assign reviewer pij-dead --why requeue --project fleet"
+            ])
+        );
         assert!(
-            actions(
-                "fleet",
-                "reviewer",
-                "one",
-                &rows,
-                &live(&["pij-dead"]),
-                &["", ""],
-                None
-            )
-            .is_empty()
+            stuck[0]["says"]
+                .as_str()
+                .unwrap()
+                .starts_with("pij-dead holds reviewer and is live, yet 2 request(s) still wait"),
+            "{stuck:?}"
         );
     }
 
@@ -1254,11 +1337,20 @@ mod tests {
             None,
         );
         assert_eq!(
-            acts.len(),
-            1,
-            "140 is held and any-holder requests drain to it: {acts:?}"
+            conditions(&acts),
+            [
+                "no-live-holder",
+                "waiting-with-live-holder",
+                "waiting-with-live-holder"
+            ],
+            "141 has no live holder; the any-holder and 140 requests can go to pij-140: {acts:?}"
         );
         assert_eq!(acts[0]["instance"], "141");
+        assert_eq!(acts[2]["instance"], "140");
+        assert_eq!(
+            acts[2]["commands"][0],
+            "pij directory release reviewer/140 pij-140 --why requeue --project fleet"
+        );
         assert_eq!(
             acts[0]["commands"],
             json!([

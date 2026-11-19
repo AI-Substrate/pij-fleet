@@ -1183,6 +1183,60 @@ pub async fn drain(
     Ok(outcomes)
 }
 
+/// F193: a holder that comes back (a revive, or a registration that lifts its
+/// tombstone or binds the incarnation a revive launched) takes the requests
+/// its roles queued while it was gone. On its own task, as an assign's drain
+/// runs: for each of the seat's open holdings, [`drain`] delivers what that
+/// holding can take. Nothing is forced: the drain claims a request only while
+/// the seat is live and holds the role, so one that cannot be delivered yet (a
+/// Copilot seat whose receiver has not registered) goes back on the queue for
+/// the next return or assign. A legacy prime row holds nothing (C24).
+/// One indexed read of the seat's open holdings, then one queue read per
+/// holding; no launch.
+pub fn drain_returned(services: &Services, seat: &SeatId) -> tokio::task::JoinHandle<()> {
+    let (services, seat) = (services.clone(), seat.clone());
+    tokio::spawn(async move {
+        let holdings = match services
+            .directory
+            .store()
+            .open_assignments(seat.as_str())
+            .await
+        {
+            Ok(holdings) => holdings,
+            Err(cause) => {
+                eprintln!("pij-rs: {seat}'s role queues not drained on return: {cause}");
+                return;
+            }
+        };
+        for held in holdings.iter().filter(|held| held.role != PRIME_ROLE) {
+            match drain(&services, &held.project, &held.role, &held.instance, &seat).await {
+                Ok(drained) => {
+                    for one in drained {
+                        if let Err(cause) = one.outcome {
+                            eprintln!(
+                                "pij-rs: role request {} for {seat} not drained on return: {cause}",
+                                one.id
+                            );
+                        }
+                    }
+                }
+                Err(cause) => eprintln!(
+                    "pij-rs: role queue for {} not drained on {seat}'s return: {cause}",
+                    held.role
+                ),
+            }
+        }
+    })
+}
+
+/// The registration hook that runs [`drain_returned`] through `services` (F193).
+pub(crate) fn return_hook(services: &Services) -> crate::registration::ReturnHook {
+    let services = services.clone();
+    Arc::new(move |seat: &SeatId| {
+        drain_returned(&services, seat);
+    })
+}
+
 /// At boot, settle the requests a stopped daemon left `delivering` (review
 /// of #129): one delivery already took is marked delivered, any other is
 /// re-queued for the next assign. A failure is logged; boot carries on.
