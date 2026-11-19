@@ -1693,6 +1693,16 @@
 					"seat": "pij-academic-wallaby",
 					"to": "2026-11-19T00:01:40.224Z",
 					"why": "F194 #245 correctness (gpt-6.1-sol)"
+				},
+				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-19T00:14:38.057Z",
+					"harness": "copilot",
+					"harness_session": "be9dc8aa-fdf7-49f8-9cc6-69879490dd9f",
+					"instance_key": "246",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-small-swift",
+					"why": "review of #246 (plan 231)"
 				}
 			]
 		}
