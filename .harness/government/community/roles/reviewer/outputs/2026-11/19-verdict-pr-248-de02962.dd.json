@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f174-4d82-75d2-ad0e-454214d2a480",
+				"date": "2026-11-19",
+				"head": "de0296290966cf936c86e454bd9cebf1cbd949b1",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:248",
+				"writer": "pij-nutritious-starfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After merge and operator bounce: capture git.pa-watchdog-common-dir with daemon uptime at boot and again after more than 600 seconds; no after-bounce claim in this review."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 248",
+					"exit_code": 0,
+					"log": "FINAL at de0296290966cf936c86e454bd9cebf1cbd949b1; CLEAN; latest CI checks passed; detached review worktree unchanged"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/jobs/135270950513",
+					"exit_code": 0,
+					"log": "Successful retry at de0296290966cf936c86e454bd9cebf1cbd949b1; all job steps successful"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14489389396/zip",
+					"exit_code": 0,
+					"log": "Artifact selected from successful job upload receipt; 2516 passing JUnit entries, zero failures/errors; both updated placement tests, recreated-worktree, launch-count, shim, spawn-site and previously flaky tmux test all PASS; nextest summary reports six additional skipped tests"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR 248: final round-2 correctness review\n\nHead: `de0296290966cf936c86e454bd9cebf1cbd949b1`\nDelta reviewed: `2bfd4dcbb779a4847b07738d772ba0c9686e741e..de0296290966cf936c86e454bd9cebf1cbd949b1` (root.rs and watchdog cost documentation only).\n\n## Verdict: PASS WITH NOTES\n\n**R248-1 is closed. No remaining blocker or new normal-use correctness bug was found in the delta.** This is the final review round under C34; no additional hardening or fixture inventory is requested.\n\n- `place()` now canonicalizes an existing starting directory before taking its ancestors. Both A/alias -> B/sub and an alias outside either repository are asserted to return B's common git directory and agree with git. The successful exact-head CI artifact contains the passing parity test with these assertions.\n- A missing folder still exits as `NotARepo` before canonicalization, and the unchanged watchdog returns the original folder key. A canonicalization failure for an existing directory yields `Unknown`, leaving the git fallback available.\n- macOS /tmp or /var aliases do not introduce a second repository key: the returned common directory was already canonicalized, the git fallback canonicalizes its answer, and presence and shim use the same shared placement/common-dir path. Resolving the starting directory changes discovery, not the canonical representation of a valid repository's key. Missing/non-repository keys intentionally remain the original folder string.\n- Valid relative gitdir and commondir paths remain relative to the discovered physical worktree and admin directory respectively. An absent commondir still selects the gitdir, preserving ordinary submodules and separate gitdirs.\n- `small_text()` rejects non-regular files and metadata lengths over 4096 before opening. `take(4097)` also bounds bytes read if a regular file grows after stat; a result over 4096 bytes or invalid UTF-8 is rejected. Static FIFO and oversized cases for both pointer types return `Unknown` and are pinned by the passing undecidable-layout test. Stat failures other than NotFound now yield `Unknown`. No shell, recursion, timer or production launch site is added. No extra same-user adversarial file-replacement machinery is required under C33.\n\n## Cost and outstanding operational proof\n\nThe delta adds one starting-directory canonicalization per placement call and bounded pointer metadata checks. Ordinary decided layouts still launch **zero** processes. Unknown layouts retain the existing fallback and 600-second per-folder answer TTL.\n\nThe existing tick is 60 seconds. With N live seats, P PAs and ancestry depth D, ordinary placement remains about (P+1)*N calls and O((P+1)*N*D) filesystem work per round, with no per-round folder deduplication. The revised documentation states this cost explicitly. This is placement policy, not a brake; the fixed policy now assigns symlinked seats to their physical repository.\n\n**Note owed, not a code-review blocker:** after merge and the operator's daemon bounce, capture the watchdog git spawn counter with daemon uptime at boot and again after more than 600 seconds. The round-1 baseline remains 28 -> 28 over 20.207 seconds on the old daemon; this review makes no after-bounce claim.\n\n## Evidence\n\n`just pr-freeze 248`: FINAL at the full head above, clean detached worktree, latest checks successful.\n\nCI run **44437133490**, successful retry job **135270950513**, exact head verified through the GitHub job API. Selected artifact **14489389396** from that successful job's upload receipt, not by artifact name. Its JUnit contains 2516 passing entries and zero failures/errors; nextest's summary additionally reports six skipped tests. Confirmed passing entries for:\n\n- both placement tests, including the new alias and FIFO/oversized assertions;\n- recreated-worktree placement and the presence launch-count test;\n- the shim common-directory contract and spawn-site inventory;\n- `staged_submit_excludes_human_input_mid_body_and_before_enter`, the unrelated test reported flaky on the earlier attempt.\n\nNo local build, test, dependency installation or daemon bounce was performed. Full local `harness checks` was not run, honoring the packet's no-build/no-test constraint. The review worktree remains unchanged.\n\n**Harness improvement:** the two Git-oracle alias regressions now encode the round-1 discovery instead of requiring a future reviewer to infer filesystem semantics. No new proof gap in this delta requires another review round.\n"
+		}
+	]
+}
