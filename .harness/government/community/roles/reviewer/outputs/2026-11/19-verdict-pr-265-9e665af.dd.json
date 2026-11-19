@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f2e2-b098-73d3-85f5-7e2c3ad5a8fa",
+				"date": "2026-11-19",
+				"head": "9e665af8b04ef4fc03f309cfa8fb7d02211e3386",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44485817060/job/135428889921",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:265",
+				"writer": "pij-main-prawn",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "#265: PASS WITH NOTES\nHead: 9e665af8b04ef4fc03f309cfa8fb7d02211e3386\nBase: dba0c080 (#263 merged)\nRole: reviewer, instance 265\n\nNo blocking correctness findings.\n\nThe sibling regression now exercises the observed shape. registration.rs:3402-3456 gives each new process the original HOST parent; only HOST, SHELL and the current restart are alive. At 3483-3501, the complete returned descriptor is fed into the next registration, so proc actually advances through r1, r2 and r3 while anchor remains HOST. The earlier #263 fixture reset that state and could not establish transitivity; this one would fail under #263's rule.\n\nAnchor lifecycle is sound for production-created routes. register_inner at 1207-1214 selects anchor.or(descriptor.proc) only on an existing proxied route and matches the exact ProcIdentity against verified native ancestry. It copies the selected anchor unchanged. Gate failure and opt-out use SeatCacheProxy::plain, which sets anchor=None (model.rs:618-624); a successful fresh gate also starts with anchor=None (cache_proxy.rs:269-274). Spawn/revive constructs a new descriptor and assigns that gate decision wholesale (http/mod.rs:1664-1674), not the displaced carried route. A non-descendant registration clears the complete cache_proxy option (registration.rs:1226-1227). Store upsert serializes the whole option and assigns cache_proxy=excluded.cache_proxy (registry.rs:595-624), so there is no separate retained anchor to resurrect a plain route. Same-process registration and /new appropriately preserve the still-proxied route and anchor.\n\nPre-anchor compatibility: serde(default) reads existing JSON without anchor. For an older gate stamp whose row.proc still identifies its stamped launch, using that verified proc as the initial anchor is correct; the sibling test starts with exactly anchor=None and establishes it on the first carry. A legacy #263 carried row is different: its row.proc is already r1 and its original supervisor was never stored. Its next sibling r2 cannot recover that supervisor and reads plain. pm-001 explicitly confirmed this is the accepted forward-only F221 won't-fix (display only; heals on revive), not upgrade recovery required by #265. This note also applies to rows whose route was already lost. No backfill or environment inspection is implied.\n\nGuards checked read-only: pid-only matching fails a_reused_pid_carries_no_route for both absent and present anchors; dropping the lineage guard fails the outside-lineage test; ignoring/resetting the retained anchor fails the second sibling step and explicit anchor assertion; retaining a route/anchor on a plain transition fails the outside-lineage sequence, which tries the original supervisor again after clearing. The forged-claim test deserializes a cache_proxy plus anchor through the actual Registration type, then registers it and expects no route. Opt-out and fresh revive assertions remain explicit. I did not rerun the author's eight mutation builds.\n\nProof: just pr-freeze 265 returned FINAL at the full head above. CI run 44485817060 succeeded at that exact head; rust-test job 135428889921 reports 2569 passed, 6 skipped. Its successful upload log identifies artifact 14509944540. Reading that artifact by ID confirms all six registration regressions and a_carried_seat_counts_as_proxied passed. git diff --check dba0c080...HEAD passed; spawn_sites.rs is unchanged. No Cargo, shared-build, local Rust tests, or fleet mutations were run.\n\nCost and docs: zero additional launches, loops, polls or timers. The new fallback is an Option read; lookup remains within the existing maximum of 31 verified ancestors, only on replacement registrations. Existing argv observations are unchanged. The updated API, blueprint 003 and workstream s08 describe siblings, a stable exact anchor, whole-route clearing and the unchanged carried reason. Live after-merge proof remains separate from this source/CI verdict.\n\nLocal harness limit: harness checks --quick exited 1 in the dependency-free review checkout (missing local tsx/vitest tooling; typecheck unavailable; ambient Biome rejects the repo config). Skill, native extension and SDK sensors passed; Rust/route-inventory/smoke were skipped. No dependencies were installed or symlinked; source worktree is clean. This is not a locally green ship gate.\n\nHarness lesson: external-process sequence fixtures must follow the observed tree and feed each returned descriptor into the next step. This PR now encodes that missing proof directly in the sibling regression and records the original fixture failure in D-F213-2.\n"
+		}
+	]
+}
