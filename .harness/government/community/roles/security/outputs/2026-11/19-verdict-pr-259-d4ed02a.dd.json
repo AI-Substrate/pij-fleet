@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f259-2790-7bb0-81b5-401de7625dee",
+				"date": "2026-11-19",
+				"head": "d4ed02aabdb7989508f3205307ded9927f76a694",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:259",
+				"writer": "pij-deliberate-orca",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 259",
+					"exit_code": 0
+				},
+				{
+					"command": "/usr/bin/nice -n 19 just copilot-sdk-contract",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "ROUND 1 security PASS for PR #259 at d4ed02aabdb7989508f3205307ded9927f76a694.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerabilities found | - |\n\nThe security-review specialist returned PASS after a bounded static review covering installed-CLI SDK/module resolution and symlinks, the Node resolution hook, process argument handling and inherited environment, credential/daemon access boundaries, and current-head public-source/JSON/docs/PR-body privacy. No introduced exploitable module/path injection or credential/privacy vulnerability was found. C33 applies: same-user control of installed SDK files, repository files and environment is trusted; the canary is not a sandbox.\n\nValidation: just pr-freeze 259 returned FINAL at the exact head, with CLEAN merge status, main base, ready status, unchanged migration numbering and passing CI check (22), check (24), rust-lint, rust-test and Delivers. The detached review worktree was clean.\n\nLive canary: /usr/bin/nice -n 19 just copilot-sdk-contract exited 0, reporting all seven tool/hook/session-event checks passing on Copilot 1.0.114-0. The tool handler returned the expected identity-not-ready response rather than sending a real message. --record was not used. target/ was absent before and after; git status remained clean. Existing dependencies were used; no dependency installation, build or cargo command was run.\n\nKnown limits: this is a security-only verdict with static inspection plus the real-SDK registration canary, not a credential-file-access trace, future-SDK guarantee or live-fleet cost measurement."
+		}
+	]
+}
