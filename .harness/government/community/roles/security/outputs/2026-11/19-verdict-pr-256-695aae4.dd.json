@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f20e-3473-74c3-bb0c-95a320c52484",
+				"date": "2026-11-19",
+				"head": "695aae4a4033941c44dfead656ef070febf9fef9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:256",
+				"writer": "pij-perfect-cicada",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"role:security owns f214-audit-after after merge and deployment: record deployment time, collect at least three days of post-deploy data, compare silent/false-cold and large-seat outcomes, inspect warning/forced-wake receipts, and publish actual elapsed/resource receipts to pm-001."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 256",
+					"exit_code": 0,
+					"log": "FINAL at 695aae4a4033941c44dfead656ef070febf9fef9; main, CLEAN, exact-head CI green, clean detached worktree. Latest run passed after transient GitHub UNKNOWN."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS WITH NOTES\nPR: #256\nHead: 695aae4a4033941c44dfead656ef070febf9fef9\n\nNo high-confidence introduced security vulnerabilities found. Read-only inspection covered all 23 changed-file diffs, the complete new audit script, affected production boundaries, the PR body, and the before-audit note at governance commit 1cba5d70. C33's user-account trust boundary and C34's bounded review scope apply. No product, protected model-cost, or governance files were edited by hand.\n\nSecurity receipts:\n- harness/scripts/cache-ttl-audit.py:67-92 opens SQLite mode=ro and selects event/seat metadata with bound window parameters, not message bodies or credential/account columns. Lines 100-135 retain usage/model/cache/timing data and select conversation-agent usage. IMPORTANT: lines 119-123 physically read raw transcript lines before filtering; \"metadata-only\" describes extraction/output, not physical I/O. No transcript message-body fields or raw records are serialized.\n- harness/scripts/cache-ttl-audit.py:183-202,229-250 emits grouped statistics; explicit --json writes seat/model/route/timing/token/TTL/classification metadata to a caller-selected local file. It is not anonymized. File permissions follow umask, and an existing destination can be truncated. No new network publication, account object, credential-file access, shell evaluation, or child-process launch is introduced.\n- crates/core/src/session_status.rs:269-301 preserves native/split evidence before proxy and the versioned table. Lines 25,330-331,361-364 establish wire v2 and default missing v1 TTL facts to unknown.\n- crates/core/src/cold_wake.rs:204-209 constructs TTL text from numeric/enum facts; 233-280 retains the >400,000 threshold and unknown-after-five-minutes warning; 349-371 keeps table-only evidence insufficient for warm-flush/cheap-revive positive cache knowledge.\n- crates/daemon/src/http/cold_wake.rs:185-195,211-264 trims/rejects empty force reasons, refuses cold unforced delivery, and persists the forced-wake audit before delivery; audit failure prevents proceeding. crates/daemon/src/pa_watchdog.rs:331-375 likewise propagates audit failure.\n- Wire/log changes include derived coldWake.warning, refusal details and forced-wake cache_ttl metadata, not just cacheTtlSeconds and basis. No raw transcript, credential, account object, or new endpoint is exposed (crates/core/src/cold_wake.rs:145-185,455-495; crates/daemon/src/http/cold_wake.rs:239-258).\n- Complete diff inventory confirms no edits to crates/cli/src/fleet_report* or docs/how/prompt-cache-cost.md. New rendering markers are allowlisted literals (.omp/extensions/pij/core/roster-table.ts:41-44; crates/cli/src/roster.rs:39-44).\n\nCost, with evidence grades:\n- Source inspection: no new production timer/poll, process-launch site, or transcript read per existing status invocation. The existing source.status() read is followed by an in-memory lookup over at most five table rows (crates/daemon/src/http/mod.rs:3736-3784). Added launches/second: zero; added per-seat scheduled work: none. This is source evidence, not a before/after live measurement.\n- The audit is on demand under nice -n 19 (justfile:226-227). It performs four SELECTs, reads report tables, scans selected Copilot transcripts, sorts per-seat calls, and reconstructs call-time arrays per delivery. Pairing includes sum(deliveries_per_seat * calls_per_seat); neither transcript I/O nor wall-clock/memory cost is proven window-bounded (harness/scripts/cache-ttl-audit.py:69-150).\n- Author's before-audit note at 1cba5d70 records the November 12-19, 2026 03:36 UTC window: fleet-report, --since 7d --threads 2, exit 0, 107188 calls / 16757 turns / 755 sessions; prototype audit exit 0, 14620 delivered / 13404 paired / 9402 decided. These are work-volume receipts, not elapsed/CPU/RSS/launch-rate measurements, and the prototype receipt does not prove execution of the committed script. No live audit was run by this review.\n\nValidation:\n- Independently ran just pr-freeze 256: exit 0, FINAL at the full head above; gh and ls-remote agree, main/CLEAN/not draft, all checks passing, clean detached worktree. No migrations added; schema version remains 47.\n- Pre-publication recheck briefly returned exit 1 for GitHub merge state UNKNOWN after another PR merged; the next just pr-freeze 256 returned exit 0, CLEAN and FINAL at the unchanged head. No failed build or test was retried.\n- Delegated read-only review inspected exact-head CI run 44457705817: check (22), check (24), rust-lint and rust-test succeeded. Delivers run 44457707511 succeeded. These are job/step outcomes; individual JUnit cases were not independently enumerated.\n- No local builds, tests, harness boot/checks, runtime exploit probes, or live-store audits were executed. Static inspection plus CI is not deployed-behavior or provider-expiry proof.\n\nNonblocking qualifications and obligation:\n- PAST_TTL=Refuse is a conservative cold-wake brake: removing it permits the same or more wakes. The chosen treatment of expired cache is deliberate and awaiting the prime; this security pass does not resolve that ruling.\n- The false-cold increase and provider-real expiry accuracy remain the correctness review's question; a security pass does not establish that actually warm seats are never refused.\n- OWED, owner role:security: after merge AND deployment, collect the deployment timestamp, run the committed cache-TTL audit over a post-deploy window (at least three days), compare silent-cold/false-cold and large-seat outcomes, inspect warning/forced-wake receipts, and publish f214-audit-after to pm-001. Preserve output privacy and include actual elapsed/resource receipts. This obligation is not discharged by replay or CI.\n\nHarness feedback:\nmagicWand: validate delegated security reports for full head, per-check file:line evidence, actual commands and proof limits before accepting completion.\ndifficulties: the initial delegated report was verdict-only; one same-context follow-up recovered the retained evidence without a second review. Captured as DL-001 in this review worktree's transient harness buffer. Review used exact-head CI/finality rather than prohibited local gates.\n"
+		}
+	]
+}
