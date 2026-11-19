@@ -308,6 +308,15 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-dear-walrus",
 					"why": "F211 #253 security (Copilot gpt-6.1-sol)"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-19T03:50:07.358Z",
+					"harness": "copilot",
+					"harness_session": "d1e5ce80-753d-4f2c-aaf7-b1267c0ef920",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-mass-pony",
+					"why": "pm-004: verdict on #255 (ws004 s07)"
 				}
 			]
 		}
