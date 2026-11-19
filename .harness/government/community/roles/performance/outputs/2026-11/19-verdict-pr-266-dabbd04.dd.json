@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f305-e99e-7463-afce-d0e962b77cc5",
+				"date": "2026-11-19",
+				"head": "dabbd04062d73a12ffef2a831bd7e2f2030c8f8a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:266",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Post-deployment runtime overhead measurement and F222 step2 request-rate attribution; P266-001 is closed, no remaining performance code-change request."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git rev-parse HEAD; git diff 890515121f3d8f38cc96947847e7178ce42e1cc9 dabbd04062d73a12ffef2a831bd7e2f2030c8f8a; git diff --exit-code 890515121f3d8f38cc96947847e7178ce42e1cc9 dabbd04062d73a12ffef2a831bd7e2f2030c8f8a -- crates/testkit/tests/spawn_sites.rs",
+					"exit_code": 0,
+					"log": "HEAD dabbd04062d73a12ffef2a831bd7e2f2030c8f8a; four-file corrective delta read; spawn_sites diff: no output."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES — performance/266 round 2 (final), exact head dabbd04062d73a12ffef2a831bd7e2f2030c8f8a.\n\nP266-001 CLOSED. Reviewed the exact delta from 890515121f3d8f38cc96947847e7178ce42e1cc9 and confirmed detached HEAD. http/mod.rs:611-615,642 builds RouteCounts once from Endpoint::ALL. route_counts.rs:118-129 sorts/deduplicates the static templates into a boxed slice with inline counters. record (:134-158) performs a binary search using the same string ordering, borrows the inline PathCounts, chooses the bounded method slot and increments the appropriate relaxed atomic. No mutex, per-route Arc clone or first-request allocation remains in record. Missing or unknown templates increment the fixed unmatched bucket.\n\nsnapshot (:163-195) only reads atomics and builds the owned output projection; no accounting lock is held, and names are formatted only after a nonzero outcome was read. Requests cannot be serialized behind snapshot formatting through the old global mutex. Endpoint storage and the 128 seat-shape slots remain bounded. API docs accurately distinguish the extra seats-query scan/increment, non-transactional per-atomic reading and wrapping total/counters.\n\n| Cost surface | Trigger / scaling | Added launches |\n| --- | --- | --- |\n| Record answered request | O(log P) immutable template lookup, <=7 method comparisons, one outcome fetch_add; seats GET adds O(query bytes) scan and second fetch_add | 0 by source inspection |\n| Router construction | One-time sort/dedup/boxed fixed table from 62 endpoint templates | 0 |\n| Ping snapshot | O(8P+128) bounded visits and output allocations, independent of recording through no shared mutex | 0 |\n\nNo new poll, timer, process observation, launch site, log, event or store write. No work scales directly as tick x seat; accounting scales with completed HTTP request rate. Middleware still retains MatchedPath across the handler through its existing cheap Arc-backed clone; the eliminated per-route counter Arc and mutex are not being conflated with that framework lifetime handling.\n\nChecks exercised: exact HEAD and round-2 diff inspected, constructor/record/snapshot and outer integration read, scope confirmed as four changed files, spawn_sites.rs delta exit0/no output. Concurrent-counter test was inspected but not run here: its final joined snapshot asserts all40,000 route/shape increments. CI and mutation results are supplied by requester. No builds, tests, mutations, restarts or configuration edits performed by reviewer.\n\nNon-blocking measurement note: runtime overhead of this exact patch remains to be observed after deployment; do not relabel the old daemon baseline as a benchmark of these counters. Latest pre-counter F222 baseline is note1196f630: PID74846 e4b63eb1b2, CPU35.20% over240.009s with documented live-proof overlap; earlier PID17600 was31.86%. Once merged/bounced, data.requests is the instrument for F222 step2; compare same-PID counter deltas, per-route/query-shape rates, CPU-time slope, RSS and launch counters. No remaining performance code-change request in this final round.\n"
+		}
+	]
+}
