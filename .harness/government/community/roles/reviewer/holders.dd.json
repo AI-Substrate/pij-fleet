@@ -1882,7 +1882,10 @@
 					"harness_session": "4b0db837-7643-466e-b89f-a8ec3a6fb6bc",
 					"instance_key": "260",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #260 merged (93ede9146a57)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-compulsory-junglefowl",
+					"to": "2026-11-19T06:29:06.157Z",
 					"why": "F219 OMP worktree.clone off + sensor; F218 #260"
 				}
 			]
