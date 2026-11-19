@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f15f-de11-7601-b061-30a97070c316",
+				"date": "2026-11-19",
+				"head": "2bfd4dcbb779a4847b07738d772ba0c9686e741e",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44434863733/job/135261066747",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:248",
+				"writer": "pij-vast-silkworm",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Deploy owner: capture candidate boot and >600-second site counters with commit/PID/uptime; repeat spawn-rate and CPU/RSS baseline after authorized bounce."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just spawn-rate --seconds 20",
+					"exit_code": 0,
+					"log": "Old daemon commit8863651685 PID61945;20.0s;machine160.9 launches/s;daemon child attribution lower bound empty."
+				},
+				{
+					"command": "pij-rs --json ping plus /bin/ps, paired 20.016 seconds apart",
+					"exit_code": 0,
+					"log": "2026-11-19T01:16:59.114613Z->01:17:19.130997Z;uptime23:21->23:41;git.pa-watchdog-common-dir28->28;all daemon spawns781->781;RSS152192->147728KiB;CPUtime11:07.72->11:12.22."
+				},
+				{
+					"command": "gh run view 44434863733 --job 135261066747 --log; gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14488941754/zip",
+					"exit_code": 0,
+					"log": "Linux merge includes exact head;2516 passed,6 skipped;JUnit confirms7 targeted placement/launch-accounting/shim tests passed."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #248 performance review — PASS WITH NOTES\n\nHead: 2bfd4dcbb779a4847b07738d772ba0c9686e741e\nReviewer: pij-vast-silkworm, role performance/248\nRequest: 01a1f15f-de11-7601-b061-30a97070c316\nScope: launch cost, in-process scaling, spawn accounting, CI evidence and live pre-deploy baseline. Correctness/security verdicts remain with their assigned reviewers. No local cargo build/test or daemon bounce performed.\n\n## Decision\n\nNo blocking performance finding. The normal main-checkout, linked-worktree and non-repository paths launch nothing, including their first observation. Unknown layouts retain the existing git launch site, guarded by a 600-second per-folder answer cache. This removes a boot/new-folder burst, not a previous one-git-per-seat-per-minute steady-state rate. Source review is inferential; the CI launch-counter test is deterministic. Candidate behavior on the live macOS fleet is not yet measured.\n\nPlacement is POLICY: the returned repository key selects the PA/prime scope; it is not a one-directional brake.\n\n## Cost and scaling\n\n- Existing scheduler only: TICK=60 seconds; one owned watchdog instance, serialized awaited rounds. No new timer, poll, task, process launch site or per-tick-per-seat launch.\n- Before: one git per distinct placed folder per daemon lifetime, plus each new folder; unplaceable folders retried once per 600 seconds. PR historical receipts 23 at uptime 6min -> 23 at 7m39s -> 25 at 13m47s are reported by the author, not independently re-created here.\n- After normal placement: zero git launches at boot and steady state. A directory walk performs metadata checks per ancestor; a worktree/submodule-style pointer adds two read_to_string calls and canonicalization. These calls use ordinary git metadata; the code does not enforce a small-file byte limit.\n- After fallback: at most one git invocation per Unknown folder per 600 seconds in the serialized watchdog, including cached success or failure; average <=U/600 invocations/s for U continuously Unknown folders, with an initial U-folder burst. Git has the existing 2-second timeout and kill_on_drop. root::place runs before cache lookup, so a readable replacement bypasses an old fallback answer immediately. No recursive pointer traversal: at most one gitdir pointer and one commondir are read.\n- Important documentation precision: filesystem placement is NOT once per distinct folder per round. For N live seats and P watched PAs, scope_of performs N+1 repo calls per PA (pa_watchdog.rs:514-515,976-985), then presence_scopes performs N more calls (pa_presence.rs:274-276), plus tombstoned-parent anchors. The quiet path is approximately P*(N+1)+N walks per 60-second round: O((P+1)*N*D) metadata work at ancestor depth D. Same-folder seats repeat the walk. Limit wakes and dormant notifications can add scope walks; last_pa scans tombstoned PAs only on a would-be missing-PA send and launches nothing. The docs' per-call description is true, but the per-PA multiplier should remain visible when judging cost.\n- Fallback launch is still spawns::record(\"git.pa-watchdog-common-dir\") immediately before program::launch_async(\"git\", ...), not a shell. The resolver caches a PATH hit; the normal installed git path is absolute. It is the existing launch, not an added site. spawn_sites.rs scans daemon production Command builders for accounting and separately trips over bare git/tmux launches. It is a source tripwire, not complete runtime proof.\n\n## Live baseline — old deployed code, not this PR\n\nCommand: pij-rs --json ping, paired with /bin/ps -p 61945 -o pid=,lstart=,etime=,%cpu=,rss=,time=\nDaemon commit 8863651685; PID 61945; local start Thu 19 Nov 10:53:38 2026.\n\n|UTC sample|Uptime|git.pa-watchdog-common-dir|All daemon spawns|RSS KiB|ps %CPU|CPU time|\n|---|---|---|---|---|---|---|\n|2026-11-19T01:16:59.114613Z|23:21|28|781|152192|123.1|11:07.72|\n|2026-11-19T01:17:19.130997Z|23:41|28|781|147728|17.4|11:12.22|\n\nMeasured interval 20.016 seconds. Every recorded per-op counter delta is 0, including git.pa-watchdog-common-dir. CPU time rose 4.50 seconds, about 22.5% of one core over this short interval. ps %CPU samples are transient values, not the interval average. This warm window cannot measure the boot saving.\n\nCommand: just spawn-rate --seconds 20, same old-daemon PID 61945, immediately preceding the paired sample.\nObserved: 20.0 seconds; total_new_per_s=160.9; sampled_per_s=158.4; attributed lower bound <gone before seen>=96.8/s, other=61.5/s; daemon_children_per_s_lower_bound={}; no statusline/managed Claude-hook launches sampled. Whole-machine counts include concurrent seats and this review's probes; absence of sampled daemon children is not proof of no short-lived daemon launches. The paired daemon counters are the site-specific evidence. Do not attribute the 160.9/s machine total to F202.\n\n## CI checked, not merely reported\n\nReview worktree HEAD equals the full requested head. gh pr view 248 reports all five checks SUCCESS. Rust job https://github.com/AI-Substrate/pij-fleet/actions/runs/44434863733/job/135261066747 tested Linux merge a638b337ecabc4daf7a6e62a82fd2ba359da4969, explicitly composed from 2bfd4dcbb779a4847b07738d772ba0c9686e741e and main 88636516859d2249548920c9e7aaadc53b5178a5. Summary: 2516 passed, 6 skipped.\n\nDownloaded and inspected that run's JUnit artifact 14488941754. All seven targeted tests executed and passed:\n- community::root::tests::place_names_the_common_dir_git_names\n- community::root::tests::place_leaves_what_it_cannot_read_to_git\n- pa_watchdog::tests::a_recreated_worktree_is_placed_in_its_new_repository_at_once\n- pij-daemon::presence_launches::the_presence_checks_and_placing_folders_launch_nothing\n- pij-daemon::shim_http::shim_sessions_emits_the_frozen_legacy_names_and_resolves_git_common_dir\n- pij-testkit::spawn_sites::every_daemon_launch_site_records_itself\n- pij-testkit::spawn_sites::no_daemon_launch_searches_path_for_git_or_tmux\n\nThe launch test covers 47 normal-layout rounds with no counter increase, including a new repository, then exactly two fallback launches for four seats in two garbled folders and no extra launches on the next two rounds. Those simulated minute arguments do not advance std::time::Instant; this proves cache reuse, not real-time TTL expiry. The source declares GIT_ANSWER_TTL=600s; the >10-minute live check is still owed.\n\n## Notes owed / proof ceiling\n\nAfter the authorized merge and bounce, the deployer must retain candidate commit/PID/uptime plus by_op[\"git.pa-watchdog-common-dir\"] immediately after boot and again after >600 seconds. Normal live layouts should remain absent/zero from boot, unlike the old boot burst. Repeat just spawn-rate --seconds 20 and paired daemon counters, CPU time and RSS on the candidate. A warm zero-delta baseline or Linux unit tests do not replace this macOS boot/fallback-window receipt. Ownership: pij-steady-otter's merge/deploy flow; not an authorization for this reviewer to bounce the fleet.\n\nHarness feedback captured as DL-001 in .harness/temp/agent/session-buffer.md via harness observe. Magic wand: a single cost-receipt recipe should pair ping site deltas with PID/commit/uptime, CPU/RSS and spawn-rate, preventing a boot burst from being mislabeled steady state. No source or canonical review-worktree documentation changed.\n"
+		}
+	]
+}
