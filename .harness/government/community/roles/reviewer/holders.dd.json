@@ -1835,6 +1835,16 @@
 					"seat": "pij-obliged-lark",
 					"to": "2026-11-19T05:07:59.519Z",
 					"why": "F214 #256 correctness"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T05:18:48.894Z",
+					"harness": "copilot",
+					"harness_session": "d26a48c6-a1aa-4c4a-bc80-77b060d8b8c7",
+					"instance_key": "258",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-magnificent-reindeer",
+					"why": "F214 follow-up #258 (audit labels, retro): correctness + C21 public check"
 				}
 			]
 		}
