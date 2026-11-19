@@ -1688,7 +1688,10 @@
 					"harness_session": "b28d0d0d-410f-4a5c-9415-a757ff4e0cd6",
 					"instance_key": "245",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #245 merged (577a6c7a13f6)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-academic-wallaby",
+					"to": "2026-11-19T00:01:40.224Z",
 					"why": "F194 #245 correctness (gpt-6.1-sol)"
 				}
 			]
