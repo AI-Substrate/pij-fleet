@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"head": "66c82a4bb358b591b38b9040a32974951cbb7c97",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/251#issuecomment-6998026021",
+				"role": "performance",
+				"subject": "pr:251",
+				"writer": "pij-vast-silkworm",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "top -l 7 -s 10 -pid 5448; paired ps and pij-rs --json ping",
+					"exit_code": 0,
+					"log": "Deployed66c82a4bb3;uptime02:30→03:33,UTC02:37:08.131→02:38:11.595. IntervalCPU15.6,18.9,19.7,18.2,16.2,17.8 mean17.73%;CPUtime+11.81s/63.461s=18.61%core;RSS188560→193104KiB;spawns452→452,alloperationdeltas0. Target<~20 met in window."
+				},
+				{
+					"command": "pij-rs --json state pij-musical-hedgehog (timed subprocess)",
+					"exit_code": 0,
+					"log": "Wall0.008064s;stillactive,pid98769,tombstonedAtnull,same5256fe34 session;sessionStatus.not-found UNI-STATUS-TRANSCRIPT-NOT-FOUND. Left open."
+				},
+				{
+					"command": "sample 5448 5 1; two GET /v1/cards through existing authenticated adapter transport",
+					"exit_code": 0,
+					"log": "No old Spine.all_matching,terminal_outcome_message,walk_prep_root frames captured. New all_matching_after cursor/schema path captured once; other cards reads remain. Consecutivecards87.72ms/85.42ms,126cards each,0held. Initialwarmthuncontrolled;timingsalone do notprove0rows."
+				},
+				{
+					"command": "just spawn-rate --seconds 20 (separate settled window)",
+					"exit_code": 0,
+					"log": "Wholemachine112.5launches/s,sampled111.0/s,daemonchildobservedlowerbound{};nooverlapwithCPU/sample. Earlierstartupwindow191.9/s and0.5/sdaemonchildrennotusedassteadyrate. Hostactivitynotattributedto251."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "## Final F209 post-merge performance receipt\n\n**Target met in the observed settled window:** all six10s daemon CPU intervals were below20%; mean **17.73%**, with **18.61% of one core** from cumulative CPU time. Hedgehog stayed open and still has no transcript; its state lookup took **8.06ms**.\n\nDeployed merge **`66c82a4bb358b591b38b9040a32974951cbb7c97`**, daemon **PID5448**, ping commit `66c82a4bb3`. Waited until daemon uptime **02:30**, avoiding bounce catch-up. No seat closed/reloaded; no local build/test or daemon mutation by this reviewer.\n\n### Settled minute\n\nCommand: `/usr/bin/top -l 7 -s 10 -pid 5448 -stats pid,command,cpu,time,mem`. First cumulative sample excluded. Six interval CPU percentages: **15.6,18.9,19.7,18.2,16.2,17.8**.\n\n| Receipt | Before | After |\n|---|---|---|\n| UTC |2026-11-19 02:37:08.131|2026-11-19 02:38:11.595|\n| Daemon uptime |02:30|03:33|\n| Cumulative CPU time (`ps`) |0:53.22|1:05.03|\n| RSS (`ps`,KiB) |188560|193104|\n| Daemon spawn counter |452|452|\n| Placement-git counter (absent=0) |0|0|\n\nCPU time increased **11.81s over63.461s =18.61%core**. Every observed daemon spawn operation delta was0. RSS increased4544KiB within this window; no long-term heap or leak claim.\n\nFor context, pre-#249 observation was~49.8%core; [after #249 alone](https://github.com/AI-Substrate/pij-fleet/pull/249#issuecomment-6997833162), the same settled-age protocol measured22.43%mean interval CPU /22.87%CPU-time and still captured full-history cards replay. These are uncontrolled live-fleet observations, not an isolated attribution of every saved CPU second.\n\n### Hedgehog remained open\n\n`pij-rs --json state pij-musical-hedgehog`, wall time around the complete subprocess: **0.008064s**. Response retains `state=idle`, `liveness=active`, PID98769, `tombstonedAt=null`, session `5256fe34-ff16-4676-b804-8fd87d75a87c`, and:\n\n```json\n{\"sessionStatus\":{\"outcome\":\"not-found\",\"detail\":\"UNI-STATUS-TRANSCRIPT-NOT-FOUND: no transcript found for the session\"}}\n```\n\nThis is normal-use latency, potentially served by the kept miss, not a cold stat benchmark. Earlier same-seat receipt was2.281s.\n\n### Five-second stack and cards route\n\n`/usr/bin/sample 5448 5 1` began02:38:11.679UTC, after the CPU interval. The old `Spine::all_matching`, terminal-outcome JSON replay and `walk_prep_root` symbols were not captured. The new path was captured once at a cursor query/schema guard:\n\n`seat_card → EventBus::all_matching_after → SqliteSpine::all_matching_after → matching → require_current_schema`.\n\nCards are **not free or absent**: the sample still shows normal seat/status/role/report/queue/liveness reads. The eliminated claim is the repeated full delivery-history fold, not every cards query or all daemon CPU. A short stack sample cannot prove zero calls forever or turn frame counts into CPU attribution.\n\nTwo consecutive real `GET /v1/cards` requests at02:38:42UTC took **87.72ms** and **85.42ms**, each returning126 cards and0 held deliveries. Used the existing adapter's normal authenticated GET transport in a throwaway JS probe; no credentials printed or directly inspected. Initial projection warmth was uncontrolled, so these are not cold-versus-warm timings. CI's row counter (603 cold,0 unchanged,1 new) and indexed-seek proof—not request latency alone—establish the replay bound.\n\nLocal full ping/ps/top/state/sample/cards receipts retained under `/tmp/pij-vast-silkworm-pr251-deployed-66c82a4b*`. The two-part F209 live CPU/latency proof is complete for this deployed commit and observed window. The review's disclosed unpruned ever-carded projection-map memory cost remains; this measurement does not establish a lifetime memory bound.\n\nA separate later, settled `just spawn-rate --seconds 20` window reported whole-machine112.5launches/s, sampled111.0/s, observed daemon-child lower bound{}. It did not overlap the CPU minute or five-second sample. An earlier startup-window probe reported191.9/s and observed0.5/s `pij-rs` daemon children; that is not the settled rate. These machine-wide rates include unrelated fleet work and do not assign host launch savings to #251.\n"
+		}
+	]
+}
