@@ -1755,6 +1755,16 @@
 					"seat": "pij-near-coral",
 					"to": "2026-11-19T02:05:31.379Z",
 					"why": "F208 #250 correctness (Copilot gpt-6.1-sol)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T02:17:58.106Z",
+					"harness": "copilot",
+					"harness_session": "6872afe7-27e7-47fd-bd28-5a3994cf5de3",
+					"instance_key": "251",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-daily-elephant",
+					"why": "F209 part 2 #251 correctness"
 				}
 			]
 		}
