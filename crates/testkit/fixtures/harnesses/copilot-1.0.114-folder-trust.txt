@@ -1,0 +1,40 @@
+ [Current]  Sessions   Issues   Pull requests   Gists
+
+│   ▔▔▔▔   /experimental                │  /model — Switch models across providers, or use Copilot Fusion            │ ┃
+│                                                                                                                    │ ┃
+├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤ ┃
+│ Discover MAI Code 2 Flash                                                                                          │ ┃
+│ Try a fast model built for responsive coding tasks, 50% off right now.                                             │ ┃
+│ Click here or enter /model mai-code-2-flash to switch                                                              │ ┃
+│ ctrl+x → m switch for this session                                                                                 │ ┃
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ ┃
+                                                                                                                       ┃
+ ● No Copilot instructions found for this repository. Run /init to generate them.                                      ┃
+                                                                                                                       ┃
+ ! Failed to load 1 skill. Run /skills for more details.                                                               ┃
+                                                                                                                       ┃
+ ● An administrator-managed setting replaced model "claude-opus-5" with "gpt-6.1-sol" for this session. Contact your   ┃
+   administrator if this is unexpected.                                                                                ┃
+                                                                                                                       ┃
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Confirm folder trust                                                                                                 │
+│ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │
+│ ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮ │
+│ │ /private/tmp/f215-copilot-5isljw12                                                                               │ │
+│ ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ │
+│                                                                                                                      │
+│ Copilot can read files in this folder and, with your permission, edit them or run code and shell commands. It will   │
+│ remember your permissions for the rest of this session.                                                              │
+│                                                                                                                      │
+│ Git commands run in this folder may use configuration from the enclosing repository and execute programs configured  │
+│ by that repository.                                                                                                  │
+│                                                                                                                      │
+│ Do you trust the files in this folder?                                                                               │
+│                                                                                                                      │
+│ ❯ 1. Yes                                                                                                             │
+│   2. Yes, and remember this folder for future sessions                                                               │
+│   3. No (Esc)                                                                                                        │
+│                                                                                                                      │
+│ ↑/↓ to navigate · enter to select · esc to cancel                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+0% f215-copilot-5isljw12 ⛓ unregistered (pane held) • gpt-6.1-sol · xhigh • xhigh • 0/272k • 0 AIU • 0m

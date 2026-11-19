@@ -12,6 +12,7 @@ mod usage_limit;
 
 pub mod modal;
 pub mod proc;
+pub mod trust;
 
 pub use adapter::{
     BindObservation, ClaudeHarness, CodexHarness, CopilotHarness, HarnessRegistry,

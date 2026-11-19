@@ -4,11 +4,13 @@ import { parseDestination, renderDestination } from "../core/address.js";
 import { type ControlOutcome, isControlCommand, validateCommand } from "../core/commands.js";
 import {
 	COLD_WAKE_CODE,
+	DaemonRefusalError,
 	type FyiClaimRequest,
 	isHeldFyi,
 	isRetiredSeatRefusal,
 	type Registration,
 	type RustSeatDescriptor,
+	type SeatCloseAnswer,
 } from "../core/daemon-wire.js";
 import { memorableIdentitySeed } from "../core/discovery.js";
 import { buildCallerContext } from "../core/generation-routing.js";
@@ -92,6 +94,29 @@ export function describeSpawnedWorker(worker: SpawnedWorker): string {
 					: [`roster read failed: ${registration.rosterError}`]),
 			];
 	return [...lines, ...(notice ? [notice] : [])].join("\n");
+}
+
+/** What pij_close did: the daemon's answer, and whether the seat's pane was killed. */
+export interface SeatClosed {
+	readonly held: boolean;
+	readonly process: string;
+	readonly killed?: string;
+	readonly killFailed?: string;
+}
+
+/** A close's outcome; a refusal carries the daemon's own code (e.g. E-RS-OWNERSHIP). */
+export type SeatCloseResult =
+	| { readonly ok: true; readonly value: SeatClosed }
+	| { readonly ok: false; readonly code: string; readonly message: string };
+
+/** The pij_close result text. */
+export function describeSeatClosed(id: string, closed: SeatClosed): string {
+	if (closed.held) return `pij close of ${id} is held for its memory turn: ${closed.process}`;
+	if (closed.killed !== undefined)
+		return `closed pij worker: ${id}; killed its pane ${closed.killed}`;
+	if (closed.killFailed !== undefined)
+		return `closed pij worker: ${id}, but its pane was not killed: ${closed.killFailed}`;
+	return `closed pij worker: ${id}. ${closed.process}`;
 }
 
 /** How a send may deviate from a plain waking message. */
@@ -782,8 +807,51 @@ export class RustRuntimeSession {
 		};
 	}
 
-	close(id: SessionId): ReturnType<PijSession["close"]> {
-		return this.session.close(id);
+	/**
+	 * Close a seat by id through the daemon (F216), wherever it runs: the
+	 * daemon resolves this caller and holds the guard (the seat itself, its
+	 * recorded parent, or the prime for a dead orphan). The pane is killed only
+	 * when the daemon names it as still the seat's own; a close held for the
+	 * seat's memory turn kills nothing.
+	 */
+	async close(id: SessionId, signal?: AbortSignal): Promise<SeatCloseResult> {
+		const seat = this.self;
+		if (seat === "") return { ok: false, code: "E-NOID", message: "this seat is not registered" };
+		let answer: SeatCloseAnswer;
+		try {
+			answer = await this.client.close(
+				{
+					seat: id,
+					caller: {
+						PIJ_SESSION_ID: seat,
+						...(this.paneId === undefined ? {} : { TMUX_PANE: this.paneId }),
+						...(this.nativeSession === undefined ? {} : { HARNESS_SESSION_ID: this.nativeSession }),
+						cwd: process.cwd(),
+					},
+				},
+				signal,
+			);
+		} catch (error) {
+			// The daemon's own code (E-RS-OWNERSHIP, …), else its error kind.
+			const code =
+				error instanceof DaemonRefusalError
+					? typeof error.details?.code === "string"
+						? error.details.code
+						: (error.kind ?? "refused")
+					: "unreachable";
+			return { ok: false, code, message: error instanceof Error ? error.message : String(error) };
+		}
+		if (answer.killPane === undefined)
+			return { ok: true, value: { held: answer.held, process: answer.process } };
+		const killed = this.tmux.killPane(answer.killPane);
+		return {
+			ok: true,
+			value: {
+				held: false,
+				process: answer.process,
+				...(killed.ok ? { killed: answer.killPane } : { killFailed: killed.message }),
+			},
+		};
 	}
 
 	capture(type: string, data?: unknown): void {

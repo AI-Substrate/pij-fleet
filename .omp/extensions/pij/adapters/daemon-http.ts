@@ -7,6 +7,7 @@ import {
 	type ActivityRequest,
 	DaemonRefusalError,
 	decodeEnvelope,
+	decodeSeatCloseAnswer,
 	decodeStreamLine,
 	type EventFrame,
 	type FyiClaim,
@@ -21,6 +22,8 @@ import {
 	type ReleaseRequest,
 	type ReleaseResponse,
 	type RustSeatDescriptor,
+	type SeatCloseAnswer,
+	type SeatCloseRequest,
 	type SendRequest,
 } from "../core/daemon-wire.js";
 import {
@@ -220,6 +223,11 @@ export class PijDaemonClient {
 	/** Run the `pij` block that ends a seat's reply (plan 226). */
 	async turnEnd(request: TurnEndRequestWire, signal?: AbortSignal): Promise<TurnEndResultWire> {
 		return decodeTurnEndResult(await this.post<unknown>("/v1/turn-end", request, signal));
+	}
+
+	/** Close a seat by id (F216): the daemon finds it wherever it runs and checks the caller may. */
+	async close(request: SeatCloseRequest, signal?: AbortSignal): Promise<SeatCloseAnswer> {
+		return decodeSeatCloseAnswer(await this.post<unknown>("/v1/close", request, signal));
 	}
 
 	/** Atomic pending → delivered claim; a count of 0 carries an empty block. */

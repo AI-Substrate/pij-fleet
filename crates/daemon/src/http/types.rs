@@ -185,6 +185,11 @@ pub struct SpawnRequest {
     /// Launch a Copilot seat plain, never through the cache proxy (plan 229).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_cache_proxy: bool,
+    /// Answer a Claude or Copilot folder-trust prompt during the wait by
+    /// choosing its row that trusts the folder (F215). Without it, a prompt
+    /// refuses the spawn at once and leaves the pane waiting on it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub trust_folder: bool,
 }
 
 /// Additive spawn result: launch dispatch and process binding are separate facts.

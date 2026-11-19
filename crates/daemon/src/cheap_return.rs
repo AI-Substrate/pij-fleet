@@ -21,6 +21,7 @@ use std::time::Duration;
 
 use pij_core::events::EventFilter;
 use pij_core::model::{Event, SeatId};
+use pij_core::ports::MenuKey;
 use pij_core::wire;
 use pij_harnesses::{ModelRestore, StagedSubmission, restore_claude_models, save_claude_models};
 use serde_json::{Value, json};
@@ -215,7 +216,7 @@ pub async fn switch_back(
         {
             services
                 .tmux
-                .press_enter(&pane)
+                .press_key(&pane, MenuKey::Enter)
                 .await
                 .map_err(|error| format!("the dialog was not confirmed: {error}"))?;
             switched.confirmed = true;

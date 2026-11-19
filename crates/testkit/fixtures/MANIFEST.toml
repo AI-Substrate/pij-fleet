@@ -576,3 +576,38 @@ sha256 = "396a5119b779aa1c49a6def3085e74e56a612077b88000d6a1b3cb750ced1ce2"
 bytes = 976
 note = "Plan 164 review F01b: the seat-address grammar (`seat`, `seat@machine`, `@@` escapes), read by pij_core::address tests and by the OMP/Pi and Copilot parsers' tests so the three sides cannot drift."
 answer = "Each case is {input, seat, machine|null} (valid) or {input, error: true}: the first unescaped `@` separates the machine, `@@` is a literal `@` in the seat, an alias cannot contain `@`, and an empty seat or alias is refused."
+
+[[fixture]]
+path = "harnesses/copilot-1.0.114-folder-trust.txt"
+sha256 = "9ef2d92e98e0f316fba1431871cb70aea2cde6e6042e1926b1b606e0a4af84e1"
+bytes = 6459
+note = "Live Copilot CLI 1.0.114 started with the spawn flags (--yolo --no-ask-user) in a fresh git repo under /tmp, 120x40 pane: its folder-trust prompt ('Confirm folder trust', 'Do you trust the files in this folder?', '❯ 1. Yes' highlighted). F215."
+answer = "pij_harnesses::trust::folder_trust_prompt(Copilot) matches; the highlighted row is the trust row, so the next key is Enter. The daemon's 20-row tail cuts off the title, so the question row is the anchor."
+
+[[fixture]]
+path = "harnesses/copilot-1.0.114-folder-trust-short.txt"
+sha256 = "5fe4f018c28a8c7285c0331f8ff3c4e47632c25a8e3009b1e50aa97f21700f4a"
+bytes = 2135
+note = "Live Copilot CLI 1.0.114 folder-trust prompt in a 72x24 pane: the menu scrolls, so only '❯ 1. Yes' of its three rows shows and the footer wraps. F215."
+answer = "folder_trust_prompt(Copilot) still matches on the question row plus one visible option row; next key Enter."
+
+[[fixture]]
+path = "harnesses/copilot-1.0.114-folder-trust-second-row.txt"
+sha256 = "f76dfc52e73593e35fb921072c48ff87ca8ea9a614e7bbe54ad858808524681b"
+bytes = 6459
+note = "The same live Copilot 1.0.114 prompt after one Down: '❯ 2. Yes, and remember this folder for future sessions' highlighted. F215."
+answer = "folder_trust_prompt(Copilot) matches; the highlight is below the trust row, so the next key is Up, never Enter."
+
+[[fixture]]
+path = "harnesses/claude-2.1.328-folder-trust.txt"
+sha256 = "a8a94968fb9e3ef8a713655b429b5bce84d722266512f857ff342d558495d7a9"
+bytes = 815
+note = "Live Claude Code 2.1.328 started with --dangerously-skip-permissions in a fresh git repo under /tmp, 120x40 pane: its folder-trust prompt ('Accessing workspace:', '❯ No, exit' highlighted, 'Yes, I trust this folder', 'Enter to confirm · Esc to cancel'). The prompt sits at the TOP of the pane, so the bottom 20 rows are blank. D-226-6, F215."
+answer = "folder_trust_prompt(Claude) matches on the full screen; the highlight is on 'No, exit', so the next key is Down, never Enter."
+
+[[fixture]]
+path = "harnesses/claude-2.1.328-folder-trust-yes-row.txt"
+sha256 = "83074b34be30bb014dc95e75e75da41a3df77b800c05363a3b620ce93ff753fe"
+bytes = 815
+note = "The same live Claude 2.1.328 prompt after one Down: '❯ Yes, I trust this folder' highlighted. F215."
+answer = "folder_trust_prompt(Claude) matches; the highlight is the trust row, so the next key is Enter."

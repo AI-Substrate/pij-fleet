@@ -235,6 +235,40 @@ export function isRetiredSeatRefusal(error: unknown, seat: string): boolean {
 	);
 }
 
+/** `POST /v1/close` by seat id (F216). The daemon resolves the caller and holds the guard. */
+export interface SeatCloseRequest {
+	readonly seat: string;
+	readonly caller: {
+		readonly PIJ_SESSION_ID: string;
+		readonly TMUX_PANE?: string;
+		readonly HARNESS_SESSION_ID?: string;
+		readonly cwd: string;
+	};
+}
+
+/** What a close answered: retired, or held for the seat's memory turn first. */
+export interface SeatCloseAnswer {
+	/** The daemon's account of what the close leaves running. */
+	readonly process: string;
+	/** The close waits on the seat's memory turn: nothing is retired yet. */
+	readonly held: boolean;
+	/** The pane the daemon names as still the seat's own, to kill; only on a retired seat. */
+	readonly killPane?: string;
+}
+
+export function decodeSeatCloseAnswer(value: unknown): SeatCloseAnswer {
+	const row = object(value, "pij close answer");
+	const held = row.held !== undefined && row.held !== null;
+	const killPane = row.kill_pane;
+	if (killPane !== undefined && (typeof killPane !== "string" || !/^%\d+$/.test(killPane)))
+		throw new Error("pij close answer kill_pane must be a tmux pane id");
+	return {
+		process: string(row.process, "pij close answer process"),
+		held,
+		...(held || killPane === undefined ? {} : { killPane }),
+	};
+}
+
 function object(value: unknown, label: string): Record<string, unknown> {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) {
 		throw new Error(`${label} must be an object`);

@@ -2827,3 +2827,129 @@ describe("extension-stream delivery", () => {
 		expect(runtime.eventCount("daemon_event_ack_error")).toBe(0);
 	});
 });
+
+describe("close through the daemon (F216)", () => {
+	/** A parent booted with a roster holding only itself: its child runs in
+	 *  another project and registered after boot, so no local row knows it. */
+	async function bootParent(close: (body: Record<string, unknown>) => Response) {
+		vi.stubEnv("PIJ_ANNOUNCE_TO", "");
+		vi.stubEnv("PIJ_SPAWN_ID", "");
+		vi.stubEnv("PIJ_SPAWN_TASK", "");
+		vi.stubEnv("PIJ_SESSION_ID", "pij-parent");
+		const closes: Array<Record<string, unknown>> = [];
+		const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+			const path = new URL(String(url)).pathname;
+			if (path === "/v1/seats") return envelope("pij seats", { seats: [], unavailable: [] });
+			if (path === "/v1/register") {
+				const claim = JSON.parse(String(init?.body)) as Record<string, unknown>;
+				return envelope("pij register", {
+					id: claim.id,
+					harness: claim.harness,
+					pane: claim.pane,
+					proc: { pid: claim.pid, proc_start: claim.proc_start },
+					folder: claim.folder,
+					state: "idle",
+					parent: null,
+				});
+			}
+			if (path === "/v1/events")
+				return eventResponse(`${JSON.stringify({ hello: true, v: 1, build: "pij-rs test" })}\n`);
+			if (path === "/v1/inbox") return envelope("pij inbox", []);
+			if (path === "/v1/activity") return envelope("pij activity", { changed: true });
+			if (path === "/v1/close") {
+				const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+				closes.push(body);
+				return close(body);
+			}
+			throw new Error(`unexpected path ${path}`);
+		});
+		const tmux = new FakeTmux();
+		const runtime = new RustRuntimeSession(
+			new PijDaemonClient({ addr: "127.0.0.1:7461", stateDir: "/tmp/state" }, "secret", {
+				fetch: fetchMock as typeof fetch,
+				readFile: async () => "secret",
+				processStart: () => 20260905092248,
+			}),
+			tmux,
+			[],
+		);
+		bindRuntime(runtime, new FakePiRuntime());
+		await runtime.boot({
+			extension_build: "0123456789",
+			extension_path: "/abs/extension",
+			folder: "/abs/tree",
+			dataDir: "",
+			eventsPath: "",
+			harness: "pi",
+			harnessSessionId: "native-session",
+			piSessionId: "native-session",
+			runtimeBin: "omp",
+			paneId: "%42",
+			resetRuntimeState: true,
+			reason: "startup",
+		});
+		return { runtime, tmux, closes };
+	}
+
+	it("closes a child the boot roster never saw, by id, and kills the pane the daemon names", async () => {
+		const { runtime, tmux, closes } = await bootParent(() =>
+			envelope("pij close", {
+				seat: "pij-child",
+				seq: 9,
+				process:
+					"pij close retires the seat; its process keeps running. To stop it, its parent runs: tmux kill-pane -t %77",
+				kill_pane: "%77",
+			}),
+		);
+		const closed = await runtime.close("pij-child");
+		expect(closed).toEqual({
+			ok: true,
+			value: expect.objectContaining({ held: false, killed: "%77" }),
+		});
+		expect(closes).toEqual([
+			{
+				seat: "pij-child",
+				caller: expect.objectContaining({ PIJ_SESSION_ID: "pij-parent", TMUX_PANE: "%42" }),
+			},
+		]);
+		expect(tmux.killedPanes).toEqual(["%77"]);
+	});
+
+	it("passes the daemon's refusal through and kills nothing when the caller may not close", async () => {
+		const { runtime, tmux } = await bootParent(
+			() =>
+				new Response(
+					JSON.stringify({
+						ok: false,
+						command: "pij close",
+						v: 2,
+						error: "refused",
+						meta: "pij-parent may not close pij-stranger",
+						details: { code: "E-RS-OWNERSHIP" },
+					}),
+					{ status: 403 },
+				),
+		);
+		expect(await runtime.close("pij-stranger")).toEqual({
+			ok: false,
+			code: "E-RS-OWNERSHIP",
+			message: "pij-parent may not close pij-stranger",
+		});
+		expect(tmux.killedPanes).toEqual([]);
+	});
+
+	it("kills nothing on a close held for the seat's memory turn", async () => {
+		const { runtime, tmux } = await bootParent(() =>
+			envelope("pij close", {
+				held: "awaiting-memory",
+				memory_turn: { action: "close", pending: true },
+				process:
+					"pij close retires the seat; its process keeps running. To stop it, its parent runs: tmux kill-pane -t %77",
+				kill_pane: "%77",
+			}),
+		);
+		const closed = await runtime.close("pij-child");
+		expect(closed).toMatchObject({ ok: true, value: { held: true } });
+		expect(tmux.killedPanes).toEqual([]);
+	});
+});

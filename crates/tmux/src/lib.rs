@@ -22,7 +22,8 @@ use pij_core::delivery::MAX_TYPED_FRAME_BYTES;
 use pij_core::error::{PijError, Result};
 use pij_core::model::{Harness, Pane, PaneProcess, ProcIdentity};
 use pij_core::ports::{
-    LaunchCommand, STAGED_SUBMIT_RECOVERY, StagedSubmit, TapSweep, TmuxPort, is_rendered_leftover,
+    LaunchCommand, MenuKey, STAGED_SUBMIT_RECOVERY, StagedSubmit, TapSweep, TmuxPort,
+    is_rendered_leftover,
 };
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::{Instant, sleep};
@@ -1090,8 +1091,11 @@ impl TmuxPort for TmuxAdapter {
         Ok(())
     }
 
-    async fn press_enter(&self, pane: &str) -> Result<()> {
-        self.run("send-keys", &os_args(["send-keys", "-t", pane, "Enter"]))?;
+    async fn press_key(&self, pane: &str, key: MenuKey) -> Result<()> {
+        self.run(
+            "send-keys",
+            &os_args(["send-keys", "-t", pane, key.tmux_name()]),
+        )?;
         Ok(())
     }
 

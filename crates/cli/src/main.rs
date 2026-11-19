@@ -355,6 +355,12 @@ enum Command {
         /// cache proxy (plan 229). Revive keeps the seat opted out.
         #[arg(long)]
         no_cache_proxy: bool,
+        /// Answer a Claude or Copilot folder-trust prompt by choosing its
+        /// row that trusts the folder (Copilot: `1. Yes`, this session only;
+        /// Claude: `Yes, I trust this folder`). Without it, a prompt refuses
+        /// the spawn at once and leaves the pane waiting on it (F215).
+        #[arg(long, conflicts_with = "no_wait")]
+        trust_folder: bool,
     },
     /// Relaunch a tombstoned or observed-dead seat with its prior launch intent.
     Revive {
@@ -4391,6 +4397,7 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
         no_wait,
         wait_seconds,
         no_cache_proxy,
+        trust_folder,
     } = command
     else {
         return Ok(None);
@@ -4461,6 +4468,7 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
         role: role.clone(),
         caller: role.is_some().then(caller_context),
         no_cache_proxy: *no_cache_proxy,
+        trust_folder: *trust_folder,
     }))
 }
 

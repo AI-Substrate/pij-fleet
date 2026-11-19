@@ -970,6 +970,30 @@ pub struct StagedSubmit {
     pub paste_open: bool,
 }
 
+/// A key pij may press in a harness's own menu: navigation and confirm, never
+/// typed text (see [`TmuxPort::press_key`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MenuKey {
+    /// Move the highlight one row up.
+    Up,
+    /// Move the highlight one row down.
+    Down,
+    /// Choose the highlighted row.
+    Enter,
+}
+
+impl MenuKey {
+    /// The key's tmux name, as `send-keys` takes it (not literal text).
+    #[must_use]
+    pub const fn tmux_name(self) -> &'static str {
+        match self {
+            Self::Up => "Up",
+            Self::Down => "Down",
+            Self::Enter => "Enter",
+        }
+    }
+}
+
 /// Every tmux syscall in the workspace.
 #[async_trait]
 pub trait TmuxPort: Send + Sync {
@@ -1043,14 +1067,19 @@ pub trait TmuxPort: Send + Sync {
     /// Type `keys` into a pane, literally. Does NOT send: see [`Self::submit`].
     async fn send_keys(&self, pane: &str, keys: &str) -> Result<()>;
 
-    /// Press Enter in a pane, with nothing typed: only to confirm a dialog pij
-    /// itself opened (plan 225b: Claude's "Switch model?" after a `/model`).
-    /// pij never answers a dialog it did not open (plan 219). The default
-    /// refuses, so an adapter that can't do it never pretends to.
-    async fn press_enter(&self, pane: &str) -> Result<()> {
+    /// Press one menu key in a pane, with nothing typed. Only to answer a
+    /// dialog pij itself opened (plan 225b: Claude's "Switch model?" after a
+    /// `/model`), or a folder-trust prompt the caller asked pij to answer with
+    /// `spawn --trust-folder` (F215). pij never answers a dialog it did not
+    /// open and was not asked to (plan 219). The default refuses, so an
+    /// adapter that can't do it never pretends to.
+    async fn press_key(&self, pane: &str, key: MenuKey) -> Result<()> {
         Err(crate::error::PijError::Adapter {
             adapter: "tmux".to_string(),
-            message: format!("press_enter is not supported for pane {pane}"),
+            message: format!(
+                "press_key {} is not supported for pane {pane}",
+                key.tmux_name()
+            ),
         })
     }
 
