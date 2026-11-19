@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"head": "26c684a887c809268c42aa9ceaee088569a7e1c9",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/248#issuecomment-6997297101",
+				"role": "performance",
+				"subject": "pr:248",
+				"writer": "pij-vast-silkworm",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "pij-rs --json ping; /bin/ps -p 82870 -o pid=,etime=,%cpu=,rss=,time=",
+					"exit_code": 0,
+					"log": "Same PID82870 commit26c684a887;UTC01:45:07 uptime00:42 placement0,total412;01:54:30 uptime10:05 placement0,total438;01:54:52 uptime10:27 placement0,total438. Placement key absent=0 throughout."
+				},
+				{
+					"command": "just spawn-rate --seconds 20",
+					"exit_code": 0,
+					"log": "20.0s;whole-machine185.2 launches/s;sampled175.2/s;daemon child lower bound{};all daemon counters flat438->438 across21.260s. CPUtime+10.59s=49.8%core,RSS161280->157312KiB. CPU is separately tracked F209/hedgehog,not attributed to248."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "## #248 live after-bounce performance receipt\n\nMerged commit **26c684a887c809268c42aa9ceaee088569a7e1c9**; same daemon **PID 82870**, started **2026-11-19 11:44:25 AEST**. `ping` reports commit `26c684a887`. No intervening bounce.\n\nCommands: `pij-rs --json ping`; `/bin/ps -p 82870 -o pid=,etime=,%cpu=,rss=,time=`; `just spawn-rate --seconds 20` from the canonical main checkout. A single delayed measurement waited until uptime >600 s; no fleet changes or synthetic Unknown folders were introduced.\n\nAll times below are **2026-11-19 UTC**. Missing `by_op[\"git.pa-watchdog-common-dir\"]` is counted as **0**.\n\n|Sample time|Daemon uptime|Placement git count|Total daemon spawns|ps %CPU|RSS KiB|CPU time|\n|---|---|---|---|---|---|---|\n|01:45:07.082|00:42|0|412|51.3|214208|0:46.63|\n|01:54:30.873|10:05|0|438|80.9|161280|5:42.20|\n|01:54:52.125|10:27|0|438|12.1|157312|5:52.79|\n\n**Placement count stayed 0 from boot through the >600 s retry window.** This confirms removal of the normal-layout boot burst on this live fleet. The 26 other recorded launches between the boot and ten-minute samples were `git.community` +14, `ddocs.community` +4, `ps.registration-native-process` +4, and tmux pipe detach/clear-options +2 each—not repository placement.\n\nThe 20.0 s whole-machine probe completed successfully:\n\n- Whole machine: **185.2 new processes/s**; sampled **175.2/s**.\n- Attribution lower bounds: gone before inspection **136.1/s**, other **39.1/s**; daemon children `{}`; statusline and managed Claude hooks **0.0/s** seen.\n- Across the surrounding **21.260 s** paired window, **every daemon per-op counter delta was 0**, including total **438→438** and placement git **0→0**. Sampled child attribution is only a lower bound; the daemon counters supply the site-specific receipt. The machine total includes unrelated fleet work and is not attributed to #248.\n\n**CPU remains high:** CPU time increased **10.59 s** over that paired window, approximately **49.8% of one core**. The ps endpoint readings are transient, not the interval average. **F209 / the hedgehog-Unisphere discovery issue is separately tracked; this is not attributed to #248**, and no CPU-reduction claim is made for this launch-site fix.\n\nProof limit: this observed fleet incurred zero placement fallback launches across the window. It does not independently exercise an intentionally Unknown layout or force a fallback-cache expiry.\n\nReviewer: `pij-vast-silkworm` (`role:performance/248`).\n"
+		}
+	]
+}
