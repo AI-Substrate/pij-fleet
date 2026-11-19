@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"head": "a70cace40b002e9940b230b5ca27d6763a72977c",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/256#issuecomment-7001369640",
+				"role": "performance",
+				"subject": "f:214-audit-after",
+				"writer": "pij-mild-pony",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "pij-rs --json state pij-central-llama; pij-rs --json state pij-aggregate-boa; pij-rs --json state pij-appropriate-swordtail",
+					"exit_code": 0,
+					"log": "Deployed36530/a70cace40b showed30m native,5m native,1h proxy; sanitized values only"
+				},
+				{
+					"command": "two timestamped pij-rs --json ping readings around nice -n 19 just spawn-rate --seconds 20 --json",
+					"exit_code": 0,
+					"log": "05:09:33.189Z..05:09:53.698Z,20.5094s,total571->581,+10existing ps.registration-native-process,all other sites0;machine148.1/s,not PR-attributed"
+				},
+				{
+					"command": "nice -n 19 pij-rs fleet-report \"$HOME\" --since 2026-11-19T05:08:00Z --until 2026-11-19T06:10:00Z --threads 2 --out /tmp/f214/fr-after-a70cace4-0610",
+					"exit_code": 0,
+					"log": "1507calls,307turns,54sessions,14unseated;62minute post-deploy window"
+				},
+				{
+					"command": "/usr/bin/time -lp just cache-ttl-audit /tmp/f214/fr-after-a70cace4-0610 --json /tmp/f214/performance-256-after-a70cace4-0610.json",
+					"exit_code": 0,
+					"log": "261delivered,233paired,151decided;largecoldallowed1,warned0;warmrefused/warned1(refused0);modelled large refusals2;2.26s wall,2.14CPU-s,maxRSS82198528B,0swaps;independent guard-row mismatches0"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "## F214 post-deploy audit — first hour\n\nDeployed merge: `a70cace40b002e9940b230b5ca27d6763a72977c`; `PAST_TTL = Warn` (b). PID `36530` reported that revision at both deployment verification and the end-window check. This audit was run by PERFORMANCE only.\n\n### Windows and method\n\n- **Before (B):** 2026-11-12 03:36:05.250Z–2026-11-19 03:36:05.250Z; 14,620 delivered, 13,404 paired, 9,402 decided.\n- **After (A):** 2026-11-19 05:08:00Z–06:10:00Z, 62 minutes; 261 delivered, 233 paired, 151 decided. Of the paired deliveries, 76 were busy and six were non-busy partial-cache cases, excluded from decided counts. Fleet report: 1,507 calls, 307 turns, 54 sessions, 14 unseated.\n- Same audit pairing and thresholds: previous/next main-chain calls, next call within 15 minutes, cache-read share ≥50% warm / <10% cold. B uses the pre-F214 guard; A uses shipped Warn. Counts below are reconstructed **guard decisions over delivered-call pairs**, not observed sender refusals. Window lengths and traffic differ; do not infer rates or significance from raw totals. `—` means no decided after samples, not proof of zero risk.\n\n### Per harness × model × route\n\nParentheses are a subset of the preceding count: warned among large cold allowed; refused among warm refused-or-warned.\n\n| Harness | Model | Route | Decided B → A | Large cold allowed (warned), B → A | Warm refused/warned (refused), B → A | Large refusals, B → A |\n|---|---|---|---:|---:|---:|---:|\n| claude | claude-opus-5-5 | anthropic | 3333 → 0 | 0 (0) → — | 0 (0) → — | 67 → — |\n| copilot | claude-opus-5.5 | plain | 3298 → 15 | 211 (0) → 0 (0) | 4 (4) → 1 (0) | 34 → 0 |\n| omp | claude-opus-5.5 | github-copilot | 995 → 4 | 48 (0) → 0 (0) | 0 (0) → 0 (0) | 7 → 0 |\n| claude | claude-sonnet-5-5 | anthropic | 815 → 0 | 0 (0) → — | 0 (0) → — | 9 → — |\n| copilot | claude-opus-5.5 | proxied | 433 → 91 | 3 (0) → 1 (0) | 0 (0) → 0 (0) | 2 → 2 |\n| copilot | gpt-6.1-sol | plain | 180 → 10 | 3 (0) → 0 (0) | 0 (0) → 0 (0) | 5 → 0 |\n| omp | gpt-6.1-sol | github-copilot | 173 → 5 | 0 (0) → 0 (0) | 0 (0) → 0 (0) | 0 → 0 |\n| copilot | claude-sonnet-5.5 | plain | 53 → 0 | 0 (0) → — | 0 (0) → — | 0 → — |\n| copilot | gpt-6.2-astra | plain | 45 → 13 | 0 (0) → 0 (0) | 0 (0) → 0 (0) | 0 → 0 |\n| omp | claude-opus-5.5-1m | github-copilot | 37 → 8 | 0 (0) → 0 (0) | 0 (0) → 0 (0) | 0 → 0 |\n| copilot | gpt-5.6-sol | plain | 28 → 0 | 0 (0) → — | 0 (0) → — | 0 → — |\n| copilot | claude-sonnet-5.5 | proxied | 6 → 5 | 0 (0) → 0 (0) | 0 (0) → 0 (0) | 0 → 0 |\n| copilot | claude-opus-5.5-1m | proxied | 3 → 0 | 0 (0) → — | 0 (0) → — | 0 → — |\n| claude | claude-fable-5-2 | anthropic | 2 → 0 | 0 (0) → — | 0 (0) → — | 0 → — |\n| omp | gpt-6.2-astra | github-copilot | 1 → 0 | 0 (0) → — | 0 (0) → — | 0 → — |\n| **Total** | | | **9402 → 151** | **265 (0) → 1 (0)** | **4 (4) → 1 (0)** | **124 → 2** |\n\n### What this window establishes—and does not\n\n- No decided large cold 5-minute-TTL case occurred after deployment. The one modeled warm warning was plain Copilot Claude at 6.37 minutes idle, with a 99.8% next-call cache-read share. This exercises the Warn classification, not demonstrated prevention of an expensive cold wake.\n- The remaining modeled large cold allow was proxied Claude: approximately 26 minutes idle on a native one-hour TTL; next-call cache-read share 8.6%. A TTL is not a guarantee of actual cache residency.\n- Recounting all after rows independently yielded zero `new_guard` mismatches. The two modeled refusals were delivered pairs, not proof of two rejected requests. There were no `send.cold-wake-forced`, `watchdog.nudge`, or `watchdog.idle-nudge` events in the window. Ordinary-send `cold_check` is attached to the response after delivery-outcome persistence; those spine events do not prove that the server issued the modeled warning. Context availability after a daemon restart is another replay-vs-runtime limit. No actual refusal-error rate or avoided-token savings is claimed.\n- The report window can omit a pre-window predecessor for Claude/OMP; pairs without both required calls are excluded. This first-hour sample does not replace a longitudinal effectiveness study.\n\n### Deployed surface and resource receipts\n\nLive `pij-rs state` output at 05:09Z showed Copilot GPT `cache 30m native`, plain Copilot Claude `cache 5m native`, and proxied Claude `cache 1h proxy`. No synthetic wake was induced.\n\n| Launch measurement | Before merge | After deployment |\n|---|---:|---:|\n| Measured interval | 20.3384 s | 20.5094 s |\n| Daemon total counters | 1763 → 1763 | 571 → 581 |\n| Daemon launch delta | 0 | 10, all existing `ps.registration-native-process` |\n| Whole-machine launches/s | 284.6 | 148.1 |\n\nAll other after-window launch-site deltas were zero. There is no new TTL launch site; the measured fleet did **not** have zero launches. Different fleet activity and the restart prevent attributing the machine-rate difference to F214. After pair: 05:09:33.189Z–05:09:53.698Z. Daemon CPU/RSS snapshots were 16.9% / 111,504 KiB near deployment and 13.6% / 145,744 KiB at 06:10:44Z; these are not isolated CPU or leak measurements.\n\nThe audit itself exited 0: 2.26 s wall, 1.69 s user + 0.45 s system, maximum RSS 82,198,528 bytes, zero swaps. Report folding used two threads at nice 19; the audit recipe also runs at nice 19. No local builds or tests.\n\nReproduction (local reports are not published):\n```sh\nnice -n 19 pij-rs fleet-report \"$HOME\" --since 2026-11-19T05:08:00Z --until 2026-11-19T06:10:00Z --threads 2 --out /tmp/f214/fr-after-a70cace4-0610\njust cache-ttl-audit /tmp/f214/fr-after-a70cace4-0610\n```\n\nAudit-tool provenance: `70d01ba27a6258efa69b66d30ba5671ee1d30b68`, script SHA-256 `9dafb2b618980a7833c3748d45925ababe0fadd27a02c5e97a0a0a4557cf74e5`. The tool changed during the scheduled wait to correct legacy `cache_*` diagnostics; its guard/policy computation is unchanged from the merged review. The deployed daemon stayed at the merge SHA above. Only guard metrics are compared here.\n"
+		}
+	]
+}
