@@ -168,6 +168,15 @@
 					"seat": "pij-vast-silkworm",
 					"to": "2026-11-19T02:34:41.186Z",
 					"why": "F209 part 2 #251 cost (cards history read)"
+				},
+				{
+					"assigned_by": "pij-outstanding-silkworm",
+					"from": "2026-11-19T03:50:07.967Z",
+					"harness": "copilot",
+					"harness_session": "4c39d23d-563d-401c-a843-69014ed8cc11",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-productive-stingray",
+					"why": "pm-004: cost verdict on #255 (ws004 s07)"
 				}
 			]
 		}
