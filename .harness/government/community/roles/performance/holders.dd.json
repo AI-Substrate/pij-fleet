@@ -137,7 +137,10 @@
 					"harness_session": "01a1f15f-842f-773e-94e3-5bc54ec11dcb",
 					"instance_key": "248",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #248 merged (26c684a887c8)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-vast-silkworm",
+					"to": "2026-11-19T01:44:28.514Z",
 					"why": "F202 #248 cost: launch-site change (OMP gpt-6.1-sol)"
 				}
 			]

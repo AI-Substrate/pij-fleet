@@ -241,7 +241,10 @@
 					"harness_session": "1d8b4347-0e0c-4b74-b096-e7b116156b85",
 					"instance_key": "248",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #248 merged (26c684a887c8)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-successful-dingo",
+					"to": "2026-11-19T01:44:28.514Z",
 					"why": "F202 #248 security (Copilot gpt-6.1-sol)"
 				}
 			]
