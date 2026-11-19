@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-19",
+				"hook": "When resuming PR256 round 2 or the owed post-deploy F214 audit.",
+				"tags": [
+					"review",
+					"cache-ttl",
+					"audit",
+					"f214",
+					"follow-up"
+				],
+				"title": "PR256 R1: audit cache warmth is not guard disposition"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Review #256 round 1 at 695aae4a4033941c44dfead656ef070febf9fef9:\nR256-001 blocks the new Python audit's stats, not the TTL-source wiring.\nCompute guard metrics from disposition, not estimated cache warmth. Small\nseats can be cache-cold and guard-clear by design. Saved/committed replay\nguard totals: silent cold 970 -> 710 (large 265 -> 5), warm refusals 4 -> 56.\nThe advertised new false-cold 221 includes 165 small clear seats.\n\nThe 52 newly refused warm large deliveries all had own 300s evidence,\n32 Copilot and 20 OMP, not the table. The coder's metadata investigation\nreports the Copilot examples were past native expiry even after adjusting\nfor completion. Distinguish conservative brake false positives from a\nwrong fallback source. Refuse/Warn remains the prime's pending decision.\n\nRound 2 should check corrected guard/cache metrics and focused Python\nregressions in CI, not widen review. No local builds/tests were permitted.\nJUnit from successful job 135336668132, artifact 14497913524, proved\n2,536 passing/non-skipped Rust cases at the reviewed head.\n\nReviewer/256 owns the promised f214-audit-after: after merge and daemon\ndeployment, wait at least three days, audit from the actual deployment\ntimestamp, use corrected guard metrics, inspect warn receipts and forced\nwake TTL/basis events, then write an output note to pm-001. The verdict's\nnotes_owed carries this obligation; plain-close does not erase it.\n\nmagicWand: pin audit metrics against guard-disposition examples in CI.\ndifficulties: green Rust/TS gates did not exercise the Python audit's\nmeaning; independent cache/guard columns prevented a policy misdiagnosis.\nCaptured in the review worktree as harness observation reviewer-256/DL-001.\n"
+		}
+	]
+}
