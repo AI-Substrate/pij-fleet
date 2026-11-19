@@ -145,6 +145,13 @@ async fn control_native_refuses_unsupported_targets_and_invalid_shapes_without_e
         (
             Harness::Omp,
             Some("%target"),
+            "restart",
+            "",
+            "E-RS-CONTROL-UNSUPPORTED: `restart` is Copilot's /restart",
+        ),
+        (
+            Harness::Omp,
+            Some("%target"),
             "compact",
             "do this too",
             "E-RS-CONTROL-BODY",

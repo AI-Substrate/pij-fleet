@@ -376,7 +376,7 @@ pub(crate) async fn activity(
 }
 
 /// Resolve the live seat a hook speaks for, and check its binding evidence.
-async fn bound_seat(
+pub(super) async fn bound_seat(
     state: &AppState,
     command: &str,
     seat: Option<SeatId>,

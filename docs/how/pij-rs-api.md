@@ -937,6 +937,20 @@ Cost: one request per turn end whose reply ends with a `pij` block; nothing othe
 
 Sources: [`turn_end.rs`](../../crates/core/src/turn_end.rs) (parse, judge, render), [`http/turn_end.rs`](../../crates/daemon/src/http/turn_end.rs) (validate and run), [OMP adapter](../../.omp/extensions/pij/adapters/omp-turn-end.ts).
 
+## Lost Copilot login (F212)
+
+| Surface | Contract |
+|---|---|
+| POST `/v1/seat/auth-error` | Request `{seat, native_session, pid, proc_start, kind}`, unknown fields refused. `kind` is `authorization` (a `session.error` with `errorType: authorization`, status 401) or `credential-authority` (the `GitHub credential authority error:` refusal, which has no code). `native_session` must be the one the seat is bound to, as for `/v1/fyi/claim`; only a Copilot seat may report. `pid` and `proc_start` name the reporting process and must be the seat's current one: `/restart` keeps the session and replaces the process, so a late report from the replaced process is `409` `E-RS-AUTH-STALE` and nothing is done. The pij Copilot extension sends it once the failed run has ended and its idle is published, and never sends error text. Local key only; not peer-reachable. |
+| Answer | `data` is `{action, msg_id?, told?}`. `action` is `restart` (the seat's own `restart` control was queued as `pij-bg`, `msg_id` is its id), `notify` (busy, a composer not empty or unreadable, or the control refused: its live parent and the designated prime of each project it holds a role in were sent the fix), `not-restarted` (the restart settled and the same process still reports: they were told to `/exit`, then `pij-rs revive <seat>`), `relogin` (the process pij restarted lost its login too: they were told to `/login`), `pending` (the restart control is still queued) or `told` (already told inside the window). `told` lists each recipient with its delivery outcome. |
+| Window | One restart and one notice per seat per 30 min on the daemon's monotonic clock, so a wall-clock jump cannot end it. Reports for one seat are decided one at a time. Every decision that acts is a `seat.auth_recovery` spine event (`{action, at, pid, proc_start, kind, msg_id}`); after a daemon restart the latest one stands in for the forgotten window, and its wall-clock age can only spare the seat. |
+
+Policy and brakes: the restart is the policy. The brakes (a seat that isn't idle, a composer that isn't recognized and empty, a recent restart) only ever turn it into a notice or nothing, and the `restart` control then waits on the control path's own brakes (settled idle, empty composer, hold limit). `restart` is also a user control: `pij send <copilot-seat> --command restart` (self or parent) types Copilot's `/restart`, which swaps the CLI process and keeps the same session; every other harness refuses it.
+
+Cost: nothing per tick. Per report: one indexed spine read per seat per daemon lifetime, one read of the seat's live controls while a restart may be pending, its holdings when someone is told, one composer capture when a restart is possible, then one queued control or one message per recipient. The daemon launches nothing.
+
+Sources: [`auth_recovery.rs`](../../crates/daemon/src/auth_recovery.rs), [`http/auth_error.rs`](../../crates/daemon/src/http/auth_error.rs), [`control.rs`](../../crates/core/src/control.rs).
+
 ## Send to a role (plan 199)
 
 `pij send role:<id>` (or `role:<id>/<instance>` for a many-holder role) is resolved by the project's community directory, never by `seat_roles` (ruling C1). The project is `--project <slug>`, else the one whose repo holds the caller's cwd. The role document is found in the governance worktree without launching git. Live holders are open holdings whose seat is registered and not tombstoned. `role:prime` is the exception (C24, F168): its one holder is the project's designated prime (`pij project set --prime`), and prime assignment rows, open or released, count for nothing, in the send and in `pij directory routes` alike. With no designation, or a designated seat that is not live, it queues as any role with no live holder.

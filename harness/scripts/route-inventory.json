@@ -635,6 +635,15 @@
 		},
 		{
 			"method": "POST",
+			"path": "/v1/seat/auth-error",
+			"authority": "seat-authority",
+			"class": "controls",
+			"grants_by": ["seat"],
+			"guard": ["B"],
+			"note": "A Copilot seat's own extension reports a lost login (F212); the daemon may queue the seat's own /restart (idle, empty composer, once per 30 min) or tell its parent and the prime. Bound by the seat's native session."
+		},
+		{
+			"method": "POST",
 			"path": "/v1/bg/{job}/emit",
 			"authority": "job-token",
 			"reason": "Its own per-job secret, outside the bearer ring (plan 163); the daemon key plus a seat's identifiers is not enough."

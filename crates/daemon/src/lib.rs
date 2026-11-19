@@ -9,6 +9,7 @@
 
 pub mod admission;
 pub mod auth;
+mod auth_recovery;
 pub mod background;
 pub mod bg_routing;
 pub mod cache_proxy;
@@ -137,6 +138,8 @@ pub struct Services {
     pub interaction: Arc<InteractionGate>,
     /// Panes whose tap the pane observer could not attach (F112), for the PA digest.
     pub tap_refusals: Arc<pane_observer::TapRefusals>,
+    /// Each Copilot seat's last lost-login decision (F212), on the monotonic clock.
+    pub(crate) auth_recovery: Arc<auth_recovery::Ledger>,
     /// The commit this daemon was built from ([`BUILD_COMMIT`]), shown in `ping`.
     pub build_commit: Option<String>,
     /// The extension trees this daemon was built with, for the PA digest's
@@ -664,6 +667,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         tmux,
         interaction,
         tap_refusals: Arc::new(pane_observer::TapRefusals::new()),
+        auth_recovery: Arc::new(auth_recovery::Ledger::new()),
         build_commit: BUILD_COMMIT.map(str::to_string),
         extension_trees: ExtensionTrees {
             copilot: EXTENSION_TREE_COPILOT.map(str::to_string),

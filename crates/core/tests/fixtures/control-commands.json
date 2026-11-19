@@ -1,5 +1,5 @@
 {
   "commands": ["compact", "new", "reload"],
-  "copilot_commands": ["compact"],
+  "copilot_commands": ["compact", "restart"],
   "copilot_refusal": "E-RS-CONTROL-UNSUPPORTED: use Copilot's native user controls"
 }
