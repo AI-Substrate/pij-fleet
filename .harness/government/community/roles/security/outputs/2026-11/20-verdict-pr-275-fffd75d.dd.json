@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f625-4328-7241-855e-9d7eb6108ca9",
+				"date": "2026-11-20",
+				"head": "fffd75d08efb49e5875ad0efbebcf901c455bb73",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44637075313/job/135958210213",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:275",
+				"writer": "pij-remarkable-horse",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 275",
+					"exit_code": 0,
+					"log": "FINAL at fffd75d08efb49e5875ad0efbebcf901c455bb73; five checks passed; clean detached worktree"
+				},
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci",
+					"exit_code": 0,
+					"log": "CI run 44637075313, successful job 135958210213, JUnit artifact ID 14585061268: 2597 tests, zero failures/errors/skips; both new revive tests and all spawn_sites passed"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Read-only worktree lacks node_modules; eight missing/mismatched-JS-tool sensors fail. Heavy stages skipped. Not a green local ship gate."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS WITH NOTES\nPR: #275\nHead: fffd75d08efb49e5875ad0efbebcf901c455bb73\nBase: 8f798be429f9fdaf3b35c777006d06a53d603bdb\nScope: changed behavior and added public text, under C21, C33 and C34.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No security vulnerabilities found | - |\n\nAuthority is not widened. Bearer authentication and peer-scope middleware still precede the handler (crates/daemon/src/http/mod.rs:813-816,832-859). Parent/prime override authorization remains unchanged under the lock, AFTER the new wait, not before it (crates/daemon/src/http/revive.rs:568-602). The helper grants no authority.\n\nThe wait completes before spawn-lock acquisition and returns no pane observation to the decision (revive.rs:336-358,408-414). The locked path rereads the registry and probes current process identity and pane presence (revive.rs:159-193,550-556). A present matching pane or unverifiable listing still refuses; pane reuse visible to the locked check cannot authorize revival over that pane (revive.rs:182-193,550-602). PID reuse remains Recycled rather than Dead (crates/core/src/liveness.rs:23-33). Descriptor retirement uses a transactional comparison and the same spawn guard continues into launch (crates/store/src/registry.rs:59-74; revive.rs:703-710).\n\nPolicy versus brake: dead-process observation decides eligibility (policy); a present or unverifiable pane vetoes launch (brake). The wait does not remove that brake.\n\nNon-security timing/cost note: the helper uses a monotonic Tokio deadline and 250 ms sleeps (revive.rs:323-324,350-357), but FIVE SECONDS IS A POLLING BUDGET, NOT A HARD END-TO-END REQUEST BOUND. A control-reply wait can take three seconds (crates/tmux/src/control.rs:34,282-292); unavailable control queries can fall back to synchronous Command::output without an explicit timeout at that layer (crates/tmux/src/lib.rs:338-342,457-461,860-862). Therefore an in-flight pane read can exceed the polling deadline, and zero subprocess launches is true only of the healthy persistent-control path. The nominal 21 helper reads exclude the later locked observation. This is a correctness/performance clarification, not a security blocker under C33; the correctness reviewer should grade it and the caller timeout margin. No separate live-fleet cost measurement was performed by this security review.\n\nChanged-text inspection found no added secrets, credentials or C21 private home paths across the four changed files. This is not a repository-history secret scan.\n\nEvidence:\n- just pr-freeze 275: FINAL at the exact full head; clean detached worktree; all five checks passed. Repeated immediately before publication.\n- Successful Rust CI run 44637075313, job 135958210213, uploaded JUnit artifact ID 14585061268. Parsed by that exact artifact ID: 2597 tests, zero failures, errors or skips.\n- New regressions passed: a_cleanly_quit_seat_revives_once_its_pane_closes (0.851 s); a_dead_seat_whose_pane_stays_is_still_refused_after_the_bound (5.102 s).\n- Existing concurrent-revive, authority, present-pane and recycled-process regressions passed; all six spawn_sites tests passed.\n- harness boot --json: advisory ready=false because this read-only worktree has no node_modules.\n- harness checks --quick --json: exit 1, eight local sensors failed on missing/mismatched JavaScript tools; skill structure and native contracts passed; heavy route-inventory/Rust/smoke stages were skipped. This is not a green local ship gate. No dependencies were installed or linked, no local builds or mutations were run, and the review source tree remains clean.\n\nHarness feedback: the highest-leverage improvement is a read-only review-proof command that imports exact-successful-job CI receipts and reports missing local tooling as unavailable without falling through to ambient package tools. The session-only structured retrospective and CI evidence were retained outside the review worktree; no source or governance files were hand-edited.\n"
+		}
+	]
+}
