@@ -7,7 +7,11 @@
 // - statically, everywhere (CI has no omp): the file sets `worktree:` /
 //   `clone: false`;
 // - live, when omp is on PATH: `omp config get worktree.clone --json`, run from
-//   the repo root (OMP reads the project layer from <cwd>/.omp), answers false.
+//   the repo root, answers false. OMP reads the project layer from the session's
+//   start directory (and an explicit `omp worktree add`'s cwd), so the root is
+//   where seats start. `omp config get` may run OMP's own settings
+//   initialization or migrations, so this half is not provably read-only on
+//   OMP's global state; the probes so far left ~/.omp/agent/config.yml unchanged.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -18,19 +22,31 @@ export const CONFIG = ".omp/config.yml";
 /** OMP's answer for `worktree.clone` from `root`, or undefined without omp. */
 export type OmpClone = (root: string) => boolean | undefined;
 
-/** `clone: false` under a top-level `worktree:` block, comments ignored. */
+/**
+ * `clone: false` as a direct child of a top-level `worktree:` block (at the
+ * block's first child indent, never deeper), comments ignored; the last such
+ * `clone` wins, as in YAML.
+ */
 export function setsCloneFalse(yaml: string): boolean {
 	let inWorktree = false;
+	let childIndent: number | undefined;
+	let clone: string | undefined;
 	for (const raw of yaml.split("\n")) {
 		const line = raw.replace(/\s+#.*$/, "").replace(/^#.*$/, "");
 		if (line.trim() === "") continue;
-		if (!/^\s/.test(line)) {
+		const indent = line.length - line.trimStart().length;
+		if (indent === 0) {
 			inWorktree = /^worktree:\s*$/.test(line);
+			childIndent = undefined;
 			continue;
 		}
-		if (inWorktree && /^\s+clone:\s*false\s*$/.test(line)) return true;
+		if (!inWorktree) continue;
+		childIndent ??= indent;
+		if (indent !== childIndent) continue;
+		const value = /^clone:\s*(\S+)\s*$/.exec(line.trimStart())?.[1];
+		if (value !== undefined) clone = value;
 	}
-	return false;
+	return clone === "false";
 }
 
 export const ompClone: OmpClone = (root) => {

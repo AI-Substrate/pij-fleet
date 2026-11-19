@@ -40,6 +40,9 @@ describe("omp-config-check (F219)", () => {
 		["clone left on", "worktree:\n  clone: true\n"],
 		["clone commented out", "worktree:\n  # clone: false\n"],
 		["clone under another key", "other:\n  clone: false\nworktree:\n  mode: x\n"],
+		// R260-001: nested below worktree is not worktree.clone (OMP answers true).
+		["clone nested below worktree", "worktree:\n  unrelated:\n    clone: false\n"],
+		["clone false then overridden", "worktree:\n  clone: false\n  clone: true\n"],
 	])("fails with %s", (_, config) => {
 		expect(ompConfigFindings(repo(config), noOmp)).toEqual([
 			".omp/config.yml does not set worktree:\n  clone: false",

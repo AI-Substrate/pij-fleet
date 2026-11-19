@@ -216,6 +216,8 @@ citation disputes, all of which resolved as neither party being wrong.)
   cargo through the shared target. `just omp-config-check` (a `harness checks`
   stage) fails if the file or OMP's own answer from the repo root says otherwise.
   It is project-scoped: `just link` never links it, and `~/.omp` is not touched.
+  OMP reads it from the OMP session's start directory (and an explicit
+  `omp worktree add`'s cwd): start OMP seats at the repo root.
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
 - **`just pr-freeze <pr>`**: is a PR head final for verdicts? Run by hand before each verdict
