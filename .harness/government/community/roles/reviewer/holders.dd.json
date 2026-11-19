@@ -2084,6 +2084,16 @@
 					"seat": "pij-gentle-tern",
 					"to": "2026-11-19T22:09:31.345Z",
 					"why": "F227 live proof B"
+				},
+				{
+					"assigned_by": "pij-cultural-falcon",
+					"from": "2026-11-19T22:22:03.562Z",
+					"harness": "omp",
+					"harness_session": "01a1f5e5-92b6-7467-a16b-1861d9ce9b0a",
+					"instance_key": "f193-proof",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-essential-dove",
+					"why": "F193 repro"
 				}
 			]
 		}
