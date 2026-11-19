@@ -1,0 +1,199 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Canary, sim and verdict recorded",
+        "slug": "phase-1",
+        "status": "ready",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Canary: one proxied opus seat after the setting, driven through the flip script; per-request table from flip_window.py",
+          "phase": "ph-1b0d",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "sim232.py: egret's windows re-priced as proxied-fixed and part by part, with class-price calibration",
+          "phase": "ph-1b0d",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "Per-seat TTL weighed in the segment-cache sim; verdict recorded (keep 1h, build nothing)",
+          "phase": "ph-1b0d",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Live after-window by process start: receipt at 03:40Z, re-run with at least 1h post-restart",
+          "phase": "ph-1b0d",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "#done_when/tk-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Workstream 004 s07 and changelog row",
+          "phase": "ph-1b0d",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "done": "#done_when/tk-0005"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "availableToolCount is constant across the canary's requests, and every hot follow-up writes under 1% of its prompt except the reload residual",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          },
+          {
+            "id": "dw-0002",
+            "assertion": "The post-setting toolTokenCount is measured and priced",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0003",
+            "assertion": "Classes × prices equal billed; the egret-method plain and proxied columns reproduce sim.md",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0004",
+            "assertion": "The TTL sim calibrates to billed proxied within 10%, and every policy is reported against 1h for all and 5m for all",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0005",
+            "assertion": "The after-window is split by process start and re-run with at least 1h of post-restart data",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0006",
+            "assertion": "ddocs validate passes, and coverage-check shows s07 delivering req-01 and req-07",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+          }
+        ]
+      }
+    },
+    {
+      "name": "goals",
+      "value": []
+    },
+    {
+      "name": "non_goals",
+      "value": []
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": []
+    },
+    {
+      "name": "phases",
+      "value": []
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": []
+    },
+    {
+      "name": "execution_guardrails",
+      "value": []
+    }
+  ]
+}
