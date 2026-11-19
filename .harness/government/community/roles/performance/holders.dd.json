@@ -117,7 +117,10 @@
 					"harness": "copilot",
 					"harness_session": "dd2d8d1d-610d-482c-bccd-70de66231c76",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "dead seat (F227)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-back-rooster",
+					"to": "2026-11-19T09:47:47.447Z",
 					"why": "pm-004: cost verdict on #243 (ws004 s05)"
 				},
 				{
