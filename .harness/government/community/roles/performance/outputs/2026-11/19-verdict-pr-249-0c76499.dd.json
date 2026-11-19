@@ -1,0 +1,55 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f184-89fc-78c1-a3f1-c8ce98753e87",
+				"date": "2026-11-19",
+				"head": "0c7649929f8b4837f4d0d131a151077d8d223b79",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44439668833/job/135277075292",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "performance",
+				"subject": "pr:249",
+				"writer": "pij-vast-silkworm",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R249-001 shared with reviewer: PA must retry an inherited cached NotFound after freshness expires; otherwise idle unknown size persists indefinitely. Add consumer regression; retain bounded existing-tick cost.",
+				"Owned by pij-vast-silkworm after corrected merge/bounce: minute of 10s CPU samples plus fast musical-hedgehog state, candidate identity and counter/RSS receipts; hedgehog stays open."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git rev-parse HEAD; PR249 source/diff and CI artifact14490442186",
+					"exit_code": 0,
+					"log": "Exact head;19unisphere tests and6arch_drift tests passed. Counting tests prove1stat0walks for8concurrent Copilot misses and1Claude walk/TTL. No local builds/tests."
+				},
+				{
+					"command": "read pa_presence.rs:1002-1042 and CachedSize::fresh:107-111; compare lib.rs:239-245",
+					"exit_code": 0,
+					"log": "R249-001 independently confirmed by reviewer: cached NotFound becomes completed/fresh None without time expiry; whole turn before next idle PA tick can leave size unknown indefinitely beyond30s."
+				},
+				{
+					"command": "nonrecursive metadata-only os.scandir of configured default transcript roots",
+					"exit_code": 0,
+					"log": "2026-11-19T01:56:48Z:Copilot2788 direct dirs;OMP253;Claude199+12;Codex2. Not recursive totals or isolated walk timings."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #249 performance review — BLOCK (shared R249-001)\n\nHead: 0c7649929f8b4837f4d0d131a151077d8d223b79\nRequest: 01a1f184-89fc-78c1-a3f1-c8ce98753e87\nReviewer: pij-vast-silkworm, performance/249\nExact-head read-only review in /Users/jordanknight/pi-hacking/review-249-0c76499. No local cargo build/test, daemon bounce or code change. Part2's cards held-history optimization is excluded.\n\n## Decision\n\nThe cost shape is good and directly removes the measured Copilot walk. The head is nevertheless blocked on R249-001, the normal-use negative-cache/PA consumer regression independently confirmed by reviewer pij-daily-elephant. This is the same finding, not a second issue or another requested design round.\n\nR249-001: lib.rs:239-245 can return a cached NotFound after the transcript already exists. pa_presence.rs:1002-1008 only reads a seat that is working, was working, or lacks a fresh cached size. Lines1040-1042 treat NotFound as a completed CachedSize{tokens:None,stale:false}; CachedSize::fresh at107-111 has no age/TTL. Timeline: first miss t0; a whole turn creates the transcript and ends with its final activity generation beforet20; first idle PA readt25 gets the cached miss; next roundt85 sees an unchanged idle seat with a fresh size entry and never retries. The pre-change adapter would find the transcript att25. The nominal30s unknown can thus persist indefinitely in the PA, suppressing large-seat visibility until unrelated new activity. Reviewer owns the regression and fix acceptance.\n\nRequired fix must preserve bounded cost. One simple shape is to mark PA NotFound as retryable on its existing60s round, separately from stable Unbound/Unsupported. That adds at most one PA status attempt per missing idle seat per minute, no new timer or process launch; the adapter's30s miss still suppresses duplicate filesystem work. Other designs are acceptable if they demonstrably expire the PA's inherited unknown.\n\n## Cost assessment, apart from R249-001\n\nBefore: every missing Copilot target could recursively walk all of session-state per status read. The observed live end-to-end state command for musical-hedgehog took2.281s; samples put substantial occupancy in locate/walk/read_dir. This is not an isolated walk CPU benchmark.\n\nAfter, for a stable seat/target:\n- Copilot: explicit configured <root>/<id>/events.jsonl uses the SDK's explicit-path stat branch. Zero discovery walks. The first miss costs one logical loader.stat; queued/subsequent reads of that same miss do no filesystem lookup for30s after completion. Kernel syscall count inside loader.stat was not separately measured.\n- Claude/OMP/Codex: a missing target still traverses all configured matching roots on the first attempt, then at most once per30s per stable missing target; no walk during a live cached miss. Successful cursors retain their existing direct-stat/incremental-fold path.\n- MISS_TTL is Duration30s, checked using Instant::elapsed under the seat's existing lock. The cached key is the full StatusTarget (harness/session/explicit path), so session changes bypass the old miss. A real lookup clears the old miss; only TranscriptNotFound installs another. Other errors are not cached.\n- Coalescing applies to miss lookup work, not all requests: each request still creates its existing async read task and takes the slot. Eight queued misses share one lookup; successful warm reads still perform their normal stat. No new periodic poll, timer, task site, subprocess or daemon spawn site.\n- At status arrival rate R and M stable missing seats, old miss work scaled approximatelyR*M*root-walk-cost; Copilot now has at mostM/30 logical missing-path stats/s after the initial burst, no walks. Other harnesses have at mostM/30 walks/s, independent of read rate. Target churn can legitimately invalidate this bound; it is not a global rate limiter across changing sessions.\n- Memory: one last-miss tuple (StatusTarget,Instant,String detail) in each existing read slot, not one allocation per request retained. Space isO(session-id length + explicit path length + diagnostic length) plus fixed metadata. At most one miss per seat slot. Expired entries are cleared/replaced on a later read, not automatically removed by a timer; slots already persist for the lifetime of the adapter, so retained-miss population follows distinct seats read over that lifetime, not strictly current live seats. Exact Rust heap/layout bytes were not measured or fabricated.\n\n## Today's store breadth and residual walk cost\n\nMetadata-only nonrecursive os.scandir at2026-11-19T01:56:48Z; no transcript bodies read and no second full recursive walk induced:\n\n|Configured default root|Direct child directories|\n|---|---|\n|~/.copilot/session-state|2788|\n|~/.omp/agent/sessions|253|\n|~/.claude/projects|199|\n|~/.claude-alt/projects|12|\n|~/.codex/sessions|2|\n\nThese are root breadths, NOT recursive directory/file totals or walk timings. They show why a missing Copilot id must not traverse thousands of session dirs. A non-Copilot cold miss remains proportional to its entire root tree (including descendants); it can still be expensive or burst across many seats despite the30s bound. No claim that all remaining walks are cheap. The2.281s historical Copilot state diagnostic is the measured end-to-end comparator, not a measured cost for a Claude/OMP/Codex walk.\n\n## Other contracts checked / proof limits\n\n- Copilot uses the same SessionRoots.copilot_sessions that previously supplied SDK discovery; daemon default remains HOME/.copilot/session-state. Custom-root support is not newly added here. The existing hit-path test uses a supplied root and still returns Status, with Copilot context unknown as before. Root-override and session-id traversal review remain with correctness/security owners; this performance verdict does not certify every external Copilot configuration.\n- The30s miss is POLICY, not a brake: it decides NotFound without reading and deliberately delays visibility of newly created transcripts. Cold-wake check maps NotFound to Unknown and allows the send, as before; the new cache extends that unknown period. R249-001 is the unbounded downstream extension of this policy, not a disagreement with the explicitly chosen30s freshness tradeoff.\n- New direct unisphere-core dependency is under [dev-dependencies], and architecture rule is unisphere-core@dev. The core crate already exists as an SDK transitive dependency; it is inaccurate to claim the crate is absent from the shipped dependency graph. This adds no new production dependency edge/source revision. Cargo.lock source remains the existing pinned GitHub Unisphere0370cab revision. Counting-loader code is inside cfg(test).\n\n## CI evidence actually inspected\n\nPR body read first; worktree HEAD equals the full requested head. Current five checks all SUCCESS. Downloaded CI run44439668833 JUnit artifact14490442186, whose workflow_run.head_sha is this exact head; no failed suites.\n\nAll19 pij-unisphere tests executed and passed, including:\n- a_copilot_miss_is_one_stat_per_lifetime_shared_by_concurrent_reads:8 concurrent misses ->1 stat,0 walks; transcript creation remains hidden within TTL; found after expiry,still0 walks.\n- a_claude_miss_walks_once_per_lifetime:5 misses ->1 walk, then finds created transcript after expiry.\n- a_missing_copilot_transcript_is_not_found_by_walking_every_session.\n- a_copilot_seat_is_read_with_its_context_unknown (canonical hit).\n- repeated_and_concurrent_reads_of_one_seat_stay_warm.\n- a_cancelled_read_still_keeps_its_cursor.\n\nThe six arch_drift tests passed, including live workspace graph and a_dev_only_rule_never_permits_a_shipped_edge. cold_wake::tests::anything_unknown_allows_and_says_why passed. New tests do not exercise PA idle caching of a synthetic miss after a real transcript appears; R249-001 needs its consumer-level regression. Session-target bypass is source-inspected, not separately pinned by a new target-switch miss test.\n\nCI: https://github.com/AI-Substrate/pij-fleet/actions/runs/44439668833/job/135277075292\n\n## Owned live proof after corrected head merges and authorized bounce\n\nI own the post-deploy measurement. Keep hedgehog open and its transcript missing; bind results to candidate PID/commit/uptime. Take top10s samples for a minute (exclude initial cumulative sample), plus CPU-time/RSS delta and paired ping spawn counters. Run/time one `pij-rs --json state pij-musical-hedgehog`; expected still not-found but fast vs2.281s. Requested CPU target is roughly<20% of one core. If it stays above20%, report the observed result and remaining stacks; do not claim success or silently blame/grade part2 here.\n\nFresh pre249 baseline is already complete from #248 deploy: PID82870, commit26c684a887,uptime10:05->10:27,CPUtime5:42.20->5:52.79 over21.260s (~49.8%core),RSS161280->157312KiB,spawns438->438,placementgit0->0;machine185.2 launches/s. Posted at https://github.com/AI-Substrate/pij-fleet/pull/248#issuecomment-6997297101 and performance notee348627f. This closes #248's owed >600s reading before this review.\n"
+		}
+	]
+}
