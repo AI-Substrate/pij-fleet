@@ -213,6 +213,71 @@ async fn revive_observed_dead_tombstones_before_relaunch_and_cites_seq() {
     assert_ne!(revived.pane, prior.pane);
 }
 
+/// F200: an OMP seat that quit cleanly is dead before tmux closes its pane.
+/// The revive waits for the pane (bounded) and then revives, where it used to
+/// refuse `E-RS-REVIVE-LIVE` until a retry happened to land after the close.
+#[tokio::test]
+async fn a_cleanly_quit_seat_revives_once_its_pane_closes() {
+    use pij_core::ports::TmuxPort;
+    let f = fixture(Arc::new(FakeLiveness::new())).await;
+    f.tmux.arrange_pane("%old");
+    let prior = target();
+    let before = f.services.registry.put(prior.clone()).await.unwrap();
+    let tmux = Arc::clone(&f.tmux);
+    let closes = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        tmux.kill("%old").await.unwrap();
+    });
+    let started = std::time::Instant::now();
+    let body = post(&f, &request()).await;
+    closes.await.unwrap();
+    assert_eq!(body["ok"], true, "{body}");
+    assert!(started.elapsed() >= std::time::Duration::from_millis(500));
+    let events = f
+        .services
+        .spine
+        .tail(Some(&prior.id), before)
+        .await
+        .unwrap();
+    let tombstone: Value = serde_json::from_str(&events[0].payload).unwrap();
+    assert_eq!(tombstone["reason"], "revive-observed-dead");
+    assert_eq!(
+        tombstone["observation"]["pane_present"], false,
+        "{tombstone}"
+    );
+}
+
+/// F200's brake is unchanged: a dead seat whose pane never closes is still
+/// refused, once the bounded wait (5 s, a pane read every 250 ms) is spent,
+/// and nothing is retired or launched.
+#[tokio::test]
+async fn a_dead_seat_whose_pane_stays_is_still_refused_after_the_bound() {
+    let f = fixture(Arc::new(FakeLiveness::new())).await;
+    f.tmux.arrange_pane("%old");
+    let prior = target();
+    let before = f.services.registry.put(prior.clone()).await.unwrap();
+    let started = std::time::Instant::now();
+    let body = post(&f, &request()).await;
+    let waited = started.elapsed();
+    assert_eq!(body["details"]["code"], "E-RS-REVIVE-LIVE", "{body}");
+    assert_eq!(
+        body["details"]["observation"]["pane_present"], true,
+        "{body}"
+    );
+    assert!(
+        waited >= std::time::Duration::from_secs(5) && waited < std::time::Duration::from_secs(8),
+        "{waited:?}"
+    );
+    let reads = f
+        .tmux
+        .calls()
+        .iter()
+        .filter(|call| call.as_str() == "list_panes")
+        .count();
+    assert!(reads <= 22, "{reads} pane reads");
+    unchanged(&f, &prior, before).await;
+}
+
 #[tokio::test]
 async fn revive_retired_harness_succeeds_and_audits_override() {
     let f = fixture_with_retired_harnesses(Arc::new(FakeLiveness::new()), vec![Harness::Pi]).await;

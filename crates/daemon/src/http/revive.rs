@@ -318,6 +318,45 @@ async fn conversation_live_elsewhere(
     None
 }
 
+/// F200: how long a dead seat's pane may take to close before the revive
+/// decides anyway, and how often the panes are read meanwhile.
+const PANE_CLOSE_BOUND: std::time::Duration = std::time::Duration::from_secs(5);
+const PANE_CLOSE_POLL: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// F200: an OMP seat that quits cleanly is dead a second or two before tmux
+/// closes its pane, and the revive refused (`E-RS-REVIVE-LIVE`) until it did.
+/// Liveness `dead` decides a revive (the policy); a present pane vetoes it
+/// (the brake), unchanged. This only waits for the brake's input to settle:
+/// while the live seat's process is dead and its pane is still listed, the
+/// panes are read again every [`PANE_CLOSE_POLL`], for at most
+/// [`PANE_CLOSE_BOUND`], through the tmux control client. It decides nothing
+/// and runs before the spawn lock, so no other spawn waits on it; the locked
+/// observation after it decides as before. At most 21 pane reads per revive,
+/// only on this path; no launch.
+async fn wait_for_dead_pane_to_close(state: &AppState, seat: &SeatId) {
+    let Ok(Some(seat)) = state.services.registry.get(seat).await else {
+        return;
+    };
+    if seat.tombstoned_at.is_some() {
+        return;
+    }
+    let observation = observe(state, &seat).await;
+    let Some(pane) = observation.pane else {
+        return;
+    };
+    if observation.liveness != "dead" || observation.pane_present != Some(true) {
+        return;
+    }
+    let deadline = tokio::time::Instant::now() + PANE_CLOSE_BOUND;
+    while tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(PANE_CLOSE_POLL).await;
+        match state.services.tmux.list_panes().await {
+            Ok(panes) if panes.iter().any(|listed| listed.id == pane) => {}
+            _ => return,
+        }
+    }
+}
+
 pub(super) async fn revive_seat(
     State(state): State<AppState>,
     body: std::result::Result<Json<ReviveRequest>, JsonRejection>,
@@ -363,8 +402,13 @@ pub(super) async fn revive_seat(
         );
     }
 
-    // No pre-lock registry read: a second revive must observe the new incarnation,
-    // not the same dead predecessor that the first request is about to replace.
+    // F200: a seat that quit cleanly is dead before its pane closes. Wait,
+    // bounded and outside the spawn lock, for that pane to go; then the
+    // locked check below observes and decides exactly as before.
+    wait_for_dead_pane_to_close(&state, &request.id).await;
+    // No pre-lock registry read decides anything: a second revive must observe
+    // the new incarnation, not the same dead predecessor that the first
+    // request is about to replace.
     let spawn_guard = state.spawn_lock.lock().await;
     let prior = match state.services.registry.get(&request.id).await {
         Ok(Some(prior)) => prior,

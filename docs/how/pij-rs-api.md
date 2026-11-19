@@ -2486,6 +2486,8 @@ pij-rs revive <seat> --model <id> --json                 # relaunch on another m
 
 Without an eligible override, `E-RS-REVIVE-LIVE` names the observation and exact override command; its remediation does not grant authorization. Shim `pij revive` still refuses `E-RS-UNPORTED`, and native `--print`/`--attach` remain unsupported.
 
+**A seat that just quit (F200).** A harness that quits cleanly is dead a second or two before tmux closes its pane. When the live seat's process reads dead and its pane is still listed, the revive first waits for the pane: it reads the panes again every 250 ms, for at most 5 s, through the tmux control client, before taking the spawn lock (so no other spawn waits on it). Then the observation and decision run exactly as before: liveness `dead` decides the revive (the policy), and a pane still present after the wait refuses `E-RS-REVIVE-LIVE` (the brake, unchanged). Cost, per revive on this path only: at most 21 pane reads and no launch.
+
 ## Double seat: `E-RS-CONVERSATION-LIVE` (plan 174)
 
 One conversation cannot be two seats. When a live seat holds a conversation and another process runs the same conversation (a hand `claude --resume` of a revived seat, for example), the daemon refuses with `E-RS-CONVERSATION-LIVE`:
