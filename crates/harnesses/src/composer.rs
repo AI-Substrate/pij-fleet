@@ -14,8 +14,19 @@ pub fn composer_region(capture: &str, cursor_x: u32, cursor_y: u32) -> ComposerR
 
 fn rendered_composer(capture: &str, cursor_x: u32, cursor_y: u32) -> Option<String> {
     let lines: Vec<&str> = capture.lines().collect();
-    if let Some((row, first_column, payload)) = copilot_v1_composer(&lines) {
-        return clip_payload(payload, row, first_column, cursor_x, cursor_y);
+    if let Some(found) = copilot_v1_composer(&lines) {
+        // BRAKE, not a policy: a frame with a running activity is never read
+        // as a composer, by this or any later recognizer (F210).
+        if found.activity {
+            return None;
+        }
+        return clip_payload(
+            found.payload,
+            found.row,
+            found.first_column,
+            cursor_x,
+            cursor_y,
+        );
     }
 
     for (row, line) in lines.iter().enumerate().rev() {
@@ -93,7 +104,33 @@ fn rendered_composer(capture: &str, cursor_x: u32, cursor_y: u32) -> Option<Stri
     clip_multiline(&lines[prompt.0..composer_end], prompt.0, cursor_x, cursor_y)
 }
 
-fn copilot_v1_composer<'a>(lines: &'a [&'a str]) -> Option<(usize, usize, &'a str)> {
+/// Copilot's `╻▄▄` / `┃` / `╹▀▀` composer box.
+struct CopilotBox<'a> {
+    row: usize,
+    first_column: usize,
+    payload: &'a str,
+    /// A running activity (`◉ Compacting conversation history (1s)`) sits
+    /// above the cwd row while the box stays empty (F210).
+    activity: bool,
+}
+
+/// Every glyph in Copilot 1.0.114's spinner tables (`cli-main.js`: `frames`
+/// `[∙ ◉ ◎]`, `pulseFrames` `[● ◉ ◎ ○ ◎ ◉]`, `framesAltScreen`
+/// `[∙ ∘ ○ ◎ ◉ ◎ ○ ∘]`). A live `/compact` cycled through `● ◉ ◎ ○` (F210 r2).
+const COPILOT_SPINNER_FRAMES: [char; 6] = ['∙', '∘', '●', '◉', '◎', '○'];
+
+/// An activity row: a spinner frame at column 0, a space, then text. Copilot
+/// indents transcript rows (` ● DONE`), so a column-0 frame is never one.
+fn is_copilot_activity_row(line: &str) -> bool {
+    let mut chars = line.chars();
+    chars
+        .next()
+        .is_some_and(|glyph| COPILOT_SPINNER_FRAMES.contains(&glyph))
+        && chars.next() == Some(' ')
+        && !chars.as_str().trim().is_empty()
+}
+
+fn copilot_v1_composer<'a>(lines: &'a [&'a str]) -> Option<CopilotBox<'a>> {
     for (top_row, window) in lines.windows(3).enumerate().rev() {
         if !is_copilot_box_rule(window[0], '╻', '▄')
             || !is_copilot_box_rule(window[2], '╹', '▀')
@@ -118,7 +155,14 @@ fn copilot_v1_composer<'a>(lines: &'a [&'a str]) -> Option<(usize, usize, &'a st
                 (after_border, 0)
             }
         });
-        return Some((top_row + 1, leading + 1 + padding, payload));
+        return Some(CopilotBox {
+            row: top_row + 1,
+            first_column: leading + 1 + padding,
+            payload,
+            activity: lines[top_row.saturating_sub(2)..top_row]
+                .iter()
+                .any(|line| is_copilot_activity_row(line)),
+        });
     }
     None
 }
@@ -188,10 +232,25 @@ fn is_plain_rule(line: &str) -> bool {
 fn is_copilot_footer(line: &str) -> bool {
     let lower = line.trim().to_lowercase();
     lower.starts_with("/ commands")
-        || lower.starts_with("← open sidebar · / commands · ? help · tab next tab")
+        || is_copilot_sidebar_hint(&lower)
         || lower.starts_with("@ files · # issues")
         || lower.contains("esc interrupt")
         || lower.contains("context")
+}
+
+/// Copilot's hint row: `← open sidebar · / commands · ? help · tab next tab`,
+/// which 1.0.114 renders with mode segments in between
+/// (`← open sidebar · Interactive · Allow All · / commands · …`) and an
+/// update notice can precede (`v1.0.82 downloaded · run /restart to apply ·
+/// ← open sidebar · …`). Without a right-aligned `… context` it was the only
+/// footer row, and an exact-prefix match missed it, so every control was held
+/// `unrecognized` (F210). Each hint is a whole `·` segment, so prose that
+/// mentions them is not a footer.
+fn is_copilot_sidebar_hint(lower: &str) -> bool {
+    let segments: Vec<&str> = lower.split('·').map(str::trim).collect();
+    ["← open sidebar", "/ commands", "? help"]
+        .iter()
+        .all(|hint| segments.contains(hint))
 }
 
 /// The parts of a Codex footer line.
@@ -648,5 +707,105 @@ mod codex_0_164_warning_lines {
             ComposerRegion::Recognized(String::new()),
             "in-process layout with a session title"
         );
+    }
+}
+
+#[cfg(test)]
+mod copilot_1_0_114_wide {
+    use super::{ComposerRegion, composer_region, is_copilot_footer};
+
+    /// Recorded 2026-11-19 from pane %189 (Copilot 1.0.114, 250x70, idle,
+    /// cursor (2, 66)); transcript text and the cwd scrubbed to the same width.
+    /// Neither footer row says `context`, and the hint row carries mode
+    /// segments (`Interactive · Allow All`) before `/ commands`, so
+    /// `/compact` was held `unrecognized` to the hold limit (F210).
+    const IDLE: &str =
+        include_str!("../tests/fixtures/2026-11-19-copilot-v1.0.114-wide-pane-189-idle.txt");
+    /// The same pane mid-compaction, cursor (2, 66): an empty composer under
+    /// a `○ Compacting conversation history (0s)` activity row.
+    const COMPACTING: &str =
+        include_str!("../tests/fixtures/2026-11-19-copilot-v1.0.114-wide-pane-189-compacting.txt");
+    /// A throwaway Copilot 1.0.114 seat on the same model, 250x70, with
+    /// `hello draft` typed (caret (13, 66); Home moves it to (2, 66)). With
+    /// input, Copilot drops the `← open sidebar · / commands · ? help` hints:
+    /// `Interactive · Allow All · @ files/sessions · # issues`. Transcript and
+    /// cwd scrubbed to the same width.
+    const DRAFT: &str =
+        include_str!("../tests/fixtures/2026-11-19-copilot-v1.0.114-wide-draft.txt");
+
+    #[test]
+    fn idle_wide_pane_is_an_empty_composer() {
+        assert_eq!(
+            composer_region(IDLE, 2, 66),
+            ComposerRegion::Recognized(String::new())
+        );
+    }
+
+    /// A draft is never read as an empty composer, wherever the caret is: its
+    /// hint row is not a footer, so the frame is unrecognized and held.
+    #[test]
+    fn a_draft_in_the_wide_pane_is_never_empty() {
+        let hint = DRAFT.lines().nth(68).expect("fixture has the hint row");
+        assert!(hint.contains("@ files/sessions · # issues"), "{hint:?}");
+        assert!(!is_copilot_footer(hint), "{hint:?}");
+        for caret in [13, 2] {
+            assert_eq!(
+                composer_region(DRAFT, caret, 66),
+                ComposerRegion::Unrecognized,
+                "caret column {caret}"
+            );
+        }
+    }
+
+    /// Every spinner frame Copilot can draw on the activity row holds the
+    /// frame (review r2: the pulse cycles `● ◉ ◎ ○`).
+    #[test]
+    fn a_compacting_pane_is_not_an_empty_composer_in_any_spinner_frame() {
+        assert!(COMPACTING.contains("\n○ Compacting"));
+        for frame in super::COPILOT_SPINNER_FRAMES {
+            let capture =
+                COMPACTING.replacen("\n○ Compacting", &format!("\n{frame} Compacting"), 1);
+            assert_eq!(
+                composer_region(&capture, 2, 66),
+                ComposerRegion::Unrecognized,
+                "frame {frame}"
+            );
+        }
+    }
+
+    /// A transcript row is indented, so a message bullet above the cwd row is
+    /// not an activity (the idle fixture would otherwise depend on its text).
+    #[test]
+    fn an_indented_bullet_above_the_cwd_row_is_not_an_activity() {
+        let rows: Vec<&str> = IDLE.lines().collect();
+        assert_eq!(rows[63], "", "the idle fixture has a blank row there");
+        let capture = IDLE.replacen("\n\n ~/workspace", "\n ● Done.\n ~/workspace", 1);
+        assert_ne!(capture, IDLE);
+        assert_eq!(
+            composer_region(&capture, 2, 66),
+            ComposerRegion::Recognized(String::new())
+        );
+    }
+
+    #[test]
+    fn hint_row_with_mode_segments_is_a_footer() {
+        let hint = IDLE.lines().nth(68).expect("fixture has the hint row");
+        assert!(hint.contains("Interactive · Allow All"), "{hint:?}");
+        assert!(is_copilot_footer(hint), "{hint:?}");
+        // The 1.0.82 update notice ahead of the same hints, with no `context`.
+        let notice = " v1.0.82 downloaded · run /restart to apply · ← open sidebar · Interactive · / commands · ? help · tab next tab      claude-opus-5.5";
+        assert!(is_copilot_footer(notice), "{notice:?}");
+    }
+
+    #[test]
+    fn sidebar_hint_words_in_prose_are_not_a_footer() {
+        for line in [
+            "← open sidebar to find / commands and ? help",
+            "← open sidebar · / commands",
+            "← open sidebar · ? help",
+            "See ← open sidebar · / commands · ? help for details",
+        ] {
+            assert!(!is_copilot_footer(line), "{line:?}");
+        }
     }
 }

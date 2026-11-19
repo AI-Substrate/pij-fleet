@@ -1,0 +1,70 @@
+  xxxxxxx   xxxxxxxx   xxxxxx   xxxx xxxxxxxx   xxxxx
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                                                                                                                                                      │
+│  ╭─╮╭─╮                               │  xxxxxxx xxxxxxx                                                                                                                                                                                             │
+│  ╰─╯╰─╯  xxxxxxx xx.x.xxx-x xxxx xx.  │  xxx xxx xxxx xxxxx xx xxxxxxx xxxx xxxxxxxx xxx xxxx xxxxxxxx                                                                                                                                               │
+│  █ ▘▝ █  xxxxx xxx xxxxxxxx.          │                                                                                                                                                                                                              │
+│   ▔▔▔▔   /xxxxxxxxxxxx                │                                                                                                                                                                                                              │
+│                                                                                                                                                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ! xxxxxx xx xxxx x xxxxx. xxx /xxxxxx xxx xxxx xxxxxxx.
+
+ ! xxxxxxxx xxxx "xxxxxxxxx" xxxxxxxxx xxxxxxxx xxxxxxxxxxxxxx. xxx xxxxxxx_xxxxxxxx_xxx_xxx, xxxxxxx_xxxxxxxx_xxx_xxx_xxxxxxx, xx xxxxxxx_xxxxxxxx_xxxxxx_xxxxx.
+
+ ! xxxxx xxxxxxx xxxxxxxxx xxxxxx xx xxxxxxxx xxx xxx xxxxxx xxxxxxxxxxx; xxxxxxxx xxxxx xx xxxxxxxxxxx
+
+ ! xxxxxx xx xxxx x xxxxx. xxx /xxxxxx xxx xxxx xxxxxxx.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ~/work-areas/pij [⎇ main*%]                                                                                                                                                                              Run on: This computer ctrl+e change environment
+╻▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+┃ hello draft
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ Interactive · Allow All · @ files/sessions · # issues                                                                                                                                                                                    claude-opus-5.5
+5% pij ⎇ main ⛓ pij-stale-cod • claude-opus-5.5 · medium • xhigh • 50k/1.0M • 0 AIU • 0m

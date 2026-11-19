@@ -53,7 +53,16 @@ types `/compact` into the seat's pane through the same pane control path as
 Claude's compact (the typing gate and an empty composer). It also waits for a
 *settled* idle, because Copilot's busy footer reads as an empty composer: the
 seat's published state must be `idle` on two registry reads 250 ms apart (Copilot
-publishes `idle` for 2–4 ms between steps of one turn). Copilot messages stay on this extension. `new` and
+publishes `idle` for 2–4 ms between steps of one turn). The empty composer is read
+from the `╻▄▄` / `┃` / `╹▀▀` box with a footer row within two rows below it. The hint
+row counts as a footer when its `·` segments include `← open sidebar`,
+`/ commands` and `? help`, whatever mode segments 1.0.114 puts between them, so a
+pane whose footers never say `context` is still read (F210). With text typed,
+1.0.114 drops those hints (`Interactive · Allow All · @ files/sessions · # issues`),
+so such a pane with a draft stays unrecognized wherever the caret is. A running
+activity just above the cwd row (any spinner frame `∙ ∘ ● ◉ ◎ ○` at column 0, a
+space, then text, as in `◉ Compacting conversation history (1s)`) makes the frame
+unreadable, never an empty composer. Copilot messages stay on this extension. `new` and
 `reload` still refuse with `E-RS-CONTROL-UNSUPPORTED`; native user-driven session
 lifecycle remains separate. The compact queues on `delivery-control:<seat>`, not
 on the extension's `delivery:<seat>` kind, so the extension never claims it. Both
