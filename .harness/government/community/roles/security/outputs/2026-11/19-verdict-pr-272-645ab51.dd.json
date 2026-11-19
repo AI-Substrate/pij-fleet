@@ -1,0 +1,60 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f38e-6c63-7023-9b5e-054538d8d3c1",
+				"date": "2026-11-19",
+				"head": "645ab5103784ce386f63f0f37bba95c490c162dc",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:272",
+				"writer": "pij-far-emu",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 272",
+					"exit_code": 0
+				},
+				{
+					"command": "just shared-build: memory-turn brake unit, all 26 memory_turn_http tests, dead-holder directory regression",
+					"exit_code": 0
+				},
+				{
+					"command": "mutate revive OR to AND: action-brake unit test",
+					"exit_code": 101
+				},
+				{
+					"command": "mutate routes to omit holder live.contains: dead-holder directory regression",
+					"exit_code": 101
+				},
+				{
+					"command": "restore both guards: action-brake unit and dead-holder directory regression",
+					"exit_code": 0
+				},
+				{
+					"command": "harness checks in dependency-free archived snapshot (environment-limited, not passed)",
+					"exit_code": 1
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS: security review of PR #272 at 645ab5103784ce386f63f0f37bba95c490c162dc, under C21, C33 and C34. No reportable introduced security vulnerability.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No reportable vulnerabilities found | - |\n\nAuthorization and destructive work:\n- Caller derivation and contradictory-actor refusal precede ownership admission and construction of the held close (http/identity.rs:1414-1564; http/lifecycle.rs:464-507,561-569).\n- The pending action retains the original closer, seat, process and pane. Execution rereads the descriptor, checks incarnation and current may_close authority, and uses the original actor. The store compares the full checked descriptor transactionally; a conflict repeats those checks (http/memory_turn.rs:316-331,510-533,593-615; store/src/registry.rs:62-73).\n- Observed death cannot manufacture a close continuation. Only an authorized pending close reaches this conversion. The explicit caller's close is POLICY; changed process/pane and an already-landed owner-close are one-directional BRAKES. Every tombstone still blocks compact (http/memory_turn.rs:671-680).\n- Ordinary registration cannot lift an owner-close. Explicit revive installs a replacement descriptor through put_lifting_owner_close; the held action's incarnation brake spares a replacement process or pane (registration.rs:1083-1095; store/src/registry.rs:573-587; http/mod.rs:1706-1743).\n\nRendering and data:\n- The dead-seat release command passes role/instance, seat, why and project as separate words through picture::command, which applies shell_word to every word. Apostrophes and shell metacharacters are quoted; none is concatenated as executable shell input (community/directory.rs:481-491; community/picture.rs:98-103; core/src/directory.rs:32-40).\n- Ordinary open rows partition by registry liveness: live seats versus tombstoned/unknown seats. Legacy prime rows remain legacy, not authority. Existing end_pending diagnostics are intentionally retained in live with the actual seat_live flag; the normal close writer sets to together with end_pending. Thus disjointness relies on that existing writer invariant, not arbitrary malformed open-plus-pending rows (community/directory.rs:459-494,2196-2205).\n- Routes filter both ordinary holdings and the designated prime against one live registry read. Views end no holdings. The revive regression uses the real registry upsert to lift observed-dead, proving the reader transition; it is not an end-to-end revive-launch test.\n- Inspected all ten changed files, the exact-head PR body and D-F227-1: no new home paths, credentials or C21 disclosure found. Pattern scanning is not a comprehensive secret-detector guarantee.\n\nIndependent execution:\n- just pr-freeze 272: PASS at the reviewed SHA; latest exact-head CI checks passed, including the later successful delivers run.\n- just shared-build --timeout 120s -- test --locked -p pij-daemon --lib a_held_action_skips_a_seat_closed_or_revived_during_the_turn --then test --locked -p pij-daemon --test memory_turn_http --then test --locked -p pij-daemon --test directory_http a_dead_seats_open_holding_is_named_never_counted_and_a_revive_restores_it: PASS, 1 + 26 + 1 tests. Run from an archived exact-head snapshot, with the shared target, CARGO_INCREMENTAL=0, four jobs and nice19.\n- Own mutation: change the process/pane revive brake from OR to AND. The action-brake unit test FAILS, exit 101.\n- Own mutation: remove the ordinary-holder live.contains filter from routes. The directory regression FAILS, exit 101, printing the dead holder.\n- Restore both guards and rerun those two targets: PASS, exit 0.\n- harness boot: NOT-READY advisory, missing local TypeScript dependencies. harness checks --quick and harness checks were attempted in the disposable snapshot, not passed: missing local TS tooling, an incompatible ambient Biome, and the archive's absent Git metadata prevent the corresponding stages. Exact-head CI is the TS/full-gate receipt; no shared node_modules was linked (C25). No local full-gate success or live deployed-fleet proof is claimed.\n\nCost: no new loop, poll, timer or launch. Routes add one registry list per call; directory adds one get per distinct dead-holder seat on demand. No new per-tick/per-seat work.\n\nLimits: this review does not claim exhaustive atomicity across the existing separate tombstone and holding-end operations. No newly introduced exploitable interleaving was established. The forthcoming role-send test commit is not covered by this SHA-bound verdict.\n\nHarness feedback: magicWand MW-001 is a frozen-head review-probe recipe that archives sources, serializes guard mutations through shared-build and emits head-bound receipts without touching the review tree. Difficulty: full gates expect Git metadata and local TS tooling, while C25 intentionally keeps dependency-free review worktrees CI-only.\n"
+		}
+	]
+}
