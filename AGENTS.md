@@ -183,8 +183,9 @@ citation disputes, all of which resolved as neither party being wrong.)
   Cargo names workspace artifacts by crate, so two trees building into one
   target overwrite each other mid-build. The recipe serialises builds with a
   lock, refuses under the disk floor (`PIJ_DISK_FLOOR_GB`, default 25), rebuilds
-  your own sources with `CARGO_INCREMENTAL=0`, runs every cargo command under
-  `nice -n 19` only (never `taskpolicy -b`, F186), and always releases. A stale lock is reported with its clear command, never
+  your own sources with `CARGO_INCREMENTAL=0`, runs every cargo command at
+  niceness 19 only (never `taskpolicy -b`, F186; a caller already at 19, such as
+  `just test`, gets no second nice, so it never stacks to 20), and always releases. A stale lock is reported with its clear command, never
   cleared for you (plans 198, 208). Parallelism is capped too, because `nice`
   lowers priority but does not shorten the run queue (F126). The repository's
   `.cargo/config.toml` sets `build.jobs = 4` and `RUST_TEST_THREADS = 4` for

@@ -75,6 +75,8 @@ function fixture(): Fixture {
 			// The scheduling cargo runs under: its niceness, and the flag a fake
 			// taskpolicy passed down, had one wrapped it (F186: none ever does).
 			'[ -n "$NICENESS" ] && echo "niceness=$(ps -o nice= -p $$ | tr -d \' \') taskpolicy=$FAKE_TASKPOLICY args=$*" >> "$LOG"',
+			// The script's own niceness (nice execs into cargo, so the parent is it).
+			'[ -n "$NICENESS" ] && echo "parent-niceness=$(ps -o nice= -p $PPID | tr -d \' \')" >> "$LOG"',
 			// A build child (rustc, a build script) that ticks into the log
 			// while alive; cargo waits for it, as cargo waits for rustc.
 			'[ -n "$WORKER" ] && ( i=0; while [ $i -lt 25 ]; do echo "tick $1" >> "$LOG"; sleep 0.2; i=$((i+1)); done ) </dev/null >/dev/null 2>&1 &',
@@ -130,11 +132,21 @@ interface Run {
 	stderr: string;
 }
 
-function start(f: Fixture, args: string[], env: NodeJS.ProcessEnv = {}, umask?: string) {
+function start(
+	f: Fixture,
+	args: string[],
+	env: NodeJS.ProcessEnv = {},
+	umask?: string,
+	parentNice: readonly number[] = [],
+) {
 	const options: SpawnOptions = { cwd: f.worktree, env: { ...f.env, ...env } };
+	// The caller's own niceness: each entry wraps the script in one more nice.
+	const niced = parentNice.flatMap((n) => ["/usr/bin/nice", "-n", String(n)]);
 	const child = umask
 		? spawn("sh", ["-c", `umask ${umask} && exec bash "$0" "$@"`, SCRIPT, ...args], options)
-		: spawn("bash", [SCRIPT, ...args], options);
+		: niced.length > 0
+			? spawn(niced[0] ?? "", [...niced.slice(1), "bash", SCRIPT, ...args], options)
+			: spawn("bash", [SCRIPT, ...args], options);
 	let stderr = "";
 	child.stderr?.on("data", (chunk: Buffer) => {
 		stderr += chunk.toString();
@@ -309,6 +321,31 @@ describe("just shared-build", () => {
 			"niceness=19 taskpolicy=none args=test -p x --doc -- name",
 		]);
 		expect(existsSync(f.lock)).toBe(false);
+	});
+
+	// R257-001: `just test` runs vitest under nice -n 19, so this script ran with a
+	// niced parent and its own nice -n 19 stacked cargo to 20. Cargo ends at the
+	// script's niceness or 19, whichever is higher: below 19 it is raised to 19,
+	// and at 19 or above nothing is added. The test runner's own niceness (0 in
+	// CI, 19 under `just test`) is why the script's is read, not assumed.
+	it.each([
+		[[5]],
+		[[19]],
+		[[19, 19]],
+	] as const)("never stacks nice on a parent already niced by %j", async (parentNice) => {
+		const f = fixture();
+		const result = await start(f, ["--", "build"], { NICENESS: "1" }, undefined, parentNice).done;
+		expect(result.code, result.stderr).toBe(0);
+		const value = (prefix: string): number =>
+			Number(
+				log(f)
+					.find((line) => line.startsWith(prefix))
+					?.slice(prefix.length)
+					.split(" ")[0],
+			);
+		const script = value("parent-niceness=");
+		expect(script).toBeGreaterThanOrEqual(Math.min(...parentNice));
+		expect(value("niceness=")).toBe(Math.max(19, script));
 	});
 
 	it("releases the lock when cargo fails and runs nothing after the failure", async () => {
