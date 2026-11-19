@@ -2105,7 +2105,10 @@
 					"harness_session": "f9fd96aa-a56d-43fc-a3d2-da5cfefef4e2",
 					"instance_key": "f190-proof",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "F190 repro done",
+					"released_by": "pij-cultural-falcon",
 					"seat": "pij-regulatory-snipe",
+					"to": "2026-11-19T22:24:15.313Z",
 					"why": "F190 repro"
 				}
 			]
