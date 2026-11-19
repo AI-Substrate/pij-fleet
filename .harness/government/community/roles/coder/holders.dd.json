@@ -1081,7 +1081,10 @@
 					"harness_session": "01a1f172-b316-72df-af40-40261d587094",
 					"instance_key": "f210",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #252 merged (408418a18c1d)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-printed-egret",
+					"to": "2026-11-19T03:07:43.844Z",
 					"why": "F210: Copilot /compact parks unrecognized on a wide pane (salamander %189)"
 				}
 			]
