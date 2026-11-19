@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f20e-7df6-7a92-a11a-ecba9bec2376",
+				"date": "2026-11-19",
+				"head": "d992f6747b492e6dd80237d38ecc236d4cdca981",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:253",
+				"writer": "pij-solar-piranha",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C34 follow-up: detached settlement/admission-to-audit crash windows can produce redundant notices; no extra review round.",
+				"C34 follow-up: boot query count is live-seat-bounded, but matching spawn history per seat is not."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 253",
+					"exit_code": 0,
+					"log": "FINAL d992f6747b492e6dd80237d38ecc236d4cdca981; clean; all five latest checks pass"
+				},
+				{
+					"command": "gh run view 44457191062 --json headSha,conclusion,attempt,jobs",
+					"exit_code": 0,
+					"log": "Exact head; attempt 2 success for rust-test, rust-lint, check (22), check (24); latest delivers check also passed"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14498074181/zip",
+					"exit_code": 0,
+					"log": "Artifact selected from successful job 135336560805 upload log; junit.xml has 2540 executed cases, zero failures; every repair regression passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES -- #253 round 2 at d992f6747b492e6dd80237d38ecc236d4cdca981\n\nReviewed only the repair delta from ac8a00daf5c0ca017d4fc858e4a0eee5ae72e913. R253-001 and R253-002 are closed for the original lost-handoff scenarios. No remaining blocker from round 1; the new notes below are C34 follow-ups, not another review round.\n\nR253-001 CLOSED. SpawnWaits records bound independently of unanswered. Both bound() and not_answered() remove and hand off the entry when they observe the second fact, outside the mutex. This covers bind-then-drop, bind-before-stale-timeout-settlement and failure-then-bind. report_spawn_failure now retains the guard across the awaited failure construction and only settles it afterward (http/mod.rs:1903-1919). The missing route-level interrupted-build fixture is not a gate under C34: the unit bind-then-drop regression and the changed guard lifetime directly cover the relevant mechanism.\n\nR253-002 CLOSED. Boot checks launched/answered/reported records for the current spawn_id and recovers bound as well as unbound rows. Already-bound launches hand off immediately; unbound launches hand off on registration. An answered launch and a pre-F211 historical row are ignored. The new HTTP recovery test also checks that a second completed boot does not report again.\n\nSuccess-path inventory:\n\n- --no-wait builds its response, then calls answered(\"dispatched\"), http/mod.rs:1719-1722.\n- Normal bound success builds its response, then calls answered(\"bound\"), http/mod.rs:1759-1765.\n- Bound failure/model mismatch builds the failure or named fallback, then calls answered(\"failed-bound\"), http/mod.rs:1903-1919.\n- Revive uses this same launch_seat_locked path: ordinary revive dispatches; --cheap waits for binding. There is no separate unmarked successful launch return.\n- The two pre-row rollback paths call withdrawn(), not answered(). They leave no new live launch row to recover; a failed revive retains the prior row with its prior spawn_id. Pre-launch refusals have no launch receipt to settle.\n\nRetry/withheld behavior: send failures return without spawn.reported, so an eligible launch gets at most one new reporting attempt per boot, not a timer or in-process retry loop. A committed spawn.reported suppresses later boots. Missing parent, tombstoned parent and lookup failure are explicitly distinguished but are all final withheld records; parent-lookup failure is not in the retry-on-next-boot category. There is no prime fallback, as the PR now states.\n\nC34 follow-up -- settlement crash window. spawn_waits.rs:203-215 detaches answered/report tasks without retaining their JoinHandles. The answer can return before spawn.answered commits. Similarly, report():338-356 admits a send with a newly generated message ID before appending spawn.reported. A daemon exit between those facts can produce a false \"unanswered\" notice or a duplicate admitted notice on recovery. Therefore \"exactly once\" is proven for the in-memory handoff and completed receipts, not an atomic end-to-end guarantee across every interruption. A stable per-spawn notice ID plus tracked/drained settlement work would narrow this without a new retry loop; park_notice.rs already demonstrates stable notice IDs and admission reconciliation. Treat this as a named residual/follow-up, not a claim that the original unreported-seat recovery is still absent.\n\nC34 follow-up -- boot cost is history-sensitive. Success adds TWO spine appends, launched and answered, not three. A failed launch additionally writes spawn.failed and, when reported, spawn.reported. No new process-launch site, timer or periodic loop is added. Recovery lists the registry once (including retired rows before its filter), then performs one indexed all_matching query per live spawned row. That query reads all three matching kinds across the seat's history, then filters the current spawn_id in memory; total work is O(registry rows + matching spawn history), not bounded solely by the live-seat count. This is once per boot, with no demonstrated cost breach, so it is a follow-up rather than a new gate. No live before/after cost measurement was run by this reviewer.\n\nSecurity/correlation notes closed: the shared close-command helper applies shell_word separately to seat and pane, with a hostile-value regression. bound() requires the exact recorded seat and pane as well as spawn_id, and the negative correlation test passes. Detached reporting captures the launch rather than the registering seat's claimed parent and holds no mutex across IO. At boot, Launch::of reconstructs launch metadata from the current registry row; the spine receipts are used to identify settlement for its spawn_id. No new same-user authentication requirement is imposed.\n\nEvidence:\n\n- just pr-freeze 253: FINAL at the full head above, clean detached worktree, all five latest checks pass; rechecked before this verdict.\n- CI run 44457191062, attempt 2: exact head; rust-test, rust-lint, check (22), check (24) all succeeded. The separate latest delivers check succeeded.\n- Successful rust-test job 135336560805 identifies artifact 14498074181 in its own upload log. Its junit.xml contains 2,540 executed cases, zero failures. All seven SpawnWaits tests, both restart HTTP regressions, timeout/adapter regressions, normal bound success, model mismatch and both affected revive integration tests passed.\n- Attempt 1's only failure was the unchanged real-tmux control-mode test a_lost_control_client_falls_back_then_reconnects: its tmux test server was absent. The successful attempt includes that test.\n- No local build, test, mutation run, live spawn, daemon bounce or harness checks was run, per the CI-only review packet. Source worktree remains clean.\n- Harness observation MW-001 records the settlement crash-window sensor as the highest-value follow-up. No additional fixture or mutation run is required to accept this final-round repair.\n"
+		}
+	]
+}
