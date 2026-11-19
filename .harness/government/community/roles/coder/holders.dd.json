@@ -1129,6 +1129,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-joyous-sailfish",
 					"why": "pm-004: workstream 004 s07 (plan 232, proxied tool-list flips)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T03:34:30.145Z",
+					"harness": "omp",
+					"harness_session": "01a1f1de-6c8d-7431-9640-98f465df725e",
+					"instance_key": "f214",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-determined-silkworm",
+					"why": "F214 HIGH: cache TTL as a first-class fact; never mistake cold for warm"
 				}
 			]
 		}
