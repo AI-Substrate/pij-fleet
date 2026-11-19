@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f26d-69ed-72b0-904a-0f68f2cca4c2",
+				"date": "2026-11-19",
+				"head": "65d00078ba93664b1854d768d8531dcd0e2542f4",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "performance",
+				"subject": "pr:259",
+				"writer": "pij-public-cobra",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #259 performance verdict — final round\n\n**PASS** at `65d00078ba93664b1854d768d8531dcd0e2542f4`.\nRequest: `01a1f26d-69ed-72b0-904a-0f68f2cca4c2`.\n\nThe round-two barriers/readline/status handling add **no production subprocess site**. No normal-use performance bug found. The only added subprocess work is the installed-SDK regression's availability probe and its own canary run. No added idle, daemon or per-seat polling cost.\n\n## Executed proof\n\nVerified the detached worktree HEAD equals the full subject SHA and consumed exact-head green CI statuses. Linked the existing dependency installation with `just worktree-deps` (165 links); no install or build.\n\nRan canonical recipes without an outer nice, per the updated instruction; their own nice applies:\n\n```sh\n/usr/bin/time -lp just copilot-sdk-contract --json\n```\n\nExit **0**, report **pass**, installed/verified Copilot **1.0.114-0**, **7/7 checks passed**. Real **0.22 s**, user **0.14 s**, system **0.04 s**; time-reported maximum resident set size **58,376,192 bytes**. This command statistic is not a measured sum of concurrent child RSS. Round one's 0.21-second sample is consistent in magnitude, not a controlled benchmark proving a 10-ms regression or improvement.\n\n```sh\njust test harness/scripts/copilot-sdk-contract.test.ts harness/scripts/checks-copilot-sdk-sensor.test.ts\n```\n\nExit **0**, **8/8 tests passed**, two files, **695 ms** total. The real installed-SDK canary with **50-ms delayed, ordered, mid-record-split stderr** passed its seven internal checks; its regression took **498 ms**. Seven sensor-status cases took **2 ms**. The recipe printed `/usr/bin/nice -n 19 npm run test -- \"$@\"`.\n\nWorktree target remained absent. No builds, cargo, full gates, --record writes, source mutation or global configuration changes ran.\n\n## Cost and lifecycle delta\n\n- **Production canary:** the same version command and real-extension child launch sites remain. Three fixed barrier session events (two hook answers, one tool answer), one joined fact, line buffering and bounded fact listeners are in-process/stdIO work. They add no shell, process, polling loop or fixed sleep.\n- **Barrier waits:** the existing 10-second per-step deadline bounds fact waits; timeout is reported as a failed contract run. Existing child-stdin close, awaited exit and 3-second kill fallback remain. No retry loop or resident worker was added.\n- **Delay fixture:** two one-shot 50-ms timers per split data chunk (one timer for end/close), only in the regression parent. It wraps the already-created stderr stream and launches nothing. It is passed as a direct parent --import, not introduced into normal production invocation.\n- **New SDK regression:** on a machine with Copilot, one availability `copilot --version` probe and one Node canary-driver child per suite invocation. That driver performs its normal version query, extension-child launch and existing ancestry probes. Therefore the unit adds **one complete canary run plus one version probe**, not merely one Node process. Without Copilot, discovery attempts the version probe and the integration case skips.\n- **New seven-case sensor regression:** ctx.exec is stubbed for every sensor; it exercises the real finite checks logic but launches no commands, tests or builds.\n- **Existing ps probes:** ancestry traversal is unchanged and on demand. Round one observed two ps calls, but that is not a universal bound: time spent awaiting pipe delivery can let the real extension progress further through its pre-existing bounded ancestry walk. No claim is made that every delayed test must launch exactly two ps processes.\n- **Scheduling:** doctor/self-check/checks remain explicit on-demand entry points. No daemon hook, seat receiver, status line or timer invokes this check. Zero added launches/s at rest; extra unit-process cost scales with test-suite invocations, not live seats.\n\nThe #257 recipe/shared-build changes visible in the old-head-to-new-head comparison are rebase content already merged on main, not new #259 process sites. No new daemon spawn site exists; spawn_sites.rs remains unaffected.\n\nReadline processing and three protocol round trips are cheap at the exercised fixed workload. Invalid report-status handling adds only finite array/status processing and no launches. No fleet-wide throughput claim is made, and no controlled before/after fleet experiment was substituted for the direct exact-head command proof above.\n"
+		}
+	]
+}
