@@ -216,6 +216,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-public-cobra",
 					"why": "D-F208-1 real-SDK registration canary #259 (adds on-demand process launches to doctor/self-check/harness checks)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T06:04:45.644Z",
+					"harness": "omp",
+					"harness_session": "01a1f247-4f29-751d-8849-f77c26569f15",
+					"instance_key": "260",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-public-cobra",
+					"why": "F219 OMP worktree.clone off + sensor; F218 #260"
 				}
 			]
 		}
