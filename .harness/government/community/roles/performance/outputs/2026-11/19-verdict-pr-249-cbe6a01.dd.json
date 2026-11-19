@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f198-b767-7e20-8f91-b0616a244a38",
+				"date": "2026-11-19",
+				"head": "cbe6a01d2bd9ad72f8b3e3c0fb839967804d8959",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44442078410/job/135287030553",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:249",
+				"writer": "pij-vast-silkworm",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Owned post-merge measurement: minute of 10s CPU samples plus fast musical-hedgehog state, candidate PID/commit/uptime and spawn/RSS receipts; hedgehog remains open."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git diff 0c7649929f8b4837f4d0d131a151077d8d223b79..cbe6a01d2bd9ad72f8b3e3c0fb839967804d8959; source review",
+					"exit_code": 0,
+					"log": "R249-001 closed: NotFound stale=true; existing deduplicated fleet+60s tick bounds retry1/status/seat/round;Unbound/Unsupported remain completed;no new launch."
+				},
+				{
+					"command": "gh pr view 249; CI JUnit artifact14492720598",
+					"exit_code": 0,
+					"log": "Artifact exact-head cbe6a01;real adapter PA idle-miss regression,target-change/hit-clears cache test,counting-loader tests andspawn_sites all executedPASS;no failed suites."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #249 round 2 — performance PASS WITH NOTES\n\nHead: cbe6a01d2bd9ad72f8b3e3c0fb839967804d8959\nRequest: 01a1f198-b767-7e20-8f91-b0616a244a38\nReviewer: pij-vast-silkworm, performance/249\nDelta reviewed from0c7649929f8b4837f4d0d131a151077d8d223b79 in the requested worktree. Unrelated rebased F208 extension/docs changes are excluded. No local build/test, code edit or daemon bounce.\n\n## Decision\n\nR249-001 is closed. pa_presence.rs:1046 now records NotFound with stale=true. CachedSize::fresh therefore returns false at the next eligible round, even for an idle seat with no further activity. The adapter can then find a transcript whose earlier synthetic miss expired. Unbound and Unsupported remain completed and do not acquire a perpetual retry. No remaining blocking finding in this final-round delta.\n\n## Incremental cost\n\n- Existing PA scheduler: one round per60s. The large-seat path builds one union of eligible primed-scope fleet seats, deduplicated by SeatId (placed set, pa_presence.rs:727-749). Each permanently NotFound seat is scheduled for at most one PA status attempt per round; pending slow reads already remain bounded by the existing read_blocks mechanism.\n- Copilot: at most one missing-path loader stat per minute from this PA path,0 walks. A miss younger than30s (possibly installed by another request) answers without a lookup.\n- Claude/OMP/Codex: at most one whole-root miss walk per minute per stable missing seat from the PA path, not one every30s from this caller. Across other requesters the adapter still limits stable misses to one completed lookup/30s. A walk is still proportional to the root tree and can be costly; the final delta adds no nested per-PA multiplier here.\n- There is no blanket reread of known idle fleets. The new retry population is NotFound entries, including permanently missing idle seats in an eligible primed scope. No new timer, process launch, wire field, map or retained allocation. The new cost is O(M) status attempts per60s for M such missing seats, replacing the incorrect permanent unknown.\n- NotFound supplies no size and cannot manufacture a large-seat crossing. Existing presence claims still own once-per-crossing delivery; when a real large size becomes visible, the normal claim sends once.\n- with_miss_ttl is public compiled code, not #[cfg(test)]; #[must_use] is not an access guard. Current callsite search finds only the new daemon regression outside its definition. Production constructors still choose MISS_TTL=30s, with no production-config route to the test duration. No performance blocker.\n\n## CI inspected\n\nExact-head current checks are SUCCESS. Downloaded run44442078410 artifact14492720598 (workflow_run.head_sha equals this head), no failed suites. Executed PASS:\n- pa_watchdog::tests::an_idle_seat_read_during_a_kept_miss_is_sized_once_it_expires: real adapter, transcript appears during miss, next round after expiry with no activity produces the large-seat FYI.\n- tests::a_kept_miss_answers_only_its_own_target_and_a_hit_clears_it.\n- tests::a_copilot_miss_is_one_stat_per_lifetime_shared_by_concurrent_reads.\n- tests::a_claude_miss_walks_once_per_lifetime.\n- every_daemon_launch_site_records_itself.\n\nThe reported unrelated compaction_wake flake was not rerun locally or used to reopen scope.\nCI: https://github.com/AI-Substrate/pij-fleet/actions/runs/44442078410/job/135287030553\n\n## Owned deployment proof remains\n\nAfter merge and authorized bounce, I own a minute of top10s CPU samples (first cumulative sample excluded), PID/commit/uptime, CPU-time/RSS and paired spawn counters, plus timed not-found `pij-rs --json state pij-musical-hedgehog` with hedgehog left open. Compare to current baseline~49.8%core and2.281s state latency. Target roughly<20%CPU; report actual result, not a pre-merge promise. PR251's held-delivery projection is separate work and is not approved by this verdict.\n"
+		}
+	]
+}
