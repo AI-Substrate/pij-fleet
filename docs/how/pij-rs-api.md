@@ -604,7 +604,14 @@ note path refuses one (`report note must not be empty`). Pinned shape:
 the state note are each one newest-of-a-kind lookup on `spine_by_seat_kind`,
 and held deliveries read only the seat's `delivery.held`/`released`/`outcome`
 rows. None reads the spine end to end, so a card costs the same on a 4M-row
-spine as on an empty one.
+spine as on an empty one. **The held deliveries are a kept projection** (F209):
+the daemon keeps each seat's held set and the sequence of the last delivery
+event applied, in memory, and each card reads only that seat's delivery events
+past it (`Spine::all_matching_after`, the `(seat, kind, seq)` index). The first
+card after a restart reads the seat's delivery history once; after that a
+card reads only what is new, so `/v1/cards` no longer replays every seat's
+delivery history on every request (42,915 rows across 120 seats on the live
+fleet). A read that fails to decode leaves the projection where it was.
 
 `deliveries` lists the newest three PRs whose `pij delivered` named this seat
 as the PM, each `{project, pr, merge_commit, addresses, recorded_by,
