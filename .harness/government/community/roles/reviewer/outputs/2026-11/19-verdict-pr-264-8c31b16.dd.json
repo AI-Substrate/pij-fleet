@@ -1,0 +1,48 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f2e4-1947-70b2-89a6-b635972c545b",
+				"date": "2026-11-19",
+				"head": "8c31b168a8cc8f92e09ce768c9dde443597e196f",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:264",
+				"writer": "pij-wispy-penguin",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C34 follow-up: a real short/wrapped Claude trust fixture would establish heading visibility; no live clipped-heading regression was reproduced."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 264",
+					"exit_code": 0,
+					"log": "FINAL exact head 8c31b168a8cc8f92e09ce768c9dde443597e196f; latest five checks pass"
+				},
+				{
+					"command": "CI run 44486038586, Rust job 135429629772, JUnit artifact 14511395036",
+					"exit_code": 0,
+					"log": "2576 passed / 6 skipped; all six trust unit tests and both daemon trust tests confirmed passing in the job-specific artifact"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: PASS WITH NOTES\n\nPR #264, round 2 of 2 (C34). Exact head: 8c31b168a8cc8f92e09ce768c9dde443597e196f.\nReviewed the complete three-file delta from f808581187bf33c0513a637304264e9e4029ecb3.\n\n**R264-001 is closed.** `TrustPrompt::safe_answer()` now uses the observed highlight. It names Enter alone only on the trust row, otherwise the correct direction/count before Enter and what Enter would currently choose. With no visible highlight it tells the person to select the named trust row first, without guessing navigation. Session-only trust is attached to Copilot's `1. Yes`, not to its persistent-trust row. Existing tests assert the guidance alongside navigation for all five real fixtures and the no-highlight screen; the HTTP refusal test now includes Copilot's second row.\n\nClaude's classifier now requires `Accessing workspace:` before its option rows, and its negative test rejects bare menu rows. Both existing Claude captures have that heading at row 3 and the confirmation footer at row 17; the unchanged spawn capture reads the whole visible screen, so the former bottom-20-row truncation does not remove it. I found no demonstrated normal-use regression in this delta.\n\n**C34 follow-up / proof limitation, not a blocker:** no live short/wrapped Claude fixture establishes that the heading always stays visible. If an actual pane clips it while retaining both options, the new parser will not classify that screen and the spawn can reach its normal registration timeout. Artificially cropping a fixture would demonstrate the parser's precondition, not prove Claude actually produces that layout. Capture a real short Claude prompt if this recurs and extend the existing fixture tests; no speculative parser machinery is requested.\n\nThe pre-existing TS `killPane` swallowed-error behavior remains a separate nonblocking follow-up. F216, ownership checks, F211 settlement, automatic key sending and pane teardown are unchanged by this delta.\n\n**Cost:** no new loop, timer, launch site or capture. The existing active-spawn wait remains a 50 ms sleep per iteration, with one capture and in-process classification; opted-in trust-key sends remain at most one per second per waiting spawn. This round only changes guidance formatting, the heading comparison, tests and docs. No live fleet cost measurements were performed by this correctness seat.\n\n**Evidence:** `just pr-freeze 264` reports FINAL at the exact head, with the latest five checks passing. CI run `44486038586`, successful Rust job `135429629772`, reports 2,576 passed / 6 skipped. Its upload log identifies JUnit artifact `14511395036`; downloaded by that ID and parsed, it confirms all six trust unit tests and both daemon trust tests passed. Node 22/24, Rust lint and the latest Delivers checks also passed. No local builds, dependency installation, source edits, pane input or pane kills.\n\n**Harness feedback:** the remaining proof gap is a real short/wrapped Claude capture, not another synthetic inventory. Captured as SUGG-001 and preserved here so a recurrence can become a focused fixture regression.\n"
+		}
+	]
+}
