@@ -1654,7 +1654,10 @@
 					"harness": "copilot",
 					"harness_session": "aa89f0ae-fc53-4f17-be8d-d84aec9eb278",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "dead seat (F227)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-contemporary-caribou",
+					"to": "2026-11-19T09:47:43.899Z",
 					"why": "pm-004: verdict on #242 (ws004 s04 receipts)"
 				},
 				{
