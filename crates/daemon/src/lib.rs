@@ -76,6 +76,18 @@ pub const BUILD: &str = concat!("pij-rs ", env!("CARGO_PKG_VERSION"));
 /// The PA digest compares seats' extension builds with it (F113).
 pub const BUILD_COMMIT: Option<&str> = option_env!("PIJ_BUILD_COMMIT");
 
+/// What `pij-rs --version` prints after the name: the package version and the
+/// commit stamp, `0.1.0 (<commit>)`, or `0.1.0 (unstamped)`. The deploy build
+/// (`harness/scripts/release-build.sh`) refuses to hand on a binary whose stamp
+/// is not its checkout's commit (F226).
+pub static VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!(
+        "{} ({})",
+        env!("CARGO_PKG_VERSION"),
+        BUILD_COMMIT.unwrap_or("unstamped")
+    )
+});
+
 /// The git tree ids of the extension sources this daemon was built with, in the
 /// form the extensions report after ` tree:` in their `extension_build`
 /// (ten characters of each id, `+`-joined), stamped by `just rs-install` and

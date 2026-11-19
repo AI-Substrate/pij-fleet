@@ -3,7 +3,7 @@
 //! The PA digest flags a seat whose extension source differs from what the
 //! daemon was built with, by comparing git tree ids: each extension reports its
 //! directory's tree (and the OMP extension the one file it imports from outside
-//! it), and `just rs-install` / `just bounce-rs` stamp the same. A tree only
+//! it), and the deploy build (`harness/scripts/release-build.sh`) stamps the same. A tree only
 //! covers what is under it, so this walks each extension's relative imports
 //! from its entry point and fails when the closure reaches a file outside the
 //! directory that the identity does not list.
@@ -210,14 +210,23 @@ fn each_extension_tree_covers_its_import_closure() {
         identity.contains(&format!("\"{declared}\"")),
         "OUTSIDE_ROOTS lists {listed}"
     );
-    let justfile = std::fs::read_to_string(root.join("justfile")).expect("read the justfile");
+    // F226: one deploy build stamps every deploy (rs-install, bounce-rs,
+    // `pij-rs daemon bounce`); no recipe keeps a copy that could drift.
     let stamp = format!(
         "git rev-parse HEAD HEAD:.copilot/extensions/pij HEAD:.omp/extensions/pij HEAD:{listed}"
     );
+    let release_build = std::fs::read_to_string(root.join("harness/scripts/release-build.sh"))
+        .expect("read the deploy build");
     assert_eq!(
-        justfile.matches(&stamp).count(),
-        2,
-        "just rs-install and just bounce-rs stamp the same trees"
+        release_build.matches(&stamp).count(),
+        1,
+        "the deploy build stamps these trees"
+    );
+    let justfile = std::fs::read_to_string(root.join("justfile")).expect("read the justfile");
+    assert_eq!(
+        justfile.matches("git rev-parse HEAD HEAD:").count(),
+        0,
+        "no recipe keeps its own stamp"
     );
 }
 

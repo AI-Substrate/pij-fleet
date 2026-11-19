@@ -97,6 +97,11 @@ fn build_fake(root: &Path, word: &str) {
     std::fs::set_permissions(&artifact, permissions).expect("make the build executable");
 }
 
+/// Where [`build_fake`] leaves the build.
+fn built(fixture: &RepoFixture) -> PathBuf {
+    fixture.root.join("target/release/pij-rs")
+}
+
 /// The fixture with the repository's own installer in it, and a home.
 fn with_installer(fixture: &RepoFixture) -> PathBuf {
     let scripts = fixture.root.join("harness/scripts");
@@ -132,7 +137,7 @@ fn install_copies_the_build_outside_target_and_replaces_it_by_rename() {
     let home = with_installer(&fixture);
 
     build_fake(&fixture.root, "one");
-    let copy = install(&fixture.root, &home).expect("installed");
+    let copy = install(&fixture.root, &built(&fixture), &home).expect("installed");
     assert_eq!(copy, home.join(".local/share/pij/bin/pij-rs"));
     for dir in [
         ".local",
@@ -147,7 +152,7 @@ fn install_copies_the_build_outside_target_and_replaces_it_by_rename() {
     std::fs::hard_link(&copy, &running).expect("hold the running file");
 
     build_fake(&fixture.root, "one");
-    install(&fixture.root, &home).expect("reinstalled unchanged");
+    install(&fixture.root, &built(&fixture), &home).expect("reinstalled unchanged");
     assert_eq!(
         inode(&copy),
         inode(&running),
@@ -155,7 +160,10 @@ fn install_copies_the_build_outside_target_and_replaces_it_by_rename() {
     );
 
     build_fake(&fixture.root, "two");
-    assert_eq!(install(&fixture.root, &home).expect("reinstalled"), copy);
+    assert_eq!(
+        install(&fixture.root, &built(&fixture), &home).expect("reinstalled"),
+        copy
+    );
     assert_ne!(inode(&copy), inode(&running), "a new build is a new file");
     assert_eq!(
         std::fs::read_to_string(&running).expect("the running file"),
@@ -171,7 +179,7 @@ fn install_copies_the_build_outside_target_and_replaces_it_by_rename() {
     let output = Command::new(&copy).output().expect("run the copy");
     assert_eq!(String::from_utf8_lossy(&output.stdout), "two\n");
 
-    let error = install(&fixture.root, &home).expect_err("no build to install");
+    let error = install(&fixture.root, &built(&fixture), &home).expect_err("no build to install");
     assert!(error.to_string().contains("no built pij-rs"), "{error}");
     assert!(copy.is_file(), "a failed install leaves the copy alone");
 }
@@ -190,7 +198,7 @@ fn install_refuses_a_directory_others_can_write_to() {
         std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, writable);
         std::fs::set_permissions(&open, permissions).expect("open it up");
 
-        let error = install(&fixture.root, &home).expect_err("refused");
+        let error = install(&fixture.root, &built(&fixture), &home).expect_err("refused");
         assert!(
             error.to_string().contains("refusing") && error.to_string().contains(dir),
             "{dir}: {error}"

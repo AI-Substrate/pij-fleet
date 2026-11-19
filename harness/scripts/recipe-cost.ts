@@ -12,11 +12,13 @@ const NICE = /harness\/scripts\/nice19\.sh\b/;
 const STACKING_NICE = /\bnice -n\b/;
 const SHARED_BUILD = /shared-build\.sh\b/;
 /**
- * Bare cargo builds into the checkout's default target, a fresh one per
- * worktree. Only the release deploy builds (`rs-install`, `bounce-rs`) do that,
- * niced; everything else goes through shared-build.
+ * Bare cargo builds into the checkout's default target. Everything goes
+ * through shared-build; the deploy recipes build through release-build.sh,
+ * which does (F226).
  */
-const BARE_CARGO = /\bcargo (?!build --release\b)(?:build|test|clippy|check|nextest|bench|run)\b/;
+const BARE_CARGO = /\bcargo (?:build|test|clippy|check|nextest|bench|run)\b/;
+const RELEASE_BUILD = /harness\/scripts\/release-build\.sh\b/;
+const INSTALL = /harness\/scripts\/install-pij-rs\.sh\b/;
 const TARGET_ASSIGNMENT = /\b(CARGO_TARGET_DIR|PIJ_SHARED_TARGET)=("[^"]*"|\S*)/g;
 /** The target may only come from cargo-target.sh, directly or through `$target`. */
 const RESOLVED_TARGET = /^"?(?:\$\(bash harness\/scripts\/cargo-target\.sh\)|\$\{?target\}?)"?$/;
@@ -33,15 +35,27 @@ export function recipeCostFindings(justfile: string): RecipeFinding[] {
 	const findings: RecipeFinding[] = [];
 	let recipe = "";
 	let resolves = false;
+	let released = false;
 	const lines = justfile.split("\n");
 	lines.forEach((text, index) => {
 		const header = /^@?([A-Za-z_][\w-]*)[^:=]*:(?!=)/.exec(text);
 		if (header) {
 			recipe = header[1] ?? "";
 			resolves = false;
+			released = false;
 		}
 		if (!/^\s/.test(text) || text.trim().startsWith("#")) return;
 		if (text.includes("harness/scripts/cargo-target.sh")) resolves = true;
+		if (RELEASE_BUILD.test(text)) released = true;
+		// F226: an install takes only what the stamped deploy build handed on.
+		if (INSTALL.test(text) && !released)
+			findings.push({
+				line: index + 1,
+				recipe,
+				text: text.trim(),
+				problem:
+					"installs a pij-rs not built and stamp-checked by harness/scripts/release-build.sh",
+			});
 		const at = { line: index + 1, recipe, text: text.trim() };
 		const runner = RUNNER.exec(text);
 		if (STACKING_NICE.test(text))

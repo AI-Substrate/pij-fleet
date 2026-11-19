@@ -68,11 +68,11 @@ pub fn reproducible_repo(cwd: &Path) -> Result<PathBuf> {
 /// Refuses on every unobserved or ambiguous state; announcements alone are
 /// best-effort and are returned as output lines rather than gating the bounce.
 pub async fn run(repo_root: &Path, state_dir: &Path) -> Result<BounceReport> {
-    build(repo_root)?;
+    let built = build(repo_root)?;
     let home = std::env::var_os("HOME")
         .filter(|home| !home.is_empty())
         .ok_or_else(|| failure("HOME is not set, so the built pij-rs has nowhere to install"))?;
-    let artifact = install(repo_root, Path::new(&home))?;
+    let artifact = install(repo_root, &built, Path::new(&home))?;
     let old = store::read_runtime(state_dir)?;
     corroborate(old.process).await?;
     let announcements = announce(state_dir, &old).await;
@@ -96,29 +96,35 @@ pub async fn run(repo_root: &Path, state_dir: &Path) -> Result<BounceReport> {
     })
 }
 
-fn build(repo_root: &Path) -> Result<()> {
-    let output = Command::new("cargo")
-        .args([
-            "build",
-            "--locked",
-            "--release",
-            "-p",
-            "pij-cli",
-            "--bin",
-            "pij-rs",
-        ])
-        .env_remove("CARGO_TARGET_DIR")
+/// Build through the repository's one deploy build (F226): shared-build into
+/// the checkout's target, stamped, and refused unless the binary carries this
+/// checkout's commit. Returns the built binary; a failed or wrongly stamped
+/// build returns the script's refusal, before anything is installed or stopped.
+fn build(repo_root: &Path) -> Result<PathBuf> {
+    let output = Command::new("/bin/bash")
+        .arg(repo_root.join("harness/scripts/release-build.sh"))
         .current_dir(repo_root)
+        .stderr(Stdio::piped())
         .output()
         .map_err(|error| failure(format!("could not start the release build: {error}")))?;
-    if output.status.success() {
-        return Ok(());
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let tail: Vec<&str> = stderr.trim().lines().rev().take(20).collect();
+        return Err(failure(format!(
+            "release build failed ({}): {}",
+            output.status,
+            tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+        )));
     }
-    Err(failure(format!(
-        "release build failed ({}): {}",
-        output.status,
-        String::from_utf8_lossy(&output.stderr).trim()
-    )))
+    let printed = String::from_utf8_lossy(&output.stdout);
+    let built = PathBuf::from(printed.trim());
+    if !built.is_absolute() || !built.is_file() {
+        return Err(failure(format!(
+            "the release build named no binary (it printed {:?})",
+            printed.trim()
+        )));
+    }
+    Ok(built)
 }
 
 /// Install the build as the copy outside target/ (F187), through the same
@@ -127,10 +133,10 @@ fn build(repo_root: &Path) -> Result<()> {
 /// can't break the daemon's next launch or the seats it spawns (they run its
 /// own executable). The copy is renamed into place: a running daemon keeps its
 /// file. PATH is not relinked here; `just rs-install` does that.
-fn install(repo_root: &Path, home: &Path) -> Result<PathBuf> {
+fn install(repo_root: &Path, built: &Path, home: &Path) -> Result<PathBuf> {
     let output = Command::new("/bin/sh")
         .arg(repo_root.join("harness/scripts/install-pij-rs.sh"))
-        .arg(repo_root.join("target/release/pij-rs"))
+        .arg(built)
         .env("HOME", home)
         .current_dir(repo_root)
         .output()

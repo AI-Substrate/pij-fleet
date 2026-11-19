@@ -176,7 +176,14 @@ citation disputes, all of which resolved as neither party being wrong.)
   `~/.local/share/pij/bin/pij-rs` and links it next to the `pij` shim in
   `$(npm prefix -g)/bin`; nothing on PATH points into `target/` (F187).
   **`just bounce-rs`** rebuilds, installs and restarts the daemon;
-  **`just rs-autostart`** registers a macOS LaunchAgent.
+  **`just rs-autostart`** registers a macOS LaunchAgent. Both deploy recipes
+  and `pij-rs daemon bounce` build through **`harness/scripts/release-build.sh`**
+  (F226): shared-build into the checkout's one target (its lock, this tree's own
+  sources, so another worktree's release artifacts can't be linked), stamped
+  with HEAD, and the binary's `pij-rs --version` must read
+  `pij-rs <version> (<HEAD, 10 chars>)`. A failed build exits with cargo's
+  status and an unstamped or other-commit binary is refused, both before
+  anything is installed or the daemon is stopped.
 - **`just shared-build`**: any seat building into a cargo target another
   worktree also uses runs cargo through it, never bare:
   `PIJ_SHARED_TARGET=<abs dir> just shared-build -- <cargo args> [--then <cargo args>]`.
@@ -209,7 +216,8 @@ citation disputes, all of which resolved as neither party being wrong.)
   so a test that starts a cargo build fails, and
   `harness/scripts/recipe-cost.test.ts` fails on an un-niced test or build
   recipe, a bare `nice -n` in any recipe (it stacks past 19 under a niced
-  caller), cargo outside shared-build (bar the niced release deploy builds), or
+  caller), cargo outside shared-build, an install of a `pij-rs` that
+  `release-build.sh` did not build and stamp-check (F226), or
   a target not from `cargo-target.sh`.
 - **Worktrees are plain checkouts (F219).** The committed project layer
   `.omp/config.yml` sets `worktree.clone: false`, so OMP's rewrite of
