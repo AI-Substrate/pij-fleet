@@ -1926,6 +1926,16 @@
 					"seat": "pij-main-prawn",
 					"to": "2026-11-19T07:53:33.111Z",
 					"why": "F213 proxied seat route from stamped-ancestor lineage #263"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-19T08:01:55.139Z",
+					"harness": "copilot",
+					"harness_session": "96fc9639-0a2c-4dbd-b84d-c07640746d71",
+					"instance_key": "264",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-wispy-penguin",
+					"why": "F215 spawn trust-prompt refusal + F216 pij_close by id #264"
 				}
 			]
 		}
