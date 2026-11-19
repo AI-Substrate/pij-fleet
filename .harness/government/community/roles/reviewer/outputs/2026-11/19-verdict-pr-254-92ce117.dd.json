@@ -1,0 +1,57 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f1ee-a856-71f3-960a-b307334c720a",
+				"date": "2026-11-19",
+				"head": "92ce1171412a8555d986246e188b158430238e8f",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:254",
+				"writer": "pij-partial-echidna",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R254-001: settle same-PID/refused restarts instead of leaving recovery pending",
+				"R254-002: enforce the restart cooldown with monotonic elapsed time",
+				"R254-003: make per-seat recovery admission atomic",
+				"R254-004: reject reports from the process incarnation before restart",
+				"R254-005: notify the affected project designated prime"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 254",
+					"exit_code": 0,
+					"log": "FINAL at 92ce1171412a8555d986246e188b158430238e8f; CLEAN; all five checks pass"
+				},
+				{
+					"command": "gh run view 44453854862 --json conclusion,headSha,jobs",
+					"exit_code": 0,
+					"log": "success at reviewed head; Node 22/24 and Rust lint/test jobs pass; rust-test log reports 2538 passed, 6 skipped"
+				},
+				{
+					"command": "git diff origin/main...HEAD --check",
+					"exit_code": 0,
+					"log": "passed; review checkout clean; no local build or test per request"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# BLOCK: #254 at 92ce1171412a8555d986246e188b158430238e8f\n\nFirst-round correctness review. Five P2 findings below. Review was read-only; no local builds, tests, installs, live restart probes, or credential-file reads.\n\n## Findings\n\n### R254-001 [P2] An unchanged PID is treated as pending even after restart has finished or failed\n\nLocation: `crates/daemon/src/auth_recovery.rs:102-105`.\n\nEvery subsequent auth failure from the recorded PID returns `Pending`; nothing consults the restart control's delivery outcome or distinguishes queued work from a command already submitted. This happens on an expressly documented supported case: a Copilot process started without its npm loader prints \"Restart is not available\" and keeps its PID. Delivery acknowledges submission, so there is no control left to execute, but the parent and prime receive no notice. All further errors are suppressed until the window expires, when the same ineffective restart is tried again. A held control that ultimately fails has the same recovery-state problem.\n\nKeep pending only while the control really is pending; once it has settled without replacing the process, send the one actionable failure notice rather than silently waiting for another 30-minute cycle. Cover command refusal/unchanged PID, not only changed-PID relogin.\n\n### R254-002 [P2] The destructive-operation cooldown uses wall time, not monotonic elapsed time\n\nLocation: `crates/daemon/src/auth_recovery.rs:96`; source: `crates/daemon/src/http/auth_error.rs:58-62`.\n\nThe route passes `system_time_ms()`, implemented with `SystemTime::now()` and Unix-epoch arithmetic at `crates/daemon/src/http/mod.rs:4388-4395`. A forward wall-clock correction of 30 minutes expires the brake immediately, allowing another restart seconds after the first. A backward correction can suppress recovery and notices for longer than the promised window. Saturating subtraction prevents underflow, not either behavior.\n\nEnforce the per-seat restart brake with monotonic elapsed time. Durable audit timestamps may remain wall time; do not make a forward clock correction authorize an early destructive retry.\n\n### R254-003 [P2] The per-seat admission check and recovery record are not atomic\n\nLocation: `crates/daemon/src/auth_recovery.rs:136-155`.\n\nTwo overlapping reports can both read the same absent/expired recovery event, both await a free-composer observation, and then both record `Restart`. The event bus serializes individual appends, not this read/decide/write operation. Reports with different millisecond timestamps receive different control IDs at line 153, so queue deduplication does not collapse them. Both restarts are admitted inside the window; overlapping busy reports can likewise produce duplicate notices.\n\nSerialize the decision and reservation by seat, or use a store compare-and-record operation. Persist-before-mutate alone does not provide the requested at-most-once guarantee. A focused concurrent-report case should leave exactly one restart or notification reservation.\n\n### R254-004 [P2] Reports cannot distinguish the process before /restart from the process after it\n\nLocation: `crates/daemon/src/http/auth_error.rs:21-24`; producer: `.copilot/extensions/pij/store.mjs:2281-2284`.\n\nThe report contains only seat, native session, and kind. The F190 probe establishes that `/restart` preserves both seat and native session. Consequently an old-process report delayed across re-registration still passes the binding check. Recovery then reads the registry's new PID at `auth_recovery.rs:141`, rather than the reporting process's incarnation. With a recent automatic restart, this old error is misreported as a fresh-process login failure; after a manual restart with no recovery record it can queue an unnecessary restart of the healthy replacement.\n\nBind freshness to the reporter's process incarnation (PID plus process-start identity, or equivalent registration generation), refuse stale reports, and make the recovery decision against that same incarnation. This is report correctness, not a request for new per-seat credentials under C33.\n\n### R254-005 [P2] Escalation reads the machine singleton prime instead of the affected project's designated prime\n\nLocation: `crates/daemon/src/auth_recovery.rs:230-238`.\n\n`directory.store().prime()` reads `prime_designation WHERE singleton=1` (`crates/store/src/governance.rs:676-683`), not the project's `prime_id`. When a project has its own prime, an auth failure sends to the parent and the unrelated machine prime, or to the parent alone if that singleton is absent. The actual designated project prime is never consulted; the subsequent `Notify`/`Relogin` record suppresses another attempt within the window.\n\nResolve the affected project's designated prime and deduplicate it against the live parent. Existing project-prime routing is demonstrated by `crates/daemon/src/idle_nudge.rs:307-334` and its `the_projects_designated_prime_gets_the_fyi` regression.\n\n## Verified brakes and contracts\n\n- The destructive policy is the automatic restart. Registry-idle, settled-idle, recognized-empty-composer, cooldown, and hold-limit checks are brakes: removing one only permits the same restart sooner or more often. R254-002 and R254-003 concern the cooldown/admission brake's implementation.\n- Restart is not accidentally excluded from the delivery brakes. `crates/daemon/src/pointer/worker.rs:386-395` gates every tagged Copilot control on settled idle. `:511-557` sends it through `submit_with_owned_input` and the composer hold limit. `crates/harnesses/src/interaction.rs:630-679` rechecks the composer under acquired input ownership.\n- Extension matching covers authorization/401 and both credential-authority prefixes, including subagent errors; reports are chained after the run's idle publication and contain no error message text.\n- The new route checks a nonempty native-session binding, rejects non-Copilot seats and unknown fields. Different-session reports are refused; R254-004 is specifically the same-session process replacement.\n- Restart is Copilot-only. Its explicit command uses the existing self-or-recorded-parent ownership rule; fleet role labels do not confer that authority.\n\n## Security\n\nIndependent security pass: no confirmed authorization or privacy vulnerability under C33's same-OS-user trust boundary. No account names, tenant/enterprise hostnames, tokens, or credential-reading additions were identified in the changed material or PR body. Static inspection is not an executable security proof.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None confirmed under C33 | - |\n\n## Evidence and cost\n\n- `just pr-freeze 254`: FINAL at the full reviewed SHA; head agreement, main base, CLEAN, ready, all five latest checks successful.\n- `gh run view 44453854862 --json conclusion,headSha,jobs`: successful at the reviewed SHA; Node 22/24 checks, typecheck, lint, npm tests, native Copilot tests, Rust fmt/clippy and Rust tests passed.\n- CI job `135324022836` log: 2538 tests passed, 6 skipped. Existing auth-recovery cases test sequential reports; they do not establish atomic admission or unchanged-PID restart settlement.\n- `git diff origin/main...HEAD --check`: passed. Working tree remained clean.\n- Local build/test and `harness checks` were not run, as instructed; CI is the build/test evidence. No live fleet behavior is claimed.\n- Cost: no new periodic loop, poll, timer, or direct daemon launch site. Per failed run, one extension report; per report, a spine lookup and, when eligible, a composer observation plus one queued control or up to two notices. The existing drain worker performs delivery; Copilot itself replaces its process. R254-003 means the claimed per-seat bound is not yet guaranteed.\n\n## Harness feedback\n\nMagic wand: a restart-control settlement fixture that distinguishes queued, submitted-but-unchanged-PID, replaced-PID, and failed/held outcomes, and can replay a stale report across replacement. Difficulty: successful command injection currently proves only submission, whereas recovery treats it as an effective restart. Encode those states in the existing daemon fake-tmux/router tests rather than adding a live probe or another polling loop.\n"
+		}
+	]
+}
