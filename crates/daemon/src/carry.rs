@@ -276,6 +276,11 @@ pub async fn carry(
         to: Some(target.id.clone()),
         ..Carried::default()
     };
+    // The retired seats between `from` and the live end, in order.
+    let via: Vec<SeatId> = chain[..chain.len() - 1]
+        .iter()
+        .map(|seat| seat.id.clone())
+        .collect();
     for project in projects {
         let held: Vec<(String, String)> = intent
             .scope
@@ -291,7 +296,7 @@ pub async fn carry(
             Some(repo) => {
                 services
                     .directory
-                    .carry_project(project, repo.clone(), from, &target, &held)
+                    .carry_project(project, repo.clone(), from, &via, &target, &held)
                     .await
             }
         };
@@ -436,6 +441,12 @@ fn now_ms() -> u64 {
 /// drain), so the requests the carry put back, and any queued for a carried
 /// role, reach it. A carry already done drains too: a crash between its
 /// commit and its drain leaves the requests queued, and this is their redo.
+///
+/// A new boundary first finishes any earlier carry on the same launch whose
+/// chain runs into `from` and that began but never finished (F233): a cut
+/// after its holders commit, overtaken by this `/clear`, would otherwise
+/// wait for the next daemon start. Each is a redo, so only a recorded
+/// intent is finished.
 pub fn carry_later(
     services: &Services,
     from: &SeatId,
@@ -444,22 +455,80 @@ pub fn carry_later(
 ) -> tokio::task::JoinHandle<()> {
     let (services, from, to) = (services.clone(), from.clone(), to.clone());
     tokio::spawn(async move {
-        match carry(&services, &from, &to, start).await {
-            Ok(Some(carried)) => {
-                if !carried.delivering.is_empty() {
-                    eprintln!(
-                        "pij-rs carry {from} -> {to}: still delivering to {from}: {}; the next registration or daemon start finishes the carry",
-                        carried.delivering.join(", ")
-                    );
+        let earlier = if start == Start::New {
+            predecessors(&services, &from)
+                .await
+                .unwrap_or_else(|error| {
+                    eprintln!("pij-rs carry {from} -> {to}: earlier boundaries: {error}");
+                    Vec::new()
+                })
+        } else {
+            Vec::new()
+        };
+        let mut ends: Vec<SeatId> = Vec::new();
+        for (old, next, step) in earlier
+            .into_iter()
+            .map(|(old, next)| (old, next, Start::Redo))
+            .chain([(from.clone(), to.clone(), start)])
+        {
+            match carry(&services, &old, &next, step).await {
+                Ok(Some(carried)) => {
+                    if !carried.delivering.is_empty() {
+                        eprintln!(
+                            "pij-rs carry {old} -> {next}: still delivering to {old}: {}; the next registration or daemon start finishes the carry",
+                            carried.delivering.join(", ")
+                        );
+                    }
+                    if let Some(end) = carried.to
+                        && !ends.contains(&end)
+                    {
+                        ends.push(end);
+                    }
                 }
-                if let Some(end) = carried.to {
-                    let _ = crate::delivery::role_send::drain_returned(&services, &end).await;
-                }
+                Ok(None) => {}
+                Err(error) => eprintln!("pij-rs carry {old} -> {next}: {error}"),
             }
-            Ok(None) => {}
-            Err(error) => eprintln!("pij-rs carry {from} -> {to}: {error}"),
+        }
+        for end in ends {
+            let _ = crate::delivery::role_send::drain_returned(&services, &end).await;
         }
     })
+}
+
+/// The earlier boundaries on `seat`'s launch whose chain runs into it, as
+/// (old, its successor) pairs, oldest first. One registry read and one
+/// roster read, per new boundary only.
+///
+/// # Errors
+/// A registry failure.
+async fn predecessors(
+    services: &Services,
+    seat: &SeatId,
+) -> pij_core::error::Result<Vec<(SeatId, SeatId)>> {
+    let Some(launch) = services
+        .registry
+        .get(seat)
+        .await?
+        .and_then(|seat| seat.spawn_id)
+    else {
+        return Ok(Vec::new());
+    };
+    let seats = services.registry.list(Default::default()).await?;
+    let mut pairs = Vec::new();
+    let mut next = seat.clone();
+    for _ in 0..MAX_HOPS {
+        let reason = boundary_reason(&next);
+        let Some(old) = seats.iter().find(|old| {
+            old.spawn_id.as_deref() == Some(launch.as_str())
+                && old.tombstone_reason.as_deref() == Some(reason.as_str())
+        }) else {
+            break;
+        };
+        pairs.push((old.id.clone(), next));
+        next = old.id.clone();
+    }
+    pairs.reverse();
+    Ok(pairs)
 }
 
 /// The registration hook: carry each named (from, to) pair later.
