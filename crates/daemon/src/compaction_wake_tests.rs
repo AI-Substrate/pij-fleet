@@ -635,45 +635,81 @@ async fn a_failed_tracking_write_refuses_the_compact_until_it_recovers() {
     assert_eq!(queued(&services).await, 1, "replay dedup unchanged");
 }
 
+/// Poll `future` once; whether it finished.
+async fn poll_once<F: Future + ?Sized>(mut future: std::pin::Pin<&mut F>) -> bool {
+    std::future::poll_fn(|cx| std::task::Poll::Ready(future.as_mut().poll(cx).is_ready())).await
+}
+
 /// Review of #167, F002: a caller dropped at any point of `admit_control`
-/// never leaves a compact admitted without its row. Each case polls the
-/// admission a few more times before dropping it; the owned work it started
-/// is then let finish.
+/// never leaves a compact admitted without its row.
+///
+/// The drop points are set by state, not by poll count (F228). A sweep of
+/// 1..=64 polls used the count as a clock: on a slow runner the row's SQLite
+/// commit outlasted all 64, so every case dropped before the admission began
+/// and none could witness one in flight. Now an early drop is a few polls in;
+/// a late one waits for the row to land, then polls `after_row` more times.
+/// One poll after the row starts the admission's owned task, so the in-flight
+/// witness no longer depends on speed. `flush` waits for that task, where a
+/// fixed sleep used to guess how long it takes.
 #[tokio::test]
 async fn a_dropped_caller_never_leaves_a_compact_admitted_untracked() {
+    enum DropAt {
+        Polls(usize),
+        AfterRow(usize),
+    }
+    let cases = (1..=4)
+        .map(DropAt::Polls)
+        .chain((0..=2).map(DropAt::AfterRow));
     let mut admitted_after_drop = 0;
-    for polls in 1..=64 {
+    for case in cases {
         let (services, _store, _config, folder) = services().await;
         fleet(&services, &folder).await;
         let state = crate::http::test_state(services.clone());
         let mut admission = Box::pin(crate::http::admit_control(&state, compact_msg("m-cancel")));
         let mut finished = false;
-        for _ in 0..polls {
-            let ready = std::future::poll_fn(|cx| {
-                std::task::Poll::Ready(admission.as_mut().poll(cx).is_ready())
-            })
-            .await;
-            if ready {
-                finished = true;
-                break;
+        let label = match case {
+            DropAt::Polls(polls) => {
+                for _ in 0..polls {
+                    if poll_once(admission.as_mut()).await {
+                        finished = true;
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+                format!("after {polls} polls")
             }
-            tokio::task::yield_now().await;
-        }
+            DropAt::AfterRow(after_row) => {
+                let deadline = tokio::time::Instant::now()
+                    + pij_testkit::time::scaled(std::time::Duration::from_secs(10));
+                while !finished && pending(&services).await.is_empty() {
+                    assert!(
+                        tokio::time::Instant::now() < deadline,
+                        "the compaction row never landed"
+                    );
+                    finished = poll_once(admission.as_mut()).await;
+                }
+                for _ in 0..after_row {
+                    if finished {
+                        break;
+                    }
+                    finished = poll_once(admission.as_mut()).await;
+                }
+                format!("{after_row} polls after the row")
+            }
+        };
         drop(admission);
-        // Let any owned write or admission the dropped caller started finish.
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        // Let any admission the dropped caller started finish.
+        services.delivery.flush().await.unwrap();
         let admitted = queued(&services).await;
         let recorded = pending(&services).await;
         assert!(
             admitted == 0 || recorded == ["m-cancel"],
-            "dropped after {polls} polls: {admitted} admitted, rows {recorded:?}"
+            "dropped {label}: {admitted} admitted, rows {recorded:?}"
         );
-        if admitted > 0 && !finished {
-            admitted_after_drop += 1;
-        }
         if finished {
-            assert_eq!((admitted, recorded.len()), (1, 1));
-            break;
+            assert_eq!((admitted, recorded.len()), (1, 1), "finished {label}");
+        } else if admitted > 0 {
+            admitted_after_drop += 1;
         }
     }
     assert!(
