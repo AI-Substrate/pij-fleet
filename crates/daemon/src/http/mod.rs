@@ -2966,10 +2966,48 @@ pub(crate) async fn send_control(
             ));
         }
     }
+    let unarmed = matches!(msg.command.as_deref(), Some("reload" | "new"))
+        && state
+            .services
+            .reported_context
+            .control(&target.id, target.proc)
+            == Some(false);
     match admit_control(state, msg).await {
-        Ok(receipt) => envelope(StatusCode::OK, &Envelope::ok(name, receipt)),
+        Ok(mut receipt) => {
+            // F199: the seat reported it cannot run this yet, so its extension
+            // will refuse it; the sender learns that, and the human step, now.
+            // A warning, never a refusal: the seat decides, and may be armed by
+            // the time it claims the command.
+            if unarmed {
+                let note = unarmed_control_step(target);
+                receipt.warning = Some(match receipt.warning.take() {
+                    Some(earlier) => format!("{earlier}\n{note}"),
+                    None => note,
+                });
+            }
+            envelope(StatusCode::OK, &Envelope::ok(name, receipt))
+        }
         Err(error) => send_failure(name, error),
     }
+}
+
+/// F199: an OMP or Pi seat runs `reload` and `new` only from a control context
+/// a human arms by running `/pij` in it. What to do about one that has not.
+pub(crate) fn unarmed_control_step(seat: &SeatDescriptor) -> String {
+    let place = seat.pane.as_deref().map_or_else(
+        || "in its session".to_string(),
+        |pane| {
+            format!(
+                "in that seat's pane (tmux pane {})",
+                pij_core::directory::shell_word(pane)
+            )
+        },
+    );
+    format!(
+        "{}'s control context is unarmed: it runs reload and new only after a human runs /pij \
+         in it. Run /pij {place}, then resend.",
+        pij_core::render::seat(seat.id.as_str())
+    )
 }
 
 /// Admit one authorized control: the single place a control enters delivery,
@@ -3930,7 +3968,13 @@ async fn seat_card(
         .await
         .pop()
         .map(|(_, renewed)| renewed);
+    // F199: whether this incarnation reported it can run reload/new.
+    let control = state.services.reported_context.control(&id, seat.proc);
+    let control_line = (control == Some(false)).then(|| unarmed_control_step(&seat));
     let mut projection = state_card(seat, liveness, &state.machine_alias, card, state_record);
+    projection.card.control_context =
+        control.map(|armed| if armed { "armed" } else { "unarmed" }.to_string());
+    projection.card.control_context_line = control_line;
     projection.card.session_status = Some(session_status);
     projection.card.size = size;
     projection.card.size_lines = size_lines;
@@ -4211,6 +4255,8 @@ fn state_card(
             delivery_deferrals: Vec::new(),
             pending_fyis: 0,
             dialog: None,
+            control_context: None,
+            control_context_line: None,
             deliveries: Vec::new(),
             session_status: None,
             size: pij_core::cold_wake::SeatSize::default(),

@@ -4246,6 +4246,11 @@ fn render_state(envelope: &Envelope<pij_daemon::http::StateCard>, json: bool) ->
             }
             (None, None) => {}
         }
+        // F199: an OMP/Pi seat that cannot run reload/new yet, and the human
+        // step; an armed one says so in the card's own fields.
+        if let Some(line) = &card.control_context_line {
+            let _ = write!(output, "\n{line}");
+        }
         if card.pending_fyis > 0 {
             let _ = write!(output, "\nFYIs held: {}", card.pending_fyis);
         }

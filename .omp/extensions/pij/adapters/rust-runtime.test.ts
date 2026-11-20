@@ -92,6 +92,7 @@ async function bootPushedEvent(
 	const sendSignals: Array<AbortSignal | null | undefined> = [];
 	const claimRequests: string[] = [];
 	const activities: string[] = [];
+	const controlContexts: unknown[] = [];
 	let eventStreams = 0;
 	const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
 		const path = new URL(String(url)).pathname;
@@ -141,6 +142,7 @@ async function bootPushedEvent(
 		if (path === "/v1/activity") {
 			const posted = JSON.parse(String(init?.body)) as Record<string, unknown>;
 			activities.push(String(posted.state));
+			controlContexts.push(posted.control_context);
 			return envelope("pij activity", { changed: true });
 		}
 		throw new Error(`unexpected path ${path}`);
@@ -170,7 +172,15 @@ async function bootPushedEvent(
 		resetRuntimeState: true,
 		reason: "startup",
 	});
-	return { acknowledgements, activities, claimRequests, runtime, sends, sendSignals };
+	return {
+		acknowledgements,
+		activities,
+		claimRequests,
+		controlContexts,
+		runtime,
+		sends,
+		sendSignals,
+	};
 }
 
 function announceRuntime(
@@ -310,6 +320,9 @@ describe("RustRuntimeSession", () => {
 		const pi = new FakePiRuntime();
 		const { runtime, activities } = await bootPushedEvent(PUSHED_EVENT_WIRE, pi, []);
 		try {
+			// F199: boot reports `idle` with the control context; turns start after it.
+			await vi.waitFor(() => expect(activities).toEqual(["idle"]));
+			activities.length = 0;
 			runtime.onTurnStart("2026-11-19T00:02:05.000Z");
 			runtime.onTurnEnd();
 			runtime.onTurnStart("2026-11-19T00:02:06.000Z");
@@ -360,13 +373,29 @@ describe("RustRuntimeSession", () => {
 		const { runtime, acknowledgements } = await bootPushedEvent(PUSHED_EVENT_WIRE, pi, claim);
 		try {
 			await vi.waitFor(() => expect(acknowledgements).toHaveLength(1));
-			expect(acknowledgements[0]?.control_outcome).toMatchObject({
+			expect(acknowledgements[0]?.control_outcome).toEqual({
 				outcome: "refused",
-				reason: expect.stringContaining("/pij"),
+				reason:
+					"Control context is unarmed; run /pij in this seat's pane (tmux pane %42), then resend the command",
 			});
 			pi.setArmed(true);
 			expect(runtime.applyPendingControl()).toEqual([]);
 			expect(pi.controlCalls).toEqual([]);
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
+
+	it("F199: reports its control context at boot, and again when /pij arms it", async () => {
+		const pi = new FakePiRuntime(true, false);
+		const { runtime, controlContexts } = await bootPushedEvent(PUSHED_EVENT_WIRE, pi, []);
+		try {
+			await vi.waitFor(() => expect(controlContexts).toEqual(["unarmed"]));
+			runtime.setControlArmed(true);
+			await vi.waitFor(() => expect(controlContexts).toEqual(["unarmed", "armed"]));
+			runtime.setControlArmed(true);
+			await Promise.resolve();
+			expect(controlContexts, "unchanged: nothing is sent").toEqual(["unarmed", "armed"]);
 		} finally {
 			runtime.shutdown("quit");
 		}

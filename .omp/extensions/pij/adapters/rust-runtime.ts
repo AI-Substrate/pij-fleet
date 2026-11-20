@@ -262,6 +262,8 @@ export class RustRuntimeSession {
 	private activityUnsupported = false;
 	/** The last state the daemon accepted; shutdown repairs a seat left `working`. */
 	private activityPublished: "working" | "idle" | undefined;
+	/** F199: a human has run /pij in this session, so reload/new can run. */
+	private controlArmed = false;
 
 	constructor(
 		client: PijDaemonClient,
@@ -325,6 +327,27 @@ export class RustRuntimeSession {
 		this.pi.set(pi);
 	}
 
+	/**
+	 * F199: whether reload/new can run here (OMP hands them out only to a
+	 * command a human runs: /pij). A change is reported on the next activity
+	 * post, sent now, so a sender learns it before its next control.
+	 */
+	setControlArmed(armed: boolean): void {
+		if (armed === this.controlArmed) return;
+		this.controlArmed = armed;
+		this.reportControlContext();
+	}
+
+	/** F199: the session that armed it has ended; its next boot reports `unarmed`. */
+	forgetControlContext(): void {
+		this.controlArmed = false;
+	}
+
+	/** F199: tell the daemon this session's control context, with its turn state. */
+	private reportControlContext(): void {
+		this.publishActivity(this.activityPublished ?? (this.pi.isIdle() ? "idle" : "working"));
+	}
+
 	async boot(input: RustBootInput): Promise<{ readonly id: string; readonly role?: string }> {
 		const lifecycle = ++this.lifecycle;
 		clearInterval(this.mailTicker);
@@ -376,6 +399,7 @@ export class RustRuntimeSession {
 		this.registry.seed(fromRustDescriptor(accepted));
 		this.self = acceptedId;
 		process.env.PIJ_SESSION_ID = acceptedId;
+		this.reportControlContext();
 		await this.flush();
 		await this.recoverInbox(acceptedId, this.client, lifecycle);
 		this.stopEvents?.();
@@ -438,6 +462,7 @@ export class RustRuntimeSession {
 				const client = this.client;
 				this.pushedChain = this.pushedChain
 					.then(() => this.ensureRegistration(seat, client, continuityRegistration))
+					.then(() => this.reportControlContext())
 					.catch((error: unknown) => {
 						this.session.capture("daemon_event_error", {
 							message: error instanceof Error ? error.message : String(error),
@@ -690,7 +715,17 @@ export class RustRuntimeSession {
 			if (this.activityUnsupported) return;
 			if (shutdown !== undefined && this.activityPublished !== "working") return;
 			try {
-				if (await client.publishActivity({ seat, ...evidence, state }, shutdown))
+				if (
+					await client.publishActivity(
+						{
+							seat,
+							...evidence,
+							state,
+							control_context: this.controlArmed ? "armed" : "unarmed",
+						},
+						shutdown,
+					)
+				)
 					this.activityPublished = state;
 				else this.activityUnsupported = true;
 			} catch (error) {
@@ -1179,8 +1214,9 @@ export class RustRuntimeSession {
 				if (!(await this.pi.control(validated.value))) {
 					return {
 						outcome: "refused",
-						reason:
-							"Control context is unarmed; ask the human to run /pij, then resend the command",
+						reason: `Control context is unarmed; run /pij in this seat's pane${
+							this.paneId === undefined ? "" : ` (tmux pane ${this.paneId})`
+						}, then resend the command`,
 					};
 				}
 			} else {

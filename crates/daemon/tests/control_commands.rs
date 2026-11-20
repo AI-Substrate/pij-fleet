@@ -332,3 +332,53 @@ async fn control_native_strips_only_standard_empty_envelopes() {
         server.abort();
     }
 }
+
+/// F199: an OMP seat runs reload and new only after a human runs `/pij` in it.
+/// When its extension has reported it unarmed, the sender learns that at once,
+/// with the human step, on the receipt and in `pij state`; the control is
+/// still queued, because the seat decides and may be armed when it claims it.
+#[tokio::test]
+async fn a_control_to_an_unarmed_seat_warns_the_sender_with_the_human_step() {
+    let (addr, server, _store, queue) = daemon(Harness::Omp, Some("%target"), Some("sender")).await;
+    let report = |context: &str| json!({"seat":"target","pane":"%target","state":"idle","control_context":context});
+    let step = "'s control context is unarmed: it runs reload and new only after a human runs \
+                /pij in it. Run /pij in that seat's pane (tmux pane %target), then resend.";
+    let (status, answer) = post(addr, "/v1/activity", report("unarmed")).await;
+    assert_eq!(status, 200, "{answer:?}");
+
+    let (status, receipt) = post(addr, "/v1/send", request("reload")).await;
+    assert_eq!(status, 200, "{receipt:?}");
+    let warning = receipt.data.as_ref().unwrap()["warning"].clone();
+    assert!(warning.as_str().unwrap().ends_with(step), "{warning}");
+    assert!(
+        queue
+            .peek(&[pij_core::delivery::delivery_kind(&"target".into())])
+            .await
+            .expect("peek")
+            .is_some(),
+        "the control is still queued"
+    );
+    let (_, card) = post(addr, "/v1/state", json!({"id":"target"})).await;
+    let card = card.data.expect("state card");
+    assert_eq!(card["controlContext"], "unarmed");
+    assert_eq!(card["controlContextLine"], warning);
+
+    // Once a human runs /pij there, the extension reports it: no warning.
+    let (status, answer) = post(addr, "/v1/activity", report("armed")).await;
+    assert_eq!(status, 200, "{answer:?}");
+    let (status, receipt) = post(addr, "/v1/send", request("new")).await;
+    assert_eq!(status, 200, "{receipt:?}");
+    assert!(
+        receipt
+            .data
+            .as_ref()
+            .unwrap()
+            .get("warning")
+            .is_none_or(Value::is_null)
+    );
+    let (_, card) = post(addr, "/v1/state", json!({"id":"target"})).await;
+    let card = card.data.expect("state card");
+    assert_eq!(card["controlContext"], "armed");
+    assert!(card.get("controlContextLine").is_none());
+    server.abort();
+}

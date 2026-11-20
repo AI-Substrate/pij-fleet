@@ -647,6 +647,14 @@ pub struct StateCard {
     /// since `since_ms`. Absent when there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dialog: Option<pij_core::modal_stall::DialogView>,
+    /// F199: for an OMP or Pi seat whose extension reported it, `armed` when
+    /// it can run reload and new (a human has run `/pij` in it since it
+    /// loaded), else `unarmed`. Absent when this incarnation has not said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_context: Option<String>,
+    /// F199: what to do about an `unarmed` seat, with its pane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_context_line: Option<String>,
     /// PRs whose delivery named this seat as the PM, newest first (plan 196,
     /// AC6): `pij delivered` posts here. Read by `pij state <seat>` only;
     /// `/v1/cards` leaves it empty so the bulk read stays cheap.
