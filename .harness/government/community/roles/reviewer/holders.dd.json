@@ -2487,6 +2487,16 @@
 					"seat": "pij-rational-termite",
 					"to": "2026-11-20T17:21:47.073Z",
 					"why": "#297 F243+F244 review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T17:51:19.698Z",
+					"harness": "copilot",
+					"harness_session": "ef9fda2b-0b8e-47cd-b114-9d1a602c4ad0",
+					"instance_key": "298",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-zonal-bee",
+					"why": "#298 F245+F246 review"
 				}
 			]
 		}
