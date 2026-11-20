@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fa53-efd6-7bf2-9b0d-23a756c131d1",
+				"date": "2026-11-21",
+				"head": "0d9961ccfc4473813a41ebc94efb95475e23ce61",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:298",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"F247 (prime C34 ruling): use builtin UID instead of id -u and word limits as bounds on launched reads, in the next PR touching bounce-rs."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "nice -n 19 node /tmp/p298-r2-bounce-bound-probe.mjs",
+					"exit_code": 0,
+					"log": "/tmp/p298-r2-bounce-bound-receipt.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES — final performance review at0d9961ccfc4473813a41ebc94efb95475e23ce61, answers01a1fa53-efd6-7bf2-9b0d-23a756c131d1. Final C34 round; retain performance/298 until merge. F247 is the prime-approved residual. Independent security/reviewer gates and the fleet APPLY hold remain separate.\n\nP298-001 closure: own exact final recipe smoke passed, `nice -n 19 node /tmp/p298-r2-bounce-bound-probe.mjs`, exit0. It uses the same blocked holder as R1, boundary-fakes release/install/npm/tmux/lsof in owned scratch, and makes PATH lsof reject -U so only the absolute PIJ_BOUNCE_LSOF seam can work. Bounce refused exit1; old owned process stayed alive; controlled exec-sleep holder was killed/reaped. Holder wait4158.070334ms, total recipe5206.665167ms. Exact recipe SHA2563315773211ba4c7c107dc85919dfdae59c568a6f12097b94876cd3675b3095a3. Raw /tmp/p298-r2-bounce-bound-receipt.json. No Cargo build, fleet resource collection, real bounce or sweep APPLY by this seat.\n\nCost and worst-case scope:\n- Bounce adds one /usr/sbin/lsof only after a no-server refusal, not per seat or daemon tick. bounded() uses builtin kill/wait/clock checks, but launches absolute /bin/sleep0.1 nominal10/s while a manual invocation waits. Holder limit5 plus grace2 permits roughly70 sleep launches at the configured worst-case sum; existing setter limit2 plus grace2 permits roughly40. Setter timeout never enters the holder arm, so do not sum both postkill graces as a mandatory path. With SECONDS resolution, a limitL expires in aboutL-1..L seconds plus at most one0.1s sleep overshoot and scheduler/syscall latency. Holder first wait therefore about4..5s, not necessarily5s; grace about1..2s. If still alive after grace it returns125 without an unbounded wait, otherwise124 after timeout. Output goes to a private regular file, so a descendant retaining a pipe cannot hold this job's command substitution open. No subprocess per lsof output line: read, printf-v, -e and -ef are shell builtins. No whole-bounce hard deadline is claimed.\n- Sweep on macOS uses one absolute /usr/sbin/lsof, LC_ALL=C, and one stdout-reader thread. Start/deadline are established before spawn;9s of the configured10s is for child completion, with the last1s reserved for kill/reap polling. Both phases use in-process20ms sleeps/try_wait (~50 checks/s), no subprocess per poll. recv_timeout uses that same remaining deadline: no successful-path reader.join or timeout-path blocking child.wait remains. A child still alive or a reader with no EOF is left rather than extending the caller's wait. This is a bounded acquisition/wait design, not proof of kernel syscall preemption or a literal hard wall deadline for all processing.\n- Decode/path construction is O(output bytes); metadata is one call per bound path; set lookups are by dev/ino. Unresolved path scoping adds parent/ancestor metadata, invoked twice by the CLI (diagnostic then sweep). The candidate list still sorts O(NlogN) then uses metadata/set/flock in-process, with zero per-entry process launches. These costs scale with process/descriptor inventory, returned paths, unresolved paths and directory entries. Linux reads /proc/net/unix in-process, no lsof launch. Byte decoding and filesystem metadata processing are not themselves deadline-checked; do not describe the entire sweep as a10s operation.\n- Fixture PID polling and F246 are unchanged from R1:100kill0 syscalls/s for configured2s per dropping fixture, not whole Drop; no process per poll. Four fixture types retain their one added synchronous tmux PID read before that wait. F246 normal success still2mktemp+2mv; failure adds1or2rm per publication. Prior directly inspected F246 three-state fake-Cargo proof carries across the unchanged source; no rerun.\n- No production daemon loop, timer, task, recurring poll or launch-site change. No new process per daemon tick or per live seat, and no new daemon spawn_sites entry is required. Manual bounce polling still has real launch cost as counted above; it is not zero merely because it does not recur at rest.\n\nEvidence and limitations:\nRead /tmp/f245-r2-receipts.md, final source and regressions, /tmp/f245-checks5.log, and raw /tmp/f245-r2-dryrun2.{txt,time}. The retained dry-run sample is0.57s real/0.10user/0.31sys for173held,1unresolved,52136stale,50ignored,nothingremoved. It was built at0ddb5119. Direct later-commit diff confirms the acquisition path and bounce helper unchanged, but unresolved-path placement changed: this is inherited acquisition evidence, not an exact-final-head whole-sweep benchmark or a standalone-lsof measurement. Coder MR8/MB5-MB7 and green deadline cases are retained summary evidence, no per-case elapsed/raw transcript and no duplicate test run here. Final deadline regression source covers both non-exiting child and descendant holding stdout with300ms wait and <scaled2s assertion. Our final exact-recipe smoke independently proves the requested P298-001 repair. Final harness envelope shows15sensorspass; head association is coder provenance rather than an embedded SHA. CI44795653617/5of5 is requester/coder supplied.\n\nC34 ruling: the prime, relayed by pm-001, accepted P298-R2-001 as F247: use builtin $UID instead of id -u, and word the bounds as bounds on launched reads, folded into the next PR touching bounce-rs. The current once-only `$(id -u)` remains PATH-resolved at justfile821 (present in R1), so the verified absolute-launch claim is pinned lsof and absolute poll sleeps, not literally every new PR helper. Existing port-lsof calls are also unchanged and outside P298-001. No new recurring per-seat cost or reproduced timeout regression; accepted F247 is nonblocking here. No third round.\n\nDestructive semantics: socket-holder/type/ownership/lock predicates are the intended sweep policy. Explicit Unknown now preserves sockets and orphan locks. Directory-level uncertainty is scoped, with an independently reproduced reviewer residual below; this is not a blanket failclosed proof. Young mtime is a one-directional brake, not retention policy. The bounce holder check and its timeout are brakes on signalling: removing them permits the same or more signals. This review does not itself authorize fleet APPLY, parsing/security clearance or deployment.\nDirectly read final reviewer alias runtime: PID4949/128queued/refusal61; exact R2 dev/ino branch refuses and text-equality mutant proceeds. Also read reviewer R298-R2-001 raw /Users/jordanknight/.copilot/session-state/ef9fda2b-0b8e-47cd-b114-9d1a602c4ad0/files/review298-r2-probes/case-1-baseline.log: a removed bound parent alias causes its live candidate to be marked Stale/removed1. This is the independent reviewer's P1 correctness residual, already sent to PM for C34; this performance cost verdict does not overrule it or clear the sweep. Remaining peer official deadline-suite raw receipt was not required to delay this prime-requested publication; source/retained coder deadline evidence and our exact-head stall proof are the performance evidence actually consumed.\n\nmagicWand: retain head-stamped subprocess boundary receipts with separate acquisition, output, parse and filesystem phases, so configured waits cannot silently turn into global wall-time claims.\ndifficulties: manual polling still launches sleep; once-only helpers can remain PATH-resolved; inherited benchmark provenance must survive later unrelated scoping changes. This governed review records that feedback without product edits.\n\nEvidence ledger /tmp/performance-298-final-static-cost.json. Keep performance/298 until merge, independent of verdict. Any newly discovered final-round issue goes to pm-001 under C34 rather than another review round.\n"
+		}
+	]
+}
