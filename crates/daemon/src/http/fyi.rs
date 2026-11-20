@@ -251,6 +251,10 @@ pub(crate) struct ActivityRequest {
     /// required with `context_tokens`.
     #[serde(default)]
     context_token: Option<String>,
+    /// F199: `armed` or `unarmed`, whether the OMP/Pi extension can run
+    /// reload/new (a human has run `/pij` in it since it loaded).
+    #[serde(default)]
+    control_context: Option<String>,
 }
 
 /// The seat's mechanical state after the publication.
@@ -275,6 +279,20 @@ pub(crate) async fn activity(
             return refused(
                 ACTIVITY,
                 format!("state must be `working` or `idle`, not `{other}`"),
+            );
+        }
+    };
+    let armed = match request.control_context.as_deref() {
+        None => None,
+        Some("armed") => Some(true),
+        Some("unarmed") => Some(false),
+        Some(other) => {
+            return refused(
+                ACTIVITY,
+                format!(
+                    "control_context must be `armed` or `unarmed`, not `{}`",
+                    pij_core::render::line(other)
+                ),
             );
         }
     };
@@ -362,6 +380,9 @@ pub(crate) async fn activity(
             changed
         }
     };
+    if let Some(armed) = armed {
+        reports.record_control(&seat.id, seat.proc, armed);
+    }
     envelope(
         StatusCode::OK,
         &Envelope::ok(

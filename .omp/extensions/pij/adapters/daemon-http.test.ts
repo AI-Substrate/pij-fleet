@@ -229,6 +229,33 @@ describe("pij-rs HTTP client", () => {
 		});
 	});
 
+	it("F199: a daemon that predates control_context keeps getting activity, without it", async () => {
+		const bodies: Array<Record<string, unknown>> = [];
+		const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+			const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+			bodies.push(body);
+			// axum's answer to an unknown field under deny_unknown_fields: a bare 422.
+			if ("control_context" in body)
+				return new Response("Failed to deserialize the JSON body", { status: 422 });
+			return new Response(
+				JSON.stringify({ v: 2, ok: true, command: "pij activity", data: { changed: true } }),
+			);
+		});
+		const client = new PijDaemonClient(
+			{ addr: "127.0.0.1:7461", stateDir: "/tmp/state" },
+			"secret",
+			deps(fetchMock as typeof fetch),
+		);
+		const post = { seat: "pij-a", pane: "%4", control_context: "armed" } as const;
+		await expect(client.publishActivity({ ...post, state: "working" })).resolves.toBe(true);
+		await expect(client.publishActivity({ ...post, state: "idle" })).resolves.toBe(true);
+		expect(bodies.map((body) => [body.state, body.control_context])).toEqual([
+			["working", "armed"],
+			["working", undefined],
+			["idle", undefined],
+		]);
+	});
+
 	it("encodes swallowed delivery failure without changing ordinary or control acknowledgements", async () => {
 		const requests: unknown[] = [];
 		const client = new PijDaemonClient(

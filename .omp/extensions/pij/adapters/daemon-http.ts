@@ -161,6 +161,8 @@ export async function detectDaemonGeneration(
 
 export class PijDaemonClient {
 	private reconnecting = false;
+	/** F199: this daemon rejects `control_context` on /v1/activity. */
+	private controlContextUnsupported = false;
 
 	/** Inbox recovery defers transport work to the existing stream reconnect loop. */
 	isReconnecting(): boolean {
@@ -266,13 +268,18 @@ export class PijDaemonClient {
 	/**
 	 * Publish the seat's turn state. Resolves false when the daemon has no
 	 * /v1/activity route: a bare 404, as opposed to a refusal envelope.
+	 * F199: a daemon that predates `control_context` rejects the unknown field
+	 * (a bare 422); the post is resent without it, and this client stops
+	 * sending it.
 	 */
 	async publishActivity(request: ActivityRequest, signal?: AbortSignal): Promise<boolean> {
+		const { control_context, ...plain } = request;
+		const sent = this.controlContextUnsupported ? plain : request;
 		const response = await this.request(
 			"/v1/activity",
 			{
 				method: "POST",
-				body: JSON.stringify(request),
+				body: JSON.stringify(sent),
 				...(signal === undefined ? {} : { signal }),
 			},
 			{ "Content-Type": "application/json" },
@@ -282,6 +289,15 @@ export class PijDaemonClient {
 			decodeEnvelope<unknown>(text);
 		} catch (error) {
 			if (response.status === 404 && !(error instanceof DaemonRefusalError)) return false;
+			if (
+				response.status === 422 &&
+				control_context !== undefined &&
+				sent === request &&
+				!(error instanceof DaemonRefusalError)
+			) {
+				this.controlContextUnsupported = true;
+				return this.publishActivity(plain, signal);
+			}
 			throw error;
 		}
 		return true;
