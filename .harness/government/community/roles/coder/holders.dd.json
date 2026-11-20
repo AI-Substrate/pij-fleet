@@ -1346,6 +1346,16 @@
 					"seat": "pij-forthcoming-silkworm",
 					"to": "2026-11-20T10:37:24.496Z",
 					"why": "F236 human text render of the unarmed-control warning (prime ruling)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T10:47:28.594Z",
+					"harness": "omp",
+					"harness_session": "01a1f66b-21d0-7652-8b03-da1df9910ceb",
+					"instance_key": "c34i",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-forthcoming-silkworm",
+					"why": "C34 follow-ups batch (i)"
 				}
 			]
 		}
