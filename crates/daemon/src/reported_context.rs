@@ -56,6 +56,9 @@ struct State {
     reports: HashMap<SeatId, Report>,
     grants: HashMap<SeatId, Grant>,
     generations: HashMap<SeatId, u64>,
+    /// F199: whether each seat's OMP/Pi extension can run reload/new, for the
+    /// incarnation that said so.
+    controls: HashMap<SeatId, (Option<ProcIdentity>, bool)>,
 }
 
 /// One authorized size report, as `/v1/activity` carries it.
@@ -203,6 +206,25 @@ impl ReportedContext {
     /// started.
     pub fn generation(&self, seat: &SeatId) -> u64 {
         self.lock().generations.get(seat).copied().unwrap_or(0)
+    }
+
+    /// F199: record whether `seat`'s extension holds a control context
+    /// (`armed`: a human has run `/pij` in it since it loaded), for its
+    /// incarnation `proc`. A report rides `/v1/activity`, which any local
+    /// caller naming the seat may post (as the state itself): the fact only
+    /// ever adds a warning to a control's receipt, it never refuses one.
+    pub fn record_control(&self, seat: &SeatId, proc: Option<ProcIdentity>, armed: bool) {
+        self.lock().controls.insert(seat.clone(), (proc, armed));
+    }
+
+    /// F199: the control context `seat` last reported, when it was its current
+    /// incarnation `proc` that reported it; `None` for anything else.
+    pub fn control(&self, seat: &SeatId, proc: Option<ProcIdentity>) -> Option<bool> {
+        self.lock()
+            .controls
+            .get(seat)
+            .filter(|(reported, _)| *reported == proc)
+            .map(|(_, armed)| *armed)
     }
 
     fn get(&self, seat: &SeatId, session: &str) -> Option<Report> {
@@ -387,5 +409,28 @@ mod tests {
             "the old grant is gone"
         );
         assert!(reports.authorized(&seat, next, &renewed));
+    }
+
+    /// F199: a seat's control context describes the incarnation that reported
+    /// it; a new process has said nothing yet, so nothing is known.
+    #[test]
+    fn a_control_context_applies_only_to_the_incarnation_that_reported_it() {
+        let reports = ReportedContext::default();
+        let seat: SeatId = "pij-o".into();
+        let first = Some(ProcIdentity {
+            pid: 4,
+            proc_start: 10,
+        });
+        let next = Some(ProcIdentity {
+            pid: 4,
+            proc_start: 11,
+        });
+        assert_eq!(reports.control(&seat, first), None);
+        reports.record_control(&seat, first, false);
+        assert_eq!(reports.control(&seat, first), Some(false));
+        assert_eq!(reports.control(&seat, next), None, "a recycled pid");
+        reports.record_control(&seat, next, true);
+        assert_eq!(reports.control(&seat, next), Some(true));
+        assert_eq!(reports.control(&seat, first), None);
     }
 }

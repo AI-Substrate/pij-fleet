@@ -605,6 +605,7 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("session_shutdown", async (event, ctx: ExtensionContext) => {
 		if (isPeerless(ctx)) return;
 		commandControl = undefined;
+		rustRuntime?.forgetControlContext();
 		ompSessionNameGeneration += 1;
 		ompSessionNamePublication = undefined;
 		// Pi guarantees this closed union (extensions.md, session_shutdown): only
@@ -636,6 +637,7 @@ export default function (pi: ExtensionAPI): void {
 				newSession: () => ctx.newSession(),
 				reload: () => reloadWithCompletion(pi, () => ctx.reload()),
 			};
+			rustRuntime.setControlArmed(true);
 			const applied = session?.applyPendingControl() ?? [];
 			const peers = rustRuntime.peerCount();
 			const appliedNote = applied.length > 0 ? ` · applied ${applied.join("+")}` : "";

@@ -92,6 +92,19 @@ async function bootPushedEvent(
 	const sendSignals: Array<AbortSignal | null | undefined> = [];
 	const claimRequests: string[] = [];
 	const activities: string[] = [];
+	const controlContexts: unknown[] = [];
+	/** While set, an activity post is recorded as sent and answered only on release. */
+	let activityHold: Promise<void> | undefined;
+	const holdActivity = () => {
+		let release!: () => void;
+		activityHold = new Promise((resolve) => {
+			release = resolve;
+		});
+		return () => {
+			activityHold = undefined;
+			release();
+		};
+	};
 	let eventStreams = 0;
 	const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
 		const path = new URL(String(url)).pathname;
@@ -141,6 +154,8 @@ async function bootPushedEvent(
 		if (path === "/v1/activity") {
 			const posted = JSON.parse(String(init?.body)) as Record<string, unknown>;
 			activities.push(String(posted.state));
+			controlContexts.push(posted.control_context);
+			await activityHold;
 			return envelope("pij activity", { changed: true });
 		}
 		throw new Error(`unexpected path ${path}`);
@@ -170,7 +185,16 @@ async function bootPushedEvent(
 		resetRuntimeState: true,
 		reason: "startup",
 	});
-	return { acknowledgements, activities, claimRequests, runtime, sends, sendSignals };
+	return {
+		acknowledgements,
+		activities,
+		claimRequests,
+		controlContexts,
+		holdActivity,
+		runtime,
+		sends,
+		sendSignals,
+	};
 }
 
 function announceRuntime(
@@ -310,6 +334,9 @@ describe("RustRuntimeSession", () => {
 		const pi = new FakePiRuntime();
 		const { runtime, activities } = await bootPushedEvent(PUSHED_EVENT_WIRE, pi, []);
 		try {
+			// F199: boot reports `idle` with the control context; turns start after it.
+			await vi.waitFor(() => expect(activities).toEqual(["idle"]));
+			activities.length = 0;
 			runtime.onTurnStart("2026-11-19T00:02:05.000Z");
 			runtime.onTurnEnd();
 			runtime.onTurnStart("2026-11-19T00:02:06.000Z");
@@ -360,13 +387,113 @@ describe("RustRuntimeSession", () => {
 		const { runtime, acknowledgements } = await bootPushedEvent(PUSHED_EVENT_WIRE, pi, claim);
 		try {
 			await vi.waitFor(() => expect(acknowledgements).toHaveLength(1));
-			expect(acknowledgements[0]?.control_outcome).toMatchObject({
+			expect(acknowledgements[0]?.control_outcome).toEqual({
 				outcome: "refused",
-				reason: expect.stringContaining("/pij"),
+				reason:
+					"Control context is unarmed; run /pij in this seat's pane (tmux pane %42), then resend the command",
 			});
 			pi.setArmed(true);
 			expect(runtime.applyPendingControl()).toEqual([]);
 			expect(pi.controlCalls).toEqual([]);
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
+
+	it("F199: reports its control context at boot, and again when /pij arms it", async () => {
+		const pi = new FakePiRuntime(true, false);
+		const { runtime, controlContexts } = await bootPushedEvent(PUSHED_EVENT_WIRE, pi, []);
+		try {
+			await vi.waitFor(() => expect(controlContexts).toEqual(["unarmed"]));
+			runtime.setControlArmed(true);
+			await vi.waitFor(() => expect(controlContexts).toEqual(["unarmed", "armed"]));
+			runtime.setControlArmed(true);
+			await Promise.resolve();
+			expect(controlContexts, "unchanged: nothing is sent").toEqual(["unarmed", "armed"]);
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
+
+	// Review of #286 (B286-001): a context-only report carries the latest turn
+	// state, a transition still in flight included, never the last one the
+	// daemon acknowledged; otherwise it lands after that transition and reverses it.
+	it.each([
+		"idle",
+		"working",
+	] as const)("F199 review: arming behind a %s still in flight reports that state", async (state) => {
+		const pi = new FakePiRuntime(true, false);
+		const { runtime, activities, controlContexts, holdActivity } = await bootPushedEvent(
+			PUSHED_EVENT_WIRE,
+			pi,
+			[],
+		);
+		try {
+			if (state === "idle") runtime.onTurnStart("2026-11-20T00:00:00.000Z");
+			await vi.waitFor(() => expect(activities).toHaveLength(state === "idle" ? 2 : 1));
+			const release = holdActivity();
+			if (state === "idle") runtime.onAgentEnd(false);
+			else runtime.onTurnStart("2026-11-20T00:00:00.000Z");
+			// Posts are serial: this one is sent only once the one before it was acknowledged.
+			await vi.waitFor(() => expect(activities.at(-1)).toBe(state));
+			runtime.setControlArmed(true);
+			release();
+			await vi.waitFor(() => expect(controlContexts.at(-1)).toBe("armed"));
+			expect(activities.at(-1), "the latest state, not the last acknowledged").toBe(state);
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
+
+	it("F199 review: a re-attach behind a working still in flight reports working", async () => {
+		const watch = vi.spyOn(PijDaemonClient.prototype, "watchEvents");
+		const pi = new FakePiRuntime(true, false);
+		const { runtime, activities, holdActivity } = await bootPushedEvent(PUSHED_EVENT_WIRE, pi, []);
+		try {
+			await vi.waitFor(() => expect(activities).toEqual(["idle"]));
+			const release = holdActivity();
+			runtime.onTurnStart("2026-11-20T00:00:00.000Z");
+			await vi.waitFor(() => expect(activities).toEqual(["idle", "working"]));
+			// The daemon forgot the seat: the re-attach registers it again, then reports.
+			const notice = watch.mock.calls[0]?.[2];
+			if (notice === undefined) throw new Error("the runtime watches events with a notice");
+			notice("pij: re-attached at cursor 1");
+			// Nothing public says the re-attach's report is queued; its private chain does.
+			const internals = runtime as unknown as { readonly pushedChain: Promise<void> };
+			await internals.pushedChain;
+			release();
+			await vi.waitFor(() => expect(activities).toHaveLength(3));
+			expect(activities.at(-1)).toBe("working");
+		} finally {
+			watch.mockRestore();
+			runtime.shutdown("quit");
+		}
+	});
+
+	it("F199 review: a new lifecycle reports its own turn state, not the last one published", async () => {
+		const pi = new FakePiRuntime(true, false);
+		const { runtime, activities } = await bootPushedEvent(PUSHED_EVENT_WIRE, pi, []);
+		try {
+			runtime.onTurnStart("2026-11-20T00:00:00.000Z");
+			await vi.waitFor(() => expect(activities).toEqual(["idle", "working"]));
+			// A replacement session starts idle while the daemon last accepted
+			// `working` (a shutdown repair that never landed leaves the same).
+			await runtime.boot({
+				extension_build: "0123456789",
+				extension_path: "/abs/extension",
+				folder: "/abs/tree",
+				dataDir: "",
+				eventsPath: "",
+				harness: "pi",
+				harnessSessionId: "native-session-2",
+				piSessionId: "native-session-2",
+				runtimeBin: "omp",
+				paneId: "%42",
+				resetRuntimeState: true,
+				reason: "new",
+			});
+			await vi.waitFor(() => expect(activities).toHaveLength(3));
+			expect(activities.at(-1)).toBe("idle");
 		} finally {
 			runtime.shutdown("quit");
 		}

@@ -113,6 +113,20 @@ impl SqliteQueue {
                 })?,
             None => self.claim_lease_secs,
         };
+        // F234: a claim whose kinds have no live row has nothing to expire,
+        // recover, park or claim, so it takes no write transaction. Any
+        // pending or running row of these kinds, due or not, takes the full
+        // path below unchanged: a lapsed running claim must still be
+        // recovered, and a delayed or FIFO-blocked pending row still decided
+        // there. Uses `jobs_claimable (state, kind, id)`.
+        let live: Option<i64> = sqlx::query_scalar(LIVE_OF_KINDS_SQL)
+            .bind(&kinds_json)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        if live.is_none() {
+            return Ok(ExtensionClaim::default());
+        }
         let mut result = ExtensionClaim::default();
 
         let pool = self.pool.clone();
@@ -279,6 +293,14 @@ pub const CLAIM_NEXT_SQL: &str = "SELECT id, kind, serial_key, payload, dedupe_k
            WHERE earlier.serial_key = jobs.serial_key AND earlier.state = 'pending' \
              AND earlier.id < jobs.id AND earlier.kind LIKE ?2)) \
      ORDER BY id LIMIT 1";
+
+/// The claim's preflight (F234): is any row of these kinds live (pending or
+/// running, due or not)? `?1` the JSON kind list. Public so the cost test
+/// explains THIS query.
+pub const LIVE_OF_KINDS_SQL: &str = "SELECT 1 FROM jobs \
+     WHERE state IN ('pending', 'running') \
+       AND kind IN (SELECT value FROM json_each(?1)) \
+     LIMIT 1";
 
 /// The absolute deadline `delay` from now, in whole epoch seconds rounded UP:
 /// the queue compares whole seconds, and truncating released a 100 ms retry
