@@ -1315,7 +1315,10 @@
 					"harness_session": "01a1f66b-21d0-7652-8b03-da1df9910ceb",
 					"instance_key": "f230",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #284 merged (7c7701337e33)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-forthcoming-silkworm",
+					"to": "2026-11-20T10:37:06.448Z",
 					"why": "F230 fix lane, moved from falcon by the prime"
 				},
 				{

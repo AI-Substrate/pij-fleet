@@ -733,7 +733,10 @@
 					"harness_session": "e99f3f87-9b86-4cfd-b0ac-e03f7054aee0",
 					"instance_key": "284",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #284 merged (7c7701337e33)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-financial-falcon",
+					"to": "2026-11-20T10:37:06.448Z",
 					"why": "#284 F230 security"
 				},
 				{

@@ -2326,7 +2326,10 @@
 					"harness_session": "d2cfd247-cdf8-47ee-bb93-62377500148f",
 					"instance_key": "284",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #284 merged (7c7701337e33)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-glorious-smelt",
+					"to": "2026-11-20T10:37:06.448Z",
 					"why": "#284 F230 review"
 				},
 				{
