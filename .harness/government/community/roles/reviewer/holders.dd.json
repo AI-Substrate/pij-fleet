@@ -2250,6 +2250,16 @@
 					"seat": "pij-semantic-hornet",
 					"to": "2026-11-20T06:44:10.322Z",
 					"why": "#279 R2 delta review; holding ended unexpectedly, hornet is the round-1 reviewer"
+				},
+				{
+					"assigned_by": "pij-cultural-falcon",
+					"from": "2026-11-20T06:45:18.819Z",
+					"harness": "copilot",
+					"harness_session": "ce5bd1e8-b92d-49ec-b381-e6a9e2ea3ab6",
+					"instance_key": "f190-proof",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-extraordinary-panda",
+					"why": "F190 live proof (throwaway)"
 				}
 			]
 		}
