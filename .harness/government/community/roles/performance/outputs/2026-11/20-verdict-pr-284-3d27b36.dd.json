@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f875-9e37-7921-bc3d-224f776b2f10",
+				"date": "2026-11-20",
+				"head": "3d27b36ab7c409f23e78d61b121817e47bfa47c7",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:284",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Original cost qualifications now committed. Per-publication retries and per-job historical event_stats work remain disclosed; no live F230 after-cost proof from this static review. Independent final correctness/security gates separate."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git rev-parse HEAD && git log --no-merges --oneline 16b75f3b..3d27b36a ^origin/main && git diff origin/main 3d27b36a --stat && git diff 16b75f3b 3d27b36a -- .copilot/extensions/pij/store.mjs .copilot/extensions/pij/store.test.mjs crates/daemon/src/background.rs docs/difficulties.md docs/how/pij-rs-api.md skills/pij/references/00-routing.md",
+					"exit_code": 0,
+					"log": "/tmp/performance-284-final-static-cost.json; complete diff artifact://274. Exact-head static source review only, no performance runtime or test claims."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES — performance/284 FINAL C34 round. Exact head 3d27b36ab7c409f23e78d61b121817e47bfa47c7; prior verdict bf499c75 at 16b75f3b8bc510e8a305ecd7ca49044b3be27b1c. Answers 01a1f875-9e37-7921-bc3d-224f776b2f10.\n\nRound-one performance wording is resolved in committed D-F230-1, pij-rs-api.md and routing text. No new performance issue or third-round request. Source-only review: no builds, tests, formatters, benchmark, deployment, registration or live measurement by this seat. Correctness reviewer smelt is running final native contracts/full gate; no unobserved PASS is asserted.\n\nB284-1 repair: republishActivity captures the observed state when enqueued, rather than reading the newest state when its serialized callback runs. A failed obsolete state returns before activityDelay, including when superseded before its first send. The existing post-wait attempt>0 guard remains. Cost of this repair is a captured existing state plus a constant-time comparison; it avoids the obsolete first retry sleep and introduces no new request trigger, history, loop, timer or launch site beyond round one.\n\n| Changed path | Final static cost and scaling |\n| --- | --- |\n| Registration activity | One extra healthy primary POST per successful registration with a known observed state and supported route; zero with unknown state/unsupported route. Sum successful-registration rates across native extensions. |\n| Publication retries | Original plus at most five primary retries per publication. Waits 1,2,5,10,30 seconds: 48 seconds scheduled sleep, not a wall bound. Plan217's existing 400/422 fallback may add one state-only POST per attempt; conservative total at most12 logical RPCs/publication. |\n| Timer/serialization | The bounded retry loop HAS its own activityDelay sleep timer; at most five new waits/publication and one active activity retry wait/bridge. No new recurring poller. The serialized Promise queue is not a hard lifetime/depth cap. |\n| Retry lifetime | Per publication, NOT per outage or state lifetime. Exhaustion resets activityState; a subsequent same-state event can start another episode. This is explicitly covered by the adopted two-episode cap regression. |\n| Busy native batches | Floor is per background job/source, not per aggregate owner. Owner rates add across jobs; default60s offers at most1/60 batch/s/job, subject to the existing100ms tick and pending work. I=0 remains allowed and tick-limited. |\n| Eligible busy-job reads | Once the floor passes, up to10 event_stats checks/s/job, each two explicit SQL reads (schema + COUNT/SUM/MAX across retained job history). Offered work scales O(10*sum historical rows), even when no event is pending. No new per-tick subprocess site. |\n\nFor Q publication episodes actually offered across N seats: primary retry attempts<=5Q, primary total<=6Q, fallback-inclusive logical posts<=12Q and retry-wait arms<=5Q. These are source bounds, not measured traffic. Existing request deadlines and delivery/cold-routing work remain; unchanged launch inventory is not a claim that all resulting work launches nothing or wakes no model.\n\nRegression SOURCE inspected: capture chronology, obsolete first-send wait, serialization, superseded-after-wait, per-publication cap with same-state rearm, all harness/native combinations, persisted floor/pending events after restart, and admission-before-settle recovery retaining one batch. Packet says the two repair regressions were RED at16b75f3; performance did not rerun them. Smelt independently confirmed the two repaired guards by direct read and reports runtime/gates underway, without deploy/canary.\n\nScope: non-merge F230 commits97e7fab0,273425ea,af9e35f9; exact HEAD verified. Actual origin/main-to-final PR delta is six files. F234/F199 code and additive ledger rows from main merges are not charged as new F230 changes. Relative round one, background production changes only clarify the per-job comment; added background logic in this delta is test code. No new OS-launch site, recurring loop or timer introduced by the repair; the originally added bounded retry loop/timer and newly eligible tick work are now accurately disclosed.\n\nEvidence: full diff artifact://274 and /tmp/performance-284-final-static-cost.json. Static performance acceptance only; independent correctness/security and any requested deployed after-measure remain separate. Retain performance/284 holding until merge.\n"
+		}
+	]
+}
