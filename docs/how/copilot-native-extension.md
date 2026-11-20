@@ -249,6 +249,10 @@ session's seat (F190). Its role holdings and held FYIs move. Its delivered,
 unanswered role requests are delivered again, so the cleared session's
 successor reads them. The old seat names its successor in `pij directory`.
 A seat with no launch id (one not started by `pij spawn`) carries nothing.
+After `/clear`, the seat's roles, queued requests and held FYIs move to the new
+session on its **first prompt**; until then the old id keeps them, because
+plan 168's blank-session brake holds a session with no prompt behind a live
+holder with history (`registration.refused`, `holder-current`).
 Details and recovery: `docs/how/pij-rs-api.md` § Native Copilot registration.
 
 ## On a Copilot update (D-F208-2)

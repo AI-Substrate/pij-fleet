@@ -9911,6 +9911,7 @@ async fn a_carry_cut_between_its_two_stores_is_finished_once_by_either_redo() {
                 "fleet",
                 repo.main.clone(),
                 &from,
+                &[],
                 &heir,
                 &[("pm-001".to_string(), String::new())],
             )
@@ -10121,6 +10122,7 @@ async fn reviewer_carry_recovers_crash_between_index_end_and_start() {
                 "fleet",
                 repo_path,
                 &old,
+                &[],
                 &heir,
                 &[("pm-001".to_string(), String::new())],
             )
@@ -10453,6 +10455,284 @@ async fn a_seat_id_that_crosses_a_later_boundary_is_carried_again() {
             .any(|(_, body)| body.contains("fyi-later")),
         "carried again: {:?}",
         fyis(&rig, "pij-later").await
+    );
+    rig.server.abort();
+}
+
+#[tokio::test]
+async fn reviewer_r2_second_clear_after_git_before_index_is_recovered() {
+    use pij_store::RequestState;
+    let (rig, repo, _) = limit_rig("pij-r2-clear-index-window", true).await;
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let (from, to) = (SeatId::from("pij-holder"), SeatId::from("pij-heir"));
+    let heir = rig.services.registry.get(&to).await.unwrap().unwrap();
+    pij_daemon::carry::record_intent(&rig.services, &from, &to)
+        .await
+        .unwrap();
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let bus = rig.services.event_bus.clone();
+    let (inside, resume) = (entered.clone(), release.clone());
+    let boundary = tokio::spawn(async move {
+        bus.publish_committed_batch(async move {
+            inside.notify_one();
+            resume.notified().await;
+            Ok((Vec::<pij_core::model::Event>::new(), ()))
+        })
+        .await
+        .unwrap();
+    });
+    entered.notified().await;
+    let directory = rig.services.directory.clone();
+    let (repo_path, old) = (repo.main.clone(), from.clone());
+    let indexing = tokio::spawn(async move {
+        directory
+            .carry_project(
+                "fleet",
+                repo_path,
+                &old,
+                &[],
+                &heir,
+                &[("pm-001".to_string(), String::new())],
+            )
+            .await
+    });
+    tokio::time::timeout(scaled(std::time::Duration::from_secs(10)), async {
+        while !git(&repo.gov, &["log", "-1", "--format=%s"]).contains("carry pij-holder") {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("first carry's governance commit landed");
+    indexing.abort();
+    assert!(indexing.await.unwrap_err().is_cancelled());
+    release.notify_one();
+    boundary.await.unwrap();
+    assert_eq!(
+        rig.store
+            .open_assignments("pij-holder")
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        rig.store
+            .open_assignments("pij-heir")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    supersede(
+        &rig,
+        "pij-heir",
+        "pij-final",
+        "%92",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    pij_daemon::carry::carry_later(&rig.services, &from, &to, Redo)
+        .await
+        .unwrap();
+    pij_daemon::carry::carry_later(&rig.services, &to, &SeatId::from("pij-final"), New)
+        .await
+        .unwrap();
+    pij_daemon::carry::redo_at_boot(&rig.services).await;
+    assert_eq!(
+        request_row(&rig, "req-limit").await,
+        (RequestState::Delivered, Some("pij-final".to_string())),
+        "a second clear after the first holders commit must recover onto the live end"
+    );
+    assert_eq!(
+        rig.store.open_assignments("pij-final").await.unwrap().len(),
+        1
+    );
+    assert!(
+        rig.store
+            .open_assignments("pij-holder")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(copies(&rig, "pij-final", "req-limit").await, 1);
+    rig.server.abort();
+}
+
+/// F233: the same cut, but no daemon start between: the second `/clear`'s
+/// own carry finishes the earlier one first (its intent is recorded), so
+/// the work lands on the live end with no boot redo and no explicit redo.
+#[tokio::test]
+async fn a_second_clear_finishes_the_cut_carry_before_its_own() {
+    use pij_store::RequestState;
+    let (rig, repo, _) = limit_rig("pij-f233-no-restart", true).await;
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let (from, to) = (SeatId::from("pij-holder"), SeatId::from("pij-heir"));
+    let heir = rig.services.registry.get(&to).await.unwrap().unwrap();
+    pij_daemon::carry::record_intent(&rig.services, &from, &to)
+        .await
+        .unwrap();
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let bus = rig.services.event_bus.clone();
+    let (inside, resume) = (entered.clone(), release.clone());
+    let boundary = tokio::spawn(async move {
+        bus.publish_committed_batch(async move {
+            inside.notify_one();
+            resume.notified().await;
+            Ok((Vec::<pij_core::model::Event>::new(), ()))
+        })
+        .await
+        .unwrap();
+    });
+    entered.notified().await;
+    let directory = rig.services.directory.clone();
+    let (repo_path, old) = (repo.main.clone(), from.clone());
+    let indexing = tokio::spawn(async move {
+        directory
+            .carry_project(
+                "fleet",
+                repo_path,
+                &old,
+                &[],
+                &heir,
+                &[("pm-001".to_string(), String::new())],
+            )
+            .await
+    });
+    tokio::time::timeout(scaled(std::time::Duration::from_secs(10)), async {
+        while !git(&repo.gov, &["log", "-1", "--format=%s"]).contains("carry pij-holder") {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("first carry's governance commit landed");
+    indexing.abort();
+    assert!(indexing.await.unwrap_err().is_cancelled());
+    release.notify_one();
+    boundary.await.unwrap();
+    assert_eq!(
+        rig.store
+            .open_assignments("pij-holder")
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        rig.store
+            .open_assignments("pij-heir")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    supersede(
+        &rig,
+        "pij-heir",
+        "pij-final",
+        "%92",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    pij_daemon::carry::carry_later(&rig.services, &to, &SeatId::from("pij-final"), New)
+        .await
+        .unwrap();
+    assert_eq!(
+        request_row(&rig, "req-limit").await,
+        (RequestState::Delivered, Some("pij-final".to_string())),
+    );
+    assert_eq!(
+        rig.store.open_assignments("pij-final").await.unwrap().len(),
+        1
+    );
+    for seat in ["pij-holder", "pij-heir"] {
+        assert!(
+            rig.store.open_assignments(seat).await.unwrap().is_empty(),
+            "{seat}"
+        );
+    }
+    // The index has the heir's holding the cut never wrote, already ended.
+    let heir_rows: Vec<_> = rig
+        .store
+        .assignments("fleet")
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|row| row.seat == "pij-heir")
+        .collect();
+    assert_eq!(heir_rows.len(), 1, "{heir_rows:?}");
+    assert_eq!(
+        heir_rows[0].release_why.as_deref(),
+        Some("carried to pij-final")
+    );
+    assert_eq!(copies(&rig, "pij-final", "req-limit").await, 1);
+    rig.server.abort();
+}
+
+/// F233's predecessor finish is a redo: an earlier boundary on the same
+/// launch with no recorded intent (from before the carry existed) is left
+/// alone when a later `/clear` on that launch carries.
+#[tokio::test]
+async fn a_later_clear_never_carries_an_earlier_boundary_without_an_intent() {
+    use pij_store::RequestState;
+    let (rig, _repo, _) = limit_rig("pij-f233-no-backfill", true).await;
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    supersede(
+        &rig,
+        "pij-heir",
+        "pij-final",
+        "%92",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    pij_daemon::carry::carry_later(
+        &rig.services,
+        &SeatId::from("pij-heir"),
+        &SeatId::from("pij-final"),
+        New,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        rig.store
+            .open_assignments("pij-holder")
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        rig.store
+            .open_assignments("pij-final")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        request_row(&rig, "req-limit").await,
+        (RequestState::Delivered, Some("pij-holder".to_string())),
     );
     rig.server.abort();
 }
