@@ -712,6 +712,16 @@
 					"seat": "pij-outside-possum",
 					"to": "2026-11-20T08:22:37.532Z",
 					"why": "#283 F233 security verdict, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T08:36:08.698Z",
+					"harness": "copilot",
+					"harness_session": "7abf0bb5-3bd4-4a83-b33c-2ad8ca0cdc5f",
+					"instance_key": "285",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-corporate-anteater",
+					"why": "#285 F234 security"
 				}
 			]
 		}
