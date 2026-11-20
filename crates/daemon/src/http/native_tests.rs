@@ -3075,6 +3075,53 @@ async fn an_idle_native_claim_is_answered_empty_at_the_daemons_bound() {
     server.abort();
 }
 
+/// F231: an idle native claim's wait is held time in ping, not active: the
+/// claim's passes between waits are what `active_us` sums.
+#[tokio::test]
+async fn an_idle_native_claims_wait_is_held_time_and_only_its_passes_are_active() {
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    services
+        .delivery
+        .set_native_idle_answer(Duration::from_millis(1_500));
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    native_http_response(
+        client.get(format!("http://{addr}/v1/inbox")).query(&[
+            ("seat", seat.id.to_string()),
+            ("wait", "true".into()),
+            ("native_session", identity.native_session.clone().unwrap()),
+            ("pid", identity.pid.unwrap().to_string()),
+            ("proc_start", identity.proc_start.unwrap().to_string()),
+        ]),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    let ping: serde_json::Value = client
+        .get(format!("http://{addr}/health"))
+        .bearer_auth("native-key")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let inbox = &ping["data"]["requests"]["routes"]["GET /v1/inbox"];
+    let (held, active) = (
+        inbox["held_us"].as_u64().unwrap(),
+        inbox["active_us"].as_u64().unwrap(),
+    );
+    assert_eq!(inbox["ok"], 1, "{inbox}");
+    assert!(held >= 1_400_000, "the wait is held: {inbox}");
+    assert!(
+        active > 0 && active < held / 4,
+        "only the passes are active: {inbox}"
+    );
+    server.abort();
+}
+
 #[tokio::test(start_paused = true)]
 async fn native_recycle_keeps_consumed_job_done_and_parks_only_unconsumed_work() {
     let clock = manual_receiver_clock();
