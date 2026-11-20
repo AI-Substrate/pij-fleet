@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before interpreting PR300 after numbers or claiming OMP native model presence proves canary catalog execution",
+				"tags": [
+					"pr300",
+					"after-deploy",
+					"F249",
+					"catalog",
+					"proof"
+				],
+				"title": "PR300 deployed counts and F249 footer proof ceiling"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Deployed note a43d2cde57c33b3fac1f6e2d50e0f2ff74f191cc at merge90e659cd16; writer_holds_role=false because holding ended at merge. Same PID41256/start07:19:09 host local, UTCNov20 21:20:15.044989->21:21:15.070262,60.023331s:345->354 launches (+2ddocs,+7git only),CPU13.53% of one core,RSS265856->206560KiB. Before42016:0/s,CPU13.36%,RSS137136->132288KiB. Separate machine95.2->38.9/s; startup age and load differ, so no causal CPU/RSS/machine claim. Three pre-write adopt refusals each exactly+1lsof/+1tree-ps/+0ancestry-ps; binding checks unchanged. Real OMP canary of cultural-falcon acked then refused runtime model observation; no repeat after PM instructed leave working coder alone. Native model was present. Important producer split: sessionStatus reads native records; canary facts.model parses pane footer then optionally resolves catalog. Adapter/governance files and capture are byte-identical parent/merge. Live footer moved from U+2B22 to U+25D2, so parser returns None before omp.models. PM confirmed pre-existing footer drift, proposed F249; NOT PR300 regression. Direct installed catalog succeeded745rows/2.479s but is not daemon helper proof. Daemon catalog proof remains NOT CLAIMED with PM acceptance; actual caller attempted was canary_command->observe_bind->resolve_omp_model. No bounce/release build/kill/code edit or active collector. MagicWand: cost/canary receipts should distinguish native producer presence, footer consumer observation, catalog invocation, and invocation refusal rather than turning a populated registry model into inferred live execution."
+		}
+	]
+}

@@ -43,6 +43,7 @@
 - [2026-11-19 PR262 held: per-command priority cost](2026-11-19-pr262-held-priority-cost.dd.md): nice19 execs in place; shared-build queries per command, not per batch; await convergence head (pr262, performance, niceness)
 - [2026-11-19 PR262 merged live outer and plain PASS](2026-11-19-pr262-merged-live-proof.dd.md): At cc77bc0c both requested test paths run children at19; SDK7/7; strip ANSI in observer triggers (pr262, performance, niceness, live-proof)
 - [2026-11-19 PR264 visible-screen capture and proof-overlap receipt](2026-11-19-pr264-visible-screen-capture-and-proof.dd.md): When changing folder-trust spawn detection or interpreting PR264 deployed launch and key-pacing evidence (pr264, F215, F216, launches, trust, measurement)
+- [2026-11-21 PR300 deployed counts and F249 footer proof ceiling](2026-11-21-pr300-deployed-f249-proof.dd.md): Before interpreting PR300 after numbers or claiming OMP native model presence proves canary catalog execution (pr300, after-deploy, F249, catalog, proof)
 - [2026-11-21 PR300 launch baseline and literal tripwire limits](2026-11-21-pr300-launch-baseline-tripwire.dd.md): Before interpreting PR300 deployed cost or reviewing resolved launch helpers and literal-only sensors (pr300, launches, baseline, sensor, proof)
 - [2026-11-21 Tmux absence proof and launched-read budgets](2026-11-21-tmux-absence-proof-and-launched-read.dd.md): Before changing tmux cleanup, Linux holder census, bounce waits or resuming after PR299 (tmux, F247, F248, bounds, proof, handover)
 <!-- /pij:generated -->
