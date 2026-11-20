@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Read when resuming pm-001 after the 20 Nov compaction, before routing a round-2 or rebased head, or when a review seat finds a new problem in the last C34 round",
+				"tags": [
+					"c34",
+					"verdicts",
+					"holdings",
+					"rebase",
+					"resume",
+					"cost"
+				],
+				"title": "20 Nov: final-round rules, holdings after verdicts, and seat-state traps"
+			}
+		},
+		{
+			"name": "body",
+			"value": "State at 18:00 +10:00, 20 Nov:\n- Merged and proven today: #272 F227, #273 F193, #274 SDK record, #275 F200, #276 R273-001, #277 auth/lapse, #278 F228, #279 F190, #280 F229, #281 F232, #282 F231.\n- In review: #283 F233 at e38a9be. Reviewer pij-regulatory-fly, security pij-outside-possum; performance pij-melodic-snail has passed (118bb5a).\n- falcon (OMP): free after #283.\n- forthcoming-silkworm (OMP, coder/f230): F230 fix, then F199 (c)+(d), then the C34 follow-ups in two PRs. Packets are in session files/msgs/f230-fix-packet and f199-packet.\n- snail (performance): F234, a read-only look at inbox's 117 ms ACTIVE per completion.\n- F222 CPU is closed as not reproduced (16% on 46106685).\n- Drafts NOT posted, for the prime and Jordan: the tmux upstream report (files/msgs/f229-upstream-draft.md) and the OMP reload-hook ask (still to come from silkworm with F199).\n\nLessons:\n1. Review seats release their holdings themselves after a BLOCK (hornet did). Then round 2 to role:reviewer/N queues with no holder. Every packet now says \"KEEP your holding until the PR merges\". If badger flags a queued request, reassign the same seat: assign drains the queue.\n2. Rebase or merge of main between rounds: check `git range-diff <oldbase>..<old> origin/main..<new~k>` yourself, and say \"rebase-only, verdicts carry\" to all seats. A merge commit is fine if `git diff origin/main <head> --stat` shows only the PR's files.\n3. A new problem found in the LAST C34 round: get the prime's ruling (ship with a named F-item, or an exception round) BEFORE the seat publishes, and tell the seat the ruling's source (msg id) so it can write the verdict honestly. Name the residual in the PR body, editing only the body.\n4. Pushing back early pays: holding #279 to stop a boot-time backfill, and flagging when \"one commit\" can't span git and SQLite, both saved rounds. Ask \"what does the FIRST start after merge do?\" for anything with a redo or boot scan.\n5. Cost: 'active' (wall time) isn't CPU, and an empty profile isn't proof. A tool that sleeps on a Tokio worker or falls back to a fork per read is the shape to look for (P280-001). Hold bounces while perf measures, and delay spawning review seats until after a perf window: registrations skew the route numbers.\n6. Never batch extensions_reload with pij_sends: the reload aborts sends in flight. Resend through the CLI.\n7. After `pij delivered`, the PR's role/N holdings are gone, so post-merge asks go to the seat by name.\n"
+		}
+	]
+}
