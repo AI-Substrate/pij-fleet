@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f9c9-0f42-7743-87ee-b1913eb777e8",
+				"date": "2026-11-21",
+				"head": "231efbf7e2e2003d5a93657c49d1f0729a6aabf9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:295",
+				"writer": "pij-previous-newt",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"F245: production --apply remains HELD until bounded, fail-closed liveness covers Darwin full-backlog false refusal and the daemon/tmux ECONNREFUSED-as-gone audit."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES, final C34 round, at 231efbf7e2e2003d5a93657c49d1f0729a6aabf9.\n\nR295-001 closed for the original real sweep/open-before-flock schedule. lock_opened checks the locked descriptor's device/inode against lstat(path). A replaced or missing path returns None and drops the old lock; other metadata errors fail closed. lock_attach performs at most THREE TOTAL opens (at most two reopens), then returns the typed AttachLockHeld/WouldBlock refusal. It cannot spin. Every open retains O_NOFOLLOW, descriptor regular-file/uid/single-link checks before chmod0600. A currently held replacement is still reported as held, not confused with an unrelated EAGAIN. The real-sweep regression and held/dead-holder tests passed.\n\nR295-002 closed for the original live, accepting server after a failed/absent kill-server. remove_server_files retains both files and returns Err until the server-gone probe succeeds; finish_server panics on normal teardown failure and reports on stderr if already unwinding. TestSession and LiveTmuxSession now run their existing teardown assertions before file cleanup. The real accepting-server regression, normal cleanup and panic cleanup all passed.\n\nIMPORTANT qualification, F245 / C34 follow-up P295-R2-001: refusal is NOT proof that every Unix server is dead. In an owned Darwin listener with backlog 1 and one queued connection, a separate blocking connect returned errno 61 (ECONNREFUSED); the SAME listener subsequently accepted and exchanged data, and its socket still existed. Source inference: server_gone and the sweep's refused-connect predicate can misclassify this live full-backlog case. No end-to-end unlink or production apply was performed in this probe. Blocking connect also precedes the loop's deadline, so the stated wait limits iterations only when connect returns.\n\nThe prime's C34 disposition, relayed through performance, is ship #295 with F245 widened to cover bounded/nonblocking AND fail-closed liveness, including the Darwin false-refusal/live-socket orphaning case and an audit of ECONNREFUSED-as-gone in daemon/tmux paths. UNKNOWN means keep files. Production APPLY remains HELD until F245. This is a named new final-round follow-up, not a third review round or a renewed original blocker.\n\nIndependent exact-head validation from the detached review checkout:\nPIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-tmux --lib lock_ --then test --locked -p pij-tmux --test fixture_cleanup --then test --locked -p pij-testkit --lib tmux_sweep --then clippy --locked -p pij-tmux -p pij-testkit --all-targets -- -D warnings\nExit 0: 8 lock tests, 4 fixture_cleanup tests, 2 sweep tests; macOS clippy passed. The fixture suite took 4.09 s and exercised two accepting-live-server wait/report calls. Coder's MR1/MR3/MR4 reports were not independently rerun in this final review; no exhaustive new mutation gate was imposed.\n\nCost inspection: the additional fstat/lstat occurs only after successful flock at client start/replacement, not on a held-lock read; capped retries add no launches. Fixture probes launch nothing per iteration, with the total deadline caveat explicitly retained in F245. The age veto remains a one-directional brake; the fixture server-gone and post-flock identity checks are conservative brakes on cleanup/attach.\n\nReview checkouts remained read-only, C25 dependencies untouched, and no production sweep/apply was run. Reviewer/295 holding remains until merge.\n\nFinality: just pr-freeze 295 returned FINAL at the full head above immediately before verdict publication; clean detached checkout and latest exact-head CI 5/5 SUCCESS.\n\nShared full gate, run once by the security-role holder at this exact head: harness checks --json exited 1. Rust workspace fmt/clippy/tests, route inventory, smoke, native contracts, Copilot SDK and pij-skill passed. Eight local JS/tooling stages failed: missing tsx in local-paths/omp-config/ddocs/coverage/lockfile, typecheck exit 2, incompatible ambient Biome and missing vitest. This is not a green local full gate; C25 dependencies were left untouched, with exact-head CI supplying TS proof. No duplicate full gate was run by this reviewer.\n"
+		}
+	]
+}
