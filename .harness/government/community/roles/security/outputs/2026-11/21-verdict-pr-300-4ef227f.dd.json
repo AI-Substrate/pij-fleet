@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fac9-e24c-7dd1-9435-26a40cc8aa83",
+				"date": "2026-11-21",
+				"head": "4ef227f6ae704ca5f3923cd2d6d00fcdc8423fa5",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:300",
+				"writer": "pij-collective-tarsier",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N1: reword the identity.rs 'never invent' comment (pid reuse)",
+				"N2: the bare-name sensor misses consts and variables"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib the_ancestry_walk (macOS)",
+					"exit_code": 0,
+					"log": "1 passed"
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib register_walk_and_sqlite_roundtrip (macOS)",
+					"exit_code": 0,
+					"log": "1 passed"
+				},
+				{
+					"command": "just shared-build -- test -p pij-tmux the_walk_keeps --then test -p pij-harnesses parent (macOS)",
+					"exit_code": 0,
+					"log": "3 passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict: #300 at 4ef227f — pass-with-notes\n\nIdentity stays a fail-closed boundary. No new unsafe, FFI or dependency (no Cargo change; `parent_of` reuses the existing safe `proc_pidinfo` ProcBSDShortInfo read, which checks `pbsi_pid == pid`, and Linux `/proc/<pid>/stat` field 4 parsed after the last `)`).\n\n## Ancestry (identity.rs 676-722, proc.rs parent_of)\n- Every stop refuses: no peer pid, an unread parent (None), parent <= 1 (launchd/init reparent), 64 hops (which also ends self-parents and cycles), and a spawn_blocking join error (`unwrap_or(false)`, both call sites 583 and 945). The old `parent != pid` check is subsumed by the hop limit; the outcome is the same.\n- Reparenting can't invent the host: an orphan goes to 1 (refused) or, on Linux, to a subreaper, which is already a real ancestor.\n- Pid reuse: the walk is per-hop rather than one snapshot, so in theory a chain pid that exits and is reused between two reads could be read as the new process. The caller can't steer this: on macOS pids are sequential, so the race needs a wrap to that exact pid, inside microseconds, by a fork in the host's tree. The old path had a wider window of the same class (peer pid read by lsof, then a separate ps launch, milliseconds apart). Net exposure is equal or smaller. Not a block.\n\n## Launches\n- lsof: `/usr/sbin/lsof` on macOS is a const, absolute, root:wheel 0755. Elsewhere it's PATH-resolved through program::launch, as the bare name was before.\n- omp: `program::launch(\"omp\")` resolves on first use from the daemon's own PATH, which the daemon never changes (no `set_var(\"PATH\")`). It keeps only a hit, checks `access(X_OK)` on each launch, and searches again only if the kept path vanishes. Nothing after resolution can redirect it except a change to the user's own PATH dirs, which is the same trust the bare name had. Args are fixed; no shell; `-iTCP@{SocketAddr}` is not caller text.\n\n## Public repo\n- The diff has no secrets, tokens, home paths or usernames. No lockfile change.\n\n## macOS proof (CI is Linux only), shared-build at nice 19\n- `test -p pij-daemon --lib the_ancestry_walk` ok (real kernel parent_of)\n- `test -p pij-daemon --lib register_walk_and_sqlite_roundtrip` ok (local_start agrees with ps lstart)\n- `test -p pij-tmux the_walk_keeps` ok; `test -p pij-harnesses parent` ok\n\n## Notes (non-blocking)\n- N1 (low, doc): identity.rs's doc comment says the walk \"can only lose the host, never invent it\". That holds for reparenting but not under pid reuse mid-walk. Reword it on a later touch, or bind each hop by (pid, start) if identity ever needs stronger guarantees.\n- N2 (low, sensor scope; perf/reviewer own it): the bare-name sensor matches `Command::new(\"<literal>\")` only, so a bare name passed through a const or variable (e.g. `Command::new(LSOF)` outside launch) is not caught.\n"
+		}
+	]
+}
