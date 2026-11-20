@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Open first when resuming #284 (F230 round 2), #286 (F199), or the C34 follow-up PRs; or before diagnosing an ENOTEMPTY teardown flake or writing a retry/re-publish of seat activity",
+				"tags": [
+					"f230",
+					"f199",
+					"c34",
+					"handover",
+					"flaky",
+					"git",
+					"activity",
+					"copilot",
+					"omp"
+				],
+				"title": "F230/F199/C34 handover; git-ai ENOTEMPTY root cause; activity-publication ordering traps"
+			}
+		},
+		{
+			"name": "body",
+			"value": "STATE (2026-11-20, silkworm):\n- #284 F230: round 2 is committed LOCALLY at 97e7fab0 (worktree pij-f230, branch f230-native-bg-batches, on 16b75f3b). Do NOT push until pm-001 says go (waiting on smelt and financial-falcon verdicts). The PR body with the corrected cost table is in /tmp/f230/pr-body.md; apply it with `gh pr edit 284 --body-file` when pushing.\n- #286 F199: FINAL at d55bb57c, sent to pm-001 together with the OMP upstream draft (not posted). The design choice was a receipt WARNING rather than a refusal (the report is unauthenticated); the PM may ask for a hard refusal.\n- C34 (i), worktree pij-c34i, branch c34-guards-and-leaks, UNCOMMITTED:\n  - nice19.sh refuses an unreadable niceness (NICE19_PS seam for tests);\n  - release-build.sh: the embed closure was added to the dirty guard, and an EXIT/TERM trap cleans the snapshot;\n  - control.rs: the attach lock is 0600 and narrowed in place;\n  - hermetic git in release-build and shared-build tests.\n  - A pij-tmux lib test run was in flight. Still to do: ledger rows, commit, harness checks, PR.\n- C34 (ii), worktree pij-c34ii, branch c34-tests-and-wording, UNCOMMITTED:\n  - omp-config inline YAML, 3 RED on main;\n  - directory_http breaks on Closed;\n  - revive.rs R275 wording;\n  - refusals tie-order with an equal-time test;\n  - route_counts rendezvous with barriers;\n  - TmuxAdapter::with_stage_limit plus a scaled limit in staging_at_the_measured_launch_tail.\n  - Not built yet. R264 (a real short-pane Claude trust fixture) needs a live capture: run claude in a fresh dir in a short tmux pane. Don't crop a fixture by hand.\n\nLESSONS:\n- An ENOTEMPTY in a vitest afterEach rmSync on temp git repos has a cause: Jordan's global git config sets trace2.eventtarget to the git-ai daemon socket. After each git command returns, the daemon writes .git/ai and refs/notes/ai into ANY repo, the test fixtures included. Make fixture git hermetic with GIT_CONFIG_GLOBAL=/dev/null and GIT_CONFIG_NOSYSTEM=1, in the helper env and in the script-under-test env. governance-branch.test.ts already does this. Other harness/scripts tests that init repos have the same exposure: fleet-map, pr-freeze, worktree-deps, local-path, commit-trailers.\n- Re-publishing state through a promise chain: capture the value when you enqueue it, never in a thunk that reads it when it runs. Otherwise older queued sends land after the newest. A failed send must check \"superseded?\" BEFORE it waits to retry, because the abort signal may have been replaced before the attempt started. Reviewers write exactly these interleavings, so test them with a held first request (holdActivity in store.test.mjs).\n- Cost rows: a retry loop with a sleep IS a new loop and timer, so say so. State caps per call versus per outage. Per-job floors scale per owner as the sum over jobs. Rate per-tick SQL reads (100 ms tick means 10/s).\n- Adding a field to an OMP activity post breaks older daemons (deny_unknown_fields returns a bare 422). Strip the field and resend; see daemon-http.ts publishActivity.\n"
+		}
+	]
+}
