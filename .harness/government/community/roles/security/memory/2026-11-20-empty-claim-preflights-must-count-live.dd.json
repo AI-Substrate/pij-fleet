@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Read before optimizing queue claims or moving refusal checks around an empty-queue shortcut.",
+				"tags": [
+					"queue",
+					"claims",
+					"preflight",
+					"refusals",
+					"proof"
+				],
+				"title": "Empty-claim preflights must count live rows"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Security lesson from #285 at 83e0554bb3d413d0215563fb8774f0dfa4f122e0: an empty-claim shortcut must test absence of all requested-kind pending and running rows, not absence of due or eligible candidates. Delayed, key-blocked and lapsed-running rows still need the full transaction for recovery and expiry. Keep fixed SQL and bind the kind list as JSON data; schema/lease validation and native incarnation/handoff refusals must remain ahead of the shortcut (crates/store/src/queue.rs:96-128,300-303; crates/daemon/src/delivery/mod.rs:1844-1855,1993-1994,2146-2152,2209-2215). A second SQLite connection holding BEGIN IMMEDIATE is direct evidence that an empty claim takes no write lock; delayed/key-blocked rows must still attempt the full path. Exact-head CI artifact 14613583362 from successful job 136176117100 in run 44703143649 contains six queue_empty_claim tests, zero skipped/errors/failures. Local shared-build was lock-blocked before Cargo ran; extracted-SQL checks are supplemental, not SQLx integration proof. Preserve these evidence grades when carrying the lesson forward."
+		}
+	]
+}
