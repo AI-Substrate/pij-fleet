@@ -1,0 +1,56 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f875-9daf-7ff3-8bc6-4edd10b75c1d",
+				"date": "2026-11-20",
+				"head": "3d27b36ab7c409f23e78d61b121817e47bfa47c7",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:284",
+				"writer": "pij-glorious-smelt",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 284",
+					"exit_code": 0,
+					"log": "pr284-r2-freeze.log"
+				},
+				{
+					"command": "just copilot-native-test",
+					"exit_code": 0,
+					"log": "pr284-r2-native.log"
+				},
+				{
+					"command": "harness/scripts/nice19.sh node pr284-r2-native-mutate.mjs: seven GREEN tests and two independently reverted repair guards RED",
+					"exit_code": 0,
+					"log": "pr284-r2-native-mutations.json"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "pr284-r2-checks.log"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES, final round under C34.\nHead: 3d27b36ab7c409f23e78d61b121817e47bfa47c7.\nReviewed the fixes since 16b75f3b8bc510e8a305ecd7ca49044b3be27b1c and the six-file\nPR delta against main. B284-1 is resolved; no new correctness issue found.\n\nResolved:\n- republishActivity captures state when it is enqueued. The registration report\n  cannot jump ahead with a later-observed state and then be overwritten by an\n  older queued transition. Reverting only that capture makes the committed\n  registration-order regression fail.\n- A superseded failed attempt exits before scheduling a retry wait. The old\n  one-second delay is gone. Reverting only that guard makes the committed\n  superseded-before-first-send regression fail.\n- Serial reports, supersession after a completed wait, and the retry cap all\n  have adopted regression coverage. Seven selected F230 tests pass.\n- The adopted Rust scope probe covers every harness, both native flags. Busy\n  delivery remains exactly Copilot AND native_extension_delivery; FYIs are\n  unchanged. The adopted restart probes preserve the per-job floor, pending\n  events and already-admitted batch identity.\n- Cost wording now names the new bounded retry loop and activityDelay timer,\n  six attempts / five waits totaling 48 seconds per publication, not per outage\n  or state lifetime; the 400/422 context-report fallback can add a second POST.\n  Another publication can begin on a later same-state root event, as its adopted\n  test proves. No unbounded repeat of the 30-second slot exists.\n- Batch delivery is bounded per job, not across an owner's jobs. The existing\n  100 ms tick can run up to 10 event_stats checks/s per eligible busy native job\n  past its floor, each two in-process SQL reads. No new process launch or poller.\n\nEvidence:\n- just pr-freeze 284: exit 0, FINAL/CLEAN at this exact head immediately before\n  publication; all latest CI checks pass.\n- just copilot-native-test: exit 0; 371 passed, 3 skipped, 0 failed.\n- Private native-only snapshot of this head: all seven F230 tests pass; two\n  independently reverted repair guards each fail their one selected regression.\n  The mutation driver rejects zero-test receipts and leaves source restored.\n- harness checks: exit 1. Rust (fmt, clippy, full workspace tests), route\n  inventory, smoke, native contracts, SDK contracts and skill structure pass.\n  Eight stages fail in this C25 dependency-free review worktree: local-paths,\n  omp-config, ddocs, coverage, typecheck, lockfile, lint and vitest. Local TS tools\n  are absent and ambient Biome is incompatible; attribution is an advisory\n  warning. No installation or symlink was made. Local full-gate success is not\n  claimed; the exact-head CI checks are green.\nReceipts: pr284-r2-native.log, pr284-r2-native-mutations.json,\npr284-r2-checks.log, pr284-r2-freeze.log.\n\nNotes are validation limits, not new C34 findings or a third round:\nNo live extension reload, deployment, fleet-cost measurement or async-shell\ncanary was performed by this reviewer. The assigned runtime/performance owners\nretain that post-merge proof. The tracked review worktree is unchanged.\n\nHarness improvement: the round-1 in-flight registration, supersession and\nrestart-floor probes are now committed deterministic contracts, rather than\nprivate review-only tests. Reviewer/284 holding remains active until merge.\n"
+		}
+	]
+}
