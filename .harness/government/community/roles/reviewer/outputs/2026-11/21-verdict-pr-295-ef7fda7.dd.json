@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f9ae-5584-7340-889a-0fb375301944",
+				"date": "2026-11-21",
+				"head": "ef7fda74f0eaec50f730abe4d28e4ad8b98f876f",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:295",
+				"writer": "pij-previous-newt",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "BLOCK at ef7fda74f0eaec50f730abe4d28e4ad8b98f876f: two reproduced correctness defects in the destructive cleanup. These are cooperating-process/failed-command cases, not hostile-same-user security findings.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| R295-001 | 🟠 HIGH | crates/testkit/src/tmux_sweep.rs | 231-245 | Unlink while flocked can split the attach lock's inode identity | 10/10 |\n| R295-002 | 🟠 HIGH | crates/testkit/src/tmux.rs | 146-150 | Failed kill-server still unlinks a live server's socket | 10/10 |\n\nR295-001: a fixture/client can open the old, eligible lock and finish its descriptor checks, then pause before flock. The sweep locks/unlinks that inode and releases it. The opener then locks the unlinked inode; a newcomer creates and locks the replacement pathname. Both exclusive locks succeed. The scratch reproduction exercised the exact sweep source: old inode 1096421290, nlink=0; replacement inode 1096421291; both_locked=true. Holding flock across unlink does not prevent this schedule, and the ten-minute brake checks the old file's age, not an already-open descriptor. The producer in crates/tmux/src/control.rs:803-824 has no post-flock pathname/inode recheck. The PR correctly explains this problem when rejecting product unlink, but the sweep has the same problem. Preserve one lock identity, or make safe removal conditional on a genuinely enforced quiescent/revalidated protocol; do not claim flock alone makes online removal race-safe.\n\nR295-002: PrivateTmux ignores kill-server's result and removes both files regardless. An isolated real tmux server, with only kill-server made to return failure, remained alive after Drop while socket_exists=false. The probe's owned PID was subsequently terminated explicitly and confirmed gone. The same ordering in adapter.rs:2310-2321 and pane_observer.rs:977-994 removes the socket before the existing \"gone\" probe, so that pathname-based probe can falsely certify successful teardown. Establish that the owned server is gone before unlinking; failed/unknown teardown must preserve its live socket and surface the failure, including during panic.\n\nFocus checks:\n- Prefix selection is anchored and case-sensitive. Scratch tests spare default, pij, work, an embedded pij-test- prefix and uppercase PIJ-TEST-. Both unanchored and case-insensitive mutations were caught.\n- answers() considers only ConnectionRefused dead. EACCES, ENOENT and a returned timeout are unknown and spared for socket candidates; no explicit connect deadline exists. A mutation treating other connect errors as dead was caught with a paired dangling socket link. Separate retained gap: lock_verdict:224 treats every paired-socket lstat failure as absence; it should distinguish NotFound from unknown errors.\n- Final-component socket/lock symlinks are spared by lstat/O_NOFOLLOW; a following-metadata mutation was caught. Directory ownership/mode/symlink validation and dirfd/inode rechecks are absent. Security reported no demonstrated account-boundary exploit under C33 in the genuine private tmux directory; that is not a claim that arbitrary attacker-writable --dir paths are safe.\n- All added Drop calls are textually after kill-server; R295-002 shows why that is not proof of successful teardown.\n- Policy: fixture namespace plus dead-server eligibility and lock exclusion. Brake: ten-minute age veto, which only spares. The statement's intended distinction is accurate, but the lock-exclusion safety claim is not.\n- Cost: manual one-shot O(entries) sweep, zero process launches per entry; no new product polling/timer. Fixture teardown adds two unlinks after an existing process launch.\n\nEvidence:\n- just pr-freeze 295: FINAL at the full head above, clean detached checkout, all five exact-head CI checks SUCCESS.\n- Exact sweep source SHA-256 before and after scratch mutations: 1d2b62f32a6f7d251ea8d0ac3bcad9f340e77768180ab75519f4f1966b17df4c. Product worktree unchanged.\n- Scratch guard tests through just shared-build: 3 passed. Each of four independent mutations failed the intended guard tests (exit 101): unanchored prefix, case-insensitive prefix, unknown-connect-is-dead, following symlinks. Copies were restored.\n- Scratch exact-source open-before-flock safety assertion: FAILED, exit 101, with both_locked=true.\n- Real PrivateTmux failed-kill safety assertion: FAILED, exit 1, alive_after_failed_kill=True and socket_exists=False. Only an owned scratch directory/server was affected.\n- Security-role holder's full harness checks --json: exit 1. Rust workspace fmt/clippy/tests, route inventory, smoke, native contracts and pij-skill passed. Eight local JS/tooling stages failed due missing/incompatible tools/dependencies; C25 was respected. Exact-head CI passed. My duplicate gate/scoped Rust run was cancelled in favour of this shared receipt, not counted as a pass.\n\nHarness lesson/magic wand: make fixture teardown's negative path a permanent test (kill-server fails while the server still answers), and pin lock identity across the open-before-flock schedule. Success/panic cleanup and an already-held lock do not prove either condition. Runnable review probes exist outside the product checkout; no production apply was run.\n\nHolding reviewer/295 is retained until merge.\n"
+		}
+	]
+}
