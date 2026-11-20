@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Open before diagnosing a flaky real-tmux or timing test, adding any lock or wait on the tmux read path, touching control.rs attach/setup, or resuming F232 (codex binder retry)",
+				"tags": [
+					"f228",
+					"f229",
+					"f232",
+					"tmux",
+					"flaky",
+					"testing",
+					"cost",
+					"tokio",
+					"handover"
+				],
+				"title": "Real-tmux test flakes and cross-process tmux attach (F228, F229 #278 #280)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Flake diagnosis (F228, #278 merged 9ffc5729):\n- Measure first: build test bins once via `just shared-build -- test ... --no-run --message-format=json-render-diagnostics`, copy the executable out of the shared target, run it N times niced (`--exact --test-threads 1` and whole-binary). Add the outcomes to an assert to see the real error. The CAS \"flake\" was a tmux SIGSEGV, not timing.\n- `~/Library/Logs/DiagnosticReports/tmux-*.ips` (procLaunch vs crash time) tells you if a server crashed. Never paste that path in PRs/ledger (C21): say \"macOS DiagnosticReports\".\n- CI `server exited unexpectedly` at teardown = kill-server exit 1 while the server goes; postcondition is \"no server\" (F27 pattern, `list-sessions` fails). Mutation: fake tmux on PATH.\n- Poll counts and fixed sleeps are clocks. Drive by state (row landed) and use barriers like `services.delivery.flush()`. PIJ_TEST_TIME_SCALE can't go below 1; inject slowness instead (a SQLite trigger burning CPU on INSERT).\n\ntmux crash + lock (F229, #280, round 2 head c8d2eab2, verdicts pending):\n- Two control clients attaching concurrently with setup `destroy-unattached on` SIGSEGV tmux 3.6a (shell repro 12-14/30). In-process threads rarely reproduce; two PROCESSES with plain `tmux -L` (not the logging wrapper) give ~50%.\n- Fix: flock `<tap root>/.control-attach-<label>.lock` held attach->sentinel. Round 1 waited (sleep loop on a Tokio worker under the state mutex) and then forked every read for the 5 s backoff -> BLOCKED (R280-001/P280-001). RESTART_BACKOFF caps STARTS, not read forks; fallback costs (1+3N)/0.6 launches/s from the observer.\n- Round 2: try_lock once; held -> Query::Busy (read error, no launch), retry next read; refuse only after 5 s (frozen holder). Typed AttachLockHeld error (spawn EAGAIN is also WouldBlock). Probe: 50 ms timer on a current_thread runtime must fire on time.\n- A forked child briefly holds a copy of a flock'd fd until exec (CLOEXEC): \"taken at once after release\" tests need a short retry under parallel tests.\n- Open: S280-001 lock file mode follows umask. Upstream tmux draft sent to pm-001, not posted.\n\nNext (F232, after #280 merges): CodexBinder marks rows/locks seen BEFORE probing (codex_bind.rs ~242-265), so an Err (e.g. Busy) is never retried. Fix: unmark the row on a probe Err; keep Seen for real decisions (registration refusal = decision). RED test = minnow's `reviewer_one_busy_probe_is_not_retried_after_release` (diff in pm-001's message). Cost: tick is 5 s; a persistent Err would re-probe (lsof on macOS) every tick -> cap consecutive Err retries per row and say so in the cost row.\n"
+		}
+	]
+}
