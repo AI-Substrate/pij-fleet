@@ -89,7 +89,8 @@ function fixture(): Fixture {
 			// An orphaned sleep must not hold the test's stderr pipe open.
 			'[ -n "$NAP" ] && sleep "$NAP" </dev/null >/dev/null 2>&1',
 			// An artifact in the profile's deps, as a real build leaves (F243).
-			'[ -n "$ARTIFACT" ] && mkdir -p "$CARGO_TARGET_DIR/debug/deps" && date > "$CARGO_TARGET_DIR/debug/deps/libalpha.rlib"',
+			// `ARTIFACT_AT` puts it elsewhere, relative to the target (a target triple's layout).
+			'[ -n "$ARTIFACT" ] && at="$CARGO_TARGET_DIR/${ARTIFACT_AT:-debug/deps/libalpha.rlib}" && mkdir -p "${at%/*}" && date > "$at"',
 			"wait",
 			'echo "end $1" >> "$LOG"',
 			'[ "$1" = fail ] && exit 7',
@@ -132,6 +133,7 @@ function fixture(): Fixture {
 			WORKER: "",
 			NICENESS: "",
 			ARTIFACT: "",
+			ARTIFACT_AT: "",
 			FAKE_TASKPOLICY: "none",
 		},
 	};
@@ -294,6 +296,42 @@ describe("just shared-build", () => {
 		// A failed run records nothing, so its artifacts count as another build.
 		expect(await touched(f, ["--", "fail"])).toBe(false);
 		expect(await touched(f)).toBe(true);
+	});
+
+	it("touches after another tree's batch built and then failed, in any cargo layout (R297-001)", async () => {
+		const f = fixture();
+		const lib = join(f.worktree, "crates", "alpha", "src", "lib.rs");
+		const other = join(f.root, "other");
+		mkdirSync(join(other, "crates", "alpha", "src"), { recursive: true });
+		writeFileSync(join(other, "crates", "alpha", "src", "lib.rs"), "\n");
+		spawnSync("git", ["init", "-q", other], { env: { ...process.env, ...HERMETIC_GIT } });
+		const touchedAfter = async (env: NodeJS.ProcessEnv, from: Fixture, args: string[]) => {
+			await run(f, ["--", "build"], { ARTIFACT: "1" });
+			utimesSync(lib, 1_000_000, 1_000_000);
+			await run(f, ["--", "build"], { ARTIFACT: "1" });
+			expect(statSync(lib).mtimeMs).toBe(1_000_000_000);
+			await run(from, args, { ARTIFACT: "1", ...env });
+			await run(f, ["--", "build"]);
+			return statSync(lib).mtimeMs > 1_000_000_000;
+		};
+		// termite's case: another tree's build succeeds into an explicit
+		// --target layout, then a later command of the same batch fails.
+		const triple = { ARTIFACT_AT: "aarch64-apple-darwin/debug/deps/libalpha.rlib" };
+		expect(await touchedAfter(triple, { ...f, worktree: other }, ["--", "build", "--then", "fail"])).toBe(true);
+		// The same failed batch, whatever it wrote and wherever (here no deps file).
+		const binary = { ARTIFACT_AT: "debug/pij-rs" };
+		expect(await touchedAfter(binary, { ...f, worktree: other }, ["--", "build", "--then", "fail"])).toBe(true);
+		// Bare cargo outside any run, into a target triple's deps.
+		utimesSync(lib, 1_000_000, 1_000_000);
+		await run(f, ["--", "build"], { ARTIFACT: "1" });
+		const bare = join(f.target, "aarch64-apple-darwin", "release", "deps", "libbare.rlib");
+		mkdirSync(join(bare, ".."), { recursive: true });
+		writeFileSync(bare, "x");
+		const later = Date.now() / 1000 + 60;
+		utimesSync(bare, later, later);
+		utimesSync(lib, 1_000_000, 1_000_000);
+		await run(f, ["--", "build"]);
+		expect(statSync(lib).mtimeMs).toBeGreaterThan(1_000_000_000);
 	});
 
 	it("names the seat in the owner line from PIJ_SESSION_ID or whoami when PIJ_ID is unset, else the user", async () => {
