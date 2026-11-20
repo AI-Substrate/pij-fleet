@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f98d-c88a-7d10-862d-4c0e778ca9b5",
+				"date": "2026-11-21",
+				"head": "7704c7ec932c514de975442ca1ae03d62abc6300",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:294",
+				"writer": "pij-very-mouse",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 294",
+					"exit_code": 0,
+					"log": "FINAL at exact head; clean worktree and all latest CI checks passed."
+				},
+				{
+					"command": "git diff --check 0587a416611096daa0712e96fe161f47b81e87d2 7704c7ec932c514de975442ca1ae03d62abc6300",
+					"exit_code": 0,
+					"log": "Security-review agent: no diagnostics."
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "Rust, route inventory, smoke, pij-skill and native contracts passed; eight dependency/tooling stages failed; full local gate not green."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: ACCEPT\nSubject: pr:294 (F240)\nHead: 7704c7ec932c514de975442ca1ae03d62abc6300\nBase: 0587a416611096daa0712e96fe161f47b81e87d2\nRequest: 01a1f98d-c88a-7d10-862d-4c0e778ca9b5\n\nNo security vulnerabilities found in the exact three-file diff.\n\nEvidence:\n- crates/tmux/src/control.rs:297-303: the new diagnostic formats a fixed message and child.id() only. It exposes no environment, argv, secret, home path or error/debug payload.\n- crates/tmux/src/control.rs:330-356: the private Arc<Mutex<Option<Child>>> retains the owned child across a failed thread start. Option::take makes the ownership transfer exclusive. No new external-input shell/path sink, permission change or authority boundary is introduced.\n- crates/tmux/src/control.rs:307-311,361-369: one added failure-only polling window uses try_wait at a 5 ms interval for REAP_WAIT (1 s). It adds no production process-launch site or steady-state timer. The successful deferred-thread path is unchanged. Full correctness and performance verdicts remain with their respective holders.\n- C21 and C33 were checked against the current governance rulings. Same-user impersonation hardening is outside this PR's scope; no such guard was removed.\n\nValidation:\n- Exact HEAD and base resolved successfully.\n- The complete exact diff and surrounding implementation were read by the security-review agent.\n- git diff --check for this base/head: passed, no diagnostics.\n- just pr-freeze 294: FINAL at the exact head; CLEAN, ready, all latest CI checks passed (check 22, check 24, rust-lint, rust-test, delivers).\n- harness boot --json: exit 0 but ready:false because worktree test dependencies are missing. This is not a passing local execution receipt.\n- harness checks: exit 1. Passed: pij-skill, copilot-native, route-inventory, Rust workspace fmt/clippy/tests, smoke. Failed: local-paths, omp-config, ddocs, coverage, typecheck, lockfile, lint, test. Five script stages could not find node_modules/.bin/tsx; vitest could not load; typecheck exited 2; the available Biome rejected the configuration's includes key. Copilot SDK and commit-trailer sensors warned. The full local gate is not green.\n- Final git status --porcelain=v1: empty; HEAD unchanged. Final pr-freeze invocation again reported FINAL.\n\nProof limits: the security recommendation is source-based, backed by exact-head CI and the passing local Rust sensor. Local Rust execution came from the completed harness gate, not the security-review agent. No real OS thread-exhaustion experiment, independent mutation rerun or live-fleet cost measurement was performed. Author-reported mutations are not claimed as reviewer execution. No dependencies were installed or linked; the product worktree was left unchanged. This verdict does not assert that the full local ship/done gate passed.\n\nHarness feedback:\nmagicWand: a dependency-free review preflight that reports source-review readiness separately from local execution readiness and attaches exact-head CI receipts.\ndifficulties: missing vitest prevents full review boot readiness under C25. This repeats security's existing dependency-free review readiness note; it is an encoding candidate for the harness owner, not a block on F240. Two observations were captured through harness observe.\n\nThe security/294 holding is retained until merge.\n"
+		}
+	]
+}
