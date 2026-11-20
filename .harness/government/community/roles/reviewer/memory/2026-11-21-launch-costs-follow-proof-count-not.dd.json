@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before reviewing identity ancestry, combined adopt flags, or launch-sensor coverage.",
+				"tags": [
+					"review",
+					"launches",
+					"sensors",
+					"cost",
+					"ancestry"
+				],
+				"title": "Launch costs follow proof count, not request count"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#300 at 4ef227f6ae704ca5f3923cd2d6d00fcdc8423fa5 received PASS-WITH-NOTES (governed verdict commit edc3076). Two specific lessons extend the existing #134 probe note:\n\n- Count ancestry proofs, not HTTP requests. Non-Claude adopt with both --harness-session and --take-over can invoke caller_descends_from twice: crates/daemon/src/http/identity.rs:941-949 and :992-995 through :582-585. Each proof launches lsof once; therefore one request can launch it twice. This was inherited behavior, not a new regression.\n- no_daemon_launch_names_a_program_bare is a literal-source tripwire (crates/testkit/tests/spawn_sites.rs:263-268). Direct bare omp/lsof constructors fail; independent source-fixture mutations using Command::new(OMP) with a bare-name constant, or Command::new($tool) inside a parameterized macro, survive. A literal constructor inside a helper/macro body is visible, but argument propagation is not. Do not describe a sensor-only mutation as a full-binary or full-gate result.\n\nNative reviewer proof: 56 targeted Rust tests and macOS clippy passed. Exact extracted guard/oracle mutations caught MA1/MA2/MA4, MT1/MT2; the unchanged scanner over copied production sources caught MS1/MS2/MS3. All baseline controls passed, and failure logs confirmed each mutant actually ran its test. Product checkout stayed clean. C25 local quick-gate tooling failures were reported separately from green exact-head CI.\n\nmagicWand: encode the reusable scratch extraction/source-fixture technique as a dependency-free review-proof recipe, keeping baseline, killed mutant, surviving mutant, and unavailable gate distinct. No universal analyzer or new same-user identity machinery was required for this PR.\n"
+		}
+	]
+}
