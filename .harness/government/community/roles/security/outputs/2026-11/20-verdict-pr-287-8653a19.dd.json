@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f87b-e09b-7532-bf93-233c67acd442",
+				"date": "2026-11-20",
+				"head": "8653a193a26a364083443f5648e292d1c471205c",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:287",
+				"writer": "pij-graceful-cod",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 287",
+					"exit_code": 0,
+					"log": "Initial freeze: requested 8653a193a26a364083443f5648e292d1c471205c FINAL; all latest checks passed. Prepublication freeze later failed at moved head 6855617c30767c52bc71d4bafbe4533572a0c941; this verdict does not approve that head."
+				},
+				{
+					"command": "gh run view 44718113663 --repo AI-Substrate/pij-fleet --json headSha,status,conclusion,jobs",
+					"exit_code": 0,
+					"log": "Requested-head CI success: Node 22/24 typecheck, lint and test; generation-routing 57 passed; Rust 2648 passed, 6 skipped; Rust lint success."
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "Missing local TS dependencies and incompatible ambient Biome. C25 exact-head TS proof is CI-only. No dependencies installed or linked; no heavy local gate run."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict - PR 287\n\nResult: PASS WITH NOTES for requested head\n`8653a193a26a364083443f5648e292d1c471205c`, base\n`a89e8cb64452ab92524bd41b93b9c74a7428c868`.\n\nSUPERSEDED HEAD: the prepublication freeze found the PR at\n`6855617c30767c52bc71d4bafbe4533572a0c941`, with CI still running. This verdict\nanswers the original request only. It is not a review or approval of the new\nhead.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | ⚪ LOW | .omp/extensions/pij/core/generation-routing.ts | 134, 148, 162-169 | Terminal-control passthrough in human warning text; accepted trusted-local C33 residual, non-blocking | 9/10 |\n\nNo blocking, in-scope vulnerability was established. All five changed files were\nreviewed. No added secrets, private owner identities, or machine-home paths were\nfound under C19/C21.\n\n## Confirmed limitation and reachability\n\nState control lines and send receipt warnings are printed verbatim. The\ndaemon's warning producer at `crates/daemon/src/http/mod.rs:2996-3010` calls\n`shell_word`: this quotes shell syntax but preserves terminal controls.\nA builtin-only probe of the exact TS renderer bodies confirmed that ESC,\nnewline/forged framing, and carriage return in supplied pane text survive the\nhuman output.\n\nThe demonstrated pane source requires an authenticated same-user registration.\nNo external-input path to that pane was established. C33 trusts same-user\nprocesses, so this demonstration is not a blocking security vulnerability.\nThe newly exposed paths are TS state text and non-FYI send warnings; held-FYI\nwarnings already printed. In `crates/cli/src/main.rs:4251-4255`, the added Rust\nlabel uses daemon-generated armed/unarmed values, while the warning print was\nalready present before this PR.\n\nOptional hardening: restrict pane identifiers to their closed grammar or\nvisibly escape controls in a single-line human representation. Existing new\ntests cover benign wording, not hostile terminal-control text. This is not a\nmerge gate under C33/C34.\n\n## Evidence\n\n- `just pr-freeze 287` initially passed, confirming the requested head, clean\n  detached worktree, main base, and successful latest CI checks.\n- CI run `44718113663` is bound to the requested head. Node 22/24 typecheck,\n  lint, and test jobs passed. Node 22 job `136226590540` ran\n  `generation-routing.test.ts`: 57 tests passed; suite totals were 2368 passed\n  and 7 skipped. Rust job `136226589927` reported 2648 passed, 6 skipped;\n  Rust lint also passed.\n- `just --no-dotenv --command harness/scripts/nice19.sh node --disable-warning=ExperimentalWarning --input-type=module` with inline\n  exact-source renderer assertions passed (exit 0). It used only Node builtins,\n  did not load project dependencies, and preserved benign armed/no-warning\n  output while confirming raw controls survive.\n- `harness boot` returned advisory `ready: false`: local vitest is missing.\n  `just worktree-deps --check` exited 1. No dependencies were installed or linked.\n- `harness checks --quick` exited 1 due to missing local TS tooling and an\n  incompatible ambient Biome version. These are review-environment failures,\n  not PR findings; exact-head TS proof is CI-only under C25. The heavy local\n  gates were not run.\n- The final `just pr-freeze 287` invocation failed because the PR moved to the\n  new head above and its checks were running. The reviewed worktree stayed\n  clean.\n\nCost: rendering only; no added loop, poll, timer, request, or process launch.\nNo steady-state per-seat cost change. Security/287 holding is retained until\nmerge.\n\nHarness feedback: the quick checks gate should expose the same dependency\nreadiness preflight as boot, distinguishing a C25 CI-only review from product\nfailures. Session-local friction and retrospective records were saved without\nediting the review worktree.\n"
+		}
+	]
+}
