@@ -1,0 +1,56 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f8bc-1337-7753-967a-33973d3392f5",
+				"date": "2026-11-20",
+				"head": "74a4e7694000e601d2f790937033f55abb3d4988",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:289",
+				"writer": "pij-conceptual-cephalopod",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 289",
+					"exit_code": 0,
+					"log": "FINAL twice at 74a4e7694000e601d2f790937033f55abb3d4988; CLEAN; all latest checks passed"
+				},
+				{
+					"command": "gh run view 44727655222 --repo AI-Substrate/pij-fleet",
+					"exit_code": 0,
+					"log": "Exact-head CI success; 2657 Rust tests passed, six skipped; successful-job artifact 14625126948 explicitly records both Closed-state regressions passed"
+				},
+				{
+					"command": "PYTHONDONTWRITEBYTECODE=1 PYTHON_COLORS=0 NO_COLOR=1 python3 -",
+					"exit_code": 0,
+					"log": "Exact-source SQLite closed-half mutation receipt: original exit0 Closed, mutant exit1 None; mutant open Queued remains passing. SQL-level, not compiled-Rust mutant."
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "Final-head local Rust, route inventory, smoke and native checks passed; eight dependency-free TS/tooling stages failed; C25 TS proof is exact-head CI"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS - #289 security, final round 2 under C34\nHead: 74a4e7694000e601d2f790937033f55abb3d4988\nPrevious review head: 844d2fd697604ecbba1b489be3dd8d5a23d75741\nMain: 0744555dee5013daeeffb860b24c494cdb8346f4\n\nR289-FU-01 is fixed. No security vulnerability or new final-round issue was\nfound in the fix delta; no PM ruling or third review round is needed.\n\ncrates/store/src/role_requests.rs:426-447 adds the fixed UNION ALL query over\nthe open and closed tables. The ID is supplied by .bind(id) at :432; both ?1\noccurrences use the same bound value. No ID becomes SQL syntax or a table name.\nQueued, Closed and unknown reads passed in exact-source SQLite execution.\nFour hostile ID probes, including SQL syntax and an embedded NUL, stayed\nexact-match data; both table halves use primary-key index searches.\nThe existing close transaction at :1264-1301 archives and removes the live row.\n\ncrates/daemon/tests/directory_http.rs:3819-3827 now polls the state getter and\nstops on Delivered or Closed. Its final expected success remains Delivered.\nThe new real-store regression at :3843-3875 checks Queued, withdrawal, absence\nfrom the old open-only getter, Closed from the new getter, and unknown-ID None.\n\nRequested mutation: executed against the exact getter SQL and exact CREATE\nTABLE statements from migrations 0034/0040 in fresh SQLite :memory: databases.\nRemoving ONLY the closed-table UNION ALL half, retaining LIMIT 1, killed the\nidentical Closed assertion:\n- Original: Queued passed, Closed returned ('closed',), exit 0.\n- Mutant: Queued still passed, Closed returned None, assertion failed, exit 1.\n- Receipt wrapper: exit 0. An initial diagnostic-format comparison failure\n  was corrected without changing either SQL result.\nThis is exact-source SQL-level closed-branch mutation, not a compiled Rust\nintegration-test mutant. No tracked or scratch files were modified.\n\nMerge-only check: 844d2fd6..9d08389a changes exactly three expected files\n(68 insertions, 7 deletions). 9d08389a..74a4e769 integrates #288.\nAll 1897 non-ledger entries matched their appropriate parent; explicit ledger\nreconstruction matched exactly the three inherited #288 rows. No unrelated\nmerge edits were found.\n\nValidation:\n- just pr-freeze 289: FINAL twice at this exact full head, CLEAN, all latest\n  checks pass; detached review source remains clean.\n- Exact-head CI run 44727655222: Node 22/24, Rust lint and Rust tests success;\n  cargo nextest run --locked --workspace --profile ci: 2657 passed, 6 skipped;\n  doctests passed.\n- Successful Rust job 136259053101 JUnit artifact 14625126948 explicitly\n  records a_withdrawn_request_reads_closed_not_missing and\n  a_cancelled_assign_waiter_never_strands_its_drain as passed, not skipped.\n- Local harness checks: exit 1. Rust, route inventory, smoke, pij-skill,\n  Copilot native and SDK passed. Eight dependency-free TS/tooling stages\n  failed; local tools were absent or incompatible ambient Biome was used.\n  The trailer sensor warned. No local full-gate-green claim.\n- C25: no dependencies installed or symlinked; TS proof is exact-head CI.\n\nCost: one static statement with two primary-key reads. The changed caller is\nthe existing integration-test poll; no new production loop, timer or launch.\n\nHarness feedback retained: exact-head CI-aware review readiness would avoid\nprescribing dependency writes forbidden by C25. Encoding remains outside this\nread-only security scope.\n\nSecurity/289 holding remains active until merge.\n"
+		}
+	]
+}
