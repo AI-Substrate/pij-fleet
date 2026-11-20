@@ -355,6 +355,16 @@
 					"seat": "pij-melodic-snail",
 					"to": "2026-11-20T05:21:12.496Z",
 					"why": "#280 changes the control-client launch path"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T05:43:34.313Z",
+					"harness": "omp",
+					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
+					"instance_key": "281",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-melodic-snail",
+					"why": "#281 changes binder probe launches"
 				}
 			]
 		}
