@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fa83-d1f1-7b20-b28e-8b216dcc3666",
+				"date": "2026-11-21",
+				"head": "7a6e632b559857484007c26d3a5afdccf2c5b8d6",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:299",
+				"writer": "pij-zonal-bee",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R299-001 P1: an incomplete Linux leader-fd census must not license deletion; ordinary leader pthread_exit with a serving worker and handoff-to-already-scanned-process both lose live bindings."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 299",
+					"exit_code": 0
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build --copy-out debug/pij-tmux-fixture-sweep <owned-session-copy> -- build -p pij-testkit --bin pij-tmux-fixture-sweep --then test -p pij-testkit --lib tmux_sweep -- --nocapture --then clippy -p pij-testkit -p pij-tmux --tests -- -D warnings",
+					"exit_code": 0
+				},
+				{
+					"command": "native Linux exact production linux_bound_paths(None), ordinary pthread worker after leader exit; expected safety regression RED: live socket removed 1 and worker serves after deletion",
+					"exit_code": 101
+				},
+				{
+					"command": "exact-helper deterministic fake-proc handoff and genuine source exit replay; expected safety regression RED: owner still holds socket but census empty, live socket removed 1",
+					"exit_code": 101
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# R1 BLOCK: PR #299\n\nHead: `7a6e632b559857484007c26d3a5afdccf2c5b8d6`\nBase: `3b5d06ae` (main, #298)\nRequest: `01a1fa83-d1f1-7b20-b28e-8b216dcc3666`\n\n**BLOCK on R299-001 (P1): the new Linux holder filter can classify a live\nsocket as unheld and delete it.** F248's strict stat handling and F247's\nlaunch reduction are positive changes, but do not make that new policy safe.\nNo fleet APPLY and no live bounce were run. The reviewer holding remains\nheld until merge or an explicit ownership change.\n\n## R299-001: P1, an incomplete Linux fd census licenses deletion\n\nRoot: `crates/testkit/src/tmux_sweep.rs:305-316,337-399`.\nIn particular, lines 310-315 drop every `/proc/net/unix` row whose inode\nwas not observed during the per-process leader-fd scan.\n\nThe absence of an inode in this non-atomic, leader-only census is not proof\nthat nobody holds it. There are two independent counterexamples.\n\n### A. Native Linux: a live worker after ordinary main-thread exit\n\nA native Linux test compiled the exact-head production module and called\nthe actual `linux_bound_paths(None)`, using the real `/proc`, not a fixture.\nA small C child bound a private fixture-prefixed Unix socket, started an\nordinary pthread, and called `pthread_exit` in main. It did **not** unshare\nits descriptor table or use `CLONE_FILES`-off threads.\n\nObserved:\n\n```text\nleader_fd_entries=0\ntasks=2\nkernel_bound=true\nfilter_kept_path=false\nworker_serves_after_sweep=true\nprocess_alive=true\nkept=false\nReport: verdict=Stale, removed=1\n```\n\nThe `/proc/net/unix` row was present. The process remained alive. The worker\nsuccessfully answered on an already-connected client **after** the sweep\nunlinked the socket pathname. The source-owned-file and fixture-prefix\nchecks passed; the standard test clock advanced beyond the young-file\nbrake, exactly as the repository's existing sweep tests do.\n\nThis is not merely the disclosed separate-thread-fd-table residual:\nordinary shared-table pthread behavior is sufficient. There is no failed\nstat for F248 to catch, because the new filter removes the row first.\n\nThe test ran in an already-cached Linux image with networking disabled,\nno pulls or installs, one CPU, and explicit nice 19. Its cargo build/test\nwas serialized through the host's `just shared-build`, using the same\nphysical shared target. Only reviewer-owned source and scratch sockets\nwere used. The C fixture compiled during cargo's build step, not in a test.\nThe child and owned container were removed afterward.\n\n### B. Gone-mid-scan: transfer to an already-scanned process\n\nA deterministic fake-`/proc` interleaving exercised the unchanged\n`own_socket_inodes` helper:\n\n1. Process A's empty fd table was scanned.\n2. Process B transferred the socket to A and exited while B's already-open\n   status read was in progress.\n3. B's fd directory lookup returned `NotFound` and was skipped.\n4. A still held `socket:[424242]`, but was not rescanned.\n5. The exact production inode/path join discarded the still-bound row.\n6. A real reviewer-owned live socket was classified `Stale` and removed.\n\nThe trace was `own={}`, `owner_still_holds_424242=true`, `removed=1`,\n`kept=false`. FIFOs controlled the interleaving; no timing lottery or\nproduction-source instrumentation was required.\n\nThis second test is a Linux scan/row replay on macOS, **not** a native Linux\nfd-transfer experiment. The native result in A independently establishes\nthe destructive bug.\n\nThe stated implication \"one it shared is found through the process that\nstill holds it\" is not guaranteed by a one-pass scan. PID reuse does not\nrepair that missing guarantee; neither counterexample needs reuse.\nChanging only a PID-existence check is therefore insufficient. Incomplete\nowner coverage must not become positive evidence of absence.\n\n## Positive verification\n\n| Check | Result |\n|---|---|\n| F248 removed directory alias and renamed directory | PASS against the retained shape of R298-R2-001, with real macOS lsof records for the test process. Both live sockets spared. |\n| Any failed bound-path stat | PASS: global Unknown; stale fixture socket and orphan lock both kept. Diagnostic includes the known holder PID. |\n| Owned process fd permission failure | PASS: Unknown/error, not an empty known census. |\n| Actual copied product CLI on owned scratch | PASS: both alias/rename cases exit 2 with BLOCKED; all owned live/stale sockets and orphan lock kept. |\n| Mutant: drop failed bound-path stats | CAUGHT by assertion: Known-empty instead of Unknown. |\n| Mutant: skip an owned fd-directory error | CAUGHT by assertion: `Ok({})` instead of error. |\n| New native leader-exit regression | RED, exit 101 on the live-socket deletion assertion. Build succeeded; worker answered after deletion. |\n| New handoff/exit regression | RED, exit 101 on the live-socket deletion assertion. Clearly graded as a replay. |\n\nExact official command, exit **0**, macOS:\n\n```sh\nPIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build \\\n  --copy-out debug/pij-tmux-fixture-sweep <owned-session-copy> -- \\\n  build -p pij-testkit --bin pij-tmux-fixture-sweep \\\n  --then test -p pij-testkit --lib tmux_sweep -- --nocapture \\\n  --then clippy -p pij-testkit -p pij-tmux --tests -- -D warnings\n```\n\nResults: **12/12** official sweep tests passed; scoped macOS clippy clean.\nThe independent baseline probes passed **3/3**. Both requested safety-guard\nmutants were assertion-caught, not compile-failed.\n\nThe official Linux real-holder tests deliberately limit the scan to the\ntest process and then filter by that process. Their green results do not\nprove that production's all-process census covers live holders, which is\nwhy the native `linux_bound_paths(None)` experiment matters.\n\n`harness boot --json` is NOT READY because this C25 review checkout has no\nlocal TS dependencies. Available harness checks are recorded separately;\nno dependency install/link and no claim of a full green local ship gate.\nThe exact-head CI was 5/5 green and `just pr-freeze 299` reported FINAL.\nThe detached review checkout remained unchanged.\n\n## Policy, cost and scope\n\nThe Linux UID/fd filter is correctly described as **policy**, not a brake:\nit can make the sweep delete more. R299-001 is a correctness failure in\nthat deciding evidence, not a request for cross-seat isolation.\n\nStrict failed-stat handling only spares. `YOUNG` remains a one-directional\nage brake. Retaining those guards does not compensate for omitting a live\nsocket before either guard sees it.\n\nThe Linux scan launches no processes and is once per manual sweep,\nO(processes plus inspected fds); there is no new per-tick/per-seat daemon\nwork. Performance owns the F247 differential receipt, which reports the\nextra UID launch removed. UID/setuid/cross-user classification and output\nrendering were assigned to the separate security review, not duplicated\nhere.\n\n## Harness feedback\n\nMagic wand: a native Linux destructive-safety fixture with an ordinary\nworker retaining a live listener after leader exit, plus a controlled\ndescriptor-handoff interleaving. Both are now retained private probes,\nready to port into the existing suite. They prove the missing negative\nevidence directly instead of relying on a green single-process census.\nRaw commands, logs and reproduction sources were retained and their\nprivate pointers sent to pm-001 and the specialist reviewers.\n"
+		}
+	]
+}
