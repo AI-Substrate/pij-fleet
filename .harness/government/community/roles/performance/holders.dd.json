@@ -508,6 +508,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-melodic-snail",
 					"why": "#295 R2 producer lock re-check cost"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T16:33:49.309Z",
+					"harness": "omp",
+					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
+					"instance_key": "297",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-melodic-snail",
+					"why": "#297 shared-build launches + bounce-rs"
 				}
 			]
 		}
