@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fac9-e055-7593-8f94-30b0ee334ee4",
+				"date": "2026-11-21",
+				"head": "4ef227f6ae704ca5f3923cd2d6d00fcdc8423fa5",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:300",
+				"writer": "pij-grand-spider",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 300",
+					"exit_code": 0
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build --timeout 15 -- test --locked -p pij-testkit --test spawn_sites --then test --locked -p pij-daemon --lib identity --then test --locked -p pij-tmux --lib the_walk_keeps_its_selection_only_when_the_start_reread_agrees --then test --locked -p pij-harnesses --test liveness_parity",
+					"exit_code": 0
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build --timeout 15 -- clippy --locked -p pij-cli -p pij-daemon -p pij-harnesses -p pij-tmux -p pij-testkit --all-targets -- -D warnings",
+					"exit_code": 0
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES -- reviewer/300, round 1\nHead: 4ef227f6ae704ca5f3923cd2d6d00fcdc8423fa5\nBase: main 305b60ab\n\nNo introduced normal-use correctness blocker found. All eleven changed files and the affected callers were reviewed directly. The detached product worktree remains clean; no product edits, dependency installation, symlinks, deployment, or live process intervention.\n\nNonblocking notes\n\nR300-N1 (P3), crates/testkit/tests/spawn_sites.rs:263-268: the new sensor is a literal-source tripwire, not transitive launch analysis. It visits all nine listed daemon/sidecar crates and catches a literal constructor inside a helper or macro definition, but cannot follow constants, helper arguments, or parameterized macro arguments. Independent source-fixture mutations confirmed Command::new(\"omp\") and Command::new(\"lsof\") fail, while Command::new(OMP) with OMP=\"omp\" and a macro expanding Command::new($tool) invoked with \"omp\" pass. These are sensor-only counterexamples, not a claim that the complete gate accepts those source changes. Suggested follow-up: qualify the broad documentation claim and preserve targeted negative controls; no general-purpose analyzer is required for this PR.\n\nR300-N2 (P3), crates/daemon/src/http/identity.rs:941-949, 992-995, 582-585: the cost unit is one lsof per ancestry proof, not universally one per HTTP request. A non-Claude adopt supplying both --harness-session and --take-over can require both proofs, hence two lsof launches. This is existing behavior, not an added launch regression; the PR's per-request wording should not become a universal budget.\n\nCorrectness and proof boundaries\n\n- For a stable tree, the new ancestry walk preserves the old PID equality and parent-chain acceptance decisions. It refuses an unread parent or parent <=1, admits a host at up to 63 parent edges, and rejects at the unchanged 64-iteration limit. A self-parent now consumes that cap instead of stopping immediately, with the same refusal result. The real kernel parent test and real HTTP takeover test pass.\n- macOS parent_of uses the existing PID-checked short-BSD reader; Linux reads field 4 of /proc/<pid>/stat using the existing last-')' parser. These are fresh reads, not a cached ancestry.\n- The pane selection rereads the selected PID, not the pane PID, and rejects None or a changed local start. Its timebase and second precision remain the existing observed_start/ProcIdentity contract. Native parity passes for live, exited/reaped and zombie cases, plus alternate timezones. The PID-recycle classification test also passes.\n- Do not read identity.rs:674-675's \"never invent it\" as an atomic PID-generation proof. The ancestry API still carries PID numbers, not process generations, across non-atomic observations; the previous lsof/ps mechanism was also PID-only. No atomic-reuse guarantee or new per-seat adversarial boundary is established here. This is a proof limit, not a demonstrated new normal-use regression or a request for new C33 machinery.\n- lsof is pinned to /usr/sbin/lsof on macOS. OMP now uses the existing resolver at first launch; a kept executable is reused until invalidated, with the existing ENOENT retry behavior. No unsafe code, FFI, dependency or lockfile change was introduced.\n\nCost\n\nNo new loop, poll or timer. The existing OMP wait loop is unchanged. OMP costs one launch per catalog invocation; lsof one per ancestry proof; identity ancestry zero launches and at most 64 parent reads per proof; the tmux tree walk one counted ps per walk instead of two. Registration argv probing is unchanged, cached per host-named ancestor per registration, not per tick. No new per-tick/per-seat launch was added. Fleet baseline and post-merge AFTER measurements remain performance/merger-owned; this review performed no bounce.\n\nIndependent validation\n\nAll Cargo commands below ran through just shared-build, the resolved common target and its lock, at nice 19 with four jobs.\n\n1. test --locked -p pij-testkit --test spawn_sites: PASS, 6.\n2. test --locked -p pij-daemon --lib identity: PASS, 46, including actual HTTP takeover and start-time SQLite roundtrip.\n3. test --locked -p pij-tmux --lib the_walk_keeps_its_selection_only_when_the_start_reread_agrees: PASS, 1.\n4. test --locked -p pij-harnesses --test liveness_parity: PASS, 3.\n5. clippy --locked -p pij-cli -p pij-daemon -p pij-harnesses -p pij-tmux -p pij-testkit --all-targets -- -D warnings: PASS on macOS.\n6. Scratch mutations, compiled offline through shared-build: exact extracted ancestry guard/oracle catches MA1 (admit init), MA2 (65 iterations), MA4 (drop equality); exact extracted tmux function/oracle catches MT1 (omit reread) and MT2 (wrong PID). The unmodified production scanner over copied production sources catches MS1 (retired ancestry op), MS2 and MS3. All baseline controls pass. Constant/macro bypasses survive as documented in N1. These are scratch component/sensor mutations, not full production-binary mutation runs.\n7. just pr-freeze 300: FINAL, exact full head agrees with GitHub and ls-remote; CLEAN, latest checks 5/5, ready, no migrations. Linux CI run 44816410210 has passing Node 22/24, rust-lint and rust-test jobs; latest delivers run 44817241659 passes.\n8. harness boot: ready=false at the C25 tree's missing dependency check. harness checks --quick: FAIL, eight TS/tooling-dependent sensors (missing local tools and ambient Biome mismatch); native Copilot and installed-SDK contracts pass, heavy sensors skipped. This is not a local full-gate pass. TS/full Linux proof is the exact-head CI above; no dependencies were installed to work around the review constraint.\n\nHarness feedback\n\nmagicWand: a dependency-free review-proof recipe that extracts the real guards/oracles, supplies controlled source fixtures to the existing scanner, and reports killed/surviving mutants separately. This session produced that executable scratch fixture rather than editing the review tree.\n\ndifficulties: the general quick inventory does not stop at the dependency readiness boundary and therefore invokes ambient incompatible TS tools in a dependency-free review tree. Preserve the environment failure as such, never report it as a product defect or quietly install/symlink tools.\n\nHolding reviewer/300 until merge.\n"
+		}
+	]
+}
