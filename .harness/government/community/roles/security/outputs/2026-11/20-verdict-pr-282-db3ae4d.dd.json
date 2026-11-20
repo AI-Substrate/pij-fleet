@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f7c9-cce3-74d1-b0ab-d6d43e4b268c",
+				"date": "2026-11-20",
+				"head": "db3ae4d29c932a8629499e564e1aa745156c9b28",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:282",
+				"writer": "pij-pleased-swift",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Rebase/wording confirmation and new-head pr-freeze; F231 stays OPEN until live timings name and CPU-check the culprit."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #282 - security round 1: PASS\n\nHead: `db3ae4d29c932a8629499e564e1aa745156c9b28`\nBase: `fdd6ad1e33737deea54ab37981b3197eccc45b3e`\n\nContent verdict only: the initial `just pr-freeze 282` passed, but at 2026-11-20 07:20:52 UTC the same head was CONFLICTING/DIRTY against main `7de79bb87c12d0671b8ed182207a128869dab51a`. The PM confirmed #281 moved main, authorized publication at this head, and owns the rebase/wording confirmation. This head is not currently FINAL or READY.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerabilities found | - |\n\nReviewed all nine changed files. Timing remains numeric, cumulative data keyed by the existing fixed method/route templates, not seats, request identities, raw parameter values or paths. Ping's bearer authentication and peer-key exclusion are unchanged (`http/mod.rs:473-492,814-860`). No new secrets, private/home paths, shell execution, dependencies, privilege changes or attacker-controlled metric keys. C21/C33/C34 apply. Independent security audit agrees.\n\n## Timing correctness and cost\n\nAll five current HeldSpan sites are sequential and dropped before the next active pass:\n\n| Park | Source under `crates/daemon/src/` | Existing cadence |\n|---|---|---|\n| Inbox subscription/idle/backstop select | `delivery/mod.rs:2267-2277` | 500 ms native checks; 15 s during-turn backstop; events/idle deadline |\n| Dispatch/canary acknowledgement wait | `http/governance.rs:1909-1914` | 25 ms, bounded by deadline |\n| Spawn model-footer wait | `http/mod.rs:1887-1888` | 250 ms, at most 8 s |\n| Spawn registration wait | `http/mod.rs:1991-1992` | 50 ms, bounded by requested wait |\n| Revive dead-pane settling | `http/revive.rs:368-369` | 250 ms, at most 5 s |\n\nSQLite awaits, tmux reads and other I/O remain active. The native receiver-deadline wait belongs to a background lifecycle worker, not an HTTP handler. Event-stream body lifetime likewise is not handler time.\n\nThe request-scoped Cell is installed while the scoped future is polled and follows that future across runtime worker threads. It is not automatically inherited by spawned tasks. None of the current span sites moves a span into another task or overlaps/nests spans. Hypothetically moving a span into another request's scope would credit its dropping scope; the API does not enforce creator ownership. This is not a present-path bug.\n\n`Spent::split` saturates duration conversion, subtracts saturatingly and clamps held to wall: per request, held <= wall and active + held = clamped wall microseconds. Raw held accumulation saturates. Cumulative timing atomics **wrap**, just like the existing count counters; they are not strictly monotonic at u64 overflow. Concurrent snapshots remain nontransactional as documented. These limits do not control product behavior.\n\nThe existing count, refusal, unmatched-method/path and seats-query semantics remain intact. Recording adds one or two relaxed atomic additions to the existing immutable slot; no mutex, allocation, new loop, timer, process launch or log. Task-local scope work occurs on future polls, and HeldSpan work occurs per existing park/wake, not solely per completed response. Its scaling is the existing waiting-handler count times the cadences above; no process is launched per tick or per seat.\n\nReran the author's retained release benchmark at nice 19: 2 million iterations x 3, baseline 1.8 ns, F231 42.7-42.8 ns, **added 40.9-41.0 ns/request**. This reproduces the claimed range. The retained executable is from the pre-rebase F231 tree, not an exact-head build; its source measures the same scoped timing/atomic core. An independently reconstructed optimized core measured +40.65-40.99 ns, and one immediately-ready HeldSpan added approximately 38-39 ns beyond the no-span path. These are core microbenchmarks, not end-to-end HTTP or live fleet CPU measurements.\n\nAt the supplied 12-17 responses/s, the approximately 41 ns entry/exit overhead is **0.49-0.70 microseconds of CPU per second**, plus existing future-poll and marked-wait accounting. No new steady-state polling or launches.\n\n## Evidence\n\nExact-head CI run `44691664806`, successful rust-test job `136138678737`, uploaded artifact ID `14608554328`: JUnit confirms PASS for the handler-time/long-poll test, real idle native-inbox test, and backward-compatible ping-counts test. The workspace run passed 2631 tests. All five required GitHub checks passed.\n\nReviewed the author's retained mutation receipt: M1 (drop active add) failed all three relevant tests; M5 (held counted active) failed both long-poll tests. M2-M4 also were caught. These are author-recorded parsed failure lists from the identical pre-rebase change, not independently rerun mutations or retained full cargo logs.\n\nLocal `harness boot --json` reported NOT-READY due to absent Vitest dependencies. C25 prohibits linking shared node_modules; no dependencies were linked or installed. Full `harness checks --json` was invoked, then stopped after finality changed, while its Rust stage was waiting on shared-build's lock. It did not complete; no local full-gate pass is claimed. Exact-head CI provides the test proof above.\n\n## What deployment enables\n\nTake two timing snapshots across an interval longer than the 55 s idle inbox answer. Rank routes by delta-active_us / interval, then compute delta-active_us / delta-(ok+refused) to separate high call rate from expensive calls. Compare inbox with seats/registration routes and correlate the ranked candidates with daemon CPU and the SQLite-worker profile. Active time is nonparked handler **wall time**, not CPU time; it includes scheduling, pool contention and I/O, and excludes detached/background work after a response. It identifies candidates, not a guaranteed CPU attribution. F231 remains OPEN until a live measurement names and CPU-checks the culprit.\n\nHarness feedback captured: retain an opt-in benchmark recipe with source SHA/compiler/profile receipts and separate ready-request versus parked-poll cost; add a read-only review gate mode that explicitly grades CI-only TS evidence. No product-source edits; retain the security/282 holding until merge.\n"
+		}
+	]
+}
