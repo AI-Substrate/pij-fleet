@@ -2435,6 +2435,16 @@
 					"seat": "pij-sufficient-clam",
 					"to": "2026-11-20T15:03:28.268Z",
 					"why": "#293 F242 review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T15:22:59.808Z",
+					"harness": "copilot",
+					"harness_session": "a14ff8eb-a4ad-4780-a956-5a72a5065fbf",
+					"instance_key": "294",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-integral-tiglon",
+					"why": "#294 F240 review"
 				}
 			]
 		}
