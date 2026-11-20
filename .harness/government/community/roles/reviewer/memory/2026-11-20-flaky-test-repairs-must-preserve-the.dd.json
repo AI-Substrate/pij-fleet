@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Before reviewing real-tmux warm-ups, teardown flakes or cancellation-sweep repairs",
+				"tags": [
+					"review",
+					"tmux",
+					"tests",
+					"cancellation",
+					"f228"
+				],
+				"title": "Flaky test repairs must preserve the concurrency oracle"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#278/F228: serialize control-client startup, not reservations. Keep separate adapters/locks and both acquire_submit calls after Barrier(3). Warm-up only works around tmux 3.6a's concurrent attach/setup crash; the production fix remains F229.\n\nCheck teardown in both directions: nonzero kill-server after actual death must pass; nonzero kill-server leaving the server alive must fail. Independent shim controls proved both branches; remove the shim and verify fixture cleanup.\n\nFor cancellation sweeps, wait for committed state rather than treating poll count as a clock. Join owned admissions with flush(), and retain the assertion that at least one caller was dropped with admission in flight. Both repaired tests passed 20/20 independently; verdict at 7380b7c.\n"
+		}
+	]
+}
