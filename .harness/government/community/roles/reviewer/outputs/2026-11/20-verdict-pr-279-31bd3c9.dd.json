@@ -1,0 +1,58 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f785-c9d4-7960-8b42-35495f3318df",
+				"date": "2026-11-20",
+				"head": "31bd3c9a09ff70311b97a0b1dd2911ec6cf1dc43",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:279",
+				"writer": "pij-semantic-hornet",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"F233 remains RED: crash-equivalent interruption after holdings git commit, followed by second clear, can orphan queued work. Prime explicitly accepted shipping this residual under C34; no OTHER blocker found."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "harness checks --json",
+					"exit_code": 1,
+					"log": ".harness/records/retro/2026-11-20/review-279-r2-gate.json"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --test directory_http reviewer_r2_second_clear_after_git_before_index_is_recovered",
+					"exit_code": 101,
+					"log": ".harness/records/retro/2026-11-20/review-279-r2-overlap.log"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --test directory_http a_seat_id_that_crosses_a_later_boundary_is_carried_again",
+					"exit_code": 101,
+					"log": ".harness/records/retro/2026-11-20/review-279-r2-intent-mutant.log"
+				},
+				{
+					"command": "just pr-freeze 279",
+					"exit_code": 0,
+					"log": "FINAL at 31bd3c9a09ff70311b97a0b1dd2911ec6cf1dc43; clean detached review checkout"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# #279 final-round review\n\nHead: `31bd3c9a09ff70311b97a0b1dd2911ec6cf1dc43`.\n\n## A. Verdict\n\n**PASS WITH NOTES, subject to the named F233 acceptance. No other blocker found in the round-2 delta.**\n\nF233 remains a reproduced correctness failure, not a passing test. The prime explicitly accepts shipping this residual under C34, as relayed by PM-001 in message `9d8872ec-778d-4137-a12e-eeb961133b1d`, citing prime message `ebfffc69d54905ab-0000000000000007`. The PR body names F233, the crash-window-plus-second-clear sequence, and the F227 directory release repair. That acceptance changes the shipping disposition, not the observed behavior.\n\n## B. Scope\n\nReviewed only `git diff 31bd3c9a~1 31bd3c9a`: seven files, +893/-279. Round 1 stands for unchanged code. The exact head is a clean detached checkout and pr-freeze confirms FINAL. No implementation or dependency edits were made there.\n\n## C. Fix verification\n\n| Requirement | Assessment |\n|---|---|\n| R279-001: split index ends/starts | Fixed by carry_assignments_committed: ends, successor starts and role events commit or roll back together. Redo reads governance rows under the intent's recorded scope, not the disappearing open-index rows. |\n| R279-002: both clears before carry begins | Fixed for that ordering: the walk follows the native boundary chain to its live same-launch end. The post-git/pre-index ordering below remains F233. |\n| Store proves each hop | The mail transaction uses BEGIN IMMEDIATE, reads every named seat, checks a non-null common launch, each exact predecessor reason, and a live endpoint before moving mail or writing the event. A wrong launch, unrelated endpoint, absent row or broken boundary refuses E-RS-CARRY-UNPROVEN. |\n| Cycles and bound | The walk reads at most 16 successors. A cycle with no live endpoint or a 17-hop chain returns None before a new intent or holdings/mail write. This is a conservative brake: no partial transfer, but no eventual-recovery guarantee for a longer chain. Existing unfinished work is retained rather than moved. |\n| Exactly-once and F193 | Atomic index updates remove the split-index gap. Delivery still uses the role admission gate and a transactional queued-to-delivering claim; competing drains cannot both claim one request. Claims now reject answered requests. |\n| Intent sequence | Completion must name the latest started sequence and list no delivering request. An older completed intent cannot suppress an unfinished later intent for the same seat ID. Redo still requires a recorded intent. |\n| Cost and locks | No new steady-state process launch or poll. Per carry, the chain adds at most 16 indexed registry reads; one index transaction per held project replaces split index writes. Boot still does one roster scan and intent/completion reads per eligible tombstone, with a bounded chain walk. Git remains on the blocking writer pool; carry's sequencing/gates and settle sleep remain async. No live deployment was performed. |\n\n## D. Accepted residual F233\n\nLocation: `crates/daemon/src/community/directory.rs:2307-2314` and `crates/daemon/src/carry.rs:313-330`.\n\nThe retained test `reviewer_r2_second_clear_after_git_before_index_is_recovered` reproduces the unresolved original R279-002 overlap:\n\n1. A supersedes to B on the same launch; record A's intent and scope.\n2. Run the real carry_project to B while holding EventBus's index-publication boundary.\n3. The governance commit lands, recording A ended and B open. Cancel before any atomic index update. A remains open in the index; B has no index holding.\n4. B supersedes to C on the same launch.\n5. Redo A, run B's new carry, and run boot redo.\n\nA's governance row says `carried to B`. Redo now targeting C skips that row because its release reason does not equal `carried to C`. B has no indexed holding, so B's new intent records no role scope. A's request gets requeued, but C has no indexed role to drain it. The test expects `(Delivered, Some(\"pij-final\"))` and receives `(Queued, None)`.\n\nThis is not a new final-round hardening requirement: it is the original crash/second-clear failure at a later write boundary. The prime has chosen to ship it as F233. The probe retains real SQLite/git state and cancels the actual index waiter; it does not manually corrupt the index. This probe establishes a crash-equivalent ordering, not that a daemon crash is necessary for every possible ordering.\n\nThe F227 release command addresses the dead governance holding. It must not be described as an automatic repair of the missing successor index: the retained probe shows no live indexed holder. F233 owns completing that recovery, with this test as its RED fixture.\n\n## E. Mutation and security\n\nOne non-equivalent mutation was applied only in an isolated exact-head source copy: remove the equality between `seat.carried.intent` and the latest started sequence. `a_seat_id_that_crosses_a_later_boundary_is_carried_again` ran and failed with `carried again: []`. The source was restored afterward.\n\nThe delegated static security review of only this delta found no vulnerabilities within C33. No new carry HTTP route, launch escaping, unsafe shell rendering or home-path leak was found.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None found within the C33 delta scope | - |\n\n## F. Evidence\n\nAll cargo commands use the canonical shared target through shared-build, niceness 19 and four jobs. Both adopted regressions, the reused-ID test and the late-answer test are ordinary directory_http tests included in the completed Rust workspace gate. The still-queued separate targeted batch was cancelled after that full gate passed; it is not reported as a completed run.\n\nCompleted results:\n\n| Command | Result |\n|---|---|\n| just pr-freeze 279 | PASS: exact head FINAL and review checkout clean. |\n| harness boot --json | Exit 0 advisory, ready=false: no local vitest/TS dependencies. No dependency installation or symlink. |\n| just shared-build -- test --locked -p pij-daemon --test directory_http reviewer_r2_second_clear_after_git_before_index_is_recovered | Exit 101: one test ran and reproduced F233. |\n| just shared-build -- test --locked -p pij-daemon --test directory_http a_seat_id_that_crosses_a_later_boundary_is_carried_again (isolated completion-sequence mutant) | Exit 101: one test ran; mutation caught. |\n| harness checks --json | Exit 1 overall: missing local TS dependencies and incompatible ambient Biome. Rust fmt/clippy/workspace tests, native contracts/SDK, skill structure, route inventory and smoke PASS. The completed unmutated Rust workspace run covers both adopted regressions, reused-ID completion, late-answer claims and competing drains. |\n\nThe Rust stage runs `just rust-check`, whose cargo commands are `clippy --locked --workspace --all-targets -- -D warnings` followed by `test --locked --workspace -- --skip route_inventory_tests::every_served_route_is_in_the_inventory_and_classified`, both through shared-build. None of the named carry regressions is ignored or excluded by that selector. This unmutated full run also replaced the prior mutation's build artifacts.\n\n`pr-freeze` verifies successful exact-head CI. Local TS proof remains CI-only under C25; the local overall harness gate is not falsely reported as green.\n\nRetained in the standing governance worktree, using relative portable paths:\n\n- `.harness/records/retro/2026-11-20/review-279-r2-overlap.diff`\n- `.harness/records/retro/2026-11-20/review-279-r2-overlap.log`\n- `.harness/records/retro/2026-11-20/review-279-r2-intent-mutant.log`\n- `.harness/records/retro/2026-11-20/review-279-r2-gate.json`\n\nThe failure logs are scrubbed of machine home paths. The product checkout was never changed.\n\n## G. Coverage limits\n\nThe original R279-001 test was necessarily adapted rather than literally unchanged: cancellation now occurs before the single index transaction, then the fixture plants the old split-index state to test redo's governance/scope repair. That adaptation is appropriate because a split end/start commit no longer exists in the implementation.\n\nThe 16-hop behavior and all-hop SQL proof were traced directly; no exhaustive chain inventory was required. No live Copilot clear or before/after fleet deployment measurement was performed. Those limits are distinct from the real SQLite/git regression evidence.\n\n## H. Handover\n\nNo other blocker identified in this final-round delta. Ship only with F233 explicitly accepted and named; do not describe every crash/chain ordering as healed. The PM/prime owns landing the retained RED fixture and F233's subsequent repair. The reviewer has not changed implementation or pushed.\n"
+		}
+	]
+}
