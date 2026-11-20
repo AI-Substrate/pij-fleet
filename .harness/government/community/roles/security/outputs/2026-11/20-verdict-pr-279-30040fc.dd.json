@@ -1,0 +1,55 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f726-0de6-7a11-89e2-618527261a7f",
+				"date": "2026-11-20",
+				"head": "30040fc8653d05fea322ed48d63ee8e5a08f7ee1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44671997090",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:279",
+				"writer": "pij-small-whitefish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Recover committed governance carry across the predecessor-end/successor-start index cut.",
+				"Carry queued same-launch native boundaries through the latest live successor without weakening proof."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --test directory_http reviewer_",
+					"exit_code": 101,
+					"log": "prime-governance:.harness/records/retro/2026-11-20/review-279-carry-probes.log; 3 passed, 2 failed on unchanged exact-head product code"
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-daemon --test directory_http a_boundary_without_a_recorded_intent_is_never_redone -- --exact",
+					"exit_code": 101,
+					"log": "Isolated M12 guard removal: 1 executed test failed as expected, left (0,1), right (1,0); mutation restored and copy removed"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "Isolated exact-head macOS: Rust, route inventory, native contracts/SDK, skill and smoke PASS; local TypeScript/tooling unavailable under C25. Exact-head CI run44671997090 passed; JUnit artifact14600043488 confirms all 8 carry tests."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "BLOCK at 30040fc8653d05fea322ed48d63ee8e5a08f7ee1 (base 9ffc5729843e9e0aac6825165a7de31b4d30d6ce).\n\nNo introduced C33 authorization vulnerability was found. The block is for two reproduced normal-use correctness defects in the carry guarantees, not for per-seat isolation or optional hardening. C34 permits these recovery/stalled-work blockers.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/daemon/src/community/directory.rs | 2379-2400 | Carry recovery loses its role scope after predecessor index ends commit but before successor starts are admitted; boot redo leaves the request on the retired seat. Correctness/availability, not an authorization bypass. | 9/10 |\n| 2 | 🟡 MEDIUM | crates/daemon/src/carry.rs | 68-72, 174-188 | Two queued native boundaries A->B->C retire B before A->B runs. The live-successor guard drops A->B, and B->C has no indexed holdings to carry; work remains on A. Correctness/availability, not an authorization bypass. | 9/10 |\n\n1. Index-cut recovery. pij-semantic-hornet held EventBus publication, invoked the real carry_project, observed committed predecessor index ends, aborted before successor starts were admitted, then released the boundary and ran boot redo. Actual: request still Delivered to pij-holder and successor index empty. Expected: successor pij-heir receives the work. The durable governance carry must be sufficient to reconstruct this partially updated projection; recovery cannot depend solely on open predecessor/successor index rows (carry.rs:190-243).\n2. Queued boundaries. On unchanged product code, the reviewer queued two same-launch native boundaries A->B->C before A->B began. Actual: request remained on pij-holder. Expected: it reached pij-final. Preserve the same-process/same-spawn/native-boundary proof for every edge while ensuring an intermediate retired successor does not discard the earlier work. Weakening the authorization guard is not an acceptable repair.\n\nExecutable probe attribution: pij-semantic-hornet ran `just shared-build -- test --locked -p pij-daemon --test directory_http reviewer_` in a git-archive copy of this exact head, using the canonical PIJ_SHARED_TARGET, nice19 and four jobs. Exit 101: 3 passed, 2 failed, in 2.12 seconds. Failures: `reviewer_carry_recovers_crash_between_index_end_and_start` and `reviewer_carry_reaches_latest_successor_after_two_clear_boundaries`. The old-answer probe, stamped after the holding index update but before the mail transaction, passed: no requeue or successor copy. Concurrent F193 drains with carry and compact-request replay also passed: one copy.\n\nRetained portable receipts in prime-governance: `.harness/records/retro/2026-11-20/review-279-carry-probes.log` (read and verified) and `review-279-carry-regressions.diff` (reviewer's isolated test patch, not installed in this review checkout). Receipt messages: 11f41a58-9c38-476e-97e0-2961ba24c230 and a4d33977-4a69-49ed-a453-9bbebcbe860d. Product sources were unchanged.\n\nSecurity trace:\n- registration.rs:1272-1295,1618-1626,1756-1768,2060-2137 corroborates predecessor process identity, native session change and present/equal spawn IDs. None/None, a different launch and non-boundary supersedes do not qualify. A revive alone is not a native-boundary carry.\n- carry.rs:177-188,298-315 records New intent before governance writes; an unrecorded Redo returns before them. Boot is one roster pass (367-388), not a recurring sweep.\n- store/role_requests.rs:921-952 repeats tombstone reason, live successor and present/equal launch proof inside the mail write transaction, returning E-RS-CARRY-UNPROVEN otherwise. Production carry_mail_committed is reached only by daemon carry, not an HTTP handler.\n- Requeue targets predecessor-held delivered/unanswered requests, preserves checkin_at/escalated_at and does not requeue successor deliveries (role_requests.rs:934-1005). Governance scope comes only from projects the predecessor held; refused project requests stay out of successful carry scope. Pending seat FYIs are separate.\n- Governance commits precede role admission-gate acquisition. Registration schedules carry; its locks do not await git. Writer work runs in spawn_blocking (community/directory.rs:2452-2480), and carry's short std Mutex scopes contain no await. The bounded 20 x 250 ms settle wait releases admission gates between pauses.\n- The 13-file diff adds no machine-specific home path or credential handling. Existing structured git arguments, confinement and symlink refusal remain. C33's trusted same-user account boundary is unchanged.\n\nCost: no new steady-state per-tick/per-seat launch path. Carry is event-driven, with a bounded settle retry and governance commit per held project; boot redo is once per daemon start. No live deployment or before/after fleet measurement was performed in this read-only review.\n\nValidation:\n- just pr-freeze 279: PASS, repeated immediately before preparing this verdict; remote and checkout both at the full head above, CLEAN, latest checks passed.\n- harness boot: advisory NOT-READY because the review worktree has no local TypeScript dependencies. C25 was followed: no dependency symlinks or installations.\n- harness checks in an isolated exact-head worktree: exit 1 overall. Rust fmt/clippy/workspace tests, route inventory, native Copilot contracts/SDK, pij skill and smoke PASS. Eight local TS/tooling sensors fail because dependencies are absent or the ambient Biome is incompatible; this is not a locally green ship gate.\n- Exact-head CI run 44671997090 passed. Successful rust-test job 136074875101 uploaded JUnit artifact 14600043488; all eight named carry tests ran and passed. Artifact ZIP SHA-256: 3e00db5502cc50b33aa4baf1c7a9cd9cba3b5e1d29c0df29cfe24b9223a2b25a. Node 22/24 typecheck, lint, tests and lockfile allowlist passed in CI.\n- Reviewer-owned M12 mutation: remove only the missing-intent Redo return in an isolated worktree. PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-daemon --test directory_http a_boundary_without_a_recorded_intent_is_never_redone -- --exact. Exit 101; exactly one test ran and failed with left (0, 1), right (1, 0), proving historical carry when the guard is removed. The original test passes in CI and the unchanged local Rust suite. Mutation restored; both disposable worktrees removed; review checkout clean.\n\nC34 follow-ups, not additional blockers here: the source-only reused-predecessor-ID completion-cache case (carry.rs:152-166) and an old validated answer stamped after the MAIL transaction but before a later claim. The latter timing differs from the passing before-mail probe. These have not been independently reproduced in this review and must not be described as passing exhaustive coverage.\n\nHarness retrospective:\nmagicWand: a scoped carry-proof/review-proof command should select the relevant tests and the successful job's exact artifact ID, and support a disposable intent-gate mutation through shared-build.\ndifficulties: dependency-free review proof is split between local Rust and C25 CI-only TypeScript; harness checks buffers long child output, requiring a separate lock-owner inspection to distinguish active work from a stall. Suggested encoding: stage-start/progress evidence with the lock-owner pointer. Deferred to the harness owner; no unrelated product/tooling changes made.\n"
+		}
+	]
+}
