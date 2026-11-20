@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f8fb-0cf1-7b21-88a4-dc6916a11ce5",
+				"date": "2026-11-20",
+				"head": "d398803f7169ef29f136704536205e8c8210ae06",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "performance",
+				"subject": "pr:292",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"P292-001: whole-exit bound must cover blocking pipe write before reply timeout, with backpressure proof. P292-002: absolute bounce sleep and accurate/enforced elapsed30s bound. Pending independent behavior/security and postmerge live costs."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git rev-parse HEAD && git diff d398803f^ d398803f; git rev-parse d398803f^ && git diff 27076a37 d398803f -- crates/testkit/tests/spawn_sites.rs",
+					"exit_code": 0,
+					"log": "/tmp/performance-292-static-cost.json; full diff artifact://286; authored shared packet inspected. Static bound finding, no runtime reproduction by performance."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "BLOCK — performance/292, exactd398803f7169ef29f136704536205e8c8210ae06, base27076a3793d62b8408b0a14aba89a569a710ad47. Answers01a1f8fb-0cf1-7b21-88a4-dc6916a11ce5. Static source review; no builds/tests, benchmark, isolated server, live measurements or daemon changes by this seat.\n\nP292-001 — the required every-path exit bound is not implemented. Live::leave locks Waiters and performs blocking ChildStdin.write_all/flush BEFORE receiver.recv_timeout(TEARDOWN_WAIT). A full pipe/non-reading client can stall before the one-second wait even starts [INFERENCE from blocking I/O semantics; not reproduced by performance]. Drop's subsequent child.wait also has no deadline; ControlClient::release acquires its state mutex, and daemon.shutdown awaits spawn_blocking release without an outer deadline. The constant proves a reply-wait bound, NOT a whole-exit bound.\n\nThe new unanswered teardown test starts cat with output discarded. Cat drains stdin, so it proves the lost-reply case while bypassing pipe backpressure; the closed-reader test proves a fast skip. Neither supports the docs' claim that a frozen server cannot hold exit. Required: bound the newly added write/admission as well as reply waiting, and prove the full-pipe/nonreading exit path; distinguish any inherited lock/reap ceiling instead of claiming recv_timeout covers it. Reviewer raven and coder notified and own exact-path runtime/mutation proof.\n\nP292-002 — bounce time/cost qualification. New justfile736 uses bare sleep in a repeated path: up to150 external sleep processes, nominal5 launches/s for one waiting bounce. Repository resource rule requires an absolute repeated launch; use /bin/sleep. The loop is bounded by iteration count, not elapsed time:30 seconds is its nominal requested sleep total, plus spawn/scheduling/kill-probe overhead, not a strict wall-time cap. Qualify or enforce the advertised elapsed bound. kill probes/increment are shell builtins; this is bounce-only work, not per-seat or at-rest load.\n\n| Path | Static rate/cost |\n| --- | --- |\n| Teardown command | One fixed if-shell -F command over that live client's existing pipe per exit, selecting in-server kill-session or set-option. No new shell/process launch. Per-exit quoting/formatting/channel/queue allocations; no per-read cost added. |\n| Reply wait | At most1s AFTER successful write; closed/poisoned reader state skips or failed write skips reply waiting. Entire exit not bounded as above. |\n| Replacement | Same exit work also occurs when a read times out/replaces a client; can add up to1s reply-wait latency and unknown blocking-write delay to that read's fallback, not only daemon bounce. |\n| Graceful SIGTERM | Additional one-time signal registration and existing event select branch, no periodic loop/timer. Shutdown adds one spawn_blocking release task after workers stop; no OS subprocess at that call. |\n| Bounce availability | Release build/install happen before stop. Old daemon drains after SIGINT before new starts; fleet reconnect gap can grow by the old stop duration. Up to30s nominal sleeps, then SIGKILL fallback; existing1.5s new-start wait still applies. Sub-second-gap comment is no longer a guarantee. |\n| Attach lock | One open per attach, existing metadata/conditionalchmod/try_lock. Real adapters key it beside tmux socket; path/canonicalization/getuid work is adapter setup, not per tick or per seat. Custom executable keeps private state-root path. |\n\nspawn_sites.rs unchanged (empty exact-base diff verified); original tmux.control-client launch recording retained. No new daemon recurring poller or per-tick/per-seat launch. The bounce loop is new, so a blanket no-new-loop/timer/launch statement would be false. release sets a flag preventing another persistent attach; any subsequent read forks, so stopping workers first matters for cost.\n\nThe destructive teardown's decision is the fixed alone predicate: only this session's sole client, one window and one pane allows kill-session; otherwise it preserves the session and switches destroy-unattached off. The attach lock is a brake, not retention: it can only delay/refuse a new attach. Security/correctness own branch and rolling-lock compatibility proof. Packet-reported2000-run before/after crash results were not rerun or independently verified here.\n\nEvidence: authoredpacket files/msgs/p292.md, complete13-file diff artifact://286; /tmp/performance-292-static-cost.json. Source ranges control.rs220-250,399-404,735-777; daemon/lib.rs345-412; justfile729-747. Keep holdingperformance/292 until merge even after BLOCK. Postmerge proof queued: same-incarnation old/new spawn windows, machine births/CPU/RSS and prime-owned SIGINT->oldgone->newready bounce timing, separated from build time; no old/new counter subtraction.\n"
+		}
+	]
+}
