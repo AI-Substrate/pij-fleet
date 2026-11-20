@@ -1374,7 +1374,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f237",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #290 merged (5de6da7c9eb8)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-20T12:33:27.466Z",
 					"why": "F237 tmux server death in fixture show-options after F229: find the lock-bypassing path, read-only first (prime ruling)"
 				},
 				{

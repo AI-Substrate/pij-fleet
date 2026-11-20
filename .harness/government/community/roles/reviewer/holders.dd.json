@@ -2404,7 +2404,10 @@
 					"harness_session": "8c4a4eef-d945-479c-bdbe-4c906ae2ae86",
 					"instance_key": "290",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #290 merged (5de6da7c9eb8)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-significant-silkworm",
+					"to": "2026-11-20T12:33:27.466Z",
 					"why": "#290 F237 review"
 				}
 			]
