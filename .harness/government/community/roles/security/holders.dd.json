@@ -876,7 +876,10 @@
 					"harness_session": "11d4c585-b8f2-4afe-9421-7484fcd7378d",
 					"instance_key": "297",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #297 merged (44f313e4954f)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-sure-mole",
+					"to": "2026-11-20T17:21:47.073Z",
 					"why": "#297 F243+F244 security"
 				}
 			]

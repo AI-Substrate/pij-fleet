@@ -2482,7 +2482,10 @@
 					"harness_session": "92e8155b-d900-4be5-9dbf-221f3d77669f",
 					"instance_key": "297",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #297 merged (44f313e4954f)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-rational-termite",
+					"to": "2026-11-20T17:21:47.073Z",
 					"why": "#297 F243+F244 review"
 				}
 			]
