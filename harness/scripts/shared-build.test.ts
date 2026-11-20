@@ -91,7 +91,8 @@ function fixture(): Fixture {
 			'[ -n "$NAP" ] && sleep "$NAP" </dev/null >/dev/null 2>&1',
 			// An artifact in the profile's deps, as a real build leaves (F243).
 			// `ARTIFACT_AT` puts it elsewhere, relative to the target (a target triple's layout).
-			'[ -n "$ARTIFACT" ] && at="$CARGO_TARGET_DIR/${ARTIFACT_AT:-debug/deps/libalpha.rlib}" && mkdir -p "${at%/*}" && date > "$at"',
+			'[ -n "$ARTIFACT_AT" ] || ARTIFACT_AT=debug/deps/libalpha.rlib',
+			'[ -n "$ARTIFACT" ] && at="$CARGO_TARGET_DIR/$ARTIFACT_AT" && mkdir -p "$(dirname "$at")" && date > "$at"',
 			"wait",
 			'echo "end $1" >> "$LOG"',
 			'[ "$1" = fail ] && exit 7',
@@ -313,7 +314,9 @@ describe("just shared-build", () => {
 		}
 		expect(readdirSync(elsewhere)).toEqual([]);
 		expect(lstatSync(join(f.target, ".pij-shared-build-tree")).isSymbolicLink()).toBe(true);
-		expect(readdirSync(f.target).filter((name) => name.startsWith(".pij-shared-build-tree."))).toEqual([]);
+		expect(
+			readdirSync(f.target).filter((name) => name.startsWith(".pij-shared-build-tree.")),
+		).toEqual([]);
 	});
 
 	it("touches after another tree's batch built and then failed, in any cargo layout (R297-001)", async () => {
@@ -335,14 +338,21 @@ describe("just shared-build", () => {
 		// termite's case: another tree's build succeeds into an explicit
 		// --target layout, then a later command of the same batch fails.
 		const triple = { ARTIFACT_AT: "aarch64-apple-darwin/debug/deps/libalpha.rlib" };
-		expect(await touchedAfter(triple, { ...f, worktree: other }, ["--", "build", "--then", "fail"])).toBe(true);
+		expect(
+			await touchedAfter(triple, { ...f, worktree: other }, ["--", "build", "--then", "fail"]),
+		).toBe(true);
 		// The same failed batch, whatever it wrote and wherever (here no deps file).
 		const binary = { ARTIFACT_AT: "debug/pij-rs" };
-		expect(await touchedAfter(binary, { ...f, worktree: other }, ["--", "build", "--then", "fail"])).toBe(true);
+		expect(
+			await touchedAfter(binary, { ...f, worktree: other }, ["--", "build", "--then", "fail"]),
+		).toBe(true);
 		// A round-1 stamp (bare `<tree>`) that a failed batch left trusted and
 		// newer than the other tree's artifacts (snail): each tree touches once
 		// on adoption, then trusts its own finished stamp again.
-		await run({ ...f, worktree: other }, ["--", "build", "--then", "fail"], { ...triple, ARTIFACT: "1" });
+		await run({ ...f, worktree: other }, ["--", "build", "--then", "fail"], {
+			...triple,
+			ARTIFACT: "1",
+		});
 		const legacy = join(f.target, ".pij-shared-build-tree");
 		writeFileSync(legacy, `${f.worktree}\n`);
 		const ahead = Date.now() / 1000 + 120;
