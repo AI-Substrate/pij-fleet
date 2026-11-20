@@ -915,7 +915,10 @@
 					"harness_session": "034cb6e8-a3cf-4423-9594-b142601db300",
 					"instance_key": "299",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #299 merged (305b60ab7b81)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-environmental-deer",
+					"to": "2026-11-20T20:31:00.384Z",
 					"why": "#299 security verdict on a different model (claude-opus-5.5) after sawfish's availability block"
 				}
 			]
