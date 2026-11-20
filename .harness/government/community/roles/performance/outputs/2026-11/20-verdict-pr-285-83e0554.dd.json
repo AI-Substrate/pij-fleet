@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f819-4af5-7e83-ae69-1cc13e7853c1",
+				"date": "2026-11-20",
+				"head": "83e0554bb3d413d0215563fb8774f0dfa4f122e0",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:285",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Correct native-versus-extension lease wording; live117ms comparison awaits merge/bounce as requested, with held/count and workload context."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git rev-parse HEAD; git diff 14226920 83e0554bb3d413d0215563fb8774f0dfa4f122e0",
+					"exit_code": 0,
+					"log": "HEAD matched requestedSHA; three-file delta +315/-0. Actual preflight, earlyreturn, unchanged write path, covering index, test source and cost wording inspected; no runtime claim."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES — static performance/285, exact head 83e0554bb3d413d0215563fb8774f0dfa4f122e0, base14226920.\n\nThe quoted PR-body cost row is confirmed. No blocking performance finding. Exact HEAD and full three-file delta inspected. No builds/tests, benchmark, live measurement or daemon changes by this seat.\n\nLIVE_OF_KINDS_SQL binds the existing kind JSON and selects only1/LIMIT1 under state pending OR running. Existing jobs_claimable(state,kind,id) covers the lookup. Schema, empty-kind and lease validation precede it. On absence, the function returns before worker allocation, owned_write and BEGIN IMMEDIATE. A delayed, expired-running or serial-blocked live row still takes the original transaction path.\n\n| Plain Queue::claim, scoped empty kinds | Before | After |\n| --- | ---: | ---: |\n| Explicit queue SQL commands | 6 | 2 |\n| Pool checkouts | 2 | 2 |\n| Queue-owned write task | 1 | 0 |\n| Write transaction/write-lock acquisition | 1 | 0 |\n\nThe two remaining commands are the retained schema PRAGMA and indexed preflight. A nonempty pass gains exactly one preflight read and one pool checkout, then retains the original recovery/claim work. Pool housekeeping, native mutex/recipient reads and read waits remain; this is not zero-cost or allocation-free HTTP handling.\n\n[INFERENCE] On the unchanged timer-only500ms idle path, each waiting native seat does about2 preflights/s and avoids about2 empty write admissions/s when its scoped queue is truly empty; notifications can add passes. No new loop, timer, process launch site or mutex. No migration/new index. spawn_sites.rs and delivery timing/notification code are unchanged.\n\nTest SOURCE covers no-write under a held SQLite writer, plain and extension claims, pending delivery, expired running recovery, delayed/serial-blocked rows, other-kind isolation and a5000-row indexed query plan. Performance did not execute these tests. The earlier F234 read-only plan also supported this predicate; no final-head runtime plan claim is made.\n\nNonblocking wording correction: Copilot's production branch uses plain Queue::claim. The test helper/ledger label extension-lease renew/parking UPDATEs as native work; those extras belong to OMP/Pi claim_extension, not the plain Copilot baseline above.\n\nLive after-proof remains as requested after merge/bounce: compare window delta_active_us/delta_count with117.048ms, alongside held/count, request rate and daemon CPU. No latency/CPU-saving magnitude is inferred from statement counts. References: queue.rs:96-135,300-303; queue_empty_claim.rs:91-284; migrations/0002_queue.sql:39; delivery/mod.rs:2083-2133.\n"
+		}
+	]
+}
