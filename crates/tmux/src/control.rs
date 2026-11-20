@@ -31,6 +31,7 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, BufRead, BufReader, Write};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, SyncSender};
@@ -493,6 +494,11 @@ pub fn attach_lock_path(state_root: &Path, server: Option<&str>) -> PathBuf {
 /// closes, so a holder that died never blocks anyone. A held lock is
 /// [`io::ErrorKind::WouldBlock`]: the start is refused, never made without
 /// the lock.
+///
+/// S280-001: the file is private (0600) whatever the umask, and one left
+/// wider is narrowed through this descriptor before locking, so its inode,
+/// the lock's identity, never changes. Another user who could open it could
+/// otherwise hold the lock and keep this daemon's clients from starting.
 pub(crate) fn lock_attach(path: &Path) -> io::Result<File> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
@@ -501,7 +507,11 @@ pub(crate) fn lock_attach(path: &Path) -> io::Result<File> {
         .create(true)
         .truncate(false)
         .write(true)
+        .mode(0o600)
         .open(path)?;
+    if file.metadata()?.permissions().mode() & 0o777 != 0o600 {
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
     match file.try_lock() {
         Ok(()) => Ok(file),
         Err(TryLockError::WouldBlock) => Err(io::Error::new(
@@ -626,7 +636,10 @@ mod tests {
         attach_lock_path, command_line, forget, is_read, lock_attach, still_waiting_for_attach,
     };
     use std::ffi::OsString;
+    use std::fs;
     use std::io;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    use std::path::Path;
     use std::process::{Command, Stdio};
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
@@ -896,6 +909,26 @@ mod tests {
             attach_lock_path(root, Some("a")),
             attach_lock_path(root, Some("b"))
         );
+    }
+
+    /// S280-001: the attach lock is private whatever the umask, and one left
+    /// wider is narrowed in place: same inode, so the lock keeps its identity.
+    #[test]
+    fn the_attach_lock_is_private_and_narrowed_in_place() {
+        let dir = lock_dir("mode");
+        let fresh = attach_lock_path(&dir, Some("fresh"));
+        drop(lock_attach(&fresh).expect("fresh lock"));
+        let mode = |path: &Path| fs::metadata(path).expect("lock").permissions().mode() & 0o777;
+        assert_eq!(mode(&fresh), 0o600);
+
+        let wide = attach_lock_path(&dir, Some("wide"));
+        fs::write(&wide, b"").expect("an earlier lock");
+        fs::set_permissions(&wide, fs::Permissions::from_mode(0o644)).expect("left wide");
+        let inode = fs::metadata(&wide).expect("lock").ino();
+        drop(lock_attach(&wide).expect("wide lock"));
+        assert_eq!(mode(&wide), 0o600);
+        assert_eq!(fs::metadata(&wide).expect("lock").ino(), inode, "same file");
+        fs::remove_dir_all(dir).expect("clean up");
     }
 
     /// F229: a held lock refuses a start at once (the caller holds the state

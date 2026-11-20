@@ -22,6 +22,12 @@ import { afterEach, describe, expect, it } from "vitest";
 const SCRIPT = resolve(import.meta.dirname, "shared-build.sh");
 const GIB_KIB = 1_048_576;
 const roots: string[] = [];
+/**
+ * Git that reads no user or system config: a global `trace2.eventtarget`
+ * hands every git command to a machine-wide daemon (git-ai), which then
+ * writes into the fixture's .git and races teardown (ENOTEMPTY).
+ */
+const HERMETIC_GIT = { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
 
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -55,7 +61,7 @@ function fixture(): Fixture {
 		mkdirSync(join(worktree, "crates", crate, "src"), { recursive: true });
 		writeFileSync(join(worktree, "crates", crate, "src", file), "\n");
 	}
-	spawnSync("git", ["init", "-q", worktree]);
+	spawnSync("git", ["init", "-q", worktree], { env: { ...process.env, ...HERMETIC_GIT } });
 	const target = join(root, "target");
 	const log = join(root, "cargo.log");
 	const free = join(root, "free-kib");
@@ -105,6 +111,7 @@ function fixture(): Fixture {
 		free,
 		env: {
 			...process.env,
+			...HERMETIC_GIT,
 			PATH: `${bin}:${process.env.PATH}`,
 			PIJ_SHARED_TARGET: target,
 			PIJ_SHARED_BUILD_DF: df,
