@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f7c9-cd22-7732-a0e1-9981ffefe329",
+				"date": "2026-11-20",
+				"head": "db3ae4d29c932a8629499e564e1aa745156c9b28",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:282",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Qualify request-rate-only cost with future polls and HeldSpan rates. Deployment owner must correlate completed-route wall timings with CPU/stack/workload evidence; F231/F222 remains open."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git rev-parse HEAD",
+					"exit_code": 0,
+					"log": "db3ae4d29c932a8629499e564e1aa745156c9b28"
+				},
+				{
+					"command": "git diff fdd6ad1e db3ae4d29c932a8629499e564e1aa745156c9b28",
+					"exit_code": 0,
+					"log": "Nine-file timing delta, +265/-49, read completely from artifact://207; relevant exact-head implementation and wait scopes read directly."
+				},
+				{
+					"command": "nice -n 19 <retained-main-checkout-release-binary>/pij_daemon-cce704aadf9d383c http::route_counts::tests::zz_bench --ignored --nocapture (executed absolute binary path; home prefix omitted for C21)",
+					"exit_code": 0,
+					"log": "running 1 test\nBENCH round 0: #266 path 1.9 ns/req, F231 path 41.7 ns/req, added 39.9 ns/req\nBENCH round 1: #266 path 2.0 ns/req, F231 path 41.8 ns/req, added 39.8 ns/req\nBENCH round 2: #266 path 1.8 ns/req, F231 path 42.1 ns/req, added 40.3 ns/req\ntest http::route_counts::tests::zz_bench_f231_overhead ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1009 filtered out; finished in 0.27s"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES — performance/282, round 1, exact head db3ae4d29c932a8629499e564e1aa745156c9b28.\n\nNo blocking performance finding. Exact HEAD and the nine-file fdd6ad1e..db3ae4d delta inspected. One retained release benchmark replayed at niceness 19; no rebuild, deployment, daemon change or live fleet measurement.\n\nBenchmark: 2,000,000 iterations/path, three rounds; one ignored test passed in 0.27 s. Replay added 39.9 / 39.8 / 40.3 ns/request, consistent with the author's 40.9-42.1 ns. Provenance: retained pre-rebase benchmark binary, base 9ffc5729 plus the F231 implementation, not a new final-head build. Source and original receipts inspected. It measures a warm, successful, ready, held_us=0 path: outer clocks, one Tokio scope poll, split and Outcomes::record. Unchanged route lookup/method selection, HeldSpan and held_us atomic are excluded.\n\n[INFERENCE] At 12-17 responses/s that READY-PATH component is 0.478-0.685 microseconds CPU/s (0.0000478-0.0000685% of one core). This is not the complete fleet overhead. Tokio 1.53.1 stores the scope inline, with thread-local RefCell swap/restore on each poll/drop: no added Box or mutex. Pending polls/cancellations cost extra; each HeldSpan adds two clock reads and a saturating task-local Cell update; held completions add another relaxed atomic. The ledger's request-rate-only cost statement needs this qualification.\n\nExisting wait-hook rates, absent external wakeups: native idle 2 spans/s/pending claim (during-turn backstop 1/15 s), dispatch 40/s/waiter, spawn registration 20/s/waiter, footer and dead-pane waits 4/s/waiter. Notifications can add inbox wakeups. These rates describe existing waits, not new timers. Span/poll overhead was not separately benchmarked. No new loop, timer, launch or hot-path lock; existing outcome/query counts remain, timing adds one or two relaxed atomics. Counter storage grows 128 bytes/template plus 16 unmatched bytes, independent of seats or request history; snapshot adds two loads/slot and two numeric fields/requested route.\n\nWhat it enables after deployment: take paired ping/CPU TIME/spawn readings over a known window at the SAME PID, commit and process-start identity. Per route compute completed count delta, requests/s and delta_active_us/delta_count (mean non-park wall latency); rank delta_active_us/(1e6*elapsed_s) to find high non-park handler occupancy. Inspect held separately and use sufficiently long windows for long-poll completions. Counters update on completion, are nontransactional and wrap: they do not measure arrivals or in-flight work.\n\nactive_us is NOT CPU time: SQLx queue/I/O awaits, lock waits and scheduler delay remain active. A cheap route waiting behind another route's SQL can look expensive; detached/background work is not assigned by this layer. Use rankings to select candidates, then require CPU TIME plus stack/rate agreement or an owner-approved controlled workload comparison before naming a culprit. These counters alone cannot explain the historical 22.5%, or establish causality against the later 17.5% window. F231/F222 diagnosis stays OPEN.\n\nReferences: http/route_counts.rs:79-138,198-260,303-332; the five added lexical wait spans; docs/how/pij-rs-api.md:97-111; locked Tokio task_local.rs scope/poll implementation. Correctness/security verdicts remain with their holders.\n"
+		}
+	]
+}
