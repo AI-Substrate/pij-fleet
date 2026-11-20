@@ -863,7 +863,10 @@
 					"harness_session": "aec42850-138f-4f94-a0c3-23b659683fb8",
 					"instance_key": "295",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #295 merged (50254c01a0dc)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-everyday-platypus",
+					"to": "2026-11-20T16:41:48.947Z",
 					"why": "#295 F241 security"
 				},
 				{
