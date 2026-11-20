@@ -92,7 +92,7 @@ fn try_run_seeded(name: &str, env: &[(&str, &str)], seed: &[(&str, &str)]) -> (P
 }
 
 /// [`try_run_seeded`], with `fakes` (name, body) written over the default
-/// fakes; `@OUT@` in a body is the scratch home.
+/// fakes; `@OUT@` in a body, or in an `env` value, is the scratch home.
 fn try_run_faked(
     name: &str,
     env: &[(&str, &str)],
@@ -197,7 +197,10 @@ fn try_run_faked(
         .env_clear()
         .env("PATH", path)
         .env("HOME", &scratch)
-        .envs(env.iter().copied())
+        .envs(
+            env.iter()
+                .map(|(key, value)| (*key, value.replace("@OUT@", &out.to_string()))),
+        )
         .status()
         .expect("run the recipe");
     (scratch, status.success())
@@ -583,10 +586,10 @@ impl Drop for OldDaemon {
     }
 }
 
-/// `bounce-rs` against a running old daemon with `tmux` faked by `tmux`: the
-/// scratch, and whether it succeeded. `lsof` names the old daemon, then a free
-/// port, then the new daemon.
-fn bounce_with_tmux(old: &OldDaemon, tmux: &str, env: &[(&str, &str)]) -> (PathBuf, bool) {
+/// `bounce-rs` against a running old daemon with `tmux` faked by `tmux` (none
+/// faked: `None`): the scratch, and whether it succeeded. `lsof` names the old
+/// daemon, then a free port, then the new daemon.
+fn bounce_with_tmux(old: &OldDaemon, tmux: Option<&str>, env: &[(&str, &str)]) -> (PathBuf, bool) {
     // `lsof -U` (F245: who holds a refused socket) answers `$FAKE_HELD`, or
     // fails with `$FAKE_LSOF_U_FAILS`, apart from the port sequence.
     let lsof = format!(
@@ -595,7 +598,9 @@ fn bounce_with_tmux(old: &OldDaemon, tmux: &str, env: &[(&str, &str)]) -> (PathB
          case $n in 1) echo {} ;; 2) ;; *) echo 4242 ;; esac; exit 0",
         old.pid
     );
-    try_run_faked("bounce-rs", env, &[], &[("lsof", &lsof), ("tmux", tmux)])
+    let mut fakes = vec![("lsof", lsof.as_str())];
+    fakes.extend(tmux.map(|body| ("tmux", body)));
+    try_run_faked("bounce-rs", env, &[], &fakes)
 }
 
 /// F242: before it signals the old daemon, `bounce-rs` switches `_pij`'s
@@ -617,7 +622,7 @@ fn bounce_rs_switches_destroy_unattached_off_before_the_signal() {
             "kill -0 {} && echo \"$*\" > '@OUT@/tmux.args'; exit 0",
             old.pid
         );
-        let (scratch, ok) = bounce_with_tmux(&old, &tmux, env);
+        let (scratch, ok) = bounce_with_tmux(&old, Some(&tmux), env);
         assert!(ok, "{env:?}: the bounce goes on");
         let args = std::fs::read_to_string(scratch.join("tmux.args"))
             .expect("tmux ran while the old daemon was still running");
@@ -638,7 +643,8 @@ fn bounce_rs_goes_on_when_tmux_has_nothing_to_protect() {
         "no such session: _pij:",
     ] {
         let old = OldDaemon::start();
-        let (scratch, ok) = bounce_with_tmux(&old, &format!("echo '{said}' >&2; exit 1"), &others);
+        let tmux = format!("echo '{said}' >&2; exit 1");
+        let (scratch, ok) = bounce_with_tmux(&old, Some(&tmux), &others);
         assert!(ok, "{said}: the bounce goes on");
         assert!(old.stopped(), "{said}: the old daemon is stopped");
         let _ = std::fs::remove_dir_all(&scratch);
@@ -666,7 +672,7 @@ fn bounce_rs_goes_on_after_a_refusal_only_when_nothing_holds_the_socket() {
         ),
     ] {
         let old = OldDaemon::start();
-        let (scratch, ok) = bounce_with_tmux(&old, refused, &env);
+        let (scratch, ok) = bounce_with_tmux(&old, Some(refused), &env);
         assert_eq!(!ok, refused_bounce, "{env:?}: refused");
         assert_eq!(
             old.stopped(),
@@ -697,7 +703,7 @@ fn bounce_rs_refuses_when_destroy_unattached_cannot_be_switched_off() {
     ] {
         let old = OldDaemon::start();
         let started = std::time::Instant::now();
-        let (scratch, ok) = bounce_with_tmux(&old, tmux, env);
+        let (scratch, ok) = bounce_with_tmux(&old, Some(tmux), env);
         assert!(
             started.elapsed() < pij_testkit::time::scaled(std::time::Duration::from_secs(20)),
             "{tmux}: bounded"
@@ -708,6 +714,83 @@ fn bounce_rs_refuses_when_destroy_unattached_cannot_be_switched_off() {
             !refused,
             "{tmux} {env:?}: the old daemon stopped"
         );
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+}
+
+/// A directory of links to every command in `/usr/bin` and `/bin` but `tmux`,
+/// so a recipe run with it on PATH finds no tmux wherever CI installed one.
+fn system_path_without_tmux() -> PathBuf {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let farm = std::env::temp_dir().join(format!(
+        "pij-stamps-no-tmux-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let _ = std::fs::remove_dir_all(&farm);
+    std::fs::create_dir_all(&farm).expect("the farm");
+    for dir in ["/usr/bin", "/bin"] {
+        for entry in std::fs::read_dir(dir).expect("a system bin").flatten() {
+            let name = entry.file_name();
+            if name != "tmux" && !farm.join(&name).exists() {
+                let _ = std::os::unix::fs::symlink(entry.path(), farm.join(&name));
+            }
+        }
+    }
+    farm
+}
+
+/// F244: no tmux on the caller's PATH (the daemon resolves tmux by the same
+/// PATH search) leaves nothing to switch `_pij`'s destroy-unattached off
+/// with: refused, never skipped. `PIJ_BOUNCE_UNSAFE=1` goes on.
+#[test]
+fn bounce_rs_refuses_when_tmux_is_not_on_path() {
+    let farm = system_path_without_tmux();
+    let path = format!("@OUT@/bin:{}", farm.display());
+    for (env, refused) in [
+        (vec![("PATH", path.as_str())], true),
+        (
+            vec![("PATH", path.as_str()), ("PIJ_BOUNCE_UNSAFE", "1")],
+            false,
+        ),
+    ] {
+        let old = OldDaemon::start();
+        let (scratch, ok) = bounce_with_tmux(&old, None, &env);
+        assert_eq!(!ok, refused, "{env:?}: refused");
+        assert_eq!(old.stopped(), !refused, "{env:?}: the old daemon stopped");
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+    let _ = std::fs::remove_dir_all(&farm);
+}
+
+/// F244 (P293-R2-001): a tmux that outlives its kill -9 (one stuck in the
+/// kernel; here `kill -9` is made a no-op by an exported bash function) holds
+/// the bounce only for the second bounded wait, and refuses it.
+/// `PIJ_BOUNCE_UNSAFE=1` goes on.
+#[test]
+fn bounce_rs_refuses_when_tmux_outlives_its_kill() {
+    let tmux = "echo $$ > '@OUT@/setter.pid'; exec /bin/sleep 30";
+    let deaf = "() { [ \"$1\" = -9 ] && return 0; builtin kill \"$@\"; }";
+    for (env, refused) in [
+        (vec![("BASH_FUNC_kill%%", deaf)], true),
+        (
+            vec![("BASH_FUNC_kill%%", deaf), ("PIJ_BOUNCE_UNSAFE", "1")],
+            false,
+        ),
+    ] {
+        let old = OldDaemon::start();
+        let started = std::time::Instant::now();
+        let (scratch, ok) = bounce_with_tmux(&old, Some(tmux), &env);
+        let took = started.elapsed();
+        if let Ok(pid) = std::fs::read_to_string(scratch.join("setter.pid")) {
+            let _ = Command::new("/bin/kill").args(["-9", pid.trim()]).status();
+        }
+        assert!(
+            took < pij_testkit::time::scaled(std::time::Duration::from_secs(20)),
+            "{env:?}: bounded, {took:?}"
+        );
+        assert_eq!(!ok, refused, "{env:?}: refused");
+        assert_eq!(old.stopped(), !refused, "{env:?}: the old daemon stopped");
         let _ = std::fs::remove_dir_all(&scratch);
     }
 }

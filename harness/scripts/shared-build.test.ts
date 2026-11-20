@@ -5,6 +5,7 @@ import {
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	realpathSync,
 	rmSync,
@@ -88,6 +89,10 @@ function fixture(): Fixture {
 			'[ -n "$WORKER" ] && ( i=0; while [ $i -lt 25 ]; do echo "tick $1" >> "$LOG"; sleep 0.2; i=$((i+1)); done ) </dev/null >/dev/null 2>&1 &',
 			// An orphaned sleep must not hold the test's stderr pipe open.
 			'[ -n "$NAP" ] && sleep "$NAP" </dev/null >/dev/null 2>&1',
+			// An artifact in the profile's deps, as a real build leaves (F243).
+			// `ARTIFACT_AT` puts it elsewhere, relative to the target (a target triple's layout).
+			'[ -n "$ARTIFACT_AT" ] || ARTIFACT_AT=debug/deps/libalpha.rlib',
+			'[ -n "$ARTIFACT" ] && at="$CARGO_TARGET_DIR/$ARTIFACT_AT" && mkdir -p "$(dirname "$at")" && date > "$at"',
 			"wait",
 			'echo "end $1" >> "$LOG"',
 			'[ "$1" = fail ] && exit 7',
@@ -129,6 +134,8 @@ function fixture(): Fixture {
 			NAP: "",
 			WORKER: "",
 			NICENESS: "",
+			ARTIFACT: "",
+			ARTIFACT_AT: "",
 			FAKE_TASKPOLICY: "none",
 		},
 	};
@@ -258,6 +265,115 @@ describe("just shared-build", () => {
 		);
 		expect(statSync(lib).mtimeMs).toBeGreaterThan(1_000_000_000);
 		expect(existsSync(f.lock)).toBe(false);
+	});
+
+	it("touches this tree's crate roots only after another tree, or a build it did not finish, wrote the target (F243)", async () => {
+		const f = fixture();
+		const lib = join(f.worktree, "crates", "alpha", "src", "lib.rs");
+		const touched = async (from: Fixture, args = ["--", "build"]) => {
+			utimesSync(lib, 1_000_000, 1_000_000);
+			await run(from, args, { ARTIFACT: "1" });
+			return statSync(lib).mtimeMs > 1_000_000_000;
+		};
+		// Nothing recorded yet: this tree's sources are made newer than any artifact.
+		expect(await touched(f)).toBe(true);
+		// This tree again, and nothing else built since: cargo's own mtimes hold.
+		expect(await touched(f)).toBe(false);
+		expect(await touched(f)).toBe(false);
+		// Another worktree builds into the same target: this tree's next run touches.
+		const other = join(f.root, "other");
+		mkdirSync(join(other, "crates", "alpha", "src"), { recursive: true });
+		writeFileSync(join(other, "crates", "alpha", "src", "lib.rs"), "\n");
+		spawnSync("git", ["init", "-q", other], { env: { ...process.env, ...HERMETIC_GIT } });
+		await run({ ...f, worktree: other }, ["--", "build"], { ARTIFACT: "1" });
+		expect(await touched(f)).toBe(true);
+		expect(await touched(f)).toBe(false);
+		// A bare cargo build wrote an artifact after the last finished run.
+		const bare = join(f.target, "debug", "deps", "libbare.rlib");
+		writeFileSync(bare, "x");
+		const later = Date.now() / 1000 + 60;
+		utimesSync(bare, later, later);
+		expect(await touched(f)).toBe(true);
+		rmSync(bare);
+		// A failed run records nothing, so its artifacts count as another build.
+		expect(await touched(f, ["--", "fail"])).toBe(false);
+		expect(await touched(f)).toBe(true);
+	});
+
+	it("never writes the stamp through a link or into a directory planted at its path, and then always touches", async () => {
+		const f = fixture();
+		const lib = join(f.worktree, "crates", "alpha", "src", "lib.rs");
+		const elsewhere = join(f.root, "elsewhere");
+		mkdirSync(elsewhere);
+		mkdirSync(f.target);
+		symlinkSync(elsewhere, join(f.target, ".pij-shared-build-tree"));
+		for (let i = 0; i < 2; i++) {
+			utimesSync(lib, 1_000_000, 1_000_000);
+			expect((await run(f, ["--", "build"], { ARTIFACT: "1" })).code).toBe(0);
+			expect(statSync(lib).mtimeMs).toBeGreaterThan(1_000_000_000);
+		}
+		expect(readdirSync(elsewhere)).toEqual([]);
+		expect(lstatSync(join(f.target, ".pij-shared-build-tree")).isSymbolicLink()).toBe(true);
+		expect(
+			readdirSync(f.target).filter((name) => name.startsWith(".pij-shared-build-tree.")),
+		).toEqual([]);
+	});
+
+	it("touches after another tree's batch built and then failed, in any cargo layout (R297-001)", async () => {
+		const f = fixture();
+		const lib = join(f.worktree, "crates", "alpha", "src", "lib.rs");
+		const other = join(f.root, "other");
+		mkdirSync(join(other, "crates", "alpha", "src"), { recursive: true });
+		writeFileSync(join(other, "crates", "alpha", "src", "lib.rs"), "\n");
+		spawnSync("git", ["init", "-q", other], { env: { ...process.env, ...HERMETIC_GIT } });
+		const touchedAfter = async (env: NodeJS.ProcessEnv, from: Fixture, args: string[]) => {
+			await run(f, ["--", "build"], { ARTIFACT: "1" });
+			utimesSync(lib, 1_000_000, 1_000_000);
+			await run(f, ["--", "build"], { ARTIFACT: "1" });
+			expect(statSync(lib).mtimeMs).toBe(1_000_000_000);
+			await run(from, args, { ARTIFACT: "1", ...env });
+			await run(f, ["--", "build"]);
+			return statSync(lib).mtimeMs > 1_000_000_000;
+		};
+		// termite's case: another tree's build succeeds into an explicit
+		// --target layout, then a later command of the same batch fails.
+		const triple = { ARTIFACT_AT: "aarch64-apple-darwin/debug/deps/libalpha.rlib" };
+		expect(
+			await touchedAfter(triple, { ...f, worktree: other }, ["--", "build", "--then", "fail"]),
+		).toBe(true);
+		// The same failed batch, whatever it wrote and wherever (here no deps file).
+		const binary = { ARTIFACT_AT: "debug/pij-rs" };
+		expect(
+			await touchedAfter(binary, { ...f, worktree: other }, ["--", "build", "--then", "fail"]),
+		).toBe(true);
+		// A round-1 stamp (bare `<tree>`) that a failed batch left trusted and
+		// newer than the other tree's artifacts (snail): each tree touches once
+		// on adoption, then trusts its own finished stamp again.
+		await run({ ...f, worktree: other }, ["--", "build", "--then", "fail"], {
+			...triple,
+			ARTIFACT: "1",
+		});
+		const legacy = join(f.target, ".pij-shared-build-tree");
+		writeFileSync(legacy, `${f.worktree}\n`);
+		const ahead = Date.now() / 1000 + 120;
+		utimesSync(legacy, ahead, ahead);
+		utimesSync(lib, 1_000_000, 1_000_000);
+		await run(f, ["--", "build"]);
+		expect(statSync(lib).mtimeMs).toBeGreaterThan(1_000_000_000);
+		utimesSync(lib, 1_000_000, 1_000_000);
+		await run(f, ["--", "build"]);
+		expect(statSync(lib).mtimeMs).toBe(1_000_000_000);
+		// Bare cargo outside any run, into a target triple's deps.
+		utimesSync(lib, 1_000_000, 1_000_000);
+		await run(f, ["--", "build"], { ARTIFACT: "1" });
+		const bare = join(f.target, "aarch64-apple-darwin", "release", "deps", "libbare.rlib");
+		mkdirSync(join(bare, ".."), { recursive: true });
+		writeFileSync(bare, "x");
+		const later = Date.now() / 1000 + 60;
+		utimesSync(bare, later, later);
+		utimesSync(lib, 1_000_000, 1_000_000);
+		await run(f, ["--", "build"]);
+		expect(statSync(lib).mtimeMs).toBeGreaterThan(1_000_000_000);
 	});
 
 	it("names the seat in the owner line from PIJ_SESSION_ID or whoami when PIJ_ID is unset, else the user", async () => {

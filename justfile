@@ -751,14 +751,16 @@ bounce-rs:
       # named as the daemon names it, PIJ_TMUX_SERVER's label (-L) or none, and
       # tmux finds the socket itself ($TMUX's, else the default one), with its
       # own check of the socket directory: never -S (S293-001). tmux by the path
-      # the shell resolves, once. Bounded (P293-001): the call has 1 to 2 s on
-      # the clock (bash's SECONDS), then is killed. No server (no socket, or a
-      # refused one no process holds, F245) or no `_pij` (a first boot: nothing
-      # to protect) and success go on to the signal; a
-      # timeout or any other failure refuses the bounce with the old daemon
-      # untouched, unless PIJ_BOUNCE_UNSAFE=1 says a human checked.
+      # the shell resolves, once, as the daemon resolves it (a PATH search): no
+      # tmux on this PATH is a failure, never a skip (F244). Bounded (P293-001):
+      # the call has 1 to 2 s on the clock (bash's SECONDS), then is killed, and
+      # gets 1 to 2 s more to go (F244); one that outlives that is left. No
+      # server (no socket, or a refused one no process holds, F245) or no `_pij`
+      # (a first boot: nothing to protect) and success go on to the signal; a timeout, a missing tmux or any other failure refuses
+      # the bounce with the old daemon untouched, unless PIJ_BOUNCE_UNSAFE=1
+      # says a human checked.
+      label="${PIJ_TMUX_SERVER:-}"
       if tmux_bin=$(command -v tmux); then
-        label="${PIJ_TMUX_SERVER:-}"
         set_err="${built%/*}/destroy-unattached.err"
         # stdin and stdout from /dev/null: a tmux client hands both to the
         # server, and a frozen server would hold this recipe's own output open.
@@ -772,8 +774,14 @@ bounce-rs:
         while kill -0 "$setter" 2>/dev/null && [ $((SECONDS - since)) -lt 2 ]; do /bin/sleep 0.1; done
         if kill -0 "$setter" 2>/dev/null; then
           kill -9 "$setter" 2>/dev/null || true
-          wait "$setter" 2>/dev/null || true
-          unsafe="tmux did not answer in 2 s"
+          since=$SECONDS
+          while kill -0 "$setter" 2>/dev/null && [ $((SECONDS - since)) -lt 2 ]; do /bin/sleep 0.1; done
+          if kill -0 "$setter" 2>/dev/null; then
+            unsafe="tmux did not answer in 2 s and outlived kill -9 (pid $setter)"
+          else
+            wait "$setter" 2>/dev/null || true
+            unsafe="tmux did not answer in 2 s"
+          fi
         elif wait "$setter"; then
           unsafe=""
         else
@@ -798,14 +806,17 @@ bounce-rs:
             *) unsafe="tmux failed: ${why:-no diagnostic}" ;;
           esac
         fi
-        if [ -n "$unsafe" ]; then
-          manual="$tmux_bin${label:+ -L $label} set-option -t _pij: destroy-unattached off"
-          if [ "${PIJ_BOUNCE_UNSAFE:-}" = 1 ]; then
-            echo "bounce-rs: could not run '$manual' ($unsafe); PIJ_BOUNCE_UNSAFE=1, stopping pid $old anyway" >&2
-          else
-            echo "bounce-rs: could not run '$manual' ($unsafe), so stopping pid $old could crash that tmux server (F237); the daemon was not stopped (the new build is installed). Run it by hand, then just bounce-rs again; or, having checked that server, PIJ_BOUNCE_UNSAFE=1 just bounce-rs" >&2
-            exit 1
-          fi
+      else
+        tmux_bin=tmux
+        unsafe="tmux is not on PATH"
+      fi
+      if [ -n "$unsafe" ]; then
+        manual="$tmux_bin${label:+ -L $label} set-option -t _pij: destroy-unattached off"
+        if [ "${PIJ_BOUNCE_UNSAFE:-}" = 1 ]; then
+          echo "bounce-rs: could not run '$manual' ($unsafe); PIJ_BOUNCE_UNSAFE=1, stopping pid $old anyway" >&2
+        else
+          echo "bounce-rs: could not run '$manual' ($unsafe), so stopping pid $old could crash that tmux server (F237); the daemon was not stopped (the new build is installed). Run it by hand, then just bounce-rs again; or, having checked that server, PIJ_BOUNCE_UNSAFE=1 just bounce-rs" >&2
+          exit 1
         fi
       fi
       kill -INT "$old" 2>/dev/null || true

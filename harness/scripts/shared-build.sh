@@ -348,13 +348,50 @@ if [ -e "$lock/owner" ] || [ -L "$lock/owner" ] ||
 	refuse 2 "could not write the owner line in $lock: something already sits at $lock/owner; no cargo run"
 fi
 
-# The other tree's artifacts carry newer mtimes than this tree's sources; touch
-# them so cargo rebuilds what this worktree actually holds.
-sources=()
-for file in "$worktree"/crates/*/src/lib.rs "$worktree"/crates/*/src/main.rs; do
-	[ -f "$file" ] && sources+=("$file")
-done
-[ ${#sources[@]} -eq 0 ] || touch "${sources[@]}"
+# Cargo takes a crate as fresh when its artifact is newer than its sources.
+# Another tree's artifacts are newer than this tree's sources, so after one
+# this tree's crate roots are touched and cargo rebuilds what this worktree
+# holds. Only then (F243): touching on every run rebuilt every workspace crate
+# every time, about 80 s of each release build.
+#
+# `stamp` holds `running <tree>` from before a run's first cargo command and
+# `finished <tree>` once its last one finished, so only "this tree finished
+# the last run here" skips the touch. A run cut short, or a batch whose later
+# command failed after an earlier one built (R297-001), leaves `running …`
+# behind and the next run touches, whoever it is. A stamp in any other form
+# (round 1's bare `<tree>`, which a failed batch could leave trusted and
+# newer than another tree's artifacts) never matches, so each tree touches
+# once on adoption. Anything that built here outside a run
+# (bare cargo) left an artifact newer than the stamp in some `deps`, in any
+# cargo layout (<profile>/deps, <triple>/<profile>/deps): one find over the
+# target, at any depth, skipping cargo's own bookkeeping (build scripts,
+# incremental caches, fingerprints) and stopping at the first newer entry.
+stamp="$target/.pij-shared-build-tree"
+# The stamp is written to an exclusive temp file (mktemp, in the target) and
+# renamed over the stamp's path. A link or a directory planted at that path
+# is never followed or written into: no stamp is written, so every run
+# touches (S297, sure-mole). The check and the rename are two steps; anyone
+# who can plant one there between them can already write the target itself.
+write_stamp() { # <content>
+	[ -d "$target" ] || return 0
+	if [ -L "$stamp" ] || [ -d "$stamp" ]; then return 0; fi
+	local tmp
+	tmp=$(/usr/bin/mktemp "$target/.pij-shared-build-tree.XXXXXX") || return 0
+	if ! { printf '%s\n' "$1" >"$tmp" && /bin/mv -f "$tmp" "$stamp"; }; then
+		/bin/rm -f "$tmp"
+	fi
+}
+last=""
+[ -f "$stamp" ] && [ ! -L "$stamp" ] && read -r last <"$stamp"
+if [ "$last" != "finished $worktree" ] ||
+	[ -n "$(/usr/bin/find "$target" \( -name build -o -name incremental -o -name .fingerprint \) -prune -o -path '*/deps/*' -newer "$stamp" -print -quit 2>/dev/null)" ]; then
+	sources=()
+	for file in "$worktree"/crates/*/src/lib.rs "$worktree"/crates/*/src/main.rs; do
+		[ -f "$file" ] && sources+=("$file")
+	done
+	[ ${#sources[@]} -eq 0 ] || touch "${sources[@]}"
+fi
+write_stamp "running $worktree"
 
 # Every cargo command runs at niceness max(19, the caller's) (F186, F220): the
 # wrapper adds 19 minus the caller's niceness, so `just test` (already at 19)
@@ -387,6 +424,10 @@ for command in "${commands[@]}"; do
 	eval "set -- $command"
 	run_cargo "$@" || exit $?
 done
+# F243: this tree's run finished here. Written after the last cargo, so every
+# artifact the run built is older than it; a failed run never gets here and
+# leaves `running …`, so the next run, this tree's or another's, touches.
+write_stamp "finished $worktree"
 # F226: the artifact this run built, copied while the lock is still held.
 if [ -n "$copy_artifact" ]; then
 	[ ! -e "$copy_dest" ] && [ ! -L "$copy_dest" ] ||
