@@ -93,6 +93,23 @@ A reading takes each counter on its own while requests go on, so it is not
 transactional (`total` is the sum of the route counts it read), and counters
 wrap at `u64::MAX`. Two readings a known interval apart give requests a
 second per route.
+
+Each route also carries `active_us` and `held_us` (F231): cumulative handler
+time in microseconds, the same keys as the counts, so `active_us / (ok +
+refused)` is that route's cost per call. Time is measured once per request
+around the rest of the stack (two `Instant::now()` and one or two relaxed
+atomic adds; no lock, no allocation). A long-poll's wait is **held**, not
+active: the waits that park a handler (the inbox `wait=true` select,
+governance `wait_dispatch`, the spawn footer and poll waits, revive's wait for a
+dead pane) mark themselves with a span that adds its length to a task-local the
+request scopes, so `held_us` is time parked and `active_us` is wall time less
+that. A 55 s idle inbox answer adds about 55 s to `held_us` and only its own
+passes to `active_us`. SQLite time per statement class is not measured: the
+store runs its ~320 `sqlx::query` call sites directly, with no shared wrapper
+to time them through, so the SQLite cost of a route is inside its
+`active_us`. Both fields are new keys beside `ok`/`refused`; nothing that read
+the earlier shape changes.
+
 `data.registrations:{total,ps,by_key,by_seat}` counts registration
 attempts since start (plan 211, issue #145): `by_key` is per
 `<path>.<mode>.<outcome>` with `{count,ps}`, where `ps` is the ancestry `ps`

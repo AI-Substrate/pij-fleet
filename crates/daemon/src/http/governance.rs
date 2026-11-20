@@ -1906,6 +1906,7 @@ async fn wait_dispatch(
         {
             return Ok(row);
         }
+        let _held = super::route_counts::HeldSpan::start();
         tokio::time::sleep_until(
             (tokio::time::Instant::now() + Duration::from_millis(25)).min(deadline),
         )

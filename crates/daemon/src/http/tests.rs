@@ -3335,21 +3335,24 @@ async fn ping_counts_requests_by_route_and_seats_reads_by_query_shape() {
         .await
         .expect("health envelope");
     let requests = &health["data"]["requests"];
+    let outcomes = |route: &str| {
+        let count = &requests["routes"][route];
+        (count["ok"].as_u64(), count["refused"].as_u64())
+    };
+    assert_eq!(outcomes("GET /v1/seats"), (Some(3), Some(1)), "{requests}");
     assert_eq!(
-        requests["routes"]["GET /v1/seats"],
-        serde_json::json!({"ok": 3, "refused": 1}),
+        outcomes("POST /v1/whoami"),
+        (Some(0), Some(1)),
         "{requests}"
     );
-    assert_eq!(
-        requests["routes"]["POST /v1/whoami"],
-        serde_json::json!({"ok": 0, "refused": 1}),
+    assert_eq!(outcomes("(unmatched)"), (Some(0), Some(1)), "{requests}");
+    // F231: each route's handler time rides beside its counts.
+    let seats = &requests["routes"]["GET /v1/seats"];
+    assert!(
+        seats["active_us"].as_u64().is_some_and(|us| us > 0),
         "{requests}"
     );
-    assert_eq!(
-        requests["routes"]["(unmatched)"],
-        serde_json::json!({"ok": 0, "refused": 1}),
-        "{requests}"
-    );
+    assert_eq!(seats["held_us"], 0, "{requests}");
     assert_eq!(
         requests["seats_queries"],
         serde_json::json!({"scope=local": 2, "(none)": 2}),

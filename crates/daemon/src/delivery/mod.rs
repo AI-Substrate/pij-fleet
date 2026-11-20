@@ -2263,6 +2263,8 @@ impl DeliveryService {
             if native && tokio::time::Instant::now() >= idle_until {
                 return Ok(NativeInboxPage::default());
             }
+            // F231: the wait is held time; each pass of the loop above is active.
+            let _held = crate::http::route_counts::HeldSpan::start();
             tokio::select! {
                 event = subscription.next() => { if event.is_none() { return Ok(NativeInboxPage::default()); } }
                 _ = tokio::time::sleep(Duration::from_millis(500)), if native && during_turn.is_none() => {}
