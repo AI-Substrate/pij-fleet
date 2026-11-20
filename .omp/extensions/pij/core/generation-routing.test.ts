@@ -197,6 +197,49 @@ describe("the explicit rs routing inventory", () => {
 		expect(rendered.text).toContain("idle · active");
 		expect(rendered.text).toContain("native-extension-unavailable");
 	});
+
+	// F236: the human is the one who must run /pij, so the text says so.
+	it("human state shows an unarmed seat's control context and the daemon's human step", () => {
+		const line =
+			"pij-omp's control context is unarmed: it runs reload and new only after a human runs /pij in it. Run /pij in that seat's pane (tmux pane %7), then resend.";
+		const render = (payload: unknown) => {
+			const rendered = renderRsAnswer(findRoute("state", undefined), payload, ["state", "pij-omp"]);
+			if (rendered.kind !== "rendered") throw new Error("state was not rendered");
+			return rendered.text;
+		};
+		const card = { id: "pij-omp", state: "idle", liveness: "active", harness: "omp" };
+		const bare = render(card);
+		expect(render({ ...card, controlContext: "unarmed", controlContextLine: line })).toBe(
+			`${bare}\ncontrol context: unarmed\n${line}`,
+		);
+		expect(render({ ...card, controlContext: "armed" })).toBe(`${bare}\ncontrol context: armed`);
+		expect(bare).not.toContain("control context");
+	});
+
+	it("human send receipts show any receipt warning on its own line", () => {
+		const warning =
+			"pij-omp's control context is unarmed: it runs reload and new only after a human runs /pij in it. Run /pij in that seat's pane (tmux pane %7), then resend.";
+		const render = (payload: unknown) =>
+			renderRsAnswer(findRoute("send", undefined), payload, [
+				"send",
+				"pij-omp",
+				"--command",
+				"reload",
+			]);
+		const receipt = {
+			msg_id: "m-3",
+			outcome: { outcome: "queued", reason: "extension-stream" },
+			at: 1,
+		};
+		expect(render({ ...receipt, warning })).toEqual({
+			kind: "rendered",
+			text: `sent (rs) — msg m-3 — receipt queued — extension-stream\n${warning}`,
+		});
+		expect(render(receipt)).toEqual({
+			kind: "rendered",
+			text: "sent (rs) — msg m-3 — receipt queued — extension-stream",
+		});
+	});
 });
 
 describe("the tail false friend remains refused", () => {
