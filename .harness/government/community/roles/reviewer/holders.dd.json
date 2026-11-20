@@ -2383,6 +2383,16 @@
 					"seat": "pij-proposed-turtle",
 					"to": "2026-11-20T11:50:32.456Z",
 					"why": "#289 C34 ii review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T11:58:57.083Z",
+					"harness": "copilot",
+					"harness_session": "90a5534e-e756-4e35-a316-97e82ee0b65c",
+					"instance_key": "291",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-continued-wombat",
+					"why": "#291 F239 review"
 				}
 			]
 		}
