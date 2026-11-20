@@ -45,6 +45,7 @@
 - [2026-11-19 PR264 visible-screen capture and proof-overlap receipt](2026-11-19-pr264-visible-screen-capture-and-proof.dd.md): When changing folder-trust spawn detection or interpreting PR264 deployed launch and key-pacing evidence (pr264, F215, F216, launches, trust, measurement)
 - [2026-11-21 PR300 deployed counts and F249 footer proof ceiling](2026-11-21-pr300-deployed-f249-proof.dd.md): Before interpreting PR300 after numbers or claiming OMP native model presence proves canary catalog execution (pr300, after-deploy, F249, catalog, proof)
 - [2026-11-21 PR300 launch baseline and literal tripwire limits](2026-11-21-pr300-launch-baseline-tripwire.dd.md): Before interpreting PR300 deployed cost or reviewing resolved launch helpers and literal-only sensors (pr300, launches, baseline, sensor, proof)
+- [2026-11-21 PR301 final allocation fix and bounded lock cost](2026-11-21-pr301-final-allocation-fix-and-bounded.dd.md): review-close (cost, memory, daemon-log, pr301)
 - [2026-11-21 PR301 retained allocation is not display length](2026-11-21-pr301-retained-allocation-is-not-display.dd.md): review-close (cost, memory, daemon-log, pr301)
 - [2026-11-21 Tmux absence proof and launched-read budgets](2026-11-21-tmux-absence-proof-and-launched-read.dd.md): Before changing tmux cleanup, Linux holder census, bounce waits or resuming after PR299 (tmux, F247, F248, bounds, proof, handover)
 <!-- /pij:generated -->
