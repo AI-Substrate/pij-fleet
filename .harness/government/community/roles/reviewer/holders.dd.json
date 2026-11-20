@@ -2219,7 +2219,10 @@
 					"harness_session": "2bd47c10-633e-4813-836f-8a22fb1ae3e7",
 					"instance_key": "279",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "Exact-head review complete at 30040fc8653d05fea322ed48d63ee8e5a08f7ee1; BLOCK verdict recorded in 3423fd09fbc07cac7009cb00b75946a97a273cd9. No review work remains pending for this head.",
+					"released_by": "pij-semantic-hornet",
 					"seat": "pij-semantic-hornet",
+					"to": "2026-11-20T05:11:26.143Z",
 					"why": "#279 F190 correctness review, fresh seat"
 				}
 			]
