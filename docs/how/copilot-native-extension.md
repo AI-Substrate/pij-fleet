@@ -295,6 +295,15 @@ not change the host executable. Ordinary Copilot remains usable. Transient
 `[pij native] unavailable: …` banner was shown and registration then succeeds,
 one `[pij native] reconnected` line follows, so a recovered outage never reads
 as a live one. Nothing is shown when no banner was, nor for a quiet standby.
+The receive loop's outage also ends when a claim reaches the inbox wait
+deadline: the daemon took the claim and held it open, so receiving works, and
+`reconnected` is shown then. An idle seat's claims only ever end there, and
+before this the banner stayed up after the outage was over (viper and seven
+more seats, an hour after the 19 Nov 23:23Z bounce). A successful
+re-registration alone does not end it: a daemon that registers the seat but
+refuses every claim keeps one banner up rather than flapping
+`unavailable`/`reconnected` on each retry. A later failure starts a new outage
+and says so again.
 
 ## Immediate peer-message delivery
 

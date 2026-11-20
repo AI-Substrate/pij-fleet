@@ -3161,7 +3161,7 @@ test("own inbox wait deadlines renew with bounded delay without re-registering o
 	assert.equal(f.trace.at(-1), "unsubscribe");
 });
 
-test("inbox wait renewal does not reset an existing outage episode", async (t) => {
+test("a claim held to its wait deadline ends an outage; the next failure starts a new one", async (t) => {
 	let polls = 0;
 	const { client, requests } = await deadlineHttpFixture(t, ({ url }, response) => {
 		if (url.pathname === "/v1/register")
@@ -3177,11 +3177,12 @@ test("inbox wait renewal does not reset an existing outage episode", async (t) =
 		else response.end(JSON.stringify({ ok: true, v: 2, data: claim.job_id }));
 	});
 	const waits = [];
+	const readyAtWait = [];
 	const f = fixture({
 		client,
 		delay: async (ms) => {
 			waits.push(ms);
-			assert.equal(f.reports.filter(({ kind }) => kind === "connection-ready").length, 0);
+			readyAtWait.push(f.reports.filter(({ kind }) => kind === "connection-ready").length);
 		},
 	});
 	t.after(() => f.bridge.stop());
@@ -3191,8 +3192,56 @@ test("inbox wait renewal does not reset an existing outage episode", async (t) =
 	await run;
 	assert.deepEqual(waits, [250, 500, 1000]);
 	assert.equal(requests.filter(({ url }) => url.pathname === "/v1/register").length, 3);
-	assert.equal(f.reports.filter(({ kind }) => kind === "reconnecting").length, 1);
-	assert.equal(f.reports.filter(({ kind }) => kind === "connection-ready").length, 1);
+	// 401 (outage), wait, re-register, deadline (ready), 401 (a new outage), re-register, claim (ready).
+	assert.deepEqual(readyAtWait, [0, 1, 1]);
+	assert.deepEqual(
+		f.reports
+			.map(({ kind }) => kind)
+			.filter((kind) => kind === "reconnecting" || kind === "connection-ready"),
+		["reconnecting", "connection-ready", "reconnecting", "connection-ready"],
+	);
+});
+
+test("an idle seat's banner clears though its claims only ever reach the wait deadline", async (t) => {
+	let polls = 0;
+	const { client, requests } = await deadlineHttpFixture(t, ({ url }, response) => {
+		if (url.pathname === "/v1/register")
+			response.end(JSON.stringify({ ok: true, v: 2, data: descriptor }));
+		else if (url.pathname === "/v1/inbox") {
+			polls++;
+			if (polls === 1) {
+				response.writeHead(401);
+				response.end(JSON.stringify({ ok: false, v: 2, error: "unauthorized" }));
+			}
+			// Every later claim is left unanswered: an idle seat's long poll.
+		} else if (url.pathname === "/v1/inbox/typing")
+			response.end(JSON.stringify({ ok: true, v: 2, data: observedTyping() }));
+		else response.end(JSON.stringify({ ok: true, v: 2, data: claim.job_id }));
+	});
+	const { logs, report } = recordingReporter();
+	const reports = [];
+	const f = fixture({
+		client,
+		report: (event) => {
+			reports.push(event);
+			report(event);
+		},
+		delay: async () => {
+			if (polls >= 5) f.bridge.stop();
+		},
+	});
+	t.after(() => f.bridge.stop());
+	await f.bridge.run();
+	assert.equal(requests.filter(({ url }) => url.pathname === "/v1/register").length, 2);
+	assert.deepEqual(
+		reports
+			.map(({ kind }) => kind)
+			.filter((kind) => kind === "reconnecting" || kind === "connection-ready"),
+		["reconnecting", "connection-ready"],
+	);
+	assert.equal(logs.length, 2, logs.join("\n"));
+	assert.match(logs[0], /^\[pij native\] unavailable: reconnecting;/);
+	assert.equal(logs[1], "[pij native] reconnected");
 });
 
 test("HTTP non-wait deadlines, body stalls and connection failures remain retryable", async (t) => {

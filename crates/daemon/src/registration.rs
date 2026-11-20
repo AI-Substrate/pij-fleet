@@ -1,4 +1,5 @@
 pub(crate) mod attempts;
+pub(crate) mod refusals;
 
 use std::future::Future;
 use std::io::Read;
@@ -126,6 +127,9 @@ pub(crate) struct RegistrationService {
     native_receivers: Option<Arc<DeliveryService>>,
     /// Attempts by path, mode and outcome, with their ancestry reads (plan 211).
     attempts: Arc<attempts::Attempts>,
+    /// D2: the (seat, code) refusals told as `registration.refused` within
+    /// the last ten minutes, shared by every clone of this service.
+    refusals: Arc<refusals::RefusalWindow>,
     /// F211: launches whose hand-off to their caller is not settled; absent
     /// in services that never bind a spawned seat.
     spawn_waits: Option<Arc<SpawnWaits>>,
@@ -192,6 +196,7 @@ impl RegistrationService {
             registration_lock: Arc::new(tokio::sync::Mutex::new(())),
             native_receivers: None,
             attempts: Arc::default(),
+            refusals: Arc::default(),
             spawn_waits: None,
             returned: None,
             parents: Arc::new(real_parent),
@@ -255,7 +260,8 @@ impl RegistrationService {
     /// Count an attempt the HTTP route refused before the service saw it (an
     /// invalid role, a pane that cannot be observed or no longer holds the
     /// claimed process), so every parsed `/v1/register` counts once (review
-    /// of #148, F001).
+    /// of #148, F001). It is not told as `registration.refused` (D2): these are
+    /// malformed claims, and invalid evidence reaches no registry statement.
     pub(crate) async fn count_early(
         &self,
         path: attempts::Path,
@@ -327,6 +333,67 @@ impl RegistrationService {
             ),
         };
         self.attempts.record(path, mode, outcome, &seat, known, ps);
+        if result.is_err() {
+            self.tell_refusal(path, outcome, &seat, known).await;
+        }
+    }
+
+    /// D2: a refusal of a real seat is told once per (seat, code) per
+    /// [`refusals::WINDOW`]: a `registration.refused` spine event
+    /// `{seat, code, attempt}` and one daemon.log line. An address the refusal
+    /// does not name (`known`) is told only when the attempt counters already
+    /// hold it by name ([`attempts::Attempts::names`]), so made-up names never
+    /// fill the window and no registry statement is made. Never fails the
+    /// registration it describes; nothing decides on it.
+    async fn tell_refusal(
+        &self,
+        path: attempts::Path,
+        outcome: attempts::Outcome,
+        seat: &str,
+        known: bool,
+    ) {
+        if seat.is_empty() {
+            return;
+        }
+        let real = known || self.attempts.names(seat);
+        if !real
+            || !self
+                .refusals
+                .admit(seat, outcome.code(), tokio::time::Instant::now())
+        {
+            return;
+        }
+        eprintln!(
+            "pij-rs registration.refused {seat}: {} on a {} attempt",
+            outcome.code(),
+            path.code()
+        );
+        let at = match system_time_ms() {
+            Ok(at) => at,
+            Err(error) => {
+                eprintln!("pij-rs could not stamp registration.refused for {seat}: {error}");
+                return;
+            }
+        };
+        if let Err(error) = self
+            .event_bus
+            .publish(Event {
+                seq: None,
+                v: wire::EVENT_VERSION,
+                at,
+                kind: "registration.refused".to_string(),
+                seat: Some(SeatId::from(seat.to_string())),
+                payload: serde_json::json!({
+                    "seat": seat,
+                    "code": outcome.code(),
+                    "attempt": path.code(),
+                })
+                .to_string(),
+            })
+            .await
+        {
+            eprintln!("pij-rs could not record registration.refused for {seat}: {error}");
+        }
     }
 
     /// Share delivery's native exclusion and its receiver leases.
@@ -3534,6 +3601,64 @@ mod tests {
         assert!(
             observed.load(std::sync::atomic::Ordering::SeqCst) > 0,
             "the instrument counts an observation when one happens"
+        );
+    }
+
+    /// D2 (auth/lapse): a refused registration of a real seat is told as one
+    /// `registration.refused {seat, code, attempt}` per (seat, code) however
+    /// often it retries inside the window; an address that is no seat is never
+    /// told (the window's ten-minute expiry and bound: `refusals::tests`).
+    #[tokio::test]
+    async fn a_refused_seat_is_told_once_per_code_and_a_made_up_one_never() {
+        let mut old = native_seat("pij-refused-told");
+        old.tombstoned_at = Some(211);
+        old.tombstone_reason = Some("superseded".into());
+        let (service, _registry) = native_service(vec![old.clone()], native_liveness()).await;
+        let tmux = native_tmux();
+        for _ in 0..3 {
+            let refused = service
+                .register_via(
+                    super::attempts::Path::Receive,
+                    native_claim(old.id.as_str()),
+                    Some("another-session".to_string()),
+                    Some(&tmux),
+                )
+                .await;
+            assert!(
+                matches!(refused, Err(RegistrationError::Retired { .. })),
+                "{refused:?}"
+            );
+        }
+        let mut made_up = native_claim("pij-no-such-seat");
+        made_up.pane = None;
+        for _ in 0..2 {
+            assert!(
+                service
+                    .register_via(super::attempts::Path::Shim, made_up.clone(), None, None)
+                    .await
+                    .is_err()
+            );
+        }
+        let told: Vec<serde_json::Value> = service
+            .event_bus
+            .raw_spine()
+            .tail(None, Seq(0))
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.kind == "registration.refused")
+            .map(|event| serde_json::from_str(&event.payload).unwrap())
+            .collect();
+        assert_eq!(
+            told,
+            vec![serde_json::json!({
+                "seat": "pij-refused-told", "code": "retired", "attempt": "receive",
+            })]
+        );
+        assert_eq!(
+            service.attempts().snapshot().total,
+            5,
+            "every attempt still counts"
         );
     }
 

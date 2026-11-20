@@ -290,6 +290,21 @@ impl Attempts {
             by_seat: counts.by_seat.clone(),
         }
     }
+
+    /// Whether `seat` is tallied by its own name: a known attempt (one that
+    /// landed on it, or a refusal that named it) has counted it since the
+    /// daemon started. D2 tells a refusal of an unnamed address only then, so
+    /// a made-up name is never told and no registry statement is made.
+    pub fn names(&self, seat: &str) -> bool {
+        seat != OVERFLOW
+            && seat != "(unnamed)"
+            && self
+                .counts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .by_seat
+                .contains_key(seat)
+    }
 }
 
 #[cfg(test)]

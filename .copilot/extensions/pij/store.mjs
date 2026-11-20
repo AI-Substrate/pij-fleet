@@ -1748,7 +1748,16 @@ export class NativeBridge {
 					retry = INITIAL_RETRY_MS;
 				} catch (error) {
 					if (signal.aborted) return;
-					if (!(error instanceof InboxWaitDeadline)) {
+					if (error instanceof InboxWaitDeadline) {
+						// The daemon took the claim and held it open to the wait deadline:
+						// receiving works, so the outage the banner names is over. An idle
+						// seat's claims only ever end here, so waiting for one to return
+						// left the banner up for good (viper and seven seats, 19 Nov). A
+						// refused claim keeps the episode, so a daemon that registers but
+						// refuses every claim still shows one banner, not one per retry.
+						if (failureEpisode) this.emit("connection-ready");
+						failureEpisode = false;
+					} else {
 						if (!error.retryable) throw error;
 						// A receiver-gap retry is purely about the event log catching up to a
 						// live, busy turn — it carries no registration staleness, so forcing a

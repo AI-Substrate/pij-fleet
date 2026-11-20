@@ -2668,13 +2668,15 @@ async fn retired_registration_refusal_contract(harness: Harness, proof: Option<&
         serde_json::json!({ "code": "E-RS-SEAT-RETIRED", "seat": "pij-retired-154" })
     );
     assert_eq!(registry.get(&old.id).await.unwrap(), Some(old.clone()));
-    assert_eq!(
-        spine
-            .tail(Some(&old.id), pij_core::model::Seq(0))
-            .await
-            .unwrap(),
-        before
-    );
+    // A refusal writes nothing but D2's one `registration.refused` record.
+    let after: Vec<_> = spine
+        .tail(Some(&old.id), pij_core::model::Seq(0))
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind != "registration.refused")
+        .collect();
+    assert_eq!(after, before);
 }
 
 #[tokio::test]
