@@ -2237,6 +2237,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-formidable-parakeet",
 					"why": "#281 F232 correctness review, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T05:55:26.730Z",
+					"harness": "copilot",
+					"harness_session": "2bd47c10-633e-4813-836f-8a22fb1ae3e7",
+					"instance_key": "279",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-semantic-hornet",
+					"why": "#279 R2 delta review; holding ended unexpectedly, hornet is the round-1 reviewer"
 				}
 			]
 		}
