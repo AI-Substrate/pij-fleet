@@ -1,0 +1,68 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f81b-aed5-73f3-8eb2-5a1120ee8ad3",
+				"date": "2026-11-20",
+				"head": "16b75f3b8bc510e8a305ecd7ca49044b3be27b1c",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:284",
+				"writer": "pij-glorious-smelt",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Capture activity state at enqueue time for registration re-publication and retain the in-flight ordering regression.",
+				"Reconcile newer main conflicts and rerun pr-freeze for the repair head."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just copilot-native-test",
+					"exit_code": 0,
+					"log": "pr284-native.log"
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=checkout-target just shared-build -- test --locked -p pij-daemon --lib background::tests -- --nocapture",
+					"exit_code": 0,
+					"log": "pr284-background.log"
+				},
+				{
+					"command": "native guard mutation driver: six operators and repair controls",
+					"exit_code": 0,
+					"log": "pr284-native-mutations.json"
+				},
+				{
+					"command": "Rust guard mutants: seven expected test failures",
+					"exit_code": 101,
+					"log": "pr284-rust-mutations.json; pr284-settlement-mutations.json"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "pr284-checks.log"
+				},
+				{
+					"command": "just pr-freeze 284 (closeout)",
+					"exit_code": 1
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "BLOCK: re-registration can reverse the order of activity publications.\n\nB284-1 (normal-use correctness): .copilot/extensions/pij/store.mjs:2408-2414.\nrepublishActivity queues a closure that reads activityObserved when it executes,\nwhereas observeActivity queues first sends with their state captured at observation.\nWhile an earlier activity request is in flight, a heartbeat re-registration can\nenqueue its re-publish ahead of working -> idle -> working transitions. The exact\nhead sends: idle, working (the newest state, read by the re-publish), working,\nidle (the older queued transition), working. Thus an older idle overwrites a newer\nworking already accepted by the daemon. Serial HTTP requests alone do not prevent\nthis reordering; attempt zero is deliberately exempt from the supersession guard.\nThis violates packet points 4 and 5 and can falsely expose a working seat as idle.\n\nRepair control: capture the registration's state when enqueuing its re-publication.\nChanging only the lazy activityObserved argument to the already-captured state\nmakes the in-flight registration regression green. Preserve that regression with\nthe fix; the normal event first-send order must remain intact.\n\nNon-blocking notes:\n- store.mjs:2424-2425,2465-2471: when working and idle are observed before the first\n  queued working request starts, that stale request captures idle's new retry\n  controller. If it fails, idle waits through its initial 1-second retry delay.\n  A stale-state check before scheduling the wait fixes this separate, bounded\n  failure of the promised immediate supersession. Both small repairs pass all\n  five additional probes and preserve the 15 existing selected activity/F230 tests.\n- Retry wording/cost: one episode is one initial attempt plus at most five retries,\n  with waits 1,2,5,10,30 seconds (48 seconds of waits, excluding HTTP time).\n  There is no unbounded repeat of the 30-second slot. Exhaustion clears activityState:\n  another same-state root event, or another registration, starts a fresh episode.\n  A deterministic unchanged-state probe produces 6 attempts, then another 6.\n  Therefore neither indefinite \"until it lands\" nor \"5 retries per state change\"\n  is the correct lifetime guarantee. The existing 400/422 context fallback can add RPCs.\n\nBatch-path proof:\nThe busy exemption is exactly Copilot AND native_extension_delivery. The added\nscope probe covers both native flags for Copilot, OMP, Pi, Claude and Codex.\nOther busy owners still accumulate, and --fyi remains held without waking.\nThe persisted last_wake_at floor survives service reconstruction; it is per job,\nnot an aggregate per-owner limit. Batch numbers are allocated at cut time, not\nconsumption time: events remain pending in the durable open batch until handoff\nsettles. Reconstructing the service after admission but before settlement retains\nthat batch and admits it only once; following events are neither lost nor duplicated.\n\nValidation:\n- just pr-freeze 284: FINAL when the review began at\n  16b75f3b8bc510e8a305ecd7ca49044b3be27b1c; all latest CI checks passed.\n  At closeout the head is unchanged and those checks still pass, but GitHub\n  reports DIRTY against newer main. Reconcile that conflict and freeze the new\n  head for round 2. This verdict covers only the requested head/base.\n- just copilot-native-test: 366 passed, 3 skipped, 0 failed.\n- PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-daemon --lib background::tests -- --nocapture: 82 passed.\n- Private exact-head snapshot plus three focused Rust probes: 85 passed.\n- Six native guard mutations fail: re-publish, retry, finite cap, retry abort,\n  supersession check and publication serialization.\n- Seven Rust guard mutations fail: busy exemption, harness scope, native flag,\n  interval floor, FYI busy bypass, persist-after-handoff ordering and event\n  retirement. The final mutation actually ran both restart probes and failed\n  both; a prior zero-test invocation was discarded, not counted as a pass.\n- Two additional native race probes fail on the exact head and pass with the\n  repair controls. Receipts: pr284-confirmed-races.log, pr284-native-mutations.json,\n  pr284-rust-mutations.json, pr284-settlement-mutations.json.\n- harness checks: exit 1, completed November 20, 2026 at 19:04:28 (+10), before\n  the reported 19:23 process kill. Six stages passed, including the full Rust\n  fmt/clippy/workspace-test gate, route inventory, smoke, native contracts,\n  SDK contracts and skill structure. Eight dependency/tooling stages failed in\n  this C25 worktree (missing local TS tools; incompatible ambient Biome).\n  Attribution was an advisory warning. No local ship-readiness claim is made.\n\nStatic cost: one new bounded retry loop and timer, not a new poller or process\nlaunch. Batch cutting uses the existing background tick; native Copilot delivery\nis at most one batch per job per min_interval, and totals scale with jobs owned.\nNo live extension reload, daemon deployment or async-shell canary was performed.\n\nHarness feedback: magicWand = make these registration-order, supersession and\nrestart-floor probes permanent contracts. Difficulties = C25's expected absent TS\ndependencies, shared-build waiting, and the need for exact mutation selectors.\nThe private mutation driver now rejects zero-test runs and invokes shared-build\nfrom the actual source root, which its under-lock freshness step requires.\nThe reviewed tracked worktree is unchanged; no dependency tree was installed.\nReviewer/284 holding is retained until merge.\n"
+		}
+	]
+}
