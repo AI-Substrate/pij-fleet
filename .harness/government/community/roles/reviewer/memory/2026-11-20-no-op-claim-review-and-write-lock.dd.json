@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "task-end",
+				"tags": [
+					"queue",
+					"mutation",
+					"harness"
+				],
+				"title": "No-op claim review and write-lock witness"
+			}
+		},
+		{
+			"name": "body",
+			"value": "No-op queue claim review: check the transaction's entire mutation set, not just candidate eligibility. The negative predicate must include every pending or running row of the exact requested kinds. Delayed, key-blocked, and expired-running rows must still take the full path; an id-only candidate UPDATE is scoped by its earlier filtered SELECT under BEGIN IMMEDIATE.\n\nA held second SQLite write lock is a useful no-write witness: baseline empty claims succeed; disabling the early return must fail with database-is-locked, not merely a timeout or compile error. On #285 at 83e0554bb3d413d0215563fb8774f0dfa4f122e0, the disabled guard compiled and produced SQLite code 5 in 2.27 seconds. Successful-job JUnit artifact 14613583362 records all six new cases passing. Full local Rust, route and smoke stages passed; the absent TS dependency surface was graded separately using exact-head CI under C25.\n\nmagicWand: a just review-mutation recipe that archives exact-head source without dependencies, runs selected tests through the canonical shared target, retains positive/negative receipts, and cleans only its named archive.\n\ndifficulties: shared-build waits are not FIFO; three queued proof paths duplicated work until full Rust proof allowed cancellation of the redundant baseline. Missing local TS tools make harness checks red even when the scoped Rust review is fully proven. Keep the environmental gate result explicit; do not edit a read-only tree or symlink node_modules to manufacture a green local gate.\n"
+		}
+	]
+}
