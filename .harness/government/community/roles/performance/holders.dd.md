@@ -58,3 +58,4 @@
 | — | pij-melodic-snail | omp | 01a1f2c1-73ff-70b7-ac14-f3d6ebd63159 | JordansacStudio.localdomain | 294 | 2026-11-20T15:23:00.768Z | 2026-11-20T15:50:31.409Z | pij-steady-otter | pij-far-jackal | #294 F240 exit bound | PR #294 merged (e77f2006cc3f) |
 | — | pij-melodic-snail | omp | 01a1f2c1-73ff-70b7-ac14-f3d6ebd63159 | JordansacStudio.localdomain | 295 | 2026-11-20T16:27:44.969Z | 2026-11-20T16:41:48.947Z | pij-steady-otter | pij-far-jackal | #295 R2 producer lock re-check cost | PR #295 merged (50254c01a0dc) |
 | — | pij-melodic-snail | omp | 01a1f2c1-73ff-70b7-ac14-f3d6ebd63159 | JordansacStudio.localdomain | 297 | 2026-11-20T16:33:49.309Z | 2026-11-20T17:21:47.073Z | pij-steady-otter | pij-far-jackal | #297 shared-build launches + bounce-rs | PR #297 merged (44f313e4954f) |
+| — | pij-melodic-snail | omp | 01a1f2c1-73ff-70b7-ac14-f3d6ebd63159 | JordansacStudio.localdomain | 298 | 2026-11-20T17:51:20.661Z | — | pij-steady-otter | — | #298 lsof launches | — |

@@ -524,6 +524,16 @@
 					"seat": "pij-melodic-snail",
 					"to": "2026-11-20T17:21:47.073Z",
 					"why": "#297 shared-build launches + bounce-rs"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T17:51:20.661Z",
+					"harness": "omp",
+					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
+					"instance_key": "298",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-melodic-snail",
+					"why": "#298 lsof launches"
 				}
 			]
 		}
