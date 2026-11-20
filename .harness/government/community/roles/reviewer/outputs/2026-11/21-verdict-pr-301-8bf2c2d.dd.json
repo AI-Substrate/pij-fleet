@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fb2b-d1dd-7a13-80a6-d0b209b3f3f7",
+				"date": "2026-11-21",
+				"head": "8bf2c2d03862cf07ac8aeefd527a3f6c8cdbcbb3",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:301",
+				"writer": "pij-quiet-moth",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R301-001 P1: concurrent oversized startup can orphan the serving daemon log",
+				"R301-002 P2: repeat identity must preserve distinct output destinations",
+				"R301-003 P2: do not normalize semantic numbers and panic locations away"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 301",
+					"exit_code": 0
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test -p pij-cli --test daemon_log",
+					"exit_code": 0
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- clippy --locked -p pij-cli -p pij-testkit --all-targets -- -D warnings",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer round 1: BLOCK\n\nSubject: pr:301. Head: 8bf2c2d03862cf07ac8aeefd527a3f6c8cdbcbb3.\nBase: 90e659cd16d763cabf7f87bfc6adc3596ff5a934.\nRequest: 01a1fb2b-d1dd-7a13-80a6-d0b209b3f3f7. C34: round 1 of at most 2.\n\n## Blocking findings\n\n### R301-001 - P1 - Concurrent startup can strand the serving daemon's log on an unlinked inode\n\n`crates/cli/src/daemon_log.rs:363-388,395-411`; installation precedes binding at `crates/cli/src/main.rs:1089-1107`.\n\nBoth processes use the same truncating `daemon.log.new` and `daemon.log.1.new` staging names. One process can publish or unlink the other's staging file. The error branch then removes the shared `.new`, while `keep_tail` has already removed `daemon.log`. A process whose rotation failed retains its original descriptor, although that inode was unlinked by its competitor. It can win the port and keep serving with its logs unreachable by pathname. Unique staging names alone would not establish which process owns the current log.\n\n**Native repro, exact-head debug binary copied out under shared-build's lock:** create an 18 MiB managed log in a private state dir; pre-open append stdout/stderr for two children; stop both shell launchers before exec, then release them together into `pij-rs --state-dir <private-state> daemon --offline --bind <same-private-address>`. No production daemon or log is involved.\n\nThe first run reproduced a serving daemon with no `daemon.log` pathname on attempt 2. A second run reproduced on attempt 1: one child alive, `/health` returned 401, the startup/listening banner was on the original inode with link count 0, and the named log held only 260 bytes and no listening banner. That inode also contained `rotation failed, kept writing: No such file or directory (os error 2)`. Thus this is a real startup race, not just a synthetic multiwriter test.\n\n**Required:** establish cross-process ownership before destructive managed rotation, and ensure a losing initializer cannot unlink another initializer's staging/current output or leave the serving process writing an unlinked file. Add a concurrent oversized-start regression. The existing bounce paths drain the old daemon, but do not serialize two new initializers before logger installation/bind.\n\n### R301-002 - P2 - A first stderr occurrence can disappear into stdout\n\n`crates/cli/src/daemon_log.rs:493-502` (shared map at `:201-210`; summary destination at `:238-245`).\n\nThe repeat key includes only the template, not the physical output. With distinct stdout/stderr destinations, a line first written on stdout makes the first identical stderr line a repeat. Its summary is also sent to the original stdout destination. A stderr-only consumer receives neither the error nor its summary.\n\n**Exact-source repro:** construct `Shared` with two different output files, call `line(0, b\"failure\\n\", now)`, `line(1, b\"failure\\n\", now)`, then `finish()`. Observed stdout: the first line plus a one-repeat summary; observed stderr: empty. The extraction retains the product's Shared/Repeats implementation; only timestamp encoding is replaced with a newline-preserving byte stub.\n\n**Required:** scope repeat identity to the output destination. Keep the existing shared-file case coalesced through its single output index.\n\n### R301-003 - P2 - Global digit folding suppresses genuinely different first diagnostics\n\n`crates/cli/src/daemon_log.rs:417-435,493-502`.\n\nDigit runs are erased everywhere, not just in volatile PID/counter fields. Two panic headers from different locations in the same source file become one key, as do otherwise-identical numeric status/error codes. The later location/code is not retained anywhere: the summary contains only `#`.\n\n**Exact-source repro:** admit `thread 'tokio-runtime-worker' panicked at crates/daemon/src/lib.rs:100:20:` and then the same header at `:200:20:` inside one window. The first is `Write`, the second is `Count`; the summary reports `lib.rs:#:#:`. These are synthetic inputs in the normal Rust panic-output format, not a claim that those source lines currently panic. The logger explicitly captures raw panic diagnostics, so distinct panic sites must remain distinguishable.\n\n**Required:** preserve semantic numeric fields and locations. Use exact-line repeat identity for general diagnostics, or restrict normalization to specifically identified volatile fields/classes rather than folding all daemon output.\n\n## Nonblocking notes and scope\n\n- **R301-N1 (P3), N2 sensor:** `crates/testkit/tests/spawn_sites.rs:311-316` accepts any nearby text containing `launch(` or `launch_async(` and `|arg|`, not specifically the resolving helper. An exact-source fixture with `unrelated_launch(\"lsof\", |tool| { Command::new(tool); })` passes. Bare const and parameterized-macro controls fail correctly; the actual production sensor passes. Tighten this accepted shape or describe it as a lexical tripwire, not proof of resolution. This is not a request for a general Rust analyzer.\n- **R301-N2 (P3), crash semantics:** the oversized trim is staged, but not one atomic transaction: `.1` is published before the old current path is removed and the fresh path published. Interruption between those operations can leave duplicate tails or an absent current path until the next launcher opens it. The shift also overwrites the oldest generation before the whole rotation commits. Do not promise crash-exactly-once or rollback; a journal is not requested.\n- The size retention/initial trim is a **destructive POLICY**, not a brake. The dev/inode/non-symlink adoption condition is a **BRAKE**: removing it permits more files to be affected. It is checked at adoption, not before each later rename. Separate security review owns external-path/TOCTOU assessment.\n- Actual private LaunchAgent proof passed: two starts, an 18 MiB original became a 16,777,215-byte tail, fresh log mode 0600, both readiness banners reached the current log, retained tail unchanged across restart. Both append-style daemon-log e2es pass. No installed LaunchAgent or production state was changed.\n- **Cost:** existing two reader threads remain event-driven by log input; per-line template work is O(line bytes), retained map capacity is 256. Socket read timeouts are armed while repeats are counted, using the 60 s window; no per-seat work or new production process launch was added. A normal full rotation performs **four renames and one open**, not three renames: two generation shifts, current-to-.1, then staging-to-current. Startup oversize trim additionally copies a bounded tail. Live fleet before/after measurement remains the performance role's separate proof, not claimed here.\n\n## Validation\n\nAll Cargo commands ran through `just shared-build`, at niceness 19 with four jobs, one build at a time.\n\n- `just pr-freeze 301`: FINAL at the full head above, before review and again before publication; exact-head CI 5/5 passed.\n- `PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test -p pij-cli daemon_log -- --test-threads 4 --then test -p pij-testkit --test spawn_sites`: passed (13 logger unit tests, the matching timestamp e2e, six spawn-site tests).\n- `PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test -p pij-cli --test daemon_log`: passed, both e2es including the 40 MiB initial trim. The executed batch also copied out the tested binary under the build lock.\n- `PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- clippy --locked -p pij-cli -p pij-testkit --all-targets -- -D warnings`: passed on macOS.\n- Scratch exact-source harness: ten controls/reproductions passed. Independent mutations bypassing the adoption inode comparison, changing fresh mode to 0644, and making the repeat-window boundary inclusive each compiled and were caught by their focused test (exit 101).\n- Scratch native LaunchAgent rotation/restart: passed; concurrent oversized startup reproduced R301-001 twice in separate runs, including a 401 health response from the serving daemon in the second run.\n- `harness boot --json`: advisory NOT-READY because node_modules is absent. `harness checks --quick --json`: dependency/tooling-limited (eight stages failed; native contracts and skill checks passed; three heavy stages skipped). No npm install or dependency symlink was attempted under C25. This is not a PR availability finding or a green local full gate.\n- Product worktree stayed clean and detached at the requested head. Every private daemon and scratch LaunchAgent was stopped/removed by its own PID/label.\n\n## Harness handback\n\nmagicWand: encode the synchronized two-initializer startup fixture, and assert both health and the serving process's named log destination. Existing single-start rotation tests cannot detect this failure even when retention counts and modes all pass.\n\nDifficulty: review-worktree quick gates resolve missing local tools to unrelated ambient versions; keep those receipts separate from exact-head CI. Reusable scratch proof files and receipts are retained in the review session; no product files were edited.\n"
+		}
+	]
+}
