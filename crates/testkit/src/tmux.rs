@@ -10,11 +10,13 @@
 //! (F238). Both sit in tmux's one shared directory for this user, so a
 //! fixture that only kills its server leaks two entries per test there.
 //! Every fixture removes both on its way out, panicking or not, once its
-//! server is confirmed gone ([`finish_server`]); a server that outlived its
-//! `kill-server` keeps them, and is reported.
+//! server's own process is confirmed gone ([`finish_server`]); a server that
+//! outlived its `kill-server` keeps them, and is reported.
+//!
+//! F245: "gone" is the server's pid having exited, never a refused
+//! `connect()` or a failing tmux command: on Darwin a live server with a full
+//! listen backlog refuses connections (tmux then says `no server running`).
 
-use std::io;
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -63,58 +65,94 @@ pub fn attach_lock_path(socket: &Path) -> PathBuf {
     socket.with_file_name(format!(".{label}{ATTACH_LOCK_SUFFIX}"))
 }
 
-/// How long a killed server is given to stop answering on its socket.
+/// How long a killed server's process is given to exit.
 pub const SERVER_GONE_WAIT: Duration = Duration::from_secs(2);
 
-/// Whether no server answers on `socket` within [`SERVER_GONE_WAIT`]: a
-/// `connect()` refused, or no socket at all. Polled in-process, so a server
-/// that is still exiting after `kill-server` is waited for, never assumed.
+/// The pid of the server tmux runs for `-L label`, as the server reports it
+/// (`#{pid}`). `None` when it does not answer, which proves nothing about
+/// whether it runs (F245).
 #[must_use]
-pub fn server_gone(socket: &Path) -> bool {
-    let deadline = Instant::now() + SERVER_GONE_WAIT;
-    loop {
-        match UnixStream::connect(socket) {
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::ConnectionRefused | io::ErrorKind::NotFound
-                ) =>
-            {
-                return true;
-            }
-            _ if Instant::now() >= deadline => return false,
-            _ => std::thread::sleep(Duration::from_millis(10)),
+pub fn server_pid(label: &str) -> Option<u32> {
+    let output = Command::new("tmux")
+        .args(["-L", label, "display-message", "-p", "#{pid}"])
+        .env_remove("TMUX")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+}
+
+/// Why a fixture's files were kept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kept {
+    /// The server's process `pid` was still running after
+    /// [`SERVER_GONE_WAIT`]: its `kill-server` failed or it has not exited.
+    Running(u32),
+    /// The server's pid was never learned, or its state could not be read:
+    /// nothing proves it gone, so nothing is removed (fail closed).
+    Unknown,
+}
+
+impl std::fmt::Display for Kept {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Running(pid) => write!(f, "its server (pid {pid}) is still running"),
+            Self::Unknown => f.write_str("nothing proves its server gone"),
         }
     }
 }
 
-/// F241: remove what a fixture's killed server leaves in tmux's shared
+/// Poll whether process `pid` has exited, in-process, for at most
+/// [`SERVER_GONE_WAIT`].
+fn exited(pid: u32) -> Result<(), Kept> {
+    let deadline = Instant::now() + SERVER_GONE_WAIT;
+    loop {
+        match pij_core::program::process_exists(pid) {
+            Some(false) => return Ok(()),
+            None => return Err(Kept::Unknown),
+            Some(true) if Instant::now() >= deadline => return Err(Kept::Running(pid)),
+            Some(true) => std::thread::sleep(Duration::from_millis(10)),
+        }
+    }
+}
+
+/// F241/F245: remove what a fixture's killed server leaves in tmux's shared
 /// directory, its socket and pij's attach lock beside it, but only once the
-/// server is confirmed gone ([`server_gone`]). A server still answering
-/// (its `kill-server` failed, or it has not exited) keeps both: unlinking a
-/// live server's socket would orphan it and make it look gone (R295-002).
+/// server's process `pid` has exited. A server still running, or one whose
+/// pid is unknown while its socket is there, keeps both: unlinking a live
+/// server's socket would orphan it and make it look gone (R295-002). With no
+/// socket (a server never started) there is nothing to orphan.
 ///
 /// # Errors
-/// When a server still answers on `socket`; nothing is removed.
-pub fn remove_server_files(socket: &Path) -> Result<(), String> {
-    if !server_gone(socket) {
-        return Err(format!(
-            "a tmux server still answers on {} after kill-server; its socket and lock are kept",
-            socket.display()
-        ));
+/// [`Kept`] when the server is not proved gone; nothing is removed.
+pub fn remove_server_files(socket: &Path, pid: Option<u32>) -> Result<(), Kept> {
+    match pid {
+        Some(pid) => exited(pid)?,
+        None if std::fs::symlink_metadata(socket).is_ok() => return Err(Kept::Unknown),
+        None => {}
     }
     let _ = std::fs::remove_file(attach_lock_path(socket));
     let _ = std::fs::remove_file(socket);
     Ok(())
 }
 
-/// [`remove_server_files`] for a fixture's `Drop`: a server that outlived its
+/// [`remove_server_files`] for a fixture's `Drop`. A server that outlived its
 /// `kill-server` fails the test, or, when the test is already panicking (a
-/// second panic would abort), is reported on stderr.
-pub fn finish_server(socket: &Path) {
-    if let Err(problem) = remove_server_files(socket) {
-        assert!(std::thread::panicking(), "{problem}");
-        eprintln!("pij-testkit: {problem}");
+/// second panic would abort), is reported on stderr. An unknown pid keeps the
+/// files and is reported: the fixture cannot tell, and the sweep will.
+pub fn finish_server(socket: &Path, pid: Option<u32>) {
+    match remove_server_files(socket, pid) {
+        Ok(()) => {}
+        Err(Kept::Running(pid)) if !std::thread::panicking() => panic!(
+            "{}: its server (pid {pid}) is still running after kill-server; socket and lock kept",
+            socket.display()
+        ),
+        Err(kept) => eprintln!(
+            "pij-testkit: {}: {kept}; socket and lock kept",
+            socket.display()
+        ),
     }
 }
 
@@ -122,6 +160,8 @@ pub fn finish_server(socket: &Path) {
 #[derive(Debug)]
 pub struct PrivateTmux {
     name: String,
+    /// The server's own process, as `new-session -P` reported it (F245).
+    pid: Option<u32>,
 }
 
 impl PrivateTmux {
@@ -147,6 +187,9 @@ impl PrivateTmux {
                 "/dev/null",
                 "new-session",
                 "-d",
+                "-P",
+                "-F",
+                "#{pid}",
                 "-s",
                 "test",
             ])
@@ -159,13 +202,20 @@ impl PrivateTmux {
             "private tmux server {name}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        Self { name }
+        let pid = String::from_utf8_lossy(&output.stdout).trim().parse().ok();
+        Self { name, pid }
     }
 
     /// The `-L` socket name.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The server's own process, as `new-session -P` reported it.
+    #[must_use]
+    pub fn pid(&self) -> Option<u32> {
+        self.pid
     }
 
     /// How many control-mode (`tmux -C`) clients are attached right now.
@@ -196,6 +246,6 @@ impl Drop for PrivateTmux {
         let _ = Command::new("tmux")
             .args(["-L", &self.name, "kill-server"])
             .output();
-        finish_server(&socket_path(&self.name));
+        finish_server(&socket_path(&self.name), self.pid);
     }
 }

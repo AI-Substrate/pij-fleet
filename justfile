@@ -752,8 +752,9 @@ bounce-rs:
       # tmux finds the socket itself ($TMUX's, else the default one), with its
       # own check of the socket directory: never -S (S293-001). tmux by the path
       # the shell resolves, once. Bounded (P293-001): the call has 1 to 2 s on
-      # the clock (bash's SECONDS), then is killed. No server or no `_pij` (a
-      # first boot: nothing to protect) and success go on to the signal; a
+      # the clock (bash's SECONDS), then is killed. No server (no socket, or a
+      # refused one no process holds, F245) or no `_pij` (a first boot: nothing
+      # to protect) and success go on to the signal; a
       # timeout or any other failure refuses the bounce with the old daemon
       # untouched, unless PIJ_BOUNCE_UNSAFE=1 says a human checked.
       if tmux_bin=$(command -v tmux); then
@@ -778,7 +779,22 @@ bounce-rs:
         else
           why=$(<"$set_err")
           case "$why" in
-            "no server running on"* | "error connecting to "*"(No such file or directory)"* | "no such session: _pij"* | "can't find session"*) unsafe="" ;;
+            "no server running on "*)
+              # F245: tmux says this when its connect() is refused, and on
+              # Darwin a live server with a full listen backlog refuses too.
+              # Go on only if no process of ours holds that socket (one lsof;
+              # tmux names the socket as the server bound it).
+              sock="${why#no server running on }"
+              if held=$(lsof -nP -a -U -u "$(id -u)" -F n 2>/dev/null); then
+                case $'\n'"$held"$'\n' in
+                  *$'\n'"n$sock"$'\n'*) unsafe="tmux was refused, but a process holds $sock (a live server with a full backlog)" ;;
+                  *) unsafe="" ;;
+                esac
+              else
+                unsafe="tmux was refused, and what holds $sock could not be read"
+              fi
+              ;;
+            "error connecting to "*"(No such file or directory)"* | "no such session: _pij"* | "can't find session"*) unsafe="" ;;
             *) unsafe="tmux failed: ${why:-no diagnostic}" ;;
           esac
         fi

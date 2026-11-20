@@ -969,30 +969,16 @@ mod tests {
 
     impl Drop for LiveTmuxSession {
         fn drop(&mut self) {
-            let killed = Command::new("tmux")
+            // F245: the teardown's postcondition is the server's own process
+            // gone, never kill-server's status (it can exit non-zero while the
+            // server goes, F27) and never a failing tmux command (a live server
+            // with a full backlog refuses connections on Darwin). Only then do
+            // its socket and the control client's attach lock go (F241).
+            let pid = pij_testkit::tmux::server_pid(&self.server);
+            let _ = Command::new("tmux")
                 .args(["-L", &self.server, "kill-server"])
                 .output();
-            // kill-server exits non-zero when the server is already gone (it can
-            // exit on its own, or between its reply and our read): the teardown's
-            // postcondition is "no server", not kill-server's status (F27).
-            let gone = || {
-                Command::new("tmux")
-                    .args(["-L", &self.server, "list-sessions"])
-                    .output()
-                    .is_ok_and(|output| !output.status.success())
-            };
-            assert!(
-                killed.as_ref().is_ok_and(|output| output.status.success())
-                    || gone()
-                    || std::thread::panicking(),
-                "failed to tear down isolated tmux server {}: {:?}",
-                self.server,
-                killed.map(|output| String::from_utf8_lossy(&output.stderr).into_owned())
-            );
-            // F238/F241: tmux leaves the socket after kill-server, and the
-            // control client's attach lock sits beside it; both go only once
-            // nothing answers on the socket (R295-002).
-            pij_testkit::tmux::finish_server(&pij_testkit::tmux::socket_path(&self.server));
+            pij_testkit::tmux::finish_server(&pij_testkit::tmux::socket_path(&self.server), pid);
         }
     }
 

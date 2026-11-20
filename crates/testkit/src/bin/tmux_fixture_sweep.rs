@@ -26,7 +26,18 @@ fn main() -> ExitCode {
             other => return usage(&format!("unknown argument {other:?}")),
         }
     }
-    let report = match tmux_sweep::sweep(&dir, SystemTime::now(), apply) {
+    let holders = tmux_sweep::Holders::read();
+    match &holders {
+        tmux_sweep::Holders::Known(held) => {
+            println!("holders: {} bound Unix socket files", held.len());
+        }
+        tmux_sweep::Holders::Unknown(why) => {
+            println!(
+                "holders: unknown ({why}); no socket counts as unheld, nothing of them is removed"
+            );
+        }
+    }
+    let report = match tmux_sweep::sweep(&dir, SystemTime::now(), apply, &holders) {
         Ok(report) => report,
         Err(error) => {
             eprintln!("pij-tmux-fixture-sweep: {}: {error}", dir.display());

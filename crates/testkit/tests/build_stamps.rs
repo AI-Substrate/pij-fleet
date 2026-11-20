@@ -587,8 +587,11 @@ impl Drop for OldDaemon {
 /// scratch, and whether it succeeded. `lsof` names the old daemon, then a free
 /// port, then the new daemon.
 fn bounce_with_tmux(old: &OldDaemon, tmux: &str, env: &[(&str, &str)]) -> (PathBuf, bool) {
+    // `lsof -U` (F245: who holds a refused socket) answers `$FAKE_HELD`, or
+    // fails with `$FAKE_LSOF_U_FAILS`, apart from the port sequence.
     let lsof = format!(
-        "n=$(cat '@OUT@/lsof.n' 2>/dev/null || echo 0); n=$((n + 1)); echo $n > '@OUT@/lsof.n'\n\
+        "case \"$*\" in *-U*) [ -n \"$FAKE_LSOF_U_FAILS\" ] && exit 1; printf '%s\\n' \"$FAKE_HELD\"; exit 0 ;; esac\n\
+         n=$(cat '@OUT@/lsof.n' 2>/dev/null || echo 0); n=$((n + 1)); echo $n > '@OUT@/lsof.n'\n\
          case $n in 1) echo {} ;; 2) ;; *) echo 4242 ;; esac; exit 0",
         old.pid
     );
@@ -627,15 +630,49 @@ fn bounce_rs_switches_destroy_unattached_off_before_the_signal() {
 /// F242: no server, or no `_pij` (a first boot), has nothing to protect.
 #[test]
 fn bounce_rs_goes_on_when_tmux_has_nothing_to_protect() {
+    // A refused socket no process holds (`lsof -U` names others only).
+    let others = [("FAKE_HELD", "n/tmp/tmux-1/someone-else")];
     for said in [
         "no server running on /tmp/tmux-1/default",
         "error connecting to /tmp/tmux-1/default (No such file or directory)",
         "no such session: _pij:",
     ] {
         let old = OldDaemon::start();
-        let (scratch, ok) = bounce_with_tmux(&old, &format!("echo '{said}' >&2; exit 1"), &[]);
+        let (scratch, ok) = bounce_with_tmux(&old, &format!("echo '{said}' >&2; exit 1"), &others);
         assert!(ok, "{said}: the bounce goes on");
         assert!(old.stopped(), "{said}: the old daemon is stopped");
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+}
+
+/// F245: tmux says `no server running on <socket>` when its connect is
+/// refused, and on Darwin a live server with a full listen backlog refuses
+/// too. The bounce goes on only when no process holds that socket; one that
+/// is held, or holders that cannot be read, refuse it, unless
+/// `PIJ_BOUNCE_UNSAFE=1`.
+#[test]
+fn bounce_rs_goes_on_after_a_refusal_only_when_nothing_holds_the_socket() {
+    let refused = "echo 'no server running on /tmp/tmux-1/default' >&2; exit 1";
+    for (env, refused_bounce) in [
+        (vec![("FAKE_HELD", "n/tmp/tmux-1/default")], true),
+        (vec![("FAKE_LSOF_U_FAILS", "1")], true),
+        (vec![("FAKE_HELD", "n/tmp/tmux-1/default-old")], false),
+        (
+            vec![
+                ("FAKE_HELD", "n/tmp/tmux-1/default"),
+                ("PIJ_BOUNCE_UNSAFE", "1"),
+            ],
+            false,
+        ),
+    ] {
+        let old = OldDaemon::start();
+        let (scratch, ok) = bounce_with_tmux(&old, refused, &env);
+        assert_eq!(!ok, refused_bounce, "{env:?}: refused");
+        assert_eq!(
+            old.stopped(),
+            !refused_bounce,
+            "{env:?}: the old daemon stopped"
+        );
         let _ = std::fs::remove_dir_all(&scratch);
     }
 }

@@ -12,8 +12,12 @@
 //!   fixtures mint (never `default`, never any other name);
 //! - it is what a fixture leaves: a socket, or a regular lock file with one
 //!   link, owned by this user;
-//! - no server answers on the socket (`connect()` is refused), and for a lock
-//!   none answers on its paired socket either;
+//! - no process holds the socket (F245): its file is not the one bound by
+//!   any listening socket of this user's processes ([`Holders`]), and for a
+//!   lock, no process holds its paired socket either. A refused `connect()`
+//!   proves nothing: on Darwin a live server whose listen backlog is full
+//!   refuses connections too, so no connect is made at all. When the holders
+//!   cannot be read, nothing is removed (fail closed);
 //! - for a lock, no process holds it (`flock` is taken without waiting, and
 //!   the file is unlinked while it is held). An attach that opened the file
 //!   before the unlink would lock the orphaned inode; the attach itself checks
@@ -25,14 +29,16 @@
 //! left, so a fixture between creating its lock and starting its server is
 //! never touched.
 //!
-//! The probes are in-process (`connect`, `flock`, `lstat`): no process is
-//! launched per entry.
+//! Per entry the probes are in-process (`lstat`, a set lookup, `flock`). The
+//! holders are read once per sweep: on Linux from `/proc/net/unix`
+//! in-process, on macOS by one bounded `/usr/sbin/lsof` (no safe in-process
+//! API for another process's sockets exists without `unsafe`, which the
+//! workspace forbids).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, OpenOptions, TryLockError};
 use std::io;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
@@ -121,12 +127,13 @@ impl Report {
     }
 }
 
-/// Sweep `dir`, judging age against `now`. Without `apply` nothing is
-/// removed (a lock judged stale is taken and released, never unlinked).
+/// Sweep `dir`, judging age against `now` and holding against `holders`.
+/// Without `apply` nothing is removed (a lock judged stale is taken and
+/// released, never unlinked).
 ///
 /// # Errors
 /// When `dir` cannot be read.
-pub fn sweep(dir: &Path, now: SystemTime, apply: bool) -> io::Result<Report> {
+pub fn sweep(dir: &Path, now: SystemTime, apply: bool, holders: &Holders) -> io::Result<Report> {
     let mut report = Report::default();
     let mut names: Vec<String> = Vec::new();
     for entry in fs::read_dir(dir)? {
@@ -154,8 +161,8 @@ pub fn sweep(dir: &Path, now: SystemTime, apply: bool) -> io::Result<Report> {
         };
         let path = dir.join(&name);
         let verdict = match kind {
-            Kind::Socket => socket_verdict(&path, now),
-            Kind::Lock => lock_verdict(&path, &dir.join(&label), now, apply),
+            Kind::Socket => socket_verdict(&path, now, holders),
+            Kind::Lock => lock_verdict(&path, &dir.join(&label), now, apply, holders),
         };
         if apply && verdict == Verdict::Stale && kind == Kind::Socket {
             match fs::remove_file(&path) {
@@ -186,16 +193,123 @@ fn ours(meta: &fs::Metadata) -> bool {
     meta.uid() == pij_core::program::real_uid()
 }
 
-/// Does a server answer on `socket`? `None` when the probe cannot tell.
-fn answers(socket: &Path) -> Option<bool> {
-    match UnixStream::connect(socket) {
-        Ok(_) => Some(true),
-        Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => Some(false),
-        Err(_) => None,
+/// How long the macOS holder read (`lsof`) may take before it counts as
+/// unknown.
+pub const HOLDERS_WAIT: Duration = Duration::from_secs(10);
+
+/// F245: which socket files some process holds, as the evidence that a
+/// server is there. A refused `connect()` is no such evidence (a live server
+/// with a full listen backlog refuses on Darwin).
+#[derive(Debug)]
+pub enum Holders {
+    /// The (device, inode) of the file at every path a listening Unix socket
+    /// of this user's processes is bound to.
+    Known(HashSet<(u64, u64)>),
+    /// The holders could not be read: nothing counts as unheld, so nothing
+    /// is removed (fail closed). Why.
+    Unknown(String),
+}
+
+impl Holders {
+    /// Read the holders: `/proc/net/unix` on Linux, in-process; on macOS one
+    /// `/usr/sbin/lsof -nP -a -U -u <uid> -F n`, given [`HOLDERS_WAIT`].
+    #[must_use]
+    pub fn read() -> Self {
+        match bound_paths() {
+            Ok(paths) => Self::Known(
+                paths
+                    .iter()
+                    .filter_map(|path| fs::metadata(path).ok())
+                    .map(|meta| (meta.dev(), meta.ino()))
+                    .collect(),
+            ),
+            Err(why) => Self::Unknown(why),
+        }
+    }
+
+    /// Does a process hold the socket file `meta` describes? `None` when the
+    /// holders are unknown.
+    #[must_use]
+    pub fn hold(&self, meta: &fs::Metadata) -> Option<bool> {
+        match self {
+            Self::Known(held) => Some(held.contains(&(meta.dev(), meta.ino()))),
+            Self::Unknown(_) => None,
+        }
     }
 }
 
-fn socket_verdict(path: &Path, now: SystemTime) -> Verdict {
+/// Every path a Unix socket is bound to, from `/proc/net/unix` (its last
+/// column; abstract names, `@…`, are no file).
+#[cfg(target_os = "linux")]
+fn bound_paths() -> Result<Vec<String>, String> {
+    let table =
+        fs::read_to_string("/proc/net/unix").map_err(|error| format!("/proc/net/unix: {error}"))?;
+    Ok(table
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_whitespace().nth(7))
+        .filter(|path| path.starts_with('/'))
+        .map(str::to_string)
+        .collect())
+}
+
+/// Every path a Unix socket of this user's processes is bound to, from one
+/// bounded `lsof`. A non-zero exit, a timeout or unreadable output is
+/// unknown.
+#[cfg(not(target_os = "linux"))]
+fn bound_paths() -> Result<Vec<String>, String> {
+    lsof_paths(Path::new("/usr/sbin/lsof"), HOLDERS_WAIT)
+}
+
+/// [`bound_paths`] from the `lsof` at `program`, given `wait`.
+#[cfg(not(target_os = "linux"))]
+fn lsof_paths(program: &Path, wait: Duration) -> Result<Vec<String>, String> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::Instant;
+    let mut child = Command::new(program)
+        .args(["-nP", "-a", "-U", "-u"])
+        .arg(pij_core::program::real_uid().to_string())
+        .args(["-F", "n"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("{}: {error}", program.display()))?;
+    let mut stdout = child.stdout.take().ok_or("lsof: no stdout")?;
+    let reader = std::thread::spawn(move || {
+        let mut text = String::new();
+        stdout.read_to_string(&mut text).map(|_| text)
+    });
+    let deadline = Instant::now() + wait;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("lsof did not finish in {wait:?}"));
+            }
+            Err(error) => return Err(format!("lsof: {error}")),
+        }
+    };
+    let text = reader
+        .join()
+        .map_err(|_| "lsof: the reader panicked".to_string())?
+        .map_err(|error| format!("lsof: {error}"))?;
+    if !status.success() {
+        return Err(format!("lsof exited {status}"));
+    }
+    Ok(text
+        .lines()
+        .filter_map(|line| line.strip_prefix('n'))
+        .filter(|path| path.starts_with('/'))
+        .map(str::to_string)
+        .collect())
+}
+
+fn socket_verdict(path: &Path, now: SystemTime, holders: &Holders) -> Verdict {
     let Ok(meta) = fs::symlink_metadata(path) else {
         return Verdict::Unsure;
     };
@@ -205,18 +319,24 @@ fn socket_verdict(path: &Path, now: SystemTime) -> Verdict {
     if young(&meta, now) {
         return Verdict::Young;
     }
-    match answers(path) {
+    match holders.hold(&meta) {
         Some(true) => Verdict::Live,
         Some(false) => Verdict::Stale,
         None => Verdict::Unsure,
     }
 }
 
-/// A lock is stale when its socket is gone or answers no one, and nobody
-/// holds it. With `apply` it is unlinked while this holds it; an attach that
+/// A lock is stale when its socket is gone or no process holds it, and
+/// nobody holds the lock. With `apply` it is unlinked while this holds it; an attach that
 /// opened it earlier finds the path no longer names it once it locks, and
 /// starts again on the new file (R295-001).
-fn lock_verdict(path: &Path, socket: &Path, now: SystemTime, apply: bool) -> Verdict {
+fn lock_verdict(
+    path: &Path,
+    socket: &Path,
+    now: SystemTime,
+    apply: bool,
+    holders: &Holders,
+) -> Verdict {
     let Ok(meta) = fs::symlink_metadata(path) else {
         return Verdict::Unsure;
     };
@@ -226,8 +346,8 @@ fn lock_verdict(path: &Path, socket: &Path, now: SystemTime, apply: bool) -> Ver
     if young(&meta, now) {
         return Verdict::Young;
     }
-    if fs::symlink_metadata(socket).is_ok() {
-        match answers(socket) {
+    if let Ok(socket) = fs::symlink_metadata(socket) {
+        match holders.hold(&socket) {
             Some(false) => {}
             Some(true) => return Verdict::Live,
             None => return Verdict::Unsure,
@@ -253,7 +373,7 @@ fn lock_verdict(path: &Path, socket: &Path, now: SystemTime, apply: bool) -> Ver
 
 #[cfg(test)]
 mod tests {
-    use super::{Kind, Report, Verdict, sweep};
+    use super::{Holders, Kind, Report, Verdict, sweep};
     use crate::tmux::ATTACH_LOCK_SUFFIX;
     use std::fs::{self, File};
     use std::os::unix::net::UnixListener;
@@ -298,9 +418,9 @@ mod tests {
         fs::symlink_metadata(path).is_ok()
     }
 
-    /// Only a fixture-prefixed socket no server answers on, and a lock whose
-    /// socket answers no one and that nobody holds, are removed; a dry run
-    /// removes nothing.
+    /// Only a fixture-prefixed socket no process holds, and a lock whose
+    /// socket no process holds and that nobody has locked, are removed; a dry
+    /// run removes nothing.
     #[test]
     fn the_sweep_removes_only_stale_fixture_entries() {
         let dir = scratch();
@@ -318,7 +438,9 @@ mod tests {
         let foreign_lock = lock(&dir, "f237-mine-1");
         let later = SystemTime::now() + Duration::from_secs(24 * 3600);
 
-        let dry = sweep(&dir, later, false).expect("dry run");
+        let holders = Holders::read();
+        assert!(matches!(holders, Holders::Known(_)), "{holders:?}");
+        let dry = sweep(&dir, later, false, &holders).expect("dry run");
         assert_eq!(dry.removed, 0);
         for path in [&stale_lock, &orphan_lock] {
             assert!(
@@ -329,7 +451,7 @@ mod tests {
         }
         assert!(exists(&dir.join("pij-test-1-stale")));
 
-        let swept = sweep(&dir, later, true).expect("sweep");
+        let swept = sweep(&dir, later, true, &holders).expect("sweep");
         assert_eq!(verdict(&swept, "pij-test-1-stale"), Some(Verdict::Stale));
         assert_eq!(
             verdict(&swept, ".pij-rs-orphan-1.pij-control-attach.lock"),
@@ -373,7 +495,7 @@ mod tests {
         let dir = scratch();
         stale_socket(&dir, "pij-test-2-young");
         let young_lock = lock(&dir, "pij-test-2-young");
-        let swept = sweep(&dir, SystemTime::now(), true).expect("sweep");
+        let swept = sweep(&dir, SystemTime::now(), true, &Holders::read()).expect("sweep");
         assert!(
             swept
                 .entries
@@ -388,6 +510,85 @@ mod tests {
                 .counts()
                 .get(&("pij-test-", Kind::Lock, Verdict::Young)),
             Some(&1)
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// F245: on Darwin a live listener whose backlog is full refuses
+    /// connections (newt's receipt). A refusal is not evidence: the sweep
+    /// asks which process holds the socket, so the listener and its lock are
+    /// spared.
+    #[test]
+    fn a_live_listener_that_refuses_connections_is_spared() {
+        let dir = scratch();
+        let path = dir.join("pij-rs-full-1");
+        let _listener = UnixListener::bind(&path).expect("bind");
+        let full_lock = lock(&dir, "pij-rs-full-1");
+        let mut accepted_never = Vec::new();
+        if cfg!(target_os = "macos") {
+            let refused = loop {
+                match std::os::unix::net::UnixStream::connect(&path) {
+                    Ok(stream) => accepted_never.push(stream),
+                    Err(error) => break error,
+                }
+                assert!(accepted_never.len() < 100_000, "the backlog never filled");
+            };
+            assert_eq!(
+                refused.kind(),
+                std::io::ErrorKind::ConnectionRefused,
+                "a live listener refuses once its backlog is full"
+            );
+        }
+        let later = SystemTime::now() + Duration::from_secs(24 * 3600);
+        let swept = sweep(&dir, later, true, &Holders::read()).expect("sweep");
+        assert_eq!(verdict(&swept, "pij-rs-full-1"), Some(Verdict::Live));
+        assert_eq!(
+            verdict(&swept, ".pij-rs-full-1.pij-control-attach.lock"),
+            Some(Verdict::Live)
+        );
+        assert_eq!(swept.removed, 0);
+        assert!(exists(&path) && exists(&full_lock));
+        drop(accepted_never);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// F245, fail closed: with the holders unknown, no socket, and no lock
+    /// whose socket is there, counts as unheld.
+    #[test]
+    fn nothing_is_removed_when_the_holders_are_unknown() {
+        let dir = scratch();
+        stale_socket(&dir, "pij-test-3-unknown");
+        let unknown_lock = lock(&dir, "pij-test-3-unknown");
+        let later = SystemTime::now() + Duration::from_secs(24 * 3600);
+        let unknown = Holders::Unknown("lsof failed".to_string());
+        let swept = sweep(&dir, later, true, &unknown).expect("sweep");
+        assert_eq!(verdict(&swept, "pij-test-3-unknown"), Some(Verdict::Unsure));
+        assert_eq!(
+            verdict(&swept, ".pij-test-3-unknown.pij-control-attach.lock"),
+            Some(Verdict::Unsure)
+        );
+        assert_eq!(swept.removed, 0);
+        assert!(exists(&dir.join("pij-test-3-unknown")) && exists(&unknown_lock));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// F245: the macOS holder read is bounded: an `lsof` that never finishes
+    /// is killed at the wait and counts as unknown.
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn a_holder_read_that_hangs_is_unknown_within_its_wait() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch();
+        let fake = dir.join("lsof");
+        fs::write(&fake, "#!/bin/sh\nexec /bin/sleep 30\n").expect("fake lsof");
+        fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).expect("chmod");
+        let started = std::time::Instant::now();
+        let read = super::lsof_paths(&fake, Duration::from_millis(300));
+        assert!(read.is_err(), "{read:?}");
+        assert!(
+            started.elapsed() < crate::time::scaled(Duration::from_secs(3)),
+            "bounded: {:?}",
+            started.elapsed()
         );
         let _ = fs::remove_dir_all(&dir);
     }

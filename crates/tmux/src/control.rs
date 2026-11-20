@@ -1021,7 +1021,8 @@ mod tests {
         let path = dir.join(".pij-test-r295-1.pij-control-attach.lock");
         let late = open_lock(&path).expect("the attach opened the lock");
         let later = SystemTime::now() + Duration::from_secs(24 * 3600);
-        let swept = pij_testkit::tmux_sweep::sweep(&dir, later, true).expect("the sweep");
+        let holders = pij_testkit::tmux_sweep::Holders::read();
+        let swept = pij_testkit::tmux_sweep::sweep(&dir, later, true, &holders).expect("the sweep");
         assert_eq!(swept.removed, 1, "the sweep unlinked the stale lock");
         let newcomer = lock_attach(&path).expect("the newcomer locks the replacement");
         assert!(

@@ -67,20 +67,38 @@ fn the_testkit_names_are_the_product_s() {
     }
 }
 
-/// R295-002: a server still answering after its `kill-server` (failed, or
-/// here never run) keeps its socket and lock, so it is never orphaned or made
-/// to look gone, and the fixture's teardown reports it.
+/// R295-002, F245: a server whose process is still running after its
+/// `kill-server` (failed, or here never run) keeps its socket and lock, so it
+/// is never orphaned or made to look gone, and the fixture's teardown reports
+/// it within its bound. An unknown pid keeps them too (fail closed).
 #[test]
 fn a_server_that_outlives_its_kill_keeps_its_socket_and_is_reported() {
     let tmux = PrivateTmux::start();
+    let pid = tmux.pid().expect("new-session -P names the server's pid");
     let (socket, lock) = attached(&tmux);
+    let started = std::time::Instant::now();
+    assert_eq!(
+        pij_testkit::tmux::remove_server_files(&socket, Some(pid)),
+        Err(pij_testkit::tmux::Kept::Running(pid)),
+        "a running server is reported"
+    );
+    let took = started.elapsed();
     assert!(
-        pij_testkit::tmux::remove_server_files(&socket).is_err(),
-        "a live server is reported"
+        took >= pij_testkit::tmux::SERVER_GONE_WAIT
+            && took
+                < pij_testkit::tmux::SERVER_GONE_WAIT
+                    + pij_testkit::time::scaled(std::time::Duration::from_secs(1)),
+        "bounded: {took:?}"
+    );
+    assert_eq!(
+        pij_testkit::tmux::remove_server_files(&socket, None),
+        Err(pij_testkit::tmux::Kept::Unknown),
+        "an unknown pid proves nothing"
     );
     assert!(!gone(&socket), "a live server keeps its socket");
     assert!(!gone(&lock), "and its lock");
-    let reported = std::panic::catch_unwind(|| pij_testkit::tmux::finish_server(&socket));
+    let reported =
+        std::panic::catch_unwind(|| pij_testkit::tmux::finish_server(&socket, Some(pid)));
     assert!(reported.is_err(), "the teardown fails the test");
     assert!(!gone(&socket) && !gone(&lock), "still kept");
     drop(tmux);
