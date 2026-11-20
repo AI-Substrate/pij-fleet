@@ -308,6 +308,11 @@ pub struct SeatStatus {
     pub version: u32,
     /// The latest main-chain call's model.
     pub model: Fact<String>,
+    /// F249: a model switch is recorded after that call, so the next call uses
+    /// another model and [`Self::model`] no longer names what the session runs.
+    /// Absent on the wire when false, so older cards read as no switch.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub model_switch_pending: bool,
     /// Tokens the next call will re-read: the last call's input plus cache read and write.
     pub context_used_tokens: Fact<u64>,
     /// The model's context window.
@@ -344,6 +349,7 @@ impl SeatStatus {
         Self {
             version: SEAT_STATUS_VERSION,
             model: Fact::Unknown,
+            model_switch_pending: false,
             context_used_tokens: Fact::Unknown,
             context_window_tokens: Fact::Unknown,
             last_call_at_ms: Fact::Unknown,

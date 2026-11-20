@@ -463,7 +463,14 @@ fn resolve_omp_model_with(
         let id = required_string(source, "id")?;
         let selector = required_string(source, "selector")?;
         let name = source.get("name").and_then(Value::as_str);
-        if observed != selector && observed != id && name != Some(observed) {
+        // F249: OMP's footer drops a leading `Claude ` from the name it shows
+        // (`modelDisplayName`), so `Claude Opus 5.5 (1M)` reads `Opus 5.5 (1M)`.
+        let shown = name.map(|name| name.strip_prefix("Claude ").unwrap_or(name));
+        if observed != selector
+            && observed != id
+            && name != Some(observed)
+            && shown != Some(observed)
+        {
             continue;
         }
         if let Some(previous) = matched
@@ -825,6 +832,32 @@ mod tests {
             .expect("unique observed catalog identity");
             assert_eq!(actual, expected);
         }
+    }
+
+    /// F249: the live 18.16 footer shows `Opus 5.5 (1M)` for the catalog's
+    /// `Claude Opus 5.5 (1M)`; the sibling `Claude Opus 5.5 1M (Copilot)` and a
+    /// name that merely contains it stay apart.
+    #[test]
+    fn omp_footer_names_resolve_with_the_claude_prefix_dropped() {
+        let inventory = r#"{"models":[{"provider":"github-copilot","id":"claude-opus-5.5","selector":"github-copilot/claude-opus-5.5","name":"Claude Opus 5.5 1M (Copilot)"},{"provider":"github-copilot","id":"claude-opus-5.5-1m","selector":"github-copilot/claude-opus-5.5-1m","name":"Claude Opus 5.5 (1M)"},{"provider":"github-copilot","id":"gpt-5.4-mini","selector":"github-copilot/gpt-5.4-mini","name":"GPT-5.4 mini"}]}"#;
+        let resolve = |observed: &str| {
+            super::resolve_omp_model_with(observed, || {
+                Ok(CommandResult {
+                    status: Some(0),
+                    stdout: inventory.to_string(),
+                    stderr: String::new(),
+                })
+            })
+        };
+        for (observed, expected) in [
+            ("Opus 5.5 (1M)", "github-copilot/claude-opus-5.5-1m"),
+            ("Opus 5.5 1M (Copilot)", "github-copilot/claude-opus-5.5"),
+            ("Claude Opus 5.5 (1M)", "github-copilot/claude-opus-5.5-1m"),
+            ("GPT-5.4 mini", "github-copilot/gpt-5.4-mini"),
+        ] {
+            assert_eq!(resolve(observed).expect(observed), expected);
+        }
+        assert!(resolve("Opus 5.5").is_err(), "no name is a prefix match");
     }
 
     #[test]

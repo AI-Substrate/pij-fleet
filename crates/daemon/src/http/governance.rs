@@ -1914,6 +1914,61 @@ async fn wait_dispatch(
     }
 }
 
+/// F249: the runtime model as the seat's native session record gives it, or
+/// `None` when the record can't be trusted to name it.
+///
+/// The record names the model of the session's latest main-chain call. It is
+/// stale in two ways, and both answer `None` here, which leaves the canary on
+/// the pane footer:
+/// - **a switch since that call** (`model_switch_pending`): the next call runs
+///   the new model, which the record has not used yet;
+/// - **a fresh session before its first call**: no transcript or no call yet,
+///   so the model is unknown.
+///
+/// Only a `native` fact counts. The record is read for the session the seat is
+/// bound to (`harness_session`), the same id the observation was just checked
+/// against, so it can't answer for another session. One incremental read of
+/// that transcript per canary; no launch.
+async fn native_runtime_model(state: &AppState, seat: &SeatDescriptor) -> Option<String> {
+    let session = seat.harness_session.clone().filter(|id| !id.is_empty())?;
+    let target = pij_core::session_status::SessionTarget {
+        seat: seat.id.clone(),
+        harness: seat.harness,
+        session,
+    };
+    native_model_of(state.services.session_status.status(&target).await)
+}
+
+/// The canary's runtime model and where it came from: the native record's
+/// when it has one, else the footer's. An empty name is no name.
+fn runtime_model<'a>(
+    native: Option<&'a str>,
+    footer: Option<&'a str>,
+) -> Option<(&'a str, &'static str)> {
+    let non_empty = |model: &&str| !model.is_empty();
+    native
+        .filter(non_empty)
+        .map(|model| (model, "native"))
+        .or_else(|| footer.filter(non_empty).map(|model| (model, "footer")))
+}
+
+/// [`native_runtime_model`]'s rule over one session-status read.
+fn native_model_of(read: Result<pij_core::session_status::SessionStatusReply>) -> Option<String> {
+    use pij_core::session_status::{Basis, Fact, SessionStatusReply};
+    match read {
+        Ok(SessionStatusReply::Status(status)) if !status.model_switch_pending => {
+            match status.model {
+                Fact::Known {
+                    value,
+                    basis: Basis::Native,
+                } if !value.is_empty() => Some(value),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 async fn canary_command(
     service: &GovernanceService,
     state: &AppState,
@@ -2022,12 +2077,6 @@ async fn canary_command(
         .harnesses
         .observe_bind(&current, current.harness_session.clone(), None)
         .await?;
-    let observed_model = observation
-        .facts
-        .model
-        .as_deref()
-        .filter(|model| !model.is_empty())
-        .ok_or_else(|| refuse("runtime model could not be observed"))?;
     if observation.facts.pane.as_deref() != Some(pane)
         || observation.facts.native_session_id != current.harness_session
     {
@@ -2035,6 +2084,12 @@ async fn canary_command(
             "fresh harness observation does not match the challenged session/pane",
         ));
     }
+    // F249: the session's own record names the runtime model; the pane's
+    // footer is the fallback for a session it can't (yet) answer for.
+    let native = native_runtime_model(state, &current).await;
+    let (observed_model, observed_from) =
+        runtime_model(native.as_deref(), observation.facts.model.as_deref())
+            .ok_or_else(|| refuse("runtime model could not be observed"))?;
     if !crate::registration::requested_model_matches(
         call.value("expect-model"),
         Some(observed_model),
@@ -2047,6 +2102,7 @@ async fn canary_command(
         let mut error = refuse("fresh runtime model disagrees with the expected/bound model");
         error.details["observed_model"] = json!(observed_model);
         error.details["expected_model"] = json!(call.value("expect-model"));
+        error.details["observed_from"] = json!(observed_from);
         return Err(error);
     }
     let _guard = service.mutation.lock().await;
@@ -2194,6 +2250,61 @@ mod tests {
     use pij_testkit::FreshStore;
 
     use super::*;
+
+    /// F249: the canary takes the runtime model from the session's own record
+    /// only when it is native and no switch is pending since its last call; a
+    /// fresh session (no transcript), an unknown or derived model, an empty one
+    /// or a failed read leaves it to the footer.
+    #[test]
+    fn the_native_record_names_the_runtime_model_only_when_it_is_current() {
+        // The record wins over the footer; the footer answers only without it.
+        assert_eq!(
+            runtime_model(Some("github-copilot/claude-opus-5.5-1m"), Some("other")),
+            Some(("github-copilot/claude-opus-5.5-1m", "native"))
+        );
+        assert_eq!(
+            runtime_model(None, Some("github-copilot/gpt-5.4-mini")),
+            Some(("github-copilot/gpt-5.4-mini", "footer"))
+        );
+        assert_eq!(runtime_model(Some(""), Some("f")), Some(("f", "footer")));
+        assert_eq!(runtime_model(None, Some("")), None);
+        assert_eq!(runtime_model(None, None), None);
+        use pij_core::session_status::{Fact, SeatStatus, SessionStatusReply};
+        let status = |model: Fact<String>, switching: bool| {
+            Ok(SessionStatusReply::Status(SeatStatus {
+                model,
+                model_switch_pending: switching,
+                ..SeatStatus::unknown()
+            }))
+        };
+        let opus = || "github-copilot/claude-opus-5.5-1m".to_string();
+        assert_eq!(
+            native_model_of(status(Fact::native(opus()), false)),
+            Some(opus())
+        );
+        for (read, why) in [
+            (status(Fact::native(opus()), true), "a switch is pending"),
+            (status(Fact::Unknown, false), "no call yet"),
+            (status(Fact::derived(opus()), false), "not native"),
+            (status(Fact::native(String::new()), false), "empty"),
+            (
+                Ok(SessionStatusReply::NotFound {
+                    detail: "UNI-STATUS-TRANSCRIPT-NOT-FOUND".into(),
+                }),
+                "a fresh session",
+            ),
+            (Ok(SessionStatusReply::Unsupported), "unsupported"),
+            (
+                Err(PijError::Adapter {
+                    adapter: "fixture".into(),
+                    message: "read failed".into(),
+                }),
+                "a failed read",
+            ),
+        ] {
+            assert_eq!(native_model_of(read), None, "{why}");
+        }
+    }
 
     fn routes() -> Value {
         serde_json::from_str(include_str!(
