@@ -123,5 +123,6 @@
 - [2026-11-19 Spawn handoffs require independent bind and answer facts](2026-11-19-spawn-handoffs-require-independent-bind.dd.md): When reviewing spawn cancellation, stale timeout snapshots, restart recovery, or exactly-once handoff claims. (review, spawn, cancellation, recovery, settlement, c34)
 - [2026-11-19 Trust recovery guidance needs fixture coverage](2026-11-19-trust-recovery-guidance-needs-fixture.dd.md): phase-end (review, trust-prompts)
 - [2026-11-20 Bounded waits are not bounded worker lifetimes](2026-11-20-bounded-waits-are-not-bounded-worker.dd.md): When reviewing bounded polling, synchronous adapters, abandoned reads, or zero-launch claims. (review, polling, deadlines, cost, c34)
+- [2026-11-20 Receiver visibility needs positive and durable evidence](2026-11-20-receiver-visibility-needs-positive-and.dd.md): Before reviewing Copilot inbox readiness, receiver-lease recovery, or bounded refusal telemetry (review, copilot, receiver, restart, dedupe)
 - [2026-11-20 Returning holders need a queue trigger as well as liveness](2026-11-20-returning-holders-need-a-queue-trigger.dd.md): When reviewing revive/registration hooks, role-queue drains, or their asynchronous regression tests. (review, role-send, registration, proof, f193)
 <!-- /pij:generated -->

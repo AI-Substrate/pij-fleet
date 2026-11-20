@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Before reviewing Copilot inbox readiness, receiver-lease recovery, or bounded refusal telemetry",
+				"tags": [
+					"review",
+					"copilot",
+					"receiver",
+					"restart",
+					"dedupe"
+				],
+				"title": "Receiver visibility needs positive and durable evidence"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Complements the credential-rotation note: this is about receive readiness and audit visibility, not retry authorization.\n\nA client's own inbox timeout proves no response, not a healthy receiver. In #277, a delayed 401 reproduced false reconnected. Require a positive daemon answer; the 55-second native empty-page answer fits under the 65-second client timeout. Check mail arriving at 54.9 seconds in ordinary and during-turn claims, and keep non-native waits unchanged.\n\nAn edge set tested only within one process misses restart duplicates. Reopen the same SQLite store after a recorded lapse: there must remain one outstanding lapse, followed by one renewal. Restore via seat-and-kind-indexed LIMIT 1 reads, not spine.tail; the two edge kinds require two seeks per live native seat, once at boot.\n\nA bounded dedupe window must not silently hide an unseen key when full. Exercise a distinct seat after 512 pairs. Oldest-entry eviction preserves visibility; equal timestamps need an explicit secondary key if deterministic order matters.\n\nEvidence: #277 final reviewer output 2026-11/20-verdict-pr-277-5e700ab.dd.json; original late-401, SQLite-restart and capacity regressions all passed after repair.\n"
+		}
+	]
+}
