@@ -4246,8 +4246,11 @@ fn render_state(envelope: &Envelope<pij_daemon::http::StateCard>, json: bool) ->
             }
             (None, None) => {}
         }
-        // F199: an OMP/Pi seat that cannot run reload/new yet, and the human
-        // step; an armed one says so in the card's own fields.
+        // F199, F236: an OMP/Pi seat's control context and, when unarmed, the
+        // daemon's human step; the same lines as the routed `pij state`.
+        if let Some(context) = &card.control_context {
+            let _ = write!(output, "\ncontrol context: {context}");
+        }
         if let Some(line) = &card.control_context_line {
             let _ = write!(output, "\n{line}");
         }
@@ -5779,6 +5782,52 @@ PEC notice";
         for line in lines {
             assert!(human.contains(&format!("\n{line}")), "{human}");
         }
+    }
+
+    /// F199, F236: an unarmed seat's control context and the daemon's human
+    /// step are printed; an armed one says only its context; a seat that has
+    /// not reported prints neither.
+    #[test]
+    fn state_prints_the_control_context_and_the_human_step() {
+        let line = "pij-omp's control context is unarmed: it runs reload and new only after a \
+                    human runs /pij in it. Run /pij in that seat's pane (tmux pane %7), then \
+                    resend.";
+        let human = |extra: serde_json::Value| {
+            let mut card = serde_json::json!({
+                "id": "pij-omp", "state": "idle", "liveness": "active", "cwd": "/abs/tree",
+                "harness": "omp", "unsupported": [], "held": [],
+            });
+            card.as_object_mut()
+                .expect("card")
+                .extend(extra.as_object().expect("fields").clone());
+            let card: pij_daemon::http::StateCard =
+                serde_json::from_value(card).expect("typed daemon state");
+            super::render_state(&pij_core::model::Envelope::ok("pij state", card), false)
+        };
+        // The first line is the card itself; the human lines follow it.
+        let lines = |extra: serde_json::Value| -> Vec<String> {
+            human(extra).lines().skip(1).map(str::to_string).collect()
+        };
+        let bare = lines(serde_json::json!({}));
+        let unarmed = lines(serde_json::json!({
+            "controlContext": "unarmed", "controlContextLine": line,
+        }));
+        assert_eq!(
+            unarmed,
+            [
+                bare.clone(),
+                vec!["control context: unarmed".into(), line.into()]
+            ]
+            .concat()
+        );
+        assert_eq!(
+            lines(serde_json::json!({"controlContext": "armed"})),
+            [bare.clone(), vec!["control context: armed".into()]].concat()
+        );
+        assert!(
+            !bare.iter().any(|row| row.contains("control context")),
+            "{bare:?}"
+        );
     }
 
     /// Plan 169 R5: a HydraFusion seat's model is its router; the reported
