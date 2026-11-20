@@ -629,7 +629,10 @@
 					"harness_session": "ab0de01e-2464-4a79-84b0-c0c098b74cbe",
 					"instance_key": "277",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #277 merged (85c38c1c19cf)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-extended-rooster",
+					"to": "2026-11-20T02:38:07.296Z",
 					"why": "#277 auth/lapse security verdict, fresh seat"
 				}
 			]
