@@ -1,0 +1,84 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f68b-e51f-7b02-a4df-56671c2d76aa",
+				"date": "2026-11-20",
+				"head": "f9d2bc77871f3d7cee6418d6d18c86c26d5e40f4",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:277",
+				"writer": "pij-calm-badger",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R277-1: require positive receive readiness; a client timeout can precede a refusal",
+				"R277-2: preserve told lapse/renewal edges across daemon restart",
+				"R277-3: full refusal window must not silence another seats first refusal"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 277",
+					"exit_code": 0
+				},
+				{
+					"command": "just copilot-native-test",
+					"exit_code": 0,
+					"log": "copilot-native-test.log"
+				},
+				{
+					"command": "isolated delayed-refusal regression, reviewed head",
+					"exit_code": 1,
+					"log": "banner-late-refusal.log"
+				},
+				{
+					"command": "same delayed-refusal regression, base store.mjs",
+					"exit_code": 0,
+					"log": "banner-base-control.log"
+				},
+				{
+					"command": "D1 repeat-lapse mutation, original edge test",
+					"exit_code": 101,
+					"log": "rust-d1-mutation.log"
+				},
+				{
+					"command": "D1 SQLite restart regression",
+					"exit_code": 101,
+					"log": "rust-d1-restart.log"
+				},
+				{
+					"command": "D2 no-dedupe mutation, original window test",
+					"exit_code": 101,
+					"log": "d2-mutation.log"
+				},
+				{
+					"command": "D2 distinct-seat capacity regression",
+					"exit_code": 101,
+					"log": "d2-capacity.log"
+				},
+				{
+					"command": "harness checks --json",
+					"exit_code": 1,
+					"log": "harness-checks.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# BLOCK — PR 277, round 1\n\nReviewed head `f9d2bc77871f3d7cee6418d6d18c86c26d5e40f4` against\n`df01a3380f8958856f5636fc1f98f4acbe1f7b8e`, read-only.\n\n## R277-1 — P2: a local timeout is not positive receive-path readiness\n\n`.copilot/extensions/pij/store.mjs:1751-1759`\n\nThe new catch branch reports `connection-ready` and clears `failureEpisode`\nwhen the client times out without receiving response headers. That does not\nestablish that the daemon accepted the claim: `#requestEnvelope:760-762`\nclassifies any unanswered inbox fetch reaching its own deadline this way.\nA delayed refusal or a request stalled before admission takes the same branch\nas a healthy idle long poll.\n\nIndependent regression: the fixture refuses the first claim with 401,\nsuccessfully re-registers, and delays the next 401 until after the client\ndeadline. This head reports reconnected despite no accepted claim. The test\nfails with ready count 1 instead of 0, and passes against the base's store.mjs.\nRequire positive receive-path evidence before ending the outage; don't use\nsilence at a client deadline as an acknowledgement.\n\nThe deviation from clearing on re-registration/heartbeat correctly avoids\nthe reported flap when registration succeeds but claims fail; it does not\nmake the replacement timeout signal sound. Successful empty/message claims\nstill end the episode normally. A returned 4xx, a response-body stall, a\nforeign timeout, or external cancellation does not take this new branch;\nthe failure is specifically a refusal not received before the local timer.\n\n## R277-2 — P2: the D1 edge history is lost on daemon restart\n\n`crates/daemon/src/delivery/mod.rs:366` and `:462-465`\n\n`native_lapsed` is rebuilt empty, rather than restored or reconciled with the\nlast durable edge. For a seat already told lapsed, a daemon restart followed\nby no heartbeat emits another lapsed event after boot grace. If its heartbeat\narrives during grace instead, the set's remove returns false, so the durable\npre-restart lapse gets no matching renewal. This violates the packet's\ncross-restart edge requirement; neither outcome is covered by the new\nsingle-service-lifetime test.\n\nIndependent SQLite regression: heartbeat, advance 61 seconds, reconcile\ntwice, destroy the services, reopen the same store, advance 61 seconds, and\nreconcile twice. The durable edge sequence is `lapsed`, `lapsed` (the second\nhas `renewed_at:null`), not one outstanding lapse; assertion 2 versus 1 fails.\n\nKeep the told state consistent with durable edges across restart, without\nemitting a renewal for a seat with no preceding lapse. The existing retain\ndoes prune tombstoned/non-native seats during ordinary reconciliation.\n\n## R277-3 — P2: saturation hides unrelated seats' first refusals\n\n`crates/daemon/src/registration/refusals.rs:44`\n\nOnce 512 distinct unexpired `(seat, code)` pairs are present, the vacant-entry\ncapacity branch returns false for every other pair. A different seat's first\nrefusal therefore produces neither its event nor its log line, potentially\nfor almost ten minutes, solely because other seats filled the window.\nThe existing capacity test expects that suppression. Eight static outcome\ncodes reach the window, so the keys need not come from malformed claimants\nto exhaust its capacity.\n\nPreserve bounded memory and non-blocking registration, but don't let other\nseats consume all first-refusal visibility. Make the chosen overflow behavior\nexplicit and cover a different seat's first refusal at capacity. The window\nis a **noise brake**, not registration policy: removing it only tells more.\n\n## Security\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| — | — | Reviewed changes | — | No security vulnerabilities found under C33 | — |\n\nThe scoped security review found no new secrets/credential-text disclosure or\nlog injection. The D2 issue above is a requested visibility/correctness\ninvariant, not a new account trust-boundary vulnerability. Codes and attempt\npaths come from static enums. The digest escapes the whole seat argument\nwith `shell_word` and adds advice only; no restart is automatically run.\n\nThe three relaxed tests still exclude any added non-refusal events. Existing\nindependent roster/queue, original-row, and refused-probe absence assertions\nare retained. Invalid-evidence/no-registry behavior was not loosened by the\nchanged event assertions. No warning/model_http 401 trigger was added.\n\n## Cost\n\nNo new process launch, timer or poll. The banner adds no request; D1 rides\nexisting receiver reconciliation/heartbeat and writes only on edges; D2 scans\nat most 512 in-memory pairs per refusal and adds no registry lookup. D1 adds\nanother live-seat retain scan alongside the existing lease pruning. The\nrestart command remains text.\n\nLive deployed-fleet counters rose from 615 to 619 during the observation\ninterval, all four launches attributed to registration host verification.\n`just spawn-rate --seconds 20` reported 367.9 machine-wide launches/s and no\nobserved daemon-child launches. These are background fleet receipts, not an\nundeployed-PR before/after comparison.\n\n## Validation\n\n- `just pr-freeze 277`: PASS/FINAL at the full reviewed head; the five GitHub\n  checks are SUCCESS.\n- `just copilot-native-test`: PASS, 363 passed / 3 skipped / 0 failed.\n- Isolated `nice -n 19 node --test --test-name-pattern='review: a late refused claim' .copilot/extensions/pij/store.test.mjs`:\n  FAIL on head (exit 1, one false ready), PASS with base store.mjs (exit 0).\n- `harness boot --json`: advisory NOT-READY, missing worktree node_modules.\n- `harness checks --json`: exit 1. PASS: Rust workspace fmt/clippy/tests,\n  smoke, route-inventory, native contracts, Copilot SDK contract, pij-skill.\n  FAIL: local-paths, omp-config, ddocs, coverage, typecheck, lockfile, lint,\n  test. The review worktree has no local JS dependencies: tsx/vitest are\n  unavailable and the ambient Biome cannot parse this repo's Biome 2 config.\n  Attribution also warns because tsx is unavailable. These are local proof\n  limitations, not additional code findings or a claimed green full gate.\n\n- D2 isolated exact-source window (only the injected clock type changed from\n  Tokio Instant to std Instant; no async/runtime behavior is involved):\n  `just shared-build -- test --offline --manifest-path d2-proof/Cargo.toml -- --skip review_saturation_must_not_hide_another_seats_first_refusal`:\n  PASS, both existing tests.\n- D2 mutation:\n  `PIJ_REVIEW_D2_MUTATION=no-dedupe just shared-build -- test --offline --manifest-path d2-proof/Cargo.toml a_pair_is_told_once_per_window_and_again_after_it`:\n  CAUGHT, exit 101; the original assertion rejects the duplicate at five\n  seconds when the occupied-entry branch is mutated to admit it.\n- D2 independent saturation regression:\n  `just shared-build -- test --offline --manifest-path d2-proof/Cargo.toml review_saturation_must_not_hide_another_seats_first_refusal`:\n  FAIL, exit 101; a different seat's first refusal is suppressed at capacity.\n\n- D1 isolated archive of the exact reviewed sources, with a default-off\n  runtime mutation selector on the existing insert-result guard:\n  `just shared-build -- test --locked -p pij-daemon --lib a_receiver_lapse_and_its_renewal_are_each_told_once -- --nocapture`:\n  PASS, the original edge test.\n- D1 mutation:\n  `PIJ_REVIEW_MUTATION=repeat-lapse just shared-build -- test --locked -p pij-daemon --lib a_receiver_lapse_and_its_renewal_are_each_told_once -- --nocapture`:\n  CAUGHT, exit 101; three lapsed events instead of one.\n- D1 independent restart regression:\n  `just shared-build -- test --locked -p pij-daemon --lib review_restart_must_not_repeat_a_receiver_lapse -- --nocapture`:\n  FAIL, exit 101; two lapsed events instead of one across service restart\n  against the same real SQLite store.\n\nAll Cargo proof used the canonical shared target lock, niceness 19,\n`CARGO_INCREMENTAL=0`, and four jobs. Mutations and added regressions are\nconfined to an isolated session archive. The review worktree remains clean.\n\n## Harness feedback\n\nmagicWand: a dependency-free exact-head review command for isolated\nrestart/delayed-response fixtures.\n\ndifficulties: this read-only checkout has no node_modules; TS/Vitest proof\nstays CI-only under C25. The full harness gate serializes focused Rust proof\nbehind its workspace build. Capturing observations in the session workspace\nreturns unconfigured because it has no .harness; the checkout was not changed.\n\nConcrete encoding: promote the supplied SQLite-restart, delayed-401 and\ncapacity-isolation regressions into the normal suites. They are preserved as\nreview-session artifacts; no product files were changed.\n"
+		}
+	]
+}
