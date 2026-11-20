@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f652-3cc7-7ba3-99c7-57ec9ad4c910",
+				"date": "2026-11-20",
+				"head": "10c8debed4cd5a46080ca96fda669f8c69140298",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44642525540/job/135982311068",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:275",
+				"writer": "pij-remarkable-horse",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C34 follow-up R275-FU-01: measure or bound whole abandoned-worker lifecycle; REPLY_TIMEOUT covers reply reception, not mutex/write/reap time. No final-round security block."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 275",
+					"exit_code": 0,
+					"log": "FINAL at 10c8debed4cd5a46080ca96fda669f8c69140298; latest checks successful; clean detached worktree"
+				},
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci",
+					"exit_code": 0,
+					"log": "CI run 44642525540 successful Rust job 135982311068; upload-log-selected JUnit artifact 14587688651 matches exact head: 2599 tests, zero failures/errors/skips"
+				},
+				{
+					"command": "harness boot --json",
+					"exit_code": 0,
+					"log": "Advisory ready=false: read-only review worktree has no node_modules; no local build, mutation, dependency installation or full local ship gate"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Round-2 FINAL security verdict: PASS WITH NOTES\nPR: #275\nHead: 10c8debed4cd5a46080ca96fda669f8c69140298\nReviewed delta only: fffd75d08efb49e5875ad0efbebcf901c455bb73..10c8debed4cd5a46080ca96fda669f8c69140298.\nThe round-1 security verdict stands for unchanged code. C33 and C34 apply.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No security vulnerabilities found in the delta | - |\n\nAbandoned results cannot authorize or answer another revive. The blocking worker owns only a tmux Arc and a runtime handle and performs one pane read; it has no registry, caller, or revive continuation (crates/daemon/src/http/revive.rs:380-393). Dropping the timed-out join handle detaches that work, and its eventual result is discarded. Existing per-command reply channels, serialized enqueue/write, one FIFO waiter consumed per reply, and original-client Arc checks preserve command/replacement correlation (crates/tmux/src/control.rs:245-281,383-419,444-462).\n\nThe wait's read is launch-free: list_panes_without_launch calls query_live, which passes may_start=false and does not start/restart a control client (crates/tmux/src/lib.rs:1114-1119; crates/tmux/src/control.rs:233-294). Caveat: abandoned reads are not absolutely free of all shared-state effects. Existing error cleanup may clear control-client bookkeeping and kill/reap the original control client (control.rs:171-175,289-291,383-393). This does not mutate seat registry or authority; the original-client Arc check prevents an old timeout from clearing a replacement client.\n\nUnknown/error/deadline ends the helper; it does not supply launch permission. Lock acquisition, registry reread, and the fresh authoritative observation follow independently (revive.rs:342-393,441-450). The unchanged locked decision refuses active processes and present or unverifiable panes (revive.rs:585-593); evidence requirements and parent/prime override authorization remain unchanged (revive.rs:404-415,594-639). Policy versus brake remains unchanged: the process observation decides eligibility; a present or unverifiable pane vetoes launch.\n\nC34 follow-up R275-FU-01, not a final-round block: blocking-read lifecycle. Reads are sequential, with at most one unfinished worker per abandoned helper invocation, but the three-second REPLY_TIMEOUT bounds reply reception only. It does NOT bound mutex acquisition, pipe writes, or child reaping (control.rs:245-291,397-410,171-175). Started spawn_blocking tasks are non-cancellable; repeated timed-out invocations can therefore accumulate workers under a stuck control path. Do not describe the entire worker lifetime as unconditionally bounded by three seconds. No normal-use security-impacting regression was identified under C33. Whole-worker admission/cancellation hardening belongs to follow-up; the correctness reviewer has been notified. Timing-witness scaling is separately a C34 follow-up owned by correctness.\n\nComplete added-line inspection found no new secrets, C21 private-home paths, or credential/home-read operations. This is a delta review, not a history-wide secret scan.\n\nEvidence:\n- The pinned head's sole parent is the round-1 head. Clean detached worktree; five changed files, +135/-29.\n- just pr-freeze 275: FINAL at the full requested head; all latest checks passed.\n- Successful Rust CI run 44642525540, job 135982311068: its upload log selects JUnit artifact ID 14587688651. Artifact metadata independently matches the exact head. Parsed JUnit: 2599 tests, zero failures, errors or skips.\n- New no-control-client and stalled-read cases passed, as did clean-quit, bound/present-pane, concurrent-revive, authority and all six spawn_sites regressions.\n- The stalled-read testcase's total 6.575 seconds is not the measured HTTP duration; runtime teardown waits for the abandoned worker. No request-latency guarantee is inferred from that total.\n- harness boot --json: advisory ready=false because this read-only worktree has no node_modules. No dependencies were installed/linked, no source changes or local builds were made, and no local mutations or full local ship gate were run. Exact-head CI is the execution proof; M5/M6 reruns belong to the correctness reviewer.\n\nHarness feedback: the next useful proof improvement is a deterministic blocking-worker lifecycle probe that distinguishes the HTTP deadline from complete worker termination, measuring mutex/write/reap time and outstanding workers. Session evidence is retained outside the review worktree; no source or governance files were hand-edited.\n"
+		}
+	]
+}
