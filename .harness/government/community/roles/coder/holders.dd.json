@@ -1447,6 +1447,16 @@
 					"seat": "pij-cultural-falcon",
 					"to": "2026-11-20T15:03:28.268Z",
 					"why": "F242 HIGH: daemon shutdown releases control first, bounded HTTP drain, bounce-rs sets destroy-unattached off pre-signal (prime)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T15:10:18.214Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f240",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F240 reaper spawn Err falls back to a bounded blocking wait (prime C34 at #292)"
 				}
 			]
 		}
