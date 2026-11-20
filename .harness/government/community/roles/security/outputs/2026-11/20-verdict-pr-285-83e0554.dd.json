@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f819-4aaf-7613-94f2-a44a51f5a3d0",
+				"date": "2026-11-20",
+				"head": "83e0554bb3d413d0215563fb8774f0dfa4f122e0",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:285",
+				"writer": "pij-corporate-anteater",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 285",
+					"exit_code": 0,
+					"log": "FINAL at 83e0554bb3d413d0215563fb8774f0dfa4f122e0; all latest CI checks passed"
+				},
+				{
+					"command": "gh pr checks 285 --repo AI-Substrate/pij-fleet --json name,bucket,state,link",
+					"exit_code": 0,
+					"log": "check (22), check (24), rust-lint, rust-test and delivers all SUCCESS; rust-test job 136176117100, run 44703143649"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14613583362/zip",
+					"exit_code": 0,
+					"log": "Artifact ID bound to successful rust-test upload log; extracted JUnit pij-store::queue_empty_claim: 6 tests, 0 skipped, errors or failures"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS: PR #285 (F234), exact head 83e0554bb3d413d0215563fb8774f0dfa4f122e0, reviewed against base 14226920. No introduced security vulnerabilities found under C33's same-user trust model and C34's bounded review scope.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None found | - |\n\nRequested checks:\n\n- SQL parameterization: crates/store/src/queue.rs:96-128,300-303. LIVE_OF_KINDS_SQL is fixed SQL with json_each(?1); kinds are bound JSON data, not interpolated SQL. Any requested-kind pending or running row retains the full transaction, including delayed, key-blocked and lapsed work.\n- Refusal ordering: schema and lease validation precede the store shortcut at crates/store/src/queue.rs:96-128. Native incarnation checks and handoff revalidation remain before queue admission at crates/daemon/src/delivery/mod.rs:1844-1855,1993-1994,2146-2152,2209-2215. The shortcut does not bypass those refusals.\n- Public-content privacy: the complete diff changes only crates/store/src/queue.rs, crates/store/tests/queue_empty_claim.rs and docs/difficulties.md. The test's 292 added lines use synthetic data; the sole new ledger row is docs/difficulties.md:196. No separate fixture changed. Manual inspection and a limited added-line scan found no credentials or home paths: 315 added lines checked, zero secret/home-path pattern matches, exit 0. This is not an exhaustive secret-detector guarantee. PR body and commit text were also inspected without observed leakage.\n\nVerification:\n\n- just pr-freeze 285: exit 0, FINAL at the full head above; main base, CLEAN, all latest checks successful, not draft, no migrations added, Delivers CI passed.\n- gh pr checks 285 --repo AI-Substrate/pij-fleet --json name,bucket,state,link: exit 0; check (22), check (24), rust-lint, rust-test and delivers all SUCCESS.\n- Independently retrieved the JUnit artifact by ID 14613583362 from successful rust-test job 136176117100, CI run 44703143649. The job's upload log binds that artifact; XML extraction and assertions exited 0. Suite pij-store::queue_empty_claim: six tests, zero skipped, errors or failures. This proves the new empty-write-lock, pending, lapsed-recovery, delayed/key-blocked, other-kind and index cases ran.\n- The scoped security reviewer also ran supplemental checks against the extracted SQL: 13/13 state/filter/injection assertions and source-order assertions passed. These are supplemental evidence, not local SQLx execution.\n\nLimits and scope:\n\nThe local scoped shared-build attempt exited 4 after a 60-second wait on the existing shared-target lock; Cargo never ran, the lock was not cleared and no second build started. harness boot returned an exit-0 advisory with ready=false because this review worktree has no TS dependencies. No dependency links or installs were made. Full harness/TS/shared-configuration probes were not run under the read-only review constraint; their absence is not represented as a local pass.\n\nThe existing 500 ms per-waiting-native-seat polling path is unchanged. This change adds one indexed existence read per claim pass and no new loop, timer or process launch; live performance acceptance remains with the performance owner, not this security verdict.\n\nThe review worktree remains clean. The security/285 holding is retained until merge. This verdict answers request 01a1f819-4aaf-7613-94f2-a44a51f5a3d0.\n"
+		}
+	]
+}
