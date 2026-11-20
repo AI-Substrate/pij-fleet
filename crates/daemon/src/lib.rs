@@ -13,6 +13,7 @@ mod auth_recovery;
 pub mod background;
 pub mod bg_routing;
 pub mod cache_proxy;
+pub mod carry;
 pub mod cheap_return;
 mod claude_bind;
 pub mod codex_bind;
@@ -153,6 +154,8 @@ pub struct Services {
     pub tap_refusals: Arc<pane_observer::TapRefusals>,
     /// Each Copilot seat's last lost-login decision (F212), on the monotonic clock.
     pub(crate) auth_recovery: Arc<auth_recovery::Ledger>,
+    /// F190: native-session-boundary carries, one at a time.
+    pub(crate) carries: Arc<carry::Carries>,
     /// The commit this daemon was built from ([`BUILD_COMMIT`]), shown in `ping`.
     pub build_commit: Option<String>,
     /// The extension trees this daemon was built with, for the PA digest's
@@ -692,6 +695,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         interaction,
         tap_refusals: Arc::new(pane_observer::TapRefusals::new()),
         auth_recovery: Arc::new(auth_recovery::Ledger::new()),
+        carries: Arc::default(),
         build_commit: BUILD_COMMIT.map(str::to_string),
         extension_trees: ExtensionTrees {
             copilot: EXTENSION_TREE_COPILOT.map(str::to_string),
@@ -1233,6 +1237,12 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         pa_watchdog_tick,
     );
     let park_notices = tokio::spawn(park_notice::follow(services.clone()));
+    // F190: once at start, redo any native-session-boundary carry a crash or
+    // an older daemon left unrecorded. One roster read; no loop.
+    {
+        let services = services.clone();
+        tokio::spawn(async move { carry::redo_at_boot(&services).await });
+    }
     let cache_proxy_loop = cache_proxy::start(Arc::new(services.clone()));
     let session_warmup = session_warmup::start(
         Arc::clone(&services.registry),
