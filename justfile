@@ -735,6 +735,24 @@ bounce-rs:
     # there, or a port still held, after that starts nothing: two daemons are
     # worse than none. Absolute /bin/sleep: no PATH search per poll (AGENTS.md).
     if [ -n "$old" ]; then
+      # F242, belt and braces: switch `_pij`'s destroy-unattached off on the
+      # daemon's tmux server before the signal, so no exit of its control
+      # client, the SIGKILL below or a crash included, can destroy `_pij` under
+      # it (F237); the new daemon's setup switches it back on. The server is
+      # found as the daemon finds it: PIJ_TMUX_SERVER's label, else $TMUX's
+      # socket, else the default one, in TMUX_TMPDIR (or /tmp) under this uid;
+      # tmux by the path the shell resolves, once. No server or no `_pij` (a
+      # first boot) is not an error.
+      if tmux_bin=$(command -v tmux); then
+        if [ -n "${PIJ_TMUX_SERVER:-}" ]; then
+          sock="${TMUX_TMPDIR:-/tmp}/tmux-$UID/$PIJ_TMUX_SERVER"
+        elif [ -n "${TMUX:-}" ]; then
+          sock="${TMUX%%,*}"
+        else
+          sock="${TMUX_TMPDIR:-/tmp}/tmux-$UID/default"
+        fi
+        "$tmux_bin" -S "$sock" set-option -t _pij: destroy-unattached off 2>/dev/null || true
+      fi
       kill -INT "$old" 2>/dev/null || true
       since=$SECONDS
       while kill -0 "$old" 2>/dev/null && [ $((SECONDS - since)) -lt 30 ]; do /bin/sleep 0.2; done

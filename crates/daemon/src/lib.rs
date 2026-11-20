@@ -111,7 +111,10 @@ pub struct ExtensionTrees {
 /// File naming the exact process that won the daemon bind.
 pub const DAEMON_RUNTIME_FILE: &str = "daemon.runtime.json";
 
-/// One shared grace period for admitted work and both store pools after producers stop.
+/// One shared grace period for admitted work and both store pools after producers stop,
+/// and, separately, for HTTP requests in flight when the stop comes (F242): ample
+/// for a local request, whose answer is a store or tmux call away; a stream never
+/// ends, so after it the remaining connections are dropped and the stop goes on.
 pub const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Durable process identity and launch facts used by `pij daemon bounce`.
@@ -324,8 +327,9 @@ pub struct Daemon {
     session_warmup: tokio::task::JoinHandle<()>,
     /// Sender notices for parked deliveries; aborted, then joined, at shutdown.
     park_notices: tokio::task::JoinHandle<()>,
-    /// Its tmux client, released last at shutdown so `_pij` is handled before
-    /// the control client goes (F238).
+    /// Its tmux client, released FIRST at shutdown, alongside the stop of every
+    /// worker and before the HTTP drain can hold anything, so `_pij` is handled
+    /// before the control client goes (F238, F242).
     tmux: Arc<dyn TmuxPort>,
 }
 
@@ -346,8 +350,15 @@ impl Daemon {
         // Signal HTTP and poll every worker shutdown together. Each worker's
         // shutdown future sends its stop before awaiting its join, so no slow
         // HTTP drain can leave queue workers claiming new rows in the meantime.
+        // The tmux control client is released in the same join (F242): its
+        // teardown never waits behind the HTTP drain, which a stream holds for
+        // all of SHUTDOWN_DRAIN_TIMEOUT. A tmux read after the release (a
+        // worker's last tick, a request still in flight) forks one client, as
+        // any read does without a control client.
         let _ = self.shutdown.send(true);
         let _ = self.governance_shutdown.send(());
+        let tmux = Arc::clone(&self.tmux);
+        let release = tokio::task::spawn_blocking(move || tmux.release_control());
         self.session_warmup.abort();
         self.park_notices.abort();
         // A cancelled notice task is the expected join outcome; any admitted
@@ -368,6 +379,7 @@ impl Daemon {
             proxy_watch,
             (),
             governance,
+            released,
         ) = tokio::join!(
             async {
                 self.joined.await.map_err(|error| PijError::Adapter {
@@ -392,11 +404,11 @@ impl Daemon {
                         message: format!("delivery observer task failed: {error}"),
                     })
             },
+            release,
         );
-        // Every worker that reads tmux has stopped. The control client leaves
-        // through its bounded teardown, never by the process dying (F238).
-        let tmux = Arc::clone(&self.tmux);
-        let _ = tokio::task::spawn_blocking(move || tmux.release_control()).await;
+        // A release that panicked is the client's teardown lost, not the
+        // stop's: the process exit ends the client either way.
+        drop(released);
         // Join work we own first. Both this join and physical pool cleanup share
         // one deadline: leaked leases must never turn stop into another wedge.
         let deadline = tokio::time::Instant::now() + SHUTDOWN_DRAIN_TIMEOUT;
@@ -1277,6 +1289,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         listener,
         router.clone(),
         serve::IDLE_CONNECTION_TIMEOUT,
+        SHUTDOWN_DRAIN_TIMEOUT,
         stopped(shutdown_rx.clone()),
     );
     let joined = match remote_listener {
@@ -1285,6 +1298,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
                 remote_listener,
                 router,
                 serve::IDLE_CONNECTION_TIMEOUT,
+                SHUTDOWN_DRAIN_TIMEOUT,
                 stopped(shutdown_rx),
             );
             tokio::spawn(async move {
