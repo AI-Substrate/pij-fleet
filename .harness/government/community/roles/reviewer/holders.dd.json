@@ -2378,7 +2378,10 @@
 					"harness_session": "a7e5be63-4091-4d46-93bd-7e9295e4b0c3",
 					"instance_key": "289",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #289 merged (74d1c63a9755)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-proposed-turtle",
+					"to": "2026-11-20T11:50:32.456Z",
 					"why": "#289 C34 ii review"
 				}
 			]

@@ -785,7 +785,10 @@
 					"harness_session": "7f576762-7fc6-40ce-ad02-796f0c709958",
 					"instance_key": "289",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #289 merged (74d1c63a9755)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-conceptual-cephalopod",
+					"to": "2026-11-20T11:50:32.456Z",
 					"why": "#289 C34 ii security"
 				}
 			]
