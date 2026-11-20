@@ -126,6 +126,7 @@
 - [2026-11-20 Bounded waits are not bounded worker lifetimes](2026-11-20-bounded-waits-are-not-bounded-worker.dd.md): When reviewing bounded polling, synchronous adapters, abandoned reads, or zero-launch claims. (review, polling, deadlines, cost, c34)
 - [2026-11-20 Busy reads need safety and retry eligibility](2026-11-20-busy-reads-need-safety-and-retry.dd.md): When a read optimization introduces transient Busy/Unknown errors, or reviewing F232 recovery. (review, tmux, busy, retry, f232)
 - [2026-11-20 Carry recovery must survive a changing successor](2026-11-20-carry-recovery-must-survive-a-changing.dd.md): Before reviewing session-boundary carry, cross-store recovery, or F233. (review, carry, recovery, f233)
+- [2026-11-20 F199 observed state repair closes B286-001](2026-11-20-f199-observed-state-repair-closes-b286.dd.md): review (activity, regression)
 - [2026-11-20 Flaky test repairs must preserve the concurrency oracle](2026-11-20-flaky-test-repairs-must-preserve-the.dd.md): Before reviewing real-tmux warm-ups, teardown flakes or cancellation-sweep repairs (review, tmux, tests, cancellation, f228)
 - [2026-11-20 Handler timing is occupancy, not CPU](2026-11-20-handler-timing-is-occupancy-not-cpu.dd.md): Before reviewing active\_us/held\_us, adding a handler park, or using route timing to attribute CPU. (review, telemetry, task-local, cost, f231)
 - [2026-11-20 No-op claim review and write-lock witness](2026-11-20-no-op-claim-review-and-write-lock.dd.md): task-end (queue, mutation, harness)
