@@ -1,0 +1,57 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f875-9dfb-7f03-a68a-fb9f66114f83",
+				"date": "2026-11-20",
+				"head": "3d27b36ab7c409f23e78d61b121817e47bfa47c7",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44715192012",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:284",
+				"writer": "pij-financial-falcon",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 284",
+					"exit_code": 0,
+					"log": "FINAL at exact head 3d27b36ab7c409f23e78d61b121817e47bfa47c7; clean review checkout and latest CI checks passed"
+				},
+				{
+					"command": "CI run 44715192012 at 3d27b36ab7c409f23e78d61b121817e47bfa47c7",
+					"exit_code": 0,
+					"log": "Node22/24, typecheck, lint, audit, native374passed, Rust2652passed/6skipped; all seven F230 native regression cases passed"
+				},
+				{
+					"command": "Inspect successful Rust job 136216668595 JUnit artifact 14619137416",
+					"exit_code": 0,
+					"log": "All three new eligibility/restart cases, original busy/other-harness cases, owner job-token and fenced-rendering tests passed"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Native/SDK/skill checks passed; eight local dependency/tooling failures under C25; no full local gate readiness claimed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "FINAL ROUND 2: security PASS for #284 (F230), exact head 3d27b36ab7c409f23e78d61b121817e47bfa47c7, base a89e8cb64452ab92524bd41b93b9c74a7428c868. No new vulnerabilities or C34 follow-ups found.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerabilities found | - |\n\nThe complete six-file PR diff and isolated repair commits 97e7fab0, 273425ea and af9e35f9 were reviewed; unrelated main merges were excluded from the repair scope.\n\nB284-1 and the one-second note are resolved: `.copilot/extensions/pij/store.mjs:2410-2416` captures activity state before enqueueing. At `2468-2478`, a failed superseded attempt returns before starting a retry wait; `2424-2428` and `2350-2357` prevent obsolete post-wait sends. Serial publication preserves observation order.\n\nAttribution remains unchanged: frozen registration/readback at `store.mjs:544-555,1318,1508-1516` validates the seat, native session, process and pane. Activity at `2337-2357,2435-2454` excludes subagents and sends only that registration's own identity tuple, including state-only context fallback. Transport remains machine-bearer authentication, not hostile same-user seat isolation. `crates/daemon/src/http/fyi.rs:400-519` retains contradictory-binding refusals; `reported_context.rs:123-131,162-184` retains seat/incarnation-grant checks under registration admission. No new permission laundering was found under C33.\n\nBatch ownership remains intact: `crates/daemon/src/background.rs:879-925` applies the stored per-job interval before resolving the recorded owner. Only native-delivery Copilot receives the busy exemption (`1949-1951`). Job-token checks (`631-665`), owner-targeted delivery (`1194,1880-1890`), and fenced rendering (`2086-2109`) remain. `crates/store/src/background.rs:548-608,863-879` binds events to the job ID and batch number.\n\nCost wording now distinguishes six attempts per publication and five waits (1, 2, 5, 10, 30 seconds), not unlimited retries per outage. The separate activityDelay timer and per-job interval floor are explicit. A context-fallback attempt can make a second POST. The existing 100-ms daemon tick can make up to ten event_stats checks/second per eligible busy job, with two SQL operations per check. No new process launch was introduced. This is a source/wording check, not a live performance measurement or a replacement for the performance verdict.\n\nAll changed source, tests, docs and ledger hunks were inspected, including `docs/difficulties.md:198`, `docs/how/pij-rs-api.md:978`, and `skills/pij/references/00-routing.md:190`. No real secrets, forbidden private identities/content, or prohibited machine-local paths were found; fixture tokens are synthetic. C21/C25/C33/C34 were checked at resolved governance `community/RULINGS.md:25,29,37-38`.\n\nProof: `just pr-freeze 284` returned FINAL at this head. Exact-head CI run 44715192012 passed Node 22/24, typecheck, lint, audit and native contracts (374 passed, zero failures/skips), including all seven F230 activity regressions. Rust tests passed 2652 cases with six skips. Successful Rust job 136216668595's JUnit artifact 14619137416 confirms the three new eligibility/restart tests, the original busy/other-harness cases, job-token checks and fenced job rendering all passed.\n\nLocal `harness checks --quick --json` passed native, SDK and skill checks but exited 1 on eight dependency/tooling failures in the node_modules-free checkout. Boot was advisory not-ready. No dependencies were installed or linked under C25; heavy local Rust/smoke checks and live cross-seat exploit probes were not run. This is security PASS, not a claim of local full-gate readiness.\n\nThe review checkout remains clean and read-only. Security/284 stays held until merge. No third round is requested.\n\nHarness feedback: existing DL-001 recurred; a review-mode readiness recipe should combine frozen-head CI receipts with dependency-free contracts instead of recommending a C25-forbidden dependency repair. This nonblocking observation is not a vulnerability or a condition on the verdict.\n"
+		}
+	]
+}
