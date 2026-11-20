@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before interpreting PR300 deployed cost or reviewing resolved launch helpers and literal-only sensors",
+				"tags": [
+					"pr300",
+					"launches",
+					"baseline",
+					"sensor",
+					"proof"
+				],
+				"title": "PR300 launch baseline and literal tripwire limits"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Performance verdict cfc9f73c696b6e37a69169cb19ab74055ef54adf: PASS-WITH-NOTES at 4ef227f6ae704ca5f3923cd2d6d00fcdc8423fa5. BEFORE: PID42016, commit3b5d06ae59, start Sat21Nov05:12:07 2026 host local; UTC21:09:46.335091 to21:10:46.383902 on Nov20, monotonic60.032763s. Spawns800->800, all19 ops flat; CPU+8.02s=13.36% one core; RSS137136->132288KiB. Separate20s machine probe95.2 launches/s, sampled90.2/s, no daemon children observed; concurrent builds and busy sampler mean this is not isolated PR attribution. No bounce/kill; no collectors remain. AFTER belongs to authorized post-merge bounce owner and must exercise request/catalog/walk triggers, not infer reductions from idle zero. Registration235ps/124 attempts;94 paid=2.50ps each; heartbeat187/73=2.562, holder-current24/0. C27 still applies; no new F justified and zero-spawn CPU is not argv attribution. Sensor6/6 PASS via shared-build nice19. Its contiguous literal check is a tripwire: variables, concat, multiline literals and macro-forwarded programs evade it. Nine crates/197 production files/six absolute-ps controls observed. Read-only predicate controls are not compiled mutants. Cost call graphs matter: OMP observed-label resolution also invokes the catalog, and pane walks also serve adopt, process controls, conditional recipient checks and unrecorded Codex caller checks; the latter is not CodexBinder itself. Resolver keeps successful paths only, permits relative PATH spelling, returns bare name on a miss and retries once on vanished-hit ENOENT. MagicWand: a read-only cost-receipt command should capture PID/start/commit, monotonic elapsed, reconciled op deltas, registration denominators, CPU/RSS and separately labelled machine window. Difficulty: manually assembling those receipts and dependency-free harness checks falling through to ambient TS tools. Quick checks were red locally, not a full-gate pass; exact-head CI5/5 was green and tree remained clean. Do not repair a C25 review tree with installs or links."
+		}
+	]
+}
