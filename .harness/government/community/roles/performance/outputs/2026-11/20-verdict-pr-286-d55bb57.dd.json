@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f82d-c97a-7832-880f-9422a87f08ce",
+				"date": "2026-11-20",
+				"head": "d55bb57caf09a5fe7d7d3a16226a7e1f90a1b922",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:286",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"P286-MEM-001: map has no cap/deathcleanup, historicalSeatId lifetime. Qualify extra reattach-without-registration posts and cached422/authresend units in committed cost text. Independent correctness BLOCK remains with reviewer; no live cost proof yet."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git rev-parse HEAD && git diff 14226920 d55bb57caf09a5fe7d7d3a16226a7e1f90a1b922",
+					"exit_code": 0,
+					"log": "/tmp/performance-286-static-cost.json; full source diff artifact://258. Source-only bounds; no runtime tests/measurement by performance."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES — static performance/286, exactd55bb57caf09a5fe7d7d3a16226a7e1f90a1b922, base14226920. HEAD matched; full16-file delta inspected. No builds/tests, measurement, reload, daemon change or source edits by performance. This is cost qualification, not ship acceptance; level-rhinoceros reported a correctness BLOCK and owns its runtime/gate evidence.\n\n| Work | Static bound and per-seat scaling |\n| --- | --- |\n| New primary activity publications | One after successful boot, one per actual arm-state change (repeated /pij while already armed is a no-op), AND one after each re-attached callback. ensureRegistration returns without registering when the seat already exists, but the report still runs: registration-only wording understates the trigger. |\n| Aggregate added rate | For OMP/Pi runtime i, let B_i,E_i,A_i be boot, reattach-notice and actual arm-change rates. Offered extra primary posts/s=sum_i(B_i+E_i+A_i). Existing turn/shutdown publications only gain the field. Zero added periodic posts in quiescent connected operation. |\n| Reattach bursts | Existing SSE loop: initial250ms ±20% (minimum200ms), exponential cap5s with4–5s jittered waits; a processed frame resets the attempt count. Frame-resetting flaps can offer up to5reattachcallbacks/s/seat (400/s for80seats), not one post per daemon registration. Actual requests can lag/burst behind the existing serialized chains; not measured arrival rates. |\n| Bare422 compatibility | One recursive resend without control_context, then client caches unsupported. In serialized RustRuntime activity, at most one extra logicalpost/client lifetime; a new client re-arms the probe. Concurrent direct callers already in flight can each resend once. No repeat-at-every-state fallback or retry loop. |\n| Inherited transport retry | request() resends once after401/403. Thus normal publication<=2wirePOSTattempts; first422 fallback<=4. /v1/activity is NOT in the connection-refused restart-wait set (/v1/send,/v1/spawn only). No new outage/backoff timer. |\n\nP286-MEM-001, named nonblocking resource residual: the new map is NOT live-bounded or cleaned on seat death. controls is HashMap<SeatId,(Option<ProcIdentity>,bool)>: same-seat reports/incarnation replacements overwrite one tuple, but distinct reporting IDs accumulate until the daemon-global ReportedContext is dropped/restarted. A mismatched incarnation reads None without removal. Storage O(H) for historical reporting seat IDs, not O(currentliveN); incarnation safety is not a retention bound. Full private-state mutation API has no erase/prune/reset, and the delta adds no death/tombstone cleanup. Owner/prime notified; committed cost wording should name this lifetime, not imply live-only storage.\n\nAn accepted post carrying the field adds one existing State mutex acquisition/map insertion and clones the seat key even on overwrite; new keys may grow/rehash the map. Reads add one borrowed-key map lookup under the existing mutex on reload/new admission and state-card projection. OptionalString parsing and warning/state-card formatting allocate; no byte-size/CPU estimate claimed. Extra posts still execute the existing bound-seat/registry activity path and generation touch; they are not merely an in-memory write. The report only warns: ordinary control admission/queueing remains; shell_word is formatting, not pane typing.\n\nNo new iterative loop, recurring poller, explicit timer or OS-launch site in this delta. The422 path is one new bounded recursive retry step. Existing reconnect loops/timers and delivery launch sites are unchanged; added requests exercise existing transport/store work. spawn_sites.rs unchanged.\n\nCost wording owed: include reattach even without registration, cached422/auth-resend units, and unbounded historical map lifetime. No live savings/steady-state CPU proof asserted. Reviewer-confirmed delayed-idle/arming ordering defect was relayed to prime and not rerun by performance. All three performance/284,/285,/286 holdings retained until merge.\n\nSources: rust-runtime.ts:335-348,402,458-471,708-737,1027-1036; daemon-http.ts:275-303,414-449,493-514,529; reported_context.rs:54-61,86-237; lib.rs:579-581; http/fyi.rs:383-385; http/mod.rs:2969-3010,3971-3977. Receipt /tmp/performance-286-static-cost.json; full diff artifact://258.\n"
+		}
+	]
+}
