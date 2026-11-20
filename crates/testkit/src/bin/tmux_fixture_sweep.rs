@@ -4,6 +4,10 @@
 //! `pij-tmux-fixture-sweep [--dir <path>]` is a dry run: it prints counts by
 //! prefix, kind and verdict, and a sample of what it would remove. Add
 //! `--apply` to remove the stale entries. Run it as `just tmux-fixture-sweep`.
+//! When the holders can't be read whole and exactly, it names why (the path
+//! and its holder's pid, escaped; on Linux, always: there is no complete
+//! census of socket holders there) and exits 2: blocked, never "nothing
+//! stale".
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::SystemTime;
@@ -28,23 +32,11 @@ fn main() -> ExitCode {
     }
     let holders = tmux_sweep::Holders::read();
     match &holders {
-        tmux_sweep::Holders::Known { held, unresolved } => {
-            println!(
-                "holders: {} bound Unix socket files, {} bound paths that won't stat",
-                held.len(),
-                unresolved.len()
-            );
-            if let Some(why) = holders.unknown_in(&dir) {
-                println!(
-                    "holders: unknown in {} ({why}); nothing there is removed",
-                    dir.display()
-                );
-            }
+        tmux_sweep::Holders::Known(held) => {
+            println!("holders: {} bound Unix socket files", held.len());
         }
         tmux_sweep::Holders::Unknown(why) => {
-            println!(
-                "holders: unknown ({why}); no socket counts as unheld, nothing of them is removed"
-            );
+            println!("holders: UNKNOWN: {why}");
         }
     }
     let report = match tmux_sweep::sweep(&dir, SystemTime::now(), apply, &holders) {
@@ -72,6 +64,11 @@ fn main() -> ExitCode {
         .iter()
         .filter(|entry| entry.verdict == Verdict::Stale)
         .collect();
+    if let tmux_sweep::Holders::Unknown(why) = &holders {
+        // F248: never to be read as "nothing stale".
+        println!("stale: unknown; BLOCKED, nothing can be removed until the holders read: {why}");
+        return ExitCode::from(2);
+    }
     println!(
         "stale: {} ({} sockets, {} locks)",
         stale.len(),
@@ -85,7 +82,8 @@ fn main() -> ExitCode {
             .count()
     );
     for entry in stale.iter().take(SAMPLE) {
-        println!("  e.g. {}", entry.name);
+        // Escaped: a control character in a name can't reach the terminal.
+        println!("  e.g. {}", entry.name.escape_debug());
     }
     if apply {
         println!("removed: {}", report.removed);

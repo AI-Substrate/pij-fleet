@@ -761,10 +761,13 @@ bounce-rs:
       # bounce with the old daemon untouched, unless PIJ_BOUNCE_UNSAFE=1 says a
       # human checked.
       #
-      # bounded <pid> <seconds>: wait on the clock for a background job, at
-      # most 1 to <seconds> s, then kill -9 it and give it 1 to 2 s more to go.
-      # Returns the job's own status, 124 once it was killed, or 125 if it
-      # outlived kill -9 (left, never waited on). Absolute /bin/sleep per poll.
+      # bounded <pid> <seconds>: wait on the clock for one launched background
+      # job, at most 1 to <seconds> s, then kill -9 it and give it 1 to 2 s more
+      # to go. Returns the job's own status, 124 once it was killed, or 125 if
+      # it outlived kill -9 (left, never waited on). Absolute /bin/sleep per
+      # poll. It bounds that launched read only (tmux here, lsof below), not
+      # the bounce: the in-shell parsing and file tests around it sit outside
+      # every budget (F247).
       bounded() {
         local pid=$1 limit=$2 since=$SECONDS
         while kill -0 "$pid" 2>/dev/null && [ $((SECONDS - since)) -lt "$limit" ]; do /bin/sleep 0.1; done
@@ -804,9 +807,14 @@ bounce-rs:
               # F245: tmux says this when its connect() is refused, and on
               # Darwin a live server with a full listen backlog refuses too.
               # Go on only if no process of ours holds that socket: one
-              # /usr/sbin/lsof (PIJ_BOUNCE_LSOF is a test seam), bounded like
-              # tmux, with 1 to 5 s (it reads every process's sockets). A
-              # timeout, or lsof failing, refuses.
+              # /usr/sbin/lsof (PIJ_BOUNCE_LSOF is a test seam), the launch
+              # bounded like tmux's, with 1 to 5 s (it reads every process's
+              # sockets); the matching below is not. A timeout, or lsof
+              # failing, refuses. The uid is bash's own $UID: no launch (F247).
+              # macOS's bash 3.2 takes UID from the environment, so one that
+              # isn't all digits refuses (S299-N2): refusing adds nothing to
+              # launch, and whoever sets this recipe's environment can already
+              # set PIJ_BOUNCE_UNSAFE=1, so it is no boundary either way.
               #
               # #298 round 2: a bound path matches by device and inode
               # (`-ef`), never by spelling (bee: tmux's /private/tmp/… is
@@ -818,11 +826,18 @@ bounce-rs:
               # name. In-shell: no launch per line.
               sock="${why#no server running on }"
               held_out="${built%/*}/socket-holders.out"
-              LC_ALL=C "${PIJ_BOUNCE_LSOF:-/usr/sbin/lsof}" -nP -a -U -u "$(id -u)" -F n </dev/null >"$held_out" 2>/dev/null &
-              reader=$!
               status=0
-              bounded "$reader" 5 || status=$?
-              if [ "$status" = 124 ] || [ "$status" = 125 ]; then
+              case "$UID" in
+                '' | *[!0-9]*) status=uid ;;
+                *)
+                  LC_ALL=C "${PIJ_BOUNCE_LSOF:-/usr/sbin/lsof}" -nP -a -U -u "$UID" -F n </dev/null >"$held_out" 2>/dev/null &
+                  reader=$!
+                  bounded "$reader" 5 || status=$?
+                  ;;
+              esac
+              if [ "$status" = uid ]; then
+                unsafe="tmux was refused, and this shell's UID is not a number (bash 3.2 takes it from the environment), so lsof can't be asked what holds $sock"
+              elif [ "$status" = 124 ] || [ "$status" = 125 ]; then
                 unsafe="tmux was refused, and lsof did not say in 5 s what holds $sock"
               elif [ "$status" != 0 ]; then
                 unsafe="tmux was refused, and what holds $sock could not be read"

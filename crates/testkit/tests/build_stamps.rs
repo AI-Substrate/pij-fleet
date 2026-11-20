@@ -600,10 +600,17 @@ fn bounce_with_tmux(old: &OldDaemon, tmux: Option<&str>, env: &[(&str, &str)]) -
          case $n in 1) echo {} ;; 2) ;; *) echo 4242 ;; esac; exit 0",
         old.pid
     );
-    let socket_lsof = "[ -n \"$FAKE_LSOF_U_HANGS\" ] && exec /bin/sleep 60\n\
+    let socket_lsof = "echo \"$*\" > '@OUT@/socket-lsof.args'\n\
+                       [ -n \"$FAKE_LSOF_U_HANGS\" ] && exec /bin/sleep 60\n\
                        [ -n \"$FAKE_LSOF_U_FAILS\" ] && exit 1\n\
                        printf '%s\\n' \"$FAKE_HELD\"";
-    let mut fakes = vec![("lsof", lsof.as_str()), ("socket-lsof", socket_lsof)];
+    // F247: the uid comes from bash, never a launched `id`.
+    let id = "echo \"$*\" >> '@OUT@/id.called'; exec /usr/bin/id \"$@\"";
+    let mut fakes = vec![
+        ("lsof", lsof.as_str()),
+        ("socket-lsof", socket_lsof),
+        ("id", id),
+    ];
     fakes.extend(tmux.map(|body| ("tmux", body)));
     let mut env = env.to_vec();
     env.push(("PIJ_BOUNCE_LSOF", "@OUT@/bin/socket-lsof"));
@@ -737,6 +744,67 @@ fn bounce_rs_goes_on_after_a_refusal_only_when_nothing_holds_the_socket() {
         unshut(&scratch);
         let _ = std::fs::remove_dir_all(&scratch);
     }
+}
+
+/// S299-N2 (deer): macOS's bash 3.2 takes UID from the environment. A UID
+/// that isn't all digits refuses the bounce (unless `PIJ_BOUNCE_UNSAFE=1`)
+/// rather than reach lsof. A bash that ignores an inherited UID (bash 5,
+/// where it is read-only) asks lsof for the real uid instead.
+#[test]
+fn bounce_rs_refuses_when_uid_is_not_a_number() {
+    let imports = std::process::Command::new("/usr/bin/env")
+        .args(["bash", "-c", "printf %s \"$UID\""])
+        .env("UID", "^501")
+        .output()
+        .map(|out| out.stdout == b"^501")
+        .expect("run bash");
+    for (unsafe_ok, refused) in [(false, imports), (true, false)] {
+        let old = OldDaemon::start();
+        let mut env = vec![("UID", "^501"), ("FAKE_HELD", "n@OUT@/real")];
+        if unsafe_ok {
+            env.push(("PIJ_BOUNCE_UNSAFE", "1"));
+        }
+        let (scratch, ok) = bounce_with_tmux(&old, Some(REFUSED_TMUX), &env);
+        assert_eq!(
+            !ok, refused,
+            "bash imports UID: {imports}; UNSAFE: {unsafe_ok}"
+        );
+        assert_eq!(old.stopped(), !refused, "the old daemon stopped");
+        let args = std::fs::read_to_string(scratch.join("socket-lsof.args")).ok();
+        if imports {
+            assert_eq!(args, None, "lsof was asked with a UID that isn't a number");
+        } else {
+            let uid = pij_core::program::real_uid();
+            let args = args.expect("lsof ran");
+            assert!(args.contains(&format!("-u {uid} ")), "{args}");
+        }
+        unshut(&scratch);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+}
+
+/// F247 (snail, P298-R2-001): the holder read names this user by bash's own
+/// `$UID`, and launches no `id` for it: a bounce that reads the holders
+/// launches as many `id`s as one that doesn't (the install step has its own).
+#[test]
+fn bounce_rs_names_the_user_to_lsof_without_launching_id() {
+    let ids = |tmux: &str| {
+        let old = OldDaemon::start();
+        let (scratch, ok) = bounce_with_tmux(&old, Some(tmux), &[("FAKE_HELD", "n@OUT@/real")]);
+        assert!(ok, "{tmux}: the bounce goes on");
+        let args = std::fs::read_to_string(scratch.join("socket-lsof.args")).ok();
+        let ids = std::fs::read_to_string(scratch.join("id.called")).unwrap_or_default();
+        unshut(&scratch);
+        let _ = std::fs::remove_dir_all(&scratch);
+        (args, ids.lines().count())
+    };
+    let (read, with_lsof) = ids(REFUSED_TMUX);
+    let (none, without) = ids("echo 'no such session: _pij:' >&2; exit 1");
+    let uid = pij_core::program::real_uid();
+    let read = read.expect("the refusal read the holders");
+    assert!(read.contains(&format!("-u {uid} ")), "{read}");
+    assert_eq!(none, None, "no refusal, no holder read");
+    assert_eq!(with_lsof, without, "the holder read launched id");
 }
 
 /// F245 round 2 (snail): the holder read is bounded like the tmux call. An
