@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Read before accepting $UID/$EUID as a trusted identity in a just recipe or shell script.",
+				"tags": [
+					"shell",
+					"identity",
+					"c33",
+					"macos"
+				],
+				"title": "macOS bash 3.2 imports UID and EUID from the environment"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#299 F247 swapped $(id -u) for bash's $UID. On macOS, #!/usr/bin/env bash usually resolves to /bin/bash 3.2.57, which takes UID and EUID from the environment (env UID=0 bash -c 'echo $UID' prints 0; bash 5 refuses, readonly). Numeric spoofs fail closed in bounce-rs (lsof -u <other> exits 1 for non-root), but lsof grammar does not: -u '^501' exits 0 with empty output, which skips the holder check silently. Graded a C33 operator-env note (S299-N2), not a block, since PIJ_BOUNCE_LSOF already grants the same. Fix shape: a digits-only case guard before use. Also #299: the Linux sweep's foreign skip is bounded by ours() file-owner checks, so only root-held or uid-dropped fds can escape it."
+		}
+	]
+}
