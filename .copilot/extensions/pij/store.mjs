@@ -2416,8 +2416,9 @@ export class NativeBridge {
 		this.activity = this.activity.then(() => this.publishActivity(state));
 	}
 	/**
-	 * F230: a failed report is retried after each wait in ACTIVITY_RETRY_MS
-	 * until it lands. A newer observed state supersedes it at once, so only the
+	 * F230: a failed report is retried after each wait in ACTIVITY_RETRY_MS,
+	 * then dropped until the next observed transition or registration publishes
+	 * again. A newer observed state supersedes it at once, so only the
 	 * latest state is ever sent.
 	 */
 	async publishActivity(state) {
