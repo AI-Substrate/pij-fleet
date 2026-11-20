@@ -1499,6 +1499,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-cultural-falcon",
 					"why": "issue #85 daemon launch leftovers (bare lsof/omp, ps sites)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T21:20:17.951Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "i90",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "issue #90 daemon.log cap and rate limit, plus #300 notes N1, N2 and the lsof cost row"
 				}
 			]
 		}
