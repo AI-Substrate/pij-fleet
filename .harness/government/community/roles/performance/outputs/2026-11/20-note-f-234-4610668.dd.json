@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"head": "46106685eee34a73cb26223d05cb2199c40b715b",
+				"kind": "note",
+				"role": "performance",
+				"subject": "f:234",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Four absolute-path pij-rs --json ping probes; /bin/ps -p 93958 -o pid=,time=,rss=; in-process PID/start stamps",
+					"exit_code": 0,
+					"log": "{\"pid\": 93958, \"commit\": \"46106685ee\", \"identity\": [93958, 1795159763, 641880], \"started_at\": \"2026-11-20T07:39:41.491034+00:00\", \"ended_at\": \"2026-11-20T07:44:49.023794+00:00\", \"elapsed_s\": 307.5317561250413, \"cpu_delta_s\": 49.28999999999999, \"cpu_percent\": 16.02762647842409, \"cpu_ols_percent\": 16.114566643658257, \"intervals\": [{\"elapsed_s\": 95.73197583347792, \"cpu_s\": 14.819999999999993, \"cpu_percent\": 15.48072090957238}, {\"elapsed_s\": 79.27837462502066, \"cpu_s\": 13.840000000000003, \"cpu_percent\": 17.45747193413326}, {\"elapsed_s\": 132.52114877098938, \"cpu_s\": 20.629999999999995, \"cpu_percent\": 15.567326567362336}], \"rss_kib\": [122416, 119008, 122960, 127008], \"responses_per_s\": 12.028026134953036, \"spawn_delta\": 2, \"spawn_by_op_delta\": {\"ddocs.community\": 0, \"gh.delivered\": 0, \"git.community\": 0, \"ps.registration-native-process\": 0, \"ps.sidecar-process-group\": 0, \"ps.tmux-harness-process-tree\": 2, \"tmux.clear-options tap owner\": 0, \"tmux.control-client\": 0, \"tmux.pipe-pane attach\": 0, \"tmux.pipe-pane detach\": 0, \"tmux.rename-window\": 0, \"tmux.set-options tap owner\": 0}}"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "F234 — the idle inbox does a write-claim transaction even when its queue is empty.\n\nSource-proven recurring mechanism: between HeldSpans, each normal native Copilot idle pass acquires the GLOBAL native_lock, reads/revalidates the recipient twice, and invokes Queue::claim. The empty queue path still validates schema, starts an owned task, obtains a pooled connection and BEGIN IMMEDIATE write lock, executes two expiry UPDATEs, searches for a candidate, and COMMITs with none. All native-mutex/pool/write-lock waits are ACTIVE wall time. The queue wrapper has no separate claim mutex: owned_write spawns a task; serialization is SQLite's transaction.\n\nLive evidence reused from c42c1cd4d1cab90760a548f437d2a5a7c1c2ba66: 335 GET /v1/inbox completions, 39,210,963 active microseconds, 18,387,379,194 held microseconds. Mean nonpark wall time117.048ms; mean held54.888s. Neither these counters nor the shared SQL-worker sample separates empty/message outcomes or SQL CPU from lock/pool/scheduler latency. Both page types are HTTP200. The prime reports most are idle answers; that proportion is not derivable from ping.\n\n[INFERENCE] With the500ms timer, an otherwise quiet55s claim makes approximately110 passes, rather than doing one117ms operation. The observed mean corresponds to approximately1.064ms active/pass if amortized across110; this is a consistency calculation, not a measured phase allocation. Notifications can add passes; work itself delays the next500ms sleep.\n\nConfirmed normal empty-pass counts, excluding driver pool-hook housekeeping:\n\n| Work per empty pass | Current | Proposed no-live-row fast path |\n| --- | ---: | ---: |\n| Explicit queue SQL commands | 6 | 2 |\n| Recipient-registry SQL commands | 4 | 4 |\n| Total explicit SQL commands | 10 | 6 |\n| Total pooled connection checkouts | 6 | 6 |\n| Queue-owned write task | 1 | 0 |\n| Write transaction/write-lock acquisition | 1 | 0 |\n\nQueue's six are PRAGMA user_version, BEGIN IMMEDIATE, expired-body UPDATE, expired-control/other UPDATE, candidate SELECT, COMMIT. Registry.get is one schema PRAGMA plus one SELECT, called twice/pass. Roughly110 passes thus imply roughly1,100 explicit SQL commands and110 empty write transactions per idle completion, plus pool pings/cleanup, descriptor decoding and native mutex waits. This is the avoidable recurring work, not a measured claim that all117ms is SQLite CPU.\n\nThe55s arm is not the primary measured active bookkeeping: HeldSpan starts BEFORE tokio::select constructs/polls/drops its timer futures. That work and wake scheduling lie mostly inside HELD time (and may still consume runtime CPU). After an empty claim the native guard is dropped before the span. The55s deadline branch already returns an empty page without another claim/settle; there is no final empty-page ACK transaction to remove. One-time steering/attestation and reply receiver-diagnostic reads also contribute active time.\n\nCheapest correctness-preserving fix: add one PRIVATE scoped existence preflight in SqliteQueue::claim_inner after the schema/input validation and before owned_write. Query only presence of ANY pending or running row for the exact requested kinds; on absence return the default empty claim. Existing Queue::peek has the safe negative predicate, but calling it would repeat schema validation and fetch/order/decode payload unnecessarily. Use SELECT1/LIMIT1 with bound kind JSON instead. The existing jobs_claimable(state,kind,id) index covers the predicate; a read-only EXPLAIN on the live schema reported a covering-index SEARCH. No workload or row/payload query was run.\n\nDo NOT test only due/eligible pending rows: an expired running claim or delayed/FIFO-blocked pending row must block the shortcut and execute the existing recovery transaction. Preserve schema refusal, native incarnation/handoff checks, subscribe-before-check,500ms backstop and55s deadline. The change removes empty write admission/task/updates, not those brakes. A nonempty queue pays one additional read/checkout; no CPU-saving percentage is asserted.\n\nDo NOT make the wait notification-only as the cheap fix. Normal subscription is seat-scoped delivery.outcome; explicit delivery.released, seat.put, retry/defer deadlines and lease expiry are not all matching notifications. Passing not_before generates no event. A15s backstop would reduce passes but changes prompt recovery latency and enlarges the final deadline gap; the no-live-row preflight avoids that tradeoff.\n\nSource: delivery/mod.rs:1723-1739,1837-1964,1989-2133,2255-2275,721-733; http/mod.rs:3060-3103,3159-3182; store/registry.rs:413-421; store/queue.rs:88-261,272-281,634-638,795-829,923-961; store/migrate.rs:40-57,75-90,118-131,213-250,267-274. Inspected F233 treee38a9be; these paths are unchanged from deployed46106685. No sweep, owner-approval request, new sample, edits, build or tests. Receipt:/tmp/f234-inbox-active-cost.json.\n\nConclusion: name the source-level cost as repeated NO-OP WRITE CLAIMS under global native admission; do not name a117ms CPU phase. A small store-private live-row guard is the first fix. Exact residual SQL-versus-mutex/pool timing would need phase measurements, not inference from the route mean.\n"
+		}
+	]
+}
