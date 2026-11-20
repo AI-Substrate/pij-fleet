@@ -2337,12 +2337,14 @@ async fn a_revived_holder_takes_what_its_role_queued_while_it_was_gone() {
         .await
         .unwrap();
     assert_eq!(revived["ok"], true, "{revived}");
+    // The drain runs on its own task and passes through `Delivering` before
+    // `Delivered` (R273-001): wait for the end state, not the first change.
     let mut request = None;
     for _ in 0..200 {
         request = rig.store.role_request("req-back").await.unwrap();
         if request
             .as_ref()
-            .is_some_and(|request| request.state != pij_store::RequestState::Queued)
+            .is_some_and(|request| request.state == pij_store::RequestState::Delivered)
         {
             break;
         }
