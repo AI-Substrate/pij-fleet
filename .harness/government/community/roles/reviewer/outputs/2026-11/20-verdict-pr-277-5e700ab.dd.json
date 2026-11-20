@@ -1,0 +1,72 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f6bc-7899-78d0-9473-36a1c7080995",
+				"date": "2026-11-20",
+				"head": "5e700abc3e61c0ff273cc7531c5b6c77bc193a3c",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:277",
+				"writer": "pij-calm-badger",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C34 follow-up R277-C34-1: equal-Instant oldest-pair eviction ties depend on HashMap iteration; use a stable tie-break if deterministic order is wanted. Nonblocking; no third review round."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 277",
+					"exit_code": 0
+				},
+				{
+					"command": "just copilot-native-test",
+					"exit_code": 0,
+					"log": "r2-copilot-native.log"
+				},
+				{
+					"command": "isolated original late-401 plus shipped late-401 and empty-page banner tests",
+					"exit_code": 0,
+					"log": "r2-banner-regressions.log"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib review_ -- --nocapture",
+					"exit_code": 0,
+					"log": "r2-rust-regressions.log"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib an_idle_native_claim_is_answered_empty_at_the_daemons_bound -- --nocapture",
+					"exit_code": 0,
+					"log": "r2-rust-regressions.log"
+				},
+				{
+					"command": "just shared-build -- test --offline --manifest-path d2-proof/Cargo.toml -- --nocapture",
+					"exit_code": 0,
+					"log": "r2-rust-regressions.log"
+				},
+				{
+					"command": "harness checks --json",
+					"exit_code": 1,
+					"log": "r2-harness-checks.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PASS WITH NOTES — PR 277, round 2 (C34 final round)\n\nHead: `5e700abc3e61c0ff273cc7531c5b6c77bc193a3c`.\nReviewed only the delta from `f9d2bc77871f3d7cee6418d6d18c86c26d5e40f4`;\nround 1 stands for the unchanged surfaces. The review checkout is read-only.\n\n## Round-one fixes\n\n- **R277-1:** the client-timeout readiness trigger is reverted. Only a\n  successfully returned claim ends the outage; zero-message pages already\n  have that meaning in the base extension. The original independent late-401\n  regression passes, along with the shipped late-401 and empty-page banner\n  tests (three selected Node tests).\n- **R277-2:** `restore_receiver_edges` runs once before heartbeat/reconcile\n  reads the edge set, under the existing native lock. It restores only a\n  seat's latest lapsed/renewed edge. Independent same-SQLite-store restart\n  regression passes: exactly one outstanding lapse across restart.\n- **R277-3:** an unseen pair now evicts an oldest timestamp instead of being\n  suppressed at capacity; registration is never blocked. Independent\n  different-seat-at-capacity regression passes. Memory\n  stays bounded at 512 pairs and ping exposes a numeric eviction count.\n\n## Requested boundary checks\n\nThe 55-second bound is checked only after an empty queue claim and during\nthe idle select (`delivery/mod.rs:2263-2272`), not around an in-flight queue\noperation. The new deadline arm is gated by `native`; ordinary non-native\nwaiting keeps its old behavior. Independent paused-clock checks exercise\nmail at 54.9 seconds for both ordinary and during-turn native claims, and\nnative/non-native idle behavior at 55 seconds.\n\nOlder extension compatibility: the final store.mjs differs from the base's\nruntime logic only by a comment. Its existing successful empty-page path\nvalidates the page, clears a prior outage, and takes the ordinary bounded\nretry pause; no new wire shape or client feature is required.\n\n**Boot read bound:** one live-Copilot roster read, then one\n`latest_matching` call for each live native Copilot seat. This is not one\nglobal SQL statement: `SqliteSpine::latest_matching` performs two\nseat-and-kind-indexed `ORDER BY seq DESC LIMIT 1` seeks in a read snapshot,\none per edge kind (`store/spine.rs:59-65,367-394`). Thus at most two spine\nrows per native seat are read, once per daemon; no whole-spine or seat-history\nscan. Failures are explicitly logged as best-effort audit restoration.\n\n## C34 follow-up R277-C34-1 — equal-time eviction ties\n\n`crates/daemon/src/registration/refusals.rs:54-58`\n\nEviction is oldest-first when timestamps differ, but **not deterministic\namong equal timestamps**: `min_by_key` orders only by the Instant and\nHashMap iteration breaks ties. The existing test gives each entry a distinct\nmillisecond and cannot show that. An isolated equal-time probe records\n13 distinct victims across 16 identically populated independent windows.\n\nThis is a nonblocking **C34 follow-up**, not another review round: all tied\ncandidates are equally old, unseen pairs are still told, the count is right,\nand no registration decision depends on which tied pair is evicted. If a\ndeterministic tie is wanted, use the pair as a secondary ordering key and\nadd one equal-time test.\n\n## Security delta\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| — | — | Reviewed delta | — | No security vulnerabilities found under C33 | — |\n\nThe scoped security review found no new vulnerabilities. Invalid/refused\nclaims still reach identity/registration checks before the new idle wait;\nsilence and 4xx responses cannot trigger the client's ready event. Restore\nqueries use the mandatory row seat and exactly the two native receiver\nedge kinds, not a payload-supplied seat or unrelated events.\n`refusals_evicted` is a u64 counter; no seat, refusal body, credentials or\nenvironment text was added to that field. Advice-only restart behavior is\nunchanged from round 1.\n\n## Cost\n\nThe new in-process idle deadline rides the existing long-poll select; it\nlaunches no process and adds no polling loop. The ordinary 500-ms native\nrevalidation wake is unchanged. An idle client now repeats a claim after\n55 seconds plus its existing retry pause (up to 5 seconds), rather than a\n65-second client timeout plus that pause: approximately one request per\n60 versus 70 seconds per continuously idle native seat at steady backoff.\nBoot restoration scales with current native seats, not spine history; the\nwindow's retain/eviction work remains bounded by 512 entries per refusal.\nLive before/after deployment receipts remain with the separate performance\nverdict; this review did not deploy or bounce anything.\n\n## Validation\n\n- `just pr-freeze 277`: FINAL at the full reviewed head; five CI checks pass.\n- `just copilot-native-test`: PASS, 364 passed / 3 skipped.\n- In the isolated exact-head archive:\n  `nice -n 19 node --test --test-name-pattern='review: a late refused claim|R277-1:|an idle seat.s banner clears' .copilot/extensions/pij/store.test.mjs`:\n  PASS, three tests including the unchanged independent round-one fixture.\n- `harness boot --json`: advisory NOT-READY (no local node_modules).\n- `harness checks --json`: exit 1. Native contracts, Copilot SDK, route\n  inventory, smoke and pij-skill PASS. Eight TS/tooling-dependent stages\n  fail in this dependency-free worktree (tsx/vitest unavailable and ambient\n  Biome incompatible); attribution warns for missing tsx.\n  The Rust stage exits 101 in the unchanged `pij-tmux --test adapter` suite.\n  Per pm-001's explicit direction, that is the separately owned F228 work,\n  out of scope for this delta; the queued adapter rerun was canceled and\n  is not a completion condition here. This is not a claimed green full gate.\n- Isolated exact-head archive:\n  `just shared-build -- test --locked -p pij-daemon --lib review_ -- --nocapture`:\n  PASS, 10 selected tests including both unchanged original SQLite/capacity\n  regressions and the new 54.9-second ordinary/during-turn and native/non-native\n  boundary checks. The SQLite restart log contains one lapsed edge.\n- `just shared-build -- test --locked -p pij-daemon --lib an_idle_native_claim_is_answered_empty_at_the_daemons_bound -- --nocapture`:\n  PASS, the shipped daemon-side idle-answer contract.\n- `just shared-build -- test --offline --manifest-path d2-proof/Cargo.toml -- --nocapture`:\n  PASS, five tests: the three shipped window tests, original capacity\n  regression and equal-time eviction probe. This additional dependency-free\n  window replay substitutes std Instant for Tokio Instant only; the original\n  capacity regression above also passes against the unadapted daemon module.\n- All Rust proof used the canonical shared target lock, niceness 19,\n  CARGO_INCREMENTAL=0 and four jobs. Added fixtures are confined to the\n  session archive; no reviewed product files changed.\n\nNo mutation-count claim is needed for this round. The linked author receipt\nlists R1-M2 as SURVIVED, so I did not treat the summary's six mutations as six\ncaught faults; requested regression results are independently recorded here.\n\n## Harness feedback\n\nmagicWand: retain a dependency-free exact-head regression replay recipe.\nThe three round-one fixtures are reusable without rewriting them; the\nisolated replay adds only the specifically requested 54.9/55-second checks.\nThe equal-time probe is the concrete fixture to promote with the C34\nfollow-up. The harness failure envelope retained only stderr's tail and\nlost the adapter test assertion on stdout; preserving the two streams\ntogether would avoid an unnecessary diagnostic rerun. No product or\ngovernance file was hand-edited.\n"
+		}
+	]
+}
