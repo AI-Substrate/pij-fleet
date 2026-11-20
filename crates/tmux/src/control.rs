@@ -798,7 +798,33 @@ fn lock_label(label: &str) -> String {
 /// opens every file), then checked through the descriptor before anything is
 /// changed: a regular file, ours, with one link. A planted link or hard link
 /// is refused, never narrowed or locked.
+///
+/// R295-001 (F241): a lock is the file at `path` *now*. Between this open and
+/// the `flock`, the file can be unlinked (the fixture sweep removes a stale
+/// lock under its own `flock`) and another process create and lock a new one
+/// there; a `flock` that then succeeds on the unlinked inode would be a
+/// second exclusive holder. So once locked, the descriptor's inode must still
+/// be the one at `path`, or the lock is dropped and the file opened again, at
+/// most [`ATTACH_LOCK_REOPENS`] times; past that the start is refused as held.
 pub(crate) fn lock_attach(path: &Path) -> io::Result<File> {
+    for _ in 0..ATTACH_LOCK_REOPENS {
+        if let Some(file) = lock_opened(open_lock(path)?, path)? {
+            return Ok(file);
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::WouldBlock,
+        AttachLockHeld(path.to_path_buf()),
+    ))
+}
+
+/// How many times [`lock_attach`] opens the file again after finding the one
+/// it locked replaced: each time needs another process to unlink the lock
+/// between this one's open and its lock.
+const ATTACH_LOCK_REOPENS: usize = 3;
+
+/// Open (creating) the lock file at `path` and check it, before any lock.
+fn open_lock(path: &Path) -> io::Result<File> {
     use std::os::unix::fs::MetadataExt;
     let file = OpenOptions::new()
         .create(true)
@@ -820,13 +846,30 @@ pub(crate) fn lock_attach(path: &Path) -> io::Result<File> {
     if meta.permissions().mode() & 0o777 != 0o600 {
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
     }
+    Ok(file)
+}
+
+/// Lock `file`, opened from `path`, without waiting: the lock, or `None` when
+/// `path` no longer names the locked inode (unlinked, or replaced), which
+/// releases it. A held lock is [`AttachLockHeld`].
+fn lock_opened(file: File, path: &Path) -> io::Result<Option<File>> {
+    use std::os::unix::fs::MetadataExt;
     match file.try_lock() {
-        Ok(()) => Ok(file),
-        Err(TryLockError::WouldBlock) => Err(io::Error::new(
-            io::ErrorKind::WouldBlock,
-            AttachLockHeld(path.to_path_buf()),
-        )),
-        Err(TryLockError::Error(error)) => Err(error),
+        Ok(()) => {}
+        Err(TryLockError::WouldBlock) => {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                AttachLockHeld(path.to_path_buf()),
+            ));
+        }
+        Err(TryLockError::Error(error)) => return Err(error),
+    }
+    let locked = file.metadata()?;
+    match fs::symlink_metadata(path) {
+        Ok(now) if now.dev() == locked.dev() && now.ino() == locked.ino() => Ok(Some(file)),
+        Ok(_) => Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
     }
 }
 
@@ -948,8 +991,8 @@ mod tests {
     use super::{
         ATTACH_LOCK_WAIT, AttachLock, Frame, Framer, Live, REAP_WAIT, REPLY_TIMEOUT, Reap, State,
         TEARDOWN_WAIT, Waiters, attach_lock_held, attach_lock_path, command_line, forget, is_read,
-        lock_attach, private_socket_dir, reap, reap_with, socket_attach_lock_path,
-        still_waiting_for_attach,
+        lock_attach, lock_opened, open_lock, private_socket_dir, reap, reap_with,
+        socket_attach_lock_path, still_waiting_for_attach,
     };
     use pij_testkit::time::scaled;
     use std::ffi::OsString;
@@ -957,11 +1000,42 @@ mod tests {
     use std::io::{self, Write};
     use std::os::fd::AsFd;
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex, mpsc};
-    use std::time::{Duration, Instant};
+    use std::time::{Duration, Instant, SystemTime};
+
+    /// R295-001 (F241), newt's schedule: an attach opens the lock; the fixture
+    /// sweep finds it stale, locks it and unlinks it; a newcomer creates and
+    /// locks the replacement; the first attach's `flock` then succeeds on the
+    /// orphaned inode. That must not count as the lock: the path no longer
+    /// names it, so the attach drops it, and its retry meets the newcomer's
+    /// lock on the one file at the path.
+    #[test]
+    fn a_lock_unlinked_between_open_and_flock_never_makes_a_second_holder() {
+        let dir = PathBuf::from(format!("/tmp/pij-r295-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir(&dir).expect("a private directory");
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).expect("0700");
+        let path = dir.join(".pij-test-r295-1.pij-control-attach.lock");
+        let late = open_lock(&path).expect("the attach opened the lock");
+        let later = SystemTime::now() + Duration::from_secs(24 * 3600);
+        let swept = pij_testkit::tmux_sweep::sweep(&dir, later, true).expect("the sweep");
+        assert_eq!(swept.removed, 1, "the sweep unlinked the stale lock");
+        let newcomer = lock_attach(&path).expect("the newcomer locks the replacement");
+        assert!(
+            lock_opened(late, &path)
+                .expect("the orphan locks")
+                .is_none(),
+            "a lock on the unlinked inode is not the lock"
+        );
+        let held = lock_attach(&path).expect_err("the retry meets the newcomer's lock");
+        assert!(attach_lock_held(&held), "{held}");
+        drop(newcomer);
+        lock_attach(&path).expect("free once the newcomer lets go");
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     fn feed(framer: &mut Framer, text: &str) -> Vec<Frame> {
         text.lines()

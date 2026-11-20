@@ -215,7 +215,7 @@ impl Drop for PrivateTmux {
         }
         // F241: the socket tmux leaves behind, and pij's attach lock beside it.
         if let Some(socket) = &self.socket {
-            pij_testkit::tmux::remove_server_files(socket);
+            pij_testkit::tmux::finish_server(socket);
         }
     }
 }

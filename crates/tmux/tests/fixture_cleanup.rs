@@ -66,3 +66,23 @@ fn the_testkit_names_are_the_product_s() {
         );
     }
 }
+
+/// R295-002: a server still answering after its `kill-server` (failed, or
+/// here never run) keeps its socket and lock, so it is never orphaned or made
+/// to look gone, and the fixture's teardown reports it.
+#[test]
+fn a_server_that_outlives_its_kill_keeps_its_socket_and_is_reported() {
+    let tmux = PrivateTmux::start();
+    let (socket, lock) = attached(&tmux);
+    assert!(
+        pij_testkit::tmux::remove_server_files(&socket).is_err(),
+        "a live server is reported"
+    );
+    assert!(!gone(&socket), "a live server keeps its socket");
+    assert!(!gone(&lock), "and its lock");
+    let reported = std::panic::catch_unwind(|| pij_testkit::tmux::finish_server(&socket));
+    assert!(reported.is_err(), "the teardown fails the test");
+    assert!(!gone(&socket) && !gone(&lock), "still kept");
+    drop(tmux);
+    assert!(gone(&socket) && gone(&lock), "killed, then both go");
+}

@@ -15,7 +15,11 @@
 //! - no server answers on the socket (`connect()` is refused), and for a lock
 //!   none answers on its paired socket either;
 //! - for a lock, no process holds it (`flock` is taken without waiting, and
-//!   the file is unlinked while it is held).
+//!   the file is unlinked while it is held). An attach that opened the file
+//!   before the unlink would lock the orphaned inode; the attach itself checks
+//!   after its `flock` that the path still names that inode, and opens the
+//!   new file otherwise (`pij_tmux`'s `lock_attach`, R295-001), so the
+//!   unlink never makes a second holder.
 //!
 //! One **brake**, which can only spare: an entry modified within [`YOUNG`] is
 //! left, so a fixture between creating its lock and starting its server is
@@ -209,8 +213,9 @@ fn socket_verdict(path: &Path, now: SystemTime) -> Verdict {
 }
 
 /// A lock is stale when its socket is gone or answers no one, and nobody
-/// holds it. With `apply` it is unlinked while this holds it, so no process
-/// can take it between the check and the unlink.
+/// holds it. With `apply` it is unlinked while this holds it; an attach that
+/// opened it earlier finds the path no longer names it once it locks, and
+/// starts again on the new file (R295-001).
 fn lock_verdict(path: &Path, socket: &Path, now: SystemTime, apply: bool) -> Verdict {
     let Ok(meta) = fs::symlink_metadata(path) else {
         return Verdict::Unsure;

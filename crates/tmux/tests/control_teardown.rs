@@ -111,7 +111,7 @@ impl Server {
 impl Drop for Server {
     fn drop(&mut self) {
         let _ = self.tmux(&["kill-server"]);
-        pij_testkit::tmux::remove_server_files(&pij_testkit::tmux::socket_path(&self.label));
+        pij_testkit::tmux::finish_server(&pij_testkit::tmux::socket_path(&self.label));
         let _ = std::fs::remove_dir_all(&self.taps);
     }
 }

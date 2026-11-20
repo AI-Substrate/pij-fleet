@@ -9,13 +9,16 @@
 //! (3.4 and 3.6a), and pij's control client leaves its attach lock beside it
 //! (F238). Both sit in tmux's one shared directory for this user, so a
 //! fixture that only kills its server leaks two entries per test there.
-//! Every fixture removes both ([`remove_server_files`]) on its way out,
-//! panicking or not.
+//! Every fixture removes both on its way out, panicking or not, once its
+//! server is confirmed gone ([`finish_server`]); a server that outlived its
+//! `kill-server` keeps them, and is reported.
 
+use std::io;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -60,13 +63,59 @@ pub fn attach_lock_path(socket: &Path) -> PathBuf {
     socket.with_file_name(format!(".{label}{ATTACH_LOCK_SUFFIX}"))
 }
 
+/// How long a killed server is given to stop answering on its socket.
+pub const SERVER_GONE_WAIT: Duration = Duration::from_secs(2);
+
+/// Whether no server answers on `socket` within [`SERVER_GONE_WAIT`]: a
+/// `connect()` refused, or no socket at all. Polled in-process, so a server
+/// that is still exiting after `kill-server` is waited for, never assumed.
+#[must_use]
+pub fn server_gone(socket: &Path) -> bool {
+    let deadline = Instant::now() + SERVER_GONE_WAIT;
+    loop {
+        match UnixStream::connect(socket) {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::ConnectionRefused | io::ErrorKind::NotFound
+                ) =>
+            {
+                return true;
+            }
+            _ if Instant::now() >= deadline => return false,
+            _ => std::thread::sleep(Duration::from_millis(10)),
+        }
+    }
+}
+
 /// F241: remove what a fixture's killed server leaves in tmux's shared
-/// directory, its socket and pij's attach lock beside it. Call it after
-/// `kill-server`, from the fixture's `Drop`, so a panicking test cleans up
-/// too. Either one already gone is fine.
-pub fn remove_server_files(socket: &Path) {
+/// directory, its socket and pij's attach lock beside it, but only once the
+/// server is confirmed gone ([`server_gone`]). A server still answering
+/// (its `kill-server` failed, or it has not exited) keeps both: unlinking a
+/// live server's socket would orphan it and make it look gone (R295-002).
+///
+/// # Errors
+/// When a server still answers on `socket`; nothing is removed.
+pub fn remove_server_files(socket: &Path) -> Result<(), String> {
+    if !server_gone(socket) {
+        return Err(format!(
+            "a tmux server still answers on {} after kill-server; its socket and lock are kept",
+            socket.display()
+        ));
+    }
     let _ = std::fs::remove_file(attach_lock_path(socket));
     let _ = std::fs::remove_file(socket);
+    Ok(())
+}
+
+/// [`remove_server_files`] for a fixture's `Drop`: a server that outlived its
+/// `kill-server` fails the test, or, when the test is already panicking (a
+/// second panic would abort), is reported on stderr.
+pub fn finish_server(socket: &Path) {
+    if let Err(problem) = remove_server_files(socket) {
+        assert!(std::thread::panicking(), "{problem}");
+        eprintln!("pij-testkit: {problem}");
+    }
 }
 
 /// A `tmux -L` server with one idle detached session, killed on drop.
@@ -147,6 +196,6 @@ impl Drop for PrivateTmux {
         let _ = Command::new("tmux")
             .args(["-L", &self.name, "kill-server"])
             .output();
-        remove_server_files(&socket_path(&self.name));
+        finish_server(&socket_path(&self.name));
     }
 }

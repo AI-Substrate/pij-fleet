@@ -222,7 +222,7 @@ impl Drop for Server {
         let _ = Command::new("tmux")
             .args(["-L", &self.name, "kill-server"])
             .output();
-        pij_testkit::tmux::remove_server_files(&pij_testkit::tmux::socket_path(&self.name));
+        pij_testkit::tmux::finish_server(&pij_testkit::tmux::socket_path(&self.name));
         let _ = fs::remove_dir_all(&self.dir);
     }
 }
