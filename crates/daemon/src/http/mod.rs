@@ -1884,6 +1884,7 @@ async fn launch_seat_locked(
                     if tokio::time::Instant::now() >= footer_deadline {
                         break;
                     }
+                    let _held = route_counts::HeldSpan::start();
                     tokio::time::sleep(Duration::from_millis(250)).await;
                 }
                 let reason = format!(
@@ -1987,6 +1988,7 @@ async fn launch_seat_locked(
             )
             .await;
         }
+        let _held = route_counts::HeldSpan::start();
         tokio::time::sleep(SPAWN_POLL_INTERVAL).await;
     }
 }

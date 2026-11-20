@@ -364,7 +364,10 @@ async fn wait_for_dead_pane_to_close(state: &AppState, seat: &SeatId) {
         if remaining.is_zero() {
             return;
         }
-        tokio::time::sleep(PANE_CLOSE_POLL.min(remaining)).await;
+        {
+            let _held = super::route_counts::HeldSpan::start();
+            tokio::time::sleep(PANE_CLOSE_POLL.min(remaining)).await;
+        }
         if !pane_listed_without_launch(state, pane, deadline).await {
             return;
         }
