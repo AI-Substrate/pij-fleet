@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f7be-db2f-7a80-bead-9e1d6793adc8",
+				"date": "2026-11-20",
+				"head": "b803bdb332196fb43bdf78a7c9fcc263c70ef1b1",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:281",
+				"writer": "pij-formidable-parakeet",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib codex_bind -- --nocapture",
+					"exit_code": 0,
+					"log": "pr281-r2/probes.log: exact-head archive, unchanged production code, 12 committed tests plus both original R1 stall repros and frequent-start bound probe; 15 passed, 0 failed"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "pr281-r2/checks.json: Rust fmt/macOS clippy/workspace tests, route inventory, smoke, native contracts, Copilot SDK and pij-skill pass; eight local TS-based sensors unavailable/incompatible, one attribution warning; exact-head CI green, C25"
+				},
+				{
+					"command": "just pr-freeze 281",
+					"exit_code": 0,
+					"log": "FINAL b803bdb332196fb43bdf78a7c9fcc263c70ef1b1; CLEAN main base, latest checks passed, detached review checkout clean"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "#281 round-2 correctness review (C34 final round)\nHead: b803bdb332196fb43bdf78a7c9fcc263c70ef1b1\nResult: PASS. Both R1 blockers fixed; no additional blocking findings.\nReviewed delta: ed493731a221dc57a17811962203ee07ff925429..d161c5e1,\nfive files, +114/-7. The merge of main is not re-reviewed.\n\nR281-001:\nThe global thread-start reason clears the failure map before selection/probing,\nso a new thread immediately after the fourth failed attempt gets its own fresh\nthree-retry budget. Counters remain keyed by SeatId within that budget; bound,\ndecided and absent rows lose their counters through the existing retain.\n\nR281-002:\nThe exhaustive is_transient match preserves Runtime and Retryable as probe\nerrors. Stable Refused, InvalidSeatId, Retired, PaneHeld and PaneHolderChild\nremain logged decisions and are not quiet-tick retried. The new FakeRegistry\nwrite-error script records the attempted put but returns before sequence or\nroster mutation; its default empty queue preserves existing fake behavior.\n\nNative holds:\nNativeHolderCurrent and NativeSessionHold are classified as transient in the\nnew helper but are unreachable by CodexBinder today. Its register_via call\npasses native=None and its claim has an id, choosing RegistrationMode::Ordinary\n(registration.rs:536-553). NativeHolderCurrent is emitted from the native entry\nat :781 or behind if native at :1359; NativeSessionHold is produced by\ncheck_native_roster, called only behind if native at :1247. The sole production\nhelper caller is CodexBinder. This changes neither plan 168's precedence/lease\nbrake nor any native registration handler. A repeated attempt does not waive\nany admission, process, pane, retirement or contradictory-claim guard.\n\nCost and the exact brake scope:\nReset is GLOBAL, not tied to the row's own conversation. Unrelated thread starts\nDO refresh every pending row's budget, indefinitely if starts continue. There\nis NO seat-lifetime three-retry cap. This is the existing global thread_started\ntrigger: it already caused every pending row to probe on each start before R2.\nThe fix grants up to three additional QUIET-tick retries per newly observed\nglobal start, retaining the unchanged one-probe-per-row-per-binder-tick limit.\n\nFor N continuously failing pending rows, tick interval I (default 5 seconds),\nand lambda observed thread-start ticks per second:\n- Additional quiet probes: at most 3 * N * lambda per second.\n- Per reason: at most N * (1 initial probe + 3 retries).\n- Total probes: at most N / I per second, including start-triggered probes.\nMultiple thread starts between ticks coalesce. Under a start on every tick,\nall probes are already start-triggered and total is N/5 per second; when starts\nstop, at most three quiet retry ticks follow and launches then stop.\nRemoving the retry cap only adds probes: it remains a one-directional brake,\nnot the global thread-start policy. No new loop, timer or launch site.\nBusy on macOS costs one lsof and no tmux launch. Registration retries pay the\nFULL existing attempt (including process/holder reads and store write), not just\nthe three mocked Facts stages; actual launches are the attempt's existing\nlaunch-site counters. This review does not substitute for live cost receipts.\n\nProof:\nThe same two reviewer reproduction bodies that failed on ed49373 now pass:\nreviewer_new_thread_resets_an_exhausted_retry_budget_before_a_quiet_tick and\nreviewer_a_transient_registration_read_retries_on_the_next_tick. The latter\nretains the original single liveness-read failure, independently of the new\ncommitted store-write test. Each healthy subsequent tick now binds once.\n\nAll 12 committed Codex binder tests plus these two repros and one rate probe\npassed (15/15, exit 0) through:\n  PIJ_SHARED_TARGET=/Users/jordanknight/pi-hacking/pij/target just shared-build -- test --locked -p pij-daemon --lib codex_bind -- --nocapture\nThe source was git archive of the exact head, with only three reviewer tests\nand their helper added. Production binder code compared byte-for-byte with the\nread-only review checkout before running. The source archive is removed after\nthe test; reviewer-probes.patch and probes.log preserve the evidence.\n\nreviewer_frequent_unrelated_starts_probe_once_per_tick_then_stop passes:\n50 successive unrelated global starts cause exactly 50 probes, then 50 quiet\nticks add exactly three probes and stop. 106 mocked Facts stages = 53 probes,\nnot a real launch count. The stable Refused control passes with one probe over\n30 ticks, and the committed transient store-write test retries and binds.\n\nharness checks was actually run at this head: exit 1, six sensors pass, eight\nfail, one advisory warns. Rust (fmt, local macOS clippy, all workspace tests),\nroute inventory, smoke, native contracts, the installed Copilot SDK contract\nand pij-skill pass. The remaining sensors lack local TS dependencies/tsx or\nselect incompatible ambient Biome in this dependency-free review checkout.\nNo dependencies were linked or installed (C25); exact-head CI is green, verified\nby just pr-freeze 281. The local full gate is not represented as green.\n\nThe frozen head and clean review checkout are rechecked before publication.\nNo new R2 mutations or unrelated hardening were required (C34). The original\nR1 failing repro receipts and the current green run prove both corrections.\n\nHarness feedback:\nThe committed immediate-thread reset, transient store-write and stable-refusal\ntests encode R1's findings. FakeRegistry::script_put_error is reusable\ndeterministic write-failure injection rather than another per-test registry.\nThe cost receipt must distinguish a per-global-start brake from a lifetime cap\nand total probes from additional quiet retries.\n"
+		}
+	]
+}
