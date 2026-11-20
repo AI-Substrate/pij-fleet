@@ -329,6 +329,16 @@
 					"seat": "pij-melodic-snail",
 					"to": "2026-11-19T10:18:19.816Z",
 					"why": "F222 step 2: closed seats stop the registration loop; /v1/seats live-rows-only #270"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T02:15:03.689Z",
+					"harness": "omp",
+					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
+					"instance_key": "277",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-melodic-snail",
+					"why": "#277 R277-1 adds a 55 s idle answer per Copilot seat; cost verdict"
 				}
 			]
 		}
