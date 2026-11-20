@@ -2341,6 +2341,16 @@
 					"seat": "pij-level-rhinoceros",
 					"to": "2026-11-20T09:57:11.272Z",
 					"why": "#286 F199 review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T10:23:49.550Z",
+					"harness": "copilot",
+					"harness_session": "86658322-7298-464b-9d99-64b3294322ff",
+					"instance_key": "287",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-bright-felidae",
+					"why": "#287 F236 review"
 				}
 			]
 		}
