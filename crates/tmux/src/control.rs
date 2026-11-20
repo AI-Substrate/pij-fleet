@@ -24,7 +24,8 @@
 //! (F229): two control clients attaching to one server at once, each sending
 //! the setup's `destroy-unattached on`, SIGSEGV the tmux 3.6a server and take
 //! every pane on it down. The lock is a brake: it can only delay or refuse an
-//! attach, and a refused start forks its reads exactly as a failed one does.
+//! attach. While another process holds it, reads are skipped ([`Query::Busy`])
+//! rather than forked, so contention launches nothing and nothing waits.
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -42,15 +43,12 @@ const READY_SENTINEL: &str = "pij-control-ready";
 const REPLY_TIMEOUT: Duration = Duration::from_secs(3);
 /// After a failed start, fork for this long before trying again.
 const RESTART_BACKOFF: Duration = Duration::from_secs(5);
-/// How long a start waits for another client's attach and setup on the same
-/// server (F229). A holder answers in milliseconds and gives up after
-/// [`REPLY_TIMEOUT`], so a wait this long only times out on a stuck holder;
-/// the start is then refused, its reads fork, and it retries after
-/// [`RESTART_BACKOFF`]. Attaching anyway would reopen the crash.
-const ATTACH_LOCK_WAIT: Duration = REPLY_TIMEOUT;
-/// How often a waiting start retries the lock. Only while another process
-/// is attaching: never per read, never per tick.
-const ATTACH_LOCK_RETRY: Duration = Duration::from_millis(10);
+/// How long a start keeps finding another process attaching before it is
+/// refused (F229). Meanwhile reads are skipped, launching nothing, and each
+/// one tries the lock once, without waiting. A live holder lets go within its
+/// own handshake bound ([`REPLY_TIMEOUT`]), so only a frozen holder lasts
+/// this long; the refused start then backs off and forks like any other.
+const ATTACH_LOCK_WAIT: Duration = Duration::from_secs(5);
 /// Attach without resizing windows, without `%output` traffic, and without
 /// keyboard input. Not a write barrier: see the module doc.
 const ATTACH_FLAGS: &str = "no-output,ignore-size,read-only";
@@ -196,6 +194,30 @@ impl Drop for Live {
 struct State {
     live: Option<Live>,
     retry_after: Option<Instant>,
+    /// When this client first found another process attaching (F229).
+    contended_since: Option<Instant>,
+}
+
+/// What a read over the control client came to.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Query {
+    /// The control client answered.
+    Answer(Reply),
+    /// No control client: the caller forks the read, as before plan 180.
+    Fork,
+    /// Another process is attaching its control client to this server
+    /// (F229). The read is skipped, launching nothing: the caller reports it
+    /// unknown, never forks.
+    Busy,
+}
+
+/// While another process holds the attach lock, is a start still waiting
+/// for it (reads skipped), or is it refused (F229)? A live holder lets go
+/// within its own [`REPLY_TIMEOUT`], so only a frozen one outlasts
+/// [`ATTACH_LOCK_WAIT`]; the start is then refused and the failed-start
+/// contract applies.
+pub(crate) fn still_waiting_for_attach(since: Instant, now: Instant) -> bool {
+    now.saturating_duration_since(since) < ATTACH_LOCK_WAIT
 }
 
 /// The lazily started, self-replacing control-mode client.
@@ -260,8 +282,9 @@ impl ControlClient {
         }
     }
 
-    /// Answer a read over the control client, or `None` to make the caller fork.
-    pub(crate) fn query(&self, args: &[OsString]) -> Option<Reply> {
+    /// Answer a read over the control client, tell the caller to fork it,
+    /// or skip it while another process attaches ([`Query::Busy`]).
+    pub(crate) fn query(&self, args: &[OsString]) -> Query {
         self.ask(args, true)
     }
 
@@ -269,16 +292,23 @@ impl ControlClient {
     /// starts or replaces a client and the caller never forks (plan 219: the
     /// modal-stall detector reads only what costs no process).
     pub(crate) fn query_live(&self, args: &[OsString]) -> Option<Reply> {
-        self.ask(args, false)
+        match self.ask(args, false) {
+            Query::Answer(reply) => Some(reply),
+            Query::Fork | Query::Busy => None,
+        }
     }
 
-    fn ask(&self, args: &[OsString], may_start: bool) -> Option<Reply> {
+    fn ask(&self, args: &[OsString], may_start: bool) -> Query {
         if !self.enabled || !is_read(args) {
-            return None;
+            return Query::Fork;
         }
-        let line = command_line(args)?;
+        let Some(line) = command_line(args) else {
+            return Query::Fork;
+        };
         let (receiver, waited_on) = {
-            let mut state = self.state.lock().ok()?;
+            let Ok(mut state) = self.state.lock() else {
+                return Query::Fork;
+            };
             let ended = state.live.as_ref().and_then(|live| {
                 live.waiters
                     .lock()
@@ -292,30 +322,48 @@ impl ControlClient {
             }
             if state.live.is_none() {
                 if !may_start || state.retry_after.is_some_and(|at| Instant::now() < at) {
-                    return None;
+                    return Query::Fork;
                 }
                 match self.start() {
                     Ok(live) => {
                         state.live = Some(live);
                         state.retry_after = None;
+                        state.contended_since = None;
+                    }
+                    // F229: another process is attaching. Never wait here
+                    // (this runs on a runtime worker, holding `state`) and
+                    // never fork: skip the read and try the lock again on the
+                    // next one, until the bound refuses the start.
+                    Err(error) if attach_lock_held(&error) => {
+                        let now = Instant::now();
+                        let since = *state.contended_since.get_or_insert(now);
+                        if still_waiting_for_attach(since, now) {
+                            return Query::Busy;
+                        }
+                        state.contended_since = None;
+                        state.retry_after = Some(now + RESTART_BACKOFF);
+                        return Query::Fork;
                     }
                     Err(_) => {
+                        state.contended_since = None;
                         state.retry_after = Some(Instant::now() + RESTART_BACKOFF);
-                        return None;
+                        return Query::Fork;
                     }
                 }
             }
-            let live = state.live.as_mut()?;
+            let Some(live) = state.live.as_mut() else {
+                return Query::Fork;
+            };
             match send(live, &line) {
                 Some(receiver) => (receiver, Arc::clone(&live.waiters)),
                 None => {
                     state.live = None;
-                    return None;
+                    return Query::Fork;
                 }
             }
         };
         match receiver.recv_timeout(REPLY_TIMEOUT) {
-            Ok(reply) => Some(reply),
+            Ok(reply) => Query::Answer(reply),
             Err(_) => {
                 // Slow or lost: this read forks, and the client is replaced so
                 // later reads stop waiting on a hung one. (Replacing it is not
@@ -324,7 +372,7 @@ impl ControlClient {
                 if let Ok(mut state) = self.state.lock() {
                     forget(&mut state, &waited_on);
                 }
-                None
+                Query::Fork
             }
         }
     }
@@ -343,7 +391,8 @@ impl ControlClient {
     fn start(&self) -> io::Result<Live> {
         // F229: no other client may attach to this server until this one's
         // setup has answered. Released when `_attach` drops, on every return.
-        let _attach = lock_attach(&self.attach_lock, ATTACH_LOCK_WAIT)?;
+        // A held lock refuses at once; `ask` skips reads until it frees.
+        let _attach = lock_attach(&self.attach_lock)?;
         pij_core::spawns::record("tmux.control-client");
         // `-N`: no server means no client; never start one just to read it.
         // `-A`: attach to `_pij`, creating it first if it is absent.
@@ -422,7 +471,8 @@ impl ControlClient {
 /// `state_root`. Keyed by the `-L` label, so isolated fixture servers never
 /// wait on the operator's. A dot file, never `*.raw`: the orphan-tap sweep
 /// cannot take it for a sink.
-pub(crate) fn attach_lock_path(state_root: &Path, server: Option<&str>) -> PathBuf {
+#[must_use]
+pub fn attach_lock_path(state_root: &Path, server: Option<&str>) -> PathBuf {
     let label: String = server
         .unwrap_or("default")
         .chars()
@@ -437,12 +487,13 @@ pub(crate) fn attach_lock_path(state_root: &Path, server: Option<&str>) -> PathB
     state_root.join(format!(".control-attach-{label}.lock"))
 }
 
-/// Take the exclusive attach lock at `path`, waiting at most `wait` for
-/// another holder (F229). The kernel releases an `flock` when its holder's
-/// last descriptor closes, so a holder that died never blocks anyone. Times
-/// out as [`io::ErrorKind::WouldBlock`]: the start is refused, never made
-/// without the lock.
-pub(crate) fn lock_attach(path: &Path, wait: Duration) -> io::Result<File> {
+/// Take the exclusive attach lock at `path` now or refuse (F229): never
+/// wait, since the caller holds this client's state lock on a runtime
+/// worker. The kernel releases an `flock` when its holder's last descriptor
+/// closes, so a holder that died never blocks anyone. A held lock is
+/// [`io::ErrorKind::WouldBlock`]: the start is refused, never made without
+/// the lock.
+pub(crate) fn lock_attach(path: &Path) -> io::Result<File> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
@@ -451,25 +502,39 @@ pub(crate) fn lock_attach(path: &Path, wait: Duration) -> io::Result<File> {
         .truncate(false)
         .write(true)
         .open(path)?;
-    let deadline = Instant::now() + wait;
-    loop {
-        match file.try_lock() {
-            Ok(()) => return Ok(file),
-            Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
-                std::thread::sleep(ATTACH_LOCK_RETRY);
-            }
-            Err(TryLockError::WouldBlock) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::WouldBlock,
-                    format!(
-                        "another tmux control client held {} for {wait:?}",
-                        path.display()
-                    ),
-                ));
-            }
-            Err(TryLockError::Error(error)) => return Err(error),
-        }
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(TryLockError::WouldBlock) => Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            AttachLockHeld(path.to_path_buf()),
+        )),
+        Err(TryLockError::Error(error)) => Err(error),
     }
+}
+
+/// Another process holds the attach lock (F229). Its own type, so a spawn
+/// that fails with `EAGAIN` (also [`io::ErrorKind::WouldBlock`]) is never
+/// taken for contention.
+#[derive(Debug)]
+pub(crate) struct AttachLockHeld(PathBuf);
+
+impl std::fmt::Display for AttachLockHeld {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "another tmux control client is attaching ({} is held)",
+            self.0.display()
+        )
+    }
+}
+
+impl std::error::Error for AttachLockHeld {}
+
+/// Did this start fail because another process holds the attach lock?
+pub(crate) fn attach_lock_held(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|inner| inner.is::<AttachLockHeld>())
 }
 
 /// Drop the live client, but only if it is still the one `waited_on` belongs
@@ -557,8 +622,8 @@ fn read_replies(mut stdout: impl BufRead, waiters: &Mutex<Waiters>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        Frame, Framer, Live, State, Waiters, attach_lock_path, command_line, forget, is_read,
-        lock_attach,
+        ATTACH_LOCK_WAIT, Frame, Framer, Live, REPLY_TIMEOUT, State, Waiters, attach_lock_held,
+        attach_lock_path, command_line, forget, is_read, lock_attach, still_waiting_for_attach,
     };
     use std::ffi::OsString;
     use std::io;
@@ -792,6 +857,7 @@ mod tests {
         let mut state = State {
             live: Some(replacement),
             retry_after: None,
+            contended_since: None,
         };
         forget(&mut state, &old_waiters);
         assert!(
@@ -832,24 +898,53 @@ mod tests {
         );
     }
 
-    /// F229: a held lock makes a start wait at most its bound, then refuse;
-    /// it is never taken without the lock. Once released it is taken at once.
+    /// F229: a held lock refuses a start at once (the caller holds the state
+    /// lock on a runtime worker, so it never waits) and is never shared. Once
+    /// released it is taken at once.
     #[test]
-    fn a_held_attach_lock_bounds_the_wait_then_refuses() {
+    fn a_held_attach_lock_refuses_at_once() {
         let path = attach_lock_path(&lock_dir("held"), Some("srv"));
-        let holder = lock_attach(&path, Duration::ZERO).expect("first holder");
-        let bound = Duration::from_millis(200);
+        let holder = lock_attach(&path).expect("first holder");
         let started = Instant::now();
-        let refused = lock_attach(&path, bound).expect_err("held: refused, never shared");
+        let refused = lock_attach(&path).expect_err("held: refused, never shared");
         let waited = started.elapsed();
-        assert_eq!(refused.kind(), io::ErrorKind::WouldBlock, "{refused}");
-        assert!(waited >= bound, "gave up early, after {waited:?}");
+        assert!(attach_lock_held(&refused), "{refused}");
+        let spawn_eagain = io::Error::from(io::ErrorKind::WouldBlock);
         assert!(
-            waited < bound + pij_testkit::time::scaled(Duration::from_secs(2)),
-            "overran its bound: {waited:?}"
+            !attach_lock_held(&spawn_eagain),
+            "an EAGAIN spawn is not contention"
+        );
+        assert!(
+            waited < pij_testkit::time::scaled(Duration::from_millis(500)),
+            "a held lock made the start wait {waited:?}"
         );
         drop(holder);
-        lock_attach(&path, Duration::ZERO).expect("released: taken at once");
+        // Taken again once released. Another test's spawn can briefly hold a
+        // forked copy of the descriptor until its exec closes it (CLOEXEC),
+        // so allow a moment rather than one attempt.
+        let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(1));
+        while let Err(error) = lock_attach(&path) {
+            assert!(
+                Instant::now() < deadline,
+                "released lock not taken: {error}"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    /// F229: a start keeps skipping reads while another process attaches,
+    /// then is refused at the bound. The bound outlasts a live holder's own
+    /// handshake limit, so only a frozen holder reaches it.
+    #[test]
+    fn a_contended_start_waits_out_the_bound_then_is_refused() {
+        let since = std::time::Instant::now();
+        assert!(still_waiting_for_attach(since, since));
+        assert!(still_waiting_for_attach(
+            since,
+            since + ATTACH_LOCK_WAIT - Duration::from_millis(1)
+        ));
+        assert!(!still_waiting_for_attach(since, since + ATTACH_LOCK_WAIT));
+        assert!(REPLY_TIMEOUT < ATTACH_LOCK_WAIT);
     }
 
     /// Helper for the next test: holds the lock in its own process until killed.
@@ -859,7 +954,7 @@ mod tests {
             return;
         };
         let ready = std::env::var("PIJ_ATTACH_LOCK_READY").expect("ready file");
-        let _held = lock_attach(std::path::Path::new(&path), Duration::ZERO).expect("hold");
+        let _held = lock_attach(std::path::Path::new(&path)).expect("hold");
         std::fs::write(ready, b"held").expect("say held");
         std::thread::sleep(Duration::from_secs(600));
     }
@@ -889,13 +984,13 @@ mod tests {
             assert!(Instant::now() < deadline, "holder never took the lock");
             std::thread::sleep(Duration::from_millis(10));
         }
-        let refused = lock_attach(&path, Duration::from_millis(50))
-            .expect_err("a live holder in another process excludes this one");
-        assert_eq!(refused.kind(), io::ErrorKind::WouldBlock, "{refused}");
+        let refused =
+            lock_attach(&path).expect_err("a live holder in another process excludes this one");
+        assert!(attach_lock_held(&refused), "{refused}");
 
         holder.kill().expect("kill holder");
         holder.wait().expect("reap holder");
-        lock_attach(&path, Duration::ZERO).expect("dead holder: taken at once");
+        lock_attach(&path).expect("dead holder: taken at once");
         let _ = std::fs::remove_dir_all(dir);
     }
 }

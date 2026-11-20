@@ -3,7 +3,7 @@
 mod control;
 mod ledger;
 
-pub use control::CONTROL_SESSION;
+pub use control::{CONTROL_SESSION, attach_lock_path};
 mod parse;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -467,8 +467,17 @@ impl TmuxAdapter {
     }
 
     fn stdout(&self, operation: &str, args: &[OsString]) -> Result<String> {
-        if let Some(reply) = self.control.query(args) {
-            return self.control_stdout(operation, reply);
+        match self.control.query(args) {
+            control::Query::Answer(reply) => return self.control_stdout(operation, reply),
+            // F229: another pij process is attaching its control client to
+            // this server. Forking now would turn that attach into a launch
+            // per read; the read is unknown instead, and launches nothing.
+            control::Query::Busy => {
+                return Err(self.error(format!(
+                    "{operation} skipped: another pij process is attaching its tmux control client to this server (F229); nothing was launched — retry in a moment"
+                )));
+            }
+            control::Query::Fork => {}
         }
         let output = self.run(operation, args)?;
         String::from_utf8(output.stdout).map_err(|error| {
