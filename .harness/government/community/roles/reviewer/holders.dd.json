@@ -2466,7 +2466,10 @@
 					"harness_session": "0474289e-ae75-4153-8ce4-be959f192fb9",
 					"instance_key": "296",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #296 merged (81d03d7f9a83)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-previous-newt",
+					"to": "2026-11-20T16:15:09.397Z",
 					"why": "#296 Copilot SDK record 1.0.115-2"
 				}
 			]
