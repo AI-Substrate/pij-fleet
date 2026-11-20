@@ -790,6 +790,16 @@
 					"seat": "pij-conceptual-cephalopod",
 					"to": "2026-11-20T11:50:32.456Z",
 					"why": "#289 C34 ii security"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T11:58:57.671Z",
+					"harness": "copilot",
+					"harness_session": "47a4d1e9-4c84-4f73-a68b-492125a5cee9",
+					"instance_key": "291",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-elated-ermine",
+					"why": "#291 F239 security"
 				}
 			]
 		}
