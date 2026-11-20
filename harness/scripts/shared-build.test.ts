@@ -5,6 +5,7 @@ import {
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	realpathSync,
 	rmSync,
@@ -298,6 +299,23 @@ describe("just shared-build", () => {
 		expect(await touched(f)).toBe(true);
 	});
 
+	it("never writes the stamp through a link or into a directory planted at its path, and then always touches", async () => {
+		const f = fixture();
+		const lib = join(f.worktree, "crates", "alpha", "src", "lib.rs");
+		const elsewhere = join(f.root, "elsewhere");
+		mkdirSync(elsewhere);
+		mkdirSync(f.target);
+		symlinkSync(elsewhere, join(f.target, ".pij-shared-build-tree"));
+		for (let i = 0; i < 2; i++) {
+			utimesSync(lib, 1_000_000, 1_000_000);
+			expect((await run(f, ["--", "build"], { ARTIFACT: "1" })).code).toBe(0);
+			expect(statSync(lib).mtimeMs).toBeGreaterThan(1_000_000_000);
+		}
+		expect(readdirSync(elsewhere)).toEqual([]);
+		expect(lstatSync(join(f.target, ".pij-shared-build-tree")).isSymbolicLink()).toBe(true);
+		expect(readdirSync(f.target).filter((name) => name.startsWith(".pij-shared-build-tree."))).toEqual([]);
+	});
+
 	it("touches after another tree's batch built and then failed, in any cargo layout (R297-001)", async () => {
 		const f = fixture();
 		const lib = join(f.worktree, "crates", "alpha", "src", "lib.rs");
@@ -321,6 +339,20 @@ describe("just shared-build", () => {
 		// The same failed batch, whatever it wrote and wherever (here no deps file).
 		const binary = { ARTIFACT_AT: "debug/pij-rs" };
 		expect(await touchedAfter(binary, { ...f, worktree: other }, ["--", "build", "--then", "fail"])).toBe(true);
+		// A round-1 stamp (bare `<tree>`) that a failed batch left trusted and
+		// newer than the other tree's artifacts (snail): each tree touches once
+		// on adoption, then trusts its own finished stamp again.
+		await run({ ...f, worktree: other }, ["--", "build", "--then", "fail"], { ...triple, ARTIFACT: "1" });
+		const legacy = join(f.target, ".pij-shared-build-tree");
+		writeFileSync(legacy, `${f.worktree}\n`);
+		const ahead = Date.now() / 1000 + 120;
+		utimesSync(legacy, ahead, ahead);
+		utimesSync(lib, 1_000_000, 1_000_000);
+		await run(f, ["--", "build"]);
+		expect(statSync(lib).mtimeMs).toBeGreaterThan(1_000_000_000);
+		utimesSync(lib, 1_000_000, 1_000_000);
+		await run(f, ["--", "build"]);
+		expect(statSync(lib).mtimeMs).toBe(1_000_000_000);
 		// Bare cargo outside any run, into a target triple's deps.
 		utimesSync(lib, 1_000_000, 1_000_000);
 		await run(f, ["--", "build"], { ARTIFACT: "1" });
