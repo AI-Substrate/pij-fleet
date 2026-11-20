@@ -699,6 +699,16 @@
 					"seat": "pij-pleased-swift",
 					"to": "2026-11-20T07:29:26.004Z",
 					"why": "#282 F231 security verdict, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T07:46:22.738Z",
+					"harness": "copilot",
+					"harness_session": "7107d26b-50e1-46eb-ab6c-09d5ce31b31d",
+					"instance_key": "283",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-outside-possum",
+					"why": "#283 F233 security verdict, fresh seat"
 				}
 			]
 		}
