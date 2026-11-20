@@ -905,7 +905,8 @@ impl BackgroundService {
         //
         // POLICY CHANGE (F230, prime's ruling): a native Copilot owner is cut
         // and sent a batch whatever its state, still at most one per
-        // `min_interval` (the floor above); its extension's reader decides when
+        // `min_interval` per job (the floor above is per job, so an owner with
+        // N sources can take N); its extension's reader decides when
         // to inject it, as for any normal send. Reason: Copilot emits no
         // `session.idle` while an async shell runs, so `busy` is unreliable for
         // native Copilot seats (pij-fluttering-elk got no batch for a 65-minute

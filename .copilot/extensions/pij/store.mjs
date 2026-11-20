@@ -2402,8 +2402,10 @@ export class NativeBridge {
 		};
 	}
 	/**
-	 * F230: send the latest observed state again. A retry waiting for the same
-	 * state ends its wait, so this one sends at once instead of behind it.
+	 * F230: send the latest observed state again, as it is now: queued behind
+	 * any publication in flight, it must not read a state observed after it,
+	 * or an older state queued behind it would land last (review of #284). A
+	 * retry waiting for the same state ends its wait, so this one sends at once.
 	 */
 	republishActivity() {
 		const state = this.activityObserved;
@@ -2411,7 +2413,7 @@ export class NativeBridge {
 		this.activityState = state;
 		this.activityRetry.abort();
 		this.activityRetry = new AbortController();
-		this.activity = this.activity.then(() => this.publishActivity(this.activityObserved));
+		this.activity = this.activity.then(() => this.publishActivity(state));
 	}
 	/**
 	 * F230: a failed report is retried after each wait in ACTIVITY_RETRY_MS
@@ -2462,6 +2464,10 @@ export class NativeBridge {
 					status: error?.status ?? null,
 					safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : null,
 				});
+				// A newer state was observed (even before this attempt began): it is
+				// queued behind this one, so this never waits to retry a state the
+				// seat has left (review of #284).
+				if (this.activityObserved !== state) return;
 				const wait = ACTIVITY_RETRY_MS[attempt];
 				if (this.activityUnsupported || wait === undefined) {
 					if (this.activityState === state) this.activityState = undefined;

@@ -1921,6 +1921,58 @@ test("F230: a failed report retries until it lands, and a newer state supersedes
 	assert.equal(f.bridge.activityPublished, "working");
 });
 
+/** Hold every /v1/activity request until `release()`; later ones go straight through. */
+function holdActivity(f) {
+	const request = f.client.request;
+	let held = Promise.withResolvers();
+	f.client.request = (path, body, signal) =>
+		path === "/v1/activity" && held
+			? held.promise.then(() => request(path, body, signal))
+			: request(path, body, signal);
+	return () => {
+		held.resolve();
+		held = undefined;
+	};
+}
+
+test("F230 review: a re-registration behind a report in flight sends the state of that moment", async (t) => {
+	const { f, states } = await activityBridge(t);
+	const release = holdActivity(f);
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	f.event({ type: "session.idle", id: "turn-1-idle", data: {} });
+	await f.bridge.register("heartbeat");
+	f.event({ type: "assistant.turn_start", id: "turn-2", data: {} });
+	f.event({ type: "session.idle", id: "turn-2-idle", data: {} });
+	f.event({ type: "assistant.turn_start", id: "turn-3", data: {} });
+	release();
+	await settles(() => states().length >= 6, "every report is sent");
+	await flush();
+	// The re-registration's idle lands where it was observed, never after a
+	// newer state: the last one sent is the seat's state now.
+	assert.deepEqual(states(), ["working", "idle", "idle", "working", "idle", "working"]);
+});
+
+test("F230 review: a report superseded before it was first sent never waits to retry", async (t) => {
+	const retry = recordedWaits();
+	const { f, states } = await activityBridge(
+		t,
+		(body) =>
+			body.state === "idle"
+				? Object.assign(new Error("Pij HTTP 500"), { status: 500 })
+				: { changed: true },
+		{ delay: retry.delay },
+	);
+	const release = holdActivity(f);
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	f.event({ type: "session.idle", id: "turn-1-idle", data: {} });
+	f.event({ type: "assistant.turn_start", id: "turn-2", data: {} });
+	retry.holdNext();
+	release();
+	await settles(() => states().length >= 3, "the newer working is sent");
+	assert.deepEqual(states(), ["working", "idle", "working"]);
+	assert.deepEqual(retry.waits, [], "no wait for a state the seat has left");
+});
+
 test("fyi claim: count gates the verbatim block; empty and failed claims add nothing", async () => {
 	const golden = await readFile(
 		new URL("../../../crates/testkit/fixtures/golden/fyi/block.txt", import.meta.url),
