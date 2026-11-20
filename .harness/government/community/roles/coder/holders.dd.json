@@ -1354,7 +1354,10 @@
 					"harness_session": "01a1f66b-21d0-7652-8b03-da1df9910ceb",
 					"instance_key": "c34i",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-forthcoming-silkworm",
+					"to": "2026-11-20T12:52:29.236Z",
 					"why": "C34 follow-ups batch (i)"
 				},
 				{
@@ -1364,7 +1367,10 @@
 					"harness_session": "01a1f66b-21d0-7652-8b03-da1df9910ceb",
 					"instance_key": "c34ii",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-forthcoming-silkworm",
+					"to": "2026-11-20T12:52:29.236Z",
 					"why": "C34 follow-ups batch (ii), PR #289"
 				},
 				{
@@ -1400,7 +1406,10 @@
 					"harness_session": "01a1f66b-21d0-7652-8b03-da1df9910ceb",
 					"instance_key": "r288fu",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-forthcoming-silkworm",
+					"to": "2026-11-20T12:52:29.236Z",
 					"why": "R288-FU-01 release-build signal-test sensor + tiger retro"
 				},
 				{
