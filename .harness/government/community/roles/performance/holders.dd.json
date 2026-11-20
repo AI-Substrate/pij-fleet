@@ -558,7 +558,10 @@
 					"harness_session": "384526ac-5054-4703-8fdd-65d50ea930bf",
 					"instance_key": "300",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #300 merged (90e659cd16d7)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-different-newt",
+					"to": "2026-11-20T21:19:16.328Z",
 					"why": "verdict on #300 (issue #85 daemon launch leftovers)"
 				}
 			]
