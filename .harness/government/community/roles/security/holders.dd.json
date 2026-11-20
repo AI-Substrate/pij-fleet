@@ -894,6 +894,16 @@
 					"seat": "pij-frequent-sawfish",
 					"to": "2026-11-20T19:09:01.635Z",
 					"why": "#298 F245+F246 security"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T19:51:28.071Z",
+					"harness": "copilot",
+					"harness_session": "af8fa981-b55a-42f2-9a2a-babde798368d",
+					"instance_key": "299",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-frequent-sawfish",
+					"why": "verdict on #299 (F248+F247), continuity from #298"
 				}
 			]
 		}
