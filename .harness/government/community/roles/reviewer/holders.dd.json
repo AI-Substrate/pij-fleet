@@ -2417,7 +2417,10 @@
 					"harness_session": "b1a86890-c40f-480f-b329-b72b537f3d25",
 					"instance_key": "292",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #292 merged (288d0d078fe0)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-allied-raven",
+					"to": "2026-11-20T13:46:57.264Z",
 					"why": "#292 F238 review"
 				}
 			]

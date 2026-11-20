@@ -1419,7 +1419,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f238",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #292 merged (288d0d078fe0)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-20T13:46:57.264Z",
 					"why": "F238 control-client exit never races destroy-unattached; lock keyed by socket path (prime re-ruling; jumps queue)"
 				}
 			]
