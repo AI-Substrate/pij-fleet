@@ -1460,6 +1460,16 @@
 					"seat": "pij-cultural-falcon",
 					"to": "2026-11-20T15:50:31.409Z",
 					"why": "F240 reaper spawn Err falls back to a bounded blocking wait (prime C34 at #292)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T15:58:51.435Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f243",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F243 release-build idempotence + F244 bounce-rs missing-tmux refusal and bounded post-kill wait"
 				}
 			]
 		}
