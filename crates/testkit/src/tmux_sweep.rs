@@ -268,10 +268,14 @@ impl Holders {
     /// Why nothing in `dir` may count as unheld, if anything: the holders are
     /// unknown, `dir` itself can't be looked at, or a bound path that won't
     /// stat may be in `dir` (its parent is `dir` by device and inode, or its
-    /// parent can't be looked at either). Such a path could be an entry of
-    /// `dir` this user can't see as bound, so `dir` is spared whole (#298
-    /// round 2, bee and sawfish: fail closed in that run, or that directory).
-    /// One whose parent is another directory names no entry of `dir`.
+    /// parent can't be looked at either, behind a directory of this user's).
+    /// Such a path could be an entry of `dir` this user can't see as bound,
+    /// so `dir` is spared whole (#298 round 2, bee and sawfish: fail closed in
+    /// that run, or that directory). One whose parent is another directory
+    /// names no entry of `dir`, nor does one behind another user's directory
+    /// this user can't search (Linux lists every user's sockets: CI's
+    /// `/run/docker/…`): whatever file it made is that user's, and the sweep
+    /// removes only this user's files.
     #[must_use]
     pub fn unknown_in(&self, dir: &Path) -> Option<String> {
         let unresolved = match self {
@@ -294,10 +298,22 @@ impl Holders {
                 Ok(_) => {}
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
                 Err(error) => {
-                    return Some(format!(
-                        "{}, bound, can't be placed: {error}",
-                        path.display()
-                    ));
+                    // The deepest ancestor that can be looked at. Behind
+                    // another user's directory we can't search, a socket was
+                    // bound by someone who can, and the file it made is
+                    // theirs: the sweep only ever removes this user's files.
+                    // Behind one of ours, it can't be placed: spare `dir`.
+                    let owner = parent
+                        .ancestors()
+                        .skip(1)
+                        .find_map(|ancestor| fs::metadata(ancestor).ok())
+                        .map(|meta| meta.uid());
+                    if owner.is_none_or(|uid| uid == pij_core::program::real_uid()) {
+                        return Some(format!(
+                            "{}, bound, can't be placed: {error}",
+                            path.display()
+                        ));
+                    }
                 }
             }
         }
@@ -639,7 +655,12 @@ mod tests {
         assert!(exists(&dir.join("pij-test-1-stale")));
 
         let swept = sweep(&dir, later, true, &holders).expect("sweep");
-        assert_eq!(verdict(&swept, "pij-test-1-stale"), Some(Verdict::Stale));
+        assert_eq!(
+            verdict(&swept, "pij-test-1-stale"),
+            Some(Verdict::Stale),
+            "{:?}",
+            holders.unknown_in(&dir)
+        );
         assert_eq!(
             verdict(&swept, ".pij-rs-orphan-1.pij-control-attach.lock"),
             Some(Verdict::Stale)
@@ -727,8 +748,14 @@ mod tests {
             );
         }
         let later = SystemTime::now() + Duration::from_secs(24 * 3600);
-        let swept = sweep(&dir, later, true, &Holders::read()).expect("sweep");
-        assert_eq!(verdict(&swept, "pij-rs-full-1"), Some(Verdict::Live));
+        let holders = Holders::read();
+        let swept = sweep(&dir, later, true, &holders).expect("sweep");
+        assert_eq!(
+            verdict(&swept, "pij-rs-full-1"),
+            Some(Verdict::Live),
+            "{:?}",
+            holders.unknown_in(&dir)
+        );
         assert_eq!(
             verdict(&swept, ".pij-rs-full-1.pij-control-attach.lock"),
             Some(Verdict::Live)
@@ -882,7 +909,18 @@ mod tests {
         fs::set_permissions(&shut, fs::Permissions::from_mode(0o000)).expect("chmod");
         let in_dir = Holders::of(&[dir.join("no-such-socket")]);
         let unplaced = Holders::of(&[shut.join("inner").join("sock")]);
-        let elsewhere = Holders::of(&[shut.join("sock"), PathBuf::from("/nonexistent-pij/sock")]);
+        let mut others = vec![shut.join("sock"), PathBuf::from("/nonexistent-pij/sock")];
+        // Behind another user's directory this user can't search (root's
+        // home on either system), as Linux lists every user's sockets.
+        for home in ["/root", "/var/root"] {
+            let behind = Path::new(home).join("pij-private").join("sock");
+            if fs::metadata(Path::new(home).join("pij-private"))
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::PermissionDenied)
+            {
+                others.push(behind);
+            }
+        }
+        let elsewhere = Holders::of(&others);
         fs::set_permissions(&shut, fs::Permissions::from_mode(0o700)).expect("chmod back");
         for holders in [&in_dir, &unplaced, &elsewhere] {
             assert!(
