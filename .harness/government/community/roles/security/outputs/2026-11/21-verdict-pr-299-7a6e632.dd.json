@@ -1,0 +1,48 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fa83-d22e-74e0-ae5e-a08a2b9518a6",
+				"date": "2026-11-21",
+				"head": "7a6e632b559857484007c26d3a5afdccf2c5b8d6",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:299",
+				"writer": "pij-frequent-sawfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Security review unavailable after automated safeguard rejection; no vulnerability finding or clean assessment established. Obtain authorized human review or resolve review access before a substantive verdict."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 299",
+					"exit_code": 0,
+					"log": "FINAL at pinned full head; CLEAN and five latest CI checks passed. Administrative finality only, not a completed security review."
+				},
+				{
+					"command": "harness boot --json",
+					"exit_code": 0,
+					"log": "Advisory ready=false: vitest absent. No dependency installation or symlinking performed."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security review request for PR #299, round 1.\n\nHead: 7a6e632b559857484007c26d3a5afdccf2c5b8d6\nBase: 3b5d06ae594de0a8a3eb1eb729dd4ae79a788bde\n\nVerdict: BLOCK - review unavailable, not a confirmed vulnerability finding.\n\nThe security-review tool failed with an automated cybersecurity-safeguard rejection (HTTP 422) and returned no review result. No clean security assessment is claimed. The requested UID-transition, foreign-holder, test-seam and diagnostic-rendering checks remain unverified by this security review.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No security finding established; the review could not be completed. | - |\n\nThis is a review-availability block, not evidence that the code contains a vulnerability. An authorized human review or resolution of the review-access restriction is needed before a substantive security verdict can be supplied.\n\nVerified administrative receipts only:\n\n- just pr-freeze 299: FINAL at the exact full head above, CLEAN, five latest CI checks passed, no migrations.\n- The detached review worktree was clean.\n- harness boot --json: advisory ready=false because vitest is absent. No dependencies were installed or symlinked (C25).\n- The PR body explicitly describes the Linux ownership filter as a policy that permits more deletion, not a safety brake. Its correctness is not certified by this output.\n\nNo product edits, live bounce, fleet --apply, or destructive probes were performed by this seat for #299. No local full-gate pass or performance certification is claimed. The security/299 holding is retained until merge as requested.\n"
+		}
+	]
+}
