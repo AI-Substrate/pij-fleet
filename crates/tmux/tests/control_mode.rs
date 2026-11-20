@@ -936,3 +936,185 @@ fn list_panes_without_launch_never_starts_a_client_or_forks() {
         assert_eq!(server.launches().len(), warm, "a live client: no launch");
     });
 }
+
+/// Helper for the next test: one pij process with its own adapter. It parks
+/// until the go file exists, then reads (which starts its control client) and
+/// reports what it read.
+#[test]
+fn control_attach_helper_process() {
+    let Ok(server) = std::env::var("PIJ_ATTACH_RACE_SERVER") else {
+        return;
+    };
+    let var = |name: &str| PathBuf::from(std::env::var(name).expect(name));
+    let (taps, parked, go, answer) = (
+        var("PIJ_ATTACH_RACE_TAPS"),
+        var("PIJ_ATTACH_RACE_PARKED"),
+        var("PIJ_ATTACH_RACE_GO"),
+        var("PIJ_ATTACH_RACE_ANSWER"),
+    );
+    // Plain `tmux -L`, not the launch-logging wrapper: the wrapper's extra
+    // shell spreads the two attaches apart and hides the race.
+    let adapter = TmuxAdapter::for_server(server, taps);
+    fs::write(&parked, b"parked").expect("say parked");
+    while !go.exists() {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // The process that finds the other attaching has its read skipped (F229);
+    // it reads again until its own client answers.
+    let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(15));
+    let read = loop {
+        match block_on(adapter.list_panes()) {
+            Err(error) if error.to_string().contains("attaching") && Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            read => break read,
+        }
+    };
+    fs::write(&answer, format!("{:?}", read.map(|panes| panes.len()))).expect("answer");
+}
+
+/// F229: two pij processes starting control clients on one server at the same
+/// moment, each sending the setup's `destroy-unattached on`, SIGSEGV'd the tmux
+/// 3.6a server (15 of 30 rounds without the lock), taking every pane with it.
+/// The attach lock makes attach and setup take turns across processes, so the
+/// server outlives every round.
+#[test]
+fn concurrent_control_attaches_from_two_processes_never_crash_the_server() {
+    for round in 0..10 {
+        let server = Server::with_sessions(&["work"]);
+        let go = server.dir.join("go");
+        let racers: Vec<_> = (0..2)
+            .map(|racer| {
+                let parked = server.dir.join(format!("parked-{racer}"));
+                let answer = server.dir.join(format!("answer-{racer}"));
+                let child = Command::new(std::env::current_exe().expect("test binary"))
+                    .args(["--exact", "control_attach_helper_process", "--nocapture"])
+                    .env("PIJ_ATTACH_RACE_SERVER", &server.name)
+                    .env("PIJ_ATTACH_RACE_TAPS", server.dir.join("taps"))
+                    .env("PIJ_ATTACH_RACE_PARKED", &parked)
+                    .env("PIJ_ATTACH_RACE_GO", &go)
+                    .env("PIJ_ATTACH_RACE_ANSWER", &answer)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .expect("spawn racer");
+                (child, parked, answer)
+            })
+            .collect();
+        let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(15));
+        while !racers.iter().all(|(_, parked, _)| parked.exists()) {
+            assert!(
+                Instant::now() < deadline,
+                "round {round}: racers never parked"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        fs::write(&go, b"go").expect("release racers");
+        let answers: Vec<String> = racers
+            .into_iter()
+            .map(|(mut child, _, answer)| {
+                child.wait().expect("reap racer");
+                fs::read_to_string(answer).unwrap_or_else(|error| format!("no answer: {error}"))
+            })
+            .collect();
+        assert!(
+            server.alive(),
+            "round {round}: the server died: {answers:?}"
+        );
+        assert!(
+            answers.iter().all(|answer| answer.starts_with("Ok(")),
+            "round {round}: {answers:?}"
+        );
+    }
+}
+
+/// Helper for the next test: another process holding a server's attach lock,
+/// as a pij process does mid-attach, until it is killed.
+#[test]
+fn attach_lock_holder_process() {
+    let Ok(lock) = std::env::var("PIJ_ATTACH_LOCK_HOLD") else {
+        return;
+    };
+    let ready = std::env::var("PIJ_ATTACH_LOCK_READY").expect("ready file");
+    let path = PathBuf::from(lock);
+    fs::create_dir_all(path.parent().expect("lock dir")).expect("lock dir");
+    let file = fs::File::create(&path).expect("lock file");
+    file.lock().expect("hold the attach lock");
+    fs::write(ready, b"held").expect("say held");
+    std::thread::sleep(Duration::from_secs(600));
+}
+
+/// F229, R280-001/P280-001: while another process holds the server's attach
+/// lock, reads are skipped, never forked and never waited on. A fork fallback
+/// would launch a tmux per read, about 400 a second from the observer alone at
+/// 80 panes; a wait would stall the runtime worker that runs the read. Here,
+/// on a current-thread runtime, reads keep running until a 50 ms timer armed
+/// beside them fires: it fires on time, every read is skipped, and nothing is
+/// launched. Once the holder is gone, the very next read starts the client:
+/// no backoff, no fallback.
+#[test]
+fn a_held_attach_lock_skips_reads_without_launching_or_waiting() {
+    let server = Server::start();
+    let lock = pij_tmux::attach_lock_path(&server.dir.join("taps"), None);
+    let ready = server.dir.join("holder-ready");
+    let mut holder = Command::new(std::env::current_exe().expect("test binary"))
+        .args(["--exact", "attach_lock_holder_process", "--nocapture"])
+        .env("PIJ_ATTACH_LOCK_HOLD", &lock)
+        .env("PIJ_ATTACH_LOCK_READY", &ready)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn lock holder");
+    let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(15));
+    while !ready.exists() {
+        assert!(Instant::now() < deadline, "holder never took the lock");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let adapter = server.adapter(true);
+    let before = server.launches().len();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("current-thread runtime");
+    runtime.block_on(async {
+        let armed = Instant::now();
+        let timer = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            armed.elapsed()
+        });
+        let mut reads = 0;
+        let deadline = armed + pij_testkit::time::scaled(Duration::from_secs(5));
+        while !timer.is_finished() {
+            assert!(Instant::now() < deadline, "the 50 ms timer never fired");
+            let error = adapter
+                .list_panes()
+                .await
+                .expect_err("a held lock skips the read");
+            assert!(error.to_string().contains("attaching"), "{error}");
+            reads += 1;
+            tokio::task::yield_now().await;
+        }
+        let fired = timer.await.expect("timer task");
+        assert!(
+            fired
+                < Duration::from_millis(50) + pij_testkit::time::scaled(Duration::from_millis(250)),
+            "a 50 ms timer fired after {fired:?}: a read blocked the runtime"
+        );
+        assert!(reads > 0, "no read ran while the timer was pending");
+    });
+    assert_eq!(
+        server.launches()[before..],
+        [] as [String; 0],
+        "a held lock launched tmux"
+    );
+
+    holder.kill().expect("kill holder");
+    holder.wait().expect("reap holder");
+    block_on(adapter.list_panes()).expect("released: the next read answers");
+    let launched = server.launches()[before..].to_vec();
+    assert_eq!(launched.len(), 1, "{launched:?}");
+    assert!(
+        launched[0].contains("-C"),
+        "the one launch is the control client: {launched:?}"
+    );
+}

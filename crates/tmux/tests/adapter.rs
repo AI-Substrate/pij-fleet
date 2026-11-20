@@ -911,12 +911,10 @@ fn separate_adapters_cannot_both_reserve_one_pane() {
     let mut racers = Vec::new();
     for _ in 0..2 {
         let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
-        // Works around a tmux crash; it does not fix one (F228, F229). Two
-        // control clients attaching at once, with the setup's
-        // `destroy-unattached on`, SIGSEGV the tmux 3.6a server, so racing
-        // the first reads killed the server in 82 of 100 runs. Each racer's
-        // client starts here, one after the other; the barrier then races
-        // only the reservation this test is about.
+        // Each racer's control client starts here, one after the other, so
+        // the barrier races only the reservation this test is about. Racing
+        // the attach too would test F229's attach lock instead: the racer
+        // that finds the other attaching has its read skipped.
         block_on(tmux.list_panes()).expect("start this racer's control client");
         let pane_id = pane.id.clone();
         let start = Arc::clone(&barrier);

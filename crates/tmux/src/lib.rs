@@ -3,7 +3,7 @@
 mod control;
 mod ledger;
 
-pub use control::CONTROL_SESSION;
+pub use control::{CONTROL_SESSION, attach_lock_path};
 mod parse;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -188,48 +188,58 @@ struct HeldSink {
 impl TmuxAdapter {
     /// Use `tmux` resolved from `PATH` and permit workspace-wide pane listings.
     pub fn new(tap_root: impl Into<PathBuf>) -> Self {
+        let tap_root = tap_root.into();
         Self {
-            binary: OsString::from("tmux"),
-            server: None,
-            session: None,
-            tap_root: tap_root.into(),
-            submit_lock: Arc::new(AsyncMutex::new(())),
-            taps: Arc::new(Mutex::new(BTreeMap::new())),
-            claims_legacy_sinks: true,
             control: Arc::new(control::ControlClient::new(
                 OsString::from("tmux"),
                 None,
                 true,
+                &tap_root,
             )),
+            binary: OsString::from("tmux"),
+            server: None,
+            session: None,
+            tap_root,
+            submit_lock: Arc::new(AsyncMutex::new(())),
+            taps: Arc::new(Mutex::new(BTreeMap::new())),
+            claims_legacy_sinks: true,
         }
     }
     /// Limit listings, new windows, and destructive guards to `session`.
     pub fn for_session(session: impl Into<String>, tap_root: impl Into<PathBuf>) -> Self {
+        let tap_root = tap_root.into();
         Self {
-            binary: OsString::from("tmux"),
-            server: None,
-            session: Some(session.into()),
-            tap_root: tap_root.into(),
-            submit_lock: Arc::new(AsyncMutex::new(())),
-            taps: Arc::new(Mutex::new(BTreeMap::new())),
-            claims_legacy_sinks: true,
             control: Arc::new(control::ControlClient::new(
                 OsString::from("tmux"),
                 None,
                 true,
+                &tap_root,
             )),
+            binary: OsString::from("tmux"),
+            server: None,
+            session: Some(session.into()),
+            tap_root,
+            submit_lock: Arc::new(AsyncMutex::new(())),
+            taps: Arc::new(Mutex::new(BTreeMap::new())),
+            claims_legacy_sinks: true,
         }
     }
 
     /// Inject the executable path while retaining the production argv contract.
     pub fn with_binary(binary: impl Into<OsString>, tap_root: impl Into<PathBuf>) -> Self {
         let binary = binary.into();
+        let tap_root = tap_root.into();
         Self {
-            control: Arc::new(control::ControlClient::new(binary.clone(), None, false)),
+            control: Arc::new(control::ControlClient::new(
+                binary.clone(),
+                None,
+                false,
+                &tap_root,
+            )),
             binary,
             server: None,
             session: None,
-            tap_root: tap_root.into(),
+            tap_root,
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
             claims_legacy_sinks: true,
@@ -242,16 +252,18 @@ impl TmuxAdapter {
     /// server with production daemons that legitimately attach pane pipes.
     pub fn for_server(server: impl Into<String>, tap_root: impl Into<PathBuf>) -> Self {
         let server = server.into();
+        let tap_root = tap_root.into();
         Self {
             control: Arc::new(control::ControlClient::new(
                 OsString::from("tmux"),
                 Some(server.clone()),
                 true,
+                &tap_root,
             )),
             binary: OsString::from("tmux"),
             server: Some(server),
             session: None,
-            tap_root: tap_root.into(),
+            tap_root,
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
             claims_legacy_sinks: false,
@@ -455,8 +467,17 @@ impl TmuxAdapter {
     }
 
     fn stdout(&self, operation: &str, args: &[OsString]) -> Result<String> {
-        if let Some(reply) = self.control.query(args) {
-            return self.control_stdout(operation, reply);
+        match self.control.query(args) {
+            control::Query::Answer(reply) => return self.control_stdout(operation, reply),
+            // F229: another pij process is attaching its control client to
+            // this server. Forking now would turn that attach into a launch
+            // per read; the read is unknown instead, and launches nothing.
+            control::Query::Busy => {
+                return Err(self.error(format!(
+                    "{operation} skipped: another pij process is attaching its tmux control client to this server (F229); nothing was launched — retry in a moment"
+                )));
+            }
+            control::Query::Fork => {}
         }
         let output = self.run(operation, args)?;
         String::from_utf8(output.stdout).map_err(|error| {
