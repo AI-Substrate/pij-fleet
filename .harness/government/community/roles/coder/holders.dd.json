@@ -1386,6 +1386,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-forthcoming-silkworm",
 					"why": "F239 stale-extension anomaly prints commit and tree (prime); after #289"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T11:06:33.640Z",
+					"harness": "omp",
+					"harness_session": "01a1f66b-21d0-7652-8b03-da1df9910ceb",
+					"instance_key": "r288fu",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-forthcoming-silkworm",
+					"why": "R288-FU-01 release-build signal-test sensor + tiger retro"
 				}
 			]
 		}
