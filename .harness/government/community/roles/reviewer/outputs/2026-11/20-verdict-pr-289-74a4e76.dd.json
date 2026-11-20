@@ -1,0 +1,66 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f8bc-12db-7543-ad5e-4911e5a78a98",
+				"date": "2026-11-20",
+				"head": "74a4e7694000e601d2f790937033f55abb3d4988",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:289",
+				"writer": "pij-proposed-turtle",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --test directory_http a_withdrawn_request_reads_closed_not_missing --then test --locked -p pij-daemon --test directory_http a_cancelled_assign_waiter_never_strands_its_drain --then clippy --locked -p pij-store -p pij-daemon --all-targets -- -D warnings",
+					"exit_code": 0,
+					"log": "round-2 baseline: both real-store tests and macOS clippy passed at the exact head"
+				},
+				{
+					"command": "just shared-build -- closed-table-half mutation and restored regression",
+					"exit_code": 0,
+					"log": "pr289-r2-proof/closed-half-mutation.json: mutant fails None != Some(Closed), exit 101; restored test passes, exit 0"
+				},
+				{
+					"command": "verify four git trees and resolved ledger rows; git show --remerge-diff HEAD",
+					"exit_code": 0,
+					"log": "pr289-r2-proof/merge-composition.json: only ledger diverges, all other entries exactly match their changing parent"
+				},
+				{
+					"command": "gh run view 44727655222; successful rust-test job 136259053101, JUnit artifact 14625126948",
+					"exit_code": 0,
+					"log": "pr289-r2-proof/ci-tests.json: exact-head withdrawal, cancelled waiter and F235 tests passed"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "pr289-r2-proof/harness-checks-quick.log: dependency-free TS/tooling unavailable under C25; no local full-gate claim"
+				},
+				{
+					"command": "just pr-freeze 289",
+					"exit_code": 0,
+					"log": "FINAL/CLEAN at 74a4e7694000e601d2f790937033f55abb3d4988; latest checks green"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS: #289, C34 final round\n\nHead: 74a4e7694000e601d2f790937033f55abb3d4988\nReviewed correction: 844d2fd697604ecbba1b489be3dd8d5a23d75741 -> 9d08389aa73429db4673c089ce0dd94cb558c147\nMerged main: 0744555dee5013daeeffb860b24c494cdb8346f4\n\nR289-FU-01 is resolved. SqliteOrchestration::role_request_state reads both the open and closed request tables in one statement; the assign-waiter now calls that helper. The new real-store regression proves Queued before withdrawal, Closed afterwards while role_request returns None, and None for an unknown ID. The cancelled assign-waiter still reaches Delivered.\n\nMutation proof: adding AND 0 only to the closed-table half leaves the open read working but fails a_withdrawn_request_reads_closed_not_missing with None != Some(Closed), exit 101. Restoring the exact original query makes the same test pass, exit 0. The isolated snapshot was removed after verifying its source matched this head; the review worktree was never edited.\n\nSQL/injection: the query text is static, and the ID is supplied with .bind(id), reused as ?1 in both primary-key predicates. No caller input is interpolated into SQL. Database errors propagate; an unparseable stored state returns an explicit adapter error rather than None. Existing role_request semantics are unchanged. References: crates/store/src/role_requests.rs:408-445; crates/daemon/tests/directory_http.rs:3819-3875.\n\nMerge composition: verified the two parents are 9d08389a and 0744555d, with merge base bc1ca834. Every nondivergent tree entry exactly matches its changing parent. docs/difficulties.md is the sole divergent file, and the resolved ledger preserves the relevant rows from both parents without duplicate D-IDs. git show --remerge-diff also identifies only that ledger resolution. No extra product-code change was introduced by the merge.\n\nLocal validation, through the canonical shared target with just shared-build, niceness 19 and four jobs:\n- test --locked -p pij-daemon --test directory_http a_withdrawn_request_reads_closed_not_missing: passed\n- test --locked -p pij-daemon --test directory_http a_cancelled_assign_waiter_never_strands_its_drain: passed\n- clippy --locked -p pij-store -p pij-daemon --all-targets -- -D warnings: passed on macOS\n- Closed-half mutation: expected regression failure, exit 101; restored regression: passed, exit 0\n\nExact-head CI: run 44727655222 is successful and records this full head SHA. The successful rust-test job 136259053101 uploaded JUnit artifact 14625126948; its cases confirm the new withdrawal regression, the cancelled waiter and F235 all ran and passed. The current PR check rollup, including both Node versions and rust-lint, is green.\n\nC25/environment: no node_modules installation or dependency links. harness boot is advisory not-ready. harness checks --quick was attempted and failed eight TS/tooling stages in the dependency-free checkout (missing tsx/Vitest and incompatible ambient Biome); native contracts, SDK contract and skill structure passed. No green local full-gate claim is made. The full exact-head CI and the scoped local Rust/macOS proofs above are the validation evidence for this read-only review.\n\nCost: no production loop, poll, timer or launch changes. The new read has only test callers in this repository, so it adds no live-fleet steady-state work; an explicit call performs at most two primary-key lookups. The existing test poll's bound and interval are unchanged.\n\nFinal pr-freeze: FINAL/CLEAN at this exact head, all latest checks passed. No new finding or additional review round requested under C34. The engineering-harness improvement is now committed and proven: a real closed-state fixture fails when the closed-table read is removed, rather than relying on an unreachable poll branch.\n\nReviewer/289 holding retained until merge.\n"
+		}
+	]
+}
