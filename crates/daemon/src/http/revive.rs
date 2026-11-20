@@ -1,4 +1,6 @@
 //! Revive observes under the spawn lock, retires by CAS, then uses the shared launch.
+use std::sync::Arc;
+
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
@@ -327,12 +329,16 @@ const PANE_CLOSE_POLL: std::time::Duration = std::time::Duration::from_millis(25
 /// closes its pane, and the revive refused (`E-RS-REVIVE-LIVE`) until it did.
 /// Liveness `dead` decides a revive (the policy); a present pane vetoes it
 /// (the brake), unchanged. This only waits for the brake's input to settle:
-/// while the live seat's process is dead and its pane is still listed, the
-/// panes are read again every [`PANE_CLOSE_POLL`], for at most
-/// [`PANE_CLOSE_BOUND`], through the tmux control client. It decides nothing
-/// and runs before the spawn lock, so no other spawn waits on it; the locked
-/// observation after it decides as before. At most 21 pane reads per revive,
-/// only on this path; no launch.
+/// while the live seat's pane is listed and its process is dead, the panes are
+/// read again every [`PANE_CLOSE_POLL`] until [`PANE_CLOSE_BOUND`] has passed.
+/// Every pane read is waited for only until that same deadline, so a slow read
+/// never stretches the wait. It decides nothing and runs before the spawn
+/// lock, so no other spawn waits on it; the locked observation after it
+/// decides as before. Every pane read here goes through the live tmux control
+/// client or not at all (no start, no fork, F114): with no live client, a
+/// failed read or a read past the deadline, the wait ends and the locked
+/// observation decides as it did before. At most 21 pane reads and one
+/// liveness read per revive, only on this path; no launch.
 async fn wait_for_dead_pane_to_close(state: &AppState, seat: &SeatId) {
     let Ok(Some(seat)) = state.services.registry.get(seat).await else {
         return;
@@ -340,21 +346,51 @@ async fn wait_for_dead_pane_to_close(state: &AppState, seat: &SeatId) {
     if seat.tombstoned_at.is_some() {
         return;
     }
-    let observation = observe(state, &seat).await;
-    let Some(pane) = observation.pane else {
+    let (Some(pane), Some(proc)) = (seat.pane.as_deref(), seat.proc) else {
         return;
     };
-    if observation.liveness != "dead" || observation.pane_present != Some(true) {
+    let deadline = tokio::time::Instant::now() + PANE_CLOSE_BOUND;
+    if !pane_listed_without_launch(state, pane, deadline).await {
         return;
     }
-    let deadline = tokio::time::Instant::now() + PANE_CLOSE_BOUND;
-    while tokio::time::Instant::now() < deadline {
-        tokio::time::sleep(PANE_CLOSE_POLL).await;
-        match state.services.tmux.list_panes().await {
-            Ok(panes) if panes.iter().any(|listed| listed.id == pane) => {}
-            _ => return,
+    if !matches!(
+        pij_core::liveness::alive(proc, state.services.liveness.as_ref()).await,
+        Ok(Liveness::Dead { .. })
+    ) {
+        return;
+    }
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return;
+        }
+        tokio::time::sleep(PANE_CLOSE_POLL.min(remaining)).await;
+        if !pane_listed_without_launch(state, pane, deadline).await {
+            return;
         }
     }
+}
+
+/// Whether tmux lists `pane`, asked of the live control client only. No live
+/// client, a failed read, or no answer by `deadline` answers `false` (pane
+/// state unknown): the caller stops waiting and the locked observation decides
+/// as before. The control client's reply wait blocks its thread (up to its 3 s
+/// reply timeout), so the read runs on a blocking-pool thread and is abandoned
+/// at the deadline; it never holds a runtime worker or the caller.
+async fn pane_listed_without_launch(
+    state: &AppState,
+    pane: &str,
+    deadline: tokio::time::Instant,
+) -> bool {
+    let tmux = Arc::clone(&state.services.tmux);
+    let runtime = tokio::runtime::Handle::current();
+    let read = tokio::task::spawn_blocking(move || {
+        runtime.block_on(async move { tmux.list_panes_without_launch().await })
+    });
+    matches!(
+        tokio::time::timeout_at(deadline, read).await,
+        Ok(Ok(Ok(Some(panes)))) if panes.iter().any(|listed| listed.id == pane)
+    )
 }
 
 pub(super) async fn revive_seat(
