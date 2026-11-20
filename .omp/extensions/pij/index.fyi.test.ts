@@ -477,6 +477,8 @@ describe("pij extension — fyi and turn activity (plan 158)", () => {
 	});
 
 	describe("turn activity", () => {
+		// F199: boot reports the seat's state with its control context (`idle`,
+		// `unarmed`) before any turn, so every sequence below starts with it.
 		it("publishes working then idle in order even when working resolves late", async () => {
 			const gate = Promise.withResolvers<void>();
 			const daemon = fakeDaemon({ pendingFyis: 0, firstActivityGate: gate.promise });
@@ -486,10 +488,17 @@ describe("pij extension — fyi and turn activity (plan 158)", () => {
 			await seat.agentEnd(false);
 			await vi.waitFor(() => expect(pathed(daemon, "/v1/activity")).toHaveLength(1));
 			gate.resolve();
-			await vi.waitFor(() => expect(daemon.applied).toEqual(["working", "idle"]));
+			await vi.waitFor(() => expect(daemon.applied).toEqual(["idle", "working", "idle"]));
+			const body = (state: string) => ({
+				seat: daemon.state.seat,
+				native_session: "native-fyi-session",
+				state,
+				control_context: "unarmed",
+			});
 			expect(pathed(daemon, "/v1/activity").map((request) => request.body)).toEqual([
-				{ seat: daemon.state.seat, native_session: "native-fyi-session", state: "working" },
-				{ seat: daemon.state.seat, native_session: "native-fyi-session", state: "idle" },
+				body("idle"),
+				body("working"),
+				body("idle"),
 			]);
 		});
 
@@ -500,13 +509,15 @@ describe("pij extension — fyi and turn activity (plan 158)", () => {
 			const current = await bootSeat(daemon);
 			seat = current;
 			await current.turnStart();
-			await vi.waitFor(() => expect(daemon.applied).toEqual(["working"]));
+			await vi.waitFor(() => expect(daemon.applied).toEqual(["idle", "working"]));
 			await current.turnEnd();
 			await current.turnStart();
-			await vi.waitFor(() => expect(pathed(daemon, "/v1/activity")).toHaveLength(2));
-			expect(daemon.applied).toEqual(["working", "working"]);
+			await vi.waitFor(() => expect(pathed(daemon, "/v1/activity")).toHaveLength(3));
+			expect(daemon.applied).toEqual(["idle", "working", "working"]);
 			await current.agentEnd(false);
-			await vi.waitFor(() => expect(daemon.applied).toEqual(["working", "working", "idle"]));
+			await vi.waitFor(() =>
+				expect(daemon.applied).toEqual(["idle", "working", "working", "idle"]),
+			);
 		});
 
 		it("agent_end publishes nothing while the agent will continue", async () => {
@@ -517,8 +528,8 @@ describe("pij extension — fyi and turn activity (plan 158)", () => {
 			await current.agentEnd(true);
 			await current.turnStart();
 			// Publications land in call order, so the second working proves agent_end was seen.
-			await vi.waitFor(() => expect(daemon.applied).toHaveLength(2));
-			expect(daemon.applied).toEqual(["working", "working"]);
+			await vi.waitFor(() => expect(daemon.applied).toHaveLength(3));
+			expect(daemon.applied).toEqual(["idle", "working", "working"]);
 		});
 
 		it("stops publishing for the runtime once the daemon has no activity route", async () => {
@@ -540,9 +551,9 @@ describe("pij extension — fyi and turn activity (plan 158)", () => {
 			const daemon = fakeDaemon({ pendingFyis: 0 });
 			const current = await bootSeat(daemon);
 			await current.turnStart();
-			await vi.waitFor(() => expect(daemon.applied).toEqual(["working"]));
+			await vi.waitFor(() => expect(daemon.applied).toEqual(["idle", "working"]));
 			await current.shutdown();
-			expect(daemon.applied).toEqual(["working", "idle"]);
+			expect(daemon.applied).toEqual(["idle", "working", "idle"]);
 		});
 
 		it("publishes nothing more when the seat is already idle", async () => {
@@ -551,19 +562,20 @@ describe("pij extension — fyi and turn activity (plan 158)", () => {
 			await current.turnStart();
 			await current.turnEnd();
 			await current.agentEnd(false);
-			await vi.waitFor(() => expect(daemon.applied).toEqual(["working", "idle"]));
+			await vi.waitFor(() => expect(daemon.applied).toEqual(["idle", "working", "idle"]));
 			await current.shutdown();
-			expect(pathed(daemon, "/v1/activity")).toHaveLength(2);
+			expect(pathed(daemon, "/v1/activity")).toHaveLength(3);
 		});
 
 		it("completes without throwing when the daemon is down", async () => {
 			const daemon = fakeDaemon({ pendingFyis: 0 });
 			const current = await bootSeat(daemon);
 			await current.turnStart();
-			await vi.waitFor(() => expect(daemon.applied).toEqual(["working"]));
+			await vi.waitFor(() => expect(daemon.applied).toEqual(["idle", "working"]));
 			daemon.state.activity = "down";
 			await expect(current.shutdown()).resolves.toBeUndefined();
 			expect(pathed(daemon, "/v1/activity").map((request) => request.body.state)).toEqual([
+				"idle",
 				"working",
 				"idle",
 			]);
