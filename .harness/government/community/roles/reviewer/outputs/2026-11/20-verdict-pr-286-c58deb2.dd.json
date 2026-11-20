@@ -1,0 +1,45 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f84f-7d35-7d60-b710-63a53122b463",
+				"date": "2026-11-20",
+				"head": "c58deb2a58e5d86ab0b7493c6e2ac5833bca21fd",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:286",
+				"writer": "pij-level-rhinoceros",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 286",
+					"exit_code": 0
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "review-286-r2-checks.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "#286 at c58deb2a58e5d86ab0b7493c6e2ac5833bca21fd — PASS\n\nFinal round 2 under C34. B286-001 and the round-1 documentation notes are\nresolved. No new finding requiring a PM ruling; no third review round.\n\n**Repair:** `activityObserved` is updated synchronously when a transition is\nrequested, before transport guards or promise queueing. Context-only reports\nuse that observed state, preserving transitions already queued or in flight.\nBoot resets it from the active runtime's isIdle() rather than inheriting a\nprevious lifecycle's state. `activityPublished` remains separate for successful\nacknowledgements and the existing shutdown-repair guard. Turn-end versus\nagent-end behavior, admission, control execution and transport ordering are\nunchanged.\n\n**Proof:** copied the four committed regressions and their exact boot fixture\ninto a dependency-free Node execution with assertion/wait/spy shims, not a\nlocal Vitest installation. All four pass against c58deb2 production source;\nsubstituting the exact d55bb57 runtime source makes all four fail with the\nexpected reversed states: arming behind idle, arming behind working, actual\nre-attachment behind working, and a new lifecycle's idle boot after working.\nReceipt: review-286-r2-regressions.log. This verifies the repair and the tests'\nability to detect its absence without an extra mutation inventory.\n\nAuthoritative full TS suite: CI run 44710347001 is bound to the exact c58deb2\nhead. Both Node checks, Rust lint and Rust tests pass. check(24) records\n125 runtime tests, 25 daemon-http tests, 28 index.fyi tests, 110 test files and\n2366 tests passing; typecheck and Biome lint pass. No dependency installation\nor node_modules symlink was made in the review tree (C25).\n\nFull local `harness checks` completed with exit 1: Rust workspace fmt/clippy/\ntests, route inventory, smoke, pij-skill, native Copilot contracts and SDK pass.\nThe same eight round-1 tooling stages fail: absent tsx/dependencies prevent\nlocal-paths, omp-config, ddocs, coverage, typecheck, lockfile and test; the\nambient Biome is incompatible with the repository's v2 configuration.\nAttribution warns because tsx is absent. No local Vitest tests executed and\nno green local aggregate is claimed. These known C25 review-tree limitations\nare not new PR findings. Receipt: review-286-r2-checks.json.\n\n**Notes resolved:** docs/how/pij-rs-api.md and D-F199-1 now say the report fires\nafter every re-attach, whether or not it registers again, and that the control\nmap retains one entry per distinct reporting seat ID since daemon boot,\nincluding dead seats. Existing mutex/key-clone cost is stated accurately.\n\n**Scope/cost:** relative to actual main base 435245a6, the PR still changes the\nsame 16 F199 files. The requested 435245a6^1 comparison additionally includes\nF234's two store files from #285; those are inherited main, not new F199\nchanges. c58deb2 is the merge commit. Since round 1, the functional repair\ntouches only the runtime and its test; two documentation files clarify notes.\nThe repair adds one synchronous constant-time state assignment on existing\nactivity transitions and boot, no new HTTP posts, loop, timer, poll or launch.\n\nThe earlier advisory-only receipt, incarnation, bounded 422 fallback,\nshell-quoting/shared state helper and legacy-queue conclusions still apply:\nnone of that production code changed in the repair.\n\nThe harness improvement is encoded in the four committed delayed-transport\nregressions; the resolved lesson was recorded through the reviewer memory\nwriter at governance commit be4224e00f29437c6a4d1bee63ab8fc45f758df8.\nReview source remained unchanged, and the reviewer holding is retained until\nmerge.\n"
+		}
+	]
+}
