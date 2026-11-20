@@ -4,11 +4,11 @@
 //! by bounce). Only the daemon installs this guard; normal CLI output is untouched.
 //!
 //! #90: two bounds on what reaches the file.
-//! - **Repeats.** A line whose template (the line with every run of ASCII
-//!   digits replaced by `#`, so pids, ports, exit codes and counters don't
-//!   count) was already written in the last [`REPEAT_WINDOW`] is counted, not
-//!   written. When its window closes, one summary line gives the count. At most
-//!   [`REPEAT_KEYS`] templates are remembered.
+//! - **Repeats.** A line the same output already wrote, exactly (its line
+//!   ending aside), in the last [`REPEAT_WINDOW`] is counted, not written. When
+//!   its window closes, one summary line gives the count. A panic's lines and
+//!   backtrace are never counted. At most [`REPEAT_KEYS`] lines are remembered,
+//!   each in at most [`TEMPLATE_SHOWN`] bytes plus an ellipsis.
 //! - **Size.** When the destination is the state dir's own `daemon.log` (the
 //!   same file by device and inode, never a symlink), the daemon rotates it
 //!   itself once it reaches [`ROTATE_AT`]: `daemon.log.1` … `daemon.log.{KEEP}`,
@@ -16,9 +16,11 @@
 //!   LaunchAgent's `StandardOutPath`, `pij-rs daemon bounce`) only opens the file
 //!   once before exec, so after a rotation the daemon writes to a file it opened
 //!   by path. A file more than a sixteenth over the cap (a log from before #90)
-//!   keeps only its last [`ROTATE_AT`] bytes, from a line start. Any other
-//!   destination (a terminal, another file) is never rotated. All of it is
-//!   in-process: no launch.
+//!   keeps only its last [`ROTATE_AT`] bytes, from a line start. Every look at
+//!   the path, at start and at each cap, holds `daemon.log.lock` (`flock`), so
+//!   two daemons started together never rotate at once and each joins the file
+//!   the other published. Any other destination (a terminal, another file) is
+//!   never rotated. All of it is in-process: no launch.
 
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
@@ -36,6 +38,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use nix::errno::Errno;
+use nix::fcntl::{Flock, FlockArg, OFlag};
 use nix::unistd::{dup2_stderr, dup2_stdout};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
@@ -75,9 +79,10 @@ impl DaemonLog {
             outputs,
             repeats: Repeats::new(REPEAT_WINDOW, REPEAT_KEYS),
         };
-        // The cap at start: a log already at or over the bound rotates now.
+        // At start, under the lock: join the current log if another daemon
+        // rotated it since this one's was opened, and rotate one at the cap.
         for index in 0..shared.outputs.len() {
-            shared.rotate_if_due(index);
+            shared.sync(index);
         }
         let shared = Arc::new(Mutex::new(shared));
         let log = Self {
@@ -237,7 +242,7 @@ impl Shared {
 
     fn write_summary(&mut self, summary: &Summary) -> io::Result<()> {
         let text = format!(
-            "pij-rs: daemon log: {} more like this in {} s after it was written: {}\n",
+            "pij-rs: daemon log: {} more of this line in {} s after it was written: {}\n",
             summary.count,
             self.repeats.window.as_secs(),
             summary.template
@@ -258,40 +263,88 @@ impl Shared {
         Ok(())
     }
 
-    /// Rotate a managed output at the cap. A rotation that fails keeps the
-    /// current file, says so in it, and is next tried a further cap later.
-    /// Its note is written straight to the file, never back through here.
+    /// Rotate a managed output once it reaches the cap.
     fn rotate_if_due(&mut self, output: usize) {
+        if self.outputs[output]
+            .rotation
+            .as_ref()
+            .is_some_and(|rotation| rotation.size >= rotation.cap)
+        {
+            self.sync(output);
+        }
+    }
+
+    /// Look at a managed output's path under the rotation lock and act on
+    /// it ([`Rotation::sync`]): at start, and at each cap. A rotation that
+    /// fails or can't get the lock keeps the current file, says so in it, and
+    /// is next tried a further cap later. Its note is written straight to the
+    /// file, never back through here.
+    fn sync(&mut self, output: usize) {
         let target = &mut self.outputs[output];
         let Some(rotation) = &mut target.rotation else {
             return;
         };
-        if rotation.size < rotation.cap {
-            return;
-        }
-        let rotated = rotation.size;
-        let note = match rotation.rotate() {
-            Ok(file) => {
+        let name = rotation
+            .path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        let (note, unmanaged) = match rotation.sync(&target.file) {
+            Ok(Synced::Current) => (None, false),
+            Ok(Synced::Rotated(file, rotated)) => {
                 target.file = file;
-                let name = rotation
-                    .path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy();
-                format!(
-                    "pij-rs: daemon log: rotated at {rotated} bytes; older lines are in {name}.1\n"
+                rotation.size = 0;
+                (
+                    Some(format!(
+                        "pij-rs: daemon log: rotated at {rotated} bytes; older lines are in {name}.1\n"
+                    )),
+                    false,
                 )
             }
+            Ok(Synced::Joined(file)) => {
+                target.file = file;
+                (
+                    Some(format!(
+                        "pij-rs: daemon log: another process rotated {name}; writing to the new one\n"
+                    )),
+                    false,
+                )
+            }
+            Ok(Synced::Busy) => {
+                rotation.size = 0;
+                (
+                    Some(format!(
+                        "pij-rs: daemon log: not rotated: another process holds {name}.lock\n"
+                    )),
+                    false,
+                )
+            }
+            Ok(Synced::Unmanaged) => (
+                Some(format!(
+                    "pij-rs: daemon log: {name} is no longer this file; not rotating it\n"
+                )),
+                true,
+            ),
             Err(error) => {
-                format!("pij-rs: daemon log: rotation failed, kept writing: {error}\n")
+                rotation.size = 0;
+                (
+                    Some(format!(
+                        "pij-rs: daemon log: rotation failed, kept writing: {error}\n"
+                    )),
+                    false,
+                )
             }
         };
-        rotation.size = 0;
-        if let Ok(bytes) = stamp(note.as_bytes())
+        if let Some(note) = note
+            && let Ok(bytes) = stamp(note.as_bytes())
             && target.file.write_all(&bytes).is_ok()
         {
             let _ = target.file.flush();
-            rotation.size = bytes.len() as u64;
+            rotation.size += bytes.len() as u64;
+        }
+        if unmanaged {
+            target.rotation = None;
         }
     }
 }
@@ -332,14 +385,45 @@ struct Rotation {
     keep: usize,
 }
 
+/// What one locked look at the managed log found and did.
+enum Synced {
+    /// This process rotated a file of this many bytes; write to the fresh one.
+    Rotated(File, u64),
+    /// Another process rotated since this one's file was opened: the path
+    /// names another regular file, now opened for append and written to.
+    Joined(File),
+    /// The path still names this process's file, under the cap.
+    Current,
+    /// Another process held the lock throughout: nothing was changed.
+    Busy,
+    /// The path is gone, or not a regular file: no longer managed.
+    Unmanaged,
+}
+
+/// Attempts at the rotation lock, [`LOCK_PAUSE`] apart (about 2 s in all).
+const LOCK_TRIES: u32 = 200;
+const LOCK_PAUSE: Duration = Duration::from_millis(10);
+
 impl Rotation {
-    /// Manage `path` only if `file` is that very file (device and inode) and
-    /// the path is a regular file, not a symlink.
+    /// Manage `path` only if `file` is the state dir's `daemon.log`: the very
+    /// file the path names (device and inode; a symlink is its own inode, so it
+    /// never matches), or one a rotation by another daemon just moved off the
+    /// path after this one's launcher opened it (R301-001): the file now at
+    /// `daemon.log.1`, or a regular file with no name left (an oversized log
+    /// trimmed to its tail). The first look under the lock ([`Self::sync`])
+    /// then joins the file the path names.
     fn adopt(file: &File, path: &Path, cap: u64, keep: usize) -> Option<Self> {
         let open = file.metadata().ok()?;
-        // `symlink_metadata`: a symlink is its own inode, so it never matches.
+        let same =
+            |named: &std::fs::Metadata| named.dev() == open.dev() && named.ino() == open.ino();
         let named = std::fs::symlink_metadata(path).ok()?;
-        (named.dev() == open.dev() && named.ino() == open.ino()).then(|| Self {
+        let mut moved = path.as_os_str().to_os_string();
+        moved.push(".1");
+        let rotated_away = named.file_type().is_file()
+            && open.file_type().is_file()
+            && (open.nlink() == 0
+                || std::fs::symlink_metadata(&moved).is_ok_and(|moved| same(&moved)));
+        (same(&named) || rotated_away).then(|| Self {
             path: path.to_path_buf(),
             size: open.len(),
             cap,
@@ -357,17 +441,75 @@ impl Rotation {
         self.suffixed(&format!(".{n}"))
     }
 
+    /// R301-001: every look at the managed log, at start and at each cap, is
+    /// made holding `daemon.log.lock` (an exclusive `flock`), so two daemons
+    /// started together never rotate at once, and each re-checks under the
+    /// lock which file the path names before doing anything. Both are
+    /// **brakes**: without the lock two rotations interleave and unlink each
+    /// other's files; without the re-check a process rotates a file another
+    /// process already replaced. Removing either makes rotation do more.
+    ///
+    /// A process that can't get the lock in about 2 s changes nothing and keeps
+    /// writing to the file it has: the holder is mid-rotation, so the path is
+    /// in flux and joining it then could pick up a file about to be moved.
+    fn sync(&mut self, current: &File) -> io::Result<Synced> {
+        let Some(_lock) = self.lock()? else {
+            return Ok(Synced::Busy);
+        };
+        let mine = current.metadata()?;
+        let joined = match std::fs::symlink_metadata(&self.path) {
+            Ok(named) if named.dev() == mine.dev() && named.ino() == mine.ino() => None,
+            Ok(named) if named.file_type().is_file() => Some(
+                OpenOptions::new()
+                    .append(true)
+                    .custom_flags(OFlag::O_NOFOLLOW.bits())
+                    .open(&self.path)?,
+            ),
+            _ => return Ok(Synced::Unmanaged),
+        };
+        self.size = match &joined {
+            Some(file) => file.metadata()?.len(),
+            None => mine.len(),
+        };
+        if self.size < self.cap {
+            return Ok(joined.map_or(Synced::Current, Synced::Joined));
+        }
+        let rotated = self.size;
+        self.rotate().map(|fresh| Synced::Rotated(fresh, rotated))
+    }
+
+    /// The exclusive lock on `daemon.log.lock`, tried without blocking up to
+    /// [`LOCK_TRIES`] times; `None` if another process held it throughout. The
+    /// lock file is never removed: removing it would let two processes lock
+    /// two different files.
+    fn lock(&self) -> io::Result<Option<Flock<File>>> {
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .mode(0o600)
+            .custom_flags(OFlag::O_NOFOLLOW.bits())
+            .open(self.suffixed(".lock"))?;
+        for _ in 0..LOCK_TRIES {
+            match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
+                Ok(lock) => return Ok(Some(lock)),
+                Err((back, Errno::EWOULDBLOCK)) => {
+                    file = back;
+                    thread::sleep(LOCK_PAUSE);
+                }
+                Err((_, errno)) => return Err(errno.into()),
+            }
+        }
+        Ok(None)
+    }
+
     /// Shift `.1`… up one (the last is replaced), move the current file to
-    /// `.1`, and open a fresh file at the path. The fresh file is made first,
-    /// so a failure before the shift changes nothing.
+    /// `.1`, and open a fresh file at the path. Called only under the lock,
+    /// with the path checked to be this process's file. The fresh file is made
+    /// first, so a failure before the shift changes nothing.
     fn rotate(&mut self) -> io::Result<File> {
         let fresh_path = self.suffixed(".new");
-        let fresh = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&fresh_path)?;
+        let fresh = staging(&fresh_path)?;
         let shifted = (|| {
             for n in (1..self.keep).rev() {
                 match std::fs::rename(self.numbered(n), self.numbered(n + 1)) {
@@ -399,12 +541,7 @@ impl Rotation {
         let mut partial = Vec::new();
         source.read_until(b'\n', &mut partial)?;
         let staged = self.suffixed(".1.new");
-        let mut target = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&staged)?;
+        let mut target = staging(&staged)?;
         io::copy(&mut source, &mut target)?;
         target.flush()?;
         std::fs::rename(&staged, self.numbered(1))?;
@@ -412,31 +549,61 @@ impl Rotation {
     }
 }
 
-/// The template a line is counted by: trailing line ending dropped and every
-/// run of ASCII digits replaced by `#`.
-fn template(line: &[u8]) -> Vec<u8> {
-    let line = line.strip_suffix(b"\n").unwrap_or(line);
-    let line = line.strip_suffix(b"\r").unwrap_or(line);
-    let mut template = Vec::with_capacity(line.len());
-    let mut in_digits = false;
-    for &byte in line {
-        if byte.is_ascii_digit() {
-            if !in_digits {
-                template.push(b'#');
-            }
-            in_digits = true;
-        } else {
-            template.push(byte);
-            in_digits = false;
-        }
+/// S301-N1: a staging file is made new (`O_EXCL`, which refuses any existing
+/// name, a symlink included), after removing a leftover. Only the lock holder
+/// makes staging files, so a leftover is a crashed rotation's or a planted
+/// link, never another live process's file; removing a link never touches
+/// its target.
+fn staging(path: &Path) -> io::Result<File> {
+    match std::fs::remove_file(path) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
+        _ => {}
     }
-    template
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+}
+
+/// R301-003: lines that are never counted, so every one is written: a Rust
+/// panic's header, its `RUST_BACKTRACE` note and every backtrace line.
+fn never_counted(line: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(line);
+    let trimmed = text.trim_start();
+    let indented = trimmed.len() < text.len();
+    text.contains("' panicked at ")
+        || trimmed.starts_with("stack backtrace:")
+        || trimmed.starts_with("note: run with `RUST_BACKTRACE")
+        || trimmed.starts_with("note: Some details are omitted")
+        || (indented && trimmed.starts_with("at "))
+        || (indented
+            && trimmed.split_once(": ").is_some_and(|(frame, _)| {
+                !frame.is_empty() && frame.bytes().all(|b| b.is_ascii_digit())
+            }))
+}
+
+/// At most this many bytes of a line are kept for its summary, in a string
+/// allocated at exactly that size (R301-P1).
+fn shown(line: &[u8]) -> String {
+    let text = String::from_utf8_lossy(line);
+    let mut end = text.len().min(TEMPLATE_SHOWN);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    let cut = end < text.len();
+    let mut shown = String::with_capacity(end + if cut { '…'.len_utf8() } else { 0 });
+    shown.push_str(&text[..end]);
+    if cut {
+        shown.push('…');
+    }
+    shown
 }
 
 #[derive(Debug, PartialEq, Eq)]
 enum Admit {
     /// Write the line, after these summaries (a window that ended, or a
-    /// template forgotten to make room).
+    /// line forgotten to make room).
     Write(Vec<Summary>),
     /// A repeat inside its window: counted, not written.
     Count,
@@ -466,7 +633,7 @@ impl Seen {
     }
 }
 
-/// Repeated-line memory: template hash → its open window.
+/// Repeated-line memory: (output, line) hash → its open window.
 struct Repeats {
     window: Duration,
     capacity: usize,
@@ -490,10 +657,18 @@ impl Repeats {
         self.next_due.is_some()
     }
 
+    /// R301-002/003: a line repeats only if the same output (one index per
+    /// destination file, so stdout and stderr to one file share it) already
+    /// wrote the exact same line, its line ending aside, within the window.
     fn admit(&mut self, line: &[u8], output: usize, now: Instant) -> Admit {
-        let template = template(line);
+        let line = line.strip_suffix(b"\n").unwrap_or(line);
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        if never_counted(line) {
+            return Admit::Write(Vec::new());
+        }
         let mut hasher = DefaultHasher::new();
-        template.hash(&mut hasher);
+        output.hash(&mut hasher);
+        line.hash(&mut hasher);
         let key = hasher.finish();
         if let Some(seen) = self.seen.get_mut(&key) {
             if now < seen.until {
@@ -504,7 +679,6 @@ impl Repeats {
             let summary = seen.summary();
             seen.until = now + self.window;
             seen.count = 0;
-            seen.output = output;
             return Admit::Write(summary.into_iter().collect());
         }
         let mut summaries = Vec::new();
@@ -523,22 +697,13 @@ impl Repeats {
             summaries.extend(seen.summary());
             self.recompute_due();
         }
-        let mut shown = String::from_utf8_lossy(&template).into_owned();
-        if shown.len() > TEMPLATE_SHOWN {
-            let mut end = TEMPLATE_SHOWN;
-            while !shown.is_char_boundary(end) {
-                end -= 1;
-            }
-            shown.truncate(end);
-            shown.push('…');
-        }
         self.seen.insert(
             key,
             Seen {
                 until: now + self.window,
                 count: 0,
                 output,
-                shown,
+                shown: shown(line),
             },
         );
         Admit::Write(summaries)
@@ -649,8 +814,8 @@ mod tests {
         let shared = unmanaged(File::create(&path).unwrap());
         let (reader, mut writer) = UnixStream::pair().unwrap();
         let feeder = thread::spawn(move || {
-            for n in 0..500 {
-                writeln!(writer, "pane observer: list-panes failed (exit {})", n % 3).unwrap();
+            for _ in 0..500 {
+                writeln!(writer, "pane observer: list-panes failed (exit 1)").unwrap();
             }
             writer.write_all(b"daemon: shutting down\n").unwrap();
             writer.shutdown(Shutdown::Write).unwrap();
@@ -660,9 +825,9 @@ mod tests {
         assert_eq!(
             payloads(&fs::read(&path).unwrap()),
             [
-                b"pane observer: list-panes failed (exit 0)\n".to_vec(),
+                b"pane observer: list-panes failed (exit 1)\n".to_vec(),
                 b"daemon: shutting down\n".to_vec(),
-                b"pij-rs: daemon log: 499 more like this in 60 s after it was written: pane observer: list-panes failed (exit #)\n".to_vec(),
+                b"pij-rs: daemon log: 499 more of this line in 60 s after it was written: pane observer: list-panes failed (exit 1)\n".to_vec(),
             ]
         );
         fs::remove_dir_all(root).unwrap();
@@ -686,13 +851,13 @@ mod tests {
         let (reader, mut writer) = UnixStream::pair().unwrap();
         let pumping = Arc::clone(&shared);
         let pump = thread::spawn(move || pump(reader, &pumping, 0));
-        for n in 0..3 {
-            writeln!(writer, "burst {n}").unwrap();
+        for _ in 0..3 {
+            writeln!(writer, "burst").unwrap();
         }
         let deadline = Instant::now() + Duration::from_secs(10);
         while !fs::read_to_string(&path)
             .unwrap()
-            .contains("2 more like this")
+            .contains("2 more of this line")
         {
             assert!(
                 Instant::now() < deadline,
@@ -703,8 +868,8 @@ mod tests {
         // Again, but now the summary falls due while other lines keep coming.
         // Lines every 50 ms never let the read time out, so only the check
         // made on each line can write it.
-        writeln!(writer, "burst 3").unwrap();
-        writeln!(writer, "burst 4").unwrap();
+        writeln!(writer, "burst").unwrap();
+        writeln!(writer, "burst").unwrap();
         for word in ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"] {
             thread::sleep(Duration::from_millis(50));
             writeln!(writer, "other {word}").unwrap();
@@ -717,7 +882,7 @@ mod tests {
             .collect();
         let summary = lines
             .iter()
-            .rposition(|line| line.contains("1 more like this"));
+            .rposition(|line| line.contains("1 more of this line"));
         let other = lines.iter().position(|line| line == "other j\n");
         assert!(summary.is_some() && summary < other, "{lines:?}");
         fs::remove_dir_all(root).unwrap();
@@ -802,9 +967,10 @@ mod tests {
     /// The two bursts in the live log (#90), as they were written: 4,498
     /// "background reconciliation failed" lines in 9 minutes (2026-10-30, ten a
     /// second) and 3,061 "list-panes failed" lines, one per 600 ms observer
-    /// tick while tmux's default server was gone (2026-11-07), whose exit code
-    /// and socket uid are digits. Each burst writes its first line, then one
-    /// summary per minute with the exact count.
+    /// tick while tmux's default server was gone (2026-11-07). Each is the
+    /// exact line the live log holds, repeated byte for byte (R301-003: keyed
+    /// on the exact line, they still collapse). Each burst writes its first
+    /// line, then one summary per minute with the exact count.
     #[test]
     fn both_live_bursts_collapse_to_one_line_and_a_summary_a_minute() {
         let background = "pij-rs: background reconciliation failed: background/refused: owner pij-different-smelt of source bg-1795abca2e9b4f0ac1e3a2a5 is gone; its final turn waits\n";
@@ -818,11 +984,8 @@ mod tests {
             (
                 3_061,
                 Duration::from_millis(600),
-                Box::new(|n: u64| {
-                    format!(
-                        "pij-rs pane observer: tmux: list-panes failed (exit {}): error connecting to /private/tmp/tmux-501/default (No such file or directory) — run `tmux list-panes -a` to verify the target\n",
-                        1 + n % 2
-                    )
+                Box::new(|_: u64| {
+                    "pij-rs pane observer: tmux: list-panes failed (exit 1): error connecting to /private/tmp/tmux-501/default (No such file or directory) — run `tmux list-panes -a` to verify the target\n".to_string()
                 }),
             ),
         ] {
@@ -855,20 +1018,20 @@ mod tests {
     }
 
     #[test]
-    fn a_window_counts_only_the_same_template_and_reports_when_it_closes() {
+    fn a_window_counts_only_the_same_line_and_reports_when_it_closes() {
         let start = Instant::now();
         let mut repeats = Repeats::new(Duration::from_secs(60), 8);
         assert_eq!(
-            repeats.admit(b"seat a pid 41\n", 0, start),
+            repeats.admit(b"seat a refused\n", 0, start),
             Admit::Write(Vec::new())
         );
         assert!(!repeats.counting(), "nothing counted, so no timer");
-        assert_eq!(repeats.admit(b"seat a pid 42\n", 0, start), Admit::Count);
+        assert_eq!(repeats.admit(b"seat a refused\n", 0, start), Admit::Count);
         assert!(repeats.counting());
-        // Words are not digits: another seat is its own line.
         assert_eq!(
-            repeats.admit(b"seat b pid 41\n", 1, start),
-            Admit::Write(Vec::new())
+            repeats.admit(b"seat b refused\n", 0, start),
+            Admit::Write(Vec::new()),
+            "another seat is another line"
         );
         assert_eq!(
             repeats.due(start + Duration::from_secs(59)),
@@ -880,15 +1043,98 @@ mod tests {
             vec![Summary {
                 output: 0,
                 count: 1,
-                template: "seat a pid #".into(),
+                template: "seat a refused".into(),
             }]
         );
         assert!(!repeats.counting());
-        // After its window the template is written again.
+        // After its window the line is written again.
         assert_eq!(
-            repeats.admit(b"seat a pid 43\n", 0, start + Duration::from_secs(61)),
+            repeats.admit(b"seat a refused\n", 0, start + Duration::from_secs(61)),
             Admit::Write(Vec::new())
         );
+    }
+
+    /// R301-003 (moth's repro): numbers are part of the line. Two panic sites
+    /// in one file, or two status codes, are two lines; and a panic's header
+    /// and backtrace are never counted, even repeated exactly.
+    #[test]
+    fn numbers_tell_lines_apart_and_panics_are_never_counted() {
+        let start = Instant::now();
+        let mut repeats = Repeats::new(Duration::from_secs(60), 16);
+        for line in [
+            "thread 'tokio-runtime-worker' panicked at crates/daemon/src/lib.rs:100:20:",
+            "thread 'tokio-runtime-worker' panicked at crates/daemon/src/lib.rs:200:20:",
+            "store: status 409",
+            "store: status 503",
+        ] {
+            assert_eq!(
+                repeats.admit(line.as_bytes(), 0, start),
+                Admit::Write(Vec::new()),
+                "{line}"
+            );
+        }
+        for line in [
+            "thread 'tokio-runtime-worker' panicked at crates/daemon/src/lib.rs:100:20:",
+            "note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+            "stack backtrace:",
+            "   0: std::panicking::begin_panic",
+            "             at /rustc/abc/library/std/src/panicking.rs:686:12",
+        ] {
+            for _ in 0..3 {
+                assert_eq!(
+                    repeats.admit(line.as_bytes(), 0, start),
+                    Admit::Write(Vec::new()),
+                    "never counted: {line}"
+                );
+            }
+        }
+        assert_eq!(repeats.admit(b"store: status 409", 0, start), Admit::Count);
+    }
+
+    /// R301-002 (moth's exact-source repro): stdout and stderr to two files are
+    /// two outputs, and each shows its own first line and summary; to one file
+    /// they are one output and coalesce.
+    #[test]
+    fn each_output_keeps_its_own_first_line_and_summary() {
+        let root = pij_testkit::fresh_dir("pij-daemon-log-outputs");
+        let (out, err) = (root.join("out.log"), root.join("err.log"));
+        let mut shared = Shared {
+            outputs: vec![
+                Output {
+                    file: File::create(&out).unwrap(),
+                    rotation: None,
+                },
+                Output {
+                    file: File::create(&err).unwrap(),
+                    rotation: None,
+                },
+            ],
+            repeats: Repeats::new(REPEAT_WINDOW, REPEAT_KEYS),
+        };
+        let now = Instant::now();
+        for _ in 0..2 {
+            shared.line(0, b"failure\n", now).unwrap();
+            shared.line(1, b"failure\n", now).unwrap();
+        }
+        shared.finish().unwrap();
+        let summary =
+            b"pij-rs: daemon log: 1 more of this line in 60 s after it was written: failure\n";
+        for path in [&out, &err] {
+            assert_eq!(
+                payloads(&fs::read(path).unwrap()),
+                [b"failure\n".to_vec(), summary.to_vec()],
+                "{}",
+                path.display()
+            );
+        }
+        // One file, one output: the second stream's line is a repeat.
+        let mut repeats = Repeats::new(REPEAT_WINDOW, REPEAT_KEYS);
+        assert_eq!(
+            repeats.admit(b"failure\n", 0, now),
+            Admit::Write(Vec::new())
+        );
+        assert_eq!(repeats.admit(b"failure\n", 0, now), Admit::Count);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -923,19 +1169,37 @@ mod tests {
         );
     }
 
+    /// R301-P1 (snail's probe): 256 distinct 32 KiB lines keep at most
+    /// `TEMPLATE_SHOWN` bytes plus an ellipsis each, in allocated capacity, not
+    /// just in length.
     #[test]
-    fn templates_replace_digit_runs_and_shown_templates_are_bounded() {
-        assert_eq!(
-            template(b"exit 1 on tmux-501 at 2026\r\n"),
-            b"exit # on tmux-# at #"
+    fn remembered_lines_are_bounded_in_allocated_bytes() {
+        let mut repeats = Repeats::new(REPEAT_WINDOW, REPEAT_KEYS);
+        let now = Instant::now();
+        for n in 0..REPEAT_KEYS {
+            let mut line = format!("{n:03} ").into_bytes();
+            line.extend(std::iter::repeat_n(b'x', 32 * 1024));
+            repeats.admit(&line, 0, now);
+        }
+        assert_eq!(repeats.seen.len(), REPEAT_KEYS);
+        let bound = TEMPLATE_SHOWN + '…'.len_utf8();
+        assert!(
+            repeats
+                .seen
+                .values()
+                .all(|seen| seen.shown.capacity() <= bound)
         );
-        let mut repeats = Repeats::new(Duration::from_secs(60), 2);
-        let long = format!("{}\n", "é".repeat(400));
-        repeats.admit(long.as_bytes(), 0, Instant::now());
-        repeats.admit(long.as_bytes(), 0, Instant::now());
-        let summary = repeats.drain().pop().unwrap();
-        assert!(summary.template.len() <= TEMPLATE_SHOWN + '…'.len_utf8());
-        assert!(summary.template.ends_with('…'));
+        let retained: usize = repeats
+            .seen
+            .values()
+            .map(|seen| seen.shown.capacity())
+            .sum();
+        assert!(retained <= REPEAT_KEYS * bound, "{retained}");
+        // Multi-byte text is cut on a character boundary, still bounded.
+        let accented = "é".repeat(400);
+        let shown = super::shown(accented.as_bytes());
+        assert!(shown.capacity() <= bound && shown.ends_with('…'));
+        assert_eq!(super::shown(b"short"), "short");
     }
 
     fn managed(root: &Path, contents: &[u8], cap: u64, keep: usize) -> Shared {
@@ -972,6 +1236,108 @@ mod tests {
         assert!(
             Rotation::adopt(&own, &root.join("absent.log"), 100, 3).is_none(),
             "no file at the path"
+        );
+        // R301-001: rotated off the path by another daemon after this one's
+        // launcher opened it: moved to `.1`, or trimmed away (no name left).
+        fs::rename(&path, root.join("daemon.log.1")).unwrap();
+        fs::write(&path, b"").unwrap();
+        assert!(
+            Rotation::adopt(&own, &path, 100, 3).is_some(),
+            "moved to .1"
+        );
+        fs::remove_file(root.join("daemon.log.1")).unwrap();
+        assert!(Rotation::adopt(&own, &path, 100, 3).is_some(), "unlinked");
+        assert!(
+            Rotation::adopt(&other, &path, 100, 3).is_none(),
+            "another named file still is not"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// R301-001: a file another process put at the path since this one's was
+    /// opened (it rotated) is joined under the lock, not rotated again.
+    #[test]
+    fn a_rotation_by_another_process_is_joined_not_repeated() {
+        let root = pij_testkit::fresh_dir("pij-daemon-log-joined");
+        let mut shared = managed(&root, b"old\n", 1000, 3);
+        let path = root.join("daemon.log");
+        fs::rename(&path, root.join("daemon.log.1")).unwrap();
+        fs::write(&path, b"theirs\n").unwrap();
+        shared.sync(0);
+        shared.write_line(0, b"mine\n").unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("theirs\n"), "{text}");
+        assert!(
+            text.contains("another process rotated daemon.log"),
+            "{text}"
+        );
+        assert!(text.ends_with(" mine\n"), "{text}");
+        assert_eq!(
+            fs::read_to_string(root.join("daemon.log.1")).unwrap(),
+            "old\n"
+        );
+        assert!(!root.join("daemon.log.2").exists(), "nothing rotated again");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// R301-001: while another process holds `daemon.log.lock`, nothing is
+    /// renamed or trimmed, even a log far over the cap; writing goes on.
+    #[test]
+    fn a_held_lock_changes_nothing() {
+        let root = pij_testkit::fresh_dir("pij-daemon-log-busy");
+        let mut shared = managed(&root, &[b'x'; 900], 100, 3);
+        let held = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(root.join("daemon.log.lock"))
+            .unwrap();
+        let held = Flock::lock(held, FlockArg::LockExclusiveNonblock).unwrap();
+        shared.sync(0);
+        let text = fs::read_to_string(root.join("daemon.log")).unwrap();
+        assert!(text.starts_with(&"x".repeat(900)), "untouched");
+        assert!(text.contains("not rotated: another process holds daemon.log.lock"));
+        assert!(!root.join("daemon.log.1").exists());
+        assert!(!root.join("daemon.log.new").exists());
+        drop(held);
+        // Released: the next look rotates.
+        shared.sync(0);
+        assert!(root.join("daemon.log.1").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// S301-N1 (antelope's repro): symlinks planted at both staging names
+    /// never truncate or receive the log; the rotation removes the links and
+    /// makes its own files.
+    #[test]
+    fn planted_staging_links_never_reach_outside_files() {
+        let root = pij_testkit::fresh_dir("pij-daemon-log-planted");
+        let victim = root.join("victim.txt");
+        fs::write(&victim, b"keep these 35 bytes intact, please\n").unwrap();
+        let state = root.join("state");
+        fs::create_dir(&state).unwrap();
+        let mut old = String::new();
+        for n in 0..40 {
+            old.push_str(&format!("old line {n:03}\n"));
+        }
+        let mut shared = managed(&state, old.as_bytes(), 100, 3);
+        for staged in ["daemon.log.new", "daemon.log.1.new"] {
+            std::os::unix::fs::symlink(&victim, state.join(staged)).unwrap();
+        }
+        shared.sync(0);
+        assert_eq!(
+            fs::read(&victim).unwrap(),
+            b"keep these 35 bytes intact, please\n"
+        );
+        for name in ["daemon.log", "daemon.log.1"] {
+            let kind = fs::symlink_metadata(state.join(name)).unwrap().file_type();
+            assert!(kind.is_file(), "{name} is a regular file");
+        }
+        assert!(
+            fs::read_to_string(state.join("daemon.log.1"))
+                .unwrap()
+                .ends_with("old line 039\n")
         );
         fs::remove_dir_all(root).unwrap();
     }

@@ -180,25 +180,46 @@ Orderly shutdown and panic unwind drain partial lines; SIGKILL cannot promise it
 stderr go to `<state-dir>/daemon.log` (`~/.pij-rs/daemon.log`), opened by
 whichever launcher started it: `just bounce-rs` (`>>`), the `just rs-autostart`
 LaunchAgent (`StandardOutPath`) or `pij-rs daemon bounce`. When that file is the
-state dir's own `daemon.log` (same device and inode; a symlink never is), the
-daemon bounds it itself, in-process: at 16 MiB it renames `daemon.log` to
-`daemon.log.1`, shifting `.1` to `.2` and `.2` to `.3` and dropping the old
-`.3`, and opens a fresh `daemon.log` (mode 0600) by path. That is four files
-of at most 17 MiB each. A log already at the cap when the daemon starts rotates at start,
-and one over 17 MiB (from before the bound) keeps only its last 16 MiB, from a
-line start. Each rotation leaves a `daemon log: rotated at N bytes` line in
-the new file, and a rotation that fails says so and keeps writing to the old
-one. Output sent anywhere else (a terminal, another file) is never rotated.
+state dir's own `daemon.log` (same device and inode; a symlink never is; or,
+for a daemon whose launcher opened it just before another daemon rotated it,
+the file now at `daemon.log.1` or one with no name left), the daemon bounds it
+itself, in-process: at 16 MiB it renames `daemon.log` to `daemon.log.1`,
+shifting `.1` to `.2` and `.2` to `.3` and dropping the old `.3`, and opens a
+fresh `daemon.log` (mode 0600) by path. That is four files of at most 17 MiB
+each. A log already at the cap when the daemon starts rotates at start, and
+one over 17 MiB (from before the bound) keeps only its last 16 MiB, from a line
+start. Each rotation leaves a `daemon log: rotated at N bytes` line in the new
+file, and a rotation that fails says so and keeps writing to the old one.
+Output sent anywhere else (a terminal, another file) is never rotated.
 
-**Repeated lines (#90).** A line is counted by its template: the line with
-every run of digits replaced by `#`, so pids, ports, exit codes and counters
-don't make it new. A template already written in the last 60 s is counted
-instead of written. When that minute ends, one line gives the count:
-`pij-rs: daemon log: N more like this in 60 s after it was written: <template>`.
-A burst therefore writes one line plus one summary a minute. At most 256
-templates are remembered (the one whose minute ends soonest is reported and
-forgotten first). Lines whose words differ (another seat, another source) are
-different templates.
+**Two daemons, one log (R301-001).** Every look at the path, at start and at
+each 16 MiB, holds an exclusive `flock` on `<state-dir>/daemon.log.lock` (a
+0600 file that stays; removing it would let two processes lock two different
+files). Under the lock the daemon re-checks which file the path names: if
+another daemon rotated it, it joins that file (`daemon log: another process
+rotated daemon.log`) instead of rotating again. A daemon that can't get the
+lock in about 2 s changes nothing, says so, keeps writing to the file it has,
+and tries again a cap later: the holder is mid-rotation, so the path is in
+flux. The lock and the re-check are **brakes**: without them two rotations
+interleave and one unlinks the file the other serves into, so removing either
+makes rotation do more. Staging files (`daemon.log.new`, `daemon.log.1.new`)
+are made only under the lock, created new (`O_EXCL`) after removing any
+leftover, so a planted symlink is removed, never followed. The lock adds no
+launch and is taken only at start and at a rotation, never per line.
+
+**Repeated lines (#90).** A line repeats only if the same output (one per
+destination file, so stdout and stderr to one file are one output) already
+wrote exactly that line, its line ending aside, in the last 60 s. A repeat is
+counted instead of written. When that minute ends, one line gives the count:
+`pij-rs: daemon log: N more of this line in 60 s after it was written: <line>`.
+A burst of one line therefore writes it once plus one summary a minute. A
+line that differs in any character, a number included (a pid, a panic
+location, a status code), is another line. A Rust panic's header, its
+`RUST_BACKTRACE` note and its backtrace lines are never counted. At most 256
+lines are remembered (the one whose minute ends soonest is reported and
+forgotten first), each kept in at most 243 bytes (240 and an ellipsis): about
+100 KB in all (a 512-bucket table of 64-byte entries, 33 KB, plus at most
+62 KB of kept text).
 
 ## Machine trust, caller identity and roles
 

@@ -251,13 +251,16 @@ fn every_daemon_launch_site_records_itself() {
 ///
 /// Every production `Command::new(<arg>)` in the daemon crates must be one of:
 /// - a string literal starting with `/`;
-/// - the closure parameter of a `program::launch`/`launch_async` call within
-///   the 4 lines before it (`launch("git", |git| … Command::new(git)`);
+/// - the closure parameter of a `program::launch`/`program::launch_async`
+///   call within the 4 lines before it (`launch("git", |git| …
+///   Command::new(git)`);
 /// - a const of the same file whose value is a literal starting with `/`;
 /// - a [`RESOLVED_ELSEWHERE`] entry, a parameter its callers resolve.
 ///
 /// Anything else, a bare literal, a const or a variable, is refused (#90 N2:
-/// the literal-only form missed a const or variable holding a bare name).
+/// the literal-only form missed a const or variable holding a bare name). It
+/// is a lexical tripwire over those source shapes, not proof of what runs:
+/// `program::launch` itself can still hand back a bare name PATH didn't find.
 #[test]
 fn no_daemon_launch_names_a_program_bare() {
     // (file, argument, why it is already resolved)
@@ -309,7 +312,8 @@ fn no_daemon_launch_names_a_program_bare() {
                     absolute += usize::from(arg.starts_with("\"/bin/ps\""));
                     arg.starts_with("\"/")
                 } else if lines[index.saturating_sub(4)..index].iter().any(|before| {
-                    (before.contains("launch(") || before.contains("launch_async("))
+                    (before.contains("program::launch(")
+                        || before.contains("program::launch_async("))
                         && before.contains(&format!("|{arg}|"))
                 }) {
                     launched += 1;
