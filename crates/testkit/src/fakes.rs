@@ -62,6 +62,7 @@ struct RegistryState {
     seats: BTreeMap<String, SeatDescriptor>,
     seq: u64,
     recorder: Recorder,
+    put_errors: VecDeque<String>,
 }
 
 impl FakeRegistry {
@@ -89,6 +90,15 @@ impl FakeRegistry {
             .calls
             .clone()
     }
+
+    /// Make the next put fail with an adapter error carrying `message`.
+    pub fn script_put_error(&self, message: impl Into<String>) {
+        self.state
+            .lock()
+            .expect("fake registry mutex")
+            .put_errors
+            .push_back(message.into());
+    }
 }
 
 impl FakeRegistry {
@@ -99,6 +109,12 @@ impl FakeRegistry {
     ) -> Result<(Seq, pij_core::ports::PutBinding)> {
         let mut state = self.state.lock().expect("fake registry mutex");
         state.recorder.record(format!("put:{}", descriptor.id));
+        if let Some(message) = state.put_errors.pop_front() {
+            return Err(PijError::Adapter {
+                adapter: "fake/registry".to_string(),
+                message,
+            });
+        }
         state.seq += 1;
         let seq = Seq(state.seq);
         if keep_parent && let Some(current) = state.seats.get(descriptor.id.as_str()) {

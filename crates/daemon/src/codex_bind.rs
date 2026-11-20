@@ -7,7 +7,7 @@
 //! app-server holds none, so its pane's thread cannot be derived and its seat is
 //! never bound from a guess.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -158,10 +158,12 @@ impl CodexBindFacts for MachineCodexBindFacts {
 ///
 /// Cost (plan 181 R12). A tick reads the lock directory and the roster, both
 /// in-process, and launches nothing unless a Codex thread started since the last
-/// tick or a pending spawned Codex row appeared. Then each pending row costs one
-/// `process_files`, and a bind costs one tmux call and one `ps`. So launches
-/// scale with Codex thread starts times pending rows, never with ticks, and a
-/// spawn that never binds costs nothing until the next thread starts.
+/// tick, a pending spawned Codex row appeared, or a row's last probe failed
+/// (F232). Then each pending row costs one `process_files`, and a bind costs one
+/// tmux call and one `ps`. A failed probe is retried on the next tick at most
+/// [`PROBE_RETRIES`] times, so launches scale with Codex thread starts times
+/// pending rows, never with ticks, and a spawn that never binds costs nothing
+/// until the next thread starts.
 pub(crate) struct CodexBinder {
     registry: Arc<dyn Registry>,
     facts: Arc<dyn CodexBindFacts>,
@@ -169,10 +171,19 @@ pub(crate) struct CodexBinder {
     seen: Mutex<Seen>,
 }
 
+/// How many more ticks re-probe a row whose probe failed (a read that errored,
+/// such as a control read skipped while another process attaches, F229, or a
+/// transient registration failure) before it waits for the next thread start.
+/// A brake: it only ever removes probes, and every thread start gives each row
+/// a fresh budget.
+const PROBE_RETRIES: u32 = 3;
+
 #[derive(Default)]
 struct Seen {
     locks: Option<BTreeSet<String>>,
     rows: BTreeSet<SeatId>,
+    /// Consecutive failed probes per row, since its last reason to probe.
+    failures: BTreeMap<SeatId, u32>,
 }
 
 impl CodexBinder {
@@ -248,6 +259,11 @@ impl CodexBinder {
                 .locks
                 .as_ref()
                 .is_none_or(|before| !locks.is_subset(before));
+            // A new thread is a new reason to probe: every row's retry budget
+            // starts again.
+            if thread_started {
+                seen.failures.clear();
+            }
             let probe = pending
                 .iter()
                 .filter(|seat| thread_started || !seen.rows.contains(&seat.id))
@@ -257,16 +273,37 @@ impl CodexBinder {
             probe
         };
         let mut bound = 0;
+        let mut failed = Vec::new();
         for seat in to_probe {
             match self.bind_seat(seat).await {
                 Ok(true) => bound += 1,
                 Ok(false) => {}
-                Err(error) => eprintln!("pij-rs codex binder: seat {}: {error}", seat.id),
+                Err(error) => {
+                    eprintln!("pij-rs codex binder: seat {}: {error}", seat.id);
+                    failed.push(seat.id.clone());
+                }
+            }
+        }
+        // A failed probe decided nothing, so the row is not yet seen and the
+        // next tick probes it again (F232), up to the retry bound.
+        let mut seen = self
+            .seen
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        seen.failures.retain(|id, _| failed.contains(id));
+        for id in failed {
+            let failures = seen.failures.entry(id.clone()).or_default();
+            *failures += 1;
+            if *failures <= PROBE_RETRIES {
+                seen.rows.remove(&id);
             }
         }
         Ok(bound)
     }
 
+    /// `Ok` when the probe decided (bound, or this row cannot bind from what
+    /// is running now, or registration refused the claim); `Err` when a read
+    /// or a transient registration failure decided nothing.
     async fn bind_seat(&self, seat: &SeatDescriptor) -> Result<bool> {
         let pane = seat
             .pane
@@ -336,10 +373,18 @@ impl CodexBinder {
             .await
         {
             Ok(_) => Ok(true),
-            Err(error) => Err(PijError::Adapter {
-                adapter: ADAPTER.to_string(),
-                message: error.to_string(),
-            }),
+            Err(error) => {
+                let transient = error.is_transient();
+                let error = PijError::Adapter {
+                    adapter: ADAPTER.to_string(),
+                    message: error.to_string(),
+                };
+                if transient {
+                    return Err(error);
+                }
+                eprintln!("pij-rs codex binder: seat {}: {error}", seat.id);
+                Ok(false)
+            }
         }
     }
 }
