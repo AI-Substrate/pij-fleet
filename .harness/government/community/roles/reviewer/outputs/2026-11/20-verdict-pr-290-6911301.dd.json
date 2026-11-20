@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f8dc-b97d-7083-906c-844561d26926",
+				"date": "2026-11-20",
+				"head": "69113015b5a097ca8886113cbc1c5b0e7d71d78e",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44732494166",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:290",
+				"writer": "pij-significant-silkworm",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "cargo clippy --locked -p pij-tmux --all-targets -- -D warnings (through just shared-build)",
+					"exit_code": 0,
+					"log": "macOS clippy passed at the assigned head; niceness 19"
+				},
+				{
+					"command": "exact-head copied adapter test binary: separate_adapters_cannot_both_reserve_one_pane --exact --nocapture, repeated 300 times with four workers",
+					"exit_code": 0,
+					"log": "tmux 3.6a, nice 19: 300/300 passed; 300/300 scoped no-server probes passed; identical binary SHA-256 db228556a9f28cf5b23040f583ea67af42cd60d7eb2fa9f7fb6775acd2541308"
+				},
+				{
+					"command": "gh run view 44732494166; successful job artifact 14627476020",
+					"exit_code": 0,
+					"log": "exact-head CI passed; JUnit records pij-tmux::adapter/separate_adapters_cannot_both_reserve_one_pane as passed and not skipped"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# #290 reviewer verdict\n\n**PASS** at `69113015b5a097ca8886113cbc1c5b0e7d71d78e`, reviewed against `74d1c63a97551b5ce18768db64a6bfa33cd97ee7`. No code findings. This is the two-file, test-only F237 change; F238 product work is outside this verdict.\n\n## Correctness\n\n- **CAS proof is preserved.** Both independently constructed adapters retain their own submit locks and race `acquire_submit` at the same barrier. The assertions still require exactly one success, one specific ownership refusal, the winning token on the pane, and disabled pane input (`crates/tmux/tests/adapter.rs:920-973`). The new setting targets the control session, not the reserved pane or its owner marker.\n- **Attach/exit ordering is correct.** The lister stays alive while both racers finish their setup handshakes. `keep_control_session` runs before dropping the lister or releasing the racers. The cleaner's `abort_submit` first reads ownership/input through its newly attached client; the second keep runs while that cleaner remains alive (`adapter.rs:908-942,975-982`; `crates/tmux/src/control.rs:394-466`; `crates/tmux/src/lib.rs:872-889`).\n- **Cleanup is preserved.** The original assertions still require restored input and an empty owner marker after abort. Reverse local-drop order retires the cleaner before `TestSession::drop`, which explicitly kills only the isolated server (`adapter.rs:2222-2324`). The independent local repetition confirmed all 300 of its fixture servers were gone.\n\n## What this masks\n\nIt deliberately masks the control-session destruction crash in this CAS fixture, including its product exposure. It does **not** mask a regression in the mutual-exclusion or reservation-cleanup behavior this test was written to prove. It is not evidence that F238 is fixed. Separate lifecycle tests, including `pij_with_only_its_own_window_goes_with_the_client` and `the_server_still_exits_when_the_operator_closes_the_last_session`, remain unchanged in `crates/tmux/tests/control_mode.rs`.\n\n## Security and cost\n\nBoth new commands use `TestSession::run`, which prefixes the unique fixture `-L` label and `/dev/null` config; every adapter also uses that label. No new command reaches the default server. Arguments are structured, the target is the constant `_pij`, and no global option, secret, private identity, or home path is added.\n\nTwo additional forked `tmux set-option` calls per execution of this one test. No new product loop, poll, timer, hook, sweep, or launch: steady-state cost and per-seat scaling are both zero. This is fixture setup, not a destructive policy or brake.\n\n## Evidence\n\n- `just pr-freeze 290`: initially FINAL on this exact head; a later check found **DIRTY** after main advanced, with the same reviewed head and all its latest CI checks passing. The PM subsequently reported reconciliation as described below.\n- `git diff --check 74d1c63a...HEAD`: passed; review worktree remains clean.\n- `cargo clippy --locked -p pij-tmux --all-targets -- -D warnings`, executed through `just shared-build`: passed on macOS, nice 19.\n- System **tmux 3.6a**, four concurrent test processes, nice 19: **600/600 CAS executions passed** across two batches. The second batch's runner exited 0 and its 300 scoped `tmux -N -L <fixture-label> list-sessions` probes all confirmed no server. The first runner exited 1 solely because its post-test oracle incorrectly equated stale socket files with live servers; that oracle was corrected before the second batch.\n- The test binary was built/copied while holding shared-build's lock; both batches used the same SHA-256: `db228556a9f28cf5b23040f583ea67af42cd60d7eb2fa9f7fb6775acd2541308`.\n- Exact-head CI run **44732494166** passed. Successful rust-test job **136275533569**, artifact **14627476020**, records `pij-tmux::adapter / separate_adapters_cannot_both_reserve_one_pane` as passed, not skipped (0.076 s). TS proof is CI-only under C25; no dependencies were installed or linked.\n- Full local `harness checks` was invoked and is still running at publication. Its result is not claimed green; local boot already reports unavailable TS dependencies.\n\n## Merge note and holding\n\nMain moved during validation. The PM reports that the coder merged main `27076a37` into F237, producing `74f354680c29e16b2191aadaac849c022b062bab`; their `git diff 69113015 74f35468 -- crates/tmux` is empty and the scoped PR additions/removals are unchanged. The PM explicitly requested this verdict at the originally assigned head and owns carrying it to the reconciled head. No local or CI proof of the new head is claimed here. **Reviewer/290 holding is retained until merge.**\n\n## Harness feedback\n\n**magicWand:** encode a `just repeat-test` surface that builds and copies an exact-head binary under the shared lock, releases the build resource, and repeats the private copy with scoped teardown probes.\n\n**difficulties:** dependency-free review boot recommends tooling unavailable under C25; shared-build waiting dominates a short stress run; socket-file existence was an incorrect teardown oracle. These observations were captured with `harness observe`. No review-worktree source changes were made.\n"
+		}
+	]
+}
