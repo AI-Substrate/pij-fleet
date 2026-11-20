@@ -2209,7 +2209,10 @@
 					"harness_session": "3be49ca4-fd73-4a61-adec-6950830a6b2c",
 					"instance_key": "280",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #280 merged (7ec3e17654b6)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-lovely-minnow",
+					"to": "2026-11-20T05:21:12.496Z",
 					"why": "#280 F229 correctness review, fresh seat"
 				},
 				{
