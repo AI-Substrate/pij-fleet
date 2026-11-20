@@ -41,7 +41,8 @@
 //! crash) still has `_pij` cleaned up, at that risk. The whole exit is
 //! bounded: the teardown is written and answered on its own thread, waited on
 //! for at most [`TEARDOWN_WAIT`], and the killed client is reaped within
-//! [`REAP_WAIT`] or handed to a thread that reaps it.
+//! [`REAP_WAIT`] or handed to a thread that reaps it; if no thread can start,
+//! it is waited on for [`REAP_WAIT`] more and then left (F240).
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -231,7 +232,8 @@ struct Live {
 impl Drop for Live {
     /// Every way a client leaves (the adapter dropped, a replacement after a
     /// slow or lost reply, `_pij` alone, a daemon shutting down) comes here,
-    /// and none of it waits longer than [`TEARDOWN_WAIT`] plus [`REAP_WAIT`].
+    /// and none of it waits longer than [`TEARDOWN_WAIT`] plus [`REAP_WAIT`],
+    /// or plus twice [`REAP_WAIT`] when no reaper thread can start (F240).
     fn drop(&mut self) {
         self.leave();
         if let Some(mut child) = self.child.take() {
@@ -289,20 +291,82 @@ impl Live {
 
 /// Reap a killed client within [`REAP_WAIT`]; one still there by then is
 /// handed to a thread that reaps it whenever it goes, so it never holds the
-/// exit and never stays a zombie.
-fn reap(mut child: Child) {
-    let deadline = Instant::now() + REAP_WAIT;
-    while Instant::now() < deadline {
+/// exit and never stays a zombie. If no thread can start (F240), the exit
+/// waits [`REAP_WAIT`] more itself; one still there after that is left, and
+/// said so with its pid.
+fn reap(child: Child) {
+    if let Reap::Left(child) = reap_with(child, spawn_reaper) {
+        eprintln!(
+            "pij-rs tmux: control client {} outlived its kill and no thread could start to reap it; left unreaped",
+            child.id()
+        );
+    }
+}
+
+/// Start the thread that reaps a client whenever it goes.
+fn spawn_reaper(reaper: Box<dyn FnOnce() + Send>) -> io::Result<()> {
+    std::thread::Builder::new()
+        .name("pij-tmux-reap".to_string())
+        .spawn(reaper)
+        .map(drop)
+}
+
+/// What became of a killed client.
+#[derive(Debug)]
+enum Reap {
+    /// Reaped (or no longer waitable) within the waits.
+    Done,
+    /// Handed to a thread that reaps it whenever it goes.
+    Handed,
+    /// Still there after both waits, with no thread to wait for it (F240).
+    Left(Child),
+}
+
+/// [`reap`], with the reaper thread started by `spawn`. When `spawn` fails
+/// (no thread can start: thread or resource exhaustion), the child would be
+/// dropped unwaited and left a zombie, so the caller waits up to
+/// [`REAP_WAIT`] more itself. The exit is held at most twice [`REAP_WAIT`]
+/// here, and only on that failure; otherwise at most [`REAP_WAIT`].
+fn reap_with(
+    mut child: Child,
+    spawn: impl FnOnce(Box<dyn FnOnce() + Send>) -> io::Result<()>,
+) -> Reap {
+    if reaped_within(&mut child, REAP_WAIT) {
+        return Reap::Done;
+    }
+    // Shared, so a thread that never starts (its closure dropped unrun)
+    // leaves the child here to be waited on.
+    let slot = Arc::new(Mutex::new(Some(child)));
+    let reaper = Arc::clone(&slot);
+    let handed = spawn(Box::new(move || {
+        if let Some(mut child) = reaper.lock().ok().and_then(|mut slot| slot.take()) {
+            let _ = child.wait();
+        }
+    }));
+    if handed.is_ok() {
+        return Reap::Handed;
+    }
+    let Some(mut child) = slot.lock().ok().and_then(|mut slot| slot.take()) else {
+        return Reap::Done;
+    };
+    if reaped_within(&mut child, REAP_WAIT) {
+        Reap::Done
+    } else {
+        Reap::Left(child)
+    }
+}
+
+/// Poll `child` every [`REAP_POLL`] for at most `wait`: true once it is
+/// reaped (or can no longer be waited on).
+fn reaped_within(child: &mut Child, wait: Duration) -> bool {
+    let deadline = Instant::now() + wait;
+    loop {
         match child.try_wait() {
-            Ok(Some(_)) | Err(_) => return,
+            Ok(Some(_)) | Err(_) => return true,
+            Ok(None) if Instant::now() >= deadline => return false,
             Ok(None) => std::thread::sleep(REAP_POLL),
         }
     }
-    let _ = std::thread::Builder::new()
-        .name("pij-tmux-reap".to_string())
-        .spawn(move || {
-            let _ = child.wait();
-        });
 }
 
 #[derive(Default)]
@@ -877,9 +941,10 @@ fn read_replies(mut stdout: impl BufRead, waiters: &Mutex<Waiters>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ATTACH_LOCK_WAIT, AttachLock, Frame, Framer, Live, REAP_WAIT, REPLY_TIMEOUT, State,
+        ATTACH_LOCK_WAIT, AttachLock, Frame, Framer, Live, REAP_WAIT, REPLY_TIMEOUT, Reap, State,
         TEARDOWN_WAIT, Waiters, attach_lock_held, attach_lock_path, command_line, forget, is_read,
-        lock_attach, private_socket_dir, reap, socket_attach_lock_path, still_waiting_for_attach,
+        lock_attach, private_socket_dir, reap, reap_with, socket_attach_lock_path,
+        still_waiting_for_attach,
     };
     use pij_testkit::time::scaled;
     use std::ffi::OsString;
@@ -1228,6 +1293,58 @@ mod tests {
             !process_alive(pid),
             "reaped by the thread, not left a zombie"
         );
+    }
+
+    /// F240: when no reaper thread can start, the child is not dropped
+    /// unwaited: the caller waits [`REAP_WAIT`] more itself, so one that goes
+    /// in that time (here killed as the thread fails to start) is reaped, not
+    /// left a zombie.
+    #[test]
+    fn a_client_with_no_reaper_thread_is_reaped_by_the_caller() {
+        let child = Command::new("/bin/sleep").arg("30").spawn().expect("sleep");
+        let pid = child.id();
+        let outcome = reap_with(child, |reaper| {
+            drop(reaper);
+            let _ = Command::new("/bin/kill")
+                .args(["-9", &pid.to_string()])
+                .status();
+            Err(io::Error::other("no thread can start"))
+        });
+        assert!(matches!(outcome, Reap::Done), "reaped: {outcome:?}");
+        assert!(!process_alive(pid), "reaped by the caller, not a zombie");
+    }
+
+    /// F240: a child that outlives both waits with no reaper thread holds the
+    /// exit no longer than twice [`REAP_WAIT`], and is given back to be named
+    /// in the log.
+    #[test]
+    fn a_client_with_no_reaper_thread_that_will_not_go_is_left_within_the_bound() {
+        let child = Command::new("/bin/sleep").arg("30").spawn().expect("sleep");
+        let pid = child.id();
+        let (done, finished) = mpsc::channel();
+        std::thread::spawn(move || {
+            let started = Instant::now();
+            let outcome = reap_with(child, |_| Err(io::Error::other("no thread can start")));
+            let _ = done.send((started.elapsed(), outcome));
+        });
+        let result = finished.recv_timeout(REAP_WAIT * 2 + scaled(Duration::from_secs(2)));
+        if result.is_err() {
+            let _ = Command::new("/bin/kill")
+                .args(["-9", &pid.to_string()])
+                .status();
+        }
+        let (took, outcome) = result.expect("the fallback wait held the exit");
+        let Reap::Left(mut child) = outcome else {
+            panic!("a child still running must be left: {outcome:?}");
+        };
+        assert_eq!(child.id(), pid, "the log names this pid");
+        assert!(took >= REAP_WAIT * 2, "both waits were given: {took:?}");
+        assert!(
+            took < REAP_WAIT * 2 + scaled(Duration::from_secs(1)),
+            "bounded: {took:?}"
+        );
+        child.kill().expect("kill");
+        child.wait().expect("wait");
     }
 
     fn process_alive(pid: u32) -> bool {
