@@ -163,6 +163,14 @@ with role-labelled checked-out connection counts and continues shutdown; the
 roles can share a pool. Normal drains preserve admitted writes, but an expired
 drain cannot promise their completion. It never waits forever for a leaked lease.
 
+On SIGINT or SIGTERM the daemon stops accepting connections and gives HTTP
+requests in flight the same five seconds to finish; every connection still open
+after that, an event stream (`GET /v1/events`, which never ends on its own)
+included, is dropped, and its client sees the stream end (F242). A client that
+streams reconnects to the next daemon. The tmux control client is released at
+the start of the stop, before any of this, so it leaves through its teardown
+(F238).
+
 Every newly emitted daemon stdout/stderr line has a UTC RFC 3339 prefix,
 including multiline diagnostics. Existing appended log history is not rewritten.
 Orderly shutdown and panic unwind drain partial lines; SIGKILL cannot promise it.

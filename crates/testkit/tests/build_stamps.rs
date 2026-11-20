@@ -26,8 +26,9 @@ const STAMPS: [&str; 3] = [
     "PIJ_EXT_TREE_OMP",
 ];
 
-/// The body of `recipe` in the justfile, unindented, without its shebang.
-fn recipe(justfile: &str, recipe: &str) -> String {
+/// The body of `recipe` in the justfile, unindented, without its shebang, and
+/// the shell it names (`bash` when its shebang says so, else `/bin/sh`).
+fn recipe(justfile: &str, recipe: &str) -> (String, &'static str) {
     let mut lines = justfile
         .lines()
         .skip_while(|line| *line != format!("{recipe}:"))
@@ -36,10 +37,14 @@ fn recipe(justfile: &str, recipe: &str) -> String {
         .map(|line| line.strip_prefix("    ").unwrap_or(line))
         .collect::<Vec<_>>();
     assert!(!lines.is_empty(), "the justfile has a `{recipe}` recipe");
+    let mut shell = "/bin/sh";
     if lines[0].starts_with("#!") {
+        if lines[0].ends_with("bash") {
+            shell = "/bin/bash";
+        }
         lines.remove(0);
     }
-    lines.join("\n")
+    (lines.join("\n"), shell)
 }
 
 fn fake(dir: &Path, name: &str, body: &str) {
@@ -83,6 +88,17 @@ fn try_run(name: &str, env: &[(&str, &str)]) -> (PathBuf, bool) {
 /// [`try_run`], with `seed` files (path under the scratch home, contents)
 /// written first, as if a previous run had left them.
 fn try_run_seeded(name: &str, env: &[(&str, &str)], seed: &[(&str, &str)]) -> (PathBuf, bool) {
+    try_run_faked(name, env, seed, &[])
+}
+
+/// [`try_run_seeded`], with `fakes` (name, body) written over the default
+/// fakes; `@OUT@` in a body is the scratch home.
+fn try_run_faked(
+    name: &str,
+    env: &[(&str, &str)],
+    seed: &[(&str, &str)],
+    fakes: &[(&str, &str)],
+) -> (PathBuf, bool) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let justfile = std::fs::read_to_string(root.join("justfile")).expect("read the justfile");
     // One scratch per call: tests of the same recipe run in parallel.
@@ -169,9 +185,13 @@ fn try_run_seeded(name: &str, env: &[(&str, &str)], seed: &[(&str, &str)]) -> (P
             .expect("seed folder");
         std::fs::write(path, contents).expect("seed a file");
     }
-    std::fs::write(scratch.join("recipe.sh"), recipe(&justfile, name)).expect("write the recipe");
+    for (name, body) in fakes {
+        fake(&bin, name, &body.replace("@OUT@", &out.to_string()));
+    }
+    let (body, shell) = recipe(&justfile, name);
+    std::fs::write(scratch.join("recipe.sh"), body).expect("write the recipe");
     let path = format!("{}:/usr/bin:/bin", bin.display());
-    let status = Command::new("/bin/sh")
+    let status = Command::new(shell)
         .arg(scratch.join("recipe.sh"))
         .current_dir(&scratch)
         .env_clear()
@@ -445,13 +465,14 @@ fn path_check(scratch: &Path, dirs: &[PathBuf]) -> (bool, String) {
         std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../justfile"))
             .expect("read the justfile");
     let script = scratch.join("path-check.sh");
-    std::fs::write(&script, recipe(&justfile, "_pij-bins-path-check")).expect("write the check");
+    let (body, shell) = recipe(&justfile, "_pij-bins-path-check");
+    std::fs::write(&script, body).expect("write the check");
     let mut path = dirs
         .iter()
         .map(|dir| dir.display().to_string())
         .collect::<Vec<_>>();
     path.extend(["/usr/bin".to_string(), "/bin".to_string()]);
-    let output = Command::new("/bin/sh")
+    let output = Command::new(shell)
         .arg(&script)
         .env_clear()
         .env("PATH", path.join(":"))
@@ -521,4 +542,135 @@ fn doctor_flags_a_pij_binary_that_resolves_into_target() {
         "the link into target/ is what runs: {out}"
     );
     let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// The old daemon `bounce-rs` stops: a real process (its pid is what the fake
+/// `lsof` names first), reaped as soon as it ends, so a stopped one is gone.
+struct OldDaemon {
+    pid: u32,
+    ended: std::sync::mpsc::Receiver<()>,
+}
+
+impl OldDaemon {
+    fn start() -> Self {
+        let mut child = Command::new("/bin/sleep")
+            .arg("60")
+            .spawn()
+            .expect("an old daemon");
+        let pid = child.id();
+        let (tx, ended) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = child.wait();
+            let _ = tx.send(());
+        });
+        Self { pid, ended }
+    }
+
+    /// Whether it ended. `bounce-rs` waits for its pid to go before it moves
+    /// on, so once the recipe returns only the reap can lag.
+    fn stopped(&self) -> bool {
+        self.ended
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .is_ok()
+    }
+}
+
+impl Drop for OldDaemon {
+    fn drop(&mut self) {
+        let _ = Command::new("/bin/kill")
+            .args(["-9", &self.pid.to_string()])
+            .status();
+    }
+}
+
+/// `bounce-rs` against a running old daemon with `tmux` faked by `tmux`: the
+/// scratch, and whether it succeeded. `lsof` names the old daemon, then a free
+/// port, then the new daemon.
+fn bounce_with_tmux(old: &OldDaemon, tmux: &str, env: &[(&str, &str)]) -> (PathBuf, bool) {
+    let lsof = format!(
+        "n=$(cat '@OUT@/lsof.n' 2>/dev/null || echo 0); n=$((n + 1)); echo $n > '@OUT@/lsof.n'\n\
+         case $n in 1) echo {} ;; 2) ;; *) echo 4242 ;; esac; exit 0",
+        old.pid
+    );
+    try_run_faked("bounce-rs", env, &[], &[("lsof", &lsof), ("tmux", tmux)])
+}
+
+/// F242: before it signals the old daemon, `bounce-rs` switches `_pij`'s
+/// destroy-unattached off on the daemon's server, then stops it. The server
+/// is named as the daemon names it, a `-L` label or none, and tmux finds the
+/// socket itself, with its own check of the socket directory: never `-S`
+/// (S293-001).
+#[test]
+fn bounce_rs_switches_destroy_unattached_off_before_the_signal() {
+    for (env, expected) in [
+        (&[][..], "set-option -t _pij: destroy-unattached off"),
+        (
+            &[("PIJ_TMUX_SERVER", "fleet")][..],
+            "-L fleet set-option -t _pij: destroy-unattached off",
+        ),
+    ] {
+        let old = OldDaemon::start();
+        let tmux = format!(
+            "kill -0 {} && echo \"$*\" > '@OUT@/tmux.args'; exit 0",
+            old.pid
+        );
+        let (scratch, ok) = bounce_with_tmux(&old, &tmux, env);
+        assert!(ok, "{env:?}: the bounce goes on");
+        let args = std::fs::read_to_string(scratch.join("tmux.args"))
+            .expect("tmux ran while the old daemon was still running");
+        assert_eq!(args.trim(), expected, "{env:?}");
+        assert!(old.stopped(), "{env:?}: then the old daemon is stopped");
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+}
+
+/// F242: no server, or no `_pij` (a first boot), has nothing to protect.
+#[test]
+fn bounce_rs_goes_on_when_tmux_has_nothing_to_protect() {
+    for said in [
+        "no server running on /tmp/tmux-1/default",
+        "error connecting to /tmp/tmux-1/default (No such file or directory)",
+        "no such session: _pij:",
+    ] {
+        let old = OldDaemon::start();
+        let (scratch, ok) = bounce_with_tmux(&old, &format!("echo '{said}' >&2; exit 1"), &[]);
+        assert!(ok, "{said}: the bounce goes on");
+        assert!(old.stopped(), "{said}: the old daemon is stopped");
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+}
+
+/// F242 (P293-001): a tmux that does not answer within the bound, or fails
+/// any other way, refuses the bounce: the old daemon is left running.
+/// `PIJ_BOUNCE_UNSAFE=1` (a human who checked the server) goes on.
+#[test]
+fn bounce_rs_refuses_when_destroy_unattached_cannot_be_switched_off() {
+    for (tmux, env, refused) in [
+        ("exec /bin/sleep 30", &[][..], true),
+        (
+            "echo 'error connecting to /tmp/tmux-1/default (Permission denied)' >&2; exit 1",
+            &[][..],
+            true,
+        ),
+        (
+            "exec /bin/sleep 30",
+            &[("PIJ_BOUNCE_UNSAFE", "1")][..],
+            false,
+        ),
+    ] {
+        let old = OldDaemon::start();
+        let started = std::time::Instant::now();
+        let (scratch, ok) = bounce_with_tmux(&old, tmux, env);
+        assert!(
+            started.elapsed() < pij_testkit::time::scaled(std::time::Duration::from_secs(20)),
+            "{tmux}: bounded"
+        );
+        assert_eq!(!ok, refused, "{tmux} {env:?}: refused");
+        assert_eq!(
+            old.stopped(),
+            !refused,
+            "{tmux} {env:?}: the old daemon stopped"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
 }
