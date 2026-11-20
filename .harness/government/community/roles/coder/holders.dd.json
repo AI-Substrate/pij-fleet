@@ -1302,7 +1302,10 @@
 					"harness_session": "01a1f66b-21d0-7652-8b03-da1df9910ceb",
 					"instance_key": "f228",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #278 merged (9ffc5729843e)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-forthcoming-silkworm",
+					"to": "2026-11-20T03:18:24.927Z",
 					"why": "F228 flaky real-tmux/timing tests; prime: parallel to falcon"
 				}
 			]

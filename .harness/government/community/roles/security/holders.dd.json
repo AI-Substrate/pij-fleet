@@ -642,7 +642,10 @@
 					"harness_session": "0981852b-441c-4218-b73d-e50f794ad86e",
 					"instance_key": "278",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #278 merged (9ffc5729843e)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-gothic-chickadee",
+					"to": "2026-11-20T03:18:24.927Z",
 					"why": "#278 F228 security verdict, fresh seat"
 				}
 			]
