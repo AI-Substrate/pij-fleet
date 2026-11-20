@@ -45,7 +45,7 @@ pub use queue::SqliteQueue;
 pub use registry::SqliteRegistry;
 pub use role_assertion::{Placement, PlacementCommit};
 pub use role_requests::{
-    CARRIED_EVENT, CarriedMail, CloseOutcome, ClosedOrOpen, ClosedRoleRequest,
+    CARRIED_EVENT, CARRY_STARTED_EVENT, CarriedMail, CloseOutcome, ClosedOrOpen, ClosedRoleRequest,
     LIMIT_CLAIM_LEASE_MS, LimitClaim, LimitStage, REQUESTS_LIST_LIMIT, ReplyMode, RequestState,
     RoleRequest, WITHDRAWN_EVENT, Withdrawal, native_boundary_reason,
 };

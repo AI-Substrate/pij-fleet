@@ -9389,6 +9389,8 @@ async fn memory_add_right_after_its_own_held_close_still_writes_the_note() {
 /// F190: the launch both seats of a native session boundary name.
 const LAUNCH: &str = "s-f190-launch";
 
+use pij_daemon::carry::Start::{New, Redo};
+
 /// F190: `to` (pane `pane`) supersedes `from` at a native session boundary,
 /// as registration records it: `to` live, `from` retired with the boundary
 /// reason naming `to`, each naming its launch.
@@ -9479,7 +9481,7 @@ async fn a_clear_carries_holdings_fyis_and_requests_to_the_successor_once() {
     .await;
     let (from, to) = (SeatId::from("pij-holder"), SeatId::from("pij-heir"));
 
-    let carried = pij_daemon::carry::carry(&rig.services, &from, &to)
+    let carried = pij_daemon::carry::carry(&rig.services, &from, &to, New)
         .await
         .unwrap()
         .expect("the guard passes");
@@ -9597,7 +9599,7 @@ async fn a_clear_carries_holdings_fyis_and_requests_to_the_successor_once() {
     let row = rig.store.role_request("req-limit").await.unwrap().unwrap();
     assert!(row.answered_at.is_some(), "{row:?}");
 
-    let rerun = pij_daemon::carry::carry(&rig.services, &from, &to)
+    let rerun = pij_daemon::carry::carry(&rig.services, &from, &to, New)
         .await
         .unwrap()
         .expect("done");
@@ -9628,9 +9630,10 @@ async fn a_carry_moves_nothing_unless_one_launch_crossed_a_native_boundary() {
     {
         let to = format!("pij-heir-{n}");
         supersede(&rig, "pij-holder", &to, &format!("%9{n}"), launches).await;
-        let carried = pij_daemon::carry::carry(&rig.services, &from, &SeatId::from(to.as_str()))
-            .await
-            .unwrap();
+        let carried =
+            pij_daemon::carry::carry(&rig.services, &from, &SeatId::from(to.as_str()), New)
+                .await
+                .unwrap();
         assert_eq!(carried, None, "{launches:?}");
         assert_eq!(request_row(&rig, "req-limit").await, delivered);
         let refused = rig
@@ -9674,7 +9677,7 @@ async fn a_carry_moves_nothing_unless_one_launch_crossed_a_native_boundary() {
     other.spawn_id = Some(LAUNCH.into());
     rig.services.registry.put(other).await.unwrap();
     assert_eq!(
-        pij_daemon::carry::carry(&rig.services, &from, &SeatId::from("pij-heir-x"))
+        pij_daemon::carry::carry(&rig.services, &from, &SeatId::from("pij-heir-x"), New)
             .await
             .unwrap(),
         None
@@ -9756,6 +9759,7 @@ async fn a_refused_project_keeps_its_holdings_and_requests_while_fyis_move() {
         &rig.services,
         &SeatId::from("pij-holder"),
         &SeatId::from("pij-heir"),
+        New,
     )
     .await
     .unwrap()
@@ -9842,7 +9846,7 @@ async fn a_request_delivering_at_the_clear_is_carried_once_it_settles() {
             .await
             .unwrap();
     });
-    let first = pij_daemon::carry::carry(&rig.services, &from, &to)
+    let first = pij_daemon::carry::carry(&rig.services, &from, &to, New)
         .await
         .unwrap()
         .expect("carried");
@@ -9893,7 +9897,11 @@ async fn a_carry_cut_between_its_two_stores_is_finished_once_by_either_redo() {
         .await;
         let (from, to) = (SeatId::from("pij-holder"), SeatId::from("pij-heir"));
         let heir = rig.services.registry.get(&to).await.unwrap().unwrap();
-        // The governance half only, then the "crash".
+        // The carry's first two writes (its intent, then the governance
+        // half), then the "crash".
+        pij_daemon::carry::record_intent(&rig.services, &from, &to)
+            .await
+            .unwrap();
         let (roles, commit) = rig
             .services
             .directory
@@ -9909,7 +9917,7 @@ async fn a_carry_cut_between_its_two_stores_is_finished_once_by_either_redo() {
         assert!(carried_event(&rig, "pij-holder").await.is_none());
 
         match redo {
-            "registration" => pij_daemon::carry::carry_later(&rig.services, &from, &to)
+            "registration" => pij_daemon::carry::carry_later(&rig.services, &from, &to, Redo)
                 .await
                 .unwrap(),
             _ => pij_daemon::carry::redo_at_boot(&rig.services).await,
@@ -9922,7 +9930,7 @@ async fn a_carry_cut_between_its_two_stores_is_finished_once_by_either_redo() {
             "{redo}: {event}"
         );
         for _ in 0..2 {
-            pij_daemon::carry::carry_later(&rig.services, &from, &to)
+            pij_daemon::carry::carry_later(&rig.services, &from, &to, Redo)
                 .await
                 .unwrap();
             pij_daemon::carry::redo_at_boot(&rig.services).await;
@@ -9965,7 +9973,7 @@ async fn an_escalated_request_is_never_escalated_again_after_a_carry() {
     )
     .await;
     let to = SeatId::from("pij-heir");
-    pij_daemon::carry::carry_later(&rig.services, &SeatId::from("pij-holder"), &to)
+    pij_daemon::carry::carry_later(&rig.services, &SeatId::from("pij-holder"), &to, New)
         .await
         .unwrap();
     let row = rig.store.role_request("req-limit").await.unwrap().unwrap();
@@ -9998,7 +10006,7 @@ async fn a_carry_cut_before_its_drain_is_drained_by_the_boot_redo() {
     )
     .await;
     let (from, to) = (SeatId::from("pij-holder"), SeatId::from("pij-heir"));
-    pij_daemon::carry::carry(&rig.services, &from, &to)
+    pij_daemon::carry::carry(&rig.services, &from, &to, New)
         .await
         .unwrap()
         .expect("carried");
@@ -10012,5 +10020,47 @@ async fn a_carry_cut_before_its_drain_is_drained_by_the_boot_redo() {
         (RequestState::Delivered, Some("pij-heir".to_string()))
     );
     assert_eq!(copies(&rig, "pij-heir", "req-limit").await, 1);
+    rig.server.abort();
+}
+
+/// F190, bounded to its own work: a native session boundary from before the
+/// carry existed (same launch, live successor, but no recorded intent) is
+/// never carried by a redo, at daemon start or at the successor's next
+/// registration. Holdings and mail stay where they are.
+#[tokio::test]
+async fn a_boundary_without_a_recorded_intent_is_never_redone() {
+    use pij_store::RequestState;
+    let (rig, _repo, _) = limit_rig("pij-carry-historical", true).await;
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let (from, to) = (SeatId::from("pij-holder"), SeatId::from("pij-heir"));
+    pij_daemon::carry::redo_at_boot(&rig.services).await;
+    pij_daemon::carry::carry_later(&rig.services, &from, &to, Redo)
+        .await
+        .unwrap();
+    let held = |seat: &'static str| {
+        let store = rig.store.clone();
+        async move { store.open_assignments(seat).await.unwrap().len() }
+    };
+    assert_eq!((held("pij-holder").await, held("pij-heir").await), (1, 0));
+    assert_eq!(
+        request_row(&rig, "req-limit").await,
+        (RequestState::Delivered, Some("pij-holder".to_string()))
+    );
+    assert!(carried_event(&rig, "pij-holder").await.is_none());
+    assert!(
+        rig.services
+            .spine
+            .latest_matching(&from, &[pij_store::CARRY_STARTED_EVENT])
+            .await
+            .unwrap()
+            .is_none()
+    );
     rig.server.abort();
 }

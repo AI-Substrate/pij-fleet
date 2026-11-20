@@ -150,8 +150,9 @@ pub(crate) struct RegistrationService {
 /// What a registration that brought a seat back calls (F193).
 pub(crate) type ReturnHook = Arc<dyn Fn(&SeatId) + Send + Sync>;
 
-/// What a registration calls for each (old, successor) it may carry (F190).
-pub(crate) type CarryHook = Arc<dyn Fn(&SeatId, &SeatId) + Send + Sync>;
+/// What a registration calls for each (old, successor) it may carry (F190):
+/// its own supersede may start a carry; an earlier one only finishes one.
+pub(crate) type CarryHook = Arc<dyn Fn(&SeatId, &SeatId, crate::carry::Start) + Send + Sync>;
 
 /// What a native claim carries into the locked registration: a verified
 /// spawn prebind, if one exists, and the host's ancestors as the daemon
@@ -1749,25 +1750,21 @@ impl RegistrationService {
         {
             returned(&descriptor.id);
         }
-        // F190: carry this registration's supersede, and redo any earlier one
-        // of this seat whose carry was never recorded (the carry checks).
+        // F190: this registration's own supersede may start a carry; an
+        // earlier boundary naming this seat is only finished when its carry
+        // began (the carry checks the recorded intent).
         if let Some(carried) = &self.carried {
+            if let Some(old) = &boundary {
+                carried(old, &descriptor.id, crate::carry::Start::New);
+            }
             let reason = crate::carry::boundary_reason(&descriptor.id);
-            let mut olds: Vec<&SeatId> = boundary.iter().collect();
-            olds.extend(
-                seats
-                    .iter()
-                    .filter(|seat| {
-                        seat.tombstone_reason.as_deref() == Some(reason.as_str())
-                            && seat.spawn_id.is_some()
-                            && seat.spawn_id == descriptor.spawn_id
-                    })
-                    .map(|seat| &seat.id),
-            );
-            olds.sort();
-            olds.dedup();
-            for old in olds {
-                carried(old, &descriptor.id);
+            for seat in seats.iter().filter(|seat| {
+                Some(&seat.id) != boundary.as_ref()
+                    && seat.tombstone_reason.as_deref() == Some(reason.as_str())
+                    && seat.spawn_id.is_some()
+                    && seat.spawn_id == descriptor.spawn_id
+            }) {
+                carried(&seat.id, &descriptor.id, crate::carry::Start::Redo);
             }
         }
         Ok((descriptor, binding))

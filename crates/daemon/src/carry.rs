@@ -7,14 +7,18 @@
 //! so the successor's drain delivers them again: the cleared session never
 //! saw them, and the time limit's clock (F73) starts at their new arrival.
 //!
-//! POLICY, and what decides it: the carry runs when `to` superseded `from` at
-//! a native session boundary in the same process (registration proved the
-//! process and wrote the reason) and both name the same launch (`spawn_id`,
-//! both present). BRAKES, each of which can only spare: no `spawn_id` on
-//! either side, a different one, a successor no longer live, or a carry
-//! already recorded done (`seat.carried` on `from` with nothing delivering).
-//! The store's mail transaction checks the same boundary again in its own
-//! read of the seats table and refuses otherwise.
+//! POLICY, and what decides it: a carry starts only for the supersede the
+//! registration that wrote it reports (`to` superseded `from` at a native
+//! session boundary in the same process, and both name the same launch:
+//! `spawn_id`, both present), and it first records that intent
+//! (`seat.carry.started` on `from`). Every redo, at a later registration or
+//! at daemon start, finishes only a carry whose intent is recorded: the
+//! intent decides, so a boundary from before this code existed is never
+//! carried. BRAKES, each of which can only spare: no `spawn_id` on either
+//! side, a different one, a successor no longer live, no recorded intent on
+//! a redo, or a carry already recorded done (`seat.carried` on `from` with
+//! nothing delivering). The store's mail transaction checks the same
+//! boundary again in its own read of the seats table and refuses otherwise.
 //!
 //! The two stores cannot share a commit. Governance first: per project, one
 //! holders commit ends `from`'s holdings and opens the same for `to`
@@ -111,6 +115,16 @@ pub struct Carried {
     pub fyis: Vec<String>,
 }
 
+/// Whether a carry may begin, or only finish one already begun.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Start {
+    /// The supersede this registration committed: record the intent, then
+    /// carry.
+    New,
+    /// A redo: carry only a boundary whose intent is recorded.
+    Redo,
+}
+
 /// How long a carry waits for a request `delivering` to the old seat to
 /// settle: a send holds that state only from its claim to its mark, a few
 /// milliseconds. Per `/clear`, never per tick.
@@ -118,7 +132,7 @@ const SETTLE_TRIES: u32 = 20;
 const SETTLE_PAUSE: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// Carry `from`'s holdings and mail to `to`, once. `None` when the guard
-/// spares it.
+/// spares it, or a redo finds no recorded intent.
 ///
 /// # Errors
 /// A store or spine failure; whatever was done stays done, and a rerun
@@ -127,6 +141,7 @@ pub async fn carry(
     services: &Services,
     from: &SeatId,
     to: &SeatId,
+    start: Start,
 ) -> pij_core::error::Result<Option<Carried>> {
     let carries = &services.carries;
     let _one = carries.lock.lock().await;
@@ -158,6 +173,18 @@ pub async fn carry(
     };
     if !eligible(&old, &new) {
         return Ok(None);
+    }
+    // The intent decides: only a carry begun here is ever redone.
+    if services
+        .spine
+        .latest_matching(from, &[pij_store::CARRY_STARTED_EVENT])
+        .await?
+        .is_none()
+    {
+        if start == Start::Redo {
+            return Ok(None);
+        }
+        record_intent(services, from, to).await?;
     }
     let store = services.directory.store().clone();
     let mut projects: Vec<String> = store
@@ -243,11 +270,7 @@ pub async fn carry(
         drop(gates);
         tokio::time::sleep(SETTLE_PAUSE).await;
     };
-    let at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| {
-            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
-        });
+    let at = now_ms();
     let (from_id, to_id) = (from.clone(), to.clone());
     let mail = services
         .event_bus
@@ -267,14 +290,52 @@ pub async fn carry(
     Ok(Some(carried))
 }
 
+/// Record a carry's intent (`seat.carry.started` on `from`), before its first
+/// write: the one fact a redo finishes on.
+///
+/// # Errors
+/// A spine failure.
+pub async fn record_intent(
+    services: &Services,
+    from: &SeatId,
+    to: &SeatId,
+) -> pij_core::error::Result<()> {
+    services
+        .event_bus
+        .publish(pij_core::model::Event {
+            seq: None,
+            v: pij_core::wire::EVENT_VERSION,
+            at: now_ms(),
+            kind: pij_store::CARRY_STARTED_EVENT.to_string(),
+            seat: Some(from.clone()),
+            payload: json!({"from": from, "to": to}).to_string(),
+        })
+        .await
+        .map(|_| ())
+}
+
+/// Wall-clock epoch ms.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
 /// Carry on its own task, then drain the successor's roles' queues (F193's
 /// drain), so the requests the carry put back, and any queued for a carried
 /// role, reach it. A carry already done drains too: a crash between its
 /// commit and its drain leaves the requests queued, and this is their redo.
-pub fn carry_later(services: &Services, from: &SeatId, to: &SeatId) -> tokio::task::JoinHandle<()> {
+pub fn carry_later(
+    services: &Services,
+    from: &SeatId,
+    to: &SeatId,
+    start: Start,
+) -> tokio::task::JoinHandle<()> {
     let (services, from, to) = (services.clone(), from.clone(), to.clone());
     tokio::spawn(async move {
-        match carry(&services, &from, &to).await {
+        match carry(&services, &from, &to, start).await {
             Ok(Some(carried)) => {
                 if !carried.delivering.is_empty() {
                     eprintln!(
@@ -293,17 +354,16 @@ pub fn carry_later(services: &Services, from: &SeatId, to: &SeatId) -> tokio::ta
 /// The registration hook: carry each named (from, to) pair later.
 pub(crate) fn carry_hook(services: &Services) -> crate::registration::CarryHook {
     let services = services.clone();
-    std::sync::Arc::new(move |from: &SeatId, to: &SeatId| {
-        carry_later(&services, from, to);
+    std::sync::Arc::new(move |from: &SeatId, to: &SeatId, start: Start| {
+        carry_later(&services, from, to, start);
     })
 }
 
-/// Once at daemon start, on its own task: redo every native-session-boundary
-/// carry whose successor is live (a crash between the commits, or a
-/// supersede before this daemon), one after another, each then draining the
-/// successor. A carry already done reads one spine event and drains. One
-/// roster read; one spine read per such tombstone with a launch id and a live
-/// successor.
+/// Once at daemon start, on its own task: finish every carry this code began
+/// and did not record done (a crash between its writes), one after another,
+/// each then draining the successor. A boundary with no recorded intent (one
+/// from before the carry existed) is left alone. One roster read; one or two
+/// spine reads per tombstone with a launch id and a live successor.
 pub async fn redo_at_boot(services: &Services) {
     let seats = match services.registry.list(Default::default()).await {
         Ok(seats) => seats,
@@ -324,6 +384,6 @@ pub async fn redo_at_boot(services: &Services) {
         if old.spawn_id.is_none() || !live.contains(&to) {
             continue;
         }
-        let _ = carry_later(services, &old.id, &to).await;
+        let _ = carry_later(services, &old.id, &to, Start::Redo).await;
     }
 }

@@ -169,6 +169,11 @@ pub struct LimitClaim {
 /// lists no `delivering` request.
 pub const CARRIED_EVENT: &str = "seat.carried";
 
+/// F190: the spine event, on the superseded seat, that records a carry's
+/// intent before its first write. Only a boundary with this intent is ever
+/// redone; one from before the carry existed has none and is left alone.
+pub const CARRY_STARTED_EVENT: &str = "seat.carry.started";
+
 /// F190: the tombstone reason registration writes when `successor`
 /// supersedes a seat at a native session boundary in the same process. The
 /// carry's mail transaction refuses unless the old seat's row says exactly

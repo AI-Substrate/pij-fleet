@@ -320,6 +320,7 @@ Same-process supersede is gated by `native_precedence` (plan 168): an optional `
 
 **A `/clear` carries the old seat's work to its successor (F190).** A Copilot `/clear` or `/new` starts a new native session in the same process, and registration retires the old seat with the reason ``superseded by `<new>` at a native session boundary (same process)``. After that commit, when both seats name the same launch (`spawn_id`, present and equal on both), the daemon carries the old seat's work to the new one on its own task:
 
+0. It records the intent first: `seat.carry.started {from, to}` on the old seat. Only the registration that committed the supersede starts a carry.
 1. Per project, one holders commit ends the old seat's open holdings (`carried to <new>`) and opens the same role and instance for the new seat (`carried from <old> at a native session boundary (same process)`).
 2. One SQLite transaction then does three things:
    - It puts the old seat's delivered, unanswered requests in those (project, role) pairs back on their role's queue. `holder` and `delivered_at` are cleared; `checkin_at` and `escalated_at` are kept, so s12 never sends a second check-in or notice.
@@ -331,9 +332,10 @@ Rules and recovery:
 - The transaction refuses (`E-RS-CARRY-UNPROVEN`) unless the seats table proves the boundary in the same read. It is the only delivered-to-queued transition, and no route reaches it.
 - A project whose holders commit is refused keeps its holdings and its requests on the old seat; the event lists it under `refused`.
 - A request still `delivering` to the old seat is waited for, at most 20 × 250 ms, and carried once it settles. One still delivering after that is listed in `delivering`, and the carry is not done.
-- A crash between the two stores heals. Every step checks state. The new seat's next registration, and the next daemon start, redo any carry whose latest `seat.carried` is missing or still lists `delivering`, and drain again.
+- A crash between any two writes heals. Every step checks state. The new seat's next registration, and the next daemon start, redo any carry that has a recorded `seat.carry.started` and whose latest `seat.carried` is missing or still lists `delivering`, and drain again.
+- **A redo finishes only what was started.** A boundary with no recorded intent, for example one from before this code existed, is never carried by a redo. The intent decides; its absence can only spare.
 - No `spawn_id` on either side, a different one, or a successor no longer live: nothing moves.
-- Cost: per `/clear` only. One holders commit per project, one transaction, one drain. At daemon start: one roster read, and one spine read per eligible tombstone.
+- Cost: per `/clear` only. One spine event, one holders commit per project, one transaction, one drain. At daemon start: one roster read, and up to two spine reads per boundary tombstone with a launch id and a live successor.
 
 ### The rows a registration reads: `GET /v1/seats/related` (F222)
 
