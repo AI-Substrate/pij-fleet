@@ -176,6 +176,30 @@ Every newly emitted daemon stdout/stderr line has a UTC RFC 3339 prefix,
 including multiline diagnostics. Existing appended log history is not rewritten.
 Orderly shutdown and panic unwind drain partial lines; SIGKILL cannot promise it.
 
+**Where the log lives and how big it gets (#90).** The daemon's stdout and
+stderr go to `<state-dir>/daemon.log` (`~/.pij-rs/daemon.log`), opened by
+whichever launcher started it: `just bounce-rs` (`>>`), the `just rs-autostart`
+LaunchAgent (`StandardOutPath`) or `pij-rs daemon bounce`. When that file is the
+state dir's own `daemon.log` (same device and inode; a symlink never is), the
+daemon bounds it itself, in-process: at 16 MiB it renames `daemon.log` to
+`daemon.log.1`, shifting `.1` to `.2` and `.2` to `.3` and dropping the old
+`.3`, and opens a fresh `daemon.log` (mode 0600) by path. That is four files
+of at most 17 MiB each. A log already at the cap when the daemon starts rotates at start,
+and one over 17 MiB (from before the bound) keeps only its last 16 MiB, from a
+line start. Each rotation leaves a `daemon log: rotated at N bytes` line in
+the new file, and a rotation that fails says so and keeps writing to the old
+one. Output sent anywhere else (a terminal, another file) is never rotated.
+
+**Repeated lines (#90).** A line is counted by its template: the line with
+every run of digits replaced by `#`, so pids, ports, exit codes and counters
+don't make it new. A template already written in the last 60 s is counted
+instead of written. When that minute ends, one line gives the count:
+`pij-rs: daemon log: N more like this in 60 s after it was written: <template>`.
+A burst therefore writes one line plus one summary a minute. At most 256
+templates are remembered (the one whose minute ends soonest is reported and
+forgotten first). Lines whose words differ (another seat, another source) are
+different templates.
+
 ## Machine trust, caller identity and roles
 
 Every `/v1` route requires a bearer key. The key grants **machine access**, not a seat identity or authority over another seat. The per-boot local key (`<state-dir>/daemon.key`) reaches every route. A **paired machine's** key (from [`peers.toml`](pij-federation.md)) authenticates as that machine's alias and reaches only `POST /v1/send`, `GET /v1/seats?scope=local` and `GET /v1/events?scope=local`; every other route, and those two without `scope=local`, answers HTTP 403 `{error:"auth", meta:"E-RS-PEER-SCOPE: …", details:{code:"E-RS-PEER-SCOPE", machine}}`. The allowlist is `Endpoint::peer_access` in [`http/mod.rs`](../../crates/daemon/src/http/mod.rs), so a new route is refused to peers until that function names it. Callers are within that trusted-machine boundary; `CallerContext` is not a cryptographically authenticated per-seat credential. The daemon resolves the caller using its existing identity service and observed pane/process binding. An asserted `PIJ_SESSION_ID` locates a record; it cannot create a seat or override contradictory pane evidence. Caller-supplied pid/start fields in the shim context are diagnostic, not adoption evidence. Never substitute a short-lived CLI pid for the harness process.

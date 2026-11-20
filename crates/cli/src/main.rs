@@ -1087,7 +1087,9 @@ fn main() -> ExitCode {
     }
     // Keep the sink alive through runtime teardown, including panic diagnostics.
     let _log = if matches!(&cli.command, Command::Daemon { action: None, .. }) {
-        match daemon_log::DaemonLog::install() {
+        let state_dir =
+            resolve_state_dir(cli.state_dir.clone(), std::env::var_os("PIJ_RS_STATE_DIR")).ok();
+        match daemon_log::DaemonLog::install(state_dir.as_deref()) {
             Ok(log) => {
                 raise_open_file_limit();
                 Some(log)

@@ -19,7 +19,7 @@ has drifted.
 | Rebuild + restart after any Rust change | `just bounce-rs` |
 | Health | `pij-rs ping` |
 | Start at login (macOS LaunchAgent) | `just rs-autostart` / `just rs-autostart-off` |
-| Logs | `~/.pij-rs/daemon.log` |
+| Logs | `~/.pij-rs/daemon.log`, rotated by the daemon at 16 MiB into `daemon.log.1`–`.3`; repeats summarised once a minute (see `docs/how/pij-rs-api.md` § Store health and daemon logs) |
 | Where the live surfaces resolve | `just where` |
 
 The daemon runs from the `pij-rs` binary linked by `just rs-install`; there is no

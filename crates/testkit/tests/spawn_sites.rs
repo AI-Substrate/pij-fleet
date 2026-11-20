@@ -247,45 +247,111 @@ fn every_daemon_launch_site_records_itself() {
 /// `posix_spawnp` try every PATH entry, and each miss is a kernel process (18
 /// per `ps` launch with the daemon's PATH). The daemon names a system tool by
 /// its absolute path (`/bin/ps`, `/usr/sbin/lsof`) and resolves a
-/// user-installed one once (`pij_core::program::launch`). Any
-/// `Command::new("<name>")` literal without a `/` in production daemon code is
-/// refused, whatever the program (#85 found bare `lsof` and `omp`).
+/// user-installed one once (`pij_core::program::launch`).
+///
+/// Every production `Command::new(<arg>)` in the daemon crates must be one of:
+/// - a string literal starting with `/`;
+/// - the closure parameter of a `program::launch`/`launch_async` call within
+///   the 4 lines before it (`launch("git", |git| … Command::new(git)`);
+/// - a const of the same file whose value is a literal starting with `/`;
+/// - a [`RESOLVED_ELSEWHERE`] entry, a parameter its callers resolve.
+///
+/// Anything else, a bare literal, a const or a variable, is refused (#90 N2:
+/// the literal-only form missed a const or variable holding a bare name).
 #[test]
 fn no_daemon_launch_names_a_program_bare() {
+    // (file, argument, why it is already resolved)
+    const RESOLVED_ELSEWHERE: [(&str, &str, &str); 3] = [
+        (
+            "crates/cache-proxy/src/token.rs",
+            "gh",
+            "a `&Path` from the proxy settings, resolved once at startup",
+        ),
+        (
+            "crates/tmux/src/control.rs",
+            "program",
+            "`command(program)` builds the tmux command inside the launch closure",
+        ),
+        (
+            "crates/tmux/src/lib.rs",
+            "program",
+            "`command(program)` builds the tmux command inside the launch closure",
+        ),
+    ];
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let root = root.canonicalize().expect("the workspace root");
     let mut files = Vec::new();
     for krate in DAEMON_CRATES {
         rust_files(&root.join("crates").join(krate).join("src"), &mut files);
     }
-    let mut absolute = 0;
+    let (mut absolute, mut launched) = (0, 0);
+    let mut used = Vec::new();
     let mut bare = Vec::new();
     for path in &files {
-        for (index, line) in production_lines(path).iter().enumerate() {
-            absolute += line.matches("Command::new(\"/bin/ps\")").count();
-            let named_bare = line
-                .match_indices("Command::new(\"")
-                .any(|(at, open)| !line[at + open.len()..].starts_with('/'));
-            if named_bare {
-                bare.push(format!(
-                    "{}:{}: {}",
-                    path.strip_prefix(&root).unwrap().display(),
-                    index + 1,
-                    line.trim()
-                ));
+        let relative = path.strip_prefix(&root).unwrap().display().to_string();
+        let lines = production_lines(path);
+        for (index, line) in lines.iter().enumerate() {
+            for (at, open) in line.match_indices("Command::new(") {
+                let rest = &line[at + open.len()..];
+                let arg = rest[..rest.find(')').unwrap_or(rest.len())]
+                    .trim()
+                    .trim_start_matches('&');
+                // A const's definitions in this file, one per `cfg`.
+                let defined: Vec<&str> = lines
+                    .iter()
+                    .filter_map(|other| {
+                        let other = other.trim_start();
+                        let other = other.strip_prefix("pub ").unwrap_or(other);
+                        other.strip_prefix(&format!("const {arg}: &str = "))
+                    })
+                    .collect();
+                let resolved = if arg.starts_with('"') {
+                    absolute += usize::from(arg.starts_with("\"/bin/ps\""));
+                    arg.starts_with("\"/")
+                } else if lines[index.saturating_sub(4)..index].iter().any(|before| {
+                    (before.contains("launch(") || before.contains("launch_async("))
+                        && before.contains(&format!("|{arg}|"))
+                }) {
+                    launched += 1;
+                    true
+                } else if !defined.is_empty() {
+                    // Every definition must be absolute.
+                    defined.iter().all(|value| value.starts_with("\"/"))
+                } else if RESOLVED_ELSEWHERE
+                    .iter()
+                    .any(|(file, name, _)| *file == relative && *name == arg)
+                {
+                    used.push((relative.clone(), arg.to_string()));
+                    true
+                } else {
+                    false
+                };
+                if !resolved {
+                    bare.push(format!("{relative}:{}: {}", index + 1, line.trim()));
+                }
             }
         }
     }
-    // Guard against a vacuous pass: the absolute-path launches must be visible.
+    // Guard against a vacuous pass: both accepted shapes must be visible.
     assert!(
         absolute >= 4,
         "found only {absolute} `/bin/ps` launches; fix the scanner"
     );
     assert!(
+        launched >= 5,
+        "found only {launched} launches inside `program::launch`; fix the scanner"
+    );
+    for (file, name, _) in RESOLVED_ELSEWHERE {
+        assert!(
+            used.iter().any(|(f, n)| f == file && n == name),
+            "stale RESOLVED_ELSEWHERE entry: {file} {name}"
+        );
+    }
+    assert!(
         bare.is_empty(),
-        "these launches search PATH (one kernel process per PATH miss on macOS); name a \
-         system tool by its absolute path, or resolve a user-installed one with \
-         `pij_core::program::launch`:\n  {}",
+        "these launches may search PATH (one kernel process per PATH miss on macOS); name a \
+         system tool by its absolute path (a literal, or a const of one), or resolve a \
+         user-installed one with `pij_core::program::launch`:\n  {}",
         bare.join("\n  ")
     );
 }
