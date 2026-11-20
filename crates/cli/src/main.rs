@@ -3712,6 +3712,13 @@ fn render_directory_at(
                     .map(|key| format!(" ({})", render::name(key)))
                     .unwrap_or_default(),
                 match dead["retired"]["kind"].as_str() {
+                    // F190: a native session boundary names its successor.
+                    Some(kind) if dead["retired"]["successor"].is_string() => format!(
+                        "{} by {} {}",
+                        render::word(kind),
+                        shown(&dead["retired"]["successor"], render::seat),
+                        local_time(&dead["retired"]["at"], &zone)
+                    ),
                     Some(kind) => format!(
                         "{} {}",
                         render::word(kind),

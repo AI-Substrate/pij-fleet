@@ -18,6 +18,7 @@ use pij_daemon::community::writer::{CommunityWriter, LOCK_RETRY};
 use pij_daemon::delivery::role_send::{DrainedAs, RoleQueueDrain};
 use pij_daemon::http::{HttpConfig, router_with_config};
 use pij_testkit::fakes::{FakeLiveness, FakeTmux};
+use pij_testkit::time::scaled;
 use pij_testkit::{FreshStore, fresh_dir};
 use serde_json::{Value, json};
 
@@ -9383,5 +9384,1075 @@ async fn memory_add_right_after_its_own_held_close_still_writes_the_note() {
     )
     .await;
     assert_eq!(other_verb["ok"], false, "only memory add: {other_verb}");
+    rig.server.abort();
+}
+
+/// F190: the launch both seats of a native session boundary name.
+const LAUNCH: &str = "s-f190-launch";
+
+use pij_daemon::carry::Start::{New, Redo};
+
+/// F190: `to` (pane `pane`) supersedes `from` at a native session boundary,
+/// as registration records it: `to` live, `from` retired with the boundary
+/// reason naming `to`, each naming its launch.
+async fn supersede(
+    rig: &Rig,
+    from: &str,
+    to: &str,
+    pane: &str,
+    launches: (Option<&str>, Option<&str>),
+) {
+    let registry = &rig.services.registry;
+    let mut heir = SeatDescriptor::new(to, Harness::Omp, "/tmp");
+    heir.pane = Some(pane.to_string());
+    heir.parent = Some(SeatId::from(SEAT));
+    heir.spawn_id = launches.1.map(str::to_string);
+    registry.put(heir).await.expect("successor");
+    let mut old = registry
+        .get(&SeatId::from(from))
+        .await
+        .unwrap()
+        .expect("old seat");
+    old.spawn_id = launches.0.map(str::to_string);
+    old.tombstoned_at = Some(1);
+    old.tombstone_reason = Some(pij_store::native_boundary_reason(to));
+    registry.put(old).await.expect("retire at the boundary");
+}
+
+/// `(state, holder)` of request `id`.
+async fn request_row(rig: &Rig, id: &str) -> (pij_store::RequestState, Option<String>) {
+    let row = rig.store.role_request(id).await.unwrap().expect("request");
+    (row.state, row.holder)
+}
+
+/// The latest `seat.carried` payload on `from`.
+async fn carried_event(rig: &Rig, from: &str) -> Option<Value> {
+    rig.services
+        .spine
+        .latest_matching(&SeatId::from(from), &[pij_store::CARRIED_EVENT])
+        .await
+        .unwrap()
+        .map(|event| serde_json::from_str(&event.payload).unwrap())
+}
+
+/// How many times delivery admitted `msg_id` for `seat`: its delivery jobs in
+/// any state, so an acknowledged arrival still counts.
+async fn copies(rig: &Rig, seat: &str, msg_id: &str) -> i64 {
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
+        .await
+        .unwrap();
+    let count = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM jobs WHERE kind = 'delivery:' || ?1 AND dedupe_key = ?2",
+    )
+    .bind(seat)
+    .bind(msg_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    count
+}
+
+/// F190: a Copilot `/clear` moves the seat's holdings and FYIs to its
+/// successor and puts its delivered, unanswered request back on the queue, so
+/// the successor's drain delivers it again with its text: the s12 clock starts
+/// at that arrival, and the successor's output answers it. A rerun moves
+/// nothing.
+#[tokio::test]
+async fn a_clear_carries_holdings_fyis_and_requests_to_the_successor_once() {
+    use pij_daemon::delivery::role_send::time_limits;
+    use pij_store::RequestState;
+    let (rig, repo, arrived) = limit_rig("pij-carry-clear", true).await;
+    let held = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-holder",
+        "fyi-carry",
+        json!({"fyi": true}),
+    )
+    .await;
+    assert_eq!(held["ok"], true, "{held}");
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let (from, to) = (SeatId::from("pij-holder"), SeatId::from("pij-heir"));
+
+    let carried = pij_daemon::carry::carry(&rig.services, &from, &to, New)
+        .await
+        .unwrap()
+        .expect("the guard passes");
+    assert_eq!(carried.landed.len(), 1, "{carried:?}");
+    assert_eq!(carried.landed[0].0, "fleet");
+    assert!(
+        carried.landed[0].1.contains(&"pm-001".to_string()),
+        "{carried:?}"
+    );
+    assert!(carried.refused.is_empty() && carried.delivering.is_empty());
+    assert_eq!(carried.requests, ["req-limit"]);
+    assert_eq!(carried.fyis, ["fyi-carry"]);
+    let holds = |seat: &'static str| {
+        let store = rig.store.clone();
+        async move {
+            store
+                .open_assignments(seat)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|row| row.role)
+                .collect::<Vec<_>>()
+        }
+    };
+    assert!(holds("pij-holder").await.is_empty());
+    assert_eq!(holds("pij-heir").await, ["pm-001"]);
+    assert_eq!(
+        request_row(&rig, "req-limit").await,
+        (RequestState::Queued, None)
+    );
+    let pending = |seat: &'static str| {
+        let queue = Arc::clone(&rig.services.queue);
+        async move { queue.pending_fyi_count(&SeatId::from(seat)).await.unwrap() }
+    };
+    assert_eq!(
+        (pending("pij-holder").await, pending("pij-heir").await),
+        (0, 1)
+    );
+    let event = carried_event(&rig, "pij-holder").await.expect("recorded");
+    assert_eq!(event["requests"], json!(["req-limit"]), "{event}");
+    assert_eq!(event["to"], "pij-heir", "{event}");
+
+    // Queued, then held for the successor: no check-in on the old clock.
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, arrived + LIMIT_MS).await),
+        []
+    );
+    pij_daemon::delivery::role_send::drain_returned(&rig.services, &to)
+        .await
+        .unwrap();
+    assert_eq!(
+        request_row(&rig, "req-limit").await,
+        (RequestState::Delivered, Some("pij-heir".to_string()))
+    );
+    assert_eq!(copies(&rig, "pij-heir", "req-limit").await, 1);
+    let bodies = inbox_bodies(&rig, "pij-heir").await;
+    assert!(
+        bodies.iter().any(|body| body.contains("please req-limit")),
+        "the successor reads the request's text: {bodies:?}"
+    );
+    // The new delivery's time, as the round reads it (the ledger keeps
+    // seconds): never before the old arrival.
+    let redelivered = rig
+        .store
+        .role_request("req-limit")
+        .await
+        .unwrap()
+        .and_then(|row| row.delivered_at)
+        .expect("delivered again");
+    assert!(redelivered >= arrived);
+    let again = arrive(&rig, "pij-heir", "req-limit").await.max(redelivered);
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, again + LIMIT_MS - 1).await),
+        [],
+        "the clock runs from the new arrival"
+    );
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, again + LIMIT_MS).await),
+        [(
+            "req-limit".to_string(),
+            "check-in",
+            Some("pij-heir".to_string()),
+            true
+        )]
+    );
+
+    let answered = call_as(
+        rig.addr,
+        "/v1/output",
+        &[
+            "output",
+            "verdict",
+            "--role",
+            "pm-001",
+            "--subject",
+            "pr:200",
+            "--head",
+            "aaaaaaa1",
+            "--result",
+            "pass",
+            "--note-owed",
+            "tidy",
+            "--evidence",
+            r#"{"command":"just rust-check","exit_code":0}"#,
+            "--body",
+            "checked",
+            "--answers",
+            "req-limit",
+        ],
+        &repo.main,
+        "%91",
+    )
+    .await;
+    assert_eq!(answered["ok"], true, "{answered}");
+    let row = rig.store.role_request("req-limit").await.unwrap().unwrap();
+    assert!(row.answered_at.is_some(), "{row:?}");
+
+    let rerun = pij_daemon::carry::carry(&rig.services, &from, &to, Redo)
+        .await
+        .unwrap()
+        .expect("done");
+    assert!(rerun.already && rerun.requests.is_empty() && rerun.fyis.is_empty());
+    pij_daemon::carry::redo_at_boot(&rig.services).await;
+    assert_eq!(holds("pij-heir").await, ["pm-001"]);
+    assert_eq!(copies(&rig, "pij-heir", "req-limit").await, 1);
+    rig.server.abort();
+}
+
+/// F190's guard: only the same launch (both `spawn_id`s present and equal)
+/// across a native session boundary carries. A different launch, none, or
+/// another supersede reason moves nothing, and the store's own check refuses
+/// a carry the seats table does not prove.
+#[tokio::test]
+async fn a_carry_moves_nothing_unless_one_launch_crossed_a_native_boundary() {
+    use pij_store::RequestState;
+    let (rig, repo, _) = limit_rig("pij-carry-guard", true).await;
+    let from = SeatId::from("pij-holder");
+    let delivered = (RequestState::Delivered, Some("pij-holder".to_string()));
+    for (n, launches) in [
+        (Some(LAUNCH), Some("s-other-launch")),
+        (None, None),
+        (Some(LAUNCH), None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let to = format!("pij-heir-{n}");
+        supersede(&rig, "pij-holder", &to, &format!("%9{n}"), launches).await;
+        let carried =
+            pij_daemon::carry::carry(&rig.services, &from, &SeatId::from(to.as_str()), New)
+                .await
+                .unwrap();
+        assert_eq!(carried, None, "{launches:?}");
+        assert_eq!(request_row(&rig, "req-limit").await, delivered);
+        let refused = rig
+            .store
+            .carry_mail_committed(
+                &from,
+                &[SeatId::from(to.as_str())],
+                &[("fleet".into(), "pm-001".into())],
+                json!({}),
+                1,
+                1,
+            )
+            .await
+            .expect_err("unproven");
+        assert!(
+            refused.to_string().contains("E-RS-CARRY-UNPROVEN"),
+            "{refused}"
+        );
+        assert_eq!(request_row(&rig, "req-limit").await, delivered);
+    }
+    // The holding the guard left on the old seat names the successor.
+    let shown = view(rig.addr, &repo).await;
+    let role = shown["data"]["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|role| role["id"] == "pm-001")
+        .cloned()
+        .unwrap();
+    assert_eq!(role["dead"][0]["seat"], "pij-holder", "{role}");
+    assert_eq!(role["dead"][0]["retired"]["kind"], "superseded", "{role}");
+    assert_eq!(
+        role["dead"][0]["retired"]["successor"], "pij-heir-2",
+        "{role}"
+    );
+    // Another supersede's reason, with one launch on both sides.
+    let mut old = rig.services.registry.get(&from).await.unwrap().unwrap();
+    old.spawn_id = Some(LAUNCH.into());
+    old.tombstone_reason = Some("superseded by `pij-heir-x`".into());
+    rig.services.registry.put(old).await.unwrap();
+    let mut other = SeatDescriptor::new("pij-heir-x", Harness::Omp, "/tmp");
+    other.spawn_id = Some(LAUNCH.into());
+    rig.services.registry.put(other).await.unwrap();
+    assert_eq!(
+        pij_daemon::carry::carry(&rig.services, &from, &SeatId::from("pij-heir-x"), New)
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(request_row(&rig, "req-limit").await, delivered);
+    assert!(carried_event(&rig, "pij-holder").await.is_none());
+    rig.server.abort();
+}
+
+/// F190: a project whose holders commit is refused keeps its holdings and its
+/// requests on the old seat, and the event says so; the other project's
+/// requests and the seat's FYIs still move.
+#[tokio::test]
+async fn a_refused_project_keeps_its_holdings_and_requests_while_fyis_move() {
+    use pij_store::{ReplyMode, RequestState, RoleRequest};
+    let (rig, repo, _) = limit_rig("pij-carry-refused", true).await;
+    // A holding and a delivered request in a project that records no repo.
+    let row = pij_store::Assignment {
+        project: "ghost".into(),
+        role: "coder".into(),
+        instance: String::new(),
+        seat: "pij-holder".into(),
+        harness: Some("omp".into()),
+        session: None,
+        machine: None,
+        from: "2026-11-01T00:00:00Z".into(),
+        to: None,
+        assigned_by: SEAT.into(),
+        released_by: None,
+        why: "legacy".into(),
+        release_why: None,
+        end_pending: false,
+    };
+    rig.store
+        .record_assignment_committed(&row, None, 1)
+        .await
+        .expect("ghost holding");
+    rig.store
+        .record_role_request(&RoleRequest {
+            id: "req-ghost".into(),
+            project: "ghost".into(),
+            role: "coder".into(),
+            instance: String::new(),
+            requester: SEAT.into(),
+            body: "please req-ghost".into(),
+            in_reply_to: None,
+            fyi: false,
+            reply: ReplyMode::Wake,
+            limit_ms: None,
+            state: RequestState::Delivered,
+            holder: Some("pij-holder".into()),
+            created_at: 1,
+            delivered_at: Some(1),
+            checkin_at: None,
+            escalated_at: None,
+            answered_at: None,
+        })
+        .await
+        .unwrap();
+    let held = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-holder",
+        "fyi-ghost",
+        json!({"fyi": true}),
+    )
+    .await;
+    assert_eq!(held["ok"], true, "{held}");
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+
+    let carried = pij_daemon::carry::carry(
+        &rig.services,
+        &SeatId::from("pij-holder"),
+        &SeatId::from("pij-heir"),
+        New,
+    )
+    .await
+    .unwrap()
+    .expect("carried");
+    assert_eq!(
+        carried.refused,
+        [("ghost".to_string(), "E-RS-NOT-FOUND".to_string())]
+    );
+    assert_eq!(carried.requests, ["req-limit"]);
+    assert_eq!(carried.fyis, ["fyi-ghost"]);
+    assert_eq!(
+        request_row(&rig, "req-ghost").await,
+        (RequestState::Delivered, Some("pij-holder".to_string()))
+    );
+    let ghost: Vec<String> = rig
+        .store
+        .open_assignments("pij-holder")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| format!("{}/{}", row.project, row.role))
+        .collect();
+    assert_eq!(ghost, ["ghost/coder"]);
+    let event = carried_event(&rig, "pij-holder").await.unwrap();
+    assert_eq!(
+        event["holdings"]["refused"][0]["project"], "ghost",
+        "{event}"
+    );
+    rig.server.abort();
+}
+
+/// F190: a request still `delivering` to the old seat when the carry runs is
+/// waited for and carried with the rest once it settles; one that never
+/// settles within the bound leaves the carry unfinished, and a rerun after it
+/// settles finishes it, delivering it exactly once.
+#[tokio::test]
+async fn a_request_delivering_at_the_clear_is_carried_once_it_settles() {
+    use pij_store::{ReplyMode, RequestState, RoleRequest};
+    let (rig, _repo, _) = limit_rig("pij-carry-delivering", true).await;
+    for id in ["req-soon", "req-late"] {
+        rig.store
+            .record_role_request(&RoleRequest {
+                id: id.into(),
+                project: "fleet".into(),
+                role: "pm-001".into(),
+                instance: String::new(),
+                requester: SEAT.into(),
+                body: format!("please {id}"),
+                in_reply_to: None,
+                fyi: false,
+                reply: ReplyMode::Wake,
+                limit_ms: None,
+                state: RequestState::Queued,
+                holder: None,
+                created_at: 2,
+                delivered_at: None,
+                checkin_at: None,
+                escalated_at: None,
+                answered_at: None,
+            })
+            .await
+            .unwrap();
+        assert!(
+            rig.store
+                .claim_role_request(id, "pij-holder")
+                .await
+                .unwrap()
+        );
+    }
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let (from, to) = (SeatId::from("pij-holder"), SeatId::from("pij-heir"));
+    let store = rig.store.clone();
+    let settle = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        store
+            .mark_role_request_delivered("req-soon", "pij-holder", 3)
+            .await
+            .unwrap();
+    });
+    let first = pij_daemon::carry::carry(&rig.services, &from, &to, New)
+        .await
+        .unwrap()
+        .expect("carried");
+    settle.await.unwrap();
+    assert_eq!(first.requests, ["req-limit", "req-soon"]);
+    assert_eq!(first.delivering, ["req-late"]);
+    assert_eq!(
+        carried_event(&rig, "pij-holder").await.unwrap()["delivering"],
+        json!(["req-late"])
+    );
+
+    rig.store
+        .mark_role_request_delivered("req-late", "pij-holder", 4)
+        .await
+        .unwrap();
+    pij_daemon::carry::redo_at_boot(&rig.services).await;
+    assert_eq!(
+        carried_event(&rig, "pij-holder").await.unwrap()["requests"],
+        json!(["req-late"])
+    );
+    for id in ["req-limit", "req-soon", "req-late"] {
+        assert_eq!(
+            request_row(&rig, id).await,
+            (RequestState::Delivered, Some("pij-heir".to_string())),
+            "{id}"
+        );
+        assert_eq!(copies(&rig, "pij-heir", id).await, 1, "{id}");
+    }
+    rig.server.abort();
+}
+
+/// F190: a crash between the governance commit and the mail transaction
+/// leaves the holdings on the successor and the mail on the old seat. The
+/// successor's next registration (the hook's carry) and the next daemon start
+/// each finish it, exactly once.
+#[tokio::test]
+async fn a_carry_cut_between_its_two_stores_is_finished_once_by_either_redo() {
+    use pij_store::RequestState;
+    for (n, redo) in ["registration", "boot"].into_iter().enumerate() {
+        let (rig, repo, _) = limit_rig(&format!("pij-carry-crash-{n}"), true).await;
+        supersede(
+            &rig,
+            "pij-holder",
+            "pij-heir",
+            "%91",
+            (Some(LAUNCH), Some(LAUNCH)),
+        )
+        .await;
+        let (from, to) = (SeatId::from("pij-holder"), SeatId::from("pij-heir"));
+        let heir = rig.services.registry.get(&to).await.unwrap().unwrap();
+        // The carry's first two writes (its intent, then the governance
+        // half), then the "crash".
+        pij_daemon::carry::record_intent(&rig.services, &from, &to)
+            .await
+            .unwrap();
+        let (roles, commit) = rig
+            .services
+            .directory
+            .carry_project(
+                "fleet",
+                repo.main.clone(),
+                &from,
+                &heir,
+                &[("pm-001".to_string(), String::new())],
+            )
+            .await
+            .expect("holders commit");
+        assert_eq!(roles, ["pm-001"]);
+        assert!(commit.is_some());
+        assert_eq!(
+            request_row(&rig, "req-limit").await,
+            (RequestState::Delivered, Some("pij-holder".to_string()))
+        );
+        assert!(carried_event(&rig, "pij-holder").await.is_none());
+
+        match redo {
+            "registration" => pij_daemon::carry::carry_later(&rig.services, &from, &to, Redo)
+                .await
+                .unwrap(),
+            _ => pij_daemon::carry::redo_at_boot(&rig.services).await,
+        }
+        let event = carried_event(&rig, "pij-holder").await.expect("finished");
+        assert_eq!(event["requests"], json!(["req-limit"]), "{redo}: {event}");
+        assert_eq!(
+            event["holdings"]["landed"][0]["commit"],
+            Value::Null,
+            "{redo}: {event}"
+        );
+        for _ in 0..2 {
+            pij_daemon::carry::carry_later(&rig.services, &from, &to, Redo)
+                .await
+                .unwrap();
+            pij_daemon::carry::redo_at_boot(&rig.services).await;
+        }
+        assert_eq!(
+            request_row(&rig, "req-limit").await,
+            (RequestState::Delivered, Some("pij-heir".to_string())),
+            "{redo}"
+        );
+        assert_eq!(copies(&rig, "pij-heir", "req-limit").await, 1, "{redo}");
+        rig.server.abort();
+    }
+}
+
+/// F190: a request already checked in and escalated keeps both stamps when
+/// the carry puts it back on the queue, so its redelivery to the successor
+/// never sends a second check-in or a second notice to the PA.
+#[tokio::test]
+async fn an_escalated_request_is_never_escalated_again_after_a_carry() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let (rig, _repo, arrived) = limit_rig("pij-carry-escalated", true).await;
+    let checked = arrived + LIMIT_MS;
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, checked).await)[0].1,
+        "check-in"
+    );
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, checked + LIMIT_MS).await)[0].1,
+        "notice"
+    );
+    let stamped = |row: pij_store::RoleRequest| (row.checkin_at, row.escalated_at);
+    let before = stamped(rig.store.role_request("req-limit").await.unwrap().unwrap());
+    assert!(before.0.is_some() && before.1.is_some(), "{before:?}");
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let to = SeatId::from("pij-heir");
+    pij_daemon::carry::carry_later(&rig.services, &SeatId::from("pij-holder"), &to, New)
+        .await
+        .unwrap();
+    let row = rig.store.role_request("req-limit").await.unwrap().unwrap();
+    assert_eq!(row.holder.as_deref(), Some("pij-heir"));
+    assert_eq!(stamped(row), before, "the stamps are kept");
+    let again = arrive(&rig, "pij-heir", "req-limit").await;
+    for at in [again + LIMIT_MS, again + 10 * LIMIT_MS] {
+        assert_eq!(limit_acts(time_limits(&rig.services, at).await), []);
+    }
+    assert_eq!(
+        copies(&rig, "pij-second", "role-limit-notice-req-limit").await,
+        1
+    );
+    rig.server.abort();
+}
+
+/// F190: a carry whose mail landed but whose drain never ran (a crash between
+/// them) is drained by the next daemon start: the requests it put back reach
+/// the successor once.
+#[tokio::test]
+async fn a_carry_cut_before_its_drain_is_drained_by_the_boot_redo() {
+    use pij_store::RequestState;
+    let (rig, _repo, _) = limit_rig("pij-carry-undrained", true).await;
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let (from, to) = (SeatId::from("pij-holder"), SeatId::from("pij-heir"));
+    pij_daemon::carry::carry(&rig.services, &from, &to, New)
+        .await
+        .unwrap()
+        .expect("carried");
+    assert_eq!(
+        request_row(&rig, "req-limit").await,
+        (RequestState::Queued, None)
+    );
+    pij_daemon::carry::redo_at_boot(&rig.services).await;
+    assert_eq!(
+        request_row(&rig, "req-limit").await,
+        (RequestState::Delivered, Some("pij-heir".to_string()))
+    );
+    assert_eq!(copies(&rig, "pij-heir", "req-limit").await, 1);
+    rig.server.abort();
+}
+
+/// F190, bounded to its own work: a native session boundary from before the
+/// carry existed (same launch, live successor, but no recorded intent) is
+/// never carried by a redo, at daemon start or at the successor's next
+/// registration. Holdings and mail stay where they are.
+#[tokio::test]
+async fn a_boundary_without_a_recorded_intent_is_never_redone() {
+    use pij_store::RequestState;
+    let (rig, _repo, _) = limit_rig("pij-carry-historical", true).await;
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let (from, to) = (SeatId::from("pij-holder"), SeatId::from("pij-heir"));
+    pij_daemon::carry::redo_at_boot(&rig.services).await;
+    pij_daemon::carry::carry_later(&rig.services, &from, &to, Redo)
+        .await
+        .unwrap();
+    let held = |seat: &'static str| {
+        let store = rig.store.clone();
+        async move { store.open_assignments(seat).await.unwrap().len() }
+    };
+    assert_eq!((held("pij-holder").await, held("pij-heir").await), (1, 0));
+    assert_eq!(
+        request_row(&rig, "req-limit").await,
+        (RequestState::Delivered, Some("pij-holder".to_string()))
+    );
+    assert!(carried_event(&rig, "pij-holder").await.is_none());
+    assert!(
+        rig.services
+            .spine
+            .latest_matching(&from, &[pij_store::CARRY_STARTED_EVENT])
+            .await
+            .unwrap()
+            .is_none()
+    );
+    rig.server.abort();
+}
+
+/// Review of #279, R279-001 (pij-semantic-hornet's probe, adapted). The ends
+/// and starts of a project's index now commit in one transaction, so the
+/// probe's cut between them cannot happen. What remains: the carry stopped
+/// after its holders commit and before any index write. The test then plants
+/// the state a cut between ends and starts would leave (governance has the
+/// successor's holding, neither seat has an open index row). The boot redo
+/// rebuilds the index from the holders files under the intent's scope and
+/// carries the request.
+#[tokio::test]
+async fn reviewer_carry_recovers_crash_between_index_end_and_start() {
+    use pij_store::RequestState;
+    let (rig, repo, _) = limit_rig("pij-review-index-gap", true).await;
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let (from, to) = (SeatId::from("pij-holder"), SeatId::from("pij-heir"));
+    let heir = rig.services.registry.get(&to).await.unwrap().unwrap();
+    let old_rows = rig.store.open_assignments("pij-holder").await.unwrap();
+    pij_daemon::carry::record_intent(&rig.services, &from, &to)
+        .await
+        .unwrap();
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let bus = rig.services.event_bus.clone();
+    let (inside, resume) = (entered.clone(), release.clone());
+    let boundary = tokio::spawn(async move {
+        bus.publish_committed_batch(async move {
+            inside.notify_one();
+            resume.notified().await;
+            Ok((Vec::<pij_core::model::Event>::new(), ()))
+        })
+        .await
+        .unwrap();
+    });
+    entered.notified().await;
+    let directory = rig.services.directory.clone();
+    let (repo_path, old) = (repo.main.clone(), from.clone());
+    let indexing = tokio::spawn(async move {
+        directory
+            .carry_project(
+                "fleet",
+                repo_path,
+                &old,
+                &heir,
+                &[("pm-001".to_string(), String::new())],
+            )
+            .await
+    });
+    // The holders commit lands; the index write waits on the held boundary.
+    let holders = repo.gov.join("community/projects/fleet/roles/pm-001");
+    tokio::time::timeout(scaled(std::time::Duration::from_secs(10)), async {
+        while !git(&repo.gov, &["log", "-1", "--format=%s"]).contains("carry pij-holder") {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("the holders commit landed ({})", holders.display()));
+    indexing.abort();
+    assert!(indexing.await.unwrap_err().is_cancelled());
+    release.notify_one();
+    boundary.await.unwrap();
+    assert_eq!(
+        rig.store
+            .open_assignments("pij-holder")
+            .await
+            .unwrap()
+            .len(),
+        1,
+        "no index write committed: ends and starts are one transaction"
+    );
+    // The cut a split index write would leave: the old row ended, no new one.
+    let ended: Vec<_> = old_rows
+        .into_iter()
+        .map(|mut row| {
+            row.to = Some("2026-11-20T00:00:00Z".into());
+            row.release_why = Some("carried to pij-heir".into());
+            row
+        })
+        .collect();
+    rig.store.end_assignments(&ended).await.unwrap();
+    assert!(
+        rig.store
+            .open_assignments("pij-holder")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        rig.store
+            .open_assignments("pij-heir")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    pij_daemon::carry::redo_at_boot(&rig.services).await;
+    assert_eq!(
+        request_row(&rig, "req-limit").await,
+        (RequestState::Delivered, Some("pij-heir".to_string())),
+        "the intent and committed holders document must recover the index gap"
+    );
+    assert_eq!(
+        rig.store.open_assignments("pij-heir").await.unwrap().len(),
+        1
+    );
+    rig.server.abort();
+}
+
+/// Review of #279 (pij-semantic-hornet's probe): an answer stamped after the
+/// holdings moved and before the mail transaction is not requeued, and no
+/// drain delivers it.
+#[tokio::test]
+async fn reviewer_old_answer_before_mail_transaction_is_not_requeued() {
+    let (rig, _repo, _) = limit_rig("pij-review-old-answer", true).await;
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let gate = rig.services.directory.admission("fleet", "pm-001").await;
+    let services = rig.services.clone();
+    let carrying = tokio::spawn(async move {
+        pij_daemon::carry::carry(
+            &services,
+            &SeatId::from("pij-holder"),
+            &SeatId::from("pij-heir"),
+            New,
+        )
+        .await
+        .unwrap()
+        .unwrap()
+    });
+    tokio::time::timeout(scaled(std::time::Duration::from_secs(10)), async {
+        while rig
+            .store
+            .open_assignments("pij-heir")
+            .await
+            .unwrap()
+            .is_empty()
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        request_row(&rig, "req-limit").await.1.as_deref(),
+        Some("pij-holder")
+    );
+    assert!(
+        rig.store
+            .mark_role_request_answered("req-limit", 123)
+            .await
+            .unwrap()
+    );
+    drop(gate);
+    assert!(carrying.await.unwrap().requests.is_empty());
+    let first =
+        pij_daemon::delivery::role_send::drain_returned(&rig.services, &SeatId::from("pij-heir"));
+    let second =
+        pij_daemon::delivery::role_send::drain_returned(&rig.services, &SeatId::from("pij-heir"));
+    first.await.unwrap();
+    second.await.unwrap();
+    assert_eq!(copies(&rig, "pij-heir", "req-limit").await, 0);
+    rig.server.abort();
+}
+
+/// Review of #279 (pij-small-whitefish's follow-up): a request put back on
+/// the queue and then answered (its old session's answer landing after the
+/// mail transaction) is never claimed, so no drain delivers it again.
+#[tokio::test]
+async fn an_answer_after_the_requeue_keeps_the_request_from_being_delivered_again() {
+    let (rig, _repo, _) = limit_rig("pij-carry-late-answer", true).await;
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let carried = pij_daemon::carry::carry(
+        &rig.services,
+        &SeatId::from("pij-holder"),
+        &SeatId::from("pij-heir"),
+        New,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(carried.requests, ["req-limit"]);
+    assert!(
+        rig.store
+            .mark_role_request_answered("req-limit", 123)
+            .await
+            .unwrap()
+    );
+    pij_daemon::delivery::role_send::drain_returned(&rig.services, &SeatId::from("pij-heir"))
+        .await
+        .unwrap();
+    assert_eq!(copies(&rig, "pij-heir", "req-limit").await, 0);
+    rig.server.abort();
+}
+
+/// Review of #279 (pij-semantic-hornet's probe): F193 drains racing the
+/// carry deliver one copy.
+#[tokio::test]
+async fn reviewer_f193_drains_racing_carry_deliver_one_copy() {
+    let (rig, _repo, _) = limit_rig("pij-review-drain-race", true).await;
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let to = SeatId::from("pij-heir");
+    let carrying =
+        pij_daemon::carry::carry_later(&rig.services, &SeatId::from("pij-holder"), &to, New);
+    let first = pij_daemon::delivery::role_send::drain_returned(&rig.services, &to);
+    let second = pij_daemon::delivery::role_send::drain_returned(&rig.services, &to);
+    carrying.await.unwrap();
+    first.await.unwrap();
+    second.await.unwrap();
+    assert_eq!(copies(&rig, "pij-heir", "req-limit").await, 1);
+    rig.server.abort();
+}
+
+/// Review of #279, R279-002 (pij-semantic-hornet's probe): two `/clear`s
+/// queued before the first carry runs (A→B→C, B retired first) land
+/// everything on C, exactly once.
+#[tokio::test]
+async fn reviewer_carry_reaches_latest_successor_after_two_clear_boundaries() {
+    use pij_store::RequestState;
+    let (rig, repo, _) = limit_rig("pij-review-double-clear", true).await;
+    let held = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-holder",
+        "fyi-chain",
+        json!({"fyi": true}),
+    )
+    .await;
+    assert_eq!(held["ok"], true, "{held}");
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    supersede(
+        &rig,
+        "pij-heir",
+        "pij-final",
+        "%92",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    pij_daemon::carry::carry_later(
+        &rig.services,
+        &SeatId::from("pij-holder"),
+        &SeatId::from("pij-heir"),
+        New,
+    )
+    .await
+    .unwrap();
+    pij_daemon::carry::carry_later(
+        &rig.services,
+        &SeatId::from("pij-heir"),
+        &SeatId::from("pij-final"),
+        New,
+    )
+    .await
+    .unwrap();
+    pij_daemon::carry::redo_at_boot(&rig.services).await;
+    assert_eq!(
+        request_row(&rig, "req-limit").await,
+        (RequestState::Delivered, Some("pij-final".to_string())),
+        "two native boundaries before the async carry starts must not strand work"
+    );
+    assert_eq!(
+        rig.store.open_assignments("pij-final").await.unwrap().len(),
+        1
+    );
+    assert!(
+        rig.store
+            .open_assignments("pij-heir")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(copies(&rig, "pij-final", "req-limit").await, 1);
+    // The FYI went to the live end (it rode along with the redelivery).
+    assert!(
+        fyis(&rig, "pij-final")
+            .await
+            .iter()
+            .any(|(_, body)| body.contains("fyi-chain")),
+        "{:?}",
+        fyis(&rig, "pij-final").await
+    );
+    for seat in ["pij-holder", "pij-heir"] {
+        let pending = rig
+            .services
+            .queue
+            .pending_fyi_count(&SeatId::from(seat))
+            .await
+            .unwrap();
+        assert_eq!(pending, 0, "{seat}");
+    }
+    rig.server.abort();
+}
+
+/// Review of #279 (pij-small-whitefish): completion is keyed by the intent,
+/// so a seat id that comes back and crosses a later boundary is carried
+/// again: its second carry, cut after its intent, is finished by the redo
+/// even though the latest `seat.carried` on the id completed the first.
+#[tokio::test]
+async fn a_seat_id_that_crosses_a_later_boundary_is_carried_again() {
+    let (rig, repo, _) = limit_rig("pij-carry-reused-id", true).await;
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-heir",
+        "%91",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    let from = SeatId::from("pij-holder");
+    let first = pij_daemon::carry::carry(&rig.services, &from, &SeatId::from("pij-heir"), New)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.requests, ["req-limit"]);
+    // The same id comes back, takes an FYI, then crosses another boundary.
+    let mut again = rig.services.registry.get(&from).await.unwrap().unwrap();
+    again.tombstoned_at = None;
+    again.tombstone_reason = None;
+    rig.services.registry.put(again).await.unwrap();
+    let held = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-holder",
+        "fyi-later",
+        json!({"fyi": true}),
+    )
+    .await;
+    assert_eq!(held["ok"], true, "{held}");
+    supersede(
+        &rig,
+        "pij-holder",
+        "pij-later",
+        "%93",
+        (Some(LAUNCH), Some(LAUNCH)),
+    )
+    .await;
+    // The second carry records its intent, then the daemon stops.
+    let later = SeatId::from("pij-later");
+    pij_daemon::carry::record_intent(&rig.services, &from, &later)
+        .await
+        .unwrap();
+    pij_daemon::carry::redo_at_boot(&rig.services).await;
+    assert!(
+        fyis(&rig, "pij-later")
+            .await
+            .iter()
+            .any(|(_, body)| body.contains("fyi-later")),
+        "carried again: {:?}",
+        fyis(&rig, "pij-later").await
+    );
     rig.server.abort();
 }

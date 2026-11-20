@@ -2238,6 +2238,172 @@ impl DirectoryService {
         ends
     }
 
+    /// F190: carry `from`'s holdings in `project` named by `scope` (each a
+    /// role and instance the carry's intent recorded) to `to`, the live end
+    /// of its native-session-boundary chain, in ONE holders commit: each of
+    /// `from`'s rows still open ends (`carried to <to>`) and `to` gets the
+    /// same role and instance, unless it already holds it. The rows come from
+    /// the holders files, never from the index, so a rerun after any cut
+    /// (the commit landed, the index did not, or only part of it) finds them
+    /// and brings the index level in one transaction (R279-001). A row
+    /// `from` gave up another way, or carried to an intermediate seat of the
+    /// chain, is left to that seat. Answers the roles carried and the commit,
+    /// if one was made.
+    ///
+    /// # Errors
+    /// Any writer refusal; nothing is written and `from` keeps its holdings.
+    pub async fn carry_project(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        from: &SeatId,
+        to: &SeatDescriptor,
+        scope: &[(String, String)],
+    ) -> Result<(Vec<String>, Option<String>), Refusal> {
+        if scope.is_empty() {
+            return Ok((Vec::new(), None));
+        }
+        let mut roles: Vec<String> = scope.iter().map(|(role, _)| role.clone()).collect();
+        roles.sort();
+        roles.dedup();
+        let pending = self.pending(project).await?;
+        let message = format!(
+            "community: carry {from}'s holdings to {}\n\n{} superseded {from} at a native session boundary (same process)\n\nPij-Seat: {}\nPij-Project: {project}",
+            to.id, to.id, to.id
+        );
+        let found: Arc<std::sync::Mutex<CarryRows>> = Arc::default();
+        let sink = Arc::clone(&found);
+        let (project_id, from_id, to_seat, wanted, scope) = (
+            project.to_string(),
+            from.to_string(),
+            to.clone(),
+            roles.clone(),
+            scope.to_vec(),
+        );
+        let outcome = self
+            .commit(repo, message, move |root, built| {
+                let to_id = to_seat.id.to_string();
+                let carried_to = format!("carried to {to_id}");
+                let now = holders::now();
+                let mut rows = CarryRows::default();
+                let mut changed = Vec::new();
+                let mut by_role = BTreeMap::new();
+                for role in &wanted {
+                    let mut held = read_holders(root, &project_id, role)?;
+                    built
+                        .landed
+                        .extend(holders::apply_ends(&mut held, &pending));
+                    for (_, instance) in scope.iter().filter(|(scoped, _)| scoped == role) {
+                        // `from`'s latest row for this key, as the files say.
+                        let Some(index) = held
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, row)| row.seat == from_id && &row.instance == instance)
+                            .max_by(|(_, a), (_, b)| a.from.cmp(&b.from))
+                            .map(|(index, _)| index)
+                        else {
+                            continue;
+                        };
+                        let row = &mut held[index];
+                        if row.to.is_none() {
+                            row.to = Some(now.clone());
+                            row.released_by = Some(to_id.clone());
+                            row.release_why = Some(carried_to.clone());
+                            changed.push(role.clone());
+                        } else if row.release_why.as_deref() != Some(carried_to.as_str()) {
+                            continue;
+                        }
+                        let template = row.clone();
+                        rows.ended.push(template.clone());
+                        if let Some(mine) = held.iter().find(|row| open_for(row, &to_id, instance))
+                        {
+                            rows.started.push(mine.clone());
+                            continue;
+                        }
+                        let mut new = template;
+                        new.seat = to_id.clone();
+                        new.harness = Some(to_seat.harness.to_string());
+                        new.session = to_seat.harness_session.clone();
+                        new.to = None;
+                        new.assigned_by = to_id.clone();
+                        new.released_by = None;
+                        new.why = format!(
+                            "carried from {from_id} at a native session boundary (same process)"
+                        );
+                        new.release_why = None;
+                        new.end_pending = false;
+                        new.from = holders::fresh_from(&held, &new.seat, &new.instance);
+                        held.push(new.clone());
+                        rows.started.push(new);
+                        changed.push(role.clone());
+                    }
+                    by_role.insert(role.clone(), held);
+                }
+                *sink
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = rows;
+                if changed.is_empty() {
+                    return Err(Refusal::new(
+                        super::E_NOTHING_TO_WRITE,
+                        "nothing to write: the holdings are carried already",
+                    ));
+                }
+                let mut files = Vec::new();
+                let mut written = Vec::new();
+                for (role, held) in &by_role {
+                    if changed.contains(role) {
+                        files.push(holders_file(role, held)?);
+                        written.push(role.as_str());
+                    }
+                }
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &pending,
+                    &written,
+                    &mut built.landed,
+                )?);
+                Ok(files)
+            })
+            .await;
+        let rows = std::mem::take(
+            &mut *found
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        let commit = match outcome {
+            Ok((written, built)) => {
+                self.flushed(&built.landed, &written).await?;
+                Some(written.commit)
+            }
+            Err(refusal) if refusal.code == super::E_NOTHING_TO_WRITE => None,
+            Err(refusal) => return Err(refusal),
+        };
+        // The index follows the files in ONE transaction: no cut leaves the
+        // old holdings ended without the successor's (review of #279), and a
+        // start the index already has is left as it is.
+        let store = self.store.clone();
+        let starts: Vec<(Assignment, String)> = rows
+            .started
+            .into_iter()
+            .map(|row| {
+                let role = seat_role_for(&row.role).to_string();
+                (row, role)
+            })
+            .collect();
+        let at = system_ms();
+        self.event_bus
+            .publish_committed_batch(async move {
+                let events = store
+                    .carry_assignments_committed(&rows.ended, &starts, at)
+                    .await?;
+                Ok((events, ()))
+            })
+            .await
+            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+        Ok((roles, commit))
+    }
+
     /// Commit a project's pending close-ends now.
     async fn flush(
         &self,
@@ -2657,6 +2823,14 @@ fn flush_files(
         files.push(holders_file(role, &rows)?);
     }
     Ok(files)
+}
+
+/// F190: the rows one project's carry found in its holders files, for the
+/// index: `from`'s carried rows (ended) and `to`'s matching open rows.
+#[derive(Default)]
+struct CarryRows {
+    ended: Vec<Assignment>,
+    started: Vec<Assignment>,
 }
 
 /// What a write's build reports back: the pending ends its files carry, the

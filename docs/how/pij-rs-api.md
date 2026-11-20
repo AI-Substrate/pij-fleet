@@ -318,6 +318,25 @@ A verified native claim for a session with no existing seat is held when its pan
 
 Same-process supersede is gated by `native_precedence` (plan 168): an optional `{last_user_message_at: ms|null, loaded_at: ms, history_unknown?: true}` on `/v1/register` and on the native receiver heartbeat. When a native claim would retire a live, attested same-process seat of another session, and the claim reports precedence, the claim must outrank the holder. That means a newer `last_user_message_at`, where `null` loses to any value, or an equal one with a later `loaded_at`. Otherwise the daemon answers HTTP 409, v2 `command:"pij register"`, `error:"refused"`, `details:{retryable:true,hold:"native-holder"}`, naming the holder, and writes nothing. The holder is spared only while its receiver lease is live. A lapsed lease, a claim without the field, or a holder whose heartbeat reports no field all keep the earlier newest-registrant supersede. A holder with no report since daemon start keeps the seat until it reports. This check is a **brake**, not a policy: removing it makes registration retire the same seats or more, never different ones. Reports live in daemon memory, on the receiver lease of the reporting incarnation. They are written under the same native lock as the lease decision, and they are monotonic per incarnation, so a delayed or out-of-order heartbeat never lowers them. A committed native registration installs its lease and report inside that lock; a takeover starts the lease afresh, and a repeat registration of the current holder never moves its expiry. An extension that cannot read its history sends `history_unknown: true`, never `null` (observed none) and never an omitted field (old extension). The daemon ranks it as having no prompt: held behind a live holder with history, the later load wins against a blank or unknown holder, and a lapsed lease is taken over. Contract and `/new` behaviour: `docs/how/copilot-native-extension.md` § Several sessions in one Copilot process.
 
+**A `/clear` carries the old seat's work to its successor (F190).** A Copilot `/clear` or `/new` starts a new native session in the same process, and registration retires the old seat with the reason ``superseded by `<new>` at a native session boundary (same process)``. After that commit, the daemon carries the old seat's work on its own task. It goes to the **live end of the boundary chain**: it follows each successor named in a boundary tombstone, up to 16 hops, while every hop names the same launch (`spawn_id`, present and equal), until it reaches a live seat. Two `/clear`s before the first carry runs (A→B→C, B already retired) put everything on C, once.
+
+0. It records the intent first: `seat.carry.started {from, to, scope: [{project, role, instance}]}` on the old seat. The scope is the old seat's open holdings at that moment. Only the registration that committed the supersede starts a carry. Every later step, and every redo, works from this recorded scope, never from what the index shows after a partial write.
+1. Per project, one holders commit ends the old seat's scoped holdings (`carried to <new>`) and opens the same role and instance for the new seat (`carried from <old> at a native session boundary (same process)`). The rows come from the governance holders files, so a rerun after the commit landed still finds them. The SQLite index then ends and starts those rows in **one transaction**, so a crash can never leave the old row ended without the new one open.
+2. One SQLite transaction then does three things:
+   - It puts the old seat's delivered, unanswered requests in those (project, role) pairs back on their role's queue. `holder` and `delivered_at` are cleared; `checkin_at` and `escalated_at` are kept, so s12 never sends a second check-in or notice.
+   - It moves every pending FYI held for the old seat to the new one.
+   - It appends `seat.carried {from, to, chain, intent, holdings: {landed: [{project, roles, commit}], refused: [{project, code}]}, requests, delivering, fyis}` on the old seat. `intent` is the sequence of the `seat.carry.started` it completes.
+3. The new seat's drain (F193) then delivers those requests again through the normal path. The cleared session never saw them, and their time limit counts from this new arrival (F73). A claim never takes a request that already has an answer, so an answer that lands after the requeue keeps it from being delivered again.
+
+Rules and recovery:
+- The transaction refuses (`E-RS-CARRY-UNPROVEN`) unless the seats table proves every hop of the chain in the same read: each seat retired at a native boundary naming the next, all on one launch, the last one live. It is the only delivered-to-queued transition, and no route reaches it.
+- A project whose holders commit is refused keeps its holdings and its requests on the old seat; the event lists it under `refused`.
+- A request still `delivering` to the old seat is waited for, at most 20 × 250 ms, and carried once it settles. One still delivering after that is listed in `delivering`, and the carry is not done.
+- A crash between any two writes heals. Every step checks state. The new seat's next registration, and the next daemon start, redo any carry whose latest `seat.carry.started` is not yet completed: no `seat.carried` names its sequence, or the one that does still lists `delivering`. Then they drain again. Completion is keyed by the intent, not the seat id, so an id that comes back and crosses a later boundary is carried again.
+- **A redo finishes only what was started.** A boundary with no recorded intent, for example one from before this code existed, is never carried by a redo. The intent decides; its absence can only spare.
+- No `spawn_id` on either side, a different one anywhere on the chain, or a chain with no live end: nothing moves.
+- Cost: per `/clear` only. One spine event, one holders commit per project, two transactions, one drain. At daemon start: one roster read, and up to two spine reads per boundary tombstone with a launch id, plus at most 16 registry reads to walk its chain.
+
 ### The rows a registration reads: `GET /v1/seats/related` (F222)
 
 A native Copilot extension does not read the roster to register. It asks `GET /v1/seats/related?id=<PIJ_SESSION_ID>&session=<native session>&pid=<host pid>` (each parameter optional, at least one required, else HTTP 400) and gets `data: {seats: [...]}`: every local row whose id, native session or process id matches, **tombstoned rows included**, in seat-id order, as bare descriptors (no role join, badge or federation). The registration checks read only the open rows, exactly as they read the roster, so a closed same-session row is never re-taken. The closed rows answer one question: was this launch's seat closed?
@@ -1596,14 +1615,16 @@ role also carries:
   says whether the holder's seat is live (only a pending end's can be false);
 - `dead` (F227): each open holding whose seat is tombstoned or unknown,
   `{seat, instance, since, retired, command}`. `retired` is how the seat ended,
-  `{reason, kind, at}` (the tombstone's reason, one printable word for it, such
-  as `observed-dead`, `superseded` or `owner-close` (F193), and epoch ms), or `null` when the
+  `{reason, kind, successor, at}` (the tombstone's reason, one printable word for it, such
+  as `observed-dead`, `superseded` or `owner-close` (F193), the seat a native
+  session boundary handed it to or `null` (F190), and epoch ms), or `null` when the
   registry no longer knows the seat; `command` is the `pij directory release`
   that ends it, or `null` when its stored key does not print (F132). Such a
   holding stays open, so a revived seat holds it again, but it is no holder:
   routes' `Holder now` and every liveness signal leave it out. The human view
   prints `open holding on dead seat <seat> (<reason> <time>); end it:
-  <command>`, and a role with no live holder but such a holding says `no live
+  <command>` (with a successor, `(superseded by <successor> <time>)`), and a
+  role with no live holder but such a holding says `no live
   holder`;
 - `designated`: for the `prime` role only, the project's designated prime
   `{seat, seat_live}` (its `prime_id`), else `null`. The prime is designated,
