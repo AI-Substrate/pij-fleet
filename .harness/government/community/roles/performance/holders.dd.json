@@ -459,6 +459,16 @@
 					"seat": "pij-melodic-snail",
 					"to": "2026-11-20T13:46:57.264Z",
 					"why": "#292 F238 cost (required)"
+				},
+				{
+					"assigned_by": "pij-melodic-snail",
+					"from": "2026-11-20T13:51:06.395Z",
+					"harness": "omp",
+					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
+					"instance_key": "292",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-melodic-snail",
+					"why": "pm-001 explicitly requests retaining performance/292 after merge for F238 deployed performance follow-through"
 				}
 			]
 		}
