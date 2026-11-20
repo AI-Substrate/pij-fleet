@@ -1376,6 +1376,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-cultural-falcon",
 					"why": "F237 tmux server death in fixture show-options after F229: find the lock-bypassing path, read-only first (prime ruling)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T11:04:44.272Z",
+					"harness": "omp",
+					"harness_session": "01a1f66b-21d0-7652-8b03-da1df9910ceb",
+					"instance_key": "f239",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-forthcoming-silkworm",
+					"why": "F239 stale-extension anomaly prints commit and tree (prime); after #289"
 				}
 			]
 		}
