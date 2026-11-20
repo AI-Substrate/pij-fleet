@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"kind": "note",
+				"role": "performance",
+				"subject": "f:242",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "F242 delayed RSS follow-up complete. Same daemon incarnation for both requested observations: PID22316, kernel[22316,1795187353,605372], start2026-11-20T15:09:13.605372Z, commit0587a41661 from the previously confirmed immutable incarnation. Both receipts valid/stable, ps exit0, no metadata error or incarnation change.\n\nReading1: ps2026-11-20T16:03:27.929410Z–16:03:27.934270Z; uptime3254.328932s (54m14.329s); RSS140832KiB =137.53125MiB =144.211968decimalMB.\nReading2: ps2026-11-20T19:09:13.683791Z–19:09:13.689465Z; uptime14400.084121s (scheduled4h boundary, observed84ms after it); RSS141200KiB =137.890625MiB =144.5888decimalMB.\n\nSame-incarnation change: +368KiB =+0.359375MiB =+0.261304% over11145.755189s. This is a small positive two-point change, not a measured continuous growth rate. Four-hour RSS is BELOW about200MB whether interpreted as decimalMB or MiB. The prime's rule, 'above about200MB and growing, or still above about200MB at four hours', does NOT trigger an F-item. Elevated-RSS/leak conclusions are not supported by these two samples; this also does not prove a leak absent.\n\nExactly two scheduled single-/bin/ps PID/RSS calls were used, with in-process kernel identity before/after each. No extra RSS/CPU sample, live window, sampler or intervening poll. Raw /tmp/f242-rss-reading-{1,2}.json; comparison /tmp/f242-rss-followup-comparison.json. The later user-requested exit-only observer for the prime-owned post-298 bounce starts after both readings; it adds no RSS sample and does not change this comparison.\n\nBounce handoff: pm-001 received reading2 immediately, requested stop/SIGKILL timing, and held the prime's bounce until the retained privacy-safe exit observer was armed and READY. Actual SIGINT/SIGKILL/new-ready marks remain prime-owned; exit observer will independently bracket original-incarnation disappearance. No bounce, signal, build or deploy by this performance seat.\n\nmagicWand: retain two head/incarnation-stamped one-shot receipts plus an explicit rule result rather than infer a leak from an isolated high number.\ndifficulties: MB versus MiB and historical/pre-bounce windows must not be mixed; this comparison names both units and uses only the requested same-incarnation pair.\n"
+		}
+	]
+}
