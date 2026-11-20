@@ -2305,6 +2305,16 @@
 					"seat": "pij-regulatory-fly",
 					"to": "2026-11-20T08:22:37.532Z",
 					"why": "#283 F233 correctness review, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T08:36:08.219Z",
+					"harness": "copilot",
+					"harness_session": "c8ccbe49-9866-4eb9-bbcb-c2aa53b2c58b",
+					"instance_key": "285",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-exuberant-beetle",
+					"why": "#285 F234 review"
 				}
 			]
 		}
