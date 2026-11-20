@@ -2393,6 +2393,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-continued-wombat",
 					"why": "#291 F239 review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T12:09:36.571Z",
+					"harness": "copilot",
+					"harness_session": "8c4a4eef-d945-479c-bdbe-4c906ae2ae86",
+					"instance_key": "290",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-significant-silkworm",
+					"why": "#290 F237 review"
 				}
 			]
 		}
