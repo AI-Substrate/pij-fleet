@@ -271,6 +271,14 @@ pub fn observed_start(pid: u32) -> Option<pij_core::model::ObservedStart> {
     })
 }
 
+/// #85: a process's start in the local timebase only, the form `ps -o lstart=`
+/// prints, for the pane harness walk's recheck of its selected pid. In-process,
+/// like [`observed_start`], and `None` exactly when it is.
+#[must_use]
+pub fn local_start(pid: u32) -> Option<u64> {
+    observed_start(pid).map(|start| start.local)
+}
+
 struct CommandOutput {
     status: ExitStatus,
     stdout: Vec<u8>,
@@ -370,6 +378,28 @@ pub fn parent_and_host_name(pid: u32) -> Option<(u32, String)> {
         let parent = linux_ppid(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)?;
         let exe = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
         Some((parent, linux_exe_name(exe.to_str()?)?))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
+/// #85: a process's parent pid, read in-process for the identity routes'
+/// ancestry walk. macOS: the short BSD info ([`parent_and_name`]), which
+/// answers for every process. Linux: field 4 of `/proc/<pid>/stat`, readable
+/// for every process. It launches nothing. `None` when the kernel will not
+/// say (no such process).
+#[must_use]
+pub fn parent_of(pid: u32) -> Option<u32> {
+    #[cfg(target_os = "macos")]
+    {
+        parent_and_name(pid).map(|(parent, _)| parent)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux_ppid(&std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?)
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {

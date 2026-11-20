@@ -668,33 +668,28 @@ async fn take_over_pane(
 /// Does the process on the far end of `peer` descend from (or equal) `host`?
 ///
 /// Both facts are OBSERVED, never claimed: `lsof` names the process owning the
-/// client end of this very connection, and one `ps` snapshot supplies the parent
-/// chain. Any failure answers `false`, which refuses; it never admits.
+/// client end of this very connection, and the parent chain is read from the
+/// kernel one process at a time, in-process (#85: it was one whole-machine
+/// `ps` snapshot per call). Any failure answers `false`, which refuses; it
+/// never admits. A parent that exits mid-walk reparents its child (to 1, or a
+/// subreaper), so the walk can only lose the host, never invent it.
 fn caller_descends_from(peer: SocketAddr, host: u32) -> bool {
-    let Some(mut pid) = peer_pid(peer) else {
+    let Some(pid) = peer_pid(peer) else {
         return false;
     };
-    pij_core::spawns::record("ps.identity-caller-ancestry");
-    let Ok(output) = std::process::Command::new("/bin/ps")
-        .args(["-Ao", "pid=,ppid="])
-        .env("LC_ALL", "C")
-        .output()
-    else {
-        return false;
-    };
-    let parents: std::collections::HashMap<u32, u32> = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split_whitespace();
-            Some((fields.next()?.parse().ok()?, fields.next()?.parse().ok()?))
-        })
-        .collect();
+    descends_from(pid, host, pij_harnesses::proc::parent_of)
+}
+
+/// Does `pid` equal `host`, or reach it through at most 64 parents read by
+/// `parent`? Stops, answering `false`, at pid 1 (or 0), an unread parent or
+/// the hop limit, which also ends a self-parent or a cycle.
+fn descends_from(mut pid: u32, host: u32, parent: impl Fn(u32) -> Option<u32>) -> bool {
     for _ in 0..64 {
         if pid == host {
             return true;
         }
-        match parents.get(&pid) {
-            Some(&parent) if parent > 1 && parent != pid => pid = parent,
+        match parent(pid) {
+            Some(next) if next > 1 => pid = next,
             _ => return false,
         }
     }
@@ -704,13 +699,22 @@ fn caller_descends_from(peer: SocketAddr, host: u32) -> bool {
 /// The pid owning the CLIENT end of `peer`: the fd whose name reads `peer->…`.
 /// Matching the direction rather than excluding the daemon's own pid keeps this
 /// correct when client and server share a process.
+///
+/// #85: `lsof` by its path, never a bare name (one kernel process per PATH
+/// miss on macOS). It stays a launch: this is a TCP connection, which has no
+/// peer-credential socket option (`LOCAL_PEERPID` and `SO_PEERCRED` are for
+/// Unix sockets), and the safe `proc_pidinfo` wrapper reads no socket
+/// descriptors. It runs once per identity request that names a host, never per
+/// tick.
 fn peer_pid(peer: SocketAddr) -> Option<u32> {
     pij_core::spawns::record("lsof.identity-peer-pid");
-    let output = std::process::Command::new("lsof")
-        .args(["-nP", &format!("-iTCP@{peer}"), "-Fpn"])
-        .env("LC_ALL", "C")
-        .output()
-        .ok()?;
+    let output = pij_core::program::launch(LSOF, |program| {
+        std::process::Command::new(program)
+            .args(["-nP", &format!("-iTCP@{peer}"), "-Fpn"])
+            .env("LC_ALL", "C")
+            .output()
+    })
+    .ok()?;
     let prefix = format!("{peer}->");
     let mut pid = None;
     for line in String::from_utf8_lossy(&output.stdout).lines() {
@@ -725,6 +729,13 @@ fn peer_pid(peer: SocketAddr) -> Option<u32> {
     }
     None
 }
+
+/// macOS ships `lsof` at a fixed path; elsewhere it is resolved through PATH
+/// once ([`pij_core::program::launch`]).
+#[cfg(target_os = "macos")]
+const LSOF: &str = "/usr/sbin/lsof";
+#[cfg(not(target_os = "macos"))]
+const LSOF: &str = "lsof";
 
 const ADOPT: &str = "pij adopt";
 const WHOAMI: &str = "pij whoami";
@@ -1550,6 +1561,39 @@ pub(crate) async fn resolve_seat(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #85: the identity routes' ancestry walk, now read in-process one parent
+    /// at a time. It admits only `host` itself or a descendant, and any stop
+    /// (pid 1, a self-parent, a parent the kernel won't name, 64 hops) refuses.
+    #[test]
+    fn the_ancestry_walk_admits_only_a_descendant_of_the_host() {
+        let chain = |pid: u32| match pid {
+            40 => Some(30),
+            30 => Some(20),
+            20 => Some(1),
+            50 => Some(50),
+            60 => None,
+            70 => Some(71),
+            pid if pid > 70 => Some(pid + 1),
+            _ => None,
+        };
+        assert!(descends_from(40, 40, chain), "the host itself");
+        assert!(descends_from(40, 20, chain), "a descendant");
+        assert!(
+            !descends_from(30, 40, chain),
+            "an ancestor is not a descendant"
+        );
+        assert!(!descends_from(40, 1, chain), "the walk stops before pid 1");
+        assert!(!descends_from(50, 20, chain), "a self-parent stops it");
+        assert!(!descends_from(60, 20, chain), "an unread parent stops it");
+        assert!(descends_from(70, 70 + 63, chain), "63 hops reach the host");
+        assert!(!descends_from(70, 70 + 64, chain), "64 hops is the limit");
+        // The real kernel read: this test's process descends from its parent.
+        let me = std::process::id();
+        let parent = pij_harnesses::proc::parent_of(me).expect("this process's parent");
+        assert!(descends_from(me, parent, pij_harnesses::proc::parent_of));
+        assert!(!descends_from(parent, me, pij_harnesses::proc::parent_of));
+    }
 
     #[tokio::test]
     async fn adopt_registration_retryable_error_preserves_conflict_discriminator() {

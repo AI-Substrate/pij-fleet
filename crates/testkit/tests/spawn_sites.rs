@@ -243,12 +243,15 @@ fn every_daemon_launch_site_records_itself() {
     );
 }
 
-/// Plan 180, follow-up D: a bare `ps` or `date` makes macOS `posix_spawnp` try
-/// every PATH entry, and each miss is a kernel process (18 per launch with the
-/// daemon's PATH). The daemon names them by absolute path instead.
+/// Plan 180, follow-up D, and #85: a program named without a path makes macOS
+/// `posix_spawnp` try every PATH entry, and each miss is a kernel process (18
+/// per `ps` launch with the daemon's PATH). The daemon names a system tool by
+/// its absolute path (`/bin/ps`, `/usr/sbin/lsof`) and resolves a
+/// user-installed one once (`pij_core::program::launch`). Any
+/// `Command::new("<name>")` literal without a `/` in production daemon code is
+/// refused, whatever the program (#85 found bare `lsof` and `omp`).
 #[test]
-fn no_daemon_launch_searches_path_for_ps_or_date() {
-    const BARE: [&str; 2] = ["Command::new(\"ps\")", "Command::new(\"date\")"];
+fn no_daemon_launch_names_a_program_bare() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let root = root.canonicalize().expect("the workspace root");
     let mut files = Vec::new();
@@ -260,7 +263,10 @@ fn no_daemon_launch_searches_path_for_ps_or_date() {
     for path in &files {
         for (index, line) in production_lines(path).iter().enumerate() {
             absolute += line.matches("Command::new(\"/bin/ps\")").count();
-            if BARE.iter().any(|pattern| line.contains(pattern)) {
+            let named_bare = line
+                .match_indices("Command::new(\"")
+                .any(|(at, open)| !line[at + open.len()..].starts_with('/'));
+            if named_bare {
                 bare.push(format!(
                     "{}:{}: {}",
                     path.strip_prefix(&root).unwrap().display(),
@@ -277,8 +283,9 @@ fn no_daemon_launch_searches_path_for_ps_or_date() {
     );
     assert!(
         bare.is_empty(),
-        "these launches search PATH (one kernel process per PATH miss on macOS); use \
-         \"/bin/ps\" or \"/bin/date\":\n  {}",
+        "these launches search PATH (one kernel process per PATH miss on macOS); name a \
+         system tool by its absolute path, or resolve a user-installed one with \
+         `pij_core::program::launch`:\n  {}",
         bare.join("\n  ")
     );
 }
@@ -289,7 +296,12 @@ fn no_daemon_launch_searches_path_for_ps_or_date() {
 #[test]
 fn retired_launches_stay_retired() {
     // (file the pattern is retired in, or every daemon file; pattern; why)
-    const RETIRED: [(Option<&str>, &str, &str); 5] = [
+    const RETIRED: [(Option<&str>, &str, &str); 6] = [
+        (
+            None,
+            "\"ps.identity-caller-ancestry\"",
+            "#85: the identity routes' ancestry walk reads parents in-process (pij_harnesses::proc::parent_of)",
+        ),
         (
             None,
             "\"date.utc-offset\"",

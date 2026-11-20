@@ -1633,16 +1633,30 @@ pub struct HarnessProcess {
 
 /// Observe the selected harness identity, retaining the original identity-only API.
 #[must_use]
-pub fn harness_process(pane_pid: u32, harness: Harness) -> Option<ProcIdentity> {
-    harness_process_tree(pane_pid, harness).map(|observed| observed.identity)
+pub fn harness_process(
+    pane_pid: u32,
+    harness: Harness,
+    start_of: impl Fn(u32) -> Option<u64>,
+) -> Option<ProcIdentity> {
+    harness_process_tree(pane_pid, harness, start_of).map(|observed| observed.identity)
 }
 
 /// Observe a unique nearest matching descendant and the complete pane subtree.
 ///
 /// `proc_start` uses the same LOCAL C-locale wall time as `ProcLiveness`.
 /// A missing/dead pane yields `None`; callers label a pane fallback explicitly.
+///
+/// One launch: the whole-machine `ps` snapshot, because macOS argv and a process
+/// list can't be read in-process without unsafe. The selected pid's start is then re-read by
+/// `start_of` (#85: in-process, `pij_harnesses::proc::observed_start`'s local
+/// form, where it was a second `ps`), and a start that moved or can't be read
+/// rejects the selection.
 #[must_use]
-pub fn harness_process_tree(pane_pid: u32, harness: Harness) -> Option<HarnessProcess> {
+pub fn harness_process_tree(
+    pane_pid: u32,
+    harness: Harness,
+    start_of: impl Fn(u32) -> Option<u64>,
+) -> Option<HarnessProcess> {
     pij_core::spawns::record("ps.tmux-harness-process-tree");
     let output = Command::new("/bin/ps")
         .args(["-Awwo", "pid=,ppid=,lstart=,command="])
@@ -1655,18 +1669,7 @@ pub fn harness_process_tree(pane_pid: u32, harness: Harness) -> Option<HarnessPr
     let text = std::str::from_utf8(&output.stdout).ok()?;
     let processes: Vec<_> = text.lines().filter_map(process_row).collect();
     let selected = harness_process_from_snapshot(pane_pid, harness, &processes)?;
-    pij_core::spawns::record("ps.tmux-harness-process-tree");
-    let output = Command::new("/bin/ps")
-        .args(["-p", &selected.identity.pid.to_string(), "-o", "lstart="])
-        .env("LC_ALL", "C")
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let start =
-        pij_core::model::parse_process_start(std::str::from_utf8(&output.stdout).ok()?).ok()?;
-    (start == selected.identity.proc_start).then_some(selected)
+    (start_of(selected.identity.pid)? == selected.identity.proc_start).then_some(selected)
 }
 
 fn process_field<'a>(rest: &mut &'a str) -> Option<&'a str> {
@@ -1888,6 +1891,50 @@ mod tests {
     use super::harness_process_from_snapshot;
     use super::new_window_args;
     use pij_core::model::{Harness, ProcIdentity};
+
+    /// #85: after its one `ps` snapshot the walk re-reads the selected pid's
+    /// start through `start_of` (in-process in production). The selection
+    /// stands only when that read agrees with the snapshot; a moved start or a
+    /// start the reader can't give rejects it.
+    #[test]
+    fn the_walk_keeps_its_selection_only_when_the_start_reread_agrees() {
+        // This test process is the "pane root": no Claude below it, so the walk
+        // falls back to the root itself.
+        let me = std::process::id();
+        let output = std::process::Command::new("/bin/ps")
+            .args(["-p", &me.to_string(), "-o", "lstart="])
+            .env("LC_ALL", "C")
+            .output()
+            .expect("ps");
+        let start = pij_core::model::parse_process_start(
+            std::str::from_utf8(&output.stdout).expect("utf-8"),
+        )
+        .expect("start");
+        let reads = std::cell::Cell::new(0);
+        let agreeing = super::harness_process_tree(me, Harness::Claude, |pid| {
+            reads.set(reads.get() + 1);
+            (pid == me).then_some(start)
+        })
+        .expect("the root, re-read and agreeing");
+        assert_eq!(
+            agreeing.identity,
+            ProcIdentity {
+                pid: me,
+                proc_start: start
+            }
+        );
+        assert_eq!(reads.get(), 1, "one re-read, of the selected pid");
+        assert_eq!(
+            super::harness_process_tree(me, Harness::Claude, |_| Some(start + 1)),
+            None,
+            "a start that moved rejects the selection"
+        );
+        assert_eq!(
+            super::harness_process_tree(me, Harness::Claude, |_| None),
+            None,
+            "an unread start rejects the selection"
+        );
+    }
 
     #[test]
     fn pane_shell_fixture_selects_claude_child() {

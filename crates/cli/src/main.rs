@@ -2688,7 +2688,7 @@ fn statusline_owns(seat: ProcIdentity) -> bool {
         seat,
         std::process::id(),
         &pij_harnesses::proc::parent_and_host_name,
-        &|pid| pij_harnesses::proc::observed_start(pid).map(|start| start.local),
+        &pij_harnesses::proc::local_start,
     )
 }
 

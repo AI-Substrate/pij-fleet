@@ -322,11 +322,16 @@ fn run_omp_command() -> std::io::Result<CommandResult> {
     let stdout = fs::File::create(&stdout_path)?;
     let stderr = fs::File::create(&stderr_path)?;
     pij_core::spawns::record("omp.models");
-    let mut child = Command::new("omp")
-        .args(["models", "--json", "--no-extensions"])
-        .stdout(Stdio::from(stdout))
-        .stderr(Stdio::from(stderr))
-        .spawn()?;
+    // #85: OMP lives wherever the user installed it, so it is resolved through
+    // PATH once and launched by the path found, never by a bare name (one
+    // kernel process per PATH miss on macOS, plan 182).
+    let mut child = pij_core::program::launch("omp", |program| {
+        Command::new(program)
+            .args(["models", "--json", "--no-extensions"])
+            .stdout(Stdio::from(stdout.try_clone()?))
+            .stderr(Stdio::from(stderr.try_clone()?))
+            .spawn()
+    })?;
     let started = Instant::now();
     let status = loop {
         if let Some(status) = child.try_wait()? {
