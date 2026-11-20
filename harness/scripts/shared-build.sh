@@ -30,7 +30,8 @@
 #                       every harness seat), else `pij-rs whoami`, else $USER
 #
 # Exit: cargo's status, or 2 usage, 3 disk floor, 4 --timeout, 5 stale lock,
-# 6 the --copy-out copy failed.
+# 6 the --copy-out copy failed, 7 the build stamp could be neither written
+# nor removed.
 # A stale lock (its owner pid is gone) is reported with the command that clears
 # it and never cleared here: whether that build is really over is the caller's
 # call, not this script's.
@@ -65,6 +66,7 @@ DF="${PIJ_SHARED_BUILD_DF:-/bin/df}"         # test seam
 MKDIR="${PIJ_SHARED_BUILD_MKDIR:-/bin/mkdir}" # test seam
 POLL="${PIJ_SHARED_BUILD_POLL_SECONDS:-20}"  # test seam
 WHOAMI="${PIJ_SHARED_BUILD_WHOAMI-}"          # test seam; default: pij-rs on PATH
+MKTEMP="${PIJ_SHARED_BUILD_MKTEMP:-/usr/bin/mktemp}" # test seam
 FLOOR_GB="${PIJ_DISK_FLOOR_GB:-25}"
 JOBS="${PIJ_CARGO_JOBS:-4}"
 
@@ -372,14 +374,23 @@ stamp="$target/.pij-shared-build-tree"
 # is never followed or written into: no stamp is written, so every run
 # touches (S297, sure-mole). The check and the rename are two steps; anyone
 # who can plant one there between them can already write the target itself.
-write_stamp() { # <content>
+# A stamp that can't be written (mktemp, the write or the rename failed) is
+# removed instead, with a warning, so no earlier `finished …` survives a run
+# it does not describe and the next run touches (F246). If it can't be
+# removed either, it may still say `finished <tree>`: the `running` write
+# refuses the run before any cargo, and after the last cargo it already says
+# `running …`, which never skips the touch.
+write_stamp() { # <content>; fails only when a stale stamp may remain
 	[ -d "$target" ] || return 0
 	if [ -L "$stamp" ] || [ -d "$stamp" ]; then return 0; fi
-	local tmp
-	tmp=$(/usr/bin/mktemp "$target/.pij-shared-build-tree.XXXXXX") || return 0
-	if ! { printf '%s\n' "$1" >"$tmp" && /bin/mv -f "$tmp" "$stamp"; }; then
-		/bin/rm -f "$tmp"
+	local tmp=""
+	if tmp=$("$MKTEMP" "$target/.pij-shared-build-tree.XXXXXX") &&
+		printf '%s\n' "$1" >"$tmp" && /bin/mv -f "$tmp" "$stamp"; then
+		return 0
 	fi
+	[ -z "$tmp" ] || /bin/rm -f "$tmp"
+	/bin/rm -f "$stamp" || return 1
+	printf 'shared-build: could not write %s; removed it, so the next run touches the crate roots\n' "$stamp" >&2
 }
 last=""
 [ -f "$stamp" ] && [ ! -L "$stamp" ] && read -r last <"$stamp"
@@ -391,7 +402,8 @@ if [ "$last" != "finished $worktree" ] ||
 	done
 	[ ${#sources[@]} -eq 0 ] || touch "${sources[@]}"
 fi
-write_stamp "running $worktree"
+write_stamp "running $worktree" ||
+	refuse 7 "could not write or remove $stamp, which may skip the next run's touch; no cargo run"
 
 # Every cargo command runs at niceness max(19, the caller's) (F186, F220): the
 # wrapper adds 19 minus the caller's niceness, so `just test` (already at 19)
@@ -427,7 +439,8 @@ done
 # F243: this tree's run finished here. Written after the last cargo, so every
 # artifact the run built is older than it; a failed run never gets here and
 # leaves `running …`, so the next run, this tree's or another's, touches.
-write_stamp "finished $worktree"
+write_stamp "finished $worktree" ||
+	printf 'shared-build: could not write %s; it still reads running, so the next run touches\n' "$stamp" >&2
 # F226: the artifact this run built, copied while the lock is still held.
 if [ -n "$copy_artifact" ]; then
 	[ ! -e "$copy_dest" ] && [ ! -L "$copy_dest" ] ||
