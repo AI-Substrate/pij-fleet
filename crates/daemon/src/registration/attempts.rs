@@ -213,6 +213,9 @@ pub struct AttemptCounts {
     /// Per seat address (the resolved seat, else the claimed id, else
     /// `(unnamed)`), at most [`SEATS`] of them plus [`OVERFLOW`].
     pub by_seat: BTreeMap<String, Tally>,
+    /// D2 (R277-3): live (seat, code) pairs the `registration.refused`
+    /// window evicted to tell a new one, since the daemon started.
+    pub refusals_evicted: u64,
 }
 
 #[derive(Default)]
@@ -288,7 +291,23 @@ impl Attempts {
             ps: by_key.values().map(|tally| tally.ps).sum(),
             by_key,
             by_seat: counts.by_seat.clone(),
+            refusals_evicted: 0,
         }
+    }
+
+    /// Whether `seat` is tallied by its own name: a known attempt (one that
+    /// landed on it, or a refusal that named it) has counted it since the
+    /// daemon started. D2 tells a refusal of an unnamed address only then, so
+    /// a made-up name is never told and no registry statement is made.
+    pub fn names(&self, seat: &str) -> bool {
+        seat != OVERFLOW
+            && seat != "(unnamed)"
+            && self
+                .counts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .by_seat
+                .contains_key(seat)
     }
 }
 

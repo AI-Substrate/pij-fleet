@@ -3195,6 +3195,88 @@ test("inbox wait renewal does not reset an existing outage episode", async (t) =
 	assert.equal(f.reports.filter(({ kind }) => kind === "connection-ready").length, 1);
 });
 
+test("R277-1: a refusal that arrives after the client's own timeout never reads as reconnected", async (t) => {
+	let polls = 0;
+	const { client } = await deadlineHttpFixture(t, ({ url }, response) => {
+		if (url.pathname === "/v1/register")
+			response.end(JSON.stringify({ ok: true, v: 2, data: descriptor }));
+		else if (url.pathname === "/v1/inbox") {
+			polls++;
+			const refuse = () => {
+				response.writeHead(401);
+				response.end(JSON.stringify({ ok: false, v: 2, error: "unauthorized" }));
+			};
+			// The second refusal is slower than the client's 150 ms timeout.
+			if (polls === 2) setTimeout(refuse, 300);
+			else refuse();
+		} else if (url.pathname === "/v1/inbox/typing")
+			response.end(JSON.stringify({ ok: true, v: 2, data: observedTyping() }));
+		else response.end(JSON.stringify({ ok: true, v: 2, data: claim.job_id }));
+	});
+	const { logs, report } = recordingReporter();
+	const reports = [];
+	const f = fixture({
+		client,
+		report: (event) => {
+			reports.push(event);
+			report(event);
+		},
+		delay: async () => {
+			if (polls >= 3) f.bridge.stop();
+		},
+	});
+	t.after(() => f.bridge.stop());
+	await f.bridge.run();
+	assert.equal(reports.filter(({ kind }) => kind === "connection-ready").length, 0);
+	assert.equal(reports.filter(({ kind }) => kind === "reconnecting").length, 1);
+	assert.equal(logs.length, 1, logs.join("\n"));
+	assert.match(logs[0], /^\[pij native\] unavailable: reconnecting;/);
+});
+
+test("an idle seat's banner clears on the daemon's empty answer to its claim", async (t) => {
+	let polls = 0;
+	const { client, requests } = await deadlineHttpFixture(t, ({ url }, response) => {
+		if (url.pathname === "/v1/register")
+			response.end(JSON.stringify({ ok: true, v: 2, data: descriptor }));
+		else if (url.pathname === "/v1/inbox") {
+			polls++;
+			if (polls === 1) {
+				response.writeHead(401);
+				response.end(JSON.stringify({ ok: false, v: 2, error: "unauthorized" }));
+			} else {
+				// The daemon answers an idle claim with an empty page (R277-1).
+				response.end(JSON.stringify({ ok: true, v: 2, data: [] }));
+			}
+		} else if (url.pathname === "/v1/inbox/typing")
+			response.end(JSON.stringify({ ok: true, v: 2, data: observedTyping() }));
+		else response.end(JSON.stringify({ ok: true, v: 2, data: claim.job_id }));
+	});
+	const { logs, report } = recordingReporter();
+	const reports = [];
+	const f = fixture({
+		client,
+		report: (event) => {
+			reports.push(event);
+			report(event);
+		},
+		delay: async () => {
+			if (polls >= 4) f.bridge.stop();
+		},
+	});
+	t.after(() => f.bridge.stop());
+	await f.bridge.run();
+	assert.equal(requests.filter(({ url }) => url.pathname === "/v1/register").length, 2);
+	assert.deepEqual(
+		reports
+			.map(({ kind }) => kind)
+			.filter((kind) => kind === "reconnecting" || kind === "connection-ready"),
+		["reconnecting", "connection-ready"],
+	);
+	assert.equal(logs.length, 2, logs.join("\n"));
+	assert.match(logs[0], /^\[pij native\] unavailable: reconnecting;/);
+	assert.equal(logs[1], "[pij native] reconnected");
+});
+
 test("HTTP non-wait deadlines, body stalls and connection failures remain retryable", async (t) => {
 	let mode = "unanswered";
 	const { client } = await deadlineHttpFixture(t, (_entry, response) => {

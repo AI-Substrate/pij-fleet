@@ -434,10 +434,15 @@ async fn native_transient_session_holds_without_mutating_owner_or_queue() {
         queue.peek(&[delivery_kind(&owner.id)]).await.unwrap(),
         queued
     );
-    assert_eq!(
-        spine.tail(None, pij_core::model::Seq(0)).await.unwrap(),
-        events
-    );
+    // A hold writes nothing but D2's one `registration.refused` record.
+    let after: Vec<_> = spine
+        .tail(None, pij_core::model::Seq(0))
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind != "registration.refused")
+        .collect();
+    assert_eq!(after, events);
     server.abort();
 }
 
@@ -2900,6 +2905,174 @@ async fn native_receiver_absent_after_boot_grace_remains_visible_after_parking()
     );
     server.abort();
     clock.abort();
+}
+
+/// D1 (auth/lapse): a receiver lease's live-to-lapsed edge is told once
+/// (`native.receiver.lapsed`, naming its last renewal), however many
+/// reconciliations see it lapsed, and the heartbeat that renews it is told once
+/// (`native.receiver.renewed`); every other heartbeat and tick says nothing.
+#[tokio::test(start_paused = true)]
+async fn a_receiver_lapse_and_its_renewal_are_each_told_once() {
+    let clock = manual_receiver_clock();
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    let delivery = services.delivery.clone();
+    let spine = services.spine.clone();
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    let request = json!({
+        "seat":seat.id, "native_session":identity.native_session, "pid":identity.pid,
+        "proc_start":identity.proc_start, "observed_at":100, "observed_seq":1,
+    });
+    let edges = || {
+        let spine = spine.clone();
+        async move {
+            spine
+                .tail(None, pij_core::model::Seq(0))
+                .await
+                .unwrap()
+                .into_iter()
+                .filter(|event| event.kind.starts_with("native.receiver."))
+                .map(|event| {
+                    let payload: Value = serde_json::from_str(&event.payload).unwrap();
+                    (event.kind, payload)
+                })
+                .collect::<Vec<_>>()
+        }
+    };
+    progress_heartbeat(&client, addr, &request).await;
+    assert_eq!(delivery.reconcile_native_receivers().await.unwrap(), 0);
+    assert!(edges().await.is_empty(), "a live lease tells nothing");
+    tokio::time::advance(Duration::from_secs(61)).await;
+    for _ in 0..3 {
+        delivery.reconcile_native_receivers().await.unwrap();
+    }
+    let lapsed = edges().await;
+    assert_eq!(lapsed.len(), 1, "{lapsed:?}");
+    assert_eq!(lapsed[0].0, "native.receiver.lapsed");
+    assert_eq!(lapsed[0].1["seat"], seat.id.as_str());
+    assert!(lapsed[0].1["renewed_at"].is_u64(), "{lapsed:?}");
+    for _ in 0..2 {
+        let reply = progress_heartbeat(&client, addr, &request).await;
+        assert_eq!(reply["data"]["state"], "live");
+        delivery.reconcile_native_receivers().await.unwrap();
+    }
+    let told = edges().await;
+    assert_eq!(
+        told.iter()
+            .map(|(kind, _)| kind.as_str())
+            .collect::<Vec<_>>(),
+        ["native.receiver.lapsed", "native.receiver.renewed"],
+        "{told:?}"
+    );
+    assert_eq!(told[1].1["seat"], seat.id.as_str());
+    // A second lapse is a new edge, told again.
+    tokio::time::advance(Duration::from_secs(61)).await;
+    delivery.reconcile_native_receivers().await.unwrap();
+    delivery.reconcile_native_receivers().await.unwrap();
+    assert_eq!(edges().await.len(), 3);
+    server.abort();
+    clock.abort();
+}
+
+/// The lease edges a test's spine holds, oldest first.
+async fn receiver_edges(spine: &Arc<dyn pij_core::ports::Spine>) -> Vec<String> {
+    spine
+        .tail(None, pij_core::model::Seq(0))
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind.starts_with("native.receiver."))
+        .map(|event| event.kind)
+        .collect()
+}
+
+/// R277-2: a told lapse survives a daemon restart. The restarted daemon
+/// restores the edge from the spine, so the lapse it finds after its boot
+/// grace is not told a second time, and the heartbeat that renews the lease
+/// tells the matching `renewed`.
+#[tokio::test(start_paused = true)]
+async fn a_told_lapse_survives_a_restart_and_is_not_told_again() {
+    let clock = manual_receiver_clock();
+    let store = FreshStore::new();
+    let (seat, identity) = contract_identity();
+    let request = json!({
+        "seat":seat.id, "native_session":identity.native_session, "pid":identity.pid,
+        "proc_start":identity.proc_start, "observed_at":100, "observed_seq":1,
+    });
+    let client = reqwest::Client::new();
+    let services = sqlite_services(&store).await;
+    services.registry.put(seat.clone()).await.unwrap();
+    let (delivery, spine) = (services.delivery.clone(), services.spine.clone());
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    progress_heartbeat(&client, addr, &request).await;
+    tokio::time::advance(Duration::from_secs(61)).await;
+    delivery.reconcile_native_receivers().await.unwrap();
+    delivery.reconcile_native_receivers().await.unwrap();
+    assert_eq!(receiver_edges(&spine).await, ["native.receiver.lapsed"]);
+    server.abort();
+    drop(delivery);
+    // The daemon restarts on the same store; its boot grace runs out.
+    let services = sqlite_services(&store).await;
+    let (delivery, spine) = (services.delivery.clone(), services.spine.clone());
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    tokio::time::advance(Duration::from_secs(61)).await;
+    delivery.reconcile_native_receivers().await.unwrap();
+    delivery.reconcile_native_receivers().await.unwrap();
+    assert_eq!(
+        receiver_edges(&spine).await,
+        ["native.receiver.lapsed"],
+        "one outstanding lapse"
+    );
+    progress_heartbeat(&client, addr, &request).await;
+    assert_eq!(
+        receiver_edges(&spine).await,
+        ["native.receiver.lapsed", "native.receiver.renewed"]
+    );
+    server.abort();
+    clock.abort();
+}
+
+/// R277-1: the daemon answers an idle native claim with an empty page at its
+/// bound ([`crate::delivery::NATIVE_IDLE_ANSWER`], 55 s, under the extension's
+/// own 65 s request timeout; shortened here), so the extension hears from the
+/// daemon that receiving works instead of timing out. Before the bound it
+/// waits.
+#[tokio::test]
+async fn an_idle_native_claim_is_answered_empty_at_the_daemons_bound() {
+    assert!(crate::delivery::NATIVE_IDLE_ANSWER < Duration::from_secs(65));
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    services
+        .delivery
+        .set_native_idle_answer(Duration::from_millis(1_500));
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let started = std::time::Instant::now();
+    let body = native_http_response(
+        reqwest::Client::new()
+            .get(format!("http://{addr}/v1/inbox"))
+            .query(&[
+                ("seat", seat.id.to_string()),
+                ("wait", "true".into()),
+                ("native_session", identity.native_session.clone().unwrap()),
+                ("pid", identity.pid.unwrap().to_string()),
+                ("proc_start", identity.proc_start.unwrap().to_string()),
+            ]),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    let waited = started.elapsed();
+    assert_eq!(body["data"], json!([]), "{body}");
+    assert!(body.get("meta").is_none(), "{body}");
+    assert!(
+        waited >= Duration::from_millis(1_400) && waited < Duration::from_millis(3_500),
+        "{waited:?}"
+    );
+    server.abort();
 }
 
 #[tokio::test(start_paused = true)]

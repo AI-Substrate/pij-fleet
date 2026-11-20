@@ -1748,6 +1748,10 @@ export class NativeBridge {
 					retry = INITIAL_RETRY_MS;
 				} catch (error) {
 					if (signal.aborted) return;
+					// R277-1: our own timeout proves nothing about the receive path (a
+					// refusal may simply be late), so it neither ends an outage nor
+					// starts one. The daemon answers an idle claim with an empty page
+					// before this fires; that returned claim ends the outage above.
 					if (!(error instanceof InboxWaitDeadline)) {
 						if (!error.retryable) throw error;
 						// A receiver-gap retry is purely about the event log catching up to a

@@ -840,11 +840,16 @@ async fn a_folder_with_a_control_character_is_refused_where_it_is_set() {
         folder_before,
         "the worker's folder is unchanged"
     );
-    assert_eq!(
-        fixture.spine.tail(None, Seq(0)).await.expect("spine").len(),
-        before,
-        "nothing published"
-    );
+    // Nothing but D2's `registration.refused` record of the refusal itself.
+    let published: Vec<_> = fixture
+        .spine
+        .tail(None, Seq(0))
+        .await
+        .expect("spine")
+        .into_iter()
+        .filter(|event| event.kind != "registration.refused")
+        .collect();
+    assert_eq!(published.len(), before, "nothing published");
 }
 
 /// Review of #200, F002: closing a seat already retired for another reason
