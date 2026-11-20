@@ -1,0 +1,57 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f6bc-78d5-7851-ace4-87e8efec0c6b",
+				"date": "2026-11-20",
+				"head": "5e700abc3e61c0ff273cc7531c5b6c77bc193a3c",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:277",
+				"writer": "pij-extended-rooster",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C34 follow-up, nonblocking: refusal eviction has no deterministic tie-breaker for equal oldest timestamps. Restore uses two indexed LIMIT 1 reads per eligible seat, not one fleet-wide query."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 277",
+					"exit_code": 0
+				},
+				{
+					"command": "gh pr checks 277",
+					"exit_code": 0,
+					"log": "ci44658829620; successful rust-test job136031683975; exact JUnit artifact14594587460; seven target cases passed"
+				},
+				{
+					"command": "nice -n 19 node --test (two exact selectors recorded in body)",
+					"exit_code": 0,
+					"log": "28 selected tests passed; no failures or skips"
+				},
+				{
+					"command": "nice -n 19 python3 -B (exact-source SQLite stdin probe)",
+					"exit_code": 0,
+					"log": "7 SQL checks passed; not a compiled Rust execution"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS WITH NOTES - C34 final round\nPR: #277\nHead: 5e700abc3e61c0ff273cc7531c5b6c77bc193a3c\nPrior reviewed head: f9d2bc77871f3d7cee6418d6d18c86c26d5e40f4\nRequest: 01a1f6bc-78d5-7851-ace4-87e8efec0c6b\n\nReviewed only the delta (11 files, +340/-57). Round one's security review\nstands for unchanged behavior. No high-confidence security blocker was\nidentified under C33. The prior global-overflow, local-timeout false-ready,\nand lost-on-restart lapse-marker notes are addressed by this delta, subject\nto the explicit implementation and proof limits below.\n\nNonblocking disposition:\n\nC34 follow-up: deterministic tie-breaking for equal-time refusal entries.\nregistration/refusals.rs:55-58 selects an oldest timestamp through HashMap\niteration. Different timestamps are ordered correctly, but equally oldest\nentries have no deterministic tie-breaker. The incoming pair is still\nadmitted, the bound is retained, and this crosses no authorization boundary.\nThis is not a final-round security block or a request for another review.\n\nIdle native answers and recovery:\n\n- .copilot/extensions/pij/store.mjs:737-776,1708-1718,1751-1755 validates\n  the response/envelope and cancellation before successful recovery.\n  The client's own wait deadline no longer clears its outage.\n  The actual R277-1 late-401 test (store.test.mjs:3198-3233) passed with\n  zero ready events, one reconnecting event, and one unavailable banner.\n- crates/daemon/src/http/mod.rs:487-492,832-859 keeps the inbox\n  bearer-authenticated and rejects paired-machine credentials for it.\n  delivery/mod.rs:103-109,1837-1865,1993-2013 requires current native\n  session/PID/process-start evidence and an eligible registration.\n- delivery/mod.rs:2134-2254,2263-2271 considers the idle timer only after\n  actual claim validation/handoff. A timer result is an empty page, not\n  delivery or acknowledgement. It cannot turn a refused claim into\n  native registration, delivery authority, or an acknowledgement.\n- The timer is guarded by native Copilot selection. Ordinary wait clients\n  keep their old behavior; existing extension empty-array handling already\n  understands the response, so this is not a new wire shape.\n- Source reasoning for a message near 54.9 seconds: an in-flight claim is\n  not wrapped in the timer. A simultaneous enqueue/deadline can defer work\n  to the next poll but does not discard or acknowledge it. This exact\n  near-boundary scenario was not locally exercised with a Rust timing test.\n- This is not a universal new guarantee about every pre-existing malformed\n  individual claim item. Invalid envelope/page metadata and invalid\n  consumer proofs retain their separate existing validation.\n\nSpine restoration and poisoning boundaries:\n\n- delivery/mod.rs:52-53,507-550 restores only exact\n  native.receiver.lapsed/native.receiver.renewed kinds. It inserts the\n  registry seat's ID, not an identifier from event payload text.\n- delivery/mod.rs:456-459,769-771 runs OnceCell initialization under\n  native_lock before heartbeat/reconciliation uses lapse markers.\n  delivery/mod.rs:789-797 prunes noneligible and tombstoned seats.\n- crates/store/src/spine.rs:64-65,367-394 binds seat and kind parameters\n  and chooses newest sequence, not client time.\n  QUERY-BOUND CORRECTION: each eligible seat causes two indexed LIMIT 1\n  SELECTs in one snapshot. Restore runs once per daemon, but is not one\n  fleet-wide SQL statement. Read count is proportional to eligible seats,\n  not spine history; the index is spine_by_seat_kind.\n- The exact SQL was independently executed against in-memory SQLite:\n  seven checks passed, covering cross-seat and payload-seat spoofing,\n  unrelated prefixed kinds, reversed/equal times versus sequence, absence\n  of history, bounded query count and indexed execution.\n  The observed plan was SEARCH spine_events USING INDEX\n  spine_by_seat_kind (seat=? AND kind=?).\n- http/governance.rs:581-600,1525-1543 attributes spine appends to the\n  resolved actor, not payload-nominated seats. As C33 requires, this does\n  not claim cryptographically daemon-only provenance against the local\n  user; local-user spine writes are trusted.\n- Restore errors log visibly at delivery/mod.rs:521,542-545, after which\n  initialization stays complete. Such failure can duplicate audit edges;\n  it does not grant receiver liveness or authority.\n\nRefusal eviction and privacy:\n\n- registration/refusals.rs:42-68 holds one mutex while expiring entries,\n  suppressing an already-seen pair, evicting an oldest entry at capacity,\n  and admitting an unseen pair. A different seat's new pair is no longer\n  suppressed by a full window.\n- registration/attempts.rs:173-187,218 and registration.rs:214-219,354-403\n  expose an internal u64 eviction total while preserving closed refusal\n  labels and real-seat observation gating. http/mod.rs:921 includes that\n  snapshot in ping. No arbitrary text is projected by refusals_evicted.\n- No new token values, credential-bearing fields, environment values or\n  machine paths were found in the changed projections/logging/docs.\n\nIndependent validation:\n\n1. Parent: exact HEAD and prior-head ancestry verified; clean checkout.\n   just pr-freeze 277 passed at this exact head.\n   gh pr checks 277 reports all five check groups passed.\n   Successful ci run44658829620; successful delivers run44658851605.\n   The earlier cancelled delivers run is not used as a success receipt.\n\n2. Exact-head Rust CI:\n   rust-test job136031683975 reports 2606 passed and 6 skipped.\n   The successful upload log names JUnit artifact14594587460.\n   Parent downloaded that exact artifact in memory and verified passes for:\n   a_receiver_lapse_and_its_renewal_are_each_told_once;\n   a_told_lapse_survives_a_restart_and_is_not_told_again;\n   an_idle_native_claim_is_answered_empty_at_the_daemons_bound;\n   native_typing_recent_nonempty_draft_does_not_gate_native_claim;\n   a_full_window_still_tells_an_unseen_pair_and_counts_what_it_evicts;\n   the_window_evicts_what_expired_without_counting_it;\n   a_refused_seat_is_told_once_per_code_and_a_made_up_one_never.\n   These are actual compiled integration/unit results at the reviewed head,\n   not results from an unverified cached local binary.\n\n3. Locally executed exact-source Node tests:\n   nice -n 19 node --test --test-reporter=spec --test-name-pattern=\"R277-1|inbox wait|idle seat's banner|HTTP non-wait deadlines|foreign TimeoutError|external inbox abort|shutdown during inbox renewal|late stale claim after stop|HTTP skew and refused envelopes|malformed claim hold metadata|native-unavailable retries|outage emits one\" .copilot/extensions/pij/store.test.mjs\n   PASS: 14 passed, zero failed/cancelled/skipped, 2846.6 ms.\n\n   nice -n 19 node --test --test-reporter=spec --test-name-pattern=\"busy native turn consumes|C31: with steering on|C31: a turn-wait hold|native consumer proof rejects|R8:|terminal banner projects|native identity preflight|native success without native message ID\" .copilot/extensions/pij/store.test.mjs\n   PASS: 14 passed, zero failed/cancelled/skipped, 129.8 ms.\n\n4. Exact-source SQL probe:\n   nice -n 19 python3 -B, stdin probe extracting LATEST_MATCHING_SQL and\n   applying the repository index migration to in-memory SQLite.\n   PASS: seven checks. This is SQL behavior proof, not a local execution\n   of compiled Rust restoration; that baseline is supplied by exact-head CI.\n\n5. git diff --check over the reviewed delta passed. Working and staged\n   diffs remained empty. No checkout files, dependencies or global settings\n   were changed; no local Rust rebuild or cached Rust test binary was used.\n\nMutation and gate limits:\n\nNo independent round-two mutation run was performed or required as a\nfinal-round gate. The author receipt lists FIVE reportedly caught mutants\nand ONE survivor (R1-M2, removing the daemon idle bound); it does not support\nthe packet's statement that all six were caught. These are author claims,\nnot independent proof.\n\nharness boot --json returned advisory ready:false because this dependency-\nfree review worktree lacks node_modules. No install or dependency symlink\nwas created. Full local harness checks was not rerun and is not claimed\ngreen; C25 keeps missing-dependency TS proof CI-only. No live daemon,\ndeployment, fleet mutation or before/after live-cost measurement was run.\n\nCost and action scope:\n\nThe idle native claim cadence changes from about one request per idle\nCopilot seat per65s to one per55s; this is a real per-seat request-rate\nincrease, not zero new requests. There is no new process launch.\nThe existing claim loop remains; the native wait gains its answer timer.\nRestore adds two indexed bounded reads per eligible seat once per daemon.\nAt capacity D2 scans at most512 entries for oldest/expiry work per service\nrefusal; the eviction total is a numeric snapshot.\nNo new automatic restart or destructive action is introduced.\nLive cost acceptance remains separate from this security verdict.\n"
+		}
+	]
+}
