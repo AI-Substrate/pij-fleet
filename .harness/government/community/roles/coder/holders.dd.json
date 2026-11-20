@@ -1294,6 +1294,16 @@
 					"seat": "pij-cultural-falcon",
 					"to": "2026-11-19T12:01:04.069Z",
 					"why": "F227 (dead role holders), prime's next item after F226"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T00:46:39.943Z",
+					"harness": "omp",
+					"harness_session": "01a1f66b-21d0-7652-8b03-da1df9910ceb",
+					"instance_key": "f228",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-forthcoming-silkworm",
+					"why": "F228 flaky real-tmux/timing tests; prime: parallel to falcon"
 				}
 			]
 		}
