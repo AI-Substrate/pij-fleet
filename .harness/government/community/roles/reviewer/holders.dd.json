@@ -2201,6 +2201,16 @@
 					"seat": "pij-innovative-jay",
 					"to": "2026-11-20T03:18:24.927Z",
 					"why": "#278 F228 test-only review, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T03:59:32.233Z",
+					"harness": "copilot",
+					"harness_session": "3be49ca4-fd73-4a61-adec-6950830a6b2c",
+					"instance_key": "280",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-lovely-minnow",
+					"why": "#280 F229 correctness review, fresh seat"
 				}
 			]
 		}
