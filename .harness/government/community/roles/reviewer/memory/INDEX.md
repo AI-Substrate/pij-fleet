@@ -135,4 +135,5 @@
 - [2026-11-20 Receiver visibility needs positive and durable evidence](2026-11-20-receiver-visibility-needs-positive-and.dd.md): Before reviewing Copilot inbox readiness, receiver-lease recovery, or bounded refusal telemetry (review, copilot, receiver, restart, dedupe)
 - [2026-11-20 Retry budgets follow rearming events, not seat lifetimes](2026-11-20-retry-budgets-follow-rearming-events-not.dd.md): Before changing event-rearmed retry budgets or registration error classification; see \#281. (review, retry, cost, registration, f232)
 - [2026-11-20 Returning holders need a queue trigger as well as liveness](2026-11-20-returning-holders-need-a-queue-trigger.dd.md): When reviewing revive/registration hooks, role-queue drains, or their asynchronous regression tests. (review, role-send, registration, proof, f193)
+- [2026-11-21 Socket absence needs a complete holder proof](2026-11-21-socket-absence-needs-a-complete-holder.dd.md): Before reviewing Unix-socket deletion, lsof pathname handling, or a process-fd census (review, sockets, liveness, negative-evidence, f248)
 <!-- /pij:generated -->
