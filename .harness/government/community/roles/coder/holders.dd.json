@@ -1356,6 +1356,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-forthcoming-silkworm",
 					"why": "C34 follow-ups batch (i)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T10:47:54.094Z",
+					"harness": "omp",
+					"harness_session": "01a1f66b-21d0-7652-8b03-da1df9910ceb",
+					"instance_key": "c34ii",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-forthcoming-silkworm",
+					"why": "C34 follow-ups batch (ii), PR #289"
 				}
 			]
 		}
