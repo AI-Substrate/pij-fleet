@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Open before changing per-route timing, moving HeldSpan across tasks, or using route timings as CPU evidence.",
+				"tags": [
+					"timing",
+					"task-local",
+					"cost",
+					"proof"
+				],
+				"title": "Held request time is not CPU attribution"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Extends the immutable-route-counter note with F231 timing. active_us is nonparked handler wall time, not CPU time: SQLite/I/O, pool contention and scheduling remain active; detached/background work after a response is unmeasured. Rank route deltas, then correlate candidates with CPU/profile evidence rather than presenting timing sums as measured CPU utilization.\n\nHeldSpan credits the task-local scope present at DROP, not a captured creator. Spawned tasks do not inherit it; moving a span can lose or misattribute held time. Keep spans sequential on the counted request future and narrow to deliberate parking, never database awaits. The current parks are inbox select, dispatch/canary wait, spawn footer, spawn registration and revive dead-pane settling. Per-request clamping guarantees held <= wall; it does not make cumulative atomic additions saturating.\n\nAccounting cost scales with existing future polls and marked park/wake cycles as well as completed responses. A ready-request microbenchmark alone does not price long-poll wake accounting; retain source/compiler/profile provenance and distinguish pre-rebase binaries from exact-head test proof.\n\nEvidence: security output 2026-11/20-verdict-pr-282-db3ae4d.dd.json; implementation in crates/daemon/src/http/route_counts.rs.\n"
+		}
+	]
+}
