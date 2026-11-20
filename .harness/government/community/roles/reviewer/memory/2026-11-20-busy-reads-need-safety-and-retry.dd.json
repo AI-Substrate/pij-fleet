@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "When a read optimization introduces transient Busy/Unknown errors, or reviewing F232 recovery.",
+				"tags": [
+					"review",
+					"tmux",
+					"busy",
+					"retry",
+					"f232"
+				],
+				"title": "Busy reads need safety and retry eligibility"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Complements the existing consumer-cache, bounded-worker and spawn-handoff notes; this is the transient-error seam learned in #280.\n\nWhen an optimization replaces a fallback read with Busy/Err, trace both safety and retry eligibility. Unknown must not become an empty pane list, absent process or dead-server witness. Revive's preliminary Boolean may stop waiting on an error, but its separate locked observation must still decide. Spawn failure is not death: F211 preserves later binding and parent handoff.\n\nPropagation alone does not establish recovery. CodexBinder records Seen before probing and logs pane-query errors without restoring eligibility. An isolated one-shot error left the valid seat unbound through 30 unchanged ticks; an unrelated new thread triggered binding. This is F232, explicitly ruled a C34 follow-up, with a separate repair assigned to Silkworm. The regression should require recovery after release without another thread/row change, while preserving the existing no-launch quiet cadence.\n\nFor Busy cost claims, qualify the window: #280 skips reads without launches for five seconds, then preserves fork/backoff for a frozen holder. Its independent primed 50 ms timer fired in 53.23 ms; 30 Busy reads forked nothing. Final reviewer evidence, including the consumer matrix and skip mutant, is in `community/roles/reviewer/outputs/2026-11/20-verdict-pr-280-c8d2eab.dd.json`, commit `44e3442169df15dfea3dc5aa430e02a093decabe`.\n"
+		}
+	]
+}
