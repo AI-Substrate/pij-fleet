@@ -133,6 +133,8 @@ export interface ActivityRequest {
 	readonly native_session?: string;
 	readonly pane?: string;
 	readonly state: "working" | "idle";
+	/** F199: whether this session can run reload/new (a human has run /pij in it). */
+	readonly control_context?: "armed" | "unarmed";
 }
 
 export interface HoldRequest {
