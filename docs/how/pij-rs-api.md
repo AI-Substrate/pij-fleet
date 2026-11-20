@@ -70,8 +70,9 @@ a write transaction; a responsive HTTP listener alone is not healthy. HTTP 200
 has `ok:true`, `data.status:"healthy"` and
 `data.store:{status:"healthy",timeout_ms:2000}`. `data.spawns:{total,by_op}` counts
 the processes this daemon has launched since it started, by `<program>.<site>`
-operation (`ps.proc-liveness`, `tmux.send-keys`, `git.orchestration-repo`, ...); the
-`by_op` values sum to `total` (plan 180). Delivering to a Claude seat launches
+operation (`ps.registration-native-process`, `tmux.pipe-pane attach`,
+`git.community`, ...: `crates/testkit/tests/spawn_sites.rs` keeps every launch
+recorded); the `by_op` values sum to `total` (plan 180). Delivering to a Claude seat launches
 nothing: the socket transport reads the peer's start in-process, once per
 resolution, and `deliver` reuses the endpoint its own probe resolved after a fresh
 start re-read (plan 218, retiring `ps.uds-peer-start`). `data.pid` is the daemon's own process

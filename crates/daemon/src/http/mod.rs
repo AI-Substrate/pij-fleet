@@ -983,13 +983,14 @@ async fn pane_harness_identity(
     pane_pid: u32,
     harness: Harness,
 ) -> Result<Option<PaneHarnessIdentity>> {
-    let candidate =
-        tokio::task::spawn_blocking(move || pij_tmux::harness_process_tree(pane_pid, harness))
-            .await
-            .map_err(|error| PijError::Adapter {
-                adapter: "harness-process".to_string(),
-                message: error.to_string(),
-            })?;
+    let candidate = tokio::task::spawn_blocking(move || {
+        pij_tmux::harness_process_tree(pane_pid, harness, pij_harnesses::proc::local_start)
+    })
+    .await
+    .map_err(|error| PijError::Adapter {
+        adapter: "harness-process".to_string(),
+        message: error.to_string(),
+    })?;
     if let Some(observed) = candidate
         && state
             .services

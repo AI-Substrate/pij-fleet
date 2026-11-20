@@ -70,7 +70,11 @@ impl CodexThreads for PaneCodexThreads {
         };
         let pane_pid = pane_process.pid;
         let held = tokio::task::spawn_blocking(move || {
-            let host = pij_tmux::harness_process_tree(pane_pid, Harness::Codex)?;
+            let host = pij_tmux::harness_process_tree(
+                pane_pid,
+                Harness::Codex,
+                pij_harnesses::proc::local_start,
+            )?;
             let files = pij_harnesses::codex::process_files(host.identity.pid);
             Some(CodexThread {
                 proc: host.identity,

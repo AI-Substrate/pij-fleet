@@ -320,7 +320,12 @@ async fn adopt_records_harness_child_not_pane_shell() {
 async fn register_walk_and_sqlite_roundtrip_preserve_identical_process_start() {
     use pij_core::ports::LivenessPort as _;
     let child = HarnessChild::new();
-    let walk = pij_tmux::harness_process(child.shell.id(), Harness::Claude).expect("walk identity");
+    let walk = pij_tmux::harness_process(
+        child.shell.id(),
+        Harness::Claude,
+        pij_harnesses::proc::local_start,
+    )
+    .expect("walk identity");
     assert_eq!(walk.pid, child.child_pid);
     let liveness = pij_harnesses::proc::ProcLiveness::new();
     let native = liveness
@@ -551,7 +556,7 @@ async fn pane_fallback_preserves_claim_and_rebounds_for_new_unrecognized_process
         );
         // The synthetic claude command is deliberately unrecognized as OMP.
         assert_eq!(
-            pij_tmux::harness_process(pane_pid, Harness::Omp)
+            pij_tmux::harness_process(pane_pid, Harness::Omp, pij_harnesses::proc::local_start)
                 .expect("pane fallback")
                 .pid,
             pane_pid
