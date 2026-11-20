@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Open when a real-tmux test loses its server in CI but not locally, or before changing control-client attach/exit or _pij handling",
+				"tags": [
+					"tmux",
+					"f237",
+					"f238",
+					"flake",
+					"stress",
+					"ci"
+				],
+				"title": "tmux flakes: reproduce on CI's tmux version, read the server log, measure before believing a fix"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F237/F238 lessons (tmux control-client crashes):\n- CI runs ubuntu-24.04 = tmux 3.4; local is Homebrew 3.6a. A CI-only tmux flake: build that version from the release tarball (configure needs --enable-utf8proc plus Homebrew libevent/ncurses/utf8proc on PKG_CONFIG_PATH, about 20 s) and put it first on PATH for the test binary.\n- Loop the built test binary directly (nice -n 19, 8 parallel, 2000 runs) and count failures AND new ~/Library/Logs/DiagnosticReports/tmux-*.ips. A crash can land in teardown without failing the test. Crash reports give the stack.\n- A wrapper `tmux` on PATH that adds -vv gives a server log, but the logging slows tmux enough to hide races (0/600). Use it once to learn the sequence, never for rates.\n- Mechanism found: a control client marked dead but not yet lost does not count as attached, so destroy-unattached destroys _pij under it, and its client-detached notify derefs a NULL curw (SIGSEGV server_client_get_pane). ONE exit suffices. Serializing exits did not fix it (13/2000); destroy-unattached off, or a teardown over the live pipe (kill an alone _pij, else switch it off), did (0/2000).\n- Measure the proposed fix before reporting it: my first draft claimed 0/1000 for serial drops, and the run said otherwise. Report the shape change to the PM with numbers.\n- testkit's arch_drift pins external deps per crate (ratified graph). Put syscalls like getuid in pij-core (already allowed nix), not in pij-tmux.\n- just bounce-rs used SIGTERM, which the daemon did not handle (no Drop ran). pij-rs daemon bounce uses SIGINT and waits.\n"
+		}
+	]
+}
