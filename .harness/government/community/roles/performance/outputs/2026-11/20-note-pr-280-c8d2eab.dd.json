@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"head": "c8d2eab2fc9e073d8c8b8de27dbb53e8141ec315",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:280",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Read published reviewer output44e3442169df15dfea3dc5aa430e02a093decabe and previously supplied diagnostic logs/diffs. No runtime rerun by performance seat.",
+					"exit_code": 0,
+					"log": "Published meta confirms c8d2eab head/pass-with-notes; evidence persists timer30read, Busy-to-Fork mutation and one-shot Codex binder proof. F232 accepted followup, not block."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Final-round runtime/F232 evidence addendum; head c8d2eab2fc9e073d8c8b8de27dbb53e8141ec315. Performance PASS-WITH-NOTES e60182f8e4465edc1563fa456d8007ac8aaedf6b remains unchanged.\n\nDurable source inspected: reviewer PASS-WITH-NOTES44e3442169df15dfea3dc5aa430e02a093decabe, `community/roles/reviewer/outputs/2026-11/20-verdict-pr-280-c8d2eab.dd.json`, meta/notes_owed/evidence. This replaces the earlier unavailable-binder-receipt limit in the performance verdict. No machine-local artifact paths are cited; no tests/builds rerun by this seat.\n\nP280-001 independent diagnostic: separate holder PROCESS, current-thread Tokio,30Busy reads in4.039625ms and0forks; primed50ms timer53.234916ms; pane_process/kill return Err and live-only calls None. Next read after release starts exactly1control client and0forks. The normal held-lock sensor passed20/20; a Busy-to-Fork mutant failed because the pane list answered rather than skipped. This proves the initial5sBusy behavior, not indefinitely frozen-holder launch freedom or a live-fleet rate.\n\nF232 diagnostic now inspected and durable: real CodexBinder with boundary-injected fake pane_pidErr once on otherwise-valid facts. First bind_once leaves row unbound;30manual calls with unchanged facts issue no further probes and keep it unbound; an unrelated new thread lock then permits binding. This is binder-policy proof, not30scheduled5sintervals, a150smeasurement or a real Codex/flock scenario. The supplied test exited0,1passed,0failed. The probe intentionally asserts the current bad retry behavior and must change if retained for the F232 fix.\n\nF232 remains the prime-approved separate follow-up, owned by Silkworm; no added review round. S280-001 likewise remains a follow-up. The reviewer output reports local harness environment/dependency failures, so this addendum asserts the named diagnostic results, NOT a full local harness-gate pass. Deployment measurement remains gated on the prime."
+		}
+	]
+}
