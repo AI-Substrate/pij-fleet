@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Before publishing crash-report stubs or treating scanText as C21 privacy proof.",
+				"tags": [
+					"privacy",
+					"c21",
+					"diagnostics",
+					"proof"
+				],
+				"title": "Home-relative diagnostic paths evade portability scans"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Extends public-live-receipts-review-heads: directly scanning an excluded ledger with local-path-check's scanText still misses home-relative locators. LOCAL_HOME_PATTERNS recognizes only absolute user-home paths; operational portability is not a general C21 privacy sanitizer.\n\nFor public diagnostic stubs, check home-relative paths outside pij's allowed layout even when no username appears. Report categories and line numbers, not matched paths. A dedicated public-ledger privacy sensor should enforce C21's layout boundary rather than ban legitimate home-relative configuration references.\n\nEvidence: harness/scripts/local-path-check.ts, LOCAL_HOME_PATTERNS and scanText; #278's original docs/difficulties.md:191 finding, resolved by a ledger-only replacement at 7380b7c within round 1. Security output: d4c0c1f.\n"
+		}
+	]
+}

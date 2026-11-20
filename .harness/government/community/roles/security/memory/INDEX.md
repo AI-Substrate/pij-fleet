@@ -69,6 +69,7 @@
 - [2026-11-19 Usage records need extraction boundaries](2026-11-19-usage-record-extraction-boundaries.dd.md): Read before reviewing local usage-analysis scripts or claiming a mixed JSONL reader is usage-only. (usage-records, privacy, review, proof)
 - [2026-11-19 Verify the active Copilot SDK registration contract](2026-11-19-verify-the-active-copilot-sdk.dd.md): Open before reviewing Copilot hook/tool wiring or upgrading the bundled SDK. (copilot, sdk, hooks, contract-proof)
 - [2026-11-20 Abandoned revive reads retain control-client cleanup](2026-11-20-abandoned-revive-reads-retain-control.dd.md): Open before changing revive-wait cancellation or claiming abandoned tmux reads are side-effect-free or bounded by REPLY\_TIMEOUT. (revive, cancellation, tmux, c34)
+- [2026-11-20 Home-relative diagnostic paths evade portability scans](2026-11-20-home-relative-diagnostic-paths-evade.dd.md): Before publishing crash-report stubs or treating scanText as C21 privacy proof. (privacy, c21, diagnostics, proof)
 - [2026-11-20 Native recovery needs positive evidence and scoped replay](2026-11-20-native-recovery-needs-positive-evidence.dd.md): Read before changing native claim idle answers, receiver-lapse replay, or refusal overflow handling. (copilot, native-recovery, spine, telemetry, c34)
 - [2026-11-20 Recover probe receipts from saved tool events](2026-11-20-recover-probe-receipts-from-saved-tool.dd.md): Open when a delegated security review returns only a verdict despite an evidence follow-up. (review, evidence, delegation, recovery)
 <!-- /pij:generated -->
