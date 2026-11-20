@@ -1,0 +1,64 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f785-ca3f-7600-8073-9a9c63fb75cc",
+				"date": "2026-11-20",
+				"head": "31bd3c9a09ff70311b97a0b1dd2911ec6cf1dc43",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44683568763",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:279",
+				"writer": "pij-small-whitefish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"F233: accepted crash/git-index plus second-clear recovery residual; falcon follows after F231. Retained RED is not healed."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --test directory_http reviewer_carry_",
+					"exit_code": 0,
+					"log": "Own exact-head local rerun: 2 executed, 2 passed, 0 failed"
+				},
+				{
+					"command": "just shared-build -- clippy --locked -p pij-daemon -p pij-store --all-targets -- -D warnings",
+					"exit_code": 0,
+					"log": "Own scoped macOS clippy PASS; nice19, four jobs, shared target lock"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --test directory_http a_carry_moves_nothing_unless_one_launch_crossed_a_native_boundary -- --exact",
+					"exit_code": 101,
+					"log": "Own isolated store launch-equality mutation CAUGHT: 1 executed test failed expected unproven assertion; mutant permitted CarriedMail across unequal launches. Original guard passes CI; source restored and copies removed."
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --test directory_http reviewer_r2_second_clear_after_git_before_index_is_recovered",
+					"exit_code": 101,
+					"log": "Peer-owned unchanged-product F233 RED: Queued/None vs Delivered/pij-final. Verified prime-governance:.harness/records/retro/2026-11-20/review-279-r2-overlap.log; accepted for shipment under C34."
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "Own local quick inventory: native contracts/SDK and skill passed; eight TS/tooling stages unavailable/incompatible under C25, heavy stages skipped. Exact-head CI run44683568763 passed; JUnit artifact14605746256 confirms all10 selected carry/intent/answer/drain tests executed successfully."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES at 31bd3c9a09ff70311b97a0b1dd2911ec6cf1dc43.\n\nNo finding OTHER than F233 was identified in the reviewed delta, security or correctness. No new C33 authorization bypass or C21 public-content issue was found. F233 is a real, reproduced correctness/availability defect, accepted for shipment by the prime under C34; this verdict does not claim it is healed.\n\nScope: final commit 10b6bec5649733562d7c67c61ae2574bfa120d0b..31bd3c9a09ff70311b97a0b1dd2911ec6cf1dc43, seven files, on review base 7ec3e17654b62a0bef6e66534f6386e6e20a1280. Round 1 stands for unchanged code. Rebase comparison against 9ffc5729843e9e0aac6825165a7de31b4d30d6ce..30040fc8653d05fea322ed48d63ee8e5a08f7ee1 proved identical added/deleted patch bytes in all twelve non-ledger files; docs/difficulties.md is the sole rebase exception. The final delta received its own source review and proof.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/daemon/src/community/directory.rs | 2313-2314 | F233: a second clear after governance commits to an intermediate successor but before index admission leaves the request queued without a holding at the live end. Accepted correctness residual, not an authorization bypass. | 9/10 |\n\nF233 evidence and disposition:\n- A->B records intent and commits governance: A is ended with \"carried to B\" and B holds the role (directory.rs:2307-2338). Execution stops before the atomic index write at 2383-2402.\n- B->C occurs on the same launch. A's redo correctly finds C and retains its intent scope, but skips A's closed governance row because its destination B differs from C (2313-2314). No holding is reconciled to C.\n- The empty reconciliation is still returned as landed (2357-2362,2376-2378,2404). carry.rs:299,313-327 includes the role in mail scope; role_requests.rs:975-985,1013-1031 requeues A's request and records completion. B's later scope comes from its empty index (carry.rs:385-395), and completed redos cannot repair C's absent holding.\n- The correctness peer's unchanged-product test `reviewer_r2_second_clear_after_git_before_index_is_recovered` ran once and failed, exit 101: actual `(Queued, None)`, expected `(Delivered, Some(\"pij-final\"))`. The retained portable receipts are `prime-governance:.harness/records/retro/2026-11-20/review-279-r2-overlap.log` and `review-279-r2-overlap.diff`; the scrubbed log was read and verified. Exact command: `just shared-build -- test --locked -p pij-daemon --test directory_http reviewer_r2_second_clear_after_git_before_index_is_recovered`. This is not a product mutation.\n- pm-001 relayed the prime's explicit C34 acceptance in message 7c8d1bb8-8fe6-447c-9b03-3b3b5b3a3ada. The PR body at this head names F233 as a known residual, with falcon fixing it after F231 and adopting the peer probe as its RED test. F233 therefore remains an explicit follow-up, not a block or a claimed PASSing recovery case.\n\nFix and security conclusions:\n- R279-001's index ends, starts and role events now commit together in `carry_assignments_committed` (crates/store/src/community.rs:264-300). A non-live successor rolls the entire transaction back. The adopted isolated index-cut regression passes; F233 concerns reconciliation across a later boundary, not a split index transaction.\n- R279-002's basic queued A->B->C case now walks to the live end. `live_chain` (carry.rs:65-117) rejects malformed/non-native reasons, missing seats, missing/unequal launch IDs and unrelated destinations.\n- `carry_mail_committed` (role_requests.rs:936-973) rereads every hop in the same mail transaction: exact predecessor/successor native-boundary reasons, one present launch ID throughout, retired intermediates and a live end. Failed proof returns E-RS-CARRY-UNPROVEN before mail or completion writes. No HTTP route to the carry store methods was identified.\n- Completion is keyed by the recorded intent sequence, not predecessor ID (carry.rs:164-204,229-232,254-258). Intent-less redos move nothing; historical unrecorded boundaries are not backfilled. The ID-reuse and crash-before-drain tests pass.\n- Requeue and claim exclude answered requests (role_requests.rs:975-985,1070-1083). The old-answer-before-mail, answer-after-requeue and concurrent F193-drain tests pass. Claims retain their queued-to-delivering CAS and current live-holder checks.\n- Governance work precedes admission-gate acquisition. New waits use Tokio guards, not registration/native std Mutex guards; the directory scratch mutex is released before awaits. The delta adds no credential handling or machine-specific home path.\n- C33's trusted same-user account boundary remains unchanged; this review does not require new per-seat isolation.\n\nKnown bound and cost:\nThe daemon walks at most sixteen hops. A cycle or longer chain returns no carry or drain; a New attempt records no intent, so ancestor work stays unresolved rather than being silently declared recovered. The store proves every supplied hop but does not independently enforce that daemon hop cap. This is a fail-closed supported bound, not a guarantee of arbitrary-length recovery.\n\nNo new steady-state per-tick/per-seat launch path was identified. Chain reads are bounded per carry; the settle wait remains at most 20 x 250 ms with gates released between pauses; governance commits are per held project; boot redo is once per daemon start. No live deploy or before/after fleet measurement was performed in this read-only review.\n\nValidation:\n- `just pr-freeze 279`: PASS at the full head above; remote/checkout agree, CLEAN, latest checks passed. Repeated before publication.\n- Own local regression rerun: `PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-daemon --test directory_http reviewer_carry_`, exit 0. Exactly two tests ran and passed: `reviewer_carry_recovers_crash_between_index_end_and_start` and `reviewer_carry_reaches_latest_successor_after_two_clear_boundaries`.\n- Own macOS scoped clippy: `PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- clippy --locked -p pij-daemon -p pij-store --all-targets -- -D warnings`, exit 0.\n- Own non-equivalent mutation: remove only the all-seat launch-equality conjunction in role_requests.rs:950-954, leaving the daemon guard intact. `PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-daemon --test directory_http a_carry_moves_nothing_unless_one_launch_crossed_a_native_boundary -- --exact`, exit 101. Exactly one test ran and failed at the direct-store `expect_err(\"unproven\")`: the mutant returned CarriedMail for unequal launches. This independently demonstrates the store proof. The unchanged guard test passed in exact-head CI. The mutation was restored; disposable source copies were removed, with the review checkout unchanged.\n- Final-head CI run 44683568763 passed. The successful rust-test job 136112454342 uploaded artifact 14605746256; ZIP SHA-256 `4d87ac74662514857e0b33145e148f6de8a6b8d69513f288ea8389fa0a83369a`. All ten selected carry/intent/answer/drain regressions were checked in its JUnit and executed successfully. The new peer-owned F233 probe is separately retained RED and is not claimed included in that green CI.\n- C25: no local TypeScript dependency symlinks or installations. Boot was advisory NOT-READY. `harness checks --quick` exited 1 with eight local TS/tooling failures caused by absent dependencies or incompatible ambient Biome; native contracts/SDK and skill passed. Heavy stages were intentionally skipped in that local quick invocation, not claimed green. Exact-head full CI and the peer's full macOS gate supply the broader evidence; the peer reported Rust, routes, native and smoke PASS, with the same local TS environment limitation.\n\nHarness retrospective:\nmagicWand: one carry-proof recipe should compose successor transitions with every durable publication boundary, not only test each recovery window and chain walk separately.\ndifficulties: a passing isolated index-cut test and a passing queued-chain test did not prove their composition. The retained F233 portable RED now encodes that missing proof for the assigned fix. Shared-target serialization delayed local receipts but was respected; no shared sources, toolchain or live fleet state were changed.\n"
+		}
+	]
+}
