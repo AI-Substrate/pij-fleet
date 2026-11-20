@@ -2183,10 +2183,11 @@ async fn a_lapsed_native_receiver_is_flagged_in_the_digest() {
     let body = &digests[0].body;
     assert!(
         body.contains(
-            "pij-silent  receiver-lapsed: native receiver lease lapsed (not renewed by this incarnation since the daemon started), so sends to it are refused (native-extension-unavailable). Reload the seat's extension (extensions_reload)"
+            "pij-silent  receiver-lapsed: native receiver lease lapsed (not renewed by this incarnation since the daemon started), so sends to it are refused (native-extension-unavailable), and an extensions_reload ask cannot reach it either. Restart it from its pane: `pij send pij-silent --command restart` (Copilot's /restart, typed when the seat is idle with an empty composer; it keeps the session)"
         ),
         "{body}"
     );
+    assert!(!body.contains("Reload the seat's extension"), "{body}");
     assert!(
         body.contains(
             "pij-stalled  receiver-lapsed: native receiver lease lapsed (last renewed 1m ago)"

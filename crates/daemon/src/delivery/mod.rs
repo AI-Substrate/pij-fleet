@@ -48,6 +48,14 @@ const PUSHED_EVENT_KIND: &str = "message.pushed";
 pub(crate) const FYI_ID_TAKEN: &str = "E-RS-FYI-ID-TAKEN";
 const NATIVE_RECEIVER_UNAVAILABLE: &str = "native-extension-unavailable";
 const NATIVE_RECEIVER_RENEWAL_DIVISOR: u64 = 3;
+/// D1: the spine kinds of a native receiver lease's two edges.
+const NATIVE_RECEIVER_LAPSED: &str = "native.receiver.lapsed";
+const NATIVE_RECEIVER_RENEWED: &str = "native.receiver.renewed";
+/// R277-1: how long a native (Copilot) claim waits idle before the daemon
+/// answers an empty page, under the extension's 65 s request timeout, so an
+/// idle receiver gets an answer from the daemon instead of timing out
+/// client-side. Only the idle wait is bounded; a claim in flight is never cut.
+pub(crate) const NATIVE_IDLE_ANSWER: Duration = Duration::from_secs(55);
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 /// One claimed inbox row. Native clients acknowledge only after SDK acceptance;
@@ -247,6 +255,16 @@ pub struct DeliveryService {
     clock: Arc<Clock>,
     native_lock: Arc<tokio::sync::Mutex<()>>,
     native_receivers: tokio::sync::Mutex<HashMap<SeatId, NativeReceiverLease>>,
+    /// D1: the seats whose lease lapse has been told (`native.receiver.lapsed`)
+    /// and that have not renewed since. Edge state only, so a lapse is told once
+    /// however often reconciliation runs. Bounded by the live native Copilot
+    /// seats: pruned with the leases on every reconciliation.
+    native_lapsed: tokio::sync::Mutex<std::collections::HashSet<SeatId>>,
+    /// R277-2: [`Self::native_lapsed`] is restored from the spine once per
+    /// daemon, before the first heartbeat or reconciliation reads it.
+    native_edges_restored: tokio::sync::OnceCell<()>,
+    /// R277-1: [`NATIVE_IDLE_ANSWER`], in ms; tests shorten it.
+    native_idle_answer_ms: AtomicU64,
     native_started_at: tokio::time::Instant,
     native_deadline_checked_at: tokio::sync::Mutex<tokio::time::Instant>,
     native_receiver_changed: tokio::sync::Notify,
@@ -358,6 +376,9 @@ impl DeliveryService {
             clock: sources.clock,
             native_lock: Arc::new(tokio::sync::Mutex::new(())),
             native_receivers: tokio::sync::Mutex::new(HashMap::new()),
+            native_lapsed: tokio::sync::Mutex::new(std::collections::HashSet::new()),
+            native_edges_restored: tokio::sync::OnceCell::new(),
+            native_idle_answer_ms: AtomicU64::new(NATIVE_IDLE_ANSWER.as_millis() as u64),
             native_started_at: tokio::time::Instant::now(),
             native_deadline_checked_at: tokio::sync::Mutex::new(tokio::time::Instant::now()),
             native_receiver_changed: tokio::sync::Notify::new(),
@@ -374,6 +395,13 @@ impl DeliveryService {
 
     pub(crate) fn native_lock(&self) -> Arc<tokio::sync::Mutex<()>> {
         Arc::clone(&self.native_lock)
+    }
+
+    /// Shorten [`NATIVE_IDLE_ANSWER`] for a test of the idle answer.
+    #[cfg(test)]
+    pub(crate) fn set_native_idle_answer(&self, bound: Duration) {
+        self.native_idle_answer_ms
+            .store(bound.as_millis() as u64, Ordering::Relaxed);
     }
 
     /// Registration/claim attests the tuple, not liveness. Only the first
@@ -427,6 +455,9 @@ impl DeliveryService {
         report: Option<ReportedPrecedence>,
     ) -> Result<NativeReceiverHeartbeat> {
         let _guard = self.native_lock.lock().await;
+        if renew {
+            self.restore_receiver_edges().await;
+        }
         self.inbox_recipient(seat, identity)
             .await?
             .filter(|seat| seat.harness == Harness::Copilot && seat.native_extension_delivery)
@@ -452,12 +483,121 @@ impl DeliveryService {
             .as_millis() as u64;
         drop(receivers);
         self.native_receiver_changed.notify_one();
+        // D1: the heartbeat that ends a told lapse says so, once.
+        if renew && self.native_lapsed.lock().await.remove(seat) {
+            let at = (self.clock)().ok();
+            self.tell_receiver_edge(NATIVE_RECEIVER_RENEWED, seat, at)
+                .await;
+        }
         Ok(NativeReceiverHeartbeat {
             state: "live",
             lease_ms,
             renew_after_ms: (lease.as_millis() as u64 / NATIVE_RECEIVER_RENEWAL_DIVISOR)
                 .min(lease_ms.saturating_sub(1)),
         })
+    }
+
+    /// R277-2: D1's edge state outlives a restart. Once per daemon, before the
+    /// first heartbeat or reconciliation reads it, each live native Copilot
+    /// seat whose last lease edge on the spine is `native.receiver.lapsed` is
+    /// marked lapsed again: it is not told lapsed a second time, and the
+    /// heartbeat that renews it tells `native.receiver.renewed`. One roster
+    /// read and one indexed spine read per live native Copilot seat, once. A
+    /// failed read restores nothing for that seat, which can only tell more.
+    async fn restore_receiver_edges(&self) {
+        self.native_edges_restored
+            .get_or_init(|| async {
+                let seats = match self
+                    .registry
+                    .list(SeatFilter {
+                        harness: Some(Harness::Copilot),
+                        live_only: true,
+                        ..SeatFilter::default()
+                    })
+                    .await
+                {
+                    Ok(seats) => seats,
+                    Err(error) => {
+                        eprintln!("pij-rs could not restore native receiver edges: {error}");
+                        return;
+                    }
+                };
+                let spine = self.event_bus.raw_spine();
+                let mut lapsed = Vec::new();
+                for seat in seats
+                    .iter()
+                    .filter(|seat| seat.native_extension_delivery && seat.tombstoned_at.is_none())
+                {
+                    match spine
+                        .latest_matching(
+                            &seat.id,
+                            &[NATIVE_RECEIVER_LAPSED, NATIVE_RECEIVER_RENEWED],
+                        )
+                        .await
+                    {
+                        Ok(Some(event)) if event.kind == NATIVE_RECEIVER_LAPSED => {
+                            lapsed.push(seat.id.clone());
+                        }
+                        Ok(_) => {}
+                        Err(error) => eprintln!(
+                            "pij-rs could not restore the receiver edge of {}: {error}",
+                            seat.id
+                        ),
+                    }
+                }
+                self.native_lapsed.lock().await.extend(lapsed);
+            })
+            .await;
+    }
+
+    /// D1: one spine event (`kind`, `{seat, renewed_at}`, epoch ms or `null`)
+    /// and one daemon.log line per lease edge. Never fails its caller: the
+    /// heartbeat or reconciliation it rides on goes on whatever the audit write
+    /// does, and the edge counts as told either way (at most one line and one
+    /// event per edge).
+    async fn tell_receiver_edge(&self, kind: &str, seat: &SeatId, renewed_at: Option<u64>) {
+        let when = renewed_at.map_or_else(
+            || "not renewed since the daemon started".to_string(),
+            |at| format!("renewed_at {at}"),
+        );
+        eprintln!("pij-rs {kind} {seat}: {when}");
+        let at = match (self.clock)() {
+            Ok(at) => at,
+            Err(error) => {
+                eprintln!("pij-rs could not stamp {kind} for {seat}: {error}");
+                return;
+            }
+        };
+        let payload = serde_json::json!({ "seat": seat, "renewed_at": renewed_at }).to_string();
+        if let Err(error) = self
+            .event_bus
+            .publish(Event {
+                seq: None,
+                v: 1,
+                at,
+                kind: kind.to_string(),
+                seat: Some(seat.clone()),
+                payload,
+            })
+            .await
+        {
+            eprintln!("pij-rs could not record {kind} for {seat}: {error}");
+        }
+    }
+
+    /// When `seat`'s own incarnation last renewed, in epoch ms; `None` when it
+    /// has not since this daemon started (or only another incarnation did).
+    async fn last_renewal_ms(&self, seat: &SeatDescriptor) -> Option<u64> {
+        let now = (self.clock)().ok()?;
+        let receivers = self.native_receivers.lock().await;
+        receivers
+            .get(&seat.id)
+            .filter(|receiver| receiver.identity.matches(seat))
+            .map(|receiver| {
+                now.saturating_sub(
+                    u64::try_from(receiver.renewed_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                )
+            })
     }
 
     /// This incarnation's lease, started afresh when the incarnation changed.
@@ -628,6 +768,7 @@ impl DeliveryService {
     /// Working hosts and held/deferred bodies do not conceal an absent receiver.
     pub(crate) async fn reconcile_native_receivers(&self) -> Result<usize> {
         let mut guard = self.native_lock.clone().lock_owned().await;
+        self.restore_receiver_edges().await;
         // A failed attempt retries at the ordinary cadence instead of spinning
         // on the same elapsed deadline. New renewals install new deadlines.
         *self.native_deadline_checked_at.lock().await = tokio::time::Instant::now();
@@ -640,21 +781,29 @@ impl DeliveryService {
                 ..SeatFilter::default()
             })
             .await?;
-        self.native_receivers.lock().await.retain(|id, _| {
-            seats.iter().any(|seat| {
-                &seat.id == id
-                    && seat.harness == Harness::Copilot
-                    && seat.native_extension_delivery
-                    && seat.tombstoned_at.is_none()
-            })
-        });
-        let mut parked = 0;
-        for seat in seats.iter().filter(|seat| {
+        let native = |seat: &SeatDescriptor| {
             seat.harness == Harness::Copilot
                 && seat.native_extension_delivery
                 && seat.tombstoned_at.is_none()
-        }) {
+        };
+        self.native_receivers
+            .lock()
+            .await
+            .retain(|id, _| seats.iter().any(|seat| &seat.id == id && native(seat)));
+        self.native_lapsed
+            .lock()
+            .await
+            .retain(|id| seats.iter().any(|seat| &seat.id == id && native(seat)));
+        let mut parked = 0;
+        for seat in seats.iter().filter(|seat| native(seat)) {
             if !self.native_receiver_live(seat).await {
+                // D1: the live-to-lapsed edge is told once, on the reconciliation
+                // that first finds it; later ones (each tick) say nothing more.
+                if self.native_lapsed.lock().await.insert(seat.id.clone()) {
+                    let renewed_at = self.last_renewal_ms(seat).await;
+                    self.tell_receiver_edge(NATIVE_RECEIVER_LAPSED, &seat.id, renewed_at)
+                        .await;
+                }
                 let (count, next_guard) = self.park_native_receiver(&seat.id, guard).await?;
                 parked += count;
                 guard = next_guard;
@@ -1833,6 +1982,10 @@ impl DeliveryService {
             };
             self.event_bus.subscribe_live(filter.for_seat(seat.clone()))
         });
+        // R277-1: a native claim's idle wait ends at this deadline with an
+        // empty page; the loop only ever stops here, between claims.
+        let idle_until = tokio::time::Instant::now()
+            + Duration::from_millis(self.native_idle_answer_ms.load(Ordering::Relaxed));
         loop {
             // Native claims are queue ownership, not permission to inject. The
             // receiver owns native consent; typing is never a native gate.
@@ -2107,10 +2260,16 @@ impl DeliveryService {
             let Some(subscription) = wake.as_mut() else {
                 return Ok(NativeInboxPage::default());
             };
+            if native && tokio::time::Instant::now() >= idle_until {
+                return Ok(NativeInboxPage::default());
+            }
             tokio::select! {
                 event = subscription.next() => { if event.is_none() { return Ok(NativeInboxPage::default()); } }
                 _ = tokio::time::sleep(Duration::from_millis(500)), if native && during_turn.is_none() => {}
                 _ = tokio::time::sleep(DURING_TURN_BACKSTOP), if during_turn.is_some() => {}
+                () = tokio::time::sleep_until(idle_until), if native => {
+                    return Ok(NativeInboxPage::default());
+                }
             }
         }
     }
