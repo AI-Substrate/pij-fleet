@@ -1,0 +1,59 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f6ea-1530-7513-8c3c-25e126fcbf2d",
+				"date": "2026-11-20",
+				"head": "7380b7ced3bcfc40bc58411581e0bef8c843750b",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:278",
+				"writer": "pij-innovative-jay",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 278",
+					"exit_code": 0
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-tmux --test adapter separate_adapters_cannot_both_reserve_one_pane -- --exact --nocapture --test-threads=1",
+					"exit_code": 0,
+					"log": "20 of 20 invocations passed in one locked --then batch"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib compaction_wake::tests::a_dropped_caller_never_leaves_a_compact_admitted_untracked -- --exact --nocapture --test-threads=1",
+					"exit_code": 0,
+					"log": "20 of 20 invocations passed in the same locked --then batch"
+				},
+				{
+					"command": "just shared-build -- clippy --locked -p pij-tmux -p pij-daemon --all-targets -- -D warnings",
+					"exit_code": 0
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "Missing review-worktree dependencies; ambient Biome incompatible. Exact-head CI green; no local full-gate pass claimed."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Round 1: PASS WITH NOTES at 7380b7ced3bcfc40bc58411581e0bef8c843750b.\n\nReviewed b65235f2056ff44000ad19034fd8c261aa92168c read-only, then independently checked the GitHub comparison to 7380b7ced3bcfc40bc58411581e0bef8c843750b: one direct-child commit, only docs/difficulties.md changed, removing the F229 home-path reference. The two Rust test files are unchanged. just pr-freeze 278 reconfirmed this new head FINAL, CLEAN, non-draft, with all five latest checks passing. The initial C21 finding is resolved within this round.\n\n1. CAS coverage remains intact (crates/tmux/tests/adapter.rs:900-973). Each racer has a separately constructed adapter, submit mutex and control client. Warm-up finishes before its thread enters Barrier(3); both acquire_submit calls remain after that barrier. Nothing serializes those reservations together outside tmux's intended atomic CAS. The assertions require exactly one winner, the loser's staged-submit refusal, the winner's marker/input state, and successful cleanup. Independent rerun: 20/20 passed with real tmux 3.6a.\n\n2. Teardown retains the real failure branch (adapter.rs:2273-2298). It ports the existing pane_observer fixture contract. A nonzero kill result is accepted only if list-sessions also fails, except while already unwinding. A failed command launch is not accepted as evidence of disappearance. Independent, session-only tmux shim: killing the server then returning 1 passes; returning 1 without killing it correctly fails at the teardown assertion (cargo exit 101). The surviving isolated fixture was killed and its disappearance verified. The shim was removed and is not committed.\n\n3. Cancellation coverage remains meaningful (compaction_wake_tests.rs:638-738). The late cases wait for the committed compaction row before advancing the caller, while retaining early-drop cases. The delivery flush joins the actual owned admission JoinSet and reports task failure; it is not a sleep. The terminal assertion still requires at least one admission whose caller had not completed before being dropped, and every admitted compact must have its tracking row. Independent rerun: 20/20 passed, each enforcing that in-flight witness.\n\n4. Scope and cost: only integration tests, a cfg(test) module and two ledger rows differ from the reviewed main baseline. No production loop, poll, timer, hook, process-launch site, dependency or lockfile changed; steady-state production cost and per-seat scaling are unchanged. Control-client warm-up relocates existing fixture startup before the CAS race; the added list-sessions launch is once per failed fixture teardown, not per daemon tick. The F229 stub now contains no home path or username, and no secrets or committed mutation shim were found in the scoped diff.\n\nIndependent commands and results:\n- Under one just shared-build lock, with the cargo-target.sh-selected target, CARGO_INCREMENTAL=0, nice-only and one test thread: test --locked -p pij-tmux --test adapter separate_adapters_cannot_both_reserve_one_pane -- --exact --nocapture --test-threads=1, repeated 20 times: passed 20/20.\n- Same locked batch: test --locked -p pij-daemon --lib compaction_wake::tests::a_dropped_caller_never_leaves_a_compact_admitted_untracked -- --exact --nocapture --test-threads=1, repeated 20 times: passed 20/20.\n- just shared-build -- clippy --locked -p pij-tmux -p pij-daemon --all-targets -- -D warnings: passed on macOS.\n- Shared-build adapter capture test with the two teardown shim modes: gone server passed; surviving server failed as required.\n- harness boot: advisory NOT-READY because the read-only review worktree lacks dependencies.\n- harness checks --quick: failed locally on missing tsx/vitest/dependencies and an incompatible ambient Biome; not claimed as a pass. No dependency install or node_modules symlink was made under C25. TypeScript and full-gate proof rely on the exact-head CI and the packet's reported harness receipt, not this local inventory.\n\nKnown limit: this PR works around the fixture's concurrent attach/setup crash; it does not fix the separately tracked production F229 problem. The other unscaled test budgets remain explicitly deferred in D-F228-1. Neither expands this test-only PR's scope.\n\nHarness feedback: the manual C21 finding exposed a proof gap. The existing portability sensor excludes the ledger and checks absolute home paths only. Magic wand: a separate diff-scoped public-ledger privacy sensor for changed text, rather than broadening the operational-path check indiscriminately. Observation DL-001 was captured through harness observe in the session workspace without changing the review checkout.\n"
+		}
+	]
+}
