@@ -7,6 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { setImmediate as flush } from "node:timers/promises";
 import {
+	ACTIVITY_RETRY_MS,
 	AUTH_ERROR_ROUTE,
 	chooseRegistration,
 	createNativeReporter,
@@ -1630,8 +1631,12 @@ test("F207: a tool boundary (root assistant.turn_end, then turn_start) publishes
  * A running bridge whose /v1/activity requests are recorded; stopped after the test.
  * `grant` is the context-report grant its registration answers with (plan 217).
  */
-async function activityBridge(t, answer = () => ({ changed: true }), { grant } = {}) {
-	const f = fixture();
+async function activityBridge(t, answer = () => ({ changed: true }), { grant, delay } = {}) {
+	const f = fixture({
+		...(delay ? { activityDelay: delay } : {}),
+		// No lease renewal: a test re-registers by hand.
+		heartbeatDelay: () => new Promise(() => {}),
+	});
 	if (grant !== undefined) {
 		const register = f.client.request;
 		f.client.request = async (path, body, signal) => {
@@ -1827,6 +1832,93 @@ test("activity: a failed stop-time idle is reported and never throws", async (t)
 		f.reports.filter((event) => event.kind === "activity-unpublished").map((e) => e.state),
 		["idle"],
 	);
+});
+
+/** F230: activity retries wait here; each wait is recorded and ends at once unless held. */
+function recordedWaits() {
+	const waits = [];
+	let hold = false;
+	return {
+		waits,
+		holdNext: () => {
+			hold = true;
+		},
+		delay: (ms, signal) => {
+			waits.push(ms);
+			if (!hold) return flush();
+			hold = false;
+			return new Promise((_resolve, reject) => {
+				if (signal.aborted) reject(signal.reason);
+				signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+			});
+		},
+	};
+}
+
+/** Turn the event loop until `done()`, failing (not hanging) if it never is. */
+async function settles(done, what) {
+	for (let turns = 0; turns < 1_000; turns++) {
+		if (done()) return;
+		await flush();
+	}
+	assert.fail(`never settled: ${what}`);
+}
+
+test("F230: an idle report that failed across a daemon restart lands after re-registration", async (t) => {
+	const retry = recordedWaits();
+	let down = false;
+	const { f, states } = await activityBridge(
+		t,
+		() =>
+			down
+				? Object.assign(new Error("Pij transport unavailable"), { status: 503 })
+				: { changed: true },
+		{ delay: retry.delay },
+	);
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	await flush();
+	down = true;
+	f.event({ type: "session.idle", id: "turn-1-idle", data: {} });
+	await settles(() => retry.waits.length >= ACTIVITY_RETRY_MS.length, "every retry wait");
+	await flush();
+	assert.deepEqual(retry.waits, ACTIVITY_RETRY_MS, "bounded: every wait, then it stops");
+	assert.equal(states().length, 2 + ACTIVITY_RETRY_MS.length);
+
+	// The daemon is back and the seat re-registers; nothing new happened here.
+	down = false;
+	await f.bridge.register("heartbeat");
+	await flush();
+	assert.equal(states().at(-1), "idle", "the lost idle lands");
+	assert.equal(f.bridge.activityPublished, "idle");
+});
+
+test("F230: a failed report retries until it lands, and a newer state supersedes it at once", async (t) => {
+	const retry = recordedWaits();
+	let failures = 2;
+	const { f, states } = await activityBridge(
+		t,
+		() =>
+			failures-- > 0
+				? Object.assign(new Error("Pij HTTP 500"), { status: 500 })
+				: { changed: true },
+		{ delay: retry.delay },
+	);
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	await settles(() => f.bridge.activityPublished === "working", "working lands");
+	assert.deepEqual(states(), ["working", "working", "working"]);
+	assert.deepEqual(retry.waits, ACTIVITY_RETRY_MS.slice(0, 2));
+
+	// The turn ends and the idle report fails; while it waits to retry, a new
+	// turn starts. The idle is never re-sent: only the newer working is.
+	failures = 1;
+	retry.holdNext();
+	f.event({ type: "session.idle", id: "turn-1-idle", data: {} });
+	await settles(() => retry.waits.length >= 3, "the idle retry waits");
+	f.event({ type: "assistant.turn_start", id: "turn-2", data: {} });
+	await settles(() => states().length >= 5, "the newer working is sent");
+	await flush();
+	assert.deepEqual(states().slice(3), ["idle", "working"]);
+	assert.equal(f.bridge.activityPublished, "working");
 });
 
 test("fyi claim: count gates the verbatim block; empty and failed claims add nothing", async () => {
