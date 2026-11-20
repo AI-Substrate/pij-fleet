@@ -125,6 +125,14 @@ function renderState(payload: unknown): string {
 	});
 	// F195: the daemon's receiver line (lapsed, since when, process still running).
 	const receiver = text(payload, "nativeReceiverLine");
+	// F199, F236: an OMP/Pi seat's control context and, when it is unarmed, the
+	// daemon's line naming the human step; the human is the one who must act.
+	const controlContext = text(payload, "controlContext");
+	const controlLine = text(payload, "controlContextLine");
+	const control = [
+		...(controlContext === undefined ? [] : [`control context: ${controlContext}`]),
+		...(controlLine === undefined ? [] : [controlLine]),
+	];
 	const deferrals = field(payload, "deliveryDeferrals");
 	const deferred = Array.isArray(deferrals)
 		? deferrals.map(
@@ -137,7 +145,7 @@ function renderState(payload: unknown): string {
 	const sized = Array.isArray(sizeLines)
 		? sizeLines.filter((line) => typeof line === "string")
 		: [];
-	return `${head}${detail.length === 0 ? "" : `\n  ${detail.join("  ·  ")}`}${receiver === undefined ? "" : `\n${receiver}`}${deferred.length === 0 ? "" : `\n${deferred.join("\n")}`}${sized.length === 0 ? "" : `\n${sized.join("\n")}`}`;
+	return `${head}${detail.length === 0 ? "" : `\n  ${detail.join("  ·  ")}`}${receiver === undefined ? "" : `\n${receiver}`}${control.length === 0 ? "" : `\n${control.join("\n")}`}${deferred.length === 0 ? "" : `\n${deferred.join("\n")}`}${sized.length === 0 ? "" : `\n${sized.join("\n")}`}`;
 }
 
 function renderShimSend(payload: unknown, argv: readonly string[]): string {
@@ -148,14 +156,17 @@ function renderShimSend(payload: unknown, argv: readonly string[]): string {
 			: (outcome ?? "?");
 	const reason = text(outcome, "reason");
 	const msgId = text(payload, "msg_id") ?? "?";
+	// F236: a receipt's warning (F199's unarmed control, plan 159's FYI
+	// question, any later one) is printed on its own line, whatever produced it.
+	const warning = text(payload, "warning");
+	const warned = warning === undefined ? "" : `\n${warning}`;
 	if (word === "held" && reason === "fyi") {
-		const warning = text(payload, "warning");
 		// F169: say the consequence; an FYI wakes no one.
 		const seat = argv.slice(1).find((arg) => !arg.startsWith("--")) ?? "the recipient";
-		return `pij send: held (fyi), ${seat} was NOT woken — ${msgId}${warning === undefined ? "" : `\n${warning}`}`;
+		return `pij send: held (fyi), ${seat} was NOT woken — ${msgId}${warned}`;
 	}
 	const coldCheck = text(payload, "cold_check");
-	return `sent (rs) — msg ${msgId} — receipt ${String(word)}${reason === undefined ? "" : ` — ${reason}`}${coldCheck === undefined ? "" : ` — cold-check: ${coldCheck}`}`;
+	return `sent (rs) — msg ${msgId} — receipt ${String(word)}${reason === undefined ? "" : ` — ${reason}`}${coldCheck === undefined ? "" : ` — cold-check: ${coldCheck}`}${warned}`;
 }
 
 function renderShimInbox(payload: unknown): string {
