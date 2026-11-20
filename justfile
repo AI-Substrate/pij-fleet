@@ -811,6 +811,10 @@ bounce-rs:
               # bounded like tmux's, with 1 to 5 s (it reads every process's
               # sockets); the matching below is not. A timeout, or lsof
               # failing, refuses. The uid is bash's own $UID: no launch (F247).
+              # macOS's bash 3.2 takes UID from the environment, so one that
+              # isn't all digits refuses (S299-N2): refusing adds nothing to
+              # launch, and whoever sets this recipe's environment can already
+              # set PIJ_BOUNCE_UNSAFE=1, so it is no boundary either way.
               #
               # #298 round 2: a bound path matches by device and inode
               # (`-ef`), never by spelling (bee: tmux's /private/tmp/… is
@@ -822,11 +826,18 @@ bounce-rs:
               # name. In-shell: no launch per line.
               sock="${why#no server running on }"
               held_out="${built%/*}/socket-holders.out"
-              LC_ALL=C "${PIJ_BOUNCE_LSOF:-/usr/sbin/lsof}" -nP -a -U -u "$UID" -F n </dev/null >"$held_out" 2>/dev/null &
-              reader=$!
               status=0
-              bounded "$reader" 5 || status=$?
-              if [ "$status" = 124 ] || [ "$status" = 125 ]; then
+              case "$UID" in
+                '' | *[!0-9]*) status=uid ;;
+                *)
+                  LC_ALL=C "${PIJ_BOUNCE_LSOF:-/usr/sbin/lsof}" -nP -a -U -u "$UID" -F n </dev/null >"$held_out" 2>/dev/null &
+                  reader=$!
+                  bounded "$reader" 5 || status=$?
+                  ;;
+              esac
+              if [ "$status" = uid ]; then
+                unsafe="tmux was refused, and this shell's UID is not a number (bash 3.2 takes it from the environment), so lsof can't be asked what holds $sock"
+              elif [ "$status" = 124 ] || [ "$status" = 125 ]; then
                 unsafe="tmux was refused, and lsof did not say in 5 s what holds $sock"
               elif [ "$status" != 0 ]; then
                 unsafe="tmux was refused, and what holds $sock could not be read"

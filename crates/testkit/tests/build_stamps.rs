@@ -746,6 +746,43 @@ fn bounce_rs_goes_on_after_a_refusal_only_when_nothing_holds_the_socket() {
     }
 }
 
+/// S299-N2 (deer): macOS's bash 3.2 takes UID from the environment. A UID
+/// that isn't all digits refuses the bounce (unless `PIJ_BOUNCE_UNSAFE=1`)
+/// rather than reach lsof. A bash that ignores an inherited UID (bash 5,
+/// where it is read-only) asks lsof for the real uid instead.
+#[test]
+fn bounce_rs_refuses_when_uid_is_not_a_number() {
+    let imports = std::process::Command::new("/usr/bin/env")
+        .args(["bash", "-c", "printf %s \"$UID\""])
+        .env("UID", "^501")
+        .output()
+        .map(|out| out.stdout == b"^501")
+        .expect("run bash");
+    for (unsafe_ok, refused) in [(false, imports), (true, false)] {
+        let old = OldDaemon::start();
+        let mut env = vec![("UID", "^501"), ("FAKE_HELD", "n@OUT@/real")];
+        if unsafe_ok {
+            env.push(("PIJ_BOUNCE_UNSAFE", "1"));
+        }
+        let (scratch, ok) = bounce_with_tmux(&old, Some(REFUSED_TMUX), &env);
+        assert_eq!(
+            !ok, refused,
+            "bash imports UID: {imports}; UNSAFE: {unsafe_ok}"
+        );
+        assert_eq!(old.stopped(), !refused, "the old daemon stopped");
+        let args = std::fs::read_to_string(scratch.join("socket-lsof.args")).ok();
+        if imports {
+            assert_eq!(args, None, "lsof was asked with a UID that isn't a number");
+        } else {
+            let uid = pij_core::program::real_uid();
+            let args = args.expect("lsof ran");
+            assert!(args.contains(&format!("-u {uid} ")), "{args}");
+        }
+        unshut(&scratch);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+}
+
 /// F247 (snail, P298-R2-001): the holder read names this user by bash's own
 /// `$UID`, and launches no `id` for it: a bounce that reads the holders
 /// launches as many `id`s as one that doesn't (the install step has its own).

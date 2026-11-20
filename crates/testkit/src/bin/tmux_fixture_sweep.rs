@@ -5,7 +5,9 @@
 //! prefix, kind and verdict, and a sample of what it would remove. Add
 //! `--apply` to remove the stale entries. Run it as `just tmux-fixture-sweep`.
 //! When the holders can't be read whole and exactly, it names why (the path
-//! and its holder's pid) and exits 2: blocked, never "nothing stale".
+//! and its holder's pid, escaped; on Linux, always: there is no complete
+//! census of socket holders there) and exits 2: blocked, never "nothing
+//! stale".
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::SystemTime;
@@ -80,7 +82,8 @@ fn main() -> ExitCode {
             .count()
     );
     for entry in stale.iter().take(SAMPLE) {
-        println!("  e.g. {}", entry.name);
+        // Escaped: a control character in a name can't reach the terminal.
+        println!("  e.g. {}", entry.name.escape_debug());
     }
     if apply {
         println!("removed: {}", report.removed);
