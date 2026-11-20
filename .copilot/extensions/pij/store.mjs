@@ -38,6 +38,12 @@ export const STANDBY_REFUSAL_LIMIT = 3;
  * any process, so the check launches nothing there.
  */
 export const STANDBY_STOPPED_RETRY_MS = 600000;
+/**
+ * F230: waits between retries of an activity report that failed, until it
+ * lands, a newer state supersedes it, or the list runs out. A longer outage
+ * ends in a re-registration, which re-publishes the latest state.
+ */
+export const ACTIVITY_RETRY_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
 /** Plan 226: the daemon route that runs a reply's closing pij block. */
 export const TURN_END_ROUTE = "/v1/turn-end";
 /** A block of up to 20 commands runs in order; a wedged daemon must not hold the stop forever. */
@@ -1303,6 +1309,7 @@ export class NativeBridge {
 		report,
 		delay = (ms, signal) => sleep(ms, undefined, { signal }),
 		heartbeatDelay = (ms, signal) => sleep(ms, undefined, { signal }),
+		activityDelay = (ms, signal) => sleep(ms, undefined, { signal }),
 		now = Date.now,
 		setTimer = setTimeout,
 		clearTimer = clearTimeout,
@@ -1315,6 +1322,7 @@ export class NativeBridge {
 		this.report = report;
 		this.delay = delay;
 		this.heartbeatDelay = heartbeatDelay;
+		this.activityDelay = activityDelay;
 		this.now = now;
 		this.precedence = precedence;
 		this.setTimer = setTimer;
@@ -1338,6 +1346,10 @@ export class NativeBridge {
 		// `working` can never land after `idle`.
 		this.activity = Promise.resolve();
 		this.activityState = undefined;
+		/** F230: the latest state Copilot's events show; the one state worth sending. */
+		this.activityObserved = undefined;
+		/** Aborted when a newer state is observed, ending a retry's wait. */
+		this.activityRetry = new AbortController();
 		this.activityUnsupported = false;
 		/** The last state the daemon accepted; stop settles a seat left `working`. */
 		this.activityPublished = undefined;
@@ -1498,6 +1510,10 @@ export class NativeBridge {
 		// the seat's context size. An older daemon issues none.
 		this.contextToken = typeof seat?.context_token === "string" ? seat.context_token : undefined;
 		this.registered = true;
+		// F230: re-publish the latest state after every registration. A report
+		// that failed across a daemon restart is otherwise lost, and a
+		// same-process re-registration keeps the state the daemon last stored.
+		this.republishActivity();
 		if (!this.reconnectRegistration) {
 			this.reconnectRegistration = { ...registration };
 			delete this.reconnectRegistration.supersedes;
@@ -2331,6 +2347,11 @@ export class NativeBridge {
 				: ["session.idle", "session.fusion_completed", "abort"].includes(event?.type)
 					? "idle"
 					: undefined;
+		if (state && state !== this.activityObserved) {
+			this.activityObserved = state;
+			this.activityRetry.abort();
+			this.activityRetry = new AbortController();
+		}
 		if (state && state !== this.activityState && !this.activityUnsupported) {
 			this.activityState = state;
 			this.activity = this.activity.then(() => this.publishActivity(state));
@@ -2380,42 +2401,86 @@ export class NativeBridge {
 			...(Number.isSafeInteger(window) && window > 0 ? { context_window_tokens: window } : {}),
 		};
 	}
+	/**
+	 * F230: send the latest observed state again, as it is now: queued behind
+	 * any publication in flight, it must not read a state observed after it,
+	 * or an older state queued behind it would land last (review of #284). A
+	 * retry waiting for the same state ends its wait, so this one sends at once.
+	 */
+	republishActivity() {
+		const state = this.activityObserved;
+		if (!state || this.activityUnsupported) return;
+		this.activityState = state;
+		this.activityRetry.abort();
+		this.activityRetry = new AbortController();
+		this.activity = this.activity.then(() => this.publishActivity(state));
+	}
+	/**
+	 * F230: a failed report is retried after each wait in ACTIVITY_RETRY_MS,
+	 * then dropped until the next observed transition or registration publishes
+	 * again. A newer observed state supersedes it at once, so only the
+	 * latest state is ever sent.
+	 */
 	async publishActivity(state) {
-		if (this.activityUnsupported || !this.registered || this.controller.signal.aborted) {
-			// Not published: the next observed transition must try again.
-			if (this.activityState === state) this.activityState = undefined;
-			return;
-		}
-		const body = {
-			seat: this.registration.id,
-			native_session: this.registration.harness_session,
-			state,
-		};
-		const token = this.contextToken;
-		const context = token && this.context ? { ...this.context, context_token: token } : undefined;
-		try {
-			try {
-				await this.client.request("/v1/activity", { ...body, ...context }, this.controller.signal);
-			} catch (error) {
-				// A refused report (a grant from before a daemon restart, or a
-				// daemon that knows no reports) still publishes the state; reports
-				// resume with the next registration's grant.
-				if (!context || ![400, 422].includes(error?.status) || this.controller.signal.aborted)
-					throw error;
-				if (this.contextToken === token) this.contextToken = undefined;
-				await this.client.request("/v1/activity", body, this.controller.signal);
+		for (let attempt = 0; ; attempt++) {
+			// Retries only: a first send keeps the order states were observed in.
+			if (attempt > 0 && this.activityObserved !== state) return;
+			const superseded = this.activityRetry.signal;
+			if (this.activityUnsupported || !this.registered || this.controller.signal.aborted) {
+				// Not published: the next observed transition must try again.
+				if (this.activityState === state) this.activityState = undefined;
+				return;
 			}
-			this.activityPublished = state;
-		} catch (error) {
-			if (this.controller.signal.aborted) return;
-			if (this.activityState === state) this.activityState = undefined;
-			// An older daemon has no activity route; stop asking for this runtime.
-			if (error?.status === 404) this.activityUnsupported = true;
-			this.emit("activity-unpublished", {
+			const body = {
+				seat: this.registration.id,
+				native_session: this.registration.harness_session,
 				state,
-				status: error?.status ?? null,
-				safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : null,
-			});
+			};
+			const token = this.contextToken;
+			const context = token && this.context ? { ...this.context, context_token: token } : undefined;
+			try {
+				try {
+					await this.client.request(
+						"/v1/activity",
+						{ ...body, ...context },
+						this.controller.signal,
+					);
+				} catch (error) {
+					// A refused report (a grant from before a daemon restart, or a
+					// daemon that knows no reports) still publishes the state; reports
+					// resume with the next registration's grant.
+					if (!context || ![400, 422].includes(error?.status) || this.controller.signal.aborted)
+						throw error;
+					if (this.contextToken === token) this.contextToken = undefined;
+					await this.client.request("/v1/activity", body, this.controller.signal);
+				}
+				this.activityPublished = state;
+				return;
+			} catch (error) {
+				if (this.controller.signal.aborted) return;
+				// An older daemon has no activity route; stop asking for this runtime.
+				if (error?.status === 404) this.activityUnsupported = true;
+				this.emit("activity-unpublished", {
+					state,
+					status: error?.status ?? null,
+					safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : null,
+				});
+				// A newer state was observed (even before this attempt began): it is
+				// queued behind this one, so this never waits to retry a state the
+				// seat has left (review of #284).
+				if (this.activityObserved !== state) return;
+				const wait = ACTIVITY_RETRY_MS[attempt];
+				if (this.activityUnsupported || wait === undefined) {
+					if (this.activityState === state) this.activityState = undefined;
+					return;
+				}
+				try {
+					await this.activityDelay(wait, AbortSignal.any([this.controller.signal, superseded]));
+				} catch {
+					// Stopped, or a newer state is queued behind this one.
+					return;
+				}
+			}
 		}
 	}
 	/**
