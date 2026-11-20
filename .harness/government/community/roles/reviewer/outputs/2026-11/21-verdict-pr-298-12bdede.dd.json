@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fa15-95ae-7630-934c-463b290ac8b2",
+				"date": "2026-11-21",
+				"head": "12bdede47db345264785d667f50ced08ef85e8dc",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:298",
+				"writer": "pij-zonal-bee",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R298-001: compare socket file identity in the bounce holder brake; aliases currently proceed.",
+				"R298-002: preserve holder pathname representations and fail closed instead of silently dropping unresolved records.",
+				"R298-003 / P298-001: bound the entire bounce holder acquisition and fail closed on timeout."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 298",
+					"exit_code": 0
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test -p pij-testkit --lib tmux_sweep -- --nocapture --then test -p pij-tmux --test fixture_cleanup -- --nocapture --then test -p pij-testkit --test build_stamps bounce_rs_goes_on_after_a_refusal_only_when_nothing_holds_the_socket -- --nocapture",
+					"exit_code": 0
+				},
+				{
+					"command": "dependency-free copied exact-head path regression tests via just shared-build; expected assertion failures: macOS live escaped names removed 3, Linux pathname replay removed 1",
+					"exit_code": 101
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# R1 BLOCK: PR #298\n\nHead: `12bdede47db345264785d667f50ced08ef85e8dc`\nBase: `44f313e4954f50584a278ef7907d442de32ddc67`\nRequest: `01a1fa15-95ae-7630-934c-463b290ac8b2`\n\nThree confirmed correctness/cost findings block this head. F246 passes.\nReview was read-only; destructive probes ran only inside reviewer-owned scratch directories.\nThe reviewer holding remains held until merge.\n\n## Findings\n\n| ID | Priority | Location | Finding |\n|---|---|---|---|\n| R298-001 | P1 | `justfile:795-800` | Bounce compares socket spellings, not socket identity, and proceeds for a live socket alias. |\n| R298-002 | P1 | `crates/testkit/src/tmux_sweep.rs:219-224,247-253,304-309` | Holder-path representations are lost or truncated, and failed metadata reads are silently converted into absence; the sweep deletes live sockets. |\n| R298-003 | P2 | `justfile:796` | The new synchronous holder `lsof` has no timeout, so bounce can hang indefinitely after its bounded tmux guard. Same issue as performance finding P298-001. |\n\n### R298-001: live macOS alias bypasses bounce's brake\n\nReal macOS tmux was started with `-S /tmp/<owned-scratch>/tmux-<uid>/<label>`.\nAccessing that same server with `-L <label>` and its matching `TMUX_TMPDIR`\nuses `/private/tmp/<owned-scratch>/tmux-<uid>/<label>`.\n\nThe server PID reported by `new-session -P -F '#{pid}'` and by\n`display-message -p '#{pid}'` agreed. After stopping only that owned server,\n128 queued clients filled its backlog; the next connect returned\n`ECONNREFUSED` (61). The bounce setter reported the `/private/tmp/` spelling,\nwhile a successful real `/usr/sbin/lsof -U` still reported `/tmp/`.\nBoth paths named the same inode.\n\nExecuting the exact head's Bash `case` on those observed values selected\n`unsafe=\"\"`: bounce would proceed without protecting the live server.\nNo production daemon was signalled. The owned server was resumed and killed\nnormally. Compare file identity or consistently resolved paths, retaining a\nfail-closed result when identity cannot be established.\n\n### R298-002: parse/stat failure is not proof of absence\n\nCompiled tests using a copy of the exact-head `tmux_sweep.rs`, real macOS\nlisteners and real absolute-path `lsof` reproduced:\n\n- Live fixture-prefixed sockets with newline, tab and backslash in their names\n  were all classified `Stale` and unlinked: `removed: 3`.\n- A live socket with an ordinary space in its name was correctly spared.\n\nThe output contains escaped pathname representations, but the code passes\nthem directly to `fs::metadata`. `filter_map(... .ok())` discards the failures\nand still returns `Known`, so missing evidence becomes permission to delete.\n\nThe Linux branch has the same end result for an ordinary space in\n`TMUX_TMPDIR`: `split_whitespace().nth(7)` truncates the pathname after the\nseven fixed columns. Replaying the exact Linux parsing expression with the\nkernel's unescaped pathname row format and a real live socket under\n`with space/` produced `Stale`, `removed: 1`. This is a compiled parser replay\non macOS, not a native Linux runtime claim.\n\nPreserve the complete pathname representation and fail closed for evidence\nthat cannot safely be mapped to the file. Silently dropping unresolved\nholder records is not a valid absence policy.\n\n### R298-003: bound the entire bounce holder acquisition\n\nThe new command substitution has no deadline. The actual complete bounce\nrecipe, with only owned fake build/install/tmux/lsof boundaries, was still\nblocked 4,501.84 ms after entering its single holder read; the old scratch\nprocess remained alive. The caller had to terminate its own process group.\nThis is independent of the earlier setter and post-kill budgets.\n\nBound the holder read and fail closed on timeout or failed acquisition.\nUse the platform's explicit executable path rather than relying on PATH\nfor this new safety probe. Performance owns the corroborating receipt.\n\n## Nonblocking notes and scope\n\n- **R298-N1:** `tmux_sweep.rs:349-355` bypasses `Holders::Unknown` when the\n  paired socket is absent. A compiled regression with an old orphan lock\n  and unknown holders returned `Stale`, `removed: 1`. This contradicts\n  \"nothing is removed\" on holder failure. No live socket was present in\n  this case, so this is a policy/reporting-contract note, not another block.\n- The sweep's 10-second budget bounds child polling, not literally every\n  possible blocking `wait`/reader `join` at lines 291 and 297-300. No\n  normal-use real-lsof descendant/pipe hang was established; this is not\n  promoted into another blocker.\n- C33's same-user trust boundary is unchanged. The findings concern unsafe\n  results from ordinary file identity/representation and acquisition\n  handling, not a hostile-seat isolation requirement.\n\n## Positive evidence\n\n| Check | Result |\n|---|---|\n| `just pr-freeze 298` | FINAL at the reviewed full head; CLEAN; five latest CI jobs passed; detached checkout clean. |\n| `PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test -p pij-testkit --lib tmux_sweep -- --nocapture --then test -p pij-tmux --test fixture_cleanup -- --nocapture --then test -p pij-testkit --test build_stamps bounce_rs_goes_on_after_a_refusal_only_when_nothing_holds_the_socket -- --nocapture` | PASS: 5 sweep, 4 fixture-cleanup, 1 bounce regression. macOS, nice 19, one shared target, four jobs. |\n| Dependency-free exact-source sweep harness, through `just shared-build -- test --offline --manifest-path <owned-scratch>/Cargo.toml` | Baseline 7/7 PASS, including inode alias matching, missing executable, permission denial, partial stdout plus nonzero exit, invalid UTF-8, and timeout. Uses fixed current UID/O_NOFOLLOW and the existing lock suffix as its only platform stubs. |\n| Mutation: discard every bound inode | CAUGHT: alias test failed with live socket classified Stale. |\n| Mutation: unknown holders return `Some(false)` | CAUGHT: existing unknown-holder test failed, Stale instead of Unsure. |\n| New exact-source representation/orphan-lock regressions | Expected RED: live escaped names removed 3; Linux space-path parser replay removed 1; Unknown orphan lock removed 1. These were assertion failures, not compilation failures. |\n| F246 actual `shared-build.sh` with owned fake cargo | PASS: unwritable stamp removed with warning; unremovable stamp exits 7 before cargo, preserves stamp/artifact, leaves no temporary stamp and releases lock; final-write failure retains safe `running` stamp and releases lock. |\n| `harness boot --json` | NOT READY: missing worktree dependencies. |\n| `harness checks --quick --json` | NOT READY: missing local TS dependencies/tools and incompatible ambient Biome; native Copilot and skill checks passed. No dependencies installed or symlinked under C25. Full local gate is not claimed; exact-head CI is green. |\n\nThe product audit independently searched daemon/tmux sources for\n`ECONNREFUSED`, `ConnectionRefused`, `no server running` and direct Unix\nconnects. The remaining production `ConnectionRefused` occurrence is TCP\naccept-error retry in `daemon/src/serve.rs:90-97`, not absence inference.\nTmux nonzero results become errors (`tmux/src/lib.rs:464-480,526-552`);\nreaper/death-sweep, pane observer and pointer worker do not infer absence\nfrom those errors. No additional product refusal-as-gone path was found.\n\nFixture PID acquisition uses tmux's server `#{pid}`, not the short-lived\nclient. PID reuse reads as still running and keeps files, so it fails closed.\nCandidate symlinks remain excluded; lock opens retain `O_NOFOLLOW`.\n\nCost: sweep has one macOS lsof per manual run, no per-entry launches;\nfixture cleanup polls `kill(pid,0)` every 10 ms for at most 2 s, without\nlaunching per poll; bounce adds one holder launch on refusal only, but its\nmissing bound is R298-003. No new recurring daemon work.\n\nThe sweep's absence evidence is the destructive **policy**; its young-file\ncheck is a one-directional **brake**. Fixture cleanup's policy is server-PID\nexit. Bounce's holder check is a **brake** before signalling the daemon.\n\n## Harness feedback\n\nMagic wand: a reusable live-socket identity/path-representation regression\nthat can run without TS dependencies. The highest-value encoding is to port\nthe owned alias and escaped-path assertions into the existing bounce/sweep\nsuites, so a textual mismatch cannot masquerade as proof of absence again.\nRaw receipts and reusable scratch probes were retained and their private\npointers sent to the requester, security and performance reviewers.\n\nOne repair head should address R298-001 through R298-003; round 2 checks\nthose fixes under C34. The F241 fleet APPLY remains held.\n"
+		}
+	]
+}
