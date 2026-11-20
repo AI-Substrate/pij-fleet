@@ -2352,7 +2352,10 @@
 					"harness_session": "86658322-7298-464b-9d99-64b3294322ff",
 					"instance_key": "287",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #287 merged (bc1ca834aa11)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-bright-felidae",
+					"to": "2026-11-20T10:37:24.496Z",
 					"why": "#287 F236 review"
 				}
 			]

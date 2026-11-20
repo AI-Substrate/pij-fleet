@@ -1341,7 +1341,10 @@
 					"harness_session": "01a1f66b-21d0-7652-8b03-da1df9910ceb",
 					"instance_key": "f236",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #287 merged (bc1ca834aa11)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-forthcoming-silkworm",
+					"to": "2026-11-20T10:37:24.496Z",
 					"why": "F236 human text render of the unarmed-control warning (prime ruling)"
 				}
 			]
