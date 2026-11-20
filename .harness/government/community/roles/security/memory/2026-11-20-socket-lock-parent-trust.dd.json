@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Read before moving a lock beside a socket or narrowing an existing lock file permissions.",
+				"tags": [
+					"filesystem",
+					"permissions",
+					"symlinks",
+					"c33"
+				],
+				"title": "Socket lock relocation changes parent trust"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Lock privacy depends on the parent/object trust boundary, not just mode 0600. Moving a formerly private-state-root lock beside a socket can put the unchanged permission-narrowing code into an other-UID-writable directory.\n\nOpen mode applies to creation only. O_CREAT without O_NOFOLLOW follows both existing and dangling symlinks; descriptor-based chmod prevents a later pathname-swap race but still chmods the initially selected symlink target. In the reviewed production lock, the conditional chmod happens before flock and before tmux's own later refusal, with no parent ownership/mode or descriptor ownership/type guard (crates/tmux/src/control.rs:504-515,595-619,647-654). Other-UID planting is not exempted by C33. Keep confidentiality, content modification and metadata/availability claims distinct.\n\nReview proof: an owned-fixture reproduction of the same OS primitives changed a target from 0755 to 0600 without changing its bytes, and a dangling link created an empty target. This was not an actual second-UID or full-adapter test. Do not claim symlink safety merely because the machine's current default socket directory happens to be private.\n\nmagicWand: encode a focused production-lock regression that keeps an unrelated target's permissions/content and a dangling target unchanged. Enforce the supported parent/object invariant before destructive permission narrowing, and make the no-follow decision atomic rather than checking a pathname then opening it.\n\ndifficulties: dependency-free review boot stopped before Rust proof; the full harness inventory subsequently passed Rust, route inventory, smoke and native contracts but failed TS stages because local tools were missing/incompatible. Exact-head CI evidence was kept separate. Do not repair or symlink shared dependencies to make a read-only review appear fully ready.\n"
+		}
+	]
+}
