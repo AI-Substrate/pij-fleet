@@ -707,7 +707,10 @@
 					"harness_session": "7107d26b-50e1-46eb-ab6c-09d5ce31b31d",
 					"instance_key": "283",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #283 merged (142269203bc9)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-outside-possum",
+					"to": "2026-11-20T08:22:37.532Z",
 					"why": "#283 F233 security verdict, fresh seat"
 				}
 			]

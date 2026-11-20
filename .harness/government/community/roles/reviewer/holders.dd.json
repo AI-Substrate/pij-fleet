@@ -2300,7 +2300,10 @@
 					"harness_session": "9fb5698d-afca-44f9-9b22-16274b53fb49",
 					"instance_key": "283",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #283 merged (142269203bc9)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-regulatory-fly",
+					"to": "2026-11-20T08:22:37.532Z",
 					"why": "#283 F233 correctness review, fresh seat"
 				}
 			]
