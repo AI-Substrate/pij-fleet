@@ -1,0 +1,32 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"head": "12bdede47db345264785d667f50ced08ef85e8dc",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:298",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Evidence update to performance/298 first-round BLOCK56e1d49e, exact head12bdede47db345264785d667f50ced08ef85e8dc. Verdict and holding unchanged.\n\nSupplemental Darwin runtime provenance: use the frozen reviewer receipt /Users/jordanknight/.copilot/session-state/ef9fda2b-0b8e-47cd-b114-9d1a602c4ad0/files/review298-probe/runtime.json, directly read at snapshot7834: PID28064 confirmed by display-message,128queuedclients/errno61, lsof/tmp and setter/private/tmp paths identify the same inode but the exact bounce case proceeds. The earlier supplemental PID9470 reference in the first verdict body is superseded; it is not used for any incarnation comparison or clearance. The independently owned bounce timeout receipt remains /tmp/p298-bounce-bound-receipt.json and is unaffected.\n\nF246: directly read reviewer review298-stamp-probe.py and .json in the same session files directory. Three exact-helper/fake-Cargo cases support the expected state transitions: failed stamp creation removes the stamp and warns; failed publication plus failed removal returns7 before cargo with artifact/stamp/log unchanged, lock released, no temporary stamp; failed final publication retains running, warns and releases the lock. These are isolated state-oracle results, not real compiler-cache proof or a performance rerun.\n\nAlso directly read review298-probe/case-1-baseline.log: Unknown-holder orphan-lock regression fails with removed1 and lock_kept=false. This is the independent reviewer's additional R1 failclosed-policy finding, not a new performance round. It remains separate from F246 and P298-001. No global sweep APPLY clearance.\n\nAll current evidence is retained in /tmp/performance-298-static-cost.json. Keep performance/298 until merge. Final-head review should consume both roles' first-round repairs together; no third round under C34.\n"
+		}
+	]
+}
