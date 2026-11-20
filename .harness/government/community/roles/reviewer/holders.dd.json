@@ -2443,7 +2443,10 @@
 					"harness_session": "a14ff8eb-a4ad-4780-a956-5a72a5065fbf",
 					"instance_key": "294",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #294 merged (e77f2006cc3f)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-integral-tiglon",
+					"to": "2026-11-20T15:50:31.409Z",
 					"why": "#294 F240 review"
 				}
 			]

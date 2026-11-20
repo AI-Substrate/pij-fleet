@@ -493,7 +493,10 @@
 					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
 					"instance_key": "294",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #294 merged (e77f2006cc3f)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-melodic-snail",
+					"to": "2026-11-20T15:50:31.409Z",
 					"why": "#294 F240 exit bound"
 				}
 			]

@@ -1455,7 +1455,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f240",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #294 merged (e77f2006cc3f)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-20T15:50:31.409Z",
 					"why": "F240 reaper spawn Err falls back to a bounded blocking wait (prime C34 at #292)"
 				}
 			]
