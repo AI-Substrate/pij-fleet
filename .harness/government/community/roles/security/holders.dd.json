@@ -902,7 +902,10 @@
 					"harness_session": "af8fa981-b55a-42f2-9a2a-babde798368d",
 					"instance_key": "299",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "security-review tool safeguard rejection (422); cannot give a substantive verdict; availability BLOCK 71650cc",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-frequent-sawfish",
+					"to": "2026-11-20T19:57:10.903Z",
 					"why": "verdict on #299 (F248+F247), continuity from #298"
 				}
 			]
