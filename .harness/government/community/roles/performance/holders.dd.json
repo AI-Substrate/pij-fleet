@@ -563,6 +563,16 @@
 					"seat": "pij-different-newt",
 					"to": "2026-11-20T21:19:16.328Z",
 					"why": "verdict on #300 (issue #85 daemon launch leftovers)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T22:55:16.117Z",
+					"harness": "copilot",
+					"harness_session": "608cd2ad-ce7c-42a2-97a9-03459cdf4b10",
+					"instance_key": "301",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-accepted-snail",
+					"why": "verdict on #301 (issue #90 daemon.log bound)"
 				}
 			]
 		}
