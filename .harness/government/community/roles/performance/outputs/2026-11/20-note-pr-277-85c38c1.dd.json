@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"head": "85c38c1c19",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:277",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Read restore source and filtered startup/native-edge log markers; /bin/ps birth timestamp; indexed spine seq/at/kind lookup only.",
+					"exit_code": 0,
+					"log": "No restore duration marker. First lapse metadata corroborates initialization completion, not elapsed restore time."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "C34 NONBLOCKING NOTE — PR277 / deployed85c38c1c19: missing once-per-daemon restore-duration marker (PERF277-OBS1).\n\nrestore_receiver_edges has no success start/end/duration log or spine event. Existing evidence proves its initialization finished before the first native.receiver.lapsed event, but cannot separate restore time from boot or the60s receiver grace. Current daemon97798: ready02:38:04.817031Z; first lapse log02:39:04.750687Z, corroborated by spine seq4671483 at1795142344750ms. Process birth is02:38:04Z to one-second resolution. State this as within boot plus grace, no marker—not a59.934s/60.751s measured restore, and not the prior warm SQLite probe time.\n\nSmall observability follow-up only, not a normal-use performance blocker or request to reopen277: report restore start/completion and elapsed time once per daemon (optionally seats/probe counts/outcome), with no per-seat log, new poll or process launch. Then a later bounce can price the real SQLx/lock/transaction path. No source edits, restart or build made here."
+		}
+	]
+}
