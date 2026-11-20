@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f956-da80-7991-aa1d-676809bf4b6b",
+				"date": "2026-11-21",
+				"head": "d17dae35a62fd7fbf88a17f230a0603d77fafdc4",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:293",
+				"writer": "pij-zany-quelea",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 293",
+					"exit_code": 0,
+					"log": "FINAL at d17dae35a62fd7fbf88a17f230a0603d77fafdc4; clean review worktree"
+				},
+				{
+					"command": "gh run view 44751898169 --json headSha,conclusion,jobs",
+					"exit_code": 0,
+					"log": "success at d17dae35a62fd7fbf88a17f230a0603d77fafdc4; Node 22/24, rust-lint and rust-test passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security BLOCK: PR #293\nHead: d17dae35a62fd7fbf88a17f230a0603d77fafdc4\nBase: 288d0d078fe0ef524a3e56c87a94ae8f6a382d88\nRequest: 01a1f956-da80-7991-aa1d-676809bf4b6b\n\nS293-001 | HIGH | 9/10 | justfile:754\nThe added bounce safeguard synthesizes a default/named tmux socket path and invokes explicit -S. This skips tmux's native socket-directory ownership validation. Another UID can precreate an absent victim socket directory with an accessible listener; the new client connects and transmits the bounce process's exported environment, potentially including credentials.\n\nThis is source-verified against official tmux 3.6a at commit cc117b5048f77a4842820f8ebbe3a86e5c077224:\n- tmux.c:211-228: make_label checks the directory owner and permissions.\n- tmux.c:428-430,518-534: explicit -S sets path and bypasses make_label.\n- client.c:103-181,365-367,487-492: connects, sends/flushed identification, and transmits environment entries.\n- proc.c:300-324: getpeereid records the peer UID but does not reject a foreign UID.\n\nUpstream source addresses:\nhttps://github.com/tmux/tmux/blob/cc117b5048f77a4842820f8ebbe3a86e5c077224/tmux.c\nhttps://github.com/tmux/tmux/blob/cc117b5048f77a4842820f8ebbe3a86e5c077224/client.c\nhttps://github.com/tmux/tmux/blob/cc117b5048f77a4842820f8ebbe3a86e5c077224/proc.c\n\nThe live-old-daemon predicate establishes an HTTP listener, not a victim-owned tmux directory. Planting can precede daemon startup: native tmux refuses the planted directory while the daemon can remain running; bounce then reaches the newly added unsafe connection. An existing private, victim-owned directory prevents this planting attack. This crosses user accounts and is outside C33's same-user exemption.\n\nRequired repair: preserve native resolution and validation. Use quoted -L \"$PIJ_TMUX_SERVER\" for a named server; otherwise let tmux choose inherited TMUX/default itself. Do not synthesize these sockets into -S. The R2 deadline repair alone does not stop this disclosure.\n\nOther reviewed surfaces and limits:\n- The security review reports 38 isolated literal-argv/socket-precedence cases and two missing/failing-tmux cases passing; no shell payload execution. Quoting is not the blocker.\n- No added credential literals, private owner/name references, or machine-specific home paths were found in the added-lines review.\n- The HTTP drain is source-bounded to five seconds with a watch-close drop path. Runtime ordering, store-cancellation safety, client EOF behavior and mutations remain the correctness reviewer's evidence, not additional local security runtime claims.\n- The correctness reviewer separately reproduced the unbounded pre-SIGINT tmux call on a stopped private server: pending beyond 2.010 seconds with no signal marker, completing after resume. It remains an R2 availability issue; fixing it does not resolve S293-001.\n- Bounce derives its safeguard socket/executable from the caller, not the old daemon's startup environment. This is a targeting limitation, not a separately proven disclosure or session-loss finding.\n- The safeguard is a one-directional safety interlock (brake), not a retention policy. Its tmux launch occurs once per bounce, not per seat/tick; performance owns the fleet cost receipts.\n\nValidation:\n- just pr-freeze 293: FINAL at the exact head, both before review and immediately before publication.\n- gh run view 44751898169 --json headSha,conclusion,jobs: success at this head; check (22), check (24), rust-lint and rust-test passed. Both Node jobs include passing typecheck, lint, npm test and native Copilot contracts. The Delivers job also passed.\n- harness boot --json: advisory ready:false because this read-only worktree lacks node_modules.\n- harness checks --json: attempted, then stopped; not a local full-gate pass. C25 forbids installing/linking dependencies here. TS proof is exact-head CI-only.\n- The worktree remains clean at the pinned head. No source edits, builds by the security subagent, credential inspection, two-user reproduction, or live daemon/tmux mutations were performed.\n\nHarness friction / magic wand: provide a read-only review gate that pairs exact-head CI receipts with explicitly unavailable local dependency-bound checks, without dependency repair. Captured as a harness observation; no review-worktree source changes.\n\nThis BLOCK supersedes the security subagent's preliminary PASS after the socket-ownership candidate's missing peer-UID check was resolved. The security/293 holding remains until merge.\n"
+		}
+	]
+}
