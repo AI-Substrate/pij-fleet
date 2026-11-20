@@ -75,5 +75,6 @@
 - [2026-11-20 Native recovery needs positive evidence and scoped replay](2026-11-20-native-recovery-needs-positive-evidence.dd.md): Read before changing native claim idle answers, receiver-lapse replay, or refusal overflow handling. (copilot, native-recovery, spine, telemetry, c34)
 - [2026-11-20 Native seat carry needs composed recovery proof](2026-11-20-native-seat-carry-needs-composed.dd.md): Open before changing native seat carry, governance/index reconciliation, or reviewing the F233 fix. (seat-carry, governance, recovery, f233, proof)
 - [2026-11-20 Recover probe receipts from saved tool events](2026-11-20-recover-probe-receipts-from-saved-tool.dd.md): Open when a delegated security review returns only a verdict despite an evidence follow-up. (review, evidence, delegation, recovery)
+- [2026-11-20 Transient scheduling preserves registration refusals](2026-11-20-transient-scheduling-preserves.dd.md): Read before changing RegistrationError retry classification or Codex native-holder behavior. (codex, retries, registration, c33, proof)
 - [2026-11-20 Unknown observations must preserve retry state](2026-11-20-unknown-preserves-retries.dd.md): Read when a read API gains Busy or unavailable results, or when probe errors interact with Seen, cursors, liveness, revive or cleanup. (observation-safety, retries, liveness, c34, proof)
 <!-- /pij:generated -->
