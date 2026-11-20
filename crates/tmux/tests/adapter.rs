@@ -905,7 +905,10 @@ fn separate_adapters_cannot_both_reserve_one_pane() {
     let Some(session) = TestSession::start_or_skip("submit-adapter-cas") else {
         return;
     };
-    let pane = block_on(TmuxAdapter::for_server(&session.server, &session.tap_root).list_panes())
+    // Kept until every control client has attached: its client leaving
+    // earlier could take `_pij` down under a dying one (F237).
+    let lister = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let pane = block_on(lister.list_panes())
         .expect("list isolated panes")
         .into_iter()
         .next()
@@ -926,6 +929,12 @@ fn separate_adapters_cannot_both_reserve_one_pane() {
             block_on(tmux.acquire_submit(&pane_id))
         }));
     }
+    // Every control client of this test is attached, and each attach's setup
+    // switched `_pij`'s `destroy-unattached` on. The racers' clients die
+    // together when their threads end; off from here, no exit can destroy
+    // `_pij` under a client that is dead but not yet lost (F237).
+    keep_control_session(&session);
+    drop(lister);
     barrier.wait();
     let results: Vec<_> = racers
         .into_iter()
@@ -965,6 +974,8 @@ fn separate_adapters_cannot_both_reserve_one_pane() {
 
     let cleaner = TmuxAdapter::for_server(&session.server, &session.tap_root);
     block_on(cleaner.abort_submit(&winner)).expect("winner releases reservation");
+    // The cleaner's client attached last; its exit at teardown is spared too.
+    keep_control_session(&session);
     assert!(!pane_input_off(&session, &pane.id));
     assert!(submit_marker(&session, &pane.id).is_empty());
 }
@@ -1468,6 +1479,23 @@ fn submit_marker(session: &TestSession, pane: &str) -> String {
         "@pij-submit-owner",
     ]);
     String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+/// F237: keep the control clients' session, `_pij`, alive however they
+/// leave. On tmux 3.4 a control client that is dead but not yet lost does not
+/// count as attached, so `destroy-unattached` can destroy `_pij` while another
+/// client leaves; the dead client's own `client-detached` notify then reads the
+/// destroyed session (SIGSEGV in `server_client_get_pane`, NULL `curw`), and
+/// the fixture's next command finds no server. Each control client's setup
+/// switches it back on at attach, so call this after the last attach.
+fn keep_control_session(session: &TestSession) {
+    session.run([
+        "set-option",
+        "-t",
+        pij_tmux::CONTROL_SESSION,
+        "destroy-unattached",
+        "off",
+    ]);
 }
 
 fn wait_for_submit_marker_clear(session: &TestSession, pane: &str, timeout: Duration) {
