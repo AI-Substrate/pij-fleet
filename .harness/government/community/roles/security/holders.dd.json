@@ -774,6 +774,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-warm-platypus",
 					"why": "#288 C34 i security"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T10:51:08.386Z",
+					"harness": "copilot",
+					"harness_session": "7f576762-7fc6-40ce-ad02-796f0c709958",
+					"instance_key": "289",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-conceptual-cephalopod",
+					"why": "#289 C34 ii security"
 				}
 			]
 		}
