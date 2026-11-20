@@ -742,7 +742,9 @@ bounce-rs:
       # found as the daemon finds it: PIJ_TMUX_SERVER's label, else $TMUX's
       # socket, else the default one, in TMUX_TMPDIR (or /tmp) under this uid;
       # tmux by the path the shell resolves, once. No server or no `_pij` (a
-      # first boot) is not an error.
+      # first boot) is not an error. Bounded (P293): a frozen server never holds
+      # the bounce before its signal; the call has 1 to 2 s on the clock (bash's
+      # SECONDS), then is killed and the bounce goes on.
       if tmux_bin=$(command -v tmux); then
         if [ -n "${PIJ_TMUX_SERVER:-}" ]; then
           sock="${TMUX_TMPDIR:-/tmp}/tmux-$UID/$PIJ_TMUX_SERVER"
@@ -751,7 +753,15 @@ bounce-rs:
         else
           sock="${TMUX_TMPDIR:-/tmp}/tmux-$UID/default"
         fi
-        "$tmux_bin" -S "$sock" set-option -t _pij: destroy-unattached off 2>/dev/null || true
+        "$tmux_bin" -S "$sock" set-option -t _pij: destroy-unattached off 2>/dev/null &
+        setter=$!
+        since=$SECONDS
+        while kill -0 "$setter" 2>/dev/null && [ $((SECONDS - since)) -lt 2 ]; do /bin/sleep 0.1; done
+        if kill -0 "$setter" 2>/dev/null; then
+          kill -9 "$setter" 2>/dev/null || true
+          echo "bounce-rs: could not set destroy-unattached off on $sock; continuing" >&2
+        fi
+        wait "$setter" 2>/dev/null || true
       fi
       kill -INT "$old" 2>/dev/null || true
       since=$SECONDS
