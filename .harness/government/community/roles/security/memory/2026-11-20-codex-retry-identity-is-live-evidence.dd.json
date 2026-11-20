@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Read before retrying automatic binder probes or claiming native host attestation.",
+				"tags": [
+					"codex",
+					"retries",
+					"registration",
+					"proof",
+					"c33"
+				],
+				"title": "Codex retry identity is live evidence"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Security review of #281 at ed493731a221dc57a17811962203ee07ff925429: retries must re-observe binding evidence, never carry a successful identity snapshot across ticks. CodexBinder reloads pending rows and spawn evidence, then rechecks child parent, unique writer-lock thread, conversation, pane wrapper PID and child start (crates/daemon/src/codex_bind.rs:238-342); ordinary registration also rechecks process start and related rows under exclusion (crates/daemon/src/registration.rs:1039-1089). A new wrapper in a reused pane does not satisfy the old spawn. Registration refusals are decisions, not retryable admissions. This is ordinary registration strength, not independent argv/cwd attestation or an exact pending-tuple compare at commit; do not upgrade the proof grade. C33 accepts same-user authority as the baseline. The predecessor lesson Unknown observations must preserve retry state records F232. Difficulties and magicWand: the existing Dependency-free review readiness gap recurred; local checks selected absent or globally mismatched TS tools while exact-head CI passed. Retain the proposed scoped read-only review mode rather than repairing shared dependencies. No product files changed; local security proof is source inspection plus exact-head CI, not peer-owned Busy or mutant execution."
+		}
+	]
+}
