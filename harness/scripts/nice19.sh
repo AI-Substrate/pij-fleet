@@ -8,14 +8,31 @@
 #   harness/scripts/nice19.sh <command> [args...]
 #
 # Cost: one ps per call, then nice execs into the command (none at 19+).
+#
+# R257-002: a niceness this cannot read is refused, never guessed: reading it
+# as 0 would run an already-niced caller's command at the old stacked level.
+# NICE19_PS names the ps to ask (tests only; default /bin/ps).
 
-current=$(/bin/ps -o nice= -p $$ 2>/dev/null)
+ps=${NICE19_PS:-/bin/ps}
+if ! current=$("$ps" -o nice= -p $$); then
+	echo "nice19.sh: could not read this shell's niceness ($ps exited non-zero); nothing was run" >&2
+	exit 1
+fi
 # Trim ps's padding without another launch.
 current=${current#"${current%%[![:space:]]*}"}
 current=${current%"${current##*[![:space:]]}"}
 case "$current" in
-"" | *[!0-9-]* | -) current=0 ;;
+-[0-9]* | [0-9]*)
+	case "${current#-}" in
+	*[!0-9]*) current="" ;;
+	esac
+	;;
+*) current="" ;;
 esac
+if [ -z "$current" ]; then
+	echo "nice19.sh: $ps gave no niceness this can read; nothing was run" >&2
+	exit 1
+fi
 if [ "$current" -ge 19 ]; then
 	exec "$@"
 fi

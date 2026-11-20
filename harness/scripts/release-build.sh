@@ -10,9 +10,11 @@
 # removes its directory.
 #
 # - Build inputs must be HEAD's: a tracked or untracked change under crates/,
-#   Cargo.toml, Cargo.lock, .cargo/ or the stamped extension trees is refused,
-#   since the stamp says HEAD (R271 review). Other local changes (config such as
-#   .omp/models.yml) are not built in and do not block a deploy.
+#   Cargo.toml, Cargo.lock, .cargo/, the stamped extension trees, or a file a
+#   crate embeds from outside crates/ (the Claude and Copilot hook scripts in
+#   harness/scripts, .dd/schemas/pij, templates/roles; R271-002) is refused,
+#   since the stamp says HEAD (R271 review). Other local changes (config such
+#   as .omp/models.yml) are not built in and do not block a deploy.
 # - Through shared-build into this checkout's one target (cargo-target.sh,
 #   F217): the target's lock, this tree's own sources rebuilt (another
 #   worktree's artifacts there carry newer mtimes), niceness 19. At the F226
@@ -27,6 +29,9 @@
 #   `--version` with exactly this commit's stamp. The bytes checked are the
 #   bytes installed: another tree's later build into the shared target can't
 #   replace them (R271-001). Anything else is refused and never handed on.
+# - The private directory is removed on every exit but success, a signal
+#   included (R271-003); a removal that fails is reported. On success it is
+#   the caller's to remove.
 #
 # Exit: cargo's status, shared-build's (2 usage, 3 disk floor, 4 timeout,
 # 5 stale lock, 6 copy), or 1 for dirty build inputs or a wrongly stamped
@@ -35,14 +40,31 @@ set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)
 cd "$(git rev-parse --show-toplevel)"
 snapshot=""
+# R271-003: whatever ends this script, an owned snapshot goes with it. Bash
+# runs a signal's trap once the foreground build returns, so the snapshot the
+# build embeds is never removed under it; a terminal's Ctrl-C reaches the
+# build's process group too and ends it first.
+cleanup() {
+	[ -z "$snapshot" ] && return
+	rm -rf "$snapshot" || printf 'release-build: could not remove %s\n' "$snapshot" >&2
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 refuse() {
-	[ -z "$snapshot" ] || rm -rf "$snapshot"
 	printf 'release-build: %s; nothing was installed or stopped\n' "$1" >&2
 	exit 1
 }
 
+# R271-002: crates embed these from outside crates/ (claude_settings.rs,
+# community/layout.rs, community/templates.rs), so they are build inputs too.
 dirty=$(git status --porcelain --untracked-files=all -- Cargo.toml Cargo.lock .cargo crates \
-	.copilot/extensions/pij .omp/extensions/pij)
+	.copilot/extensions/pij .omp/extensions/pij \
+	harness/scripts/claude-session-start-pij.sh harness/scripts/claude-user-prompt-submit-pij.sh \
+	harness/scripts/claude-stop-pij.sh harness/scripts/claude-message-display-pij.sh \
+	harness/scripts/claude-statusline-pij.sh harness/scripts/copilot-statusline-pij.sh \
+	.dd/schemas/pij templates/roles)
 [ -z "$dirty" ] || refuse "build inputs differ from HEAD (commit or remove them first):
 $dirty"
 
@@ -64,7 +86,6 @@ PIJ_BUILD_COMMIT="$commit" PIJ_EXT_TREE_COPILOT="$copilot" PIJ_EXT_TREE_OMP="$om
 	bash "$here/shared-build.sh" --copy-out release/pij-rs "$copy" \
 	-- build --release --locked -p pij-cli --bin pij-rs >&2 || status=$?
 if [ "$status" -ne 0 ]; then
-	rm -rf "$snapshot"
 	exit "$status"
 fi
 
@@ -74,4 +95,6 @@ case "$version" in
 "pij-rs "*" ($commit)") ;;
 *) refuse "the built pij-rs is '$version', not this checkout's commit $commit" ;;
 esac
+# Handed on: the caller installs it and removes the directory.
+snapshot=""
 printf '%s\n' "$copy"
