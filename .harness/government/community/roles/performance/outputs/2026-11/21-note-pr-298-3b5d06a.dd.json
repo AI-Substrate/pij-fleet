@@ -1,0 +1,32 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"head": "3b5d06ae",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:298",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Post-#298 deployment timing complete (merge3b5d06ae). This is not a claim that the separate F247/F248 follow-ups have shipped.\n\nObserved old daemon22316, immutable identity[22316,1795187353,605372], old commit0587a41661. Exit-only observer armed2026-11-20T19:10:16.593685Z after both requested RSS readings and before prime authorization to signal.\n\nOwn original-incarnation disappearance bracket:2026-11-20T19:12:07.362475Z–19:12:07.463387Z, width100.913ms. Last probe matched identity; first gone was ESRCH;1093 in-process identity/kill0 checks with100ms async sleeps,0unknown,0process launches per tick. No CPU/RSS/window/proc-argv/environment/message inspection.\n\nPrime-owned events relayed by pm-001: SIGINT after build-done19:11:59.471Z and before old daemon's shutting-down log19:12:00.653Z. Therefore signal-to-old-exit is6.709475–7.992387s (~6.71–7.99s): lower=our earliest exit minus latest signal; upper=our latest exit minus earliest signal. The prime's independent gone mark19:12:07.386Z lies inside our exit bracket.\n\nNo SIGKILL, per prime (recipe's killing-it marker never printed). New PID42016 logged listening19:12:07.772Z; bounce-rs confirmed19:12:09.197Z, commit3b5d06ae. These signal/SIGKILL/new-ready facts are prime receipts, not inferred from the exit observer or re-probed. Prime reports an80s real-Rust-change build; build time is not stop duration.\n\nFour-hour RSS was relayed before the bounce and canonically recorded as f:242 note2474913aa36156eae9b4d65701814c3252ac296c:141200KiB=137.890625MiB=144.5888decimalMB,+368KiB over the first requested sample; same PID/start/commit, no200MB rule trigger. No RSS or counters compared across this bounce.\n\nRaw exit /tmp/f298-bounce-old-gone.json; composed timeline /tmp/f298-bounce-complete.json. Observer completed; no active timing collector remains. No bounce/signal/build/deploy/fleet APPLY by this performance seat. Role holding ended at merge; no reacquisition for this postmerge note.\n\nmagicWand: retain signal brackets separately from build/recipe start so stop timing stays attributable.\ndifficulties: the host-retained observer captured the exit correctly but its old tool bridge failed only while persisting. Recovered the completed receipt unchanged from the task exception frame, then wrote with the current tool; no resampling. Future retained collectors should return data to the current bridge rather than persist through a captured bridge reference.\n"
+		}
+	]
+}
