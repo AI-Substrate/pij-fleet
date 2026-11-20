@@ -1,0 +1,63 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fac9-e42f-7493-b8b4-e064fd189209",
+				"date": "2026-11-21",
+				"head": "4ef227f6ae704ca5f3923cd2d6d00fcdc8423fa5",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:300",
+				"writer": "pij-different-newt",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Authorized post-merge owner: repeat live CPU/RSS and launch measurements after bounce, including changed request/catalog/walk triggers."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 300",
+					"exit_code": 0,
+					"log": "FINAL at 4ef227f6ae704ca5f3923cd2d6d00fcdc8423fa5; latest CI 5/5 pass"
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" CARGO_INCREMENTAL=0 just shared-build --timeout 120s -- test --locked -p pij-testkit --test spawn_sites",
+					"exit_code": 0,
+					"log": "6 passed; nice19, shared lock, four jobs/threads"
+				},
+				{
+					"command": "pij-rs --json ping, twice; /bin/ps -p 42016 -o pid=,lstart=,time=,rss=,comm=",
+					"exit_code": 0,
+					"log": "60.032763s at PID42016/3b5d06ae59: 800->800; all ops flat; CPU +8.02s (13.36% one core); RSS 137136->132288 KiB"
+				},
+				{
+					"command": "just spawn-rate --seconds 20 --json",
+					"exit_code": 0,
+					"log": "20.0s; PID42016; machine95.2 launches/s; sampled90.2/s; no daemon children observed (lower bound)"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "Eight TS-tool stages unavailable/mismatched in dependency-free C25 tree; native/SDK/skill pass; not a local full-gate pass. No dependencies installed or linked."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES -- performance, round 1\nPR #300; head 4ef227f6ae704ca5f3923cd2d6d00fcdc8423fa5; base 305b60ab7b81fc183402e9a485d3c0e97549f63f.\n\nNo blocking cost regression found. The changed sites retain their counters, remove two external reads, and add no periodic work. This is a cost verdict, not a substitute for the separately requested correctness/security verdicts.\n\nChanged-site budget\n\n| Site | Before -> after | Trigger and scaling |\n| --- | --- | --- |\n| omp.models | One bare-name launch -> one resolved-path launch when OMP resolves successfully | Per model inventory invocation, including observed-label resolution, not only the public catalog operation. No periodic/seat-wide fan-out. The existing 10 ms try_wait loop is unchanged: at most about 100 in-process checks/s for the existing 5 s timeout, no launches per check. |\n| lsof.identity-peer-pid | One bare-name launch -> one /usr/sbin/lsof launch on macOS; cached PATH resolution elsewhere | Per host-identity ancestry check. No timer or healthy-seat polling. The launched lsof still scans socket ownership; it was not eliminated. |\n| ps.identity-caller-ancestry | One whole-machine ps -> zero launches | At most 64 in-process parent-reader calls per check, constant-bounded independent of total fleet size. |\n| ps.tmux-harness-process-tree | Up to two ps launches -> one /bin/ps snapshot, followed by one in-process selected-start read | Per invocation. The retained whole-machine snapshot and parsing still scale with host process count; launch count does not scale with subtree size. All production call sites pass local_start. |\n| ps.registration-native-process | Unchanged: at most one single-PID argv launch per host-named ancestor per registration | Per qualifying registration on macOS, with registration-local caching and HOST_NAMES gating; Linux reads procfs. Existing holder-current refusals pay zero. Not a new poll or per-seat-per-tick launch. |\n| CLI statusline_owns | Zero -> zero | Only extracts the identical observed_start(...).local closure into local_start. No launch or cadence change. |\n\nSources: crates/harnesses/src/models.rs:317-351,443-453; crates/daemon/src/http/identity.rs:676-738; crates/harnesses/src/proc.rs:259-280,397-416; crates/tmux/src/lib.rs:1655-1672; crates/daemon/src/registration.rs:2475-2565; crates/cli/src/main.rs:2688-2692.\n\nNotes on the claims\n\n1. The sensor is sound for the contiguous literal spelling it checks, not a semantic proof of every program launched through helpers/macros. The nine-crate source scan saw 197 production files, six /bin/ps literal controls, and no rejected bare literals. The real six-test spawn_sites suite passes, including count coverage, retired operations and registration gating. The new predicate catches Command::new(\"omp\") and qualified Command::new(\"lsof\"), but not Command::new(NAME), Command::new(concat!(...)), a literal on a separate line, or a macro forwarding $program. Existing production_lines exclusions also remain. This is a disclosed tripwire limit, not a new uncounted changed launch or a reason to require an AST framework. Sources: crates/testkit/tests/spawn_sites.rs:17-55,246-290,297-304,470-480.\n\n2. The PR table's request triggers are narrower than the call graph. The pane walk also serves adoption (http/identity.rs:829), process-backed controls (http/mod.rs:2916), conditional recipient checks (http/governance.rs:2008-2010), and Codex caller checks until a thread is recorded (http/codex_caller.rs:48-60 -> codex_bind.rs:67-88). The latter is not the event-gated CodexBinder itself. Likewise, omp.models also serves resolve_omp_model (models.rs:443-453), not just catalog display. None introduces a new cadence here, and all pane-walk users benefit from the removed recheck launch. State rates per invocation/request rather than assuming these operations occur only at registration.\n\n3. \"Resolved once\" means a successful cached hit, with the existing resolver's recovery semantics. A missing executable is not cached and returns the bare name; a vanished hit is resolved again and ENOENT can retry once. Relative PATH entries also retain their path spelling. The PR reuses this established behavior rather than adding a permanent absolute-path guarantee for every OMP failure case. The macOS identity lsof constant is unconditionally absolute. Sources: crates/core/src/program.rs:97-117,134-162; http/identity.rs:735-738.\n\nLive BEFORE receipt (no bounce, no kills)\n\nCommands: pij-rs --json ping (spawns plus registrations selected); /bin/ps -p 42016 -o pid=,lstart=,time=,rss=,comm=.\n\nSame daemon PID 42016, deployed commit 3b5d06ae59, process start Sat 21 Nov 05:12:07 2026 in host local time.\nWindow: 2026-11-20T21:09:46.335091Z -> 2026-11-20T21:10:46.383902Z; measured monotonic snapshot interval 60.032763 s.\nSpawns: 800 -> 800, 0.000/s. All 19 by_op deltas were zero:\n\nddocs.community; gh.delivered; git.community; ps.registration-native-process; ps.sidecar-process-group; ps.tmux-harness-process-tree; tmux.atomically reserve staged submit; tmux.authorize staged submit commit; tmux.clear-options tap owner; tmux.control-client; tmux.load submit buffer; tmux.new-window; tmux.paste owned submit buffer; tmux.pipe-pane attach; tmux.pipe-pane detach; tmux.rename-window; tmux.restore pane input and release ownership; tmux.set-options tap owner; tmux.submit authorized staged body.\n\nThe changed omp.models, lsof.identity-peer-pid and ps.identity-caller-ancestry operations were absent at both edges (zero). The op sum reconciles exactly to the total delta.\n\nDaemon cumulative CPU: 16:36.02 -> 16:44.04, +8.02 CPU s, about 13.36% of one core over the interval. RSS: 137136 -> 132288 KiB. These are aggregate daemon readings, not attribution of CPU to registration or proof of a memory trend. No machine sampler was running during this CPU interval.\n\nSeparate subsequent command: just spawn-rate --seconds 20 --json, exit 0.\nResult: 20.0 s, daemon_pid 42016, machine 95.2 new processes/s; 90.2 sampled/s; no daemon children observed. Sampled command lower bounds included bash 7.8/s, copilot 6.6/s, rustc 3.9/s and cargo 2.5/s. The observer busy-polled 188062 times; parent attribution is a lower bound, includes concurrent fleet/build activity, and is not a PR-isolated before/after comparison.\n\nRegistration F-item decision\n\nNo new F-item justified by these readings. The retained C27 exception is still correctly host-gated and unchanged by #300. At the baseline, 235 ps launches belonged to 124 registration attempts: heartbeat.pane.unchanged 73/187 (2.562 ps each), receive.pane.unchanged 12/28, explicit.pane.* 7/16, two retired pane attempts 2/4, lease-retry.pane.holder-current 24/0, unspecified.pane.retired 6/0. Across the 94 attempts that paid argv cost this is 2.50 ps/attempt, not a universal 2.6 constant. Both registrations and ps were flat during the measured minute. The nonzero daemon CPU while registration launches were zero cannot be assigned to argv reads. Do not introduce a PID/start-only argv cache: exec can change argv without changing those keys. Reopen C27 only with measured registration latency/CPU harm, as its ruling requires.\n\nValidation and proof ceiling\n\n- just pr-freeze 300: FINAL at the exact full head; current latest CI checks 5/5 pass. Earlier failed Delivers runs are superseded, not current failures.\n- PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" CARGO_INCREMENTAL=0 just shared-build --timeout 120s -- test --locked -p pij-testkit --test spawn_sites: PASS, 6/6. Used the shared lock and nice-19 wrapper, four jobs/threads; no concurrent build owned by this seat.\n- Read-only reproductions of the new literal predicate confirmed the positive/negative spelling controls above; these are not claimed as compiled source-mutant runs. The coder's other mutation receipts were not independently rerun.\n- harness boot: advisory NOT-READY because this deliberately dependency-free review worktree has no node_modules.\n- harness checks --quick: FAIL locally on eight unavailable/mismatched TS-tool stages; skill/native/SDK stages pass, attribution warns, heavy stages skipped. No npm install or node_modules link was made; this is not a local full-gate pass. Exact-head CI is the available full gate. No availability block is being published.\n- git status --short --untracked-files=all: clean; the detached review tree was not edited.\n\nAFTER receipt remains owed to the authorized post-merge bounce owner. Re-measure same-fleet launch counters, CPU/RSS and the short machine window after deployment, and exercise the changed request/walk/catalog triggers: an idle zero-launch window alone cannot demonstrate their reductions. No collector from this review remains running.\n\nHarness improvement candidate: one read-only cost-receipt command should capture PID/start/commit, monotonic interval, reconciled op deltas, registration denominators, CPU/RSS and the separately labelled short machine probe. This session had to assemble that evidence manually; retain the explicit quiet-window/trigger-exercise distinction rather than adding a generic pass threshold.\n"
+		}
+	]
+}
