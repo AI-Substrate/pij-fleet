@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f96f-c879-7672-b3a8-9d5927d9ee6d",
+				"date": "2026-11-21",
+				"head": "0a7ff6de7aea496025df7c5a5f3ba4a792448198",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:293",
+				"writer": "pij-sufficient-clam",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"F244: inherited missing-tmux lookup bypass ships by prime C34 ruling, folded into the F243 PR; refuse missing tmux unless explicitly overridden or resolve it as the daemon does."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 293",
+					"exit_code": 0,
+					"log": "pr293-r2-freeze.log"
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-testkit --test build_stamps -- --nocapture --then clippy -p pij-testkit --test build_stamps -- -D warnings",
+					"exit_code": 0,
+					"log": "pr293-r2-build-stamps.log"
+				},
+				{
+					"command": "signal-free exact-helper characterization with tmux absent from PATH and UNSAFE unset",
+					"exit_code": 0,
+					"log": "pr293-r2-missing-tmux.log"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR 293 correctness review: round 2, final under C34\n\nHead: 0a7ff6de7aea496025df7c5a5f3ba4a792448198\nBase: 288d0d078fe0ef524a3e56c87a94ae8f6a382d88\nRequest: 01a1f96f-c879-7672-b3a8-9d5927d9ee6d\nReviewer: pij-sufficient-clam\n\n## Verdict\n\nPASS WITH NOTES. P293-001 is closed for the ordinary, killable tmux IPC client.\nF244 is the prime's named residual, folded into the F243 PR; it does not block\nthis final review or start a third round. The reviewer/293 holding remains\nuntil merge.\n\n## Repair and disposition\n\nReviewed only d17dae35..0a7ff6de: two commits, three files. The original HTTP\ndrain and control-release implementation did not change.\n\nAt justfile:749-792, the setter is launched with stdin/stdout on /dev/null\nand stderr in the private build-copy directory. The SECONDS-based wait lasts\n1-2 seconds plus scheduling/poll overhead; on expiry only the owned setter PID\nis killed and waited for. Timeout and unexpected command failure refuse before\nSIGINT. Success and the recognized no-server/no-socket/no-session diagnostics\nproceed. Exactly PIJ_BOUNCE_UNSAFE=1 explicitly overrides the refusal and emits\nits diagnostic.\n\nThe error message accurately says the new binary has already been installed:\nthe old daemon is left running, not every deployment side effect rolled back.\nThe protection/refusal is a brake on stopping the old daemon, not retention.\n\nThe permanent recipe tests run the actual Bash body, not a reimplementation.\nThey prove both normal/name-selected argv, protection before the stop,\nrecognized benign failures, timeout refusal, permission-denied refusal and\nthe explicit unsafe override. Their victim is an owned real sleep process;\ntmux, build, installation and port probes are fakes. The shebang-aware harness\nchange also preserves the existing stamp/install/nudge tests.\n\n## Named residual and proof ceilings\n\n- F244: when command -v tmux fails, the inherited no-else branch still reaches\n  SIGINT without protection or PIJ_BOUNCE_UNSAFE=1. A signal-free probe of the\n  exact helper, PATH=/var/empty and UNSAFE unset, returned rc 0 and reached\n  the stop marker. No real daemon or tmux server was touched.\n  The prime's C34 ruling, relayed by pm-001, explicitly accepts this as F244\n  folded into the F243 PR. That follow-up should refuse missing tmux unless\n  overridden, or resolve it as the daemon does.\n- The wait after SIGKILL has no independent timer. This proof establishes\n  ordinary killable-child cleanup, not an absolute bound on OS-level\n  uninterruptible/reaping failure. Performance routed that qualification to\n  the PM; it is not a newly invented third-round gate.\n- Native -L/default resolution replaced synthesized -S. The argv tests pass;\n  the security holder owns the socket/old-environment security verdict.\n- The inherited CLI tail EOF exit is already a named known limit. No unchanged\n  stream/client behavior was re-reviewed or re-tested here.\n- No additional mutation runs or real-tmux smoke were performed in this round.\n  The coder's mutation/smoke claims remain attributed to the packet, not to\n  this reviewer's direct evidence. Two postmerge production bounces remain\n  prime-owned and are not supplied by these tests.\n\n## Validation\n\nFrom the detached, clean exact-head review worktree:\n\n```bash\nPIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-testkit --test build_stamps -- --nocapture --then clippy -p pij-testkit --test build_stamps -- -D warnings\n```\n\nPASS, exit 0: all 12 tests passed in 12.74 seconds; scoped macOS clippy passed.\nOne shared target and lock, niceness 19 and four jobs. Receipt:\npr293-r2-build-stamps.log.\n\nThe missing-tmux exact-helper probe passed its characterization assertion:\nrc 0, REACHED_SIGNAL_WITHOUT_PROTECTION, empty stderr. Receipt:\npr293-r2-missing-tmux.log.\n\ngit diff --check d17dae35 HEAD passed. harness boot returned dependency-not-ready;\nno node_modules was installed or linked under C25. Unchanged TS proof is the\nexact-head CI, not a local TS claim. pr-freeze was FINAL on entry; final\npublication check is recorded with the verdict evidence.\n\n## Harness feedback\n\nmagicWand: make missing-executable handling a permanent fail-closed fixture in\nF244, rather than leaving the helper's applicability implicit.\n\nThe helper timeout/refusal fixture closes the first-round harness gap. The\nnew-round disposition characterization and prime ruling were captured in the\nreviewer's harness observation bucket and are preserved here.\n\nNo review-worktree source edits, installation, live daemon signals or live\nfleet measurements were performed.\n"
+		}
+	]
+}
