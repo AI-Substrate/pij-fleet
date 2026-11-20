@@ -739,29 +739,49 @@ bounce-rs:
       # daemon's tmux server before the signal, so no exit of its control
       # client, the SIGKILL below or a crash included, can destroy `_pij` under
       # it (F237); the new daemon's setup switches it back on. The server is
-      # found as the daemon finds it: PIJ_TMUX_SERVER's label, else $TMUX's
-      # socket, else the default one, in TMUX_TMPDIR (or /tmp) under this uid;
-      # tmux by the path the shell resolves, once. No server or no `_pij` (a
-      # first boot) is not an error. Bounded (P293): a frozen server never holds
-      # the bounce before its signal; the call has 1 to 2 s on the clock (bash's
-      # SECONDS), then is killed and the bounce goes on.
+      # named as the daemon names it, PIJ_TMUX_SERVER's label (-L) or none, and
+      # tmux finds the socket itself ($TMUX's, else the default one), with its
+      # own check of the socket directory: never -S (S293-001). tmux by the path
+      # the shell resolves, once. Bounded (P293-001): the call has 1 to 2 s on
+      # the clock (bash's SECONDS), then is killed. No server or no `_pij` (a
+      # first boot: nothing to protect) and success go on to the signal; a
+      # timeout or any other failure refuses the bounce with the old daemon
+      # untouched, unless PIJ_BOUNCE_UNSAFE=1 says a human checked.
       if tmux_bin=$(command -v tmux); then
-        if [ -n "${PIJ_TMUX_SERVER:-}" ]; then
-          sock="${TMUX_TMPDIR:-/tmp}/tmux-$UID/$PIJ_TMUX_SERVER"
-        elif [ -n "${TMUX:-}" ]; then
-          sock="${TMUX%%,*}"
+        label="${PIJ_TMUX_SERVER:-}"
+        set_err="${built%/*}/destroy-unattached.err"
+        # stdin and stdout from /dev/null: a tmux client hands both to the
+        # server, and a frozen server would hold this recipe's own output open.
+        if [ -n "$label" ]; then
+          "$tmux_bin" -L "$label" set-option -t _pij: destroy-unattached off </dev/null >/dev/null 2>"$set_err" &
         else
-          sock="${TMUX_TMPDIR:-/tmp}/tmux-$UID/default"
+          "$tmux_bin" set-option -t _pij: destroy-unattached off </dev/null >/dev/null 2>"$set_err" &
         fi
-        "$tmux_bin" -S "$sock" set-option -t _pij: destroy-unattached off 2>/dev/null &
         setter=$!
         since=$SECONDS
         while kill -0 "$setter" 2>/dev/null && [ $((SECONDS - since)) -lt 2 ]; do /bin/sleep 0.1; done
         if kill -0 "$setter" 2>/dev/null; then
           kill -9 "$setter" 2>/dev/null || true
-          echo "bounce-rs: could not set destroy-unattached off on $sock; continuing" >&2
+          wait "$setter" 2>/dev/null || true
+          unsafe="tmux did not answer in 2 s"
+        elif wait "$setter"; then
+          unsafe=""
+        else
+          why=$(<"$set_err")
+          case "$why" in
+            "no server running on"* | "error connecting to "*"(No such file or directory)"* | "no such session: _pij"* | "can't find session"*) unsafe="" ;;
+            *) unsafe="tmux failed: ${why:-no diagnostic}" ;;
+          esac
         fi
-        wait "$setter" 2>/dev/null || true
+        if [ -n "$unsafe" ]; then
+          manual="$tmux_bin${label:+ -L $label} set-option -t _pij: destroy-unattached off"
+          if [ "${PIJ_BOUNCE_UNSAFE:-}" = 1 ]; then
+            echo "bounce-rs: could not run '$manual' ($unsafe); PIJ_BOUNCE_UNSAFE=1, stopping pid $old anyway" >&2
+          else
+            echo "bounce-rs: could not run '$manual' ($unsafe), so stopping pid $old could crash that tmux server (F237); the daemon was not stopped (the new build is installed). Run it by hand, then just bounce-rs again; or, having checked that server, PIJ_BOUNCE_UNSAFE=1 just bounce-rs" >&2
+            exit 1
+          fi
+        fi
       fi
       kill -INT "$old" 2>/dev/null || true
       since=$SECONDS
