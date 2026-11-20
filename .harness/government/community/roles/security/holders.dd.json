@@ -603,7 +603,10 @@
 					"harness_session": "b9fe94d7-4c83-4917-b3c5-04a5c551f264",
 					"instance_key": "275",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #275 merged (3bffec2136b5)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-remarkable-horse",
+					"to": "2026-11-20T00:35:07.323Z",
 					"why": "#275 F200 security verdict, fresh seat"
 				},
 				{

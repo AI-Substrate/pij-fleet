@@ -2157,7 +2157,10 @@
 					"harness_session": "8754052e-e5ea-4ec5-9711-89fc659723d7",
 					"instance_key": "275",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #275 merged (3bffec2136b5)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-correct-ocelot",
+					"to": "2026-11-20T00:35:07.323Z",
 					"why": "#275 F200 correctness review, fresh seat"
 				},
 				{
