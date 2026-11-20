@@ -816,6 +816,16 @@
 					"seat": "pij-suitable-trout",
 					"to": "2026-11-20T12:33:27.466Z",
 					"why": "#290 F237 security"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T12:42:43.954Z",
+					"harness": "copilot",
+					"harness_session": "0225bbff-d47c-40cc-8a2c-87d57233a55f",
+					"instance_key": "292",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-inevitable-amphibian",
+					"why": "#292 F238 security"
 				}
 			]
 		}
