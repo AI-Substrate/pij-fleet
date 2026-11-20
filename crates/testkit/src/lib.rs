@@ -16,6 +16,8 @@
 //! * [`toolchain`] — the pin assert, stage 1 of `pij-gate`.
 //! * [`lockfile`] — the reproducibility assert, stage 2.
 //! * [`tmux`] — a private tmux server per test, never the operator's.
+//! * [`tmux_sweep`] — the one-time sweep of what fixtures leaked into tmux's
+//!   socket directory (F241).
 //! * [`time`] — the one test-only wall-clock scale for real-child budgets.
 //!
 //! Never a dependency of production code: every consumer declares it `@dev`, and
@@ -33,6 +35,7 @@ pub mod golden;
 pub mod lockfile;
 pub mod time;
 pub mod tmux;
+pub mod tmux_sweep;
 pub mod toolchain;
 
 pub use exec::block_on;

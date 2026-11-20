@@ -5,7 +5,6 @@
 //! never does, and the stop hung until `bounce-rs` SIGKILLed the daemon: its
 //! control client then went with no teardown at all (F238 undone).
 
-use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -34,12 +33,6 @@ async fn an_open_event_stream_does_not_hold_the_stop_and_the_control_client_leav
     let state_dir = pij_testkit::fresh_dir("pij-rs-daemon-stop");
     let private = PrivateTmux::start();
     let server = private.name().to_string();
-    let socket = PathBuf::from(
-        String::from_utf8_lossy(
-            &tmux(&server, &["display-message", "-p", "#{socket_path}"]).stdout,
-        )
-        .trim(),
-    );
     let mut config = daemon_config("127.0.0.1:0", &state_dir.join("pij.sqlite"), false);
     config.tmux_server = Some(server.clone());
     let daemon = pij_daemon::boot(&config, state_dir.clone())
@@ -95,11 +88,5 @@ async fn an_open_event_stream_does_not_hold_the_stop_and_the_control_client_leav
 
     drop(stream);
     drop(private);
-    if let (Some(dir), Some(name)) = (socket.parent(), socket.file_name()) {
-        let _ = std::fs::remove_file(dir.join(format!(
-            ".{}.pij-control-attach.lock",
-            name.to_string_lossy()
-        )));
-    }
     let _ = std::fs::remove_dir_all(&state_dir);
 }

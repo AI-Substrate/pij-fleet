@@ -2304,11 +2304,6 @@ impl Drop for TestSession {
         let killed = Command::new("tmux")
             .args(["-L", &self.server, "kill-server"])
             .output();
-        // F238: the server's attach lock sits beside its socket, in tmux's own
-        // directory; this server is gone, so is its lock.
-        let _ = fs::remove_file(pij_tmux::socket_attach_lock_path(&pij_tmux::socket_path(
-            Some(&self.server),
-        )));
         // kill-server can exit non-zero while the server does go: CI's tmux
         // printed "server exited unexpectedly" after test bodies that passed
         // (F228). The teardown's postcondition is "no server", not
@@ -2327,5 +2322,10 @@ impl Drop for TestSession {
             self.server,
             killed.map(|output| String::from_utf8_lossy(&output.stderr).into_owned())
         );
+        // F238/F241: tmux leaves the socket after kill-server, and the
+        // control client's attach lock sits beside it, in tmux's own shared
+        // directory; both go only once nothing answers on the socket
+        // (R295-002).
+        pij_testkit::tmux::finish_server(&pij_testkit::tmux::socket_path(&self.server));
     }
 }

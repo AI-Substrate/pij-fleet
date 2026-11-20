@@ -371,6 +371,15 @@ rust-check:
     cargo fmt --all --check
     PIJ_SHARED_TARGET="$(bash harness/scripts/cargo-target.sh)" bash harness/scripts/shared-build.sh -- clippy --locked --workspace --all-targets -- -D warnings --then test --locked --workspace -- --skip route_inventory_tests::every_served_route_is_in_the_inventory_and_classified
 
+# F241: the one-time sweep of the tmux sockets and attach locks pij's test
+# fixtures leaked into tmux's shared directory (`$TMUX_TMPDIR` or /tmp, then
+# tmux-<uid>). Only fixture-prefixed names, only with no server answering and
+# the lock not held, never one touched within 10 min. A dry run (counts and a
+# sample) unless `--apply`. In-process probes, no launch per entry; built and
+# run through shared-build (F217).
+tmux-fixture-sweep *ARGS:
+    PIJ_SHARED_TARGET="$(bash harness/scripts/cargo-target.sh)" bash harness/scripts/shared-build.sh -- run --locked -q -p pij-testkit --bin pij-tmux-fixture-sweep -- "$@"
+
 # Cargo into a target several worktrees share, one worktree at a time (plan 198):
 # lock, disk floor, fresh sources, CARGO_INCREMENTAL=0, niceness max(19, the
 # caller's) on every cargo command (F186, F220: nice19.sh), always released.
