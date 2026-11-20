@@ -2448,6 +2448,16 @@
 					"seat": "pij-integral-tiglon",
 					"to": "2026-11-20T15:50:31.409Z",
 					"why": "#294 F240 review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T15:58:33.397Z",
+					"harness": "copilot",
+					"harness_session": "0474289e-ae75-4153-8ce4-be959f192fb9",
+					"instance_key": "295",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-previous-newt",
+					"why": "#295 F241 review"
 				}
 			]
 		}
