@@ -213,6 +213,9 @@ pub struct AttemptCounts {
     /// Per seat address (the resolved seat, else the claimed id, else
     /// `(unnamed)`), at most [`SEATS`] of them plus [`OVERFLOW`].
     pub by_seat: BTreeMap<String, Tally>,
+    /// D2 (R277-3): live (seat, code) pairs the `registration.refused`
+    /// window evicted to tell a new one, since the daemon started.
+    pub refusals_evicted: u64,
 }
 
 #[derive(Default)]
@@ -288,6 +291,7 @@ impl Attempts {
             ps: by_key.values().map(|tally| tally.ps).sum(),
             by_key,
             by_seat: counts.by_seat.clone(),
+            refusals_evicted: 0,
         }
     }
 

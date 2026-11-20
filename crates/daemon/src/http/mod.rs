@@ -920,7 +920,7 @@ async fn health(State(state): State<AppState>) -> Response {
             .path()
             .map(|path| path.display().to_string()),
         spawns: pij_core::spawns::snapshot(),
-        registrations: state.registration.attempts().snapshot(),
+        registrations: state.registration.counts(),
         cache_proxy: state.services.cache_proxy.health(),
         requests: state.route_counts.snapshot(),
     };

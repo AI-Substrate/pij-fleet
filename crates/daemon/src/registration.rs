@@ -203,9 +203,19 @@ impl RegistrationService {
         }
     }
 
-    /// The registration counters `ping` reports (plan 211).
+    /// The registration counters alone (plan 211); `ping` reads [`Self::counts`].
+    #[cfg(test)]
     pub(crate) fn attempts(&self) -> &attempts::Attempts {
         &self.attempts
+    }
+
+    /// What `ping` reports as `registrations`: the attempt counters and the
+    /// refusal window's evictions (D2, R277-3).
+    pub(crate) fn counts(&self) -> attempts::AttemptCounts {
+        attempts::AttemptCounts {
+            refusals_evicted: self.refusals.evicted(),
+            ..self.attempts.snapshot()
+        }
     }
 
     /// Register `claim`, counting the attempt under `path` (plan 211): its
