@@ -2315,6 +2315,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-exuberant-beetle",
 					"why": "#285 F234 review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T08:38:44.918Z",
+					"harness": "copilot",
+					"harness_session": "d2cfd247-cdf8-47ee-bb93-62377500148f",
+					"instance_key": "284",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-glorious-smelt",
+					"why": "#284 F230 review"
 				}
 			]
 		}
