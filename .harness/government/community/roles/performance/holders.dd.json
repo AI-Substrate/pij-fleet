@@ -381,6 +381,16 @@
 					"seat": "pij-melodic-snail",
 					"to": "2026-11-20T07:29:26.004Z",
 					"why": "#282 adds timing to the hot path"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T07:46:23.184Z",
+					"harness": "omp",
+					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
+					"instance_key": "283",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-melodic-snail",
+					"why": "#283 adds reads per /clear; static cost"
 				}
 			]
 		}
