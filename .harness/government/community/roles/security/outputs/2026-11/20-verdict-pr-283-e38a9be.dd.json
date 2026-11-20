@@ -1,0 +1,56 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f7eb-f587-75b1-abbd-d62a5ada17b9",
+				"date": "2026-11-20",
+				"head": "e38a9be31ec4076c3204c7c8de607d9beb978ef9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:283",
+				"writer": "pij-outside-possum",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 283",
+					"exit_code": 0,
+					"log": "FINAL at exact e38a9be31ec4076c3204c7c8de607d9beb978ef9; repeated immediately before publication"
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=$(bash harness/scripts/cargo-target.sh) just shared-build -- test --locked -p pij-daemon --test directory_http clear -- --nocapture",
+					"exit_code": 0,
+					"log": "6/6 incl hornet and all three added tests; passed again after isolated guard mutation restored"
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=<shared-target> just shared-build -- test --locked -p pij-daemon --test directory_http a_later_clear_never_carries_an_earlier_boundary_without_an_intent -- --exact --nocapture",
+					"exit_code": 101,
+					"log": "Own Redo->New predecessor guard mutation CAUGHT: one test failed at10718, left0/right1. Guard restored; source worktree removed."
+				},
+				{
+					"command": "harness checks --json",
+					"exit_code": 1,
+					"log": "prime-governance:.harness/government/community/roles/security/outputs/2026-11/20-note-pr-283.dd.json (03e02f08). All local heavy stages pass; eight C25 JS/tooling failures; exact-head CI SUCCESS; no stages skipped."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS: #283 security round 1 at e38a9be31ec4076c3204c7c8de607d9beb978ef9, base 46106685eee34a73cb26223d05cb2199c40b715b.\n\nNo introduced security vulnerability or C21 disclosure was identified in the seven-file delta. This review applies C32/C33's user-account trust boundary and C34's scoped review contract, not new per-seat credential isolation.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerabilities found | - |\n\nSource evidence:\n\n- Chain confinement: carry.rs:92-114 proves present/equal launch IDs and native-boundary links with a live endpoint; :280-283 passes only its retired seats as via. community/directory.rs:2306-2327 looks up the latest holding by seat and instance and follows an ended row only when its exact \"carried to\" destination is in via. :2338-2345 requires an ended terminal row to name the actual endpoint. Another launch's seat is not added merely because governance mentions it.\n- The walk is bounded, not an immutable-incarnation authentication mechanism. It uses current registry identity and latest holding identity; membership does not impose forward ordering. Cycles cannot cause an unbounded traversal: governance traversal has via.len()+1 iterations. This review does not claim exhaustive concurrent-ID-reuse coverage or a new per-seat security boundary.\n- Exact holding ends: store/community.rs:265-268 ends and inserts the recovered ended row within the existing transaction. :449-489 binds project, role, instance, seat and from_at, with ON CONFLICT DO NOTHING on insertion. A different instance, seat or start identity is not ended by that row. Governance is authoritative for the identical key; this is not a blanket live-seat veto.\n- Predecessor finish: carry.rs:508-530 selects same-launch native predecessors; each subsequently uses the normal carry guard. :471 uses Redo and :229-231 returns without mutation when no intent exists. Attempts serialize at :227; :196-205 matches completion to intent sequence and empty delivering, :238-243 skips completed holdings/mail work, and :548-563 makes boot use Redo too. Execution may repeat; effects are idempotent, rather than tasks executing exactly once.\n- Bounds/cost: MAX_HOPS is 16 (carry.rs:75). Predecessor discovery scans a finite full roster with at most 16 candidate searches (:516-529), hence up to 16N candidate inspection for N registry rows, then at most 16 predecessor attempts plus the new boundary. Each uses intent/spine matching (:173-199). Roster, scope, holders and underlying spine-query sizes are not constant bounds. No new recurring timer, per-tick/per-seat launch or process-launch site was identified; added work is at a native boundary, not at rest. No live deploy or before/after fleet cost measurement was performed by this security review.\n- Public-content/injection review: no new credential literals, private owner/content disclosure, machine paths outside pij's layout, sensitive files or dependency changes. No credential files read. No new shell construction: inherited Git arguments use Command (community/git.rs:35-49), and role-path grammar remains checked (community/layout.rs:110-135).\n\nExecution evidence:\n\n1. `just pr-freeze 283`: PASS at the full head above; repeated before publication. Exact-head CI run 44695730418: check(22), check(24), rust-lint and rust-test SUCCESS; delivers run 44695730269 SUCCESS.\n2. `PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-daemon --test directory_http carry -- --nocapture --then test --locked -p pij-store carry -- --nocapture`: exit 0. Daemon carry selection 9/9 PASS. The store name filter ran one unrelated fleet-history test; it is not claimed as separate carry-index proof. The real index behavior is exercised by daemon integration tests.\n3. `PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-daemon --test directory_http clear -- --nocapture`: exit 0, 6/6 PASS, including all three added tests: reviewer_r2_second_clear_after_git_before_index_is_recovered; a_second_clear_finishes_the_cut_carry_before_its_own; a_later_clear_never_carries_an_earlier_boundary_without_an_intent.\n4. Own isolated mutation, no frozen-checkout edits: carry.rs:471, predecessor Start::Redo -> Start::New. `PIJ_SHARED_TARGET=<shared-target> just shared-build -- test --locked -p pij-daemon --test directory_http a_later_clear_never_carries_an_earlier_boundary_without_an_intent -- --exact --nocapture`: exit 101, one test executed and failed as expected. At directory_http.rs:10718 the unstarted predecessor's open holding count was 0, expected 1. This proves the no-backfill guard is tested. Mutation restored.\n5. After restoration, command (3) rebuilt the unchanged frozen checkout into the shared target and passed 6/6 again. No mutant artifacts are claimed as clean proof. Builds/tests used shared-build's lock, nice19 and four jobs. Disposable mutation worktree removed.\n6. `harness boot --json`: advisory ready:false, missing JS dependencies. `harness checks --json`: exit 1 overall, completed 2026-11-20T07:59:18.734Z, no stages skipped. PASS: Rust fmt/clippy/workspace tests, route inventory, smoke, native Copilot contracts, installed SDK and pij-skill. FAIL8: local-paths, omp-config, ddocs, coverage and lockfile lacked tsx (127); typecheck exited 2; ambient Biome rejected includes (1); vitest module missing (1). Attribution WARN127. C25 respected: no dependency install or node_modules symlink. This is not a green local ship gate; exact-head CI supplies the JS proof.\n\nDurable full-gate receipt:\nprime-governance:.harness/government/community/roles/security/outputs/2026-11/20-note-pr-283.dd.json\ncommit 03e02f08f41bbd6494c4b926b9664fefc62d4032\nThe body contains the complete captured emitted boot/checks envelopes, with machine paths scrubbed and terminal decorations normalized. Shared with the correctness reviewer, who stopped the duplicate heavy gate.\n\nHarness retrospective:\nmagicWand: one frozen-head review-proof command that returns a reusable per-sensor receipt and runs a disposable scoped guard mutation under shared-build.\ndifficulties: dependency-free review gates mix unavailable JS tooling with regression failures; buffered full-gate output requires a separate lock-owner inspection to distinguish progress from a stall. Captured as DL-001/DL-002 in this review's observation bucket and retained here. The shared durable receipt avoided a second workspace gate; no unrelated source or toolchain changes made.\n\nKeep security/283 held until merge. This output answers request 01a1f7eb-f587-75b1-abbd-d62a5ada17b9.\n"
+		}
+	]
+}
