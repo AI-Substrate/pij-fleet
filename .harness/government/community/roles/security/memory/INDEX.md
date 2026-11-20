@@ -82,4 +82,5 @@
 - [2026-11-20 Transient scheduling preserves registration refusals](2026-11-20-transient-scheduling-preserves.dd.md): Read before changing RegistrationError retry classification or Codex native-holder behavior. (codex, retries, registration, c33, proof)
 - [2026-11-20 Unknown observations must preserve retry state](2026-11-20-unknown-preserves-retries.dd.md): Read when a read API gains Busy or unavailable results, or when probe errors interact with Seen, cursors, liveness, revive or cleanup. (observation-safety, retries, liveness, c34, proof)
 - [2026-11-21 macOS bash 3.2 imports UID and EUID from the environment](2026-11-21-macos-bash-3-2-imports-uid-and-euid-from.dd.md): Read before accepting $UID/$EUID as a trusted identity in a just recipe or shell script. (shell, identity, c33, macos)
+- [2026-11-21 Per-hop ancestry walks and macOS-only proof](2026-11-21-per-hop-ancestry-walks-and-macos-only.dd.md): Open before reviewing in-process parent/start reads that replace a ps snapshot, or trusting CI for a macOS kernel path. (identity, process-ancestry, pid-reuse, proof, macos)
 <!-- /pij:generated -->
