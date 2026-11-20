@@ -2227,6 +2227,16 @@
 					"seat": "pij-semantic-hornet",
 					"to": "2026-11-20T05:11:26.143Z",
 					"why": "#279 F190 correctness review, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T05:43:33.081Z",
+					"harness": "copilot",
+					"harness_session": "b0e5c6a2-2e40-4df4-b155-d815340f4f51",
+					"instance_key": "281",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-formidable-parakeet",
+					"why": "#281 F232 correctness review, fresh seat"
 				}
 			]
 		}
