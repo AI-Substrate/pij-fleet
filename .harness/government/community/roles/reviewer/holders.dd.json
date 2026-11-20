@@ -2188,6 +2188,16 @@
 					"seat": "pij-calm-badger",
 					"to": "2026-11-20T02:38:07.296Z",
 					"why": "#277 auth/lapse correctness review, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T03:04:47.237Z",
+					"harness": "copilot",
+					"harness_session": "163aff50-deb1-47bb-ac25-b3fd8abbb607",
+					"instance_key": "278",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-innovative-jay",
+					"why": "#278 F228 test-only review, fresh seat"
 				}
 			]
 		}
