@@ -217,8 +217,12 @@ fn a_real_pane_left_alone_survives(name: &str, leave: impl FnOnce(TmuxAdapter)) 
         "an attach switches it on only for the idle pane"
     );
     drop(later);
-    let panes = server.run(&["list-panes", "-t", &target, "-F", "#{pane_current_command}"]);
-    assert_eq!(String::from_utf8_lossy(&panes.stdout).trim(), "cat");
+    // The start command, not the current one: Linux tmux runs `cat` under
+    // `sh -c`, so its current command reads `sh`.
+    let panes = server.run(&["list-panes", "-t", &target, "-F", "#{pane_start_command}"]);
+    let panes = String::from_utf8_lossy(&panes.stdout);
+    assert_eq!(panes.lines().count(), 1, "{panes}");
+    assert!(panes.contains("cat"), "the real pane survives: {panes}");
 }
 
 #[test]
