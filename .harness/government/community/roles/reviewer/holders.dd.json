@@ -2258,8 +2258,21 @@
 					"harness_session": "ce5bd1e8-b92d-49ec-b381-e6a9e2ea3ab6",
 					"instance_key": "f190-proof",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "carried to pij-outdoor-dormouse",
+					"released_by": "pij-outdoor-dormouse",
 					"seat": "pij-extraordinary-panda",
+					"to": "2026-11-20T06:46:59.584Z",
 					"why": "F190 live proof (throwaway)"
+				},
+				{
+					"assigned_by": "pij-outdoor-dormouse",
+					"from": "2026-11-20T06:46:59.587Z",
+					"harness": "copilot",
+					"harness_session": "533ce1a6-43a1-411e-96fd-9c1fe86a4a41",
+					"instance_key": "f190-proof",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-outdoor-dormouse",
+					"why": "carried from pij-extraordinary-panda at a native session boundary (same process)"
 				}
 			]
 		}
