@@ -936,3 +936,84 @@ fn list_panes_without_launch_never_starts_a_client_or_forks() {
         assert_eq!(server.launches().len(), warm, "a live client: no launch");
     });
 }
+
+/// Helper for the next test: one pij process with its own adapter. It parks
+/// until the go file exists, then reads (which starts its control client) and
+/// reports what it read.
+#[test]
+fn control_attach_helper_process() {
+    let Ok(server) = std::env::var("PIJ_ATTACH_RACE_SERVER") else {
+        return;
+    };
+    let var = |name: &str| PathBuf::from(std::env::var(name).expect(name));
+    let (taps, parked, go, answer) = (
+        var("PIJ_ATTACH_RACE_TAPS"),
+        var("PIJ_ATTACH_RACE_PARKED"),
+        var("PIJ_ATTACH_RACE_GO"),
+        var("PIJ_ATTACH_RACE_ANSWER"),
+    );
+    // Plain `tmux -L`, not the launch-logging wrapper: the wrapper's extra
+    // shell spreads the two attaches apart and hides the race.
+    let adapter = TmuxAdapter::for_server(server, taps);
+    fs::write(&parked, b"parked").expect("say parked");
+    while !go.exists() {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let read = block_on(adapter.list_panes());
+    fs::write(&answer, format!("{:?}", read.map(|panes| panes.len()))).expect("answer");
+}
+
+/// F229: two pij processes starting control clients on one server at the same
+/// moment, each sending the setup's `destroy-unattached on`, SIGSEGV'd the tmux
+/// 3.6a server (15 of 30 rounds without the lock), taking every pane with it.
+/// The attach lock makes attach and setup take turns across processes, so the
+/// server outlives every round.
+#[test]
+fn concurrent_control_attaches_from_two_processes_never_crash_the_server() {
+    for round in 0..10 {
+        let server = Server::with_sessions(&["work"]);
+        let go = server.dir.join("go");
+        let racers: Vec<_> = (0..2)
+            .map(|racer| {
+                let parked = server.dir.join(format!("parked-{racer}"));
+                let answer = server.dir.join(format!("answer-{racer}"));
+                let child = Command::new(std::env::current_exe().expect("test binary"))
+                    .args(["--exact", "control_attach_helper_process", "--nocapture"])
+                    .env("PIJ_ATTACH_RACE_SERVER", &server.name)
+                    .env("PIJ_ATTACH_RACE_TAPS", server.dir.join("taps"))
+                    .env("PIJ_ATTACH_RACE_PARKED", &parked)
+                    .env("PIJ_ATTACH_RACE_GO", &go)
+                    .env("PIJ_ATTACH_RACE_ANSWER", &answer)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .expect("spawn racer");
+                (child, parked, answer)
+            })
+            .collect();
+        let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(15));
+        while !racers.iter().all(|(_, parked, _)| parked.exists()) {
+            assert!(
+                Instant::now() < deadline,
+                "round {round}: racers never parked"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        fs::write(&go, b"go").expect("release racers");
+        let answers: Vec<String> = racers
+            .into_iter()
+            .map(|(mut child, _, answer)| {
+                child.wait().expect("reap racer");
+                fs::read_to_string(answer).unwrap_or_else(|error| format!("no answer: {error}"))
+            })
+            .collect();
+        assert!(
+            server.alive(),
+            "round {round}: the server died: {answers:?}"
+        );
+        assert!(
+            answers.iter().all(|answer| answer.starts_with("Ok(")),
+            "round {round}: {answers:?}"
+        );
+    }
+}

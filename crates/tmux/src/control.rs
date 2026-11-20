@@ -19,10 +19,18 @@
 //! The client lives in its own session, [`CONTROL_SESSION`], never one of the
 //! operator's (R-PRIME-1): attached there, it made a bare `tmux attach` skip the
 //! session the human last used.
+//!
+//! Attach and setup hold an exclusive `flock` on a lock file per tmux server
+//! (F229): two control clients attaching to one server at once, each sending
+//! the setup's `destroy-unattached on`, SIGSEGV the tmux 3.6a server and take
+//! every pane on it down. The lock is a brake: it can only delay or refuse an
+//! attach, and a refused start forks its reads exactly as a failed one does.
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
+use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex};
@@ -34,6 +42,15 @@ const READY_SENTINEL: &str = "pij-control-ready";
 const REPLY_TIMEOUT: Duration = Duration::from_secs(3);
 /// After a failed start, fork for this long before trying again.
 const RESTART_BACKOFF: Duration = Duration::from_secs(5);
+/// How long a start waits for another client's attach and setup on the same
+/// server (F229). A holder answers in milliseconds and gives up after
+/// [`REPLY_TIMEOUT`], so a wait this long only times out on a stuck holder;
+/// the start is then refused, its reads fork, and it retries after
+/// [`RESTART_BACKOFF`]. Attaching anyway would reopen the crash.
+const ATTACH_LOCK_WAIT: Duration = REPLY_TIMEOUT;
+/// How often a waiting start retries the lock. Only while another process
+/// is attaching: never per read, never per tick.
+const ATTACH_LOCK_RETRY: Duration = Duration::from_millis(10);
 /// Attach without resizing windows, without `%output` traffic, and without
 /// keyboard input. Not a write barrier: see the module doc.
 const ATTACH_FLAGS: &str = "no-output,ignore-size,read-only";
@@ -186,6 +203,9 @@ pub(crate) struct ControlClient {
     binary: OsString,
     server: Option<String>,
     enabled: bool,
+    /// The lock file attach and setup hold (F229): one per server, in the
+    /// adapter's state root.
+    attach_lock: PathBuf,
     state: Mutex<State>,
 }
 
@@ -198,11 +218,20 @@ impl std::fmt::Debug for ControlClient {
 }
 
 impl ControlClient {
-    pub(crate) fn new(binary: OsString, server: Option<String>, enabled: bool) -> Self {
+    /// `state_root` is the adapter's tap root (the daemon's
+    /// `<state>/pane-signals`); the attach lock lives there.
+    pub(crate) fn new(
+        binary: OsString,
+        server: Option<String>,
+        enabled: bool,
+        state_root: &Path,
+    ) -> Self {
+        let attach_lock = attach_lock_path(state_root, server.as_deref());
         Self {
             binary,
             server,
             enabled,
+            attach_lock,
             state: Mutex::new(State::default()),
         }
     }
@@ -222,7 +251,13 @@ impl ControlClient {
     }
 
     pub(crate) fn with_enabled(&self, enabled: bool) -> Self {
-        Self::new(self.binary.clone(), self.server.clone(), enabled)
+        Self {
+            binary: self.binary.clone(),
+            server: self.server.clone(),
+            enabled,
+            attach_lock: self.attach_lock.clone(),
+            state: Mutex::new(State::default()),
+        }
     }
 
     /// Answer a read over the control client, or `None` to make the caller fork.
@@ -306,6 +341,9 @@ impl ControlClient {
     }
 
     fn start(&self) -> io::Result<Live> {
+        // F229: no other client may attach to this server until this one's
+        // setup has answered. Released when `_attach` drops, on every return.
+        let _attach = lock_attach(&self.attach_lock, ATTACH_LOCK_WAIT)?;
         pij_core::spawns::record("tmux.control-client");
         // `-N`: no server means no client; never start one just to read it.
         // `-A`: attach to `_pij`, creating it first if it is absent.
@@ -376,6 +414,60 @@ impl ControlClient {
             Err(io::Error::other(
                 "control client did not answer its handshake",
             ))
+        }
+    }
+}
+
+/// The attach lock for `server` (`None`: the default server) under
+/// `state_root`. Keyed by the `-L` label, so isolated fixture servers never
+/// wait on the operator's. A dot file, never `*.raw`: the orphan-tap sweep
+/// cannot take it for a sink.
+pub(crate) fn attach_lock_path(state_root: &Path, server: Option<&str>) -> PathBuf {
+    let label: String = server
+        .unwrap_or("default")
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    state_root.join(format!(".control-attach-{label}.lock"))
+}
+
+/// Take the exclusive attach lock at `path`, waiting at most `wait` for
+/// another holder (F229). The kernel releases an `flock` when its holder's
+/// last descriptor closes, so a holder that died never blocks anyone. Times
+/// out as [`io::ErrorKind::WouldBlock`]: the start is refused, never made
+/// without the lock.
+pub(crate) fn lock_attach(path: &Path, wait: Duration) -> io::Result<File> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)?;
+    let deadline = Instant::now() + wait;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
+                std::thread::sleep(ATTACH_LOCK_RETRY);
+            }
+            Err(TryLockError::WouldBlock) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    format!(
+                        "another tmux control client held {} for {wait:?}",
+                        path.display()
+                    ),
+                ));
+            }
+            Err(TryLockError::Error(error)) => return Err(error),
         }
     }
 }
@@ -464,10 +556,15 @@ fn read_replies(mut stdout: impl BufRead, waiters: &Mutex<Waiters>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{Frame, Framer, Live, State, Waiters, command_line, forget, is_read};
+    use super::{
+        Frame, Framer, Live, State, Waiters, attach_lock_path, command_line, forget, is_read,
+        lock_attach,
+    };
     use std::ffi::OsString;
+    use std::io;
     use std::process::{Command, Stdio};
     use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
 
     fn feed(framer: &mut Framer, text: &str) -> Vec<Frame> {
         text.lines()
@@ -703,5 +800,102 @@ mod tests {
         );
         forget(&mut state, &current);
         assert!(state.live.is_none(), "its own waiter clears it");
+    }
+
+    fn lock_dir(label: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "pij-attach-lock-{label}-{}-{nanos}",
+            std::process::id()
+        ))
+    }
+
+    /// F229: each server has its own attach lock, so an isolated fixture
+    /// server never waits on the operator's, and the file is never a sink.
+    #[test]
+    fn attach_locks_are_per_server_dot_files() {
+        let root = std::path::Path::new("/state/pane-signals");
+        assert_eq!(
+            attach_lock_path(root, None),
+            root.join(".control-attach-default.lock")
+        );
+        assert_eq!(
+            attach_lock_path(root, Some("pij-rs-x/../y")),
+            root.join(".control-attach-pij-rs-x____y.lock")
+        );
+        assert_ne!(
+            attach_lock_path(root, Some("a")),
+            attach_lock_path(root, Some("b"))
+        );
+    }
+
+    /// F229: a held lock makes a start wait at most its bound, then refuse;
+    /// it is never taken without the lock. Once released it is taken at once.
+    #[test]
+    fn a_held_attach_lock_bounds_the_wait_then_refuses() {
+        let path = attach_lock_path(&lock_dir("held"), Some("srv"));
+        let holder = lock_attach(&path, Duration::ZERO).expect("first holder");
+        let bound = Duration::from_millis(200);
+        let started = Instant::now();
+        let refused = lock_attach(&path, bound).expect_err("held: refused, never shared");
+        let waited = started.elapsed();
+        assert_eq!(refused.kind(), io::ErrorKind::WouldBlock, "{refused}");
+        assert!(waited >= bound, "gave up early, after {waited:?}");
+        assert!(
+            waited < bound + pij_testkit::time::scaled(Duration::from_secs(2)),
+            "overran its bound: {waited:?}"
+        );
+        drop(holder);
+        lock_attach(&path, Duration::ZERO).expect("released: taken at once");
+    }
+
+    /// Helper for the next test: holds the lock in its own process until killed.
+    #[test]
+    fn attach_lock_holder_helper_process() {
+        let Ok(path) = std::env::var("PIJ_ATTACH_LOCK_HOLD") else {
+            return;
+        };
+        let ready = std::env::var("PIJ_ATTACH_LOCK_READY").expect("ready file");
+        let _held = lock_attach(std::path::Path::new(&path), Duration::ZERO).expect("hold");
+        std::fs::write(ready, b"held").expect("say held");
+        std::thread::sleep(Duration::from_secs(600));
+    }
+
+    /// F229: the kernel drops a dead holder's `flock`, so a crashed process
+    /// never wedges the attach: the lock is taken at once, with no wait.
+    #[test]
+    fn a_dead_holders_attach_lock_is_taken_at_once() {
+        let dir = lock_dir("dead");
+        let path = attach_lock_path(&dir, Some("srv"));
+        let ready = dir.join("holder-ready");
+        std::fs::create_dir_all(&dir).expect("lock dir");
+        let mut holder = Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "--exact",
+                "control::tests::attach_lock_holder_helper_process",
+                "--nocapture",
+            ])
+            .env("PIJ_ATTACH_LOCK_HOLD", &path)
+            .env("PIJ_ATTACH_LOCK_READY", &ready)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn lock holder");
+        let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(15));
+        while !ready.exists() {
+            assert!(Instant::now() < deadline, "holder never took the lock");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let refused = lock_attach(&path, Duration::from_millis(50))
+            .expect_err("a live holder in another process excludes this one");
+        assert_eq!(refused.kind(), io::ErrorKind::WouldBlock, "{refused}");
+
+        holder.kill().expect("kill holder");
+        holder.wait().expect("reap holder");
+        lock_attach(&path, Duration::ZERO).expect("dead holder: taken at once");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
