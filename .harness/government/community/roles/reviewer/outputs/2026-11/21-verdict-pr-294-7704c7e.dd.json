@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f98d-c84c-77f0-8b9f-0786ec3334d3",
+				"date": "2026-11-21",
+				"head": "7704c7ec932c514de975442ca1ae03d62abc6300",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:294",
+				"writer": "pij-integral-tiglon",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C34 follow-up P294-OBS1: qualify 3 s as the configured wait sum; Left's synchronous stderr warning has no independent I/O deadline. No measured normal-use hang."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 294",
+					"exit_code": 0,
+					"log": "FINAL at 7704c7ec932c514de975442ca1ae03d62abc6300; clean detached worktree; all latest CI checks pass"
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- fmt --all -- --check --then clippy -p pij-tmux --all-targets -- -D warnings --then test -p pij-tmux",
+					"exit_code": 0,
+					"log": "macOS, locked nice-only, four jobs/threads; 110 tests passed including both Err cases and the real-thread handoff"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "Rust workspace, route inventory, pij skill and native contracts passed; local tooling stages failed without pinned TS dependencies/compatible Biome; smoke lock waiter interrupted (143). Not a green local full gate; TS proof is exact-head CI under C25."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES - reviewer/294, F240, round 1\nHead: 7704c7ec932c514de975442ca1ae03d62abc6300\nBase: 0587a416611096daa0712e96fe161f47b81e87d2\n\nNo blocking findings. Read-only review of all three changed files; no source\nchanges or reviewer mutations.\n\nOwnership (crates/tmux/src/control.rs:331-358): the first bounded poll owns the\nChild exclusively. After it expires, the Child lives in one Option slot.\nThe reaper's and_then closure takes it and drops the MutexGuard before wait().\nOn successful spawn the caller never takes it; on a failed production spawn\nthe reaper closure never runs, and dropping its Arc leaves the caller's Arc\nand Child intact. Taking the Option is exclusive. The new Mutex cannot be\npoisoned by a failed child.wait(), which executes outside the guard.\n\nNormal handoff: same named detached thread and blocking child.wait(), with no\ncaller join or second poll after successful spawn. The existing real-thread\nhandoff test and the real tmux drop/release integration tests pass.\n\nBounds (control.rs:232-243, 331-374): Done returns after the first bounded poll;\nHanded returns after that poll and a successful thread start; only Err adds a\nsecond REAP_WAIT. Left returns the owned Child and logs its numeric pid.\nThe configured client-exit budget is TEARDOWN_WAIT + 2 * REAP_WAIT = 3 s on\nspawn failure, versus 2 s otherwise. These are configured waits, with normal\npoll/scheduler overhead, not hard real-time guarantees. The docs describe the extra second, but their literal whole-exit ceiling needs\nthe qualification below. F242 runs release concurrently with HTTP/workers\n(crates/daemon/src/lib.rs:353-410); its 5 s HTTP drain is not a global daemon\nstop deadline, and later admitted-write/pool cleanup has a separate deadline.\n\nC34 follow-up P294-OBS1 (corroborated, non-blocking): qualify \"whole exit at most 3 s\" as\nthe configured wait sum. The new Left warning at control.rs:298-303 writes\nsynchronously to stderr, outside those waits. Performance/294 traced the\ndaemon's stderr through a blocking UnixStream and a synchronous original-sink\ncopier; backpressure can therefore hold that warning without an independent\ndeadline. The new tests exercise reap_with, not reap's warning. No new\nnormal-use hang was observed or claimed; this is a bound qualification, not\na demand for new logging machinery. Performance published the same note as\nP294-OBS1 in governance commit ff25bacb5749fb6f15755df87ef33234e0ce73c2.\n\nPrivacy: the only new log formats child.id(), with fixed text, no argv,\nenvironment, secret, or machine-local path. No launch site is added.\n\nCost: no steady-state change. The existing slow-handoff branch adds an Arc,\nMutex and boxed closure, once per delayed client exit; the successful path\nstill starts one reaper thread. Spawn failure adds roughly 200 non-blocking\ntry_wait polls at 5 ms intervals for at most one configured second, with no\nnew process or thread. Live cost collection belongs to performance/294.\n\nEvidence:\n- just pr-freeze 294: FINAL at the exact head; CLEAN, all latest checks pass.\n- PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build\n  -- fmt --all -- --check --then clippy -p pij-tmux --all-targets --\n  -D warnings --then test -p pij-tmux: exit 0 on macOS, nice 19, locked,\n  four jobs/test threads. 110 tests passed: 40 lib (2.05 s), 41 adapter\n  (58.46 s), 23 control_mode (6.46 s), 6 control_teardown (0.29 s).\n  Both new no-reaper tests and the existing real-thread handoff test passed.\n- git diff --check 0587a416..HEAD: exit 0; review worktree remains clean.\n- CI run 44761679040: success at this full head; Rust lint/test and both\n  Node 22/24 checks passed. Delivers run 44761678730 also passed.\n- harness checks: exit 1, NOT a green local ship gate. Rust workspace\n  fmt/clippy/tests, route inventory, pij skill and Copilot native contracts\n  passed. TS/path/docs/coverage/lockfile tools failed without pinned local\n  dependencies (tsx/vitest absent); ambient Biome rejected the v2 config.\n  Smoke exited 143: I stopped only my shared-build waiter after it waited\n  behind the occupied target lock, leaving that holder untouched. No full\n  local smoke claim. No dependencies were installed or linked. Node 22/24\n  typecheck, lint and tests are instead proved by the exact-head CI run.\n\nAccepted residual: after both bounded waits, a client still not waitable when\nno reaper thread can start is explicitly left unreaped. This is disclosed,\nnot a silent success, and keeps the reaping waits bounded. C34 applies;\nthe author's mutation descriptions in the PR body were not repeated or\nindependently attested.\n\nHarness feedback:\nmagicWand: a read-only review gate profile that reports TS proof as CI-only\nunder C25 and accepts exact-head CI receipts, rather than recommending\ndependency repair that the review contract forbids.\ndifficulties: boot returned NOT-READY for absent vitest and suggested\nworktree-deps; C25 and this packet require leaving dependencies untouched.\nThe full gate nevertheless ran unavailable TS tooling and a broad Rust gate,\nthen waited behind the shared build lock for smoke; its per-stage result was\nnot visible until the final envelope. A review profile should surface that\nCI-only proof disposition and stage progress instead of requiring inference.\nNo product-tree retro or ledger edits were made in this read-only worktree.\nKeep the reviewer/294 holding until merge.\n"
+		}
+	]
+}
