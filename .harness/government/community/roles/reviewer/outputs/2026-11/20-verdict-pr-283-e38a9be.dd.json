@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f7eb-f53f-7021-b52f-9f7ba3a4e3bb",
+				"date": "2026-11-20",
+				"head": "e38a9be31ec4076c3204c7c8de607d9beb978ef9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:283",
+				"writer": "pij-regulatory-fly",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 283",
+					"exit_code": 0,
+					"log": "FINAL: full head agrees, main base, CLEAN, latest CI SUCCESS; review checkout unchanged"
+				},
+				{
+					"command": "shared-build frozen-head recovery selectors; isolated via guard mutant; restored guard and New/boot redo race",
+					"exit_code": 0,
+					"log": "community/roles/reviewer/outputs/2026-11/20-note-pr-283.dd.json at cd12c772600b6aca819cdb840e04d20b77494f0a: GREEN/expected101/GREEN; race passed"
+				},
+				{
+					"command": "harness checks --json (exact-head security holder receipt; duplicate reviewer run cancelled)",
+					"exit_code": 1,
+					"log": "community/roles/security/outputs/2026-11/20-note-pr-283.dd.json at 03e02f08f41bbd6494c4b926b9664fefc62d4032: Rust, route-inventory, smoke, native, SDK, skill pass; eight C25 JS/tooling failures; no skips"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Round 1 correctness review of #283 at e38a9be31ec4076c3204c7c8de607d9beb978ef9, against 46106685eee34a73cb26223d05cb2199c40b715b.\n\nNo blocking finding in the scoped F233 fix.\n\n1. Chain containment: the sole production caller constructs via from live_chain, excluding its live end. Every registry hop must have the same present spawn_id and a native-boundary tombstone; a reused id on another launch fails the whole chain. carry_project follows only exact \"carried to \" targets in via, and only when that row is already ended. Its walk is bounded by via.len()+1, so even a cyclic holders breadcrumb cannot run forever. An outside-chain target is not followed and an unrelated release reason is left alone. This is the carry's routing policy; launch, membership, retirement and hop-limit checks are one-directional brakes.\n\n2. Index ends: the walk collects already-ended historical rows from retired chain seats. An open row that it carries becomes ended before it is passed to the index. end_in matches project, role, instance, seat and from_at; insert uses the same five-field primary key with ON CONFLICT DO NOTHING. It cannot end a different instance or a fresh holding with another from_at, and the new insert does not change an existing row beyond the preceding exact-key end. Starts and ends remain one owned SQLite transaction; a non-live start rolls it all back. This is index reconciliation with the governance authority, not retention.\n\n3. Predecessor finish: one registry lookup and one complete roster snapshot, then at most MAX_HOPS=16 predecessor searches. This is O(16*N) over the roster size, not a separately capped roster. Candidates must name the same launch and the exact successor boundary reason; carry rechecks the actual chain. Every predecessor is passed as Start::Redo: the recorded-intent gate runs before a new scope can be captured. The shared Arc<Carries> mutex serializes normal and boot carries; completion is keyed to the intent's spine sequence. Completed redos do not move holdings or mail again. Returned ends are deduplicated before draining, and the existing atomic request claim protects competing drains.\n\n4. Local frozen-head proof: clear filter passed 6/6; carry filter passed 9/9 (some overlap). This includes all three F233 additions: reviewer_r2_second_clear_after_git_before_index_is_recovered, a_second_clear_finishes_the_cut_carry_before_its_own, and a_later_clear_never_carries_an_earlier_boundary_without_an_intent. The old index-gap and racing-drain probes passed too. No live daemon was crashed or changed.\n\nGuard mutation: in an isolated clone only, removed the via-membership filter from the governance walk. reviewer_carry_recovers_crash_between_index_end_and_start failed at its behavioral assertion with (Queued, None) instead of (Delivered, pij-heir), exit 101. The existing probe therefore catches removal of the exact guard relied on here.\n\nRestored proof: restored the exact original production guard; the same index-gap probe passed, exit 0. In the isolated fixture's existing second-clear test only, ran carry_later(New) concurrently with redo_at_boot via tokio::join!. This reviewer_f233_boundary_and_boot_redo_race_after_cut variant passed, with one delivery copy, one live final holding, no open intermediate holdings, and the missing intermediate index row recorded ended. The original frozen checkout was never edited. Scrubbed GREEN/RED/GREEN and race receipts are in prime-governance:.harness/government/community/roles/reviewer/outputs/2026-11/20-note-pr-283.dd.json, commit cd12c772600b6aca819cdb840e04d20b77494f0a.\n\nFull harness receipt: reused the security/283 holder's completed harness checks --json at this exact head (the duplicate reviewer invocation was stopped while waiting, to avoid a second heavy workspace run). The complete captured envelopes are in prime-governance:.harness/government/community/roles/security/outputs/2026-11/20-note-pr-283.dd.json, commit 03e02f08f41bbd6494c4b926b9664fefc62d4032; I read that document. Rust fmt/clippy/workspace tests, route inventory, smoke, native Copilot contracts, Copilot SDK and pij skill passed. Overall exit 1 is not a green local gate: eight TS/tooling stages failed because this C25 dependency-free checkout lacks tsx/vitest/type tooling and resolves an incompatible ambient Biome. Attribution warned (127); no stages were skipped. Latest exact-head CI checks all report SUCCESS. These are explicit local proof limitations, not a claim that harness checks passed overall.\n\nCost: no new steady-state timer, poll, per-seat process launch or spawn site. The extra predecessor work is per new human-driven session boundary, bounded as above. An unfinished predecessor reuses the existing carry's governance/index/mail work; intent lookup can take two spine reads and its validated forward walk adds bounded registry reads. There is no claim of a live before/after deployment measurement in this read-only review.\n\nC33/C21: governance remains same-user trusted input, not a new credential boundary. The new seat use is exact string comparison, not a path or shell program. Role paths and the governance writer retain their existing validation/argv boundaries. The diff contains no new credential, private identity, machine-specific path, lockfile source or dependency.\n\nHarness feedback: magicWand is a just review-proof recipe that runs exact-head selectors, creates an isolated guard-mutant fixture, restores it, checks GREEN/RED/GREEN, and bundles receipts while leaving the frozen review checkout untouched. Difficulty: manual mutation isolation and shared-target queueing required reviewer bookkeeping. Boot correctly reported unavailable TS tooling; under C25, no shared node_modules symlink was created.\n\nReviewer holding is retained for round 2 and until merge.\n"
+		}
+	]
+}
