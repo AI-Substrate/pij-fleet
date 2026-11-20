@@ -2746,6 +2746,137 @@ mod tests {
         }
     }
 
+    /// Review of #284 (pij-glorious-smelt): the exemption is exactly native
+    /// Copilot, for every harness with and without native delivery.
+    #[test]
+    fn only_a_native_copilot_owner_takes_batches_while_busy() {
+        for harness in [
+            Harness::Copilot,
+            Harness::Omp,
+            Harness::Claude,
+            Harness::Codex,
+            Harness::Pi,
+        ] {
+            for native in [false, true] {
+                let mut owner = SeatDescriptor::new("review", harness, "/work");
+                owner.native_extension_delivery = native;
+                assert_eq!(
+                    takes_batches_while_busy(&owner),
+                    harness == Harness::Copilot && native,
+                    "{harness:?}, native={native}"
+                );
+            }
+        }
+    }
+
+    /// A second service over the same store and ports: a daemon restart.
+    fn restarted(fixture: &Fixture) -> BackgroundService {
+        BackgroundService::new(
+            SqliteBackground::new(fixture.pool.clone()),
+            BackgroundPorts {
+                registry: fixture.registry.clone(),
+                liveness: fixture.service.liveness.clone(),
+                delivery: fixture.delivery.clone(),
+                event_bus: fixture.service.event_bus.clone(),
+                routing: fixture.routing.clone(),
+            },
+            fixture.dir.clone(),
+            "127.0.0.1:1".to_string(),
+        )
+    }
+
+    async fn busy_native_owner(fixture: &Fixture) {
+        fixture
+            .reshape_owner(|owner| {
+                owner.harness = Harness::Copilot;
+                owner.native_extension_delivery = true;
+                owner.state = pij_core::model::SystemState::Working;
+            })
+            .await;
+    }
+
+    /// Review of #284 (pij-glorious-smelt): the per-job floor is the stored
+    /// `last_wake_at`, so a restart inside the interval cuts no second batch;
+    /// once the floor passes, the next batch carries only the newer event.
+    #[tokio::test]
+    async fn a_restart_keeps_a_busy_native_owners_floor_and_its_pending_events() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        busy_native_owner(&fixture).await;
+        fixture.source("bg-src", "tok", false, 60_000, 5).await;
+        fixture.fire("bg-src", "tok", &["alpha"]).await;
+        fixture.service.tick().await.unwrap();
+        let at = fixture.service.lookup("bg-src").await.unwrap().last_wake_at;
+        assert!(at.is_some());
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            0
+        );
+        fixture.fire("bg-src", "tok", &["beta"]).await;
+        let service = restarted(&fixture);
+        for _ in 0..3 {
+            service.tick().await.unwrap();
+        }
+        let job = service.lookup("bg-src").await.unwrap();
+        assert_eq!((job.batches, job.last_wake_at), (1, at), "inside the floor");
+        assert_eq!(service.event_stats("bg-src").await.unwrap().pending, 1);
+        assert_eq!(fixture.queue.live_payloads().len(), 1);
+        sqlx::query("UPDATE background_jobs SET last_wake_at = 0 WHERE job_id = 'bg-src'")
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        service.tick().await.unwrap();
+        assert_eq!(service.event_stats("bg-src").await.unwrap().pending, 0);
+        let bodies: Vec<String> = fixture
+            .queue
+            .live_payloads()
+            .iter()
+            .map(|payload| serde_json::from_str::<Msg>(payload).unwrap().body)
+            .collect();
+        assert_eq!(bodies.len(), 2);
+        assert!(bodies[0].contains("alpha") && !bodies[0].contains("beta"));
+        assert!(bodies[1].contains("beta") && !bodies[1].contains("alpha"));
+    }
+
+    /// Review of #284 (pij-glorious-smelt): a crash between handing a busy
+    /// native owner its batch and settling the events leaves them pending; the
+    /// restarted service settles them against the batch already handed off,
+    /// never a second one.
+    #[tokio::test]
+    async fn a_restart_after_admission_settles_the_batch_already_handed_off() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        busy_native_owner(&fixture).await;
+        fixture.source("bg-src", "tok", false, 60_000, 5).await;
+        fixture.fire("bg-src", "tok", &["alpha", "beta"]).await;
+        arm(&fixture, "admission-before-settle");
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "crash after admission"
+        );
+        assert_eq!(fixture.queue.live_payloads().len(), 1);
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            2
+        );
+        assert_eq!(
+            fixture.service.lookup("bg-src").await.unwrap().last_wake_at,
+            None
+        );
+        let service = restarted(&fixture);
+        service.tick().await.unwrap();
+        assert_eq!(service.event_stats("bg-src").await.unwrap().pending, 0);
+        assert_eq!(fixture.queue.live_payloads().len(), 1);
+        assert!(
+            service
+                .lookup("bg-src")
+                .await
+                .unwrap()
+                .last_wake_at
+                .is_some()
+        );
+        service.tick().await.unwrap();
+        assert_eq!(fixture.queue.live_payloads().len(), 1);
+    }
+
     /// A cold owner with two pending events; returns the batch file's path.
     async fn cold_owner_batch(fixture: &Fixture) -> PathBuf {
         let job = fixture.source("bg-src", "tok", false, 0, 5).await;

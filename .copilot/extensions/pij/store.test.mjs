@@ -1973,6 +1973,68 @@ test("F230 review: a report superseded before it was first sent never waits to r
 	assert.deepEqual(retry.waits, [], "no wait for a state the seat has left");
 });
 
+// Review of #284 (pij-glorious-smelt's regressions, adopted where R2's did not
+// already cover them).
+test("F230 review: a report is sent only once the one before it is answered", async (t) => {
+	const { f, states } = await activityBridge(t);
+	const request = f.client.request;
+	const first = Promise.withResolvers();
+	let sent = 0;
+	f.client.request = (path, body, signal) => {
+		if (path !== "/v1/activity") return request(path, body, signal);
+		sent += 1;
+		return sent === 1
+			? first.promise.then(() => request(path, body, signal))
+			: request(path, body, signal);
+	};
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	await flush();
+	f.event({ type: "session.idle", id: "turn-1-idle", data: {} });
+	await flush();
+	assert.equal(sent, 1, "the idle waits for the working's answer");
+	first.resolve();
+	await settles(() => states().length >= 2, "both are sent");
+	assert.deepEqual(states(), ["working", "idle"]);
+});
+
+test("F230 review: a retry whose wait has ended never sends a state the seat has left", async (t) => {
+	const waited = Promise.withResolvers();
+	let failures = 1;
+	const { f, states } = await activityBridge(
+		t,
+		() =>
+			failures-- > 0
+				? Object.assign(new Error("Pij HTTP 500"), { status: 500 })
+				: { changed: true },
+		{ delay: () => waited.promise },
+	);
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	await settles(() => states().length >= 1, "the working fails once");
+	waited.resolve();
+	f.event({ type: "session.idle", id: "turn-1-idle", data: {} });
+	await settles(() => f.bridge.activityPublished === "idle", "the idle lands");
+	await flush();
+	assert.deepEqual(states(), ["working", "idle"]);
+});
+
+test("F230 review: the retry cap is per publication; the same state observed again starts another", async (t) => {
+	const retry = recordedWaits();
+	const { f, states } = await activityBridge(
+		t,
+		() => Object.assign(new Error("Pij transport unavailable"), { status: 503 }),
+		{ delay: retry.delay },
+	);
+	const attempts = 1 + ACTIVITY_RETRY_MS.length;
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	await settles(() => states().length >= attempts, "the first publication's attempts");
+	await flush();
+	f.event({ type: "assistant.turn_start", id: "turn-2", data: {} });
+	await settles(() => states().length >= 2 * attempts, "the second publication's attempts");
+	await flush();
+	assert.equal(states().length, 2 * attempts, "each publication stops at its cap");
+	assert.deepEqual(retry.waits, [...ACTIVITY_RETRY_MS, ...ACTIVITY_RETRY_MS]);
+});
+
 test("fyi claim: count gates the verbatim block; empty and failed claims add nothing", async () => {
 	const golden = await readFile(
 		new URL("../../../crates/testkit/fixtures/golden/fyi/block.txt", import.meta.url),
