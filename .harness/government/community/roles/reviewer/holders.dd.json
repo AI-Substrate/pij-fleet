@@ -2422,6 +2422,16 @@
 					"seat": "pij-allied-raven",
 					"to": "2026-11-20T13:46:57.264Z",
 					"why": "#292 F238 review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T14:22:59.592Z",
+					"harness": "copilot",
+					"harness_session": "6c01b857-a2b5-4a44-b91b-4d091976c656",
+					"instance_key": "293",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-sufficient-clam",
+					"why": "#293 F242 review"
 				}
 			]
 		}
