@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f752-a577-7c11-b94c-4c7baf86b319",
+				"date": "2026-11-20",
+				"head": "c8d2eab2fc9e073d8c8b8de27dbb53e8141ec315",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:280",
+				"writer": "pij-automatic-coral",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"F232: CodexBinder advances Seen before an unavailable pane probe; named non-blocking C34 follow-up under pm-001 ruling.",
+				"S280-001: carried umask-dependent lock-file permission follow-up; not reopened."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 280",
+					"exit_code": 0
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS WITH NOTES -- ROUND 2, C34 final round\nPR: #280\nHead: c8d2eab2fc9e073d8c8b8de27dbb53e8141ec315\nRequest: 01a1f752-a577-7c11-b94c-4c7baf86b319\nDelta basis: ad27621c0f995aaf4cafcd9937257ebc84018c09\n\nReviewed only the delta and its affected read consumers. The six changed files are crates/tmux/src/control.rs, crates/tmux/src/lib.rs, crates/tmux/tests/adapter.rs, crates/tmux/tests/control_mode.rs, docs/difficulties.md, and docs/how/macos-defender.md (+283/-73). The complete changed documents were inspected for forward privacy. No new security vulnerability, credential disclosure, path escape, or read-error-to-observed-absence decision was found. The round-one security baseline remains applicable except where the delta replaces its blocking acquisition behavior.\n\nF232 is a named C34 correctness follow-up, NOT a round-two block, under pm-001's explicit ruling. S280-001, the umask-dependent lock-file permission residual, remains the previously logged follow-up and is not reopened.\n\nMandatory UNKNOWN / brake trace:\n\n| Consumer | Evidence and outcome |\n| --- | --- |\n| Pane observer | crates/daemon/src/pane_observer.rs:247-255 returns on an inventory error before calculating retirements. Busy does not become an empty pane census. |\n| Two-witness death sweep | crates/daemon/src/reaper.rs:80-90,122-133,151-154,218-267 retains unknown evidence; it cannot pass the eligibility checks or reach the observed-dead tombstone commit. crates/daemon/src/death_sweep.rs:90-100 uses that reaper. |\n| Revive's locked observation | crates/daemon/src/http/revive.rs:185-198 maps unreadability to pane_present=None. The locked decision at :587-593 refuses unless presence is explicitly Some(false). Ending a preliminary wait on unreadability does not authorize revival. |\n| Authorized close | crates/daemon/src/http/lifecycle.rs:258-262,312-323,622-624 uses Unchecked on an unavailable pane observation, without kill advice or a kill_pane action. An explicitly authorized owner-close is not an observed-death decision. |\n| Actual kill and tap cleanup | crates/tmux/src/lib.rs:1495-1508 propagates inventory error before launching a kill. :1470-1491,1383-1400 cannot authorize sink removal from an unanswered inventory. |\n| Registration pane checks | crates/daemon/src/http/mod.rs:1157-1163 and crates/daemon/src/registration.rs:918-925,973-981 propagate a runtime error before accepting registration/identity. No unavailable pane is accepted as positively absent or present. |\n| Spawn | crates/daemon/src/http/mod.rs:1531-1534 stops a prelaunch inventory failure before launch. :1942-1955,2000-2040,2159-2245 report a postlaunch observation failure while preserving the dispatched seat and pane; they do not kill or tombstone them. |\n| Pointer delivery | crates/daemon/src/pointer/worker.rs:253-256,349-365 does not let unknown inventory satisfy its pane-absence terminal condition. |\n| Codex binder | crates/daemon/src/codex_bind.rs:143-148,301 propagates the failed pane probe, which is logged at :264. It neither authorizes binding nor tombstones a seat. The separate retry-bookkeeping defect is F232, below. |\n\nThus the requested destructive and identity consumers preserve UNKNOWN: errors can spare or refuse work, not manufacture the absence witness required to destroy or revive. The read refusal is a BRAKE, not an absence policy.\n\nF232 detail:\n\ncodex_bind.rs:253-256 saves the pending-row/lock-set Seen snapshot before probing. After a failed probe, the next pass attempts binding only when thread_started or !seen.rows.contains(&seat.id) is true. A transient Busy can therefore consume the retry trigger until a new row/thread or restart resets that condition. This does not touch absence or tombstone decisions. The separately assigned fix is to avoid marking failed pane probes seen. Per the supplied final-round ruling, carry F232 forward rather than block this crash fix on it.\n\nContention and C33 denial cost:\n\n- control.rs:337-345,496-513 performs one nonblocking lock attempt per eligible read. AttachLockHeld is distinguished from unrelated startup errors, including spawn EAGAIN. The new sleep/retry wait loop is gone; an early contended read returns Busy and launches no tmux process.\n- The zero-launch guarantee is ONLY the initial continuous-contention grace, less than five seconds. It is not a zero-launch guarantee for an indefinitely frozen holder.\n- At the five-second threshold, the existing failed-start contract applies: fork fallback and a five-second restart backoff. Backoff throttles starts, NOT individual fallback reads.\n- For an already-tracked, matching-tap observer with N panes, offered fallback demand is (1+3N)/0.6 tmux launches/s at the unchanged 600 ms cadence, about 402/s for 80 panes, plus other request-driven work. This is source-derived demand, not a measured production rate; launch latency and observer stalls affect achieved throughput.\n- A release before refusal permits the next eligible read to attach. A release during restart backoff does not bypass that backoff.\n- The state mutex and existing synchronous successful-start handshake remain (control.rs:309-327,391-465). This review establishes removal of the added attach-lock wait, not a claim that all pre-existing synchronous control reads or startup work have become asynchronous.\n- A same-UID holder is trusted under C33. It can deny control availability; during the initial grace that causes explicit Busy/UNKNOWN results without contention-read launches, and persistent holding later incurs the fallback costs above. S280-001's conditional different-UID accessibility concern remains a separate logged follow-up.\n\nIndependent correctness-review probe receipt inspected:\n\nExact-head production code plus one isolated diagnostic, with another PROCESS holding the lock:\nPIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-tmux --test control_mode reviewer_thirty_busy_reads_keep_timer_live_and_launch_nothing -- --exact --nocapture\nExit 0.\n\nThirty Busy reads took 4.039625 ms and launched zero forks. An independently primed 50 ms timer fired at 53.234916 ms. pane_process and kill returned Err; the live-only read returned None. After release, the next read was Ok, with exactly one control-client launch and zero forks. This is the correctness reviewer's executed receipt, not a security rerun. It proves the initial five-second Busy window, not behavior under a permanently held lock, and is not a deployed fleet comparison.\n\nSecurity proof and limits:\n\n- Parent independently verified the full head, its exact round-one parent, clean detached checkout, and just pr-freeze 280 FINAL with all latest CI checks passing.\n- Helper's harness boot --json returned exit 0 but ready:false; its dependency stage returned code 1 in 130 ms because local vitest was absent.\n- Parent attempted harness checks --quick: exit 1 from eight local dependency/ambient-tool stages. pij-skill, copilot-native and copilot-sdk passed; route-inventory, Rust and smoke were skipped. No dependencies were installed or symlinked. This is not a passing local full gate.\n- Security's consumer/error trace and delta/document inspection are static evidence. No independent security cargo, repeated mutation, different-UID, live-server contention, deployment or restart was performed. Author-reported repeated tests and mutations are not counted as security execution.\n- The requested one-shot binder-error dynamic receipt was not supplied before publication. F232 above is supported by the source trace and pm-001's supplied ruling, not a claimed security-run binder probe.\n- Frozen source was not edited. No credential contents or full environment dumps were read.\n\nHarness insight: UNKNOWN must preserve both destructive-decision witnesses and retry bookkeeping. A focused held-lock consumer fixture should prove no false retirement and no consumed retry trigger after an unavailable pane observation. This is a concrete future proof improvement, not a new final-round gate.\n"
+		}
+	]
+}
