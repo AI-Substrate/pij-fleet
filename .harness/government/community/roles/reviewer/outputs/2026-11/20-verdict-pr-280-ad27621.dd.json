@@ -1,0 +1,66 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f71c-4949-7111-a08c-55c13de06fe9",
+				"date": "2026-11-20",
+				"head": "ad27621c0f995aaf4cafcd9937257ebc84018c09",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:280",
+				"writer": "pij-lovely-minnow",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 280",
+					"exit_code": 0,
+					"log": "FINAL reconfirmed at ad27621c0f995aaf4cafcd9937257ebc84018c09; exact-head CI green; detached checkout clean."
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-tmux",
+					"exit_code": 0,
+					"log": "PASS:27 unit+41 adapter+21 control-mode tests;89 total."
+				},
+				{
+					"command": "One shared-build batch:20x each test --locked -p pij-tmux --test control_mode concurrent_control_attaches_from_two_processes_never_crash_the_server -- --exact --nocapture; test --locked -p pij-tmux --test adapter separate_adapters_cannot_both_reserve_one_pane -- --exact --nocapture",
+					"exit_code": 0,
+					"log": "PASS20/20 each; crash sensor200 rounds."
+				},
+				{
+					"command": "Isolated diagnostic:PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-tmux --test control_mode reviewer_held_attach_lock_delays_runtime_timer_and_forks_every_read -- --exact --nocapture",
+					"exit_code": 0,
+					"log": "Observed50ms Tokio timer delayed3.255947791s; first read3.255892291s;30 backoff reads forked30tmux in959.333125ms;zero control launches. Diagnostic intentionally asserts existing bad behavior."
+				},
+				{
+					"command": "Isolated guard-removal mutant compiled with shared-build --copy-out;20x nice19.sh pinned-control-mode --exact concurrent_control_attaches_from_two_processes_never_crash_the_server --nocapture",
+					"exit_code": 101,
+					"log": "EXPECTED FAIL20/20, all server-death assertions. Guarded sensorPASS20/20. Temporary checkout restored and removed; pinned executable removed."
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "Rust fmt/clippy/workspace tests,smoke,route inventory,pij skill,native contracts and SDK PASS.8 dependency/tooling stages FAIL:missing local tsx/typecheck/vitest dependencies and incompatible ambient Biome. No dependency installs/symlinks; no full local gate pass claimed."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "BLOCK -- R1, exact head ad27621c0f995aaf4cafcd9937257ebc84018c09.\n\nThe cross-process crash fix is supported by independent green and mutation evidence. One scoped correctness defect remains: the new acquisition wait blocks async runtime workers. This agrees with performance finding P280-001; it is not a second demand to redesign the existing fork fallback.\n\n## R280-001 / P280-001: contended acquisition blocks the executor\n\n`PaneObserver::start` uses `tokio::spawn` (`crates/daemon/src/pane_observer.rs:202-218`), and `observe_once:247` awaits the directly composed real adapter. `TmuxAdapter::list_panes` (`crates/tmux/src/lib.rs:870-874`) calls synchronous `stdout:469-473`, then `ControlClient::ask/start` (`crates/tmux/src/control.rs:281-304,343-347`). `lock_attach:459` repeatedly calls `std::thread::sleep` while the caller holds `Mutex<State>`. There is no blocking-pool boundary.\n\nAn isolated diagnostic at this head, using a cooperating held attach lock and the real adapter on a current-thread Tokio runtime, measured:\n\n- First fallback read: 3.255892291 seconds.\n- An independently armed 50 ms Tokio timer: 3.255947791 seconds.\n- During backoff: 30 successful reads produced 30 forked tmux launches in 959.333125 ms, with zero control-client launches.\n\nThis is directly reproduced worker starvation, not an inferred deployed whole-fleet outage. Other concurrent readers, including live-only readers, can block additional workers on the shared state mutex. Existing synchronous handshake/read costs predate this PR; the new acquisition wait adds to them.\n\nRequired correction: keep the contended acquisition and any associated state-mutex waiting off async workers, without weakening cross-process exclusion, sentinel-proven setup, one-start-at-a-time or fallback/backoff behavior. A spawned thread synchronously joined by the worker is not isolation. Promote the timer/launch probe into the existing suite: a short timer must advance while acquisition is pending. R2 checks this fix; no unrelated hardening inventory.\n\n## Requested checks\n\n| Check | Result |\n| --- | --- |\n| Guard lifetime | Correct. The owning `File` is a local in `start`, acquired before launch and held through setup and the sentinel reply. It is never moved into `Live`. Normal returns, `?` errors and panic unwinding drop it; the kernel releases a dead holder's lock. Setup failure destroys `Live` before the guard leaves scope. |\n| Reads after timeout | Correct answers via existing fork fallback. `ask:302-304` sets a five-second restart backoff after failure; `stdout:473` still calls `run` for each fallback read. The backoff does not throttle those forks. |\n| Runtime-worker isolation | FAIL: R280-001/P280-001, independently reproduced above. |\n| Filename confinement | Correct. `attach_lock_path:424-437` maps all characters outside ASCII alphanumeric, dash and underscore to underscore, then joins a fixed dot-file basename. No separator or `..` can escape the root. Sanitization collisions conservatively share a lock. |\n| Sweep and launch instrumentation | Correct. The orphan sweep accepts only non-dot regular `*.raw` sinks (`lib.rs:61-76`). The existing control launch is counted only after acquisition; no new launch site. Existing launches still use the resolved executable path. |\n\nThe attach lock is a BRAKE, not an outcome policy: removing it permits more concurrent attaches. `destroy-unattached` is preserved. C33 accepts same-user lock holding; no per-seat credential or hostile-local-process defense is requested. Lock creation inherits filesystem permissions/umask rather than setting a private mode; security owns the enclosing-directory access assessment. No personal home paths occur in the six-file diff or this verdict.\n\n## Cost and proof limits\n\nHealthy live reads add no lock work, timer, poll or process. An uncontended start opens one lock file and acquires one flock. A fully contended three-second attempt performs approximately 301 `try_lock` calls, then backs off five seconds: approximately 0.125 attempts/file opens and 37.6 lock attempts per second per affected adapter under continuous demand. This bounded retry is in-process, not a tmux launch loop.\n\nFallback is demand-driven and has no workload-independent launch-rate ceiling. A tracked matching-tap observer pass performs one global list and three reads per pane; at the unchanged 600 ms cadence the offered load is `(1 + 3N) / 0.6` tmux launches/second per affected daemon, or 401.7/s for 80 panes, plus request-driven reads. Serial launch latency and three-second stalls reduce achieved average throughput; this is an analytic demand budget, not a measured sustained fleet rate. The probe's 30 forks in 0.959 s directly disproves a five-second fork throttle.\n\nNo production lock contention, deployment or daemon bounce was performed. A 20-second live machine sample reported 284.4 new processes/s during concurrent fleet/test activity; daemon control-client counter remained 1 across sampling. These are contextual receipts, NOT a before/after deployment comparison.\n\n## Independent validation\n\n- `just pr-freeze 280`: FINAL at the full head above; remote head agrees, main base, CLEAN, latest checks pass, no added migration. `Delivers` is proved by the exact-head CI check; the local parser was unavailable.\n- `PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-tmux`: PASS, 27 unit + 41 adapter + 21 control-mode tests, zero failures.\n- Same shared-build batch, 20 repetitions each of `test --locked -p pij-tmux --test control_mode concurrent_control_attaches_from_two_processes_never_crash_the_server -- --exact --nocapture` and `test --locked -p pij-tmux --test adapter separate_adapters_cannot_both_reserve_one_pane -- --exact --nocapture`: PASS 20/20 each; crash sensor covers 200 rounds.\n- Isolated added diagnostic `reviewer_held_attach_lock_delays_runtime_timer_and_forks_every_read`, run through shared-build at niceness 19: PASS as an observational reproducer of the blocking behavior, not a desired-behavior gate.\n- Lock-removal mutation: removed only the acquisition guard, compiled through shared-build and copied the test executable out while holding its lock. The pinned mutant's crash sensor FAILED 20/20 (exit 101), each reporting server death; the guarded exact-head sensor PASSED 20/20. Each mutant invocation ran through `harness/scripts/nice19.sh`.\n- `git diff --check` against the base: PASS. Frozen review checkout remains unchanged.\n- `harness boot`: not ready because this detached checkout has no local TypeScript dependencies. No dependency symlinks or installs were made (C25); exact-head TS CI is green.\n- `harness checks`: FAIL, exit 1. Rust (fmt, clippy, workspace tests), smoke, route inventory, pij skill, native Copilot contracts and SDK contract PASS. Eight stages fail in this dependency-free checkout: local-paths, omp-config, ddocs, coverage and lockfile lack local `tsx`; typecheck and vitest lack local dependencies; lint encounters an ambient Biome incompatible with this checkout's Biome 2 configuration. Attribution is advisory WARN because `tsx` is absent. No full local ship-gate pass is claimed, and no dependencies were installed or linked.\n\nMutation and diagnostics were confined to an isolated temporary worktree, never the frozen review checkout. The temporary checkout was restored and removed after its executable was pinned. All Rust builds use shared-build, niceness 19 and its four-job cap. C34 is applied as round 1: block only the reproduced scheduling defect; the existing fallback's operational cost is explicitly bounded by workload, not a separate rewrite request.\n"
+		}
+	]
+}
