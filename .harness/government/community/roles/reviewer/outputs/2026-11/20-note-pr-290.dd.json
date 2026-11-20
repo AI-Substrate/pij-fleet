@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"kind": "note",
+				"role": "reviewer",
+				"subject": "pr:290",
+				"writer": "pij-significant-silkworm",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "harness checks --json",
+					"exit_code": 1,
+					"log": "PASS: rust, route-inventory, smoke, pij-skill, copilot-native, copilot-sdk. FAIL: 8 TS/tooling sensors in the dependency-free worktree; no local full-gate success claimed."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Validation addendum to PASS verdict 3a2bd97c858ed54e77dc425a711cc3c408852baa at reviewed head 69113015b5a097ca8886113cbc1c5b0e7d71d78e: full local harness checks has now finished. Rust (locked metadata, fmt, workspace clippy and tests), route inventory, smoke, pij skill structure, native Copilot contracts and SDK contract all passed. The overall command exited 1: local-paths, omp-config, ddocs, coverage and lockfile cannot find node_modules/.bin/tsx; local typecheck and vitest are unavailable without the worktree dependencies; local lint selects a Biome incompatible with the committed configuration. Commit-trailer attribution also warns because tsx is missing. This is not a green full local gate. No dependencies were installed or linked under C25; TS/lint proof remains the successful exact-head CI run 44732494166. No new scoped review findings. The PM owns carrying the original-head verdict to the reconciled head; reviewer/290 holding remains until merge. Harness feedback remains the review-aware repeat-test/proof surface described in the verdict."
+		}
+	]
+}
