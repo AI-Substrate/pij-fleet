@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f894-e073-74f2-8a07-f775930cf84c",
+				"date": "2026-11-20",
+				"head": "844d2fd697604ecbba1b489be3dd8d5a23d75741",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:289",
+				"writer": "pij-conceptual-cephalopod",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 289",
+					"exit_code": 0,
+					"log": "FINAL at 844d2fd697604ecbba1b489be3dd8d5a23d75741; CLEAN; all five latest checks passed"
+				},
+				{
+					"command": "gh run view 44721998148 --repo AI-Substrate/pij-fleet",
+					"exit_code": 0,
+					"log": "Exact requested head; Node 22/24, Rust lint and Rust tests success; 2655 Rust tests passed, six skipped"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "Local Rust, route inventory, smoke and native contracts passed; eight dependency-free TS/tooling stages failed; C25 TS proof is exact-head CI"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS - security review of #289\nHead: 844d2fd697604ecbba1b489be3dd8d5a23d75741\nBase: bc1ca834aa1163f86780f77bd83036f3b6b4e6ef\n\nNo exploitable vulnerability was found in the 16-file change, graded under\nC33 and C34. This is a security verdict, not a claim that the local full gate\nis green or that the PR has merged.\n\nTrust prompt: crates/harnesses/src/trust.rs:151 recognizes whole option rows\nafter the heading, or before the final exact Claude footer when the heading\nhas scrolled away. Guidance and key selection at :102/:138 use the visible\nhighlight. The existing auto-answer path requires explicit trust_folder at\ncrates/daemon/src/http/mod.rs:1818 and targets the newly spawned pane at :1832,\nnot an identifier extracted from captured prose. The cwd guard at :1474\nrejects control characters and multiline paths.\n\nThe recognizer is not dialog authentication: it does not require a contiguous,\nunique, ordered menu, and a wholly fabricated screen can match. No external\nattacker-controlled route to placing that screen over a different active\ndialog was established. Arbitrary same-user pane/process control is trusted\nunder C33. Source tracing and a ten-case row model covered misleading prose,\nmissing/reversed anchors, absent highlight and simulated wrapped-path rows;\nthe later genuine default highlight wins in the supplied short capture.\nThe model is not compiled-parser or live malicious-directory proof.\n\nPrivacy: both new Claude captures were read completely. Manifest hashes and\nbyte counts matched (short: 199 bytes/12 rows; narrow: 544 bytes/30 rows).\nNo identified secrets, tokens, usernames or home paths. The narrow fixture\ncontains only a randomized temporary workspace path. Evidence:\ncrates/testkit/fixtures/harnesses/claude-2.1.329-folder-trust-short.txt:7-10,\nclaude-2.1.329-folder-trust-narrow.txt:3-23, and MANIFEST.toml:615.\n\nRelease hook: crates/daemon/src/delivery/mod.rs:1276 explicitly gates\nadmissions_in_flight with #[cfg(test)]; its caller is in\ncrates/daemon/src/compaction_wake_tests.rs:703. It is absent in ordinary\nnon-test release builds. This conclusion is source-based, not a release-symbol\ninspection. with_stage_limit is separately compiled in production, but its\nproduction default remains unchanged and its located use is the integration test.\n\nCost scope: no new production loop, poll, timer or launch site. The fallback\nadds an in-process reverse scan of an already captured pane when its heading\nis missing. Existing opted-in spawn answering may now proceed on a short pane;\nexisting capture is 50 ms per waiting spawn, with one-second key settling,\nbounded by the registration deadline. No new steady-state per-seat activity\nor live before/after measurement is claimed.\n\nValidation:\n- just pr-freeze 289: FINAL, twice; exact requested head, CLEAN, all five latest\n  checks pass; detached review source remained clean.\n- Exact-head CI run 44721998148: Node 22/24 typecheck, lint, tests, lockfile,\n  native contracts and audit passed. Node 22: 14 config-check tests passed;\n  110 Vitest files passed, two skipped.\n- CI cargo nextest run --locked --workspace --profile ci: 2655 passed, six\n  skipped; doctests, fmt and clippy passed.\n- Local harness checks: exit 1. Rust, route inventory, smoke, pij-skill,\n  Copilot native and SDK passed. Eight TS/tooling stages failed because this\n  read-only checkout lacks pinned dependencies and used an incompatible\n  ambient Biome; the trailer sensor warned. Local just typecheck confirmed\n  missing Node type definitions (TS2688). C25: no dependencies installed or\n  symlinked; TS proof is exact-head CI.\n- Independent local trust-test build attempt: shared-lock timeout, exit 4;\n  cargo never started. Std-only checker assertions (8), fixture checks and\n  parser-row model assertions (10) passed; those are not Rust execution proof.\n\nHarness feedback / magic wand: a read-only review gate should consume\nexact-head CI receipts instead of prescribing dependency writes forbidden by\nC25. Captured during this review; encoding is deferred outside the read-only\nsecurity scope.\n\nSecurity/289 holding is retained until merge.\n"
+		}
+	]
+}
