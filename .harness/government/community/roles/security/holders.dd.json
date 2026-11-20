@@ -889,7 +889,10 @@
 					"harness_session": "af8fa981-b55a-42f2-9a2a-babde798368d",
 					"instance_key": "298",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #298 merged (3b5d06ae594d)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-frequent-sawfish",
+					"to": "2026-11-20T19:09:01.635Z",
 					"why": "#298 F245+F246 security"
 				}
 			]

@@ -532,7 +532,10 @@
 					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
 					"instance_key": "298",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #298 merged (3b5d06ae594d)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-melodic-snail",
+					"to": "2026-11-20T19:09:01.635Z",
 					"why": "#298 lsof launches"
 				}
 			]
