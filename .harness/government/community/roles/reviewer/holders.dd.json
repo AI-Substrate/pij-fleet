@@ -2292,6 +2292,16 @@
 					"seat": "pij-middle-urial",
 					"to": "2026-11-20T07:29:26.004Z",
 					"why": "#282 F231 correctness review, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T07:46:22.222Z",
+					"harness": "copilot",
+					"harness_session": "9fb5698d-afca-44f9-9b22-16274b53fb49",
+					"instance_key": "283",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-regulatory-fly",
+					"why": "#283 F233 correctness review, fresh seat"
 				}
 			]
 		}
