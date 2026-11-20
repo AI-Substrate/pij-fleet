@@ -1,0 +1,48 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f7be-db9e-7560-86ed-f24b82441bca",
+				"date": "2026-11-20",
+				"head": "b803bdb332196fb43bdf78a7c9fcc263c70ef1b1",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:281",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Static cost envelopes only; deployment owner owns live full-attempt launch/CPU receipts. Global resets provide a per-observed-start, not lifetime, retry brake."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git rev-parse HEAD",
+					"exit_code": 0,
+					"log": "b803bdb332196fb43bdf78a7c9fcc263c70ef1b1"
+				},
+				{
+					"command": "git diff ed49373 d161c5e1 -- crates/daemon/src/codex_bind.rs crates/daemon/src/codex_bind_tests.rs crates/daemon/src/registration.rs crates/testkit/src/fakes.rs docs/difficulties.md",
+					"exit_code": 0,
+					"log": "Observed five-file delta: +114/-7; full diff read from artifact://202. Corresponding final-head reset/classification hunks read directly."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES — performance/281, C34 final round, exact head b803bdb332196fb43bdf78a7c9fcc263c70ef1b1.\n\nReviewed only ed49373..d161c5e1: five files, +114/-7, plus the corresponding final-head hunks. HEAD matched the requested SHA. Static review; no build, tests, live measurements or daemon changes by this seat. Owner-reported 12 tests and harness 15/15 were not rerun.\n\n[INFERENCE] Cost: let N be a fixed population of pending errored Codex rows, lambda the rate of OBSERVED new-thread locksets, and C the launch cost of a full attempted bind. Multiple starts between binder ticks coalesce into one boolean trigger. Each observed start grants every row one trigger probe plus at most three retry probes. Extra retry demand <=3*lambda*N probes/s; total demand <=N*min(4*lambda,1/5) probes/s at the unchanged default 5-second cadence. Launch envelopes multiply these by C; initial row discovery adds a separate finite episode.\n\n| Mocked Facts accounting, not OS launches | Extra per row per observed start | Including trigger probe | Total tick-rate ceiling |\n| --- | ---: | ---: | ---: |\n| Persistent pane-read error, two stages/probe | 6 | 8 | 0.4N stages/s |\n| Registration failure after three Facts stages | 9 | 12 | 0.6N stages/s |\n\nAt N=80, total demand caps at 16 probes/s (32 or 48 mocked stages/s). Starts every tick can sustain that indefinitely, but those ticks already had trigger probes before this patch; they do not also run three retries. Real C includes existing registration work and fallback launches. The earlier read-error-only envelope does not bound these newly retried registration failures; no physical launch-rate or CPU-saving claim is made here.\n\nThe reset is global, NOT keyed to each row's own thread. Unrelated starts can refresh all budgets forever: three is a per-observed-start brake, not a lifetime cap. The unchanged filter already probes all pending rows on any thread start. This interpretation was explicitly shared with prime and correctness reviewer.\n\nMemory/cost: clear is O(F) destruction under the existing Seen mutex, F<=N; retry map and transient failed vector remain O(N), with existing pruning and no historical growth. is_transient is an exhaustive constant-time match with no allocation. Existing retain/Vec::contains can take O(F_previous*F_current) comparisons. The scripted put-error queue is fake-registry support, not daemon retry storage.\n\nNo new recurring loop, timer, task or launch site; spawn_sites.rs and launch implementations are untouched by the requested delta. Correctness/security disposition remains with their reviewers. References: final codex_bind.rs:258-300,365-387; registration.rs:59-75; round-two tests and fake-registry changes in the requested diff.\n"
+		}
+	]
+}
