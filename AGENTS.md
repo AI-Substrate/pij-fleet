@@ -196,7 +196,9 @@ citation disputes, all of which resolved as neither party being wrong.)
   Cargo names workspace artifacts by crate, so two trees building into one
   target overwrite each other mid-build. The recipe serialises builds with a
   lock, refuses under the disk floor (`PIJ_DISK_FLOOR_GB`, default 25), rebuilds
-  your own sources with `CARGO_INCREMENTAL=0`, runs every cargo command at
+  your own sources with `CARGO_INCREMENTAL=0` (touching your crate roots only
+  when another tree, or anything outside a finished run, built there since your
+  last run: F243, `$target/.pij-shared-build-tree`), runs every cargo command at
   niceness max(19, the caller's) through `harness/scripts/nice19.sh` (never
   `taskpolicy -b`, F186; never stacked to 20, F220), and always releases. A stale lock is reported with its clear command, never
   cleared for you (plans 198, 208). Parallelism is capped too, because `nice`
