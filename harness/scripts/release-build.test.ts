@@ -108,8 +108,9 @@ function fixture(): Fixture {
 			'ok) printf \'#!/bin/sh\\necho "pij-rs 0.1.0 (%s)"\\n\' "$PIJ_BUILD_COMMIT" > "$CARGO_TARGET_DIR/release/pij-rs" ;;',
 			'foreign) printf \'#!/bin/sh\\necho "pij-rs 0.1.0 (0123456789)"\\n\' > "$CARGO_TARGET_DIR/release/pij-rs" ;;',
 			"fail) echo 'error[E0308]: mismatched types' >&2; exit 101 ;;",
-			// hang: a build still running when the helper is signalled.
-			'hang) touch "$LOG.started"; sleep 2; printf \'#!/bin/sh\\necho "pij-rs 0.1.0 (%s)"\\n\' "$PIJ_BUILD_COMMIT" > "$CARGO_TARGET_DIR/release/pij-rs" ;;',
+			// hang: a build still running when the helper is signalled; it ends
+			// when the test writes $LOG.release (bounded, so it never outlives one).
+			'hang) touch "$LOG.started"; i=0; while [ ! -e "$LOG.release" ] && [ "$i" -lt 600 ]; do sleep 0.05; i=$((i + 1)); done; printf \'#!/bin/sh\\necho "pij-rs 0.1.0 (%s)"\\n\' "$PIJ_BUILD_COMMIT" > "$CARGO_TARGET_DIR/release/pij-rs" ;;',
 			"esac",
 		].join("\n"),
 	);
@@ -265,24 +266,36 @@ describe("release-build.sh, the one deploy build (F226)", () => {
 		expect(run.status, run.stderr).toBe(0);
 	});
 
-	// R271-003: a helper signalled mid-build leaves no snapshot behind. Only the
-	// helper is signalled, as a parent killing it would: the build it waits on
-	// finishes, then the trap removes the snapshot and exits 143.
-	it("removes its snapshot when it is terminated mid-build", async () => {
+	// R271-003, R288-FU-01: a helper signalled mid-build keeps its snapshot
+	// while the build it waits on still runs (bash runs a trap only once the
+	// foreground build returns), then removes it and exits 128 + the signal.
+	// Only the helper is signalled, as a parent killing it would. Each signal
+	// needs its own handler: without one, HUP kills the helper and leaks the
+	// snapshot, and INT lets it carry on and hand the build on.
+	it.each([
+		["SIGHUP", 129],
+		["SIGINT", 130],
+		["SIGTERM", 143],
+	] as const)("keeps its snapshot through the build, then removes it, on %s", async (signal, code) => {
 		const f = fixture();
 		const child = spawn("bash", [SCRIPT], {
 			cwd: f.repo,
 			env: { ...f.env, FAKE_CARGO: "hang" },
 			stdio: ["ignore", "pipe", "pipe"],
 		});
-		const exited = new Promise<number | null>((done) => child.on("exit", (code) => done(code)));
+		const exited = new Promise<number | null>((done) => child.on("exit", (status) => done(status)));
 		for (let waited = 0; !existsSync(`${f.log}.started`); waited += 20) {
 			expect(waited, "the build started").toBeLessThan(20_000);
 			await new Promise((resolve) => setTimeout(resolve, 20));
 		}
 		expect(snapshots(f)).toHaveLength(1);
-		child.kill("SIGTERM");
-		expect(await exited).toBe(143);
+		child.kill(signal);
+		// Time for a handler that ran at once to have removed it; the build has
+		// not been released, so it is still running and reading the snapshot.
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		expect(snapshots(f), "the running build still has its snapshot").toHaveLength(1);
+		writeFileSync(`${f.log}.release`, "");
+		expect(await exited).toBe(code);
 		expect(snapshots(f)).toEqual([]);
 	});
 });
