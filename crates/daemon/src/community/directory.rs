@@ -2246,9 +2246,11 @@ impl DirectoryService {
     /// the holders files, never from the index, so a rerun after any cut
     /// (the commit landed, the index did not, or only part of it) finds them
     /// and brings the index level in one transaction (R279-001). A row
-    /// `from` gave up another way, or carried to an intermediate seat of the
-    /// chain, is left to that seat. Answers the roles carried and the commit,
-    /// if one was made.
+    /// `from` carried to `via` (the retired seats of the chain between it
+    /// and `to`, in order) is followed there: an earlier carry whose index
+    /// write was cut, overtaken by a second boundary, still lands on `to`
+    /// (F233). A row given up another way is left alone. Answers the roles
+    /// carried and the commit, if one was made.
     ///
     /// # Errors
     /// Any writer refusal; nothing is written and `from` keeps its holdings.
@@ -2257,6 +2259,7 @@ impl DirectoryService {
         project: &str,
         repo: PathBuf,
         from: &SeatId,
+        via: &[SeatId],
         to: &SeatDescriptor,
         scope: &[(String, String)],
     ) -> Result<(Vec<String>, Option<String>), Refusal> {
@@ -2280,6 +2283,7 @@ impl DirectoryService {
             roles.clone(),
             scope.to_vec(),
         );
+        let via: Vec<String> = via.iter().map(ToString::to_string).collect();
         let outcome = self
             .commit(repo, message, move |root, built| {
                 let to_id = to_seat.id.to_string();
@@ -2294,14 +2298,41 @@ impl DirectoryService {
                         .landed
                         .extend(holders::apply_ends(&mut held, &pending));
                     for (_, instance) in scope.iter().filter(|(scoped, _)| scoped == role) {
-                        // `from`'s latest row for this key, as the files say.
-                        let Some(index) = held
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, row)| row.seat == from_id && &row.instance == instance)
-                            .max_by(|(_, a), (_, b)| a.from.cmp(&b.from))
-                            .map(|(index, _)| index)
-                        else {
+                        // The latest row for this key, as the files say: first
+                        // `from`'s, then, while it was carried along the chain,
+                        // the seat it was carried to (F233).
+                        let mut seat = from_id.clone();
+                        let mut found = None;
+                        for _ in 0..=via.len() {
+                            let Some(index) = held
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, row)| row.seat == seat && &row.instance == instance)
+                                .max_by(|(_, a), (_, b)| a.from.cmp(&b.from))
+                                .map(|(index, _)| index)
+                            else {
+                                break;
+                            };
+                            let next = held[index]
+                                .release_why
+                                .as_deref()
+                                .and_then(|why| why.strip_prefix("carried to "))
+                                .filter(|next| via.iter().any(|seat| seat == next))
+                                .map(str::to_string);
+                            match next {
+                                Some(next) if held[index].to.is_some() => {
+                                    // Ended toward a retired seat of the chain:
+                                    // the index may not have that end yet.
+                                    rows.ended.push(held[index].clone());
+                                    seat = next;
+                                }
+                                _ => {
+                                    found = Some(index);
+                                    break;
+                                }
+                            }
+                        }
+                        let Some(index) = found else {
                             continue;
                         };
                         let row = &mut held[index];

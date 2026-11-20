@@ -244,7 +244,9 @@ impl SqliteOrchestration {
     /// the old seat's holdings ended without the successor's: each of `ends`
     /// closes a holding (as [`Self::end_assignments`]), and each of `starts`
     /// opens one with its seat role (as [`Self::record_assignment_committed`]).
-    /// A start the index already has is left as it is, so a rerun writes
+    /// An end the index never had (a holding an earlier carry opened in the
+    /// files whose index write was cut, F233) is recorded, already ended. A
+    /// start the index already has is left as it is, so a rerun writes
     /// nothing new. Hold the bus's publication boundary around this call.
     ///
     /// # Errors
@@ -263,6 +265,7 @@ impl SqliteOrchestration {
             let mut tx = begin_write(&pool).await?;
             for end in &ends {
                 end_in(&mut tx, end).await?;
+                insert(&mut tx, end).await?;
             }
             let mut events = Vec::new();
             for (row, role) in &starts {
