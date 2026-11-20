@@ -1,0 +1,29 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Open before touching Daemon::shutdown, serve.rs, bounce-rs's stop path, any recipe that calls tmux, or proving a daemon stop on a throwaway daemon",
+				"tags": [
+					"f242",
+					"f238",
+					"shutdown",
+					"bounce",
+					"tmux",
+					"security",
+					"testing"
+				],
+				"title": "Daemon stop and bounce: prove under open streams; tmux calls from recipes (F242, #293)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- An idle stop proves nothing: the live daemon has ~86 open event streams, and serve.rs's graceful drain waited on them forever, so every bounce SIGKILLed and F238's teardown never ran. Prove a stop with a stream open (`pij-rs tail`, or GET /v1/events in-process).\n- Throwaway daemon rig: private HOME, CLAUDE_CONFIG_DIR, --state-dir, --bind 127.0.0.1:0, PIJ_TMUX_SERVER=<private -L>. NOT --offline: offline = all fake adapters, no control client. To make the control client attach, POST a spawn with TMUX_PANE=%999 (list_panes runs, then a clean refusal). In-process: pij_cli::daemon_config(.., false) + PrivateTmux + pij_daemon::boot attaches by itself (crates/cli/tests/daemon_stop.rs).\n- Recipes calling tmux: never synthesize -S (it skips tmux's socket-dir ownership check; cross-UID leak, S293-001). Use -L \"$PIJ_TMUX_SERVER\" or no flag. Give a backgrounded tmux client </dev/null >/dev/null: it hands its stdio fds to the server, so a frozen server holds your pipe open (a \"hang\" seen only by pipe readers).\n- Bounded calls in bash recipes: background, then `while kill -0 && [ $((SECONDS-since)) -lt N ]; do /bin/sleep 0.1; done`, then kill -9 and wait. macOS has no `timeout`. bash 3.2: an empty \"${arr[@]}\" under set -u errors, so use if/else. /bin/sh is dash on CI.\n- build_stamps.rs runs real recipe bodies with fakes; try_run_faked(name, env, seed, fakes) overrides fakes (@OUT@ = scratch). The harness now honours a bash shebang. For a stop test: a counting fake lsof (old pid, then a free port, then the new pid) and a real /bin/sleep victim reaped by a thread (a zombie passes kill -0).\n- pm/prime rulings on safety steps: a failed protective step REFUSES the destructive action (with an override env), it does not \"log and continue\".\n"
+		}
+	]
+}
