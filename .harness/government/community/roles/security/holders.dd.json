@@ -634,6 +634,16 @@
 					"seat": "pij-extended-rooster",
 					"to": "2026-11-20T02:38:07.296Z",
 					"why": "#277 auth/lapse security verdict, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T03:04:47.776Z",
+					"harness": "copilot",
+					"harness_session": "0981852b-441c-4218-b73d-e50f794ad86e",
+					"instance_key": "278",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-gothic-chickadee",
+					"why": "#278 F228 security verdict, fresh seat"
 				}
 			]
 		}
