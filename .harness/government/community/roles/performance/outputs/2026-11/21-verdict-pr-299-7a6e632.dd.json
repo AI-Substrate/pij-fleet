@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fa83-d276-71d2-9b99-0a763eb73248",
+				"date": "2026-11-21",
+				"head": "7a6e632b559857484007c26d3a5afdccf2c5b8d6",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:299",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "nice -n 19 node /tmp/p299-id-differential.mjs",
+					"exit_code": 0,
+					"log": "/tmp/p299-id-differential.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES — performance/299 at7a6e632b559857484007c26d3a5afdccf2c5b8d6, base3b5d06ae; answers01a1fa83-d276-71d2-9b99-0a763eb73248. Round1 under C34; retain holding until merge.\n\nF247 verified end-to-end in owned scratch: `nice -n 19 node /tmp/p299-id-differential.mjs`, exit0; raw /tmp/p299-id-differential.json. Actual extracted final recipe plus actual unchanged installer, with isolated build/npm/port-lsof/tmux/holder boundaries. No-holder/holder id-launch counts are1/1 at this head versus1/2 for the exact parent3b5d06ae recipe loaded from its git object. Both holder calls get -u501. Thus the refusal read removes one launch, not every id launch: install-pij-rs.sh still performs its common call. Only owned process substitutes were signalled; no production build, resource read or bounce. Initial harness attempt referenced the now-pruned old review worktree and failed before the historical comparison; repaired runner uses the git object and persists per-case results. The cited successful result is the repaired full run.\n\nLinux scan cost (source-derived, no Linux timing receipt): once per manual sweep, one /proc read_dir; one status read per numeric PID; for each process counted ours, one fd read_dir plus readlink per FD; then one /proc/net/unix read, row parsing/filtering, and metadata per retained bound path until first failure. Zero processes launched by this scan, and no retry, daemon timer, hook or per-seat poll. Precise work is O(P + sum FD_own + unix-table bytes + H), with O(P*maxFD) an upper-bound shorthand. Memory includes socket-inode->pid map, full table bytes/parsed paths and bound dev/ino set; UID strings/four-uid Vec are per-scanned-process allocations, not daemon recurrence. Candidate directory work remains O(NlogN) sort plus per-entry in-process metadata/set/flock/report, no per-entry launch. An Unknown read still scans/reports candidates before CLI BLOCKED/exit2, so fail-closed is not constant work. Linux scan and filesystem operations have no wall-time deadline; this remains an explicit one-shot manual operation.\n\nmacOS: one pinned /usr/sbin/lsof per holder read, now -F pn in place of -F n, adding PID records/linear parsing but no new launch, per-record process or wait loop. LC_ALL=C, reader thread and launched-read timing mechanism are unchanged:20ms in-process checks, kill at9s of10, remaining output/reap wait bounded. Decode/stat/candidate/report work sits outside that acquisition budget. Strict first stat failure now returns Unknown; per-directory unresolved scoping/ancestor walks are deleted. The bounds wording in module/recipe/docs correctly limits launched reads, not whole sweep or bounce.\n\nBounce manual wait cost is inherited, not erased: absolute /bin/sleep0.1 nominal10 launches/s per active invocation; configured holder5+2s and setter2+2s waits, no new loop here. These are not launches per daemon tick or per live seat. No daemon source, recurring task/timer/poll or launch-site delta; spawn_sites inventory unchanged. No live fleet CPU/RSS/spawn window was duplicated for a zero structural daemon-runtime delta.\n\nEvidence: read /tmp/f248-receipts.md, /tmp/f248-checks2.log, and raw /tmp/f248-dryrun.{txt,time}. Retained macOS dry run was BLOCKED on an unresolved path held by PID12482, coder exit2,1.87s real/.09user/.55sys. Built5e8602e2; direct later-commit diff confirms macOS acquisition/strict behavior unchanged, but this is inherited evidence, not an exact-final-head binary timing. Do not attribute its difference from #298's0.57s unblocked sample to -F pn: states and work differ, no component breakdown exists. Full harness envelope15sensorspass; head association is coder provenance rather than an embedded SHA. CI44804265606/5of5 and mutation summaries are requester/coder supplied. Our independent F247 differential is the exercised proof. No Linux wall-time/actual syscall-count receipt was retained; counts above come from source.\n\nPolicy and limits: strict unstat-able-path => Unknown only spares. Linux UID filtering is a policy, not brake: removing it includes more foreign unresolved sockets and can spare more, so the filter permits more deletion. YOUNG remains a one-directional brake. This cost clearance does not certify UID transitions, foreign processes holding this user's socket, PID/descriptor-transfer snapshot races, or the disclosed leader-only fd-table limitation (CLONE_FILES-off threads not scanned). Those remain reviewer/security's independent destructive-safety gates. Neither this verdict nor the blocked dry run authorizes killing/restarting the unrelated holder, a fleet sweep APPLY, or a live bounce.\n\nmagicWand: retain exact-head per-platform operation-count and launch-differential receipts, with historical fixtures loaded by git object rather than transient review directories.\ndifficulties: common installer launches invalidate an absolute 'no id ever' assertion; the differential isolates the changed path. Blocked/manual scans still have real sort/stat/fd costs and Linux has no timing receipt. Evidence ledger /tmp/performance-299-static-cost.json. Keep performance/299 until merge, including if another role blocks.\n"
+		}
+	]
+}
