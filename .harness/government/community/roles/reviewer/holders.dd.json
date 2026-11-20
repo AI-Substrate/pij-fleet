@@ -2235,7 +2235,10 @@
 					"harness_session": "b0e5c6a2-2e40-4df4-b155-d815340f4f51",
 					"instance_key": "281",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #281 merged (7de79bb87c12)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-formidable-parakeet",
+					"to": "2026-11-20T07:15:35.246Z",
 					"why": "#281 F232 correctness review, fresh seat"
 				},
 				{

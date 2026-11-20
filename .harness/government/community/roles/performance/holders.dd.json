@@ -363,7 +363,10 @@
 					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
 					"instance_key": "281",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #281 merged (7de79bb87c12)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-melodic-snail",
+					"to": "2026-11-20T07:15:35.246Z",
 					"why": "#281 changes binder probe launches"
 				},
 				{
