@@ -2367,6 +2367,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-curved-tiger",
 					"why": "#288 C34 i review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T10:51:07.937Z",
+					"harness": "copilot",
+					"harness_session": "a7e5be63-4091-4d46-93bd-7e9295e4b0c3",
+					"instance_key": "289",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-proposed-turtle",
+					"why": "#289 C34 ii review"
 				}
 			]
 		}
