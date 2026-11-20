@@ -88,6 +88,8 @@ function fixture(): Fixture {
 			'[ -n "$WORKER" ] && ( i=0; while [ $i -lt 25 ]; do echo "tick $1" >> "$LOG"; sleep 0.2; i=$((i+1)); done ) </dev/null >/dev/null 2>&1 &',
 			// An orphaned sleep must not hold the test's stderr pipe open.
 			'[ -n "$NAP" ] && sleep "$NAP" </dev/null >/dev/null 2>&1',
+			// An artifact in the profile's deps, as a real build leaves (F243).
+			'[ -n "$ARTIFACT" ] && mkdir -p "$CARGO_TARGET_DIR/debug/deps" && date > "$CARGO_TARGET_DIR/debug/deps/libalpha.rlib"',
 			"wait",
 			'echo "end $1" >> "$LOG"',
 			'[ "$1" = fail ] && exit 7',
@@ -129,6 +131,7 @@ function fixture(): Fixture {
 			NAP: "",
 			WORKER: "",
 			NICENESS: "",
+			ARTIFACT: "",
 			FAKE_TASKPOLICY: "none",
 		},
 	};
@@ -258,6 +261,39 @@ describe("just shared-build", () => {
 		);
 		expect(statSync(lib).mtimeMs).toBeGreaterThan(1_000_000_000);
 		expect(existsSync(f.lock)).toBe(false);
+	});
+
+	it("touches this tree's crate roots only after another tree, or a build it did not finish, wrote the target (F243)", async () => {
+		const f = fixture();
+		const lib = join(f.worktree, "crates", "alpha", "src", "lib.rs");
+		const touched = async (from: Fixture, args = ["--", "build"]) => {
+			utimesSync(lib, 1_000_000, 1_000_000);
+			await run(from, args, { ARTIFACT: "1" });
+			return statSync(lib).mtimeMs > 1_000_000_000;
+		};
+		// Nothing recorded yet: this tree's sources are made newer than any artifact.
+		expect(await touched(f)).toBe(true);
+		// This tree again, and nothing else built since: cargo's own mtimes hold.
+		expect(await touched(f)).toBe(false);
+		expect(await touched(f)).toBe(false);
+		// Another worktree builds into the same target: this tree's next run touches.
+		const other = join(f.root, "other");
+		mkdirSync(join(other, "crates", "alpha", "src"), { recursive: true });
+		writeFileSync(join(other, "crates", "alpha", "src", "lib.rs"), "\n");
+		spawnSync("git", ["init", "-q", other], { env: { ...process.env, ...HERMETIC_GIT } });
+		await run({ ...f, worktree: other }, ["--", "build"], { ARTIFACT: "1" });
+		expect(await touched(f)).toBe(true);
+		expect(await touched(f)).toBe(false);
+		// A bare cargo build wrote an artifact after the last finished run.
+		const bare = join(f.target, "debug", "deps", "libbare.rlib");
+		writeFileSync(bare, "x");
+		const later = Date.now() / 1000 + 60;
+		utimesSync(bare, later, later);
+		expect(await touched(f)).toBe(true);
+		rmSync(bare);
+		// A failed run records nothing, so its artifacts count as another build.
+		expect(await touched(f, ["--", "fail"])).toBe(false);
+		expect(await touched(f)).toBe(true);
 	});
 
 	it("names the seat in the owner line from PIJ_SESSION_ID or whoami when PIJ_ID is unset, else the user", async () => {

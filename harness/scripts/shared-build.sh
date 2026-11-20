@@ -348,13 +348,25 @@ if [ -e "$lock/owner" ] || [ -L "$lock/owner" ] ||
 	refuse 2 "could not write the owner line in $lock: something already sits at $lock/owner; no cargo run"
 fi
 
-# The other tree's artifacts carry newer mtimes than this tree's sources; touch
-# them so cargo rebuilds what this worktree actually holds.
-sources=()
-for file in "$worktree"/crates/*/src/lib.rs "$worktree"/crates/*/src/main.rs; do
-	[ -f "$file" ] && sources+=("$file")
-done
-[ ${#sources[@]} -eq 0 ] || touch "${sources[@]}"
+# Cargo takes a crate as fresh when its artifact is newer than its sources.
+# Another tree's artifacts are newer than this tree's sources, so after one
+# this tree's crate roots are touched and cargo rebuilds what this worktree
+# holds. Only then (F243): touching on every run rebuilt every workspace crate
+# every time, about 80 s of each release build. `stamp` names the tree whose
+# run last finished here; an artifact newer than it was built by something
+# else since (bare cargo, a run cut short) and counts as another tree. One
+# find over the profiles' deps, stopping at the first newer entry.
+stamp="$target/.pij-shared-build-tree"
+last=""
+[ -f "$stamp" ] && [ ! -L "$stamp" ] && read -r last <"$stamp"
+if [ "$last" != "$worktree" ] ||
+	[ -n "$(/usr/bin/find "$target" -maxdepth 3 -path '*/deps/*' -newer "$stamp" -print -quit 2>/dev/null)" ]; then
+	sources=()
+	for file in "$worktree"/crates/*/src/lib.rs "$worktree"/crates/*/src/main.rs; do
+		[ -f "$file" ] && sources+=("$file")
+	done
+	[ ${#sources[@]} -eq 0 ] || touch "${sources[@]}"
+fi
 
 # Every cargo command runs at niceness max(19, the caller's) (F186, F220): the
 # wrapper adds 19 minus the caller's niceness, so `just test` (already at 19)
@@ -387,6 +399,13 @@ for command in "${commands[@]}"; do
 	eval "set -- $command"
 	run_cargo "$@" || exit $?
 done
+# F243: this tree's run finished here. Written after the last cargo, so every
+# artifact the run built is older than it; a failed run never gets here, and
+# its tree's next run touches again. Replaced by a rename, never written
+# through whatever sits at the path.
+if [ -d "$target" ]; then
+	printf '%s\n' "$worktree" >"$stamp.$$" && /bin/mv -f "$stamp.$$" "$stamp"
+fi
 # F226: the artifact this run built, copied while the lock is still held.
 if [ -n "$copy_artifact" ]; then
 	[ ! -e "$copy_dest" ] && [ ! -L "$copy_dest" ] ||
