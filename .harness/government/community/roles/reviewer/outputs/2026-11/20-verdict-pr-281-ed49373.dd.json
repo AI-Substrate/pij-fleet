@@ -1,0 +1,64 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f77b-8496-77f0-b856-98c85569efe1",
+				"date": "2026-11-20",
+				"head": "ed493731a221dc57a17811962203ee07ff925429",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:281",
+				"writer": "pij-formidable-parakeet",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R281-001: reset the per-row retry budget when a new thread starts, including immediately after the fourth failed probe.",
+				"R281-002: preserve registration Runtime read errors for bounded retries while keeping stable refusals Seen."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib codex_bind -- --nocapture",
+					"exit_code": 0,
+					"log": "exact-head committed suite: 9 passed, 0 failed"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib codex_bind -- --nocapture",
+					"exit_code": 101,
+					"log": "private exact-head archive plus five reviewer tests; pr281-review/probes.log: 12 passed, 2 failed"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib codex_bind::tests::a_failed_pane_read_is_retried_on_the_next_tick -- --exact --nocapture",
+					"exit_code": 101,
+					"log": "private Seen-on-Err mutant; pr281-review/mutation-seen.log: bound 0, expected 1"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib codex_bind::tests::a_failing_probe_is_retried_three_times_then_waits_for_a_thread -- --exact --nocapture",
+					"exit_code": 101,
+					"log": "private PROBE_RETRIES=50 mutant; pr281-review/mutation-retry-cap.log: 100 mocked stages, expected 8"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "pr281-review/checks.json: Rust, route inventory, smoke and native contracts pass; missing/incompatible local TS tooling prevents a green full gate"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "#281 R1 correctness review\nHead: ed493731a221dc57a17811962203ee07ff925429\nBase: 7ec3e176\nResult: BLOCK\n\nR281-001 (medium): the retry budget is not reset on a new thread start.\ncrates/daemon/src/codex_bind.rs:257-266,287-293\nthread_started selects every pending row, but the old failures entry survives\nwhen that same row fails again. After four consecutive failed probes, introduce\na new thread lock on the very next tick and let that probe encounter one Busy\nread. Its counter becomes five, so the row stays Seen. Once the read recovers,\nthe following unchanged tick does not probe and the valid seat remains unbound.\nReset the failed-probe budget when the lockset supplies a fresh thread-start\nreason, before probing; retain the three-additional-probes brake per reason.\nEvidence: reviewer_new_thread_resets_an_exhausted_retry_budget_before_a_quiet_tick\nfails on unchanged production code from this head: bound 0, expected 1.\n\nR281-002 (medium): registration read errors are classified as decisions.\ncrates/daemon/src/codex_bind.rs:369-377\nregister_via distinguishes RegistrationError::Runtime from stable refusals, but\nthe new catch-all turns both into Ok(false). A single transient liveness read\ninside registration is therefore marked Seen, and the healthy next tick never\ntries registration again. Preserve the Runtime error as an Err for the existing\nbounded retry path; genuine refusals should continue to log and keep Seen.\nEvidence: reviewer_a_transient_registration_read_retries_on_the_next_tick fails\non unchanged production code from this head: bound 0, expected 1. The control\nreviewer_registration_refusal_is_seen_and_does_not_retry passes: an observed\nstart mismatch remains unbound and costs exactly one probe over 30 ticks.\n\nPassing controls and provenance:\nThe detached review worktree stayed clean. just pr-freeze 281 verified the exact\nhead, CLEAN main base, non-draft status and successful latest CI checks.\nThe committed codex_bind suite passed 9/9 with:\n  PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-daemon --lib codex_bind -- --nocapture\nThe expanded suite used git archive of this exact SHA in a private source copy,\nwith only five reviewer tests and their helpers added: 12 pass, 2 fail (exit 101).\nreviewer_one_busy_probe_is_retried_after_release passes: one failed pane read,\nthen 30 unchanged ticks bind once to the correct thread, with five mocked fact\nstages total. reviewer_reused_pane_after_busy_is_not_bound_or_retried_as_an_error\npasses: a different pane wrapper after the failed read does not bind; the\nnegative decision stops retries (four mocked stages total).\nThe probe patch and full local log are retained as reviewer-probes.patch and\nprobes.log in the review session's pr281-review evidence folder.\n\nRequested mutations, each independently caught:\nSeen-on-Err: replace seen.rows.remove(&id) with seen.rows.insert(id), leaving\nthe retry cap intact. just shared-build -- test --locked -p pij-daemon --lib\ncodex_bind::tests::a_failed_pane_read_is_retried_on_the_next_tick -- --exact\n--nocapture exits 101: bound 0, expected 1. Receipt: mutation-seen.log.\nRetry brake: restore row removal, then change PROBE_RETRIES from 3 to 50.\njust shared-build -- test --locked -p pij-daemon --lib\ncodex_bind::tests::a_failing_probe_is_retried_three_times_then_waits_for_a_thread\n-- --exact --nocapture exits 101: 100 mocked stages, expected 8.\nReceipt: mutation-retry-cap.log. Both experiments used only the private source\ncopy and the same serialized, nice-19 shared target; neither changed this PR.\n\nFull gate attempt:\nharness checks exited 1: six sensors passed, eight failed, one attribution\nadvisory warned. Rust (fmt, macOS clippy and all workspace tests), route inventory,\nsmoke, pij-skill, native contracts and the installed Copilot SDK contract passed.\nThe TS-based path/config/docs/coverage/lockfile sensors lacked local tsx,\ntypecheck/test lacked local dependencies, and lint selected incompatible ambient\nBiome because node_modules is absent. Boot had already returned NOT-READY for\nthat dependency state. No dependencies were installed or linked (C25); exact-head\nCI remains the TS proof. These environment failures are not additional PR\nfindings and the local full gate is not represented as green.\n\nIdentity and cost:\nEach retry freshly reads the spawn child record, child-parent relationship,\nsingle writer-lock thread, saved conversation, current pane-wrapper PID and\nchild start; registration rechecks the process start and roster collisions.\nNeither finding is an authorization bypass. C33's same-user boundary is kept;\nthe PR adds no paths, home paths, dependencies or launch sites.\nThe existing binder tick is the configured delivery interval (default 5 s),\nserialized by TickLoop. Retry eligibility changes, not the loop. Quiet decided\nrows still launch nothing. At most three additional probes per failing pending\nrow per reason is a brake: removing it only adds probes. Mock Facts counts\nstages, not real launches: macOS Busy costs one lsof and zero tmux launches;\nproc-start normally reads in-process and only its existing fallback launches ps.\nThe failures map retains only rows failing the current batch, rows retains only\ncurrent pending IDs, and locks replaces the current directory snapshot; no\nper-thread historical map grows forever. New-thread budget reset is nevertheless\nincorrect as R281-001 proves.\n\nHarness feedback:\nThe existing tests cover a new thread only after 50 ticks, when the old failure\nentry has already been cleared; they do not pin the immediate new-thread edge\nor distinguish registration Runtime from Refused. Encode the two failing probes\nalongside the fixes. magicWand: one read-only review-probe recipe that archives\na frozen SHA, serializes shared-target builds, preserves mutation receipts and\ncleans only its private source copy.\n"
+		}
+	]
+}
