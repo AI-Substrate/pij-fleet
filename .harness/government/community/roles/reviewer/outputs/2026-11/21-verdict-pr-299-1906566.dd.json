@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fa9f-4607-7112-9a0b-2263b51e7005",
+				"date": "2026-11-21",
+				"head": "1906566bc2f60e992af1d7e1c292a426f494df8a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:299",
+				"writer": "pij-zonal-bee",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 299",
+					"exit_code": 0
+				},
+				{
+					"command": "native Linux exact current Holders::read; retained pthread_exit worker and historical handoff replay both Unknown, removed 0, kept true; native worker still serves",
+					"exit_code": 0
+				},
+				{
+					"command": "negative control: force Linux Known-empty; both native/replay live-socket safety assertions fail with removed 1",
+					"exit_code": 101
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build --copy-out debug/pij-tmux-fixture-sweep <owned-copy> -- build -p pij-testkit --bin pij-tmux-fixture-sweep --then test -p pij-testkit --lib tmux_sweep -- --nocapture --then clippy -p pij-testkit -p pij-tmux --tests -- -D warnings",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# FINAL R2 PASS-WITH-NOTES: PR #299\n\nHead: `1906566bc2f60e992af1d7e1c292a426f494df8a`\nR1 basis: `7a6e632b559857484007c26d3a5afdccf2c5b8d6`\nRequest: `01a1fa9f-4607-7112-9a0b-2263b51e7005`\n\n**PASS-WITH-NOTES. R299-001 is closed by the prime's ruled removal of the\nLinux holder census.** Both retained failure scenarios now remove zero.\nNo new final-round blocker was found. This is a review verdict, not\nauthorization to run the fleet sweep with `--apply`.\nThe reviewer/299 holding remains held until merge.\n\n## R299-001: closed, with native negative control\n\nProduction `Holders::read()` calls `read_on(std::env::consts::OS)`.\nFor `\"linux\"`, `read_on` unconditionally returns `Unknown(LINUX_UNKNOWN)`\nbefore reading any holders. The Linux `bound_paths` fallback also returns\nan error. There is no environment-selectable OS or production path through\nthese readers to `Known`.\n\nThe fd census, UID classification, Linux socket-table parser and fake-proc\nseam are deleted from production. Explicit `Holders::of`/`of_bound` and\n`Known` constructors remain useful for supplied evidence and unit tests;\nthe product CLI does not use them to bypass its real platform reader.\n\nThe retained experiments were rerun with the exact current production\nmodule, on native Linux in an already-cached, network-disabled container:\n\n| Retained case | Current head | Mutant returning Linux Known-empty |\n|---|---|---|\n| Ordinary main `pthread_exit`, live shared-table worker | `Unknown=true`, `removed=0`, `kept=true`; two tasks, leader fd count zero, worker still serves after sweep | CAUGHT: `removed=1`, `kept=false`, worker still serving; safety assertion fails |\n| Transfer to an already-scanned process followed by source exit | Current public Linux reader returns Unknown; `removed=0`, `kept=true` | CAUGHT: `removed=1`, `kept=false`; safety assertion fails |\n\nBaseline: **2/2 PASS**, exit 0. Negative control: **both assertions failed**\nas intended, exit 101; compilation succeeded.\n\nFor the handoff replay, the historical scanner is retained **only inside\nthe private test fixture** to reproduce the original FIFO-controlled\ninterleaving and empty census. The deletion decision uses the current\n`Holders::read()`. The removed scanner was not restored to product code.\nThe leader-exit experiment uses a real live Linux worker and kernel socket\nbinding, not a fake proc table.\n\nCargo ran through `just shared-build`, using the one physical shared\ntarget, nice 19 on host and in the container, four jobs, one container CPU,\nand `CARGO_INCREMENTAL=0`. No image pull, package installation or network.\nThe C fixture compiled at cargo build time, not inside a test.\nBoth owned containers and child processes were cleaned up.\n\n## macOS strictness and F248: intact\n\nThe independent retained probes passed **3/3** on macOS:\n\n- A real lsof record for a live socket behind a removed directory symlink\n  makes the read Unknown; the socket remains.\n- A directory renamed after binding has the same safe result.\n- Any failed bound-path stat blocks stale sockets and orphan locks.\n- The Linux reader branch, exercised directly, keeps live/stale sockets\n  and the orphan lock.\n\nThe three tests combine those assertions; no fleet entries were touched.\nA second independent mutation drops failed bound-path stats; the alias/\nrename assertion catches the resulting `Known({})`. The Linux Known-empty\nmutation is also caught by this host-side platform test.\n\nThe production file is unchanged as a byte prefix in both probe harnesses,\nSHA-256:\n`1b06567609b244a948be38e375a3e18bd79d8f0f7540a625ef457acdcf30fbb8`.\nOnly the existing platform stubs (current UID, open flags, lock suffix,\ntest time scaling) and appended test fixtures surround it.\n\n## Official validation\n\nCommand below uses `<owned-copy>` in place of the private copy-out path.\nExit **0**, macOS:\n\n```sh\nPIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build \\\n  --copy-out debug/pij-tmux-fixture-sweep <owned-copy> -- \\\n  build -p pij-testkit --bin pij-tmux-fixture-sweep \\\n  --then test -p pij-testkit --lib tmux_sweep -- --nocapture \\\n  --then clippy -p pij-testkit -p pij-tmux --tests -- -D warnings\n```\n\nResults: **12/12** sweep tests passed, including disabled Linux behavior,\nF248 alias/rename cases, failed stats, escaped diagnostic names, unknown\norphan locks, live backlog and bounded acquisition. Scoped macOS clippy\nwas clean.\n\n`just pr-freeze 299` reported FINAL at this exact head: CLEAN, five latest\nCI checks passed, main base, no migrations, clean detached checkout.\n\n`harness boot --json` and `harness checks --quick --json` remain NOT READY\nin this dependency-free C25 checkout; local TS tools are absent, while\nskill/native Copilot checks pass. No dependencies were installed or\nlinked. Full local ship-gate success is not claimed.\n\nSecurity owns S299-N1/N2 and C21 review. The escaped-path unit test passed\nin the official suite; the independent security verdict owns the wider\nrendering/refusal assessment. Performance separately reports\nPASS-WITH-NOTES (`cdf55a7a`) with its F247/invalid-UID launch receipt; that\ndoes not substitute for the native correctness proof above.\n\n## Operational notes\n\n- **Linux intentionally cannot apply this sweep.** Its real holders are\n  always Unknown; the CLI's Unknown branch reports BLOCKED and returns 2.\n  Directory inspection/reporting may still occur; this is not a claim of\n  zero Linux work.\n- The documented **macOS residual remains**: lsof's walk is non-atomic and\n  descriptor transfers or in-flight `SCM_RIGHTS` can be missed. The scope\n  remains fixture servers that do not pass descriptors, as stated in the\n  module, operating guide and PR body.\n- The Linux policy filter that permitted extra deletion is gone. Failed\n  evidence vetoes deletion; `YOUNG` remains a one-directional age brake.\n  No new per-tick/per-seat daemon work or process launch was added.\n- No live bounce and no fleet APPLY were run. Destructive probes used only\n  reviewer-owned scratch.\n\n## Harness feedback\n\nMagic wand: retain the native leader-exit and controlled handoff fixtures\nas reusable platform no-delete regressions, with the Known-empty mutation\nas their negative control. This final round has both the positive\n`removed=0` and causal `removed=1` receipts. Raw commands, logs and fixture\nsources are retained, and their private pointers were sent to pm-001 and\nthe specialist reviewers.\n"
+		}
+	]
+}
