@@ -2175,6 +2175,16 @@
 					"seat": "pij-correct-ocelot",
 					"to": "2026-11-20T00:40:19.666Z",
 					"why": "#276 R273-001 test fix, after #275"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T01:21:44.841Z",
+					"harness": "copilot",
+					"harness_session": "d51f1957-590b-4fc4-8ea6-6acbc0a93a3a",
+					"instance_key": "277",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-calm-badger",
+					"why": "#277 auth/lapse correctness review, fresh seat"
 				}
 			]
 		}
