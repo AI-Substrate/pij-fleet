@@ -855,6 +855,16 @@
 					"seat": "pij-very-mouse",
 					"to": "2026-11-20T15:50:31.409Z",
 					"why": "#294 F240 security"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T15:58:33.983Z",
+					"harness": "copilot",
+					"harness_session": "aec42850-138f-4f94-a0c3-23b659683fb8",
+					"instance_key": "295",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-everyday-platypus",
+					"why": "#295 F241 security"
 				}
 			]
 		}
