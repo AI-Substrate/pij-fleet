@@ -2085,24 +2085,10 @@ mod tests {
         {
             return;
         }
-        let server = format!("pij-utf8-{}", std::process::id());
-        let start = std::process::Command::new("tmux")
-            .args([
-                "-L",
-                &server,
-                "-f",
-                "/dev/null",
-                "new-session",
-                "-d",
-                "-s",
-                "t",
-                "cat",
-            ])
-            .status()
-            .expect("start isolated tmux");
-        assert!(start.success());
+        // F241: a fixture that removes its socket and lock, panicking or not.
+        let tmux = pij_testkit::tmux::PrivateTmux::start();
         let mut adapter = super::TmuxAdapter::new(std::env::temp_dir());
-        adapter.server = Some(server.clone());
+        adapter.server = Some(tmux.name().to_string());
         let output = adapter
             .command(pij_core::program::resolve(&adapter.binary))
             .env_clear()
@@ -2111,15 +2097,12 @@ mod tests {
                 "display-message",
                 "-p",
                 "-t",
-                "t",
+                "test",
                 "#{session_name}\t#{session_name}",
             ])
             .output()
             .expect("tmux display-message");
-        let _ = std::process::Command::new("tmux")
-            .args(["-L", &server, "kill-server"])
-            .status();
-        assert_eq!(String::from_utf8_lossy(&output.stdout), "t\tt\n");
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "test\ttest\n");
     }
 
     #[test]

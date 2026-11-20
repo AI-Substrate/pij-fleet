@@ -33,3 +33,9 @@ path = "src/bin/delivers_check.rs"
 [[bin]]
 name = "pij-gate"
 path = "src/bin/gate.rs"
+
+# F241: the one-time sweep of tmux sockets and attach locks fixtures leaked.
+# Dry run by default; `just tmux-fixture-sweep --apply` removes.
+[[bin]]
+name = "pij-tmux-fixture-sweep"
+path = "src/bin/tmux_fixture_sweep.rs"

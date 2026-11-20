@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use pij_core::ports::TmuxPort;
 use pij_testkit::block_on;
-use pij_tmux::{CONTROL_SESSION, TmuxAdapter, socket_attach_lock_path, socket_path};
+use pij_tmux::{CONTROL_SESSION, TmuxAdapter};
 
 static SERVERS: AtomicUsize = AtomicUsize::new(0);
 
@@ -111,7 +111,7 @@ impl Server {
 impl Drop for Server {
     fn drop(&mut self) {
         let _ = self.tmux(&["kill-server"]);
-        let _ = std::fs::remove_file(socket_attach_lock_path(&socket_path(Some(&self.label))));
+        pij_testkit::tmux::remove_server_files(&pij_testkit::tmux::socket_path(&self.label));
         let _ = std::fs::remove_dir_all(&self.taps);
     }
 }

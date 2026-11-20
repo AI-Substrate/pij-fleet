@@ -972,10 +972,9 @@ mod tests {
             let killed = Command::new("tmux")
                 .args(["-L", &self.server, "kill-server"])
                 .output();
-            // F238: the server's attach lock sits beside its socket.
-            let _ = std::fs::remove_file(pij_tmux::socket_attach_lock_path(
-                &pij_tmux::socket_path(Some(&self.server)),
-            ));
+            // F238/F241: tmux leaves the socket after kill-server, and the
+            // control client's attach lock sits beside it.
+            pij_testkit::tmux::remove_server_files(&pij_testkit::tmux::socket_path(&self.server));
             // kill-server exits non-zero when the server is already gone (it can
             // exit on its own, or between its reply and our read): the teardown's
             // postcondition is "no server", not kill-server's status (F27).

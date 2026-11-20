@@ -213,8 +213,9 @@ impl Drop for PrivateTmux {
             let _ = self.server.child.kill();
             let _ = self.server.child.wait();
         }
+        // F241: the socket tmux leaves behind, and pij's attach lock beside it.
         if let Some(socket) = &self.socket {
-            let _ = fs::remove_file(socket);
+            pij_testkit::tmux::remove_server_files(socket);
         }
     }
 }
