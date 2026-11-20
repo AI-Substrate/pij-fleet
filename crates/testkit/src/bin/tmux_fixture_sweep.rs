@@ -28,11 +28,11 @@ fn main() -> ExitCode {
     }
     let holders = tmux_sweep::Holders::read();
     match &holders {
-        tmux_sweep::Holders::Known { held, unlinked } => {
+        tmux_sweep::Holders::Known { held, unresolved } => {
             println!(
-                "holders: {} bound Unix socket files, {} bound paths naming no file now",
+                "holders: {} bound Unix socket files, {} bound paths that won't stat",
                 held.len(),
-                unlinked.len()
+                unresolved.len()
             );
             if let Some(why) = holders.unknown_in(&dir) {
                 println!(

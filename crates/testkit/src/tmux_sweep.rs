@@ -218,8 +218,8 @@ pub enum Holders {
     Known {
         /// The (device, inode) of the file at each bound path.
         held: HashSet<(u64, u64)>,
-        /// Each bound path that names no file now.
-        unlinked: Vec<PathBuf>,
+        /// Each bound path that won't stat, and why.
+        unresolved: Vec<(PathBuf, io::ErrorKind)>,
     },
     /// The holders could not be read: nothing counts as unheld, so nothing
     /// is removed (fail closed). Why.
@@ -234,11 +234,12 @@ impl Holders {
     /// now, never by its spelling (`/tmp` and `/private/tmp` are one place).
     /// Every path is read exactly ([`decode_lsof_name`], the remainder of a
     /// `/proc/net/unix` line), or the whole read is unknown and nothing is
-    /// removed (#298 round 2, bee and sawfish). A path that names no file now
-    /// (`NotFound`: its socket file was unlinked, or it lives in another mount
-    /// namespace) is kept as `unlinked`: it makes a directory it may have been
-    /// in unknown ([`Holders::unknown_in`]). Any other failure to stat one
-    /// (permission, a loop, I/O) is unknown everywhere.
+    /// removed (#298 round 2, bee and sawfish). A path that won't stat (its
+    /// socket file was unlinked, it lives in another mount namespace, or, on
+    /// Linux, where every user's sockets are listed, it is in a directory
+    /// this user can't search) is kept as `unresolved`: it makes unknown the
+    /// directory it may be in ([`Holders::unknown_in`]), never silently
+    /// dropped.
     #[must_use]
     pub fn read() -> Self {
         match bound_paths() {
@@ -247,53 +248,48 @@ impl Holders {
         }
     }
 
-    /// The holders bound at `paths`: unknown if any of them fails to stat for
-    /// any reason but naming no file.
+    /// The holders bound at `paths`, each by the file it names now; every
+    /// path that won't stat is kept, unresolved.
     #[must_use]
     pub fn of(paths: &[PathBuf]) -> Self {
         let mut held = HashSet::with_capacity(paths.len());
-        let mut unlinked = Vec::new();
+        let mut unresolved = Vec::new();
         for path in paths {
             match fs::metadata(path) {
                 Ok(meta) => {
                     held.insert((meta.dev(), meta.ino()));
                 }
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                    unlinked.push(path.clone())
-                }
-                Err(error) => {
-                    return Self::Unknown(format!(
-                        "a bound socket's path won't stat: {}: {error}",
-                        path.display()
-                    ));
-                }
+                Err(error) => unresolved.push((path.clone(), error.kind())),
             }
         }
-        Self::Known { held, unlinked }
+        Self::Known { held, unresolved }
     }
 
     /// Why nothing in `dir` may count as unheld, if anything: the holders are
-    /// unknown, `dir` itself can't be looked at, or a bound path that names no
-    /// file now was in `dir` (its parent is `dir` by device and inode, or its
-    /// parent can't be looked at). A socket file unlinked while bound in
-    /// `dir`, as a fixture once left a live server, could still be reachable
-    /// there by another link, so that directory is spared whole (#298 round
-    /// 2, bee and sawfish: fail closed in that run, or that directory).
+    /// unknown, `dir` itself can't be looked at, or a bound path that won't
+    /// stat may be in `dir` (its parent is `dir` by device and inode, or its
+    /// parent can't be looked at either). Such a path could be an entry of
+    /// `dir` this user can't see as bound, so `dir` is spared whole (#298
+    /// round 2, bee and sawfish: fail closed in that run, or that directory).
+    /// One whose parent is another directory names no entry of `dir`.
     #[must_use]
     pub fn unknown_in(&self, dir: &Path) -> Option<String> {
-        let unlinked = match self {
+        let unresolved = match self {
             Self::Unknown(why) => return Some(why.clone()),
-            Self::Known { unlinked, .. } => unlinked,
+            Self::Known { unresolved, .. } => unresolved,
         };
         let here = match fs::metadata(dir) {
             Ok(meta) => (meta.dev(), meta.ino()),
             Err(error) => return Some(format!("{}: {error}", dir.display())),
         };
-        for path in unlinked {
+        for (path, why) in unresolved {
             let parent = path.parent().unwrap_or(Path::new("/"));
             match fs::metadata(parent) {
                 Ok(meta) if (meta.dev(), meta.ino()) == here => {
-                    return Some(format!("{} is bound but names no file now", path.display()));
+                    return Some(format!(
+                        "{} is bound but won't stat ({why:?})",
+                        path.display()
+                    ));
                 }
                 Ok(_) => {}
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -864,37 +860,40 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// #298 round 2 (bee): a bound path that won't stat for any reason but
-    /// naming no file (here, a directory that can't be searched) makes the
-    /// holders unknown, and nothing is removed; one that names no file holds
-    /// nothing.
+    /// #298 round 2 (bee): a bound path that won't stat is never dropped:
+    /// it spares the directory it may be in, the swept one by device and
+    /// inode or one that can't be looked at either. One in another directory
+    /// (a socket of another user's, behind a directory this user can't
+    /// search, as on Linux CI) names no entry here and changes nothing.
     #[test]
-    fn a_bound_path_that_wont_stat_removes_nothing() {
+    fn a_bound_path_that_wont_stat_spares_its_directory() {
         use std::os::unix::fs::PermissionsExt;
         let dir = scratch();
         stale_socket(&dir, "pij-test-4-stale");
         let shut = dir.join("shut");
         fs::create_dir(&shut).expect("dir");
-        fs::set_permissions(&shut, fs::Permissions::from_mode(0o000)).expect("chmod");
-        let holders = Holders::of(&[shut.join("sock")]);
-        fs::set_permissions(&shut, fs::Permissions::from_mode(0o700)).expect("chmod back");
-        assert!(matches!(holders, Holders::Unknown(_)), "{holders:?}");
         let later = SystemTime::now() + Duration::from_secs(24 * 3600);
-        let swept = sweep(&dir, later, true, &holders).expect("sweep");
-        assert_eq!(swept.removed, 0);
+        let removed = |holders: &Holders| {
+            fs::set_permissions(&shut, fs::Permissions::from_mode(0o000)).expect("chmod");
+            let swept = sweep(&dir, later, true, holders).expect("sweep");
+            fs::set_permissions(&shut, fs::Permissions::from_mode(0o700)).expect("chmod back");
+            swept.removed
+        };
+        fs::set_permissions(&shut, fs::Permissions::from_mode(0o000)).expect("chmod");
+        let in_dir = Holders::of(&[dir.join("no-such-socket")]);
+        let unplaced = Holders::of(&[shut.join("inner").join("sock")]);
+        let elsewhere = Holders::of(&[shut.join("sock"), PathBuf::from("/nonexistent-pij/sock")]);
+        fs::set_permissions(&shut, fs::Permissions::from_mode(0o700)).expect("chmod back");
+        for holders in [&in_dir, &unplaced, &elsewhere] {
+            assert!(
+                matches!(holders, Holders::Known { held, .. } if held.is_empty()),
+                "{holders:?}"
+            );
+        }
+        assert_eq!(removed(&in_dir), 0, "{in_dir:?}");
+        assert_eq!(removed(&unplaced), 0, "{unplaced:?}");
         assert!(exists(&dir.join("pij-test-4-stale")));
-        // One that names no file holds nothing, but spares the directory it
-        // was in; elsewhere it changes nothing.
-        let gone = Holders::of(&[dir.join("no-such-socket")]);
-        assert!(gone.unknown_in(&dir).is_some(), "{gone:?}");
-        assert_eq!(sweep(&dir, later, true, &gone).expect("sweep").removed, 0);
-        let elsewhere = Holders::of(&[PathBuf::from("/nonexistent-pij/sock"), shut.join("x-gone")]);
-        assert!(matches!(elsewhere, Holders::Known { .. }), "{elsewhere:?}");
-        assert_eq!(elsewhere.unknown_in(&dir), None, "{elsewhere:?}");
-        assert_eq!(
-            sweep(&dir, later, true, &elsewhere).expect("sweep").removed,
-            1
-        );
+        assert_eq!(removed(&elsewhere), 1, "{elsewhere:?}");
         assert!(!exists(&dir.join("pij-test-4-stale")));
         let _ = fs::remove_dir_all(&dir);
     }
