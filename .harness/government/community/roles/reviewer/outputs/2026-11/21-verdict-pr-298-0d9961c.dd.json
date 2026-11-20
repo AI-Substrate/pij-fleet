@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fa53-ef30-7fa0-8efa-2432c68daaee",
+				"date": "2026-11-21",
+				"head": "0d9961ccfc4473813a41ebc94efb95475e23ce61",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:298",
+				"writer": "pij-zonal-bee",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"F248 (prime C34 ship ruling): unresolvable bound parent, NotFound included, must fail closed; port the live vanished-alias regression. Fleet --apply remains held.",
+				"F247 (prime C34 ship ruling): use builtin UID instead of once-only PATH id -u and qualify limits as bounds on launched reads, not whole operations."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 298",
+					"exit_code": 0
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test -p pij-testkit --lib tmux_sweep -- --nocapture --then test -p pij-testkit --test build_stamps bounce_rs_goes_on_after_a_refusal_only_when_nothing_holds_the_socket -- --nocapture --then test -p pij-testkit --test build_stamps bounce_rs_refuses_when_the_holder_read_does_not_finish -- --nocapture --then clippy -p pij-testkit -p pij-tmux --tests -- -D warnings",
+					"exit_code": 0
+				},
+				{
+					"command": "exact-head copied sweep module, real complete lsof census, owned vanished-alias-parent regression; expected RED now named F248 and accepted for follow-up by prime",
+					"exit_code": 101
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# FINAL R2 PASS-WITH-NOTES: PR #298\n\nHead: `0d9961ccfc4473813a41ebc94efb95475e23ce61`\nR1 basis: `12bdede47db345264785d667f50ced08ef85e8dc`\nRequest answered: `01a1fa53-ef30-7fa0-8efa-2432c68daaee`\n\n**PASS-WITH-NOTES for merge under the prime's C34 ruling. This is not\npermission to run the fleet sweep with `--apply`. That remains held.**\nRound 2 is final; F247 and F248 go to the next small PR, not another round\non this head. The reviewer/298 holding remains held until merge.\n\nThe disposition was relayed by pm-001 in message\n`b764488df75ee6cf-0000000000000053`: ship #298, keep APPLY held, name the\nunresolvable-parent issue F248, and have falcon implement F248 with F247.\nNo finding below is silently represented as fixed.\n\n## R1 fix verification\n\n| R1 item | Result at this head |\n|---|---|\n| Bounce compares `/tmp` with `/private/tmp` text | Fixed. Replayed the exact R2 holder branch with a record from real lsof for an owned live tmux server. At 128 queued clients it refused connects with errno 61, but `-ef` recognized the same inode and refused bounce. Restoring textual equality was caught: it incorrectly proceeded. No live bounce ran. |\n| Escaped macOS names are stat-dropped | Fixed for the retained R1 cases. Live newline, tab, backslash and space names all remained `Live` and were spared. LC_ALL=C decoding is explicit; unknown escapes/caret refuse the read. |\n| Linux space-bearing path truncation | Fixed. The actual `parse_proc_net_unix` function preserved the complete path, and the live socket was spared. This is a Linux-table parser replay on macOS, not a native Linux runtime claim. |\n| Ordinary failed holder stat silently disappears | Fixed for the retained same-directory failure case: the directory is spared. The unresolvable-parent exception remains F248 below. |\n| Unknown holders can delete an orphan lock | Fixed. The retained R1 orphan-lock regression now passes. |\n| Unbounded holder lookup in bounce | The targeted stalled-holder regression passes and performance's exact-recipe receipt confirms refusal with the old process alive. Performance independently published PASS-WITH-NOTES at this head, commit `32806cd72dd5b9a64f2594760a99c56e181f7658`. F247 qualifies the remaining scope below. |\n| Sweep output can stay blocked behind a grandchild | The official whole-holder/grandchild regression passes. Acquisition/output waiting is bounded; this does not assert a hard real-time bound on later pathname parsing or filesystem calls. |\n\nF246 and the server-PID cleanup code are unchanged from the reviewed R1 head:\n`git diff --quiet 12bdede..HEAD -- harness/scripts/shared-build.sh harness/scripts/shared-build.test.ts crates/testkit/src/tmux.rs crates/core/src/program.rs`\nreturned 0. The R1 F246 exit-7 and final-write-failure receipts therefore\ncarry forward; they were not relabelled as fresh runs.\n\n## Accepted follow-ups\n\n### F248 / R298-R2-001: P1, live binding behind a vanished parent alias\n\nRoot: `crates/testkit/src/tmux_sweep.rs:289-300`, especially line 299:\nan unresolved bound pathname's parent returning `NotFound` is ignored.\n\nOwned scratch reproduction:\n\n1. Make `alias` a directory symlink to `real`.\n2. Bind a live fixture-prefixed Unix listener through `alias`.\n3. Remove only the symlink, leaving the listener and `real/<socket>` alive.\n4. Read the actual absolute-path lsof census. It still names the original\n   bind-time alias path.\n5. Feed the complete census through the exact-head holder code and sweep\n   only `real` in owned scratch.\n\nObserved result: the live socket was `Stale`, `removed: 1`, `kept=false`.\nThe new test failed on that assertion, not compilation. Both the isolated\nrecord and the complete real lsof census reproduce it.\n\nThe prime accepted this as **F248**, with the intended correction:\nan unresolvable parent, `NotFound` included, makes the read unknown and\nspares all. This exact symlink-alias case becomes its regression.\n**Fleet APPLY stays held until the follow-up is delivered and verified.**\nThis verdict does not claim that every stat failure currently spares.\n\n### F247: qualified once-only UID launch and bound wording\n\nPer performance and the prime's C34 ruling, replace the once-only\nPATH-resolved `id -u` at `justfile:821` with builtin `$UID` in the next\nbounce PR. Describe the limits as bounds on launched reads, not a hard\nbound on the whole bounce or sweep. Performance owns this follow-up.\n\n## Validation\n\nAll cargo work used the checkout's shared target through `just shared-build`,\nnice 19, four jobs, with `CARGO_INCREMENTAL=0`. No dependency install or\nnode_modules link; no production bounce; no fleet APPLY.\n\nExact official command, exit **0**:\n\n```sh\nPIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- \\\n  test -p pij-testkit --lib tmux_sweep -- --nocapture \\\n  --then test -p pij-testkit --test build_stamps bounce_rs_goes_on_after_a_refusal_only_when_nothing_holds_the_socket -- --nocapture \\\n  --then test -p pij-testkit --test build_stamps bounce_rs_refuses_when_the_holder_read_does_not_finish -- --nocapture \\\n  --then clippy -p pij-testkit -p pij-tmux --tests -- -D warnings\n```\n\nResults: sweep **10/10**; bounce holder table **1/1** (12 cases);\nstalled-holder/override regression **1/1**; scoped macOS clippy **clean**.\n\nAdditional retained independent probes:\n\n- Six R1/path/stat/parse/Unknown regressions: **6/6 PASS**.\n- Four guard mutants: **CAUGHT**. Raw-name decoding mutation becomes\n  `Unsure` instead of `Live`; forgetting unresolved stats permits deletion;\n  ignoring unknown holders deletes the orphan lock; replacing bounce\n  inode comparison with textual equality proceeds for the live alias.\n- F248 live-alias-parent regression: **expected RED**, reproduced using\n  the complete real lsof table, classified as the accepted follow-up above.\n- The source-copy harness retains the exact production file as a byte\n  prefix, SHA-256\n  `cd9ff875d45e4406a4e6864cb0bf44304d0da5ba82819ce62733fb01b5fee128`.\n  Its only platform stubs are current UID, `O_NOFOLLOW`, the existing lock\n  suffix and test time scaling; production sweep logic is unchanged.\n- `just pr-freeze 298`: **FINAL** at the full reviewed head, CLEAN,\n  five latest CI checks passed, no migrations; detached checkout clean.\n- `harness boot --json`: **NOT READY**, local dependencies absent.\n  `harness checks --quick --json`: **NOT READY** for the same missing local\n  TS/tooling surface; skill/native Copilot checks passed. C25 was obeyed.\n  Full local ship-gate success is not claimed; exact-head CI is green.\n\nCost remains manual/test-only: one lsof per macOS sweep, in-process\nlookups per entry, one holder read on bounce refusal, and bounded\n`/bin/sleep` polling only while the manual operation waits. No new\nrecurring daemon loop and no per-seat launch. Fixture PID checks still\npoll in-process, every 10 ms for at most 2 s.\n\nThe sweep's absence decision is destructive **policy**, and its young-file\nveto is a one-directional **brake**. Bounce's holder refusal is a **brake**.\nThe F248 limit is why merge acceptance must not be read as APPLY approval.\n\n## Harness feedback\n\nMagic wand: a reusable live-binding regression that changes a socket's\npathname visibility without stopping the listener. The owned\ndisappeared-alias-parent probe and raw receipts are retained; F248 should\nport it into the existing sweep suite. This is the highest-value encoding\nfrom the final round, and its owner and disposition are explicit.\n"
+		}
+	]
+}
