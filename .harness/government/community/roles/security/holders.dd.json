@@ -683,6 +683,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-associated-cobra",
 					"why": "#281 F232 security verdict, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T07:09:04.123Z",
+					"harness": "copilot",
+					"harness_session": "eeee9fc4-cd14-4d74-9721-626240dd6071",
+					"instance_key": "282",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-pleased-swift",
+					"why": "#282 F231 security verdict, fresh seat"
 				}
 			]
 		}
