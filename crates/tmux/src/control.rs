@@ -42,7 +42,10 @@
 //! bounded: the teardown is written and answered on its own thread, waited on
 //! for at most [`TEARDOWN_WAIT`], and the killed client is reaped within
 //! [`REAP_WAIT`] or handed to a thread that reaps it; if no thread can start,
-//! it is waited on for [`REAP_WAIT`] more and then left (F240).
+//! it is waited on for [`REAP_WAIT`] more and then left (F240), with a
+//! warning naming its pid. The bound is the sum of those configured waits;
+//! that warning is a synchronous write to stderr after them and outside it
+//! (a log sink applying backpressure could hold it; none has been measured).
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -232,8 +235,10 @@ struct Live {
 impl Drop for Live {
     /// Every way a client leaves (the adapter dropped, a replacement after a
     /// slow or lost reply, `_pij` alone, a daemon shutting down) comes here,
-    /// and none of it waits longer than [`TEARDOWN_WAIT`] plus [`REAP_WAIT`],
-    /// or plus twice [`REAP_WAIT`] when no reaper thread can start (F240).
+    /// and its configured waits sum to at most [`TEARDOWN_WAIT`] plus
+    /// [`REAP_WAIT`], or plus twice [`REAP_WAIT`] when no reaper thread can
+    /// start (F240). The warning that path writes to stderr comes after those
+    /// waits and is not inside the bound.
     fn drop(&mut self) {
         self.leave();
         if let Some(mut child) = self.child.take() {
