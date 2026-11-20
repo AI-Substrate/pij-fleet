@@ -68,5 +68,6 @@
 - [2026-11-19 Transcript containment and dev-edge provenance](2026-11-19-transcript-containment-dev-edges.dd.md): Read before changing Unisphere session-ID validation, canonical transcript status paths, or direct dev-only dependency edges. (unisphere, transcript, paths, dependencies, proof)
 - [2026-11-19 Usage records need extraction boundaries](2026-11-19-usage-record-extraction-boundaries.dd.md): Read before reviewing local usage-analysis scripts or claiming a mixed JSONL reader is usage-only. (usage-records, privacy, review, proof)
 - [2026-11-19 Verify the active Copilot SDK registration contract](2026-11-19-verify-the-active-copilot-sdk.dd.md): Open before reviewing Copilot hook/tool wiring or upgrading the bundled SDK. (copilot, sdk, hooks, contract-proof)
+- [2026-11-20 Abandoned revive reads retain control-client cleanup](2026-11-20-abandoned-revive-reads-retain-control.dd.md): Open before changing revive-wait cancellation or claiming abandoned tmux reads are side-effect-free or bounded by REPLY\_TIMEOUT. (revive, cancellation, tmux, c34)
 - [2026-11-20 Recover probe receipts from saved tool events](2026-11-20-recover-probe-receipts-from-saved-tool.dd.md): Open when a delegated security review returns only a verdict despite an evidence follow-up. (review, evidence, delegation, recovery)
 <!-- /pij:generated -->
