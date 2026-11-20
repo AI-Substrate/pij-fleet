@@ -1,0 +1,59 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f894-e032-7cb3-80f6-91c5d9f413c4",
+				"date": "2026-11-20",
+				"head": "844d2fd697604ecbba1b489be3dd8d5a23d75741",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:289",
+				"writer": "pij-proposed-turtle",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R289-FU-01 (C34 follow-up): R273 cannot see Closed via its open-only role_request lookup; use a closed-aware state read and real-store regression.",
+				"Current pr-freeze reports DIRTY against main 0744555dee5013daeeffb860b24c494cdb8346f4; reconcile and freeze the new head before READY."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "pr289-harness-checks.log: local Rust/macOS, route inventory, native contracts and smoke pass; TS/tooling unavailable under C25"
+				},
+				{
+					"command": "gh run view 44721998148; successful rust-test job 136239808448, JUnit artifact 14622517042",
+					"exit_code": 0,
+					"log": "ci-named-test-receipt.json: all six named Rust focus tests passed; TypeScript job 136239808407 passed all 14 OMP config tests"
+				},
+				{
+					"command": "just shared-build -- focused guard mutation matrix (isolated source snapshot)",
+					"exit_code": 0,
+					"log": "mutation-summary.json: 10 killed mutants, R273 branch-removal survives; real-store closure probe passes"
+				},
+				{
+					"command": "just shared-build -- restored exact-head trust, refusal, compaction and staging selectors",
+					"exit_code": 0,
+					"log": "restored-exact-head-baseline.log: 14 passed; source worktree clean"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES: #289\n\nHead: 844d2fd697604ecbba1b489be3dd8d5a23d75741\nReviewed base: bc1ca834aa1163f86780f77bd83036f3b6b4e6ef\nScope: the complete 16-file diff and the dependent admission, request-state and staging guards. Read-only; no product files changed. C34/C33 applied. No normal-use production correctness block found.\n\nC34 follow-up R289-FU-01: R273's Closed branch cannot observe closure.\ncrates/daemon/tests/directory_http.rs:3822-3839 calls role_request(), which queries only role_requests (crates/store/src/role_requests.rs:408-420). A close moves the row to closed_role_requests and deletes its open row in one transaction (same file:1230-1274). Thus a normally closed request is observed as None, not Some(Closed), and the poll still spends its budget. Removing the new Closed branch leaves the test green. A separate real-store probe confirms open lookup returns None, closed lookup returns Closed, and mark_role_request_delivered cannot deliver that closed request later. This affects a test's early failure, not production; it is a C34 follow-up, not a block. Read both states or stop on disappearance, preserving the final Delivered assertion. The coder reports a role_request_state helper and real-store test held locally for round 2; those are not part of this reviewed head.\n\nFocus findings\n- R264: the heading-free 60x12 capture matches and moves Down; the 34x30 wrapped capture still matches. The existing spawn test refuses promptly, names the safe key and leaves the pane live without pressing keys. Synthetic same-footer theme/approval dialogs and an incomplete/quoted trust menu do not match in the additional isolated probes. A footer above the menu anchors nothing. Full-row option matching and the actual highlight remain required.\n- R277: minimum timestamp still wins; equal timestamps are ordered by the complete (seat, code) key. Both chronological eviction and deterministic tie order have failing mutants. Refusal suppression remains a noise brake, not a retention policy.\n- F235: the admission witness is state-driven, uses the caller's waker, and the current-thread runtime prevents the spawned admission completing inside that spawning poll. After cancellation and flush, the witness must leave exactly one tracked admission. A false zero-count witness fails with (0, 0), and a sensor that never observes the task fails because the caller finishes. It cannot pass vacuously. Packet wording qualification: scaled 10-second stall watchdogs remain; there is no sleep or elapsed-time threshold choosing the in-flight drop point.\n- Staging: all four production constructors still use the four-second SUBMIT_STAGE_LIMIT, and production does not read the test scale. with_stage_limit is a public builder whose only repository caller is the integration test; it is not compiled out with cfg(test). Changing its effective injected bound to zero, or changing the default to eight seconds, fails the corresponding real-process test.\n- R266's two barriers deterministically establish the 20,000 intermediate count before the 40,000 final count. R275's wording now correctly distinguishes caller deadline from worker lifetime. The inline OMP mapping change is covered by exact-head CI.\n\nMutation receipts (isolated source snapshot; all cargo through just shared-build)\ntrust-remove-footer-fallback: killed, exit 101\ntrust-ignore-footer-position: killed, exit 101\ntrust-one-option-is-enough: killed by the additional non-trust probe, exit 101\ntrust-ignores-highlight: killed, exit 101\nrefusals-reverse-tie: killed, exit 101\nrefusals-newest-first: killed, exit 101\ncompaction-false-in-flight-witness: killed, exit 101\ncompaction-never-observes-task: killed, exit 101\nstaging-ignore-injected-bound: killed, exit 101\nstaging-default-eight-seconds: killed, exit 101\nassign-remove-closed-branch: survives, exit 0; the C34 follow-up above\nUnmutated isolated trust probes: 2/2 passed. Closed-state real-store probe: 1/1 passed.\nAfter the matrix, the shared target was rebuilt from the original read-only head: trust, refusal order, dropped-caller admission and both relevant staging selectors passed again. No mutant source is handed back as the reviewed baseline, and no production artifact was deployed.\n\nValidation\nThe following cargo selectors passed through just shared-build, using the canonical target, niceness 19 and four jobs:\ntest --locked -p pij-harnesses --lib trust::\ntest --locked -p pij-daemon --lib registration::refusals::\ntest --locked -p pij-daemon --lib a_dropped_caller_never_leaves_a_compact_admitted_untracked\ntest --locked -p pij-daemon --lib snapshots_during_recording_lose_nothing\ntest --locked -p pij-daemon --lib a_folder_trust_prompt_refuses_the_spawn_at_once_naming_its_safe_key\ntest --locked -p pij-daemon --test directory_http a_cancelled_assign_waiter_never_strands_its_drain\ntest --locked -p pij-tmux --test adapter staging_at_the_measured_launch_tail_still_submits\ntest --locked -p pij-tmux --test adapter stage_deadline_aborts_and_restores_input\ntest --locked -p pij-tmux --test adapter slow_launches_strand_a_short_command_with_the_recovery_notice\n\nExact-head CI: run 44721998148, rust-test job 136239808448, successful upload artifact 14622517042. Its JUnit proves all six named Rust focus tests ran and passed. TypeScript job 136239808407 passed 2373 tests, including all 14 omp-config-check tests. C25: no dependency install, no node_modules symlink and no local TypeScript mutation claim.\nharness checks: exit 1 in this dependency-free review checkout. Rust (including local macOS clippy and workspace tests), route inventory, native contracts, SDK contract, skill structure and smoke passed; eight TS/tooling stages failed (missing tsx/Vitest and an incompatible ambient Biome); attribution warned. This is not a claimed green local full gate. The author reports a green full gate at the exact head; CI and the local Rust/smoke results are independently verified here.\n\nCost: no production loop, poll, timer, hook or launch changed. The existing registration wait sleeps 50 ms (at most 20 iterations/s per waiting spawn, less capture/work latency); the footer fallback adds one O(pane rows) reverse scan only when the heading is absent. No extra capture, launch or registered-seat steady-state work. Refusal eviction remains bounded by 512 entries, with a lexical tie comparison.\n\nReadiness: pr-freeze was FINAL at intake, but its last rerun reports DIRTY against main while this head is unchanged. Remote main is now 0744555dee5013daeeffb860b24c494cdb8346f4, not the reviewed base. This verdict is for the requested exact head and reviewed base, not approval of a reconciliation or a claim of merge readiness. The coder/PM must reconcile and freeze the new head before READY.\n\nHarness feedback: a dependency-free, exact-head CI-receipt review gate would avoid proposing C25-forbidden dependency links and rerunning the whole workspace only to rediscover missing TypeScript tooling. The real-store closure probe also exposes why state tests must use the same open/closed read surface as their claimed invariant.\n\nHolding retained until merge.\n"
+		}
+	]
+}
