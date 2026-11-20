@@ -13,11 +13,14 @@
 //! - it is what a fixture leaves: a socket, or a regular lock file with one
 //!   link, owned by this user;
 //! - no process holds the socket (F245): its file is not the one bound by
-//!   any listening socket of this user's processes ([`Holders`]), and for a
-//!   lock, no process holds its paired socket either. A refused `connect()`
-//!   proves nothing: on Darwin a live server whose listen backlog is full
-//!   refuses connections too, so no connect is made at all. When the holders
-//!   cannot be read, nothing is removed (fail closed);
+//!   any listening socket of this user's processes ([`Holders`]), matched by
+//!   device and inode, never by spelling, and for a lock, no process holds
+//!   its paired socket either. A refused `connect()` proves nothing: on
+//!   Darwin a live server whose listen backlog is full refuses connections
+//!   too, so no connect is made at all. When the holders cannot be read
+//!   exactly and whole, nothing is removed (fail closed): locks included,
+//!   even one whose socket is gone. A bound path that now names no file
+//!   spares the directory it was in ([`Holders::unknown_in`]);
 //! - for a lock, no process holds it (`flock` is taken without waiting, and
 //!   the file is unlinked while it is held). An attach that opened the file
 //!   before the unlink would lock the orphaned inode; the attach itself checks
@@ -39,7 +42,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, OpenOptions, TryLockError};
 use std::io;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use crate::tmux::ATTACH_LOCK_SUFFIX;
@@ -134,6 +137,14 @@ impl Report {
 /// # Errors
 /// When `dir` cannot be read.
 pub fn sweep(dir: &Path, now: SystemTime, apply: bool, holders: &Holders) -> io::Result<Report> {
+    let scoped;
+    let holders = match holders.unknown_in(dir) {
+        Some(why) if !matches!(holders, Holders::Unknown(_)) => {
+            scoped = Holders::Unknown(why);
+            &scoped
+        }
+        _ => holders,
+    };
     let mut report = Report::default();
     let mut names: Vec<String> = Vec::new();
     for entry in fs::read_dir(dir)? {
@@ -202,9 +213,14 @@ pub const HOLDERS_WAIT: Duration = Duration::from_secs(10);
 /// with a full listen backlog refuses on Darwin).
 #[derive(Debug)]
 pub enum Holders {
-    /// The (device, inode) of the file at every path a listening Unix socket
-    /// of this user's processes is bound to.
-    Known(HashSet<(u64, u64)>),
+    /// Read: every listening Unix socket of this user's processes, by the
+    /// file its path names now.
+    Known {
+        /// The (device, inode) of the file at each bound path.
+        held: HashSet<(u64, u64)>,
+        /// Each bound path that names no file now.
+        unlinked: Vec<PathBuf>,
+    },
     /// The holders could not be read: nothing counts as unheld, so nothing
     /// is removed (fail closed). Why.
     Unknown(String),
@@ -213,18 +229,83 @@ pub enum Holders {
 impl Holders {
     /// Read the holders: `/proc/net/unix` on Linux, in-process; on macOS one
     /// `/usr/sbin/lsof -nP -a -U -u <uid> -F n`, given [`HOLDERS_WAIT`].
+    ///
+    /// Each bound path is matched by the (device, inode) of the file it names
+    /// now, never by its spelling (`/tmp` and `/private/tmp` are one place).
+    /// Every path is read exactly ([`decode_lsof_name`], the remainder of a
+    /// `/proc/net/unix` line), or the whole read is unknown and nothing is
+    /// removed (#298 round 2, bee and sawfish). A path that names no file now
+    /// (`NotFound`: its socket file was unlinked, or it lives in another mount
+    /// namespace) is kept as `unlinked`: it makes a directory it may have been
+    /// in unknown ([`Holders::unknown_in`]). Any other failure to stat one
+    /// (permission, a loop, I/O) is unknown everywhere.
     #[must_use]
     pub fn read() -> Self {
         match bound_paths() {
-            Ok(paths) => Self::Known(
-                paths
-                    .iter()
-                    .filter_map(|path| fs::metadata(path).ok())
-                    .map(|meta| (meta.dev(), meta.ino()))
-                    .collect(),
-            ),
+            Ok(paths) => Self::of(&paths),
             Err(why) => Self::Unknown(why),
         }
+    }
+
+    /// The holders bound at `paths`: unknown if any of them fails to stat for
+    /// any reason but naming no file.
+    #[must_use]
+    pub fn of(paths: &[PathBuf]) -> Self {
+        let mut held = HashSet::with_capacity(paths.len());
+        let mut unlinked = Vec::new();
+        for path in paths {
+            match fs::metadata(path) {
+                Ok(meta) => {
+                    held.insert((meta.dev(), meta.ino()));
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    unlinked.push(path.clone())
+                }
+                Err(error) => {
+                    return Self::Unknown(format!(
+                        "a bound socket's path won't stat: {}: {error}",
+                        path.display()
+                    ));
+                }
+            }
+        }
+        Self::Known { held, unlinked }
+    }
+
+    /// Why nothing in `dir` may count as unheld, if anything: the holders are
+    /// unknown, `dir` itself can't be looked at, or a bound path that names no
+    /// file now was in `dir` (its parent is `dir` by device and inode, or its
+    /// parent can't be looked at). A socket file unlinked while bound in
+    /// `dir`, as a fixture once left a live server, could still be reachable
+    /// there by another link, so that directory is spared whole (#298 round
+    /// 2, bee and sawfish: fail closed in that run, or that directory).
+    #[must_use]
+    pub fn unknown_in(&self, dir: &Path) -> Option<String> {
+        let unlinked = match self {
+            Self::Unknown(why) => return Some(why.clone()),
+            Self::Known { unlinked, .. } => unlinked,
+        };
+        let here = match fs::metadata(dir) {
+            Ok(meta) => (meta.dev(), meta.ino()),
+            Err(error) => return Some(format!("{}: {error}", dir.display())),
+        };
+        for path in unlinked {
+            let parent = path.parent().unwrap_or(Path::new("/"));
+            match fs::metadata(parent) {
+                Ok(meta) if (meta.dev(), meta.ino()) == here => {
+                    return Some(format!("{} is bound but names no file now", path.display()));
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Some(format!(
+                        "{}, bound, can't be placed: {error}",
+                        path.display()
+                    ));
+                }
+            }
+        }
+        None
     }
 
     /// Does a process hold the socket file `meta` describes? `None` when the
@@ -232,81 +313,183 @@ impl Holders {
     #[must_use]
     pub fn hold(&self, meta: &fs::Metadata) -> Option<bool> {
         match self {
-            Self::Known(held) => Some(held.contains(&(meta.dev(), meta.ino()))),
+            Self::Known { held, .. } => Some(held.contains(&(meta.dev(), meta.ino()))),
             Self::Unknown(_) => None,
         }
     }
 }
 
-/// Every path a Unix socket is bound to, from `/proc/net/unix` (its last
-/// column; abstract names, `@…`, are no file).
+/// Every path a Unix socket is bound to, from `/proc/net/unix`. A line is
+/// `Num: RefCount Protocol Flags Type St Inode [Path]`, and the path is the
+/// rest of the line after one space, spaces included; abstract names (`@…`)
+/// are no file. The kernel prints a path raw, so a newline in one breaks the
+/// next line: any line not of that shape makes the whole read unknown.
 #[cfg(target_os = "linux")]
-fn bound_paths() -> Result<Vec<String>, String> {
-    let table =
-        fs::read_to_string("/proc/net/unix").map_err(|error| format!("/proc/net/unix: {error}"))?;
-    Ok(table
-        .lines()
-        .skip(1)
-        .filter_map(|line| line.split_whitespace().nth(7))
-        .filter(|path| path.starts_with('/'))
-        .map(str::to_string)
-        .collect())
+fn bound_paths() -> Result<Vec<PathBuf>, String> {
+    let table = fs::read("/proc/net/unix").map_err(|error| format!("/proc/net/unix: {error}"))?;
+    parse_proc_net_unix(&table)
+}
+
+/// [`bound_paths`] from the text of `/proc/net/unix`.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn parse_proc_net_unix(table: &[u8]) -> Result<Vec<PathBuf>, String> {
+    use std::os::unix::ffi::OsStrExt;
+    let mut paths = Vec::new();
+    for line in table.split(|&byte| byte == b'\n').skip(1) {
+        if line.is_empty() {
+            continue;
+        }
+        let unreadable = || {
+            format!(
+                "/proc/net/unix: a line it could not read: {:?}",
+                String::from_utf8_lossy(line)
+            )
+        };
+        let mut rest = line;
+        for field in 0..7 {
+            let start = rest
+                .iter()
+                .position(|&byte| byte != b' ')
+                .ok_or_else(unreadable)?;
+            rest = &rest[start..];
+            let end = rest
+                .iter()
+                .position(|&byte| byte == b' ')
+                .unwrap_or(rest.len());
+            let token = &rest[..end];
+            let hex = |text: &[u8]| !text.is_empty() && text.iter().all(u8::is_ascii_hexdigit);
+            let fits = match field {
+                0 => token.len() > 1 && token.ends_with(b":") && hex(&token[..token.len() - 1]),
+                6 => token.iter().all(u8::is_ascii_digit),
+                _ => hex(token),
+            };
+            if !fits {
+                return Err(unreadable());
+            }
+            rest = &rest[end..];
+        }
+        let Some(path) = rest.strip_prefix(b" ") else {
+            continue;
+        };
+        if path.starts_with(b"/") {
+            paths.push(PathBuf::from(std::ffi::OsStr::from_bytes(path)));
+        }
+    }
+    Ok(paths)
 }
 
 /// Every path a Unix socket of this user's processes is bound to, from one
-/// bounded `lsof`. A non-zero exit, a timeout or unreadable output is
-/// unknown.
+/// bounded `lsof`. A non-zero exit, a timeout or a name it cannot spell
+/// exactly is unknown.
 #[cfg(not(target_os = "linux"))]
-fn bound_paths() -> Result<Vec<String>, String> {
+fn bound_paths() -> Result<Vec<PathBuf>, String> {
     lsof_paths(Path::new("/usr/sbin/lsof"), HOLDERS_WAIT)
 }
 
-/// [`bound_paths`] from the `lsof` at `program`, given `wait`.
+/// One name from `lsof -F n`, decoded exactly, or `None` when it cannot be
+/// (#298 round 2, sawfish). lsof prints a non-printable byte as `\b`, `\f`,
+/// `\n`, `\r`, `\t`, `\xHH` or `^X`, and a backslash as `\\`; under `LC_ALL=C`
+/// every byte above 0x7f is `\xHH`. `^` itself prints as `^`, so `^A` may be
+/// byte 1 or those two characters: any `^`, and any other escape, is `None`.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+fn decode_lsof_name(name: &[u8]) -> Option<Vec<u8>> {
+    let mut decoded = Vec::with_capacity(name.len());
+    let mut bytes = name.iter().copied();
+    while let Some(byte) = bytes.next() {
+        match byte {
+            b'^' => return None,
+            b'\\' => decoded.push(match bytes.next()? {
+                b'\\' => b'\\',
+                b'b' => 0x08,
+                b'f' => 0x0c,
+                b'n' => b'\n',
+                b'r' => b'\r',
+                b't' => b'\t',
+                b'x' => {
+                    let high = char::from(bytes.next()?).to_digit(16)?;
+                    let low = char::from(bytes.next()?).to_digit(16)?;
+                    u8::try_from(high * 16 + low).ok()?
+                }
+                _ => return None,
+            }),
+            _ => decoded.push(byte),
+        }
+    }
+    Some(decoded)
+}
+
+/// [`bound_paths`] from the `lsof` at `program`, all of it within `wait`
+/// (#298 round 2, snail): the spawn, the read of its output, its exit and,
+/// past nine tenths of `wait`, its kill and reaping. Anything not done by
+/// then is unknown. A child that outlives its kill is left unreaped, and a
+/// reader still blocked (a grandchild holding the pipe) is left to end at
+/// EOF: neither delays the answer.
 #[cfg(not(target_os = "linux"))]
-fn lsof_paths(program: &Path, wait: Duration) -> Result<Vec<String>, String> {
+fn lsof_paths(program: &Path, wait: Duration) -> Result<Vec<PathBuf>, String> {
     use std::io::Read;
+    use std::os::unix::ffi::OsStringExt;
     use std::process::{Command, Stdio};
+    use std::sync::mpsc;
     use std::time::Instant;
+    let started = Instant::now();
+    let deadline = started + wait;
+    let kill_at = started + wait * 9 / 10;
     let mut child = Command::new(program)
         .args(["-nP", "-a", "-U", "-u"])
         .arg(pij_core::program::real_uid().to_string())
         .args(["-F", "n"])
+        .env("LC_ALL", "C")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .map_err(|error| format!("{}: {error}", program.display()))?;
     let mut stdout = child.stdout.take().ok_or("lsof: no stdout")?;
-    let reader = std::thread::spawn(move || {
-        let mut text = String::new();
-        stdout.read_to_string(&mut text).map(|_| text)
+    let (sent, output) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = sent.send(stdout.read_to_end(&mut bytes).map(|_| bytes));
     });
-    let deadline = Instant::now() + wait;
+    let poll = Duration::from_millis(20);
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            Ok(None) if Instant::now() < kill_at => std::thread::sleep(poll),
             Ok(None) => {
                 let _ = child.kill();
-                let _ = child.wait();
+                while Instant::now() < deadline && matches!(child.try_wait(), Ok(None)) {
+                    std::thread::sleep(poll);
+                }
                 return Err(format!("lsof did not finish in {wait:?}"));
             }
             Err(error) => return Err(format!("lsof: {error}")),
         }
     };
-    let text = reader
-        .join()
-        .map_err(|_| "lsof: the reader panicked".to_string())?
+    let text = output
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .map_err(|_| format!("lsof's output did not end in {wait:?}"))?
         .map_err(|error| format!("lsof: {error}"))?;
     if !status.success() {
         return Err(format!("lsof exited {status}"));
     }
-    Ok(text
-        .lines()
-        .filter_map(|line| line.strip_prefix('n'))
-        .filter(|path| path.starts_with('/'))
-        .map(str::to_string)
-        .collect())
+    let mut paths = Vec::new();
+    for name in text
+        .split(|&byte| byte == b'\n')
+        .filter_map(|line| line.strip_prefix(b"n"))
+    {
+        // A path; the rest name a peer (`->0x…`, `->(none)`), not a file.
+        if !name.starts_with(b"/") {
+            continue;
+        }
+        let decoded = decode_lsof_name(name).ok_or_else(|| {
+            format!(
+                "lsof named a socket it could not spell exactly: {}",
+                String::from_utf8_lossy(name)
+            )
+        })?;
+        paths.push(PathBuf::from(std::ffi::OsString::from_vec(decoded)));
+    }
+    Ok(paths)
 }
 
 fn socket_verdict(path: &Path, now: SystemTime, holders: &Holders) -> Verdict {
@@ -346,12 +529,20 @@ fn lock_verdict(
     if young(&meta, now) {
         return Verdict::Young;
     }
-    if let Ok(socket) = fs::symlink_metadata(socket) {
-        match holders.hold(&socket) {
+    // Unknown holders remove nothing, a lock whose socket is gone included
+    // (#298 round 2, bee). Its socket is absent only when the lookup says so;
+    // any other failure to look is unsure.
+    if matches!(holders, Holders::Unknown(_)) {
+        return Verdict::Unsure;
+    }
+    match fs::symlink_metadata(socket) {
+        Ok(socket) => match holders.hold(&socket) {
             Some(false) => {}
             Some(true) => return Verdict::Live,
             None => return Verdict::Unsure,
-        }
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(_) => return Verdict::Unsure,
     }
     let Ok(file) = OpenOptions::new()
         .write(true)
@@ -373,7 +564,7 @@ fn lock_verdict(
 
 #[cfg(test)]
 mod tests {
-    use super::{Holders, Kind, Report, Verdict, sweep};
+    use super::{Holders, Kind, Report, Verdict, decode_lsof_name, parse_proc_net_unix, sweep};
     use crate::tmux::ATTACH_LOCK_SUFFIX;
     use std::fs::{self, File};
     use std::os::unix::net::UnixListener;
@@ -439,7 +630,7 @@ mod tests {
         let later = SystemTime::now() + Duration::from_secs(24 * 3600);
 
         let holders = Holders::read();
-        assert!(matches!(holders, Holders::Known(_)), "{holders:?}");
+        assert!(matches!(holders, Holders::Known { .. }), "{holders:?}");
         let dry = sweep(&dir, later, false, &holders).expect("dry run");
         assert_eq!(dry.removed, 0);
         for path in [&stale_lock, &orphan_lock] {
@@ -552,44 +743,212 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// F245, fail closed: with the holders unknown, no socket, and no lock
-    /// whose socket is there, counts as unheld.
+    /// F245, fail closed: with the holders unknown, nothing is removed: no
+    /// socket, no lock whose socket is there, and (#298 round 2, bee) no lock
+    /// whose socket is gone either.
     #[test]
     fn nothing_is_removed_when_the_holders_are_unknown() {
         let dir = scratch();
         stale_socket(&dir, "pij-test-3-unknown");
         let unknown_lock = lock(&dir, "pij-test-3-unknown");
+        let orphan_lock = lock(&dir, "pij-test-3-orphan");
         let later = SystemTime::now() + Duration::from_secs(24 * 3600);
         let unknown = Holders::Unknown("lsof failed".to_string());
         let swept = sweep(&dir, later, true, &unknown).expect("sweep");
         assert_eq!(verdict(&swept, "pij-test-3-unknown"), Some(Verdict::Unsure));
-        assert_eq!(
-            verdict(&swept, ".pij-test-3-unknown.pij-control-attach.lock"),
-            Some(Verdict::Unsure)
-        );
+        for name in [
+            ".pij-test-3-unknown.pij-control-attach.lock",
+            ".pij-test-3-orphan.pij-control-attach.lock",
+        ] {
+            assert_eq!(verdict(&swept, name), Some(Verdict::Unsure), "{name}");
+        }
         assert_eq!(swept.removed, 0);
         assert!(exists(&dir.join("pij-test-3-unknown")) && exists(&unknown_lock));
+        assert!(exists(&orphan_lock));
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// F245: the macOS holder read is bounded: an `lsof` that never finishes
-    /// is killed at the wait and counts as unknown.
+    /// #298 round 2 (sawfish): lsof's names decode exactly, and one that
+    /// can't be (a `^`, which is ambiguous, or an escape lsof never writes)
+    /// is `None`, which makes the whole read unknown.
+    #[test]
+    fn lsof_names_decode_exactly_or_not_at_all() {
+        let cases: [(&[u8], Option<&[u8]>); 10] = [
+            (b"/t/plain", Some(b"/t/plain")),
+            (br"/t/a\nb", Some(b"/t/a\nb")),
+            (br"/t/a\tb", Some(b"/t/a\tb")),
+            (br"/t/back\\nslash", Some(br"/t/back\nslash")),
+            (br"/t/\xc3\xbc", Some("/t/\u{fc}".as_bytes())),
+            (br"/t/\b\f\r", Some(b"/t/\x08\x0c\r")),
+            (b"/t/sp ace", Some(b"/t/sp ace")),
+            (b"/t/c^Ad", None),
+            (br"/t/q\q", None),
+            (br"/t/x\x4", None),
+        ];
+        for (name, decoded) in cases {
+            assert_eq!(
+                decode_lsof_name(name).as_deref(),
+                decoded,
+                "{}",
+                String::from_utf8_lossy(name)
+            );
+        }
+        assert_eq!(decode_lsof_name(br"/t/end\"), None, "a trailing backslash");
+    }
+
+    /// #298 round 2 (bee): `/proc/net/unix`'s path is the rest of the line,
+    /// spaces included; a line not of the table's shape (a path's newline
+    /// splits a line) makes the whole read unknown.
+    #[test]
+    fn proc_net_unix_paths_keep_their_spaces_and_a_broken_line_is_unknown() {
+        let header = "Num       RefCount Protocol Flags    Type St Inode Path\n";
+        let table = format!(
+            "{header}\
+             0000000000000000: 00000002 00000000 00010000 0001 01 12345 /tmp/tmux 1/pij-test-a b\n\
+             0000000000000000: 00000002 00000000 00000000 0001 03  6789\n\
+             0000000000000000: 00000002 00000000 00010000 0001 01 23456 @abstract\n"
+        );
+        assert_eq!(
+            parse_proc_net_unix(table.as_bytes()),
+            Ok(vec![PathBuf::from("/tmp/tmux 1/pij-test-a b")])
+        );
+        for tail in ["b", "x y z w v u t /tmp/elsewhere"] {
+            let broken = format!(
+                "{header}0000000000000000: 00000002 00000000 00010000 0001 01 12345 /tmp/a\n{tail}\n"
+            );
+            assert!(parse_proc_net_unix(broken.as_bytes()).is_err(), "{tail}");
+        }
+    }
+
+    /// #298 round 2 (sawfish, bee): a live listener is spared whatever bytes
+    /// its name holds (a newline, a tab, a backslash, a space), and one bound
+    /// through another spelling of the directory (bee's `/tmp` and
+    /// `/private/tmp`) is matched by device and inode.
+    #[test]
+    fn live_listeners_are_spared_whatever_their_names_hold() {
+        let dir = scratch();
+        let names = [
+            "pij-test-a\nb",
+            "pij-test-t\tb",
+            "pij-test-back\\b",
+            "pij-test-s b",
+        ];
+        let _live: Vec<UnixListener> = names
+            .iter()
+            .map(|name| UnixListener::bind(dir.join(name)).expect("bind"))
+            .collect();
+        stale_socket(&dir, "pij-test-stale");
+        let later = SystemTime::now() + Duration::from_secs(24 * 3600);
+        let holders = Holders::read();
+        let swept = sweep(&dir, later, true, &holders).expect("sweep");
+        for name in names {
+            assert!(exists(&dir.join(name)), "{name:?} spared ({holders:?})");
+            assert_ne!(verdict(&swept, name), Some(Verdict::Stale), "{name:?}");
+        }
+        if cfg!(target_os = "macos") {
+            // lsof spells every one of these exactly: the read is known and
+            // only the stale socket goes.
+            assert!(matches!(holders, Holders::Known { .. }), "{holders:?}");
+            assert_eq!(verdict(&swept, "pij-test-stale"), Some(Verdict::Stale));
+        }
+        // Another spelling of the same directory, through a link to it.
+        let alias = PathBuf::from(format!("{}-alias", dir.display()));
+        let _ = fs::remove_file(&alias);
+        std::os::unix::fs::symlink(&dir, &alias).expect("alias");
+        stale_socket(&dir, "pij-test-aliased");
+        let by_alias = Holders::of(&[alias.join("pij-test-aliased")]);
+        let swept = sweep(&dir, later, true, &by_alias).expect("sweep");
+        assert_eq!(verdict(&swept, "pij-test-aliased"), Some(Verdict::Live));
+        assert!(exists(&dir.join("pij-test-aliased")));
+        let _ = fs::remove_file(&alias);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// #298 round 2 (bee): a bound path that won't stat for any reason but
+    /// naming no file (here, a directory that can't be searched) makes the
+    /// holders unknown, and nothing is removed; one that names no file holds
+    /// nothing.
+    #[test]
+    fn a_bound_path_that_wont_stat_removes_nothing() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch();
+        stale_socket(&dir, "pij-test-4-stale");
+        let shut = dir.join("shut");
+        fs::create_dir(&shut).expect("dir");
+        fs::set_permissions(&shut, fs::Permissions::from_mode(0o000)).expect("chmod");
+        let holders = Holders::of(&[shut.join("sock")]);
+        fs::set_permissions(&shut, fs::Permissions::from_mode(0o700)).expect("chmod back");
+        assert!(matches!(holders, Holders::Unknown(_)), "{holders:?}");
+        let later = SystemTime::now() + Duration::from_secs(24 * 3600);
+        let swept = sweep(&dir, later, true, &holders).expect("sweep");
+        assert_eq!(swept.removed, 0);
+        assert!(exists(&dir.join("pij-test-4-stale")));
+        // One that names no file holds nothing, but spares the directory it
+        // was in; elsewhere it changes nothing.
+        let gone = Holders::of(&[dir.join("no-such-socket")]);
+        assert!(gone.unknown_in(&dir).is_some(), "{gone:?}");
+        assert_eq!(sweep(&dir, later, true, &gone).expect("sweep").removed, 0);
+        let elsewhere = Holders::of(&[PathBuf::from("/nonexistent-pij/sock"), shut.join("x-gone")]);
+        assert!(matches!(elsewhere, Holders::Known { .. }), "{elsewhere:?}");
+        assert_eq!(elsewhere.unknown_in(&dir), None, "{elsewhere:?}");
+        assert_eq!(
+            sweep(&dir, later, true, &elsewhere).expect("sweep").removed,
+            1
+        );
+        assert!(!exists(&dir.join("pij-test-4-stale")));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// F245: the macOS holder read is bounded as a whole (#298 round 2): an
+    /// `lsof` that never finishes, or one that exits while a child of its own
+    /// keeps the output pipe open, counts as unknown within the wait.
     #[cfg(not(target_os = "linux"))]
     #[test]
     fn a_holder_read_that_hangs_is_unknown_within_its_wait() {
         use std::os::unix::fs::PermissionsExt;
         let dir = scratch();
+        for (name, body) in [
+            ("never finishes", "exec /bin/sleep 30"),
+            (
+                "leaves its pipe held",
+                "/bin/sleep 10 &\necho n/tmp/x\nexit 0",
+            ),
+        ] {
+            let fake = dir.join("lsof");
+            fs::write(&fake, format!("#!/bin/sh\n{body}\n")).expect("fake lsof");
+            fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).expect("chmod");
+            let started = std::time::Instant::now();
+            let read = super::lsof_paths(&fake, Duration::from_millis(300));
+            let took = started.elapsed();
+            assert!(read.is_err(), "{name}: {read:?}");
+            assert!(
+                took < crate::time::scaled(Duration::from_secs(2)),
+                "{name}: bounded, took {took:?}"
+            );
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// #298 round 2 (sawfish): one name lsof can't spell exactly (`^A` is
+    /// byte 1 or two characters) makes the whole read unknown, however many
+    /// others read cleanly; peers (`->0x…`) are no path and are skipped.
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn a_name_lsof_cannot_spell_exactly_makes_the_read_unknown() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch();
         let fake = dir.join("lsof");
-        fs::write(&fake, "#!/bin/sh\nexec /bin/sleep 30\n").expect("fake lsof");
-        fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).expect("chmod");
-        let started = std::time::Instant::now();
-        let read = super::lsof_paths(&fake, Duration::from_millis(300));
-        assert!(read.is_err(), "{read:?}");
-        assert!(
-            started.elapsed() < crate::time::scaled(Duration::from_secs(3)),
-            "bounded: {:?}",
-            started.elapsed()
-        );
+        let mut read = Vec::new();
+        for body in [
+            "printf 'p1\\nf3\\nn/tmp/ok\\nf4\\nn->0x1\\n'",
+            "printf 'p1\\nf3\\nn/tmp/ok\\nf4\\nn/tmp/a^Ab\\n'",
+        ] {
+            fs::write(&fake, format!("#!/bin/sh\n{body}\n")).expect("fake lsof");
+            fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).expect("chmod");
+            read.push(super::lsof_paths(&fake, Duration::from_secs(5)));
+        }
+        assert_eq!(read[0], Ok(vec![PathBuf::from("/tmp/ok")]));
+        assert!(read[1].is_err(), "{:?}", read[1]);
         let _ = fs::remove_dir_all(&dir);
     }
 }

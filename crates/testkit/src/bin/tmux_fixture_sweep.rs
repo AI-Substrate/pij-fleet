@@ -28,8 +28,18 @@ fn main() -> ExitCode {
     }
     let holders = tmux_sweep::Holders::read();
     match &holders {
-        tmux_sweep::Holders::Known(held) => {
-            println!("holders: {} bound Unix socket files", held.len());
+        tmux_sweep::Holders::Known { held, unlinked } => {
+            println!(
+                "holders: {} bound Unix socket files, {} bound paths naming no file now",
+                held.len(),
+                unlinked.len()
+            );
+            if let Some(why) = holders.unknown_in(&dir) {
+                println!(
+                    "holders: unknown in {} ({why}); nothing there is removed",
+                    dir.display()
+                );
+            }
         }
         tmux_sweep::Holders::Unknown(why) => {
             println!(
