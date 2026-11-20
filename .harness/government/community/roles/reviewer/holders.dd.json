@@ -2271,7 +2271,10 @@
 					"harness_session": "533ce1a6-43a1-411e-96fd-9c1fe86a4a41",
 					"instance_key": "f190-proof",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "F190 live proof done (throwaway)",
+					"released_by": "pij-cultural-falcon",
 					"seat": "pij-outdoor-dormouse",
+					"to": "2026-11-20T06:48:03.086Z",
 					"why": "carried from pij-extraordinary-panda at a native session boundary (same process)"
 				}
 			]
