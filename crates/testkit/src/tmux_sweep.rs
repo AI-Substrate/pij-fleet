@@ -318,8 +318,10 @@ fn bound_paths() -> Result<Vec<Bound>, String> {
 /// stat, which makes the read unknown and spares everything. With it the
 /// sweep can decide, so it deletes more; it mirrors macOS's `lsof -u <uid>`.
 /// A process counts as another user's only when its `status` positively
-/// names no uid of ours (real, effective, saved, filesystem); one whose uid
-/// can't be read counts as ours. A process of ours whose `fd` directory or
+/// names an effective and a filesystem uid that aren't ours ([`foreign`]):
+/// a process running as root on a user's behalf (`sudo`, whose real uid is
+/// ours) can't have bound a file of ours as itself. One whose uids can't be
+/// read counts as ours. A process of ours whose `fd` directory or
 /// a link in it can't be read makes the read unknown. A process gone
 /// mid-scan (`/proc/<pid>` not found) is skipped: its descriptors closed
 /// with it, so any socket only it held is no longer held, and one it shared
@@ -339,39 +341,36 @@ fn own_socket_inodes(proc: &Path, uid: u32) -> Result<HashMap<u64, u32>, String>
             continue;
         };
         let dir = entry.path();
-        match fs::read_to_string(dir.join("status")) {
-            Ok(status) => {
-                let uids: Option<Vec<u32>> = status
-                    .lines()
-                    .find_map(|line| line.strip_prefix("Uid:"))
-                    .map(|uids| {
-                        uids.split_whitespace()
-                            .filter_map(|id| id.parse().ok())
-                            .collect()
-                    });
-                if uids.is_some_and(|uids| !uids.is_empty() && !uids.contains(&uid)) {
-                    continue;
-                }
-            }
+        let uids = match fs::read_to_string(dir.join("status")) {
+            Ok(status) => status
+                .lines()
+                .find_map(|line| line.strip_prefix("Uid:"))
+                .unwrap_or("")
+                .trim()
+                .to_string(),
             Err(error) if gone(&error) => continue,
-            Err(_) => {}
+            Err(_) => String::from("unreadable"),
+        };
+        if foreign(&uids, uid) {
+            continue;
         }
+        let ours = |what: &Path, error: &io::Error| {
+            format!(
+                "{}: {error} (a process of ours: Uid {uids})",
+                what.display()
+            )
+        };
         let fds = match fs::read_dir(dir.join("fd")) {
             Ok(fds) => fds,
             Err(error) if gone(&error) => continue,
-            Err(error) => {
-                return Err(format!(
-                    "{}: {error} (a process of ours, or one whose owner can't be read)",
-                    dir.join("fd").display()
-                ));
-            }
+            Err(error) => return Err(ours(&dir.join("fd"), &error)),
         };
         for fd in fds {
-            let fd = fd.map_err(|error| format!("{}: {error}", dir.join("fd").display()))?;
+            let fd = fd.map_err(|error| ours(&dir.join("fd"), &error))?;
             let target = match fs::read_link(fd.path()) {
                 Ok(target) => target,
                 Err(error) if gone(&error) => continue,
-                Err(error) => return Err(format!("{}: {error}", fd.path().display())),
+                Err(error) => return Err(ours(&fd.path(), &error)),
             };
             if let Some(inode) = target
                 .to_str()
@@ -384,6 +383,25 @@ fn own_socket_inodes(proc: &Path, uid: u32) -> Result<HashMap<u64, u32>, String>
         }
     }
     Ok(own)
+}
+
+/// Is the process whose `status` `Uid:` line is `uids` (real, effective,
+/// saved, filesystem) positively another user's? Only when the line reads as
+/// four uids and neither the effective nor the filesystem uid is `uid`: a
+/// socket file is created with the binder's filesystem uid, so only such a
+/// process can have bound one of this user's files as itself. Anything else,
+/// an unreadable or odd line included, counts as ours.
+fn foreign(uids: &str, uid: u32) -> bool {
+    let ids: Vec<u32> = uids
+        .split_whitespace()
+        .filter_map(|id| id.parse().ok())
+        .collect();
+    match ids.as_slice() {
+        [_, effective, _, filesystem] if uids.split_whitespace().count() == 4 => {
+            *effective != uid && *filesystem != uid
+        }
+        _ => false,
+    }
 }
 
 /// The (sockfs inode, bound path) of every socket in `/proc/net/unix`. A
@@ -1098,6 +1116,11 @@ mod tests {
             &["socket:[111]", "/dev/null"],
         );
         process(11, Some("Name:\ty\nUid:\t0\t0\t0\t0\n"), &["socket:[222]"]);
+        // Root on our behalf (sudo): foreign; ours run as root's real uid: ours.
+        process(13, Some("Uid:\t501\t0\t0\t0\n"), &["socket:[444]"]);
+        process(14, Some("Uid:\t0\t501\t501\t501\n"), &["socket:[555]"]);
+        // Files it makes are ours (setfsuid), whatever it runs as.
+        process(15, Some("Uid:\t0\t0\t0\t501\n"), &["socket:[666]"]);
         process(12, Some("Uid:\t501\n"), &["socket:[333]"]);
         fs::set_permissions(
             proc.join("12").join("status"),
@@ -1113,13 +1136,19 @@ mod tests {
             Some(&12),
             "owner unreadable counts as ours: {own:?}"
         );
+        assert_eq!(own.get(&444), None, "root on our behalf: {own:?}");
+        assert_eq!(own.get(&666), Some(&15), "filesystem uid ours: {own:?}");
+        assert_eq!(
+            own.get(&555),
+            Some(&14),
+            "effective and filesystem uid ours: {own:?}"
+        );
         // Another user's fd directory we can't read is skipped; one of ours
         // is unknown.
-        fs::set_permissions(
-            proc.join("11").join("fd"),
-            fs::Permissions::from_mode(0o000),
-        )
-        .expect("chmod");
+        for pid in ["11", "13"] {
+            fs::set_permissions(proc.join(pid).join("fd"), fs::Permissions::from_mode(0o000))
+                .expect("chmod");
+        }
         assert!(own_socket_inodes(&proc, uid).is_ok());
         fs::set_permissions(
             proc.join("10").join("fd"),
@@ -1128,7 +1157,7 @@ mod tests {
         .expect("chmod");
         let unreadable = own_socket_inodes(&proc, uid);
         assert!(unreadable.is_err(), "{unreadable:?}");
-        for pid in ["10", "11"] {
+        for pid in ["10", "11", "13"] {
             fs::set_permissions(proc.join(pid).join("fd"), fs::Permissions::from_mode(0o700))
                 .expect("chmod back");
         }
