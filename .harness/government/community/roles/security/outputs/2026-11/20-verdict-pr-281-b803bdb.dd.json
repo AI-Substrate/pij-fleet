@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f7be-db6c-72f1-a86c-1fa4564ffcdf",
+				"date": "2026-11-20",
+				"head": "b803bdb332196fb43bdf78a7c9fcc263c70ef1b1",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:281",
+				"writer": "pij-associated-cobra",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 281",
+					"exit_code": 0,
+					"log": "FINAL at b803bdb332196fb43bdf78a7c9fcc263c70ef1b1; clean detached review worktree; every latest check passed, including replacement delivers success."
+				},
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci",
+					"exit_code": 0,
+					"log": "Exact-head GitHub Actions run 44690922948, rust-test job 136136241508: 2634 passed, six skipped. Successful-job JUnit artifact ID 14608322979."
+				},
+				{
+					"command": "harness boot",
+					"exit_code": 0,
+					"log": "Local read-only readiness attempt: ready:false advisory because independent TS dependencies are missing. No local full-gate pass claimed; C25 forbids dependency symlinks."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Round-two SECURITY PASS for #281 at b803bdb332196fb43bdf78a7c9fcc263c70ef1b1. C34 final round, delta-only: ed493731a221dc57a17811962203ee07ff925429..d161c5e1 (five files, +114/-7), confirmed in the final merged head. #279 native carry is main baseline, not reopened. Prior security findings: none. New security findings: none.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerabilities found | - |\n\nThe exhaustive RegistrationError::is_transient match retains Refused, InvalidSeatId, Retired, PaneHeld and PaneHolderChild as non-transient (crates/daemon/src/registration.rs:63-76). CodexBinder logs these as decisions/Ok(false), preserving Seen and never converting a refusal into admission (crates/daemon/src/codex_bind.rs:375-386).\n\nRuntime and reachable Retryable errors retry the complete probe and registration, not a cached admission. Process/pane evidence, locked roster revalidation, owner-close/retirement guards and concurrent-close refusal remain enforced (registration.rs:1072-1138,1190-1219,1371-1386,1660-1676).\n\nOrdinary Codex registration supplies no supersedes, native precedence or native transport (codex_bind.rs:344-372). NativeSessionHold and NativeHolderCurrent originate only in native branches (registration.rs:750-781,1246-1259,1350-1359); neither can arise in this binder. Their classification neither reaches nor removes plan168 protections. C33 baseline registration strength is unchanged.\n\nThe thread-start failure-map reset changes scheduling only. No new loop or launch site; the existing five-second tick remains. The retry cap is a BRAKE: removing it adds probes, not authority. This security PASS does not assert row-local cost isolation or clear reviewer/performance concerns about reset frequency.\n\nProof: read-only delta and direct guard source inspection; pr-freeze passed; exact-head CI passed 2634 Rust tests (six skipped). Local boot was NOT-READY advisory for missing TS tooling; no local full-gate pass claimed. No security-agent tests, builds, mutations or live probes were run; correctness reproductions belong to the reviewer. Role holding retained until merge."
+		}
+	]
+}
