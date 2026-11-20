@@ -2159,6 +2159,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-correct-ocelot",
 					"why": "#275 F200 correctness review, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T00:25:34.075Z",
+					"harness": "copilot",
+					"harness_session": "8754052e-e5ea-4ec5-9711-89fc659723d7",
+					"instance_key": "276",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-correct-ocelot",
+					"why": "#276 R273-001 test fix, after #275"
 				}
 			]
 		}
