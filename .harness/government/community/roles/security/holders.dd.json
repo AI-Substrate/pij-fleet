@@ -605,6 +605,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-remarkable-horse",
 					"why": "#275 F200 security verdict, fresh seat"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T00:25:34.672Z",
+					"harness": "copilot",
+					"harness_session": "b9fe94d7-4c83-4917-b3c5-04a5c551f264",
+					"instance_key": "276",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-remarkable-horse",
+					"why": "#276 R273-001 test fix"
 				}
 			]
 		}
