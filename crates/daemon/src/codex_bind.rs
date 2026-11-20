@@ -171,10 +171,11 @@ pub(crate) struct CodexBinder {
     seen: Mutex<Seen>,
 }
 
-/// How many more ticks re-probe a row whose probe failed (a tmux or `ps` read
-/// that errored, such as a control read skipped while another process attaches,
-/// F229) before it waits for the next thread start. A brake: it only ever
-/// removes probes, and a row it holds back is still probed on the next start.
+/// How many more ticks re-probe a row whose probe failed (a read that errored,
+/// such as a control read skipped while another process attaches, F229, or a
+/// transient registration failure) before it waits for the next thread start.
+/// A brake: it only ever removes probes, and every thread start gives each row
+/// a fresh budget.
 const PROBE_RETRIES: u32 = 3;
 
 #[derive(Default)]
@@ -258,6 +259,11 @@ impl CodexBinder {
                 .locks
                 .as_ref()
                 .is_none_or(|before| !locks.is_subset(before));
+            // A new thread is a new reason to probe: every row's retry budget
+            // starts again.
+            if thread_started {
+                seen.failures.clear();
+            }
             let probe = pending
                 .iter()
                 .filter(|seat| thread_started || !seen.rows.contains(&seat.id))
@@ -296,8 +302,8 @@ impl CodexBinder {
     }
 
     /// `Ok` when the probe decided (bound, or this row cannot bind from what
-    /// is running now, or registration refused it); `Err` when a read failed
-    /// and decided nothing.
+    /// is running now, or registration refused the claim); `Err` when a read
+    /// or a transient registration failure decided nothing.
     async fn bind_seat(&self, seat: &SeatDescriptor) -> Result<bool> {
         let pane = seat
             .pane
@@ -368,10 +374,14 @@ impl CodexBinder {
         {
             Ok(_) => Ok(true),
             Err(error) => {
+                let transient = error.is_transient();
                 let error = PijError::Adapter {
                     adapter: ADAPTER.to_string(),
                     message: error.to_string(),
                 };
+                if transient {
+                    return Err(error);
+                }
                 eprintln!("pij-rs codex binder: seat {}: {error}", seat.id);
                 Ok(false)
             }

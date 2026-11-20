@@ -289,6 +289,68 @@ async fn a_failing_probe_is_retried_three_times_then_waits_for_a_thread() {
     assert_eq!(binder.bind_once().await.unwrap(), 1, "a thread started");
 }
 
+/// Review of #281: a thread that starts on the tick right after a row spent its
+/// retry budget gives the row a fresh budget, so one more failure is retried.
+#[tokio::test]
+async fn a_thread_start_after_the_budget_is_spent_gives_a_fresh_budget() {
+    let registry = Arc::new(FakeRegistry::new());
+    registry.put(pending()).await.unwrap();
+    let facts = Arc::new(Facts::canary());
+    // First sight, three retries, then the probe the thread start causes.
+    facts.pane_failures.store(5, Ordering::SeqCst);
+    let binder = binder(registry.clone(), facts.clone()).await;
+    for _ in 0..4 {
+        assert_eq!(binder.bind_once().await.unwrap(), 0);
+    }
+    facts
+        .locks
+        .lock()
+        .unwrap()
+        .insert("01a17f41-0000-7000-8000-000000000000".to_string());
+    assert_eq!(binder.bind_once().await.unwrap(), 0);
+    assert_eq!(facts.pane_failures.load(Ordering::SeqCst), 0);
+
+    assert_eq!(
+        binder.bind_once().await.unwrap(),
+        1,
+        "the thread start's failed probe is retried"
+    );
+}
+
+/// Review of #281: a registration that failed for a transient reason (here the
+/// store's write) decided nothing, so the next tick tries again.
+#[tokio::test]
+async fn a_transient_registration_failure_is_retried_on_the_next_tick() {
+    let registry = Arc::new(FakeRegistry::new());
+    registry.put(pending()).await.unwrap();
+    registry.script_put_error("database is locked");
+    let binder = binder(registry.clone(), Arc::new(Facts::canary())).await;
+
+    assert_eq!(binder.bind_once().await.unwrap(), 0);
+    assert!(row(&registry).await.proc.is_none());
+    assert_eq!(binder.bind_once().await.unwrap(), 1);
+    assert!(row(&registry).await.proc.is_some());
+}
+
+/// A registration that refuses the claim decided: here the child's start the
+/// probe read is not the one liveness observes, so the claim is refused, and
+/// quiet ticks do not try it again.
+#[tokio::test]
+async fn a_refused_registration_is_a_decision_and_is_not_retried() {
+    let registry = Arc::new(FakeRegistry::new());
+    registry.put(pending()).await.unwrap();
+    let mut facts = Facts::canary();
+    facts.starts.insert(CODEX, START + 1);
+    let facts = Arc::new(facts);
+    let binder = binder(registry.clone(), facts.clone()).await;
+
+    for _ in 0..30 {
+        assert_eq!(binder.bind_once().await.unwrap(), 0);
+    }
+    assert!(row(&registry).await.proc.is_none());
+    assert_eq!(facts.launches(), 3, "one probe, then nothing");
+}
+
 /// A bind costs exactly three launches: the child's files, the pane's process,
 /// the child's start.
 #[tokio::test]

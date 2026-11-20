@@ -56,6 +56,25 @@ pub(crate) enum RegistrationError {
     Runtime(PijError),
 }
 
+impl RegistrationError {
+    /// The claim may succeed unchanged if tried again: the wire marks these
+    /// `retryable`, and `Runtime` is a store or read failure, not a judgement
+    /// of the claim. Everything else is a refusal of the claim itself.
+    pub(crate) fn is_transient(&self) -> bool {
+        match self {
+            Self::Retryable(_)
+            | Self::NativeSessionHold(_)
+            | Self::NativeHolderCurrent(_)
+            | Self::Runtime(_) => true,
+            Self::Refused(_)
+            | Self::InvalidSeatId(_)
+            | Self::Retired { .. }
+            | Self::PaneHeld { .. }
+            | Self::PaneHolderChild { .. } => false,
+        }
+    }
+}
+
 /// The command that takes `pane` over for `harness` (F196): the operator's
 /// explicit answer to a pane held by a seat whose liveness is unknown.
 pub(crate) fn take_over_command(pane: &str, harness: &str) -> String {
