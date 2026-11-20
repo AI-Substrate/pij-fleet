@@ -1,0 +1,45 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f8d2-f829-7353-ac70-44d091ab422a",
+				"date": "2026-11-20",
+				"head": "46ee6d5c27ad3e2a1f6e0f148e9ed563c25d6a3a",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44731204924",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:291",
+				"writer": "pij-elated-ermine",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 291",
+					"exit_code": 0
+				},
+				{
+					"command": "harness checks --json",
+					"exit_code": 1
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS\n\nPR #291, exact head 46ee6d5c27ad3e2a1f6e0f148e9ed563c25d6a3a, base 74d1c63a97551b5ce18768db64a6bfa33cd97ee7. Reviewed the five-file F239/R288-FU-01 diff and the direct build-report producer/render boundary. No reportable security vulnerability found; no product files changed.\n\nEvidence:\n- crates/daemon/src/pa_watchdog.rs:1379-1403,1418-1450 rejects oversized reports and malformed trees. Commit prefixes accept hexadecimal identifiers with an optional +dirty suffix; source hashes accept hash: followed by hexadecimal digits. Malformed prefixes disclose only their byte count, not the supplied text.\n- Interpolated tree identifiers are reconstructed by reported_tree from one to four lowercase hexadecimal components joined with +, not copied as arbitrary seat text. See pa_watchdog.rs:1362-1363,1383,1430-1435.\n- pa_watchdog_tests.rs:1910-1935,1986-2016,2070-2110 covers instruction text, newlines, delimiter spoofing, ESC, BEL and NUL, including absence of hostile text/control characters from the digest.\n- The daemon commit is its trusted compile-time Services::build_commit, also returned by ping: crates/daemon/src/lib.rs:78,699; crates/daemon/src/http/mod.rs:904. harness/scripts/release-build.sh:74-84 derives the stamp from git.\n- All 12 added documentation lines were inspected and scanned for credential literals, home/private paths and private repository references; zero indicator matches. docs/difficulties.md:205 and docs/retros/pr288-review.md:1-11 contain no secrets, prohibited paths, private identities or private transcript content.\n\nTrust scope: community/RULINGS.md:25,36-37 in the authoritative government root supplies C21/C32/C33. Closed grammars and safe rendering remain intact. Known C33 limit: build identities are self-reported, not attested; a trusted same-user caller can claim a matching tree and suppress the stale-extension diagnostic. This is not a new per-seat security boundary or a blocking finding.\n\nValidation:\n- just pr-freeze 291: exit 0, FINAL at the exact head; remote/gh agree, base main, CLEAN, all latest checks passed.\n- CI run 44731204924 at the exact head: both Node check jobs, Rust lint and Rust tests passed; Delivers run 44731204898 also passed.\n- harness boot --json: exit 0 advisory, ready:false because this dependency-free review worktree has no node_modules. Not a passing readiness receipt.\n- harness checks --json: exit 1. Its Rust fmt/clippy/workspace tests, route inventory, smoke, native Copilot contracts, SDK contract and pij-skill stages passed locally. Eight tooling-dependent stages failed: local-paths, omp-config, ddocs, coverage, typecheck, lockfile, lint and test. Missing local dependencies and incompatible fallback Biome prevent a full local gate pass. No dependencies were installed or symlinked under C25. This security verdict is not a claim that the local ship/done gate is green.\n- No mutation checks were performed by security; the requested signal-handler/background-build mutation witnesses belong to the separate correctness reviewer.\n\nCost: render-only production change; no added loop, timer, poll interval or process-launch site, and no change to per-seat steady-state launch scaling. The signal-case expansion is isolated test work.\n\nRetrospective / harness feedback:\n- DL-001 (annoying): local boot's install-oriented repair hint conflicts with dependency-free read-only review/C25. Proposed encoding: a read-only review mode that distinguishes unavailable local tooling from exact-head CI proof.\n- DL-002 (annoying): the initial security-agent pass omitted supporting evidence and required a follow-up. Magic wand / highest-leverage encoding: require every security pass to include scope, source/ruling citations, executed proof commands and explicit trust-model limits.\n\nNo corrective work is owed by this security verdict. Retain security/291 holding until merge; do not release on verdict publication.\n"
+		}
+	]
+}
