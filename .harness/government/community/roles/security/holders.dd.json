@@ -668,7 +668,10 @@
 					"harness_session": "74b70772-a753-4c1f-b847-d2c897900272",
 					"instance_key": "279",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #279 merged (fdd6ad1e3373)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-small-whitefish",
+					"to": "2026-11-20T06:44:10.322Z",
 					"why": "#279 F190 security verdict, fresh seat"
 				},
 				{

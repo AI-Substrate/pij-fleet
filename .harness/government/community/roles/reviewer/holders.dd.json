@@ -2245,7 +2245,10 @@
 					"harness_session": "2bd47c10-633e-4813-836f-8a22fb1ae3e7",
 					"instance_key": "279",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #279 merged (fdd6ad1e3373)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-semantic-hornet",
+					"to": "2026-11-20T06:44:10.322Z",
 					"why": "#279 R2 delta review; holding ended unexpectedly, hornet is the round-1 reviewer"
 				}
 			]
