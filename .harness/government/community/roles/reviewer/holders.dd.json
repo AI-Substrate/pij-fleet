@@ -2313,7 +2313,10 @@
 					"harness_session": "c8ccbe49-9866-4eb9-bbcb-c2aa53b2c58b",
 					"instance_key": "285",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #285 merged (435245a67b97)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-exuberant-beetle",
+					"to": "2026-11-20T09:34:40.990Z",
 					"why": "#285 F234 review"
 				},
 				{

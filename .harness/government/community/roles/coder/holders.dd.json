@@ -1325,7 +1325,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f234",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #285 merged (435245a67b97)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-20T09:34:40.990Z",
 					"why": "F234 store-private no-live-row claim preflight (snail note 9d1eb490; prime pre-approved)"
 				}
 			]

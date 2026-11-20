@@ -720,7 +720,10 @@
 					"harness_session": "7abf0bb5-3bd4-4a83-b33c-2ad8ca0cdc5f",
 					"instance_key": "285",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #285 merged (435245a67b97)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-corporate-anteater",
+					"to": "2026-11-20T09:34:40.990Z",
 					"why": "#285 F234 security"
 				},
 				{
