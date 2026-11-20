@@ -34,4 +34,5 @@
 - [2026-11-11 pij-rs is a symlink into ~/pi-hacking/pij/target; a target wipe breaks it](2026-11-11-pij-rs-symlink-into-target.dd.md): read when pij-rs is 'command not found' or the shim says 'cannot run pij-rs' (pa, pij-rs, install, daemon)
 - [2026-11-11 pa: start here \(reading order of the pa notes\)](2026-11-11-start-here-reading-order.dd.md): open first after a compact or when taking over pa (pa, onboarding, index)
 - [2026-11-19 OMP extension rollouts need a restart; Copilot seats reload themselves](2026-11-19-omp-extension-rollouts-need-a-restart.dd.md): open before any extension reload rollout (pa, reload, rollout, omp, copilot)
+- [2026-11-20 Role-queue wake with a live last holder: the reviewer released after round 1](2026-11-20-role-queue-wake-with-a-live-last-holder.dd.md): open when a \[pij role queue\] wake names a reviewer/security instance (pa, role-queue, reviewer, holding)
 <!-- /pij:generated -->
