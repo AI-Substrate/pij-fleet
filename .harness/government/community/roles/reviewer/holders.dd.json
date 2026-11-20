@@ -2526,6 +2526,16 @@
 					"seat": "pij-grand-spider",
 					"to": "2026-11-20T21:19:16.328Z",
 					"why": "verdict on #300 (issue #85 daemon launch leftovers)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T22:55:15.022Z",
+					"harness": "copilot",
+					"harness_session": "ddddf745-f176-4343-859e-192fb74c0e44",
+					"instance_key": "301",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-quiet-moth",
+					"why": "verdict on #301 (issue #90 daemon.log bound)"
 				}
 			]
 		}
