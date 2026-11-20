@@ -772,7 +772,10 @@
 					"harness_session": "35204189-ed7f-4d10-b554-1401d1e30c7f",
 					"instance_key": "288",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #288 merged (0744555dee50)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-warm-platypus",
+					"to": "2026-11-20T11:14:28.372Z",
 					"why": "#288 C34 i security"
 				},
 				{

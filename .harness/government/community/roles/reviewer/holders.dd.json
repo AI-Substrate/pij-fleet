@@ -2365,7 +2365,10 @@
 					"harness_session": "30ea0189-c8dd-4928-9c98-01e1cf7bdc19",
 					"instance_key": "288",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #288 merged (0744555dee50)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-curved-tiger",
+					"to": "2026-11-20T11:14:28.372Z",
 					"why": "#288 C34 i review"
 				},
 				{
