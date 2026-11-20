@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f82d-c8df-7ee1-88b9-fe443dd5cc60",
+				"date": "2026-11-20",
+				"head": "d55bb57caf09a5fe7d7d3a16226a7e1f90a1b922",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:286",
+				"writer": "pij-level-rhinoceros",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"B286-001: context-only activity reports must preserve the latest logical turn state, including queued transitions; add delayed-idle and delayed-working regressions."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 286",
+					"exit_code": 0
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "review-286-checks.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "#286 at d55bb57caf09a5fe7d7d3a16226a7e1f90a1b922 — BLOCK\n\n**B286-001: context reporting can reverse the seat's mechanical activity state.**\nLocation: `.omp/extensions/pij/adapters/rust-runtime.ts:347-348`.\n\n`reportControlContext()` chooses `activityPublished`, the last state acknowledged\nby the daemon, rather than the latest logical state already queued for it.\nNormal-use reproduction on the exact source: the daemon last accepted working;\n`agent_end` queues idle; hold that response in flight; the human runs `/pij`;\narming queues another working post behind idle. Releasing the response gives\n`idle/unarmed -> working/armed`, leaving an idle seat working indefinitely.\nThe opposite direction is also reproduced: hold turn_start's working post while\nthe last accepted state is idle, then call the context report used on\nre-attachment; the final trace is `working/unarmed -> idle/unarmed` while busy.\nThis corrupts the state consumed by fleet activity and held lifecycle actions.\n\nRequired repair: context-only reports must preserve the latest logical turn\nstate, including transitions queued or in flight, and initialise that state\nfrom the current runtime at boot. Keep the acknowledgement state separate for\nits existing shutdown-repair purpose. Add delayed-idle and delayed-working\nregressions covering arming and re-registration. An isolated source-only fix\nprobe sampling the current runtime state passes both reproductions; no product\nsource was modified by this reviewer.\n\n**Requested focus**\n\n1. Advisory-only admission is correct. The warning is added after successful\n   `admit_control`; no control authorization, queueing or execution guard was\n   changed. Removing it changes receipt text only. It is neither a destructive\n   policy nor a safety interlock: it is an annotation.\n2. Process-incarnation matching includes pid and proc_start; a replaced process\n   sees unknown, and an armed report overwrites unarmed. The runtime clears its\n   arm flag at session_shutdown. These guards pass the focused probes.\n3. The 422 compatibility fallback is bounded and preserves every other activity\n   field. Probes cover permanent unrelated 422 (two attempts), 422 without the\n   field (one), valid refusal envelopes (one), other status codes (one), and\n   cached downgrade. The cache and missing-field checks redundantly bound the\n   retry; returning the original request instead of plain survives because the\n   cache strips the field again, without an observable behavioral change.\n4. The pane uses the shared POSIX shell_word helper. Apostrophes, whitespace and\n   shell substitution characters remain one quoted word. The state and receipt\n   use the same unarmed_control_step helper. The receipt preserves any prior\n   warning.\n5. Leaving core/session.ts's legacy queue alone is justified: the Rust claim\n   path intercepts every command in injectAndAck before onInbound, records the\n   terminal control outcome and returns. index.ts refuses legacy generation.\n\n**Proof and grading**\n\n- `just pr-freeze 286`: FINAL at intake and immediately before verdict;\n  exact head and main base agree, CLEAN,\n  latest checks pass, not draft, no migrations, Delivers CI passes.\n- Exact-head CI run 44705931935: check(22), check(24), rust-lint and rust-test\n  pass. check(24) reports 110 test files and 2362 tests passing; runtime (121),\n  daemon-http (25) and index.fyi (28) suites pass; typecheck and lint pass.\n- No local vitest tests executed, dependency install or node_modules symlink\n  (C25); the full inventory attempted the suite but it failed at startup.\n  Dependency-free Node probes load the exact production source with Node's\n  native TypeScript transform. Six effective mutants are killed: 422 status\n  selection, refusal discrimination, downgrade caching, unchanged arming,\n  clearing the arm flag, and carrying control_context. Both activity\n  reproductions fail on the reviewed source and pass with the source-only\n  current-state fix. Log: review-286-mutations.log.\n- Rust source-seam probes copy the exact new control methods, incarnation\n  regression, warning condition/body, warning helper and shell_word helper,\n  with minimal dependency stubs; they are not an assembled HTTP smoke.\n  Built once through `just shared-build` (nice-only, shared lock, four jobs).\n  The original passes; all six mutants are killed: incarnation equality,\n  warning application, command selection, armed-state selection, pane quoting,\n  and prior-warning preservation. Log: review-286-rust-mutations.log.\n- Full local `harness checks`: exit 1. Rust (workspace fmt, clippy and tests),\n  route inventory, smoke, pij-skill, native Copilot contracts and SDK pass.\n  Eight local stages fail: missing tsx/dependencies prevent local-paths,\n  omp-config, ddocs, coverage, typecheck, lockfile and test; an incompatible\n  ambient Biome rejects the repository's v2 configuration. Attribution warns\n  because tsx is absent. These are review-tree tooling failures, not additional\n  PR findings; no dependency installation was attempted. The exact receipt\n  is retained in review-286-checks.json. No green aggregate is claimed.\n\n**Cost:** no added loop, poll, timer or process launch; the existing 1-second\nmail ticker is unchanged. Added HTTP work is one activity post per registration\nor re-registration per OMP/Pi seat, and one per changed arm state. Daemon memory\nadds one tuple per distinct reporting seat ID, retained until daemon restart,\nnot a bounded live-seat cache. Live fleet cost measurement belongs to the\nperformance role; this is the static correctness review.\n\n**Harness lesson:** magicWand = a delayed-transport activity fixture so adding\nmetadata cannot invent a turn transition. Difficulties = the untested activity\nreversal and boot recommending writable dependency links in C25 review trees.\nBoth were captured; the reviewer-role memory writer persisted the lesson at\ngovernance commit 00e2e179ecbd2ce64309d17f4419cb87351de7cf.\n\nOne normal-use correctness block only, within C34. Reviewer holding retained\nuntil merge, including after this BLOCK.\n"
+		}
+	]
+}
