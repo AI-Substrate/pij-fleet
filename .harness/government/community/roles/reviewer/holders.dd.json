@@ -2409,6 +2409,16 @@
 					"seat": "pij-significant-silkworm",
 					"to": "2026-11-20T12:33:27.466Z",
 					"why": "#290 F237 review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T12:42:43.547Z",
+					"harness": "copilot",
+					"harness_session": "b1a86890-c40f-480f-b329-b72b537f3d25",
+					"instance_key": "292",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-allied-raven",
+					"why": "#292 F238 review"
 				}
 			]
 		}
