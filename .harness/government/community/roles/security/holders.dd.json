@@ -842,6 +842,16 @@
 					"seat": "pij-zany-quelea",
 					"to": "2026-11-20T15:03:28.268Z",
 					"why": "#293 F242 security"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T15:23:00.331Z",
+					"harness": "copilot",
+					"harness_session": "e56e03af-78cf-43f1-83c7-ed4976e4145d",
+					"instance_key": "294",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-very-mouse",
+					"why": "#294 F240 security"
 				}
 			]
 		}
