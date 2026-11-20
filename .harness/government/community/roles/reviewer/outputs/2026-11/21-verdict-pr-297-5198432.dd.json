@@ -1,0 +1,68 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f9f1-18bf-7ef2-9783-79a299ae7c7a",
+				"date": "2026-11-21",
+				"head": "519843289b4c8eeb068cb9d96ab9e16f392b26d3",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:297",
+				"writer": "pij-rational-termite",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"F246: prime C34 ruling accepts stamp-publication failure residual; invalidate prior stamp and warn in the F245 PR."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "nice -n 19 node pr297-r2-explicit-target-probe.mjs",
+					"exit_code": 0,
+					"log": "pr297-r2-explicit-target-probe.log: real-cargo A-B-failed-A returns A; repeat reuse and poisoned legacy-stamp adoption pass"
+				},
+				{
+					"command": "nice -n 19 node pr297-r2-state-probe.mjs",
+					"exit_code": 0,
+					"log": "pr297-r2-state-probe.log: concurrent lock/SIGTERM and no-deps failed-batch state transitions pass"
+				},
+				{
+					"command": "gh run view 44780085069 --job 136440126993 --log",
+					"exit_code": 0,
+					"log": "pr297-r2-ci-node22.log: exact-head shared-build 26/26 and full TS 2385 passed"
+				},
+				{
+					"command": "inspect artifact 14650689845 from successful rust-test job 136440126653",
+					"exit_code": 0,
+					"log": "pr297-r2-junit-summary.json: 14/14 build_stamps passed; full Rust 2689 passed"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "pr297-r2-checks-quick.log: eight unavailable/incompatible local TS-tooling stages under C25"
+				},
+				{
+					"command": "just pr-freeze 297",
+					"exit_code": 0,
+					"log": "pr297-r2-freeze.log: FINAL at 519843289b4c8eeb068cb9d96ab9e16f392b26d3, CLEAN, latest checks green"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #297: PASS WITH NOTES, final round under C34\n\nHead: `519843289b4c8eeb068cb9d96ab9e16f392b26d3`.\nRequest: `01a1f9f1-18bf-7ef2-9783-79a299ae7c7a`.\n\n**R297-001 is closed.** Reviewed the repair commits `e928ead0`, `56a9dfd0`\nand `51984328`, including the complete shared-build script and test file.\nThe intervening merge of main's #295 is not a new review scope.\n\n## Fix verification\n\nThe same real-cargo A -> B(build, then failed check) -> A reproduction that\nreturned B in round 1 now recompiles A and returns **A**, with\n`--target aarch64-apple-darwin`. B's failed batch leaves `running B`;\nreturning A leaves `finished A`. A subsequent build reports 0.00 s, compiles\nnothing, leaves source mtimes unchanged and still returns A.\n\nThe same runner verifies adoption: after B builds, a future-dated bare A stamp\nis planted to reproduce the trusted legacy state. Corrected A touches,\nrecompiles and returns A; its next run is fresh. Thus the repair does not\nsilently retain a poisoned round-1 stamp.\n\nAn independent fake-cargo state oracle verifies that:\n\n- Cargo observes `running <its tree>` before it executes.\n- A waiting B cannot enter or replace A's running stamp while A holds the lock.\n  SIGTERM drains A before B enters, and successful B publishes `finished B`.\n- A batch failing after its first successful command leaves `running B` even\n  when it wrote no deps artifact; returning A touches and publishes `finished A`.\n\nThe lock still encloses invalidation, running publication, every cargo command,\nfinished publication and copy-out. Cargo failure exits before `finished`;\ncopy-out failure may retain `finished` because the cargo artifacts are complete.\nA target absent before the first cargo command has no trusted stamp to preserve.\nThe all-depth find detects explicit-target deps; its bookkeeping pruning does\nnot exclude the reproduced target-triple layout.\n\nThe committed 26-case suite now covers the missing layout, failed batches,\nlegacy adoption and newer bare-cargo triple/release artifacts. Its stamp-path\ntest also covers the reported symlink-to-directory behavior. Security owns the\nseparate C33 check/rename residual.\n\n## Accepted residual: F246\n\nThe prime's C34 ruling, relayed by pm-001 in message\n`b764488df75ee6cf-0000000000000038`, says this ships named **F246**, folded into\nthe coder's F245 PR: stamp-publication failure can leave an earlier finished\nstamp trusted; the follow-up must invalidate and warn. This is disclosed in\nthe PR's Residual section. No publication-failure runtime proof is claimed.\nThe existing F226 release-build version/HEAD check remains an additional\ndeployment guard, not a reason to erase the residual.\n\nThis is PASS WITH NOTES, not a third-round block or a claim that F246 is fixed.\n\n## Evidence\n\n- `nice -n 19 node pr297-r2-explicit-target-probe.mjs`: PASS, exit 0.\n  Real cargo, exact-head copied scripts and just recipe, isolated target,\n  niceness 19, four jobs, no dependencies downloaded. Three checks passed:\n  R297-001 executable identity, same-tree reuse and poisoned-stamp adoption.\n  Raw receipt: `pr297-r2-explicit-target-probe.log`.\n- `nice -n 19 node pr297-r2-state-probe.mjs`: PASS, exit 0.\n  Exact helper, isolated fake cargo; interruption/concurrency and no-deps\n  failed-batch state checks passed. Raw receipt: `pr297-r2-state-probe.log`.\n- CI run `44780085069`, attempt 1: SUCCESS at this exact full SHA.\n  Node 22 job `136440126993` reports shared-build **26/26**, full TS\n  **2,385 passed**, seven skipped. Receipt: `pr297-r2-ci-node22.log`.\n  Rust job `136440126653` reports **2,689 passed**, six skipped.\n  Its successful upload artifact `14650689845` confirms all **14**\n  build-stamp/bounce cases passed. Receipts: `pr297-r2-ci-rust.log`,\n  `pr297-r2-junit-summary.json`.\n- `bash -n harness/scripts/shared-build.sh` and\n  `git diff --check 2d983f7d HEAD`: PASS.\n- `harness boot`: dependency-not-ready. `harness checks --quick --json`:\n  exit 1, eight unavailable/incompatible local TS-tooling stages.\n  Receipt: `pr297-r2-checks-quick.log`. No install or node_modules link under\n  C25. No green local full-harness claim; exact-head CI is the TS evidence.\n- F244's recipe and build-stamp tests are unchanged since round 1; their\n  exact-head CI proof was checked rather than rerunning the production\n  workspace. Prior round-1 macOS 14/14 and clippy remain attributed to round 1.\n  No new local full-workspace build, live daemon bounce or mutation run.\n\n## Cost and harness feedback\n\nNo new daemon loop or per-seat launches. Existing-target success uses two\nabsolute-path mktemp/mv pairs and zero or one absolute-path find; the scan\nshort-circuits unless the last stamp is this tree's finished stamp. Failure\ncleanup may add rm. The coder's retained scan receipt reports 44-50 ms with\n9,730 deps entries; that measurement was read, not rerun here. F244's extra\nfailure-path sleeps remain invocation-only.\n\nmagicWand: permanent artifact-identity/adoption proof, rather than a native-only\nmtime fixture. This review's original gap is now encoded by the new regression;\nthe real-cargo receipt independently confirms its intended result.\n\ndifficulties: publication failure remains explicitly tracked as F246 instead of\nbeing hidden by the pass label or expanding into a third review round.\n\nNo product edits, deployment, production signals or pushes. The reviewer/297\nholding remains until merge.\n"
+		}
+	]
+}
