@@ -2458,6 +2458,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-previous-newt",
 					"why": "#295 F241 review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T16:06:36.406Z",
+					"harness": "copilot",
+					"harness_session": "0474289e-ae75-4153-8ce4-be959f192fb9",
+					"instance_key": "296",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-previous-newt",
+					"why": "#296 Copilot SDK record 1.0.115-2"
 				}
 			]
 		}
