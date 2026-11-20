@@ -1270,6 +1270,14 @@ impl DeliveryService {
         }
     }
 
+    /// Admission tasks spawned and not yet joined, or `None` while a caller is
+    /// spawning one: lets a test drop a caller exactly when its admission is
+    /// in flight, by state rather than by poll count (F235).
+    #[cfg(test)]
+    pub(crate) fn admissions_in_flight(&self) -> Option<usize> {
+        self.admissions.try_lock().ok().map(|set| set.len())
+    }
+
     async fn arrive(&self, msg: Msg, arrival: Arrival) -> Result<Receipt> {
         if msg.to.0 == pij_core::BG_ACTOR {
             return Err(PijError::Adapter {

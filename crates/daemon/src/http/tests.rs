@@ -3839,6 +3839,12 @@ async fn a_folder_trust_prompt_refuses_the_spawn_at_once_naming_its_safe_key() {
             "claude-2.1.328-folder-trust.txt",
             "press Down once, then Enter, to choose `Yes, I trust this folder`",
         ),
+        // R264's C34 follow-up: a live 60x12 pane has scrolled the heading away.
+        (
+            Harness::Claude,
+            "claude-2.1.329-folder-trust-short.txt",
+            "press Down once, then Enter, to choose `Yes, I trust this folder`",
+        ),
     ] {
         let tmux = Arc::new(FakeTmux::new().with_standing_capture(trust_fixture(fixture)));
         let started = std::time::Instant::now();

@@ -397,30 +397,40 @@ mod tests {
 
     /// P266-001: snapshots taken while requests are recorded on other
     /// threads neither block nor lose them: every recorded request is in
-    /// the last snapshot.
+    /// the last snapshot. R266: a rendezvous holds every recorder halfway, so
+    /// one snapshot is always taken mid-recording, however they are scheduled.
     #[test]
     fn snapshots_during_recording_lose_nothing() {
         let counts = Arc::new(table());
+        let halfway = Arc::new(std::sync::Barrier::new(5));
+        let resume = Arc::new(std::sync::Barrier::new(5));
         let recorders: Vec<_> = (0..4)
             .map(|_| {
                 let counts = Arc::clone(&counts);
+                let (halfway, resume) = (Arc::clone(&halfway), Arc::clone(&resume));
                 std::thread::spawn(move || {
-                    for _ in 0..10_000 {
-                        counts.record(&Method::GET, Some(SEATS_PATH), Some(0), true, NONE);
+                    for half in 0..2 {
+                        if half == 1 {
+                            halfway.wait();
+                            resume.wait();
+                        }
+                        for _ in 0..5_000 {
+                            counts.record(&Method::GET, Some(SEATS_PATH), Some(0), true, NONE);
+                        }
                     }
                 })
             })
             .collect();
-        let mut snapshots = 0;
+        halfway.wait();
+        assert_eq!(counts.snapshot().total, 20_000, "every first half, no more");
+        resume.wait();
         while recorders.iter().any(|recorder| !recorder.is_finished()) {
             let _ = counts.snapshot();
-            snapshots += 1;
         }
         for recorder in recorders {
             recorder.join().expect("recorder");
         }
         let snapshot = counts.snapshot();
-        assert!(snapshots > 0);
         assert_eq!(snapshot.total, 40_000);
         assert_eq!(snapshot.seats_queries["(none)"], 40_000);
     }
