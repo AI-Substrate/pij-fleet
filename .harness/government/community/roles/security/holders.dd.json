@@ -920,6 +920,16 @@
 					"seat": "pij-environmental-deer",
 					"to": "2026-11-20T20:31:00.384Z",
 					"why": "#299 security verdict on a different model (claude-opus-5.5) after sawfish's availability block"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T21:08:16.745Z",
+					"harness": "copilot",
+					"harness_session": "e0314b91-a3da-4c52-8163-ca6d17497bd1",
+					"instance_key": "300",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-collective-tarsier",
+					"why": "verdict on #300 (issue #85 daemon launch leftovers)"
 				}
 			]
 		}
