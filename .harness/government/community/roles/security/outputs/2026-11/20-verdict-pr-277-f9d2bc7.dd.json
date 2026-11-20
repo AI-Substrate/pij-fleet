@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f68b-e561-7983-977c-baa89ebf7ee1",
+				"date": "2026-11-20",
+				"head": "f9d2bc77871f3d7cee6418d6d18c86c26d5e40f4",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:277",
+				"writer": "pij-extended-rooster",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"PM/correctness reviewer to disposition global D2 overflow loss, local-deadline false-ready, and daemon-incarnation-scoped D1 history; this security pass does not certify those functional properties."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 277",
+					"exit_code": 0
+				},
+				{
+					"command": "just copilot-native-test",
+					"exit_code": 0,
+					"log": "363 passed; 3 Linux-only skips"
+				},
+				{
+					"command": "gh pr checks 277",
+					"exit_code": 0,
+					"log": "ci run 44652231462; rust-test job 136009674366; JUnit artifact 14592210106; seven targeted regressions passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS WITH NOTES\nPR: #277\nHead: f9d2bc77871f3d7cee6418d6d18c86c26d5e40f4\nBase: df01a3380f8958856f5636fc1f98f4acbe1f7b8e\nRequest: 01a1f68b-e561-7983-977c-baa89ebf7ee1\n\nNo high-confidence blocking security vulnerability was identified in the\nchanges under C33's user-account trust boundary. This is a security verdict,\nnot an assertion that all requested functional properties are satisfied.\nNo product files were modified.\n\nAcceptance notes requiring the PM/correctness reviewer's disposition:\n\n1. D2 has global overflow loss, not cross-seat isolation.\n   crates/daemon/src/registration/refusals.rs:19-46 removes expired entries\n   but never evicts unexpired ones. At 512 occupied pairs every unseen\n   seat/code pair is suppressed until expiry, including another seat's\n   first refusal. Existing pairs do not have their timestamps refreshed by\n   suppressed retries. Thus \"cannot suppress another seat's refusals\" is\n   not a property of this implementation. Same-user deliberate saturation\n   is outside C33's hostile-principal model, but ordinary traffic above\n   the cap also loses visibility. Registration results are unchanged;\n   publication is awaited, so strict latency-independent nonblocking\n   behavior is not established.\n\n2. The deadline-ready banner is diagnostic, not daemon acceptance proof.\n   .copilot/extensions/pij/store.mjs:730-765,1749-1760 treats its local\n   claim wait timeout as recovery. An actual in-memory fetch probe received\n   a 401, then never submitted the next inbox request; the local deadline\n   still emitted connection-ready. No native send occurred. This is a\n   demonstrated false-ready diagnostic, not an authorization or ACK bypass.\n   Received refusals/4xx, external aborts, connection failures and stalled\n   response bodies do not themselves enter that branch. Returned messages\n   and valid empty claims end the outage. Not clearing on registration\n   or heartbeat is sound: the independent re-registration mutant made the\n   existing bounded-backoff test report 7 banners instead of 1.\n\n3. D1 history is daemon-incarnation-scoped, not durably alternating.\n   crates/daemon/src/delivery/mod.rs:363-369,426-465,512-524,596-610,705-726\n   initializes an empty set and applies the existing boot grace. Within\n   an instance, insertion tells a lapse once and heartbeat removal tells\n   a renewal only after an observed lapse. Both receiver and edge maps\n   prune non-live/non-native/tombstoned seats. The set does not remember a\n   pre-restart event; a still-lapsed seat can be observed again after the\n   new boot grace. Failed publication consumes the edge without retry.\n   Therefore durable no-double-tell across daemon restarts is not proven.\n\nSecurity evidence:\n\n- registration.rs:286-395 constructs the observation from a named\n  descriptor or an exact name already retained by Attempts::names.\n  Payload fields are seat plus closed enum-derived code and attempt\n  labels. IMPORTANT: attempt is a string path label, not a numeric count.\n  Raw refusal explanations, warning/credential text, tokens, environment\n  and home paths are not copied into these new normal observations.\n- registration/attempts.rs:102-129,177-191,245-267,298-306 normalizes\n  arbitrary client attempt labels to other, bounds retained names to\n  64 bytes, and does not retain unknown failed addresses as names.\n  http/mod.rs:1128-1197 counts malformed early claims without telling them.\n  core/src/model.rs:46-79 and registration.rs:1144-1153 enforce the\n  bounded lowercase/digit/hyphen pij identifier grammar for new IDs.\n  No new registry read is used to establish a telemetry name.\n- delivery/mod.rs:480-506 emits seat and numeric/null renewed_at.\n  Legacy stored IDs remain trusted; generic sink-error diagnostics still\n  interpolate internal errors. This is not a blanket claim that every\n  possible failure log contains only the normal observation fields.\n- http/tests.rs:2790-2819 retains the exact alias call-history invariant;\n  http/tests.rs:4983-5045 retains an empty registry call list for invalid\n  process evidence. native_tests.rs:428-445 retains unchanged owner/queue\n  assertions. tests/role_http.rs:793-852 retains escaping, absent probe\n  seat, and unchanged-folder checks. The relaxed comparisons allow only\n  registration.refused, not arbitrary event publication.\n- pa_watchdog.rs:1446-1473 builds advisory FleetAnomaly text with\n  shell_word quoting; core/src/directory.rs:32-41 safely quotes apostrophes.\n  The new restart suggestion is never executed by this path.\n- No new managed_plugins or model_http trigger was added. Existing\n  session.error classification remains unchanged; do not broaden triggers\n  based on this verdict.\n\nIndependently observed proof:\n\n- just pr-freeze 277: PASS twice, exact head FINAL and checkout clean.\n- Exact-head ci run 44652231462: successful; rust-test job 136009674366\n  reports 2603 tests passed, 6 skipped. Its successful upload log identifies\n  JUnit artifact 14592210106. That exact artifact was parsed independently:\n  D1 lapse/renewal, D2 per-window/expiry and bounded-capacity tests,\n  made-up-name refusal, unchanged transient owner/queue, restart-digest\n  advice, and control-character folder tests all passed (7 named cases).\n- just copilot-native-test: PASS, 363 passed, zero failed, three\n  Linux-only skips on this macOS checkout.\n- Existing exact-source Node banner tests: baseline 3/3 passed.\n  In-memory source mutations removing deadline-ready and clearing on\n  re-registration were both caught by those actual tests.\n- D2 COMPILED SOURCE MUTATIONS: the complete exact-head refusals.rs module\n  was compiled independently with rustc --test, using its existing Tokio\n  library dependency and temporary outputs, all at niceness 19.\n  Original tests: 2/2 PASS. Occupied-entry false-to-true mutation:\n  caught, duplicate-refusal assertion failed (exit 101).\n  Capacity >= to > mutation: caught, first-overflow assertion failed\n  (exit 101). Temporary compiler outputs were removed automatically.\n  This compiles the actual D2 module, not a translated model; it does not\n  rebuild the entire daemon.\n- D1 SOURCE-DERIVED MODEL MUTATIONS: baseline eight assertions passed;\n  always-tell lapse, contains-instead-of-remove renewal, and stale-marker\n  pruning mutants were caught. These are restricted Python interpretations\n  of exact-source guards, NOT compiled Rust/Tokio/integration mutant proof.\n  No full-daemon D1 Rust mutation run was performed. The exact-head D1\n  integration baseline is established by CI, not by these model mutations.\n- Previously run cached local Rust binaries were not proven bound to this\n  head and are not used as exact-head compilation evidence here.\n\nGate and live-proof limits:\n\nharness boot --json returned advisory ready:false because this read-only\nreview worktree has no node_modules. No dependencies were installed or\nsymlinked. Full harness checks was not rerun: the live omp-config sensor\ncan touch shared settings, and C25 keeps missing-dependency TS proof\nCI-only. No claim is made that the full local gate passed.\nNo deployment, daemon bounce, live lapse experiment or before/after fleet\ncost measurement was performed.\n\nStatic cost:\n\nNo new process launch, polling loop, timer or automatic action. Existing\nreconciliation runs every 5 seconds plus receiver-deadline wakes. D1 adds\nan in-memory edge-map prune (worst-case lapsed seats times live seats per\nreconciliation) and edge-only log/event writes. D2 scans at most 512\nin-memory pairs per service refusal, with one normal event/log per admitted\npair per ten minutes; global saturation suppresses new pairs as noted.\nThe dedupe window is a brake on noise: removing it only tells more.\nThe restart text is advice; no new destructive policy or action is added.\n\nHarness feedback:\n\ndifficulties: A verdict-only specialist response omitted completed proof;\nsaved tool receipts had to be recovered before publication.\nmagicWand: Require structured command/result, file/line, mutation and\nproof-limit receipts from no-findings review reports. Existing role memory\nalready records this recurring gap; no new product scope is proposed here.\n"
+		}
+	]
+}
