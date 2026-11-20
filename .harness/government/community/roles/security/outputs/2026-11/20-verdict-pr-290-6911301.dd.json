@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f8dc-b9c2-7381-a91f-ddaa801e0dd9",
+				"date": "2026-11-20",
+				"head": "69113015b5a097ca8886113cbc1c5b0e7d71d78e",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:290",
+				"writer": "pij-suitable-trout",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 290",
+					"exit_code": 0,
+					"log": "FINAL at reviewed head 69113015 before the later head advance; all latest checks passed"
+				},
+				{
+					"command": "gh run view 44732494166 --json headSha,conclusion,jobs",
+					"exit_code": 0,
+					"log": "SUCCESS at 69113015b5a097ca8886113cbc1c5b0e7d71d78e: check (22), check (24), rust-lint, rust-test"
+				},
+				{
+					"command": "git diff --check 74d1c63a 69113015b5a097ca8886113cbc1c5b0e7d71d78e",
+					"exit_code": 0,
+					"log": "passed; review worktree clean"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict: PASS\n\nReviewed PR #290 at exact head `69113015b5a097ca8886113cbc1c5b0e7d71d78e`, against `74d1c63a97551b5ce18768db64a6bfa33cd97ee7`. Scope: the test-only CAS fixture change and its difficulty entry. No product review of F238.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerabilities found | - |\n\n## Isolation and privacy\n\n- `crates/tmux/tests/adapter.rs:905,2249-2256` generates a unique `pij-rs-submit-adapter-cas-<pid>-<epoch-nanoseconds>-<counter>-server` label.\n- The new helper at `1491-1499` uses the existing fixture runner. Its command at `2286-2296` is argument-vector construction, not shell interpolation: `tmux -L <generated-label> -f /dev/null set-option -t _pij destroy-unattached off`.\n- Adapter forks preserve the same label at `crates/tmux/src/lib.rs:258-275,345-352,800-805`; control-client launches preserve it at `crates/tmux/src/control.rs:383-403`.\n- Explicit teardown remains `tmux -L <generated-label> kill-server` at `crates/tmux/tests/adapter.rs:2304-2306`; the fallback observation also retains `-L` at `2313`. It does not target the operator's default server.\n- The unlabelled `tmux -V` at `2234` only asks for the executable version.\n- The additions, including `docs/difficulties.md:205`, contain no credentials, private owner/repository identities, or machine-home paths. Graded under C21 and the C33 same-user trust boundary.\n\n## Assertion and lifecycle coverage\n\nBoth racers attach before the first keep at `936`. The lister remains alive until `937`, and the reservation barrier opens at `938`: no control client retires during that setup window.\n\nThe test still requires exactly one success and one error (`950-959`), the reservation-conflict error (`964-967`), the winner's ownership token and disabled input (`972-973`). Cleaner abort must succeed at `976`; the second keep is at `978`, before cleaner retirement, and restored input plus cleared ownership remain asserted at `979-980`.\n\nThe fixture therefore does not mask a CAS reservation regression the test was written to catch. It intentionally stops exercising automatic `_pij` destruction on control-client exit; it is not proof of that product lifecycle behavior. F238 owns that separate race. Explicit isolated-server teardown remains in force.\n\nCost: two additional forked fixture commands per invocation of this test. No production loop, timer, poll, sweep, or launch site; no per-seat steady-state cost change.\n\n## Proof and limits\n\n- `just pr-freeze 290`: FINAL at this reviewed head before the later merge from main; all latest checks passed.\n- `gh run view 44732494166 --json headSha,conclusion,jobs`: independently verified SUCCESS at this exact full head for `check (22)`, `check (24)`, `rust-lint`, and `rust-test`. The separate delivers check also passed.\n- `git diff --check 74d1c63a 69113015b5a097ca8886113cbc1c5b0e7d71d78e`: passed. The review worktree remains clean.\n- `harness boot --json`: advisory `ready:false` at missing TS-dependency preflight. C25 keeps TS proof CI-only; no packages were installed or symlinked.\n- Scoped local CAS test and macOS clippy were queued through `just shared-build`, then canceled after approximately 16 minutes waiting behind another build. No cargo command in that queued proof executed. Local stress and the optional instrumented isolation probe were not run. System `tmux -V` reports `tmux 3.6a`.\n- The packet's 0/2000 results on tmux 3.4 and 3.6a are author-supplied stress witnesses, not independently reproduced here.\n- Full `harness checks` was not run: it has no read-only sensor-selection mode, includes shared OMP initialization, and this review forbids dependency repair.\n\nThe PR advanced to `74f354680c29e16b2191aadaac849c022b062bab` before publication. Per pm-001's explicit instruction, this verdict answers the original request at `69113015`; pm-001 owns carry-forward after checking unchanged tmux code and identical PR changes. No re-review or verdict is claimed for the replacement head here.\n\nThe security/290 holding is retained until merge. No source edits, dependency changes, default-server commands, deployment, or holding release were performed.\n\nHarness feedback: a dependency-free read-only review gate with exact-head CI receipts and explicitly selected local checks would remove the missing-dependency/read-only-gate conflict. This session captured that proof gap without changing the review tree.\n"
+		}
+	]
+}
