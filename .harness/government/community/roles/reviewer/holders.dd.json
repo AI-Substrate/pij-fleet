@@ -2276,6 +2276,16 @@
 					"seat": "pij-outdoor-dormouse",
 					"to": "2026-11-20T06:48:03.086Z",
 					"why": "carried from pij-extraordinary-panda at a native session boundary (same process)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T07:09:03.543Z",
+					"harness": "copilot",
+					"harness_session": "c2d6526c-f1b1-40f6-b487-14a72d7af3d2",
+					"instance_key": "282",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-middle-urial",
+					"why": "#282 F231 correctness review, fresh seat"
 				}
 			]
 		}
