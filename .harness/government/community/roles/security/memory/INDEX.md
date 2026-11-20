@@ -73,4 +73,5 @@
 - [2026-11-20 Home-relative diagnostic paths evade portability scans](2026-11-20-home-relative-diagnostic-paths-evade.dd.md): Before publishing crash-report stubs or treating scanText as C21 privacy proof. (privacy, c21, diagnostics, proof)
 - [2026-11-20 Native recovery needs positive evidence and scoped replay](2026-11-20-native-recovery-needs-positive-evidence.dd.md): Read before changing native claim idle answers, receiver-lapse replay, or refusal overflow handling. (copilot, native-recovery, spine, telemetry, c34)
 - [2026-11-20 Recover probe receipts from saved tool events](2026-11-20-recover-probe-receipts-from-saved-tool.dd.md): Open when a delegated security review returns only a verdict despite an evidence follow-up. (review, evidence, delegation, recovery)
+- [2026-11-20 Unknown observations must preserve retry state](2026-11-20-unknown-preserves-retries.dd.md): Read when a read API gains Busy or unavailable results, or when probe errors interact with Seen, cursors, liveness, revive or cleanup. (observation-safety, retries, liveness, c34, proof)
 <!-- /pij:generated -->

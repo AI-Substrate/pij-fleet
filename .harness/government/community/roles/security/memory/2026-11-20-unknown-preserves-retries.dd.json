@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Read when a read API gains Busy or unavailable results, or when probe errors interact with Seen, cursors, liveness, revive or cleanup.",
+				"tags": [
+					"observation-safety",
+					"retries",
+					"liveness",
+					"c34",
+					"proof"
+				],
+				"title": "Unknown observations must preserve retry state"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #280 round 2 at c8d2eab2fc9e073d8c8b8de27dbb53e8141ec315: Busy must remain UNKNOWN through destructive decisions, and must not consume retry bookkeeping. The observer returns before retirement; unknown reaper evidence cannot tombstone; locked revive needs explicit Some(false); kill propagates inventory error before launch; postlaunch observation errors preserve the dispatched seat and pane. The Codex binder nevertheless saves Seen at codex_bind.rs:253-256 before probing, so a transient error can suppress a later attempt. This is F232, explicitly assigned as a non-blocking C34 follow-up for #280, with a separate fix to avoid marking failed probes seen. An independent correctness-review diagnostic with another process holding the lock measured 30 Busy reads in 4.039625 ms, zero forks, and a primed 50 ms timer at 53.234916 ms; release enabled exactly one control launch. Zero launches applies only to the initial five-second grace. Persistent holding later enters fork fallback and five-second startup backoff; that backoff is not a per-read fork throttle. Difficulties: availability changes require tracing both mutation guards and retry markers; a fast read-only review gate remains unavailable in dependency-free checkouts. Magic wand: a focused held-lock consumer fixture that proves no false retirement and no consumed retry trigger, without adding a new final-round gate."
+		}
+	]
+}
