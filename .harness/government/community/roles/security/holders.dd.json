@@ -764,6 +764,16 @@
 					"seat": "pij-graceful-cod",
 					"to": "2026-11-20T10:37:24.496Z",
 					"why": "#287 F236 security"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T10:49:22.478Z",
+					"harness": "copilot",
+					"harness_session": "35204189-ed7f-4d10-b554-1401d1e30c7f",
+					"instance_key": "288",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-warm-platypus",
+					"why": "#288 C34 i security"
 				}
 			]
 		}
