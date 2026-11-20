@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before reviewing daemon log rotation, concurrent initialization, repeat suppression or launch-sensor scope.",
+				"tags": [
+					"review",
+					"logging",
+					"concurrency",
+					"retention",
+					"proof"
+				],
+				"title": "Managed log ownership precedes rotation"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Managed log ownership precedes rotation\n\n#301 round 1, exact head 8bf2c2d03862cf07ac8aeefd527a3f6c8cdbcbb3:\n\n- A logger initialized before the daemon binds must tolerate two simultaneous initializers. The fact that only one daemon can win the listening port does not serialize earlier destructive file operations.\n- Shared `.new`/`.1.new` staging paths plus error cleanup can unlink another initializer's staging/current file. Unique temporary names alone do not establish which process owns the current destination.\n- Native private-state replay synchronized two shell launchers before exec, released both into offline daemons on one private port, and reproduced a responsive serving process writing its listening banner to an inode with link count zero. The named log was absent in one run, and held only 260 bytes/no listening banner in the confirming run; unauthenticated health returned 401.\n- Verify destination as well as health. A 401 and an alive PID do not prove the daemon's ongoing logs reach the named file.\n- Repeat identity must include distinct output destinations. The exact-source Shared/Repeats replay sent the first stderr occurrence entirely into stdout's summary. Global digit folding also conflates distinct panic locations, not just volatile PIDs/counters.\n- N2's expanded launch sensor rejects bare constants and parameterized macros, but its closure exemption recognizes any nearby `launch(`/`launch_async(` text, including an unrelated helper. Describe lexical proof limits accurately.\n\nProof receipts: 13 logger unit tests, both daemon-log e2es, six spawn-site tests, native macOS clippy, private LaunchAgent rotation/restart, ten exact-source scratch controls. Adoption-identity, fresh-mode and inclusive-window mutants compiled and were caught. C25 local quick gate remained dependency/ambient-tool limited; exact-head CI was 5/5.\n\nmagicWand: encode the synchronized two-initializer fixture with both health and destination assertions. Keep original-source controls, source-extraction reproductions and full-binary native receipts explicitly separate.\n\ndifficulties: a bare shared-build timeout is minutes; use an explicit `s` suffix for seconds. Shared-target lock waits are expected; do independent work, never bypass the lock. Product worktree remained read-only and no production daemon/log was touched.\n"
+		}
+	]
+}
