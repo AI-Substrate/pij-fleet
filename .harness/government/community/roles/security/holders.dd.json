@@ -907,6 +907,16 @@
 					"seat": "pij-frequent-sawfish",
 					"to": "2026-11-20T19:57:10.903Z",
 					"why": "verdict on #299 (F248+F247), continuity from #298"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T19:57:11.311Z",
+					"harness": "copilot",
+					"harness_session": "034cb6e8-a3cf-4423-9594-b142601db300",
+					"instance_key": "299",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-environmental-deer",
+					"why": "#299 security verdict on a different model (claude-opus-5.5) after sawfish's availability block"
 				}
 			]
 		}
