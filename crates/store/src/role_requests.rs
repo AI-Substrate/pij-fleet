@@ -164,6 +164,70 @@ pub struct LimitClaim {
     pub pinned: Option<String>,
 }
 
+/// F190: the spine event that records a native-session-boundary carry,
+/// appended on the superseded seat. The carry is done once the latest one
+/// lists no `delivering` request.
+pub const CARRIED_EVENT: &str = "seat.carried";
+
+/// F190: the tombstone reason registration writes when `successor`
+/// supersedes a seat at a native session boundary in the same process. The
+/// carry's mail transaction refuses unless the old seat's row says exactly
+/// this.
+pub fn native_boundary_reason(successor: &str) -> String {
+    format!("superseded by `{successor}` at a native session boundary (same process)")
+}
+
+/// The `id` column of each row.
+fn ids(rows: Vec<sqlx::sqlite::SqliteRow>) -> Result<Vec<String>> {
+    rows.iter()
+        .map(|row| row.try_get::<String, _>("id").map_err(adapter_error))
+        .collect()
+}
+
+impl SqliteOrchestration {
+    /// F190: the requests in each (project, role) of `scope` still
+    /// `delivering` to `holder`. One indexed read per pair.
+    ///
+    /// # Errors
+    /// Any SQL failure.
+    pub async fn delivering_held_by(
+        &self,
+        holder: &SeatId,
+        scope: &[(String, String)],
+    ) -> Result<Vec<String>> {
+        require_current_schema(&self.pool).await?;
+        let mut found = Vec::new();
+        for (project, role) in scope {
+            found.extend(ids(sqlx::query(
+                "SELECT id FROM role_requests \
+                 WHERE holder = ?1 AND state = 'delivering' AND project = ?2 AND role = ?3",
+            )
+            .bind(holder.as_str())
+            .bind(project)
+            .bind(role)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?)?);
+        }
+        Ok(found)
+    }
+}
+
+/// What one F190 carry moved in its mail transaction.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CarriedMail {
+    /// The delivered, unanswered requests put back on their role's queue, for
+    /// the successor's drain to deliver again.
+    pub requests: Vec<String>,
+    /// The requests in scope still `delivering` to the old seat: left to
+    /// settle, and the carry is not done until a rerun finds none.
+    pub delivering: Vec<String>,
+    /// The pending FYIs now held for the successor.
+    pub fyis: Vec<String>,
+    /// The `seat.carried` event, for the caller to publish.
+    pub events: Vec<Event>,
+}
+
 /// One request sent to a role.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoleRequest {
@@ -826,6 +890,120 @@ impl SqliteOrchestration {
             }
             tx.commit().await.map_err(adapter_error)?;
             Ok((events, changed))
+        })
+        .await
+    }
+
+    /// F190: carry `from`'s mail to `to`, the seat that superseded it at a
+    /// native session boundary, in one transaction with its `seat.carried`
+    /// event (on `from`). The only caller is the daemon's carry; the write
+    /// refuses unless the seats table proves the boundary in the same
+    /// transaction: `from` is retired with [`native_boundary_reason`] naming
+    /// `to`, `to` is live, and both name the same launch (`spawn_id`).
+    ///
+    /// In each (project, role) of `scope` (the holdings that landed on `to`),
+    /// the delivered, unanswered requests `from` holds go back on the queue
+    /// (`holder` and `delivered_at` cleared; `checkin_at` and `escalated_at`
+    /// kept), so the successor's drain delivers them again through the
+    /// normal path. This is the only delivered-to-queued transition. Every
+    /// pending FYI held for `from` moves to `to`. A request still
+    /// `delivering` to `from` is left to settle and listed, so the caller
+    /// reruns. Each move is a state check: a rerun moves nothing twice.
+    ///
+    /// # Errors
+    /// `E-RS-CARRY-UNPROVEN` when the seats table does not prove the
+    /// boundary; any SQL failure. Nothing is moved or recorded.
+    pub async fn carry_mail_committed(
+        &self,
+        from: &SeatId,
+        to: &SeatId,
+        scope: &[(String, String)],
+        holdings: serde_json::Value,
+        at: u64,
+    ) -> Result<CarriedMail> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let (from, to, scope) = (from.clone(), to.clone(), scope.to_vec());
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let proven: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM seats AS old JOIN seats AS new ON new.id = ?2 \
+                 WHERE old.id = ?1 AND old.tombstoned_at IS NOT NULL \
+                   AND old.tombstone_reason = ?3 AND new.tombstoned_at IS NULL \
+                   AND old.spawn_id IS NOT NULL AND old.spawn_id = new.spawn_id)",
+            )
+            .bind(from.as_str())
+            .bind(to.as_str())
+            .bind(native_boundary_reason(to.as_str()))
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            if !proven {
+                tx.rollback().await.map_err(adapter_error)?;
+                return Err(PijError::GovernanceRefused {
+                    code: "E-RS-CARRY-UNPROVEN".to_string(),
+                    record: from.to_string(),
+                });
+            }
+            let mut requests = Vec::new();
+            let mut delivering = Vec::new();
+            for (project, role) in &scope {
+                requests.extend(ids(sqlx::query(
+                    "UPDATE role_requests SET state = 'queued', holder = NULL, \
+                           delivered_at = NULL \
+                         WHERE holder = ?1 AND state = 'delivered' AND answered_at IS NULL \
+                           AND project = ?2 AND role = ?3 \
+                         RETURNING id",
+                )
+                .bind(from.as_str())
+                .bind(project)
+                .bind(role)
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(adapter_error)?)?);
+                delivering.extend(ids(sqlx::query(
+                    "SELECT id FROM role_requests \
+                     WHERE holder = ?1 AND state = 'delivering' AND project = ?2 AND role = ?3",
+                )
+                .bind(from.as_str())
+                .bind(project)
+                .bind(role)
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(adapter_error)?)?);
+            }
+            requests.sort();
+            delivering.sort();
+            let mut fyis = ids(sqlx::query(
+                "UPDATE fyis SET recipient = ?2 WHERE recipient = ?1 AND state = 'pending' \
+                 RETURNING id",
+            )
+            .bind(from.as_str())
+            .bind(to.as_str())
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(adapter_error)?)?;
+            fyis.sort();
+            let mut event = Event {
+                seq: None,
+                v: wire::EVENT_VERSION,
+                at,
+                kind: CARRIED_EVENT.to_string(),
+                seat: Some(from.clone()),
+                payload: json!({
+                    "from": from, "to": to, "holdings": holdings,
+                    "requests": requests, "delivering": delivering, "fyis": fyis,
+                })
+                .to_string(),
+            };
+            event.seq = Some(append_in_transaction(&mut tx, &event).await?);
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(CarriedMail {
+                requests,
+                delivering,
+                fyis,
+                events: vec![event],
+            })
         })
         .await
     }

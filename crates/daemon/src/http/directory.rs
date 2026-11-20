@@ -700,9 +700,15 @@ async fn how_dead_seats_ended(state: &AppState, view: &mut Value) {
             .await
         {
             Ok(Some(row)) => row.tombstoned_at.map_or(Value::Null, |at| {
+                // F190: the seat a native session boundary handed it to.
+                let successor = row
+                    .tombstone_reason
+                    .as_deref()
+                    .and_then(crate::carry::boundary_successor);
                 json!({
                     "reason": row.tombstone_reason,
                     "kind": retired_kind(row.tombstone_reason.as_deref()),
+                    "successor": successor,
                     "at": at,
                 })
             }),

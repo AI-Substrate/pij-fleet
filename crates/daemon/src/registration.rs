@@ -138,12 +138,20 @@ pub(crate) struct RegistrationService {
     /// revive's relaunch), after the commit, so its roles' queues drain to
     /// it. Absent in services with no role queues.
     returned: Option<ReturnHook>,
+    /// F190: told (old, successor) for a native-session-boundary supersede,
+    /// after the commit: this registration's own, and any earlier one of this
+    /// successor whose carry has not been recorded. Absent in services that
+    /// never see one.
+    carried: Option<CarryHook>,
     /// F197: parent pids, read in-process, for the pane-holder-child brake.
     parents: ParentReader,
 }
 
 /// What a registration that brought a seat back calls (F193).
 pub(crate) type ReturnHook = Arc<dyn Fn(&SeatId) + Send + Sync>;
+
+/// What a registration calls for each (old, successor) it may carry (F190).
+pub(crate) type CarryHook = Arc<dyn Fn(&SeatId, &SeatId) + Send + Sync>;
 
 /// What a native claim carries into the locked registration: a verified
 /// spawn prebind, if one exists, and the host's ancestors as the daemon
@@ -199,6 +207,7 @@ impl RegistrationService {
             refusals: Arc::default(),
             spawn_waits: None,
             returned: None,
+            carried: None,
             parents: Arc::new(real_parent),
         }
     }
@@ -422,6 +431,12 @@ impl RegistrationService {
     /// Drain a returning seat's role queues through `hook` (F193).
     pub(crate) fn with_return_hook(mut self, hook: ReturnHook) -> Self {
         self.returned = Some(hook);
+        self
+    }
+
+    /// Carry a native-session-boundary supersede's holdings and mail (F190).
+    pub(crate) fn with_carry_hook(mut self, hook: CarryHook) -> Self {
+        self.carried = Some(hook);
         self
     }
 
@@ -1597,14 +1612,22 @@ impl RegistrationService {
                 .map_err(RegistrationError::Runtime)?;
         }
 
+        // F190: the supersede this registration makes, for the carry after the
+        // commit. A native one only, naming the same launch on both sides.
+        let boundary = predecessor
+            .as_ref()
+            .filter(|previous| {
+                native
+                    && previous.tombstoned_at.is_none()
+                    && previous.spawn_id.is_some()
+                    && previous.spawn_id == descriptor.spawn_id
+            })
+            .map(|previous| previous.id.clone());
         if let Some(mut previous) = predecessor
             && previous.tombstoned_at.is_none()
         {
             previous.tombstoned_at = Some(system_time_ms()?);
-            previous.tombstone_reason = Some(format!(
-                "superseded by `{}` at a native session boundary (same process)",
-                claim.id
-            ));
+            previous.tombstone_reason = Some(pij_store::native_boundary_reason(claim.id.as_str()));
             previous.native_extension_delivery = false;
             self.registry
                 .put_reporting_keeping_parent(previous)
@@ -1725,6 +1748,27 @@ impl RegistrationService {
             && let Some(returned) = &self.returned
         {
             returned(&descriptor.id);
+        }
+        // F190: carry this registration's supersede, and redo any earlier one
+        // of this seat whose carry was never recorded (the carry checks).
+        if let Some(carried) = &self.carried {
+            let reason = crate::carry::boundary_reason(&descriptor.id);
+            let mut olds: Vec<&SeatId> = boundary.iter().collect();
+            olds.extend(
+                seats
+                    .iter()
+                    .filter(|seat| {
+                        seat.tombstone_reason.as_deref() == Some(reason.as_str())
+                            && seat.spawn_id.is_some()
+                            && seat.spawn_id == descriptor.spawn_id
+                    })
+                    .map(|seat| &seat.id),
+            );
+            olds.sort();
+            olds.dedup();
+            for old in olds {
+                carried(old, &descriptor.id);
+            }
         }
         Ok((descriptor, binding))
     }

@@ -244,6 +244,13 @@ otherwise re-runs it only on its own events and kept showing the phantom.
 Sessions already running when the daemon writes that setting pick it up on
 their next launch.
 
+A `/clear` (or `/new`) in a seat pij spawned hands that seat's work to the new
+session's seat (F190). Its role holdings and held FYIs move. Its delivered,
+unanswered role requests are delivered again, so the cleared session's
+successor reads them. The old seat names its successor in `pij directory`.
+A seat with no launch id (one not started by `pij spawn`) carries nothing.
+Details and recovery: `docs/how/pij-rs-api.md` § Native Copilot registration.
+
 ## On a Copilot update (D-F208-2)
 
 A new Copilot CLI can change its SDK without a word, as 1.0.113 did (F208): every
