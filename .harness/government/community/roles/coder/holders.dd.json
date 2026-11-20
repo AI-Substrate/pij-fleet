@@ -1434,6 +1434,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-cultural-falcon",
 					"why": "F241 tmux fixture socket/lock leak plus a one-time safe sweep (prime); after F240"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T13:52:11.521Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f242",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F242 HIGH: daemon shutdown releases control first, bounded HTTP drain, bounce-rs sets destroy-unattached off pre-signal (prime)"
 				}
 			]
 		}
