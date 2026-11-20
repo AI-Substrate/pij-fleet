@@ -38,6 +38,9 @@ struct Facts {
     panes: HashMap<String, u32>,
     starts: HashMap<u32, u64>,
     launches: AtomicUsize,
+    /// How many more `pane_pid` reads fail, as a control read skipped while
+    /// another process attaches does (F229).
+    pane_failures: AtomicUsize,
 }
 
 impl Facts {
@@ -87,6 +90,18 @@ impl CodexBindFacts for Facts {
 
     async fn pane_pid(&self, pane: &str) -> Result<Option<u32>> {
         self.launches.fetch_add(1, Ordering::SeqCst);
+        let failing = self
+            .pane_failures
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                left.checked_sub(1)
+            })
+            .is_ok();
+        if failing {
+            return Err(pij_core::error::PijError::Adapter {
+                adapter: "tmux".to_string(),
+                message: "skipped: another pij process is attaching".to_string(),
+            });
+        }
         Ok(self.panes.get(pane).copied())
     }
 
@@ -227,6 +242,51 @@ async fn no_pending_codex_row_launches_nothing() {
         assert_eq!(binder.bind_once().await.unwrap(), 0);
     }
     assert_eq!(facts.launches(), 0);
+}
+
+/// F232: a probe whose read failed decided nothing, so the next tick probes the
+/// row again; before, it waited for the next Codex thread to start.
+#[tokio::test]
+async fn a_failed_pane_read_is_retried_on_the_next_tick() {
+    let registry = Arc::new(FakeRegistry::new());
+    registry.put(pending()).await.unwrap();
+    let facts = Arc::new(Facts::canary());
+    facts.pane_failures.store(1, Ordering::SeqCst);
+    let binder = binder(registry.clone(), facts.clone()).await;
+
+    assert_eq!(binder.bind_once().await.unwrap(), 0);
+    assert!(row(&registry).await.proc.is_none());
+    assert_eq!(
+        binder.bind_once().await.unwrap(),
+        1,
+        "no thread started, and the next tick binds"
+    );
+    assert!(row(&registry).await.proc.is_some());
+}
+
+/// A read that keeps failing is retried a bounded number of ticks, then costs
+/// nothing until a Codex thread starts.
+#[tokio::test]
+async fn a_failing_probe_is_retried_three_times_then_waits_for_a_thread() {
+    let registry = Arc::new(FakeRegistry::new());
+    registry.put(pending()).await.unwrap();
+    let facts = Arc::new(Facts::canary());
+    facts.pane_failures.store(usize::MAX, Ordering::SeqCst);
+    let binder = binder(registry.clone(), facts.clone()).await;
+
+    for _ in 0..50 {
+        assert_eq!(binder.bind_once().await.unwrap(), 0);
+    }
+    // Each probe: the child's files, then the failed pane read.
+    assert_eq!(facts.launches(), 2 * 4, "first sight and three retries");
+
+    facts.pane_failures.store(0, Ordering::SeqCst);
+    facts
+        .locks
+        .lock()
+        .unwrap()
+        .insert("01a17f41-0000-7000-8000-000000000000".to_string());
+    assert_eq!(binder.bind_once().await.unwrap(), 1, "a thread started");
 }
 
 /// A bind costs exactly three launches: the child's files, the pane's process,
