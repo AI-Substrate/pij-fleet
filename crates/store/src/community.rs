@@ -192,7 +192,7 @@ impl SqliteOrchestration {
         assigned_at: u64,
     ) -> Result<AssignmentCommit> {
         require_current_schema(&self.pool).await?;
-        let at = i64::try_from(assigned_at).map_err(|_| PijError::Adapter {
+        i64::try_from(assigned_at).map_err(|_| PijError::Adapter {
             adapter: "store/community".to_string(),
             message: format!("assigned_at={assigned_at} exceeds SQLite's signed integer range"),
         })?;
@@ -222,28 +222,77 @@ impl SqliteOrchestration {
                 seat_role: current_role(&mut tx, &seat).await?,
             };
             if let Some(role) = seat_role
-                && !is_prime(&mut tx, &seat).await?
-                && commit.seat_role.as_deref() != Some(role.as_str())
-            {
-                sqlx::query(
-                    "INSERT INTO seat_roles (seat, role, assigned_by, assigned_at) VALUES (?1, ?2, ?3, ?4) \
-                     ON CONFLICT(seat) DO UPDATE SET role=excluded.role, assigned_by=excluded.assigned_by, assigned_at=excluded.assigned_at",
+                && let Some(event) = set_seat_role(
+                    &mut tx,
+                    &seat,
+                    &role,
+                    &row.assigned_by,
+                    assigned_at,
+                    &mut commit.seat_role,
                 )
-                .bind(seat.as_str())
-                .bind(&role)
-                .bind(&row.assigned_by)
-                .bind(at)
-                .execute(&mut *tx)
-                .await
-                .map_err(adapter_error)?;
-                let actor = SeatId::from(row.assigned_by.as_str());
-                let mut event = role_event(&actor, &seat, Some(&role), assigned_at);
-                event.seq = Some(append_in_transaction(&mut tx, &event).await?);
+                .await?
+            {
                 commit.events.push(event);
-                commit.seat_role = Some(role);
             }
             tx.commit().await.map_err(adapter_error)?;
             Ok(commit)
+        })
+        .await
+    }
+
+    /// F190: one carried project's index in ONE transaction, so no cut leaves
+    /// the old seat's holdings ended without the successor's: each of `ends`
+    /// closes a holding (as [`Self::end_assignments`]), and each of `starts`
+    /// opens one with its seat role (as [`Self::record_assignment_committed`]).
+    /// A start the index already has is left as it is, so a rerun writes
+    /// nothing new. Hold the bus's publication boundary around this call.
+    ///
+    /// # Errors
+    /// `E-RS-ARG` when a start's seat is not live; any SQL failure. Nothing is
+    /// written then.
+    pub async fn carry_assignments_committed(
+        &self,
+        ends: &[Assignment],
+        starts: &[(Assignment, String)],
+        assigned_at: u64,
+    ) -> Result<Vec<Event>> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let (ends, starts) = (ends.to_vec(), starts.to_vec());
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            for end in &ends {
+                end_in(&mut tx, end).await?;
+            }
+            let mut events = Vec::new();
+            for (row, role) in &starts {
+                let seat = SeatId::from(row.seat.as_str());
+                if live_seat(&mut tx, &seat).await?.is_none() {
+                    tx.rollback().await.map_err(adapter_error)?;
+                    return Err(PijError::GovernanceRefused {
+                        code: "E-RS-ARG".to_string(),
+                        record: row.seat.clone(),
+                    });
+                }
+                if !insert(&mut tx, row).await? {
+                    continue;
+                }
+                let mut current = current_role(&mut tx, &seat).await?;
+                if let Some(event) = set_seat_role(
+                    &mut tx,
+                    &seat,
+                    role,
+                    &row.assigned_by,
+                    assigned_at,
+                    &mut current,
+                )
+                .await?
+                {
+                    events.push(event);
+                }
+            }
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(events)
         })
         .await
     }
@@ -273,22 +322,7 @@ impl SqliteOrchestration {
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
             for end in &ends {
-                sqlx::query(
-                    "UPDATE community_assignments SET to_at = ?6, released_by = ?7, release_why = ?8, end_pending = ?9 \
-                     WHERE project = ?1 AND role = ?2 AND instance = ?3 AND seat = ?4 AND from_at = ?5",
-                )
-                .bind(&end.project)
-                .bind(&end.role)
-                .bind(&end.instance)
-                .bind(&end.seat)
-                .bind(&end.from)
-                .bind(&end.to)
-                .bind(&end.released_by)
-                .bind(&end.release_why)
-                .bind(i64::from(end.end_pending))
-                .execute(&mut *tx)
-                .await
-                .map_err(adapter_error)?;
+                end_in(&mut tx, end).await?;
             }
             tx.commit().await.map_err(adapter_error)
         })
@@ -432,6 +466,63 @@ async fn insert(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, row: &Assignment) 
     .await
     .map_err(adapter_error)?;
     Ok(done.rows_affected() > 0)
+}
+
+/// Record one holding's end, matched by project, role, instance, seat and
+/// `from`.
+async fn end_in(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, end: &Assignment) -> Result<()> {
+    sqlx::query(
+        "UPDATE community_assignments SET to_at = ?6, released_by = ?7, release_why = ?8, end_pending = ?9 \
+         WHERE project = ?1 AND role = ?2 AND instance = ?3 AND seat = ?4 AND from_at = ?5",
+    )
+    .bind(&end.project)
+    .bind(&end.role)
+    .bind(&end.instance)
+    .bind(&end.seat)
+    .bind(&end.from)
+    .bind(&end.to)
+    .bind(&end.released_by)
+    .bind(&end.release_why)
+    .bind(i64::from(end.end_pending))
+    .execute(&mut **tx)
+    .await
+    .map_err(adapter_error)?;
+    Ok(())
+}
+
+/// Set `seat`'s role to `role` (ruling C1) unless it is a prime or `current`
+/// already says so; the event when it changed. `current` follows the write.
+async fn set_seat_role(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    seat: &SeatId,
+    role: &str,
+    assigned_by: &str,
+    assigned_at: u64,
+    current: &mut Option<String>,
+) -> Result<Option<Event>> {
+    if is_prime(tx, seat).await? || current.as_deref() == Some(role) {
+        return Ok(None);
+    }
+    let at = i64::try_from(assigned_at).map_err(|_| PijError::Adapter {
+        adapter: "store/community".to_string(),
+        message: format!("assigned_at={assigned_at} exceeds SQLite's signed integer range"),
+    })?;
+    sqlx::query(
+        "INSERT INTO seat_roles (seat, role, assigned_by, assigned_at) VALUES (?1, ?2, ?3, ?4) \
+         ON CONFLICT(seat) DO UPDATE SET role=excluded.role, assigned_by=excluded.assigned_by, assigned_at=excluded.assigned_at",
+    )
+    .bind(seat.as_str())
+    .bind(role)
+    .bind(assigned_by)
+    .bind(at)
+    .execute(&mut **tx)
+    .await
+    .map_err(adapter_error)?;
+    let actor = SeatId::from(assigned_by);
+    let mut event = role_event(&actor, seat, Some(role), assigned_at);
+    event.seq = Some(append_in_transaction(tx, &event).await?);
+    *current = Some(role.to_string());
+    Ok(Some(event))
 }
 
 fn assignment(row: &sqlx::sqlite::SqliteRow) -> Result<Assignment> {

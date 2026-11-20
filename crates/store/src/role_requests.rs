@@ -899,57 +899,78 @@ impl SqliteOrchestration {
         .await
     }
 
-    /// F190: carry `from`'s mail to `to`, the seat that superseded it at a
-    /// native session boundary, in one transaction with its `seat.carried`
-    /// event (on `from`). The only caller is the daemon's carry; the write
-    /// refuses unless the seats table proves the boundary in the same
-    /// transaction: `from` is retired with [`native_boundary_reason`] naming
-    /// `to`, `to` is live, and both name the same launch (`spawn_id`).
+    /// F190: carry `from`'s mail to the live end of its native-session-boundary
+    /// `chain` (each successor in order, the last one live), in one
+    /// transaction with its `seat.carried` event (on `from`, naming the
+    /// `intent` it completes). The only caller is the daemon's carry; the
+    /// write refuses unless the seats table proves every hop in the same
+    /// transaction: each seat before the end is retired with
+    /// [`native_boundary_reason`] naming the next, every seat names `from`'s
+    /// launch (`spawn_id`, present), and the end is live.
     ///
-    /// In each (project, role) of `scope` (the holdings that landed on `to`),
-    /// the delivered, unanswered requests `from` holds go back on the queue
-    /// (`holder` and `delivered_at` cleared; `checkin_at` and `escalated_at`
-    /// kept), so the successor's drain delivers them again through the
-    /// normal path. This is the only delivered-to-queued transition. Every
-    /// pending FYI held for `from` moves to `to`. A request still
-    /// `delivering` to `from` is left to settle and listed, so the caller
-    /// reruns. Each move is a state check: a rerun moves nothing twice.
+    /// In each (project, role) of `scope`, the delivered, unanswered requests
+    /// `from` holds go back on the queue (`holder` and `delivered_at` cleared;
+    /// `checkin_at` and `escalated_at` kept), so the drain of whoever holds
+    /// the role delivers them again through the normal path. This is the only
+    /// delivered-to-queued transition. Every pending FYI held for `from` moves
+    /// to the end. A request still `delivering` to `from` is left to settle
+    /// and listed, so the caller reruns. Each move is a state check: a rerun
+    /// moves nothing twice.
     ///
     /// # Errors
-    /// `E-RS-CARRY-UNPROVEN` when the seats table does not prove the
-    /// boundary; any SQL failure. Nothing is moved or recorded.
+    /// `E-RS-CARRY-UNPROVEN` when the seats table does not prove the chain;
+    /// any SQL failure. Nothing is moved or recorded.
     pub async fn carry_mail_committed(
         &self,
         from: &SeatId,
-        to: &SeatId,
+        chain: &[SeatId],
         scope: &[(String, String)],
         holdings: serde_json::Value,
+        intent: u64,
         at: u64,
     ) -> Result<CarriedMail> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
-        let (from, to, scope) = (from.clone(), to.clone(), scope.to_vec());
+        let (from, chain, scope) = (from.clone(), chain.to_vec(), scope.to_vec());
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
-            let proven: bool = sqlx::query_scalar(
-                "SELECT EXISTS (SELECT 1 FROM seats AS old JOIN seats AS new ON new.id = ?2 \
-                 WHERE old.id = ?1 AND old.tombstoned_at IS NOT NULL \
-                   AND old.tombstone_reason = ?3 AND new.tombstoned_at IS NULL \
-                   AND old.spawn_id IS NOT NULL AND old.spawn_id = new.spawn_id)",
-            )
-            .bind(from.as_str())
-            .bind(to.as_str())
-            .bind(native_boundary_reason(to.as_str()))
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(adapter_error)?;
-            if !proven {
+            let mut seats = Vec::with_capacity(chain.len() + 1);
+            for id in std::iter::once(&from).chain(&chain) {
+                let row: Option<(Option<i64>, Option<String>, Option<String>)> = sqlx::query_as(
+                    "SELECT tombstoned_at, tombstone_reason, spawn_id FROM seats WHERE id = ?1",
+                )
+                .bind(id.as_str())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+                seats.push(row);
+            }
+            let launch = seats[0].as_ref().and_then(|(_, _, launch)| launch.clone());
+            let to = chain.last().cloned();
+            let proven = to.is_some()
+                && launch.is_some()
+                && seats.iter().all(|seat| {
+                    seat.as_ref()
+                        .is_some_and(|(_, _, spawn_id)| *spawn_id == launch)
+                })
+                && seats.windows(2).zip(&chain).all(|(pair, next)| {
+                    pair[0].as_ref().is_some_and(|(retired, reason, _)| {
+                        retired.is_some()
+                            && reason.as_deref()
+                                == Some(native_boundary_reason(next.as_str()).as_str())
+                    })
+                })
+                && seats
+                    .last()
+                    .and_then(Option::as_ref)
+                    .is_some_and(|(retired, _, _)| retired.is_none());
+            let Some(to) = to.filter(|_| proven) else {
                 tx.rollback().await.map_err(adapter_error)?;
                 return Err(PijError::GovernanceRefused {
                     code: "E-RS-CARRY-UNPROVEN".to_string(),
                     record: from.to_string(),
                 });
-            }
+            };
             let mut requests = Vec::new();
             let mut delivering = Vec::new();
             for (project, role) in &scope {
@@ -996,8 +1017,9 @@ impl SqliteOrchestration {
                 kind: CARRIED_EVENT.to_string(),
                 seat: Some(from.clone()),
                 payload: json!({
-                    "from": from, "to": to, "holdings": holdings,
-                    "requests": requests, "delivering": delivering, "fyis": fyis,
+                    "from": from, "to": to, "chain": chain, "intent": intent,
+                    "holdings": holdings, "requests": requests, "delivering": delivering,
+                    "fyis": fyis,
                 })
                 .to_string(),
             };
@@ -1040,15 +1062,17 @@ impl SqliteOrchestration {
     /// statement, `holder` must be live and hold the request's role now (the
     /// instance it names, or any for an instance-less request), so a drain
     /// scheduled before a release can never deliver to the old holder
-    /// (security review of #129, S1). `false` when it is no longer queued,
-    /// another drain won, or `holder` does not hold the role now; the request
-    /// then stays queued.
+    /// (security review of #129, S1). An answered request is never claimed:
+    /// one F190 put back on the queue and its old session then answered is
+    /// done, not delivered again (review of #279). `false` when it is no
+    /// longer queued, another drain won, it is answered, or `holder` does not
+    /// hold the role now; the request then stays queued.
     pub async fn claim_role_request(&self, id: &str, holder: &str) -> Result<bool> {
         self.transition(
             id,
             holder,
             "UPDATE role_requests SET state = 'delivering', holder = ?2 \
-             WHERE id = ?1 AND state = 'queued' \
+             WHERE id = ?1 AND state = 'queued' AND answered_at IS NULL \
              AND EXISTS (SELECT 1 FROM seats WHERE seats.id = ?2 AND seats.tombstoned_at IS NULL) \
              AND EXISTS (SELECT 1 FROM community_assignments AS held \
                  WHERE held.project = role_requests.project AND held.role = role_requests.role \

@@ -2238,13 +2238,17 @@ impl DirectoryService {
         ends
     }
 
-    /// F190: carry `from`'s open holdings in `project` to `to`, the seat that
-    /// superseded it at a native session boundary, in ONE holders commit: each
-    /// of `from`'s open rows ends (`carried to <to>`) and `to` gets the same
-    /// role and instance, unless it already holds it. Idempotent by state: a
-    /// rerun after the commit landed (a crash before the index caught up)
-    /// finds the files carried, writes nothing, and brings the index level
-    /// with them. Answers the roles carried and the commit, if one was made.
+    /// F190: carry `from`'s holdings in `project` named by `scope` (each a
+    /// role and instance the carry's intent recorded) to `to`, the live end
+    /// of its native-session-boundary chain, in ONE holders commit: each of
+    /// `from`'s rows still open ends (`carried to <to>`) and `to` gets the
+    /// same role and instance, unless it already holds it. The rows come from
+    /// the holders files, never from the index, so a rerun after any cut
+    /// (the commit landed, the index did not, or only part of it) finds them
+    /// and brings the index level in one transaction (R279-001). A row
+    /// `from` gave up another way, or carried to an intermediate seat of the
+    /// chain, is left to that seat. Answers the roles carried and the commit,
+    /// if one was made.
     ///
     /// # Errors
     /// Any writer refusal; nothing is written and `from` keeps its holdings.
@@ -2254,19 +2258,12 @@ impl DirectoryService {
         repo: PathBuf,
         from: &SeatId,
         to: &SeatDescriptor,
+        scope: &[(String, String)],
     ) -> Result<(Vec<String>, Option<String>), Refusal> {
-        let open: Vec<Assignment> = self
-            .store
-            .open_assignments(from.as_str())
-            .await
-            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
-            .into_iter()
-            .filter(|row| row.project == project)
-            .collect();
-        if open.is_empty() {
+        if scope.is_empty() {
             return Ok((Vec::new(), None));
         }
-        let mut roles: Vec<String> = open.iter().map(|row| row.role.clone()).collect();
+        let mut roles: Vec<String> = scope.iter().map(|(role, _)| role.clone()).collect();
         roles.sort();
         roles.dedup();
         let pending = self.pending(project).await?;
@@ -2276,15 +2273,17 @@ impl DirectoryService {
         );
         let found: Arc<std::sync::Mutex<CarryRows>> = Arc::default();
         let sink = Arc::clone(&found);
-        let (project_id, from_id, to_seat, wanted) = (
+        let (project_id, from_id, to_seat, wanted, scope) = (
             project.to_string(),
             from.to_string(),
             to.clone(),
             roles.clone(),
+            scope.to_vec(),
         );
         let outcome = self
             .commit(repo, message, move |root, built| {
                 let to_id = to_seat.id.to_string();
+                let carried_to = format!("carried to {to_id}");
                 let now = holders::now();
                 let mut rows = CarryRows::default();
                 let mut changed = Vec::new();
@@ -2294,28 +2293,34 @@ impl DirectoryService {
                     built
                         .landed
                         .extend(holders::apply_ends(&mut held, &pending));
-                    for index in open.iter().filter(|row| &row.role == role) {
-                        let Some(row) = held.iter_mut().find(|row| {
-                            row.seat == from_id
-                                && row.instance == index.instance
-                                && row.from == index.from
-                        }) else {
+                    for (_, instance) in scope.iter().filter(|(scoped, _)| scoped == role) {
+                        // `from`'s latest row for this key, as the files say.
+                        let Some(index) = held
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, row)| row.seat == from_id && &row.instance == instance)
+                            .max_by(|(_, a), (_, b)| a.from.cmp(&b.from))
+                            .map(|(index, _)| index)
+                        else {
                             continue;
                         };
+                        let row = &mut held[index];
                         if row.to.is_none() {
                             row.to = Some(now.clone());
                             row.released_by = Some(to_id.clone());
-                            row.release_why = Some(format!("carried to {to_id}"));
+                            row.release_why = Some(carried_to.clone());
                             changed.push(role.clone());
+                        } else if row.release_why.as_deref() != Some(carried_to.as_str()) {
+                            continue;
                         }
-                        rows.ended.push(row.clone());
-                        let instance = index.instance.clone();
-                        if let Some(mine) = held.iter().find(|row| open_for(row, &to_id, &instance))
+                        let template = row.clone();
+                        rows.ended.push(template.clone());
+                        if let Some(mine) = held.iter().find(|row| open_for(row, &to_id, instance))
                         {
                             rows.started.push(mine.clone());
                             continue;
                         }
-                        let mut new = index.clone();
+                        let mut new = template;
                         new.seat = to_id.clone();
                         new.harness = Some(to_seat.harness.to_string());
                         new.session = to_seat.harness_session.clone();
@@ -2374,32 +2379,28 @@ impl DirectoryService {
             Err(refusal) if refusal.code == super::E_NOTHING_TO_WRITE => None,
             Err(refusal) => return Err(refusal),
         };
-        // The index follows the files: ends are idempotent, and a start the
-        // index already has is left as it is.
-        self.store
-            .end_assignments(&rows.ended)
+        // The index follows the files in ONE transaction: no cut leaves the
+        // old holdings ended without the successor's (review of #279), and a
+        // start the index already has is left as it is.
+        let store = self.store.clone();
+        let starts: Vec<(Assignment, String)> = rows
+            .started
+            .into_iter()
+            .map(|row| {
+                let role = seat_role_for(&row.role).to_string();
+                (row, role)
+            })
+            .collect();
+        let at = system_ms();
+        self.event_bus
+            .publish_committed_batch(async move {
+                let events = store
+                    .carry_assignments_committed(&rows.ended, &starts, at)
+                    .await?;
+                Ok((events, ()))
+            })
             .await
             .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
-        for row in rows.started {
-            let store = self.store.clone();
-            let seat_role = seat_role_for(&row.role).to_string();
-            let at = system_ms();
-            match self
-                .event_bus
-                .publish_committed_batch(async move {
-                    let commit = store
-                        .record_assignment_committed(&row, Some(&seat_role), at)
-                        .await?;
-                    Ok((commit.events.clone(), commit))
-                })
-                .await
-            {
-                Ok(_) => {}
-                Err(pij_core::error::PijError::GovernanceRefused { code, .. })
-                    if code == "E-RS-DIRECTORY-HELD" => {}
-                Err(error) => return Err(Refusal::new("E-RS-STORE", error.to_string())),
-            }
-        }
         Ok((roles, commit))
     }
 
