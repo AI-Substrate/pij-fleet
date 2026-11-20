@@ -297,7 +297,13 @@ impl Holders {
 /// ([`own_socket_inodes`]), as macOS's `lsof -u <uid>` filters.
 #[cfg(target_os = "linux")]
 fn bound_paths() -> Result<Vec<Bound>, String> {
-    let own = own_socket_inodes(Path::new("/proc"), pij_core::program::real_uid())?;
+    linux_bound_paths(None)
+}
+
+/// [`bound_paths`] on Linux, of every process of this user's, or of `only`.
+#[cfg(target_os = "linux")]
+fn linux_bound_paths(only: Option<u32>) -> Result<Vec<Bound>, String> {
+    let own = own_socket_inodes(Path::new("/proc"), pij_core::program::real_uid(), only)?;
     let table = fs::read("/proc/net/unix").map_err(|error| format!("/proc/net/unix: {error}"))?;
     Ok(parse_proc_net_unix(&table)?
         .into_iter()
@@ -325,9 +331,14 @@ fn bound_paths() -> Result<Vec<Bound>, String> {
 /// a link in it can't be read makes the read unknown. A process gone
 /// mid-scan (`/proc/<pid>` not found) is skipped: its descriptors closed
 /// with it, so any socket only it held is no longer held, and one it shared
-/// is found through the process it shared it with.
+/// is found through the process it shared it with. `only` keeps to one
+/// process (the tests' own).
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn own_socket_inodes(proc: &Path, uid: u32) -> Result<HashMap<u64, u32>, String> {
+fn own_socket_inodes(
+    proc: &Path,
+    uid: u32,
+    only: Option<u32>,
+) -> Result<HashMap<u64, u32>, String> {
     let gone = |error: &io::Error| error.kind() == io::ErrorKind::NotFound;
     let mut own = HashMap::new();
     let entries = fs::read_dir(proc).map_err(|error| format!("{}: {error}", proc.display()))?;
@@ -340,6 +351,9 @@ fn own_socket_inodes(proc: &Path, uid: u32) -> Result<HashMap<u64, u32>, String>
         else {
             continue;
         };
+        if only.is_some_and(|only| only != pid) {
+            continue;
+        }
         let dir = entry.path();
         let uids = match fs::read_to_string(dir.join("status")) {
             Ok(status) => status
@@ -689,7 +703,14 @@ mod tests {
     /// alone: another process's socket elsewhere on the machine that won't
     /// stat (F248) must not decide these tests.
     fn own_holders() -> Holders {
-        match super::bound_paths() {
+        // On Linux only this process is scanned: a process of the test
+        // runner's whose fds can't be read (non-dumpable) would block a read
+        // of every process, rightly, and must not decide these tests.
+        #[cfg(target_os = "linux")]
+        let read = super::linux_bound_paths(Some(std::process::id()));
+        #[cfg(not(target_os = "linux"))]
+        let read = super::bound_paths();
+        match read {
             Ok(bound) => Holders::of_bound(
                 &bound
                     .into_iter()
@@ -1128,7 +1149,7 @@ mod tests {
         )
         .expect("chmod");
         fs::create_dir(proc.join("self-ish")).expect("not a pid");
-        let own = own_socket_inodes(&proc, uid).expect("read");
+        let own = own_socket_inodes(&proc, uid, None).expect("read");
         assert_eq!(own.get(&111), Some(&10), "ours: {own:?}");
         assert_eq!(own.get(&222), None, "another user's: {own:?}");
         assert_eq!(
@@ -1149,13 +1170,13 @@ mod tests {
             fs::set_permissions(proc.join(pid).join("fd"), fs::Permissions::from_mode(0o000))
                 .expect("chmod");
         }
-        assert!(own_socket_inodes(&proc, uid).is_ok());
+        assert!(own_socket_inodes(&proc, uid, None).is_ok());
         fs::set_permissions(
             proc.join("10").join("fd"),
             fs::Permissions::from_mode(0o000),
         )
         .expect("chmod");
-        let unreadable = own_socket_inodes(&proc, uid);
+        let unreadable = own_socket_inodes(&proc, uid, None);
         assert!(unreadable.is_err(), "{unreadable:?}");
         for pid in ["10", "11", "13"] {
             fs::set_permissions(proc.join(pid).join("fd"), fs::Permissions::from_mode(0o700))
@@ -1164,7 +1185,10 @@ mod tests {
         // A process gone mid-scan (its status and fd directory vanish).
         fs::remove_dir_all(proc.join("12")).expect("gone");
         fs::create_dir(proc.join("12")).expect("an empty husk");
-        assert_eq!(own_socket_inodes(&proc, uid).expect("read").get(&333), None);
+        assert_eq!(
+            own_socket_inodes(&proc, uid, None).expect("read").get(&333),
+            None
+        );
         let _ = fs::remove_dir_all(&proc);
     }
 
