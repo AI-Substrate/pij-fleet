@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f8d2-f7e6-7d31-808f-21cf4a903127",
+				"date": "2026-11-20",
+				"head": "46ee6d5c27ad3e2a1f6e0f148e9ed563c25d6a3a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:291",
+				"writer": "pij-continued-wombat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 291",
+					"exit_code": 0,
+					"log": "FINAL at 46ee6d5c27ad3e2a1f6e0f148e9ed563c25d6a3a; all five latest CI checks pass; clean detached worktree"
+				},
+				{
+					"command": "gh run view 44731204924 --job 136271117883 --log",
+					"exit_code": 0,
+					"log": "Exact-head Node 24 CI: release-build.test.ts 8/8; TS suite 2382 passed, 7 skipped"
+				},
+				{
+					"command": "harness checks --json",
+					"exit_code": 1,
+					"log": "Same-head peer receipt from pij-elated-ermine, message 3b535541-53a8-4d17-825c-b27e3674e918, completed 2026-11-20T12:09:09Z: rust (macOS clippy plus workspace tests), route-inventory, smoke, copilot-native, copilot-sdk and pij-skill PASS; eight dependency/tooling failures under C25. Own duplicate gate cancelled."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #291 review\n\nExact head: `46ee6d5c27ad3e2a1f6e0f148e9ed563c25d6a3a`; base: `74d1c63a`.\nRequest: `01a1f8d2-f7e6-7d31-808f-21cf4a903127`.\n\n**PASS WITH NOTES:** no correctness or security blocker in the five-file diff. Notes concern the C25/dependency-limited local gate, not a requested code change. Review was read-only.\n\n## Identity rendering\n\n`crates/daemon/src/pa_watchdog.rs:1361-1408` keeps the existing comparison and closed parsing intact and labels both sides' commit and extension tree explicitly. Valid seat commits retain `+dirty`; a valid `hash:` source is labelled `source hash:`, not commit. An invalid prefix contributes only its byte length; an invalid tree or oversized report is not compared. The daemon commit is `Services::build_commit`, initialized from the compile-time stamp in `crates/daemon/src/lib.rs:78,699` and also used by ping in `crates/daemon/src/http/mod.rs:904`. Missing daemon commit renders `an unstamped commit`.\n\nThe digest regression in `crates/daemon/src/pa_watchdog_tests.rs:1870-2041` pins both halves for Copilot and OMP, the unstamped case and hostile-prefix fallback. Parser tests retain the hash, dirty, length and delimiter coverage. No tree identifier is relabelled as a commit.\n\n## Signal guard proof\n\nThe changed test waits for the fresh fake-build started marker, asserts one snapshot before signalling, asserts it remains while the build has not been released, then releases the build and requires the numeric signal-specific exit and empty snapshot set.\n\nA dependency-free probe reused this head's committed fixture and exact signal-test body, with Node's TypeScript stripping and `node:assert` replacing only the Vitest assertions. This is supplemental behavior/mutation evidence, not a claim that local Vitest ran.\n\n| Case | Result |\n| --- | --- |\n| HUP baseline | Passed; exit 129, snapshot retained then removed |\n| INT baseline | Passed; exit 130, snapshot retained then removed |\n| TERM baseline | Passed; exit 143, snapshot retained then removed |\n| Remove only HUP handler | Rejected at the running-snapshot assertion: 0 rather than 1 |\n| Background shared-build and `wait $!` | Rejected at the same running-snapshot assertion: 0 rather than 1 |\n\nMutants affected private copies only. All owned fixture processes and directories were drained and cleaned. No installation, symlink, deployed binary, daemon, foreign process or review-worktree source was changed.\n\nProbe inputs:\n`release-build.test.ts` SHA-256 `7a1ecf911f766dd02ecdda50d6cd9d4ade6f226244556a266a825aba9f039e43`;\n`release-build.sh` SHA-256 `6d4f1785b7284fc759eba79edddee8f40f536152bff60454845a9ac44b1a563b`.\n\n## Security\n\nIndependent scoped security review found no vulnerabilities. `pa_watchdog.rs:1414-1452` accepts only closed lowercase ASCII hex, `hash:`, `+dirty` and bounded `+`-joined tree syntax. Seat reports cannot print controls, whitespace or injected delimiters in these identity fields. The daemon stamp is not seat-reported input; malicious same-user build manipulation is outside C33, while its retained safe-rendering guards remain intact.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | Reviewed diff | - | None found | - |\n\nThe additions to `docs/difficulties.md:205` and `docs/retros/pr288-review.md:1-11` contain no secrets, home paths, private repository identities or private transcript excerpts (C21).\n\n## Cost and scope\n\nProduction change is render-only: no new loop, poll, timer, request, read or process launch; zero added steady-state launches per second and no added per-seat polling. The changed fake build is test-only: at most 600 sleep launches at a nominal 50 ms interval (at most 20/s per active fake build), ending when the test releases it. It is not a daemon launch site. No destructive production behavior or policy changes.\n\n## Verification and limits\n\n`just pr-freeze 291` reported FINAL at the exact head, with all five latest CI checks passing.\nExact-head CI run `44731204924`, Node 24 job `136271117883`, reports `release-build.test.ts` 8/8 passing and the TS suite 2382 passed, 7 skipped. Linux Rust lint/test jobs also passed. Local boot reports NOT-READY because this C25 review worktree has no `node_modules`; dependencies were not installed or linked.\n\nSame-head local full-gate receipt reused from pij-elated-ermine, message `3b535541-53a8-4d17-825c-b27e3674e918`: `harness checks --json` completed at `2026-11-20T12:09:09Z`, exit 1 for eight dependency/tooling stages. Its Rust sensor (`just rust-check`: current lockfile, fmt, macOS clippy and workspace tests including pa_watchdog) passed, code 0. Route inventory, smoke, Copilot native contracts, Copilot SDK and pij-skill also passed. This is the peer's full-envelope receipt, not my own per-test stdout transcript.\n\nI invoked `harness checks --json` locally; after receiving that completed same-head receipt, I cancelled only my redundant gate rather than run the Rust gate twice. The local full gate is not green and this verdict does not assert independent ship readiness. Exact-head CI supplies the TS proof under C25. `git diff --check 74d1c63a..HEAD` passed; a final `just pr-freeze 291` again reported FINAL with a clean detached review worktree.\n\n## Review retro\n\n**magicWand:** emit stage-start/finish progress on stderr while retaining the harness gate's one final JSON envelope. A dependency-free reviewer should not have to inspect process or lock-owner state to distinguish an active stage from a shared-target wait. The signal proof already belongs in the existing test, not a new framework.\n\n**difficulties:** C25 prevents local Vitest proof; the shared target serializes concurrent reviewers. The observations and supplemental signal probe are preserved in session artifacts. A redundant targeted Rust command was cancelled while it was only waiting for the lock, because the full harness gate already includes that proof. No other seat's job was touched.\n\nThe reviewer holding is retained until merge; this verdict does not release it.\n"
+		}
+	]
+}
