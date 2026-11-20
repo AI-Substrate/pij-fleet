@@ -1366,6 +1366,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-forthcoming-silkworm",
 					"why": "C34 follow-ups batch (ii), PR #289"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T10:49:04.556Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f237",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F237 tmux server death in fixture show-options after F229: find the lock-bypassing path, read-only first (prime ruling)"
 				}
 			]
 		}
