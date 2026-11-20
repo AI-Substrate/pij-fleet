@@ -9,10 +9,12 @@
 //!
 //! A prompt is matched only on whole rows, after the box drawing around them
 //! is stripped: a heading row (Copilot's question, Claude's `Accessing
-//! workspace:`) and the menu's own rows below it. Prose that quotes a row
-//! sits on a row with other words, so it never matches. The refusal's
-//! guidance, like `--trust-folder`'s key, comes from the row highlighted on
-//! the screen, never from the prompt's default.
+//! workspace:`) and the menu's own rows below it. A pane shorter than
+//! Claude's prompt scrolls the heading off the top (a live 60x12 capture), so
+//! for Claude the footer row below the menu anchors it instead. Prose that
+//! quotes a row sits on a row with other words, so it never matches. The
+//! refusal's guidance, like `--trust-folder`'s key, comes from the row
+//! highlighted on the screen, never from the prompt's default.
 //!
 //! **Adding a harness.** Capture the prompt's real screen (`tmux
 //! capture-pane -p -t <pane>`), with its default highlight and with the
@@ -30,6 +32,9 @@ struct Chrome {
     label: &'static str,
     /// A row the options must follow: Copilot's question, Claude's heading.
     heading: &'static str,
+    /// A row the options must precede, which anchors them when a short pane
+    /// has scrolled the heading away. Copilot keeps its question in view.
+    footer: Option<&'static str>,
     /// The menu's rows, top to bottom, without the highlight marker.
     options: &'static [&'static str],
     /// How many of `options` must be visible. Copilot's menu scrolls in a
@@ -48,6 +53,7 @@ const PROMPTS: &[Chrome] = &[
         harness: Harness::Copilot,
         label: "Copilot's folder-trust prompt",
         heading: "Do you trust the files in this folder?",
+        footer: None,
         options: &[
             "1. Yes",
             "2. Yes, and remember this folder for future sessions",
@@ -61,6 +67,7 @@ const PROMPTS: &[Chrome] = &[
         harness: Harness::Claude,
         label: "Claude's folder-trust prompt",
         heading: "Accessing workspace:",
+        footer: Some("Enter to confirm · Esc to cancel"),
         options: &["No, exit", "Yes, I trust this folder"],
         shown: 2,
         trust: 1,
@@ -144,10 +151,16 @@ impl TrustPrompt {
 pub fn folder_trust_prompt(harness: Harness, screen: &str) -> Option<TrustPrompt> {
     let chrome = PROMPTS.iter().find(|chrome| chrome.harness == harness)?;
     let rows: Vec<&str> = screen.lines().map(unboxed).collect();
-    let start = rows.iter().position(|row| *row == chrome.heading)? + 1;
+    let menu = match rows.iter().position(|row| *row == chrome.heading) {
+        Some(heading) => &rows[heading + 1..],
+        None => {
+            let footer = chrome.footer?;
+            &rows[..rows.iter().rposition(|row| *row == footer)?]
+        }
+    };
     let mut shown = 0;
     let mut highlighted = None;
-    for row in &rows[start..] {
+    for row in menu {
         let (marked, text) = match row.strip_prefix(HIGHLIGHT) {
             Some(rest) => (true, rest.trim_start()),
             None => (false, *row),
@@ -276,6 +289,29 @@ mod tests {
         );
     }
 
+    /// R264's C34 follow-up, on live captures: a 60x12 pane scrolls Claude's
+    /// heading off the top, and the footer row below the menu anchors it; a
+    /// 34-column pane wraps the prose and keeps every row the parser reads.
+    /// Both still move Down from `No, exit`.
+    #[test]
+    fn claude_trust_prompt_matches_in_a_short_or_narrow_pane() {
+        let short = fixture("claude-2.1.329-folder-trust-short.txt");
+        assert!(
+            !short.contains("Accessing workspace:"),
+            "the heading is gone"
+        );
+        for name in [
+            "claude-2.1.329-folder-trust-short.txt",
+            "claude-2.1.329-folder-trust-narrow.txt",
+        ] {
+            assert_eq!(
+                answer(Harness::Claude, name).0,
+                Some(MenuKey::Down),
+                "{name}"
+            );
+        }
+    }
+
     /// No prompt, no match: each harness's normal screens, the other
     /// harness's prompt, harnesses with no row, and prose quoting the rows.
     #[test]
@@ -299,9 +335,14 @@ mod tests {
                       ● Claude shows No, exit and Yes, I trust this folder";
         assert_eq!(folder_trust_prompt(Harness::Copilot, quoted), None);
         assert_eq!(folder_trust_prompt(Harness::Claude, quoted), None);
-        // Claude's menu rows alone, without its heading above them.
+        // Claude's menu rows alone, with neither its heading above them nor
+        // its footer below.
         let menu = "❯ No, exit\n  Yes, I trust this folder";
         assert_eq!(folder_trust_prompt(Harness::Claude, menu), None);
+        // The footer above the menu anchors nothing.
+        let footer_first =
+            "Enter to confirm · Esc to cancel\n❯ No, exit\n  Yes, I trust this folder";
+        assert_eq!(folder_trust_prompt(Harness::Claude, footer_first), None);
     }
 
     /// A prompt whose highlighted row has scrolled out of view names no key,

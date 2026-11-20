@@ -643,27 +643,33 @@ async fn poll_once<F: Future + ?Sized>(mut future: std::pin::Pin<&mut F>) -> boo
 /// Review of #167, F002: a caller dropped at any point of `admit_control`
 /// never leaves a compact admitted without its row.
 ///
-/// The drop points are set by state, not by poll count (F228). A sweep of
-/// 1..=64 polls used the count as a clock: on a slow runner the row's SQLite
-/// commit outlasted all 64, so every case dropped before the admission began
-/// and none could witness one in flight. Now an early drop is a few polls in;
-/// a late one waits for the row to land, then polls `after_row` more times.
-/// One poll after the row starts the admission's owned task, so the in-flight
-/// witness no longer depends on speed. `flush` waits for that task, where a
-/// fixed sleep used to guess how long it takes.
+/// The drop points are set by state, not by poll count (F228, F235). Early
+/// drops are a few polls in; one drops as the row lands; and one drops the
+/// moment the admission's owned task exists. That last one used to be "one or
+/// two polls after the row", polled back to back: on a loaded runner the row's
+/// write had committed but not yet answered its caller, so those polls made no
+/// progress, every case dropped before the admission began, and none could
+/// witness one in flight (#285's CI). Now the caller is polled only as its own
+/// waker asks, and dropped when the delivery service shows the admission task;
+/// on this current-thread runtime that task cannot run, let alone answer,
+/// inside the poll that spawned it, so the caller is never finished there.
+/// `flush` waits for that task, where a fixed sleep used to guess.
 #[tokio::test]
 async fn a_dropped_caller_never_leaves_a_compact_admitted_untracked() {
     enum DropAt {
         Polls(usize),
-        AfterRow(usize),
+        RowLanded,
+        AdmissionInFlight,
     }
     let cases = (1..=4)
         .map(DropAt::Polls)
-        .chain((0..=2).map(DropAt::AfterRow));
-    let mut admitted_after_drop = 0;
+        .chain([DropAt::RowLanded, DropAt::AdmissionInFlight]);
+    let deadline = || pij_testkit::time::scaled(std::time::Duration::from_secs(10));
     for case in cases {
         let (services, _store, _config, folder) = services().await;
         fleet(&services, &folder).await;
+        // Nothing else in flight: a spawned admission below is this caller's.
+        services.delivery.flush().await.unwrap();
         let state = crate::http::test_state(services.clone());
         let mut admission = Box::pin(crate::http::admit_control(&state, compact_msg("m-cancel")));
         let mut finished = false;
@@ -678,9 +684,8 @@ async fn a_dropped_caller_never_leaves_a_compact_admitted_untracked() {
                 }
                 format!("after {polls} polls")
             }
-            DropAt::AfterRow(after_row) => {
-                let deadline = tokio::time::Instant::now()
-                    + pij_testkit::time::scaled(std::time::Duration::from_secs(10));
+            DropAt::RowLanded => {
+                let deadline = tokio::time::Instant::now() + deadline();
                 while !finished && pending(&services).await.is_empty() {
                     assert!(
                         tokio::time::Instant::now() < deadline,
@@ -688,15 +693,30 @@ async fn a_dropped_caller_never_leaves_a_compact_admitted_untracked() {
                     );
                     finished = poll_once(admission.as_mut()).await;
                 }
-                for _ in 0..after_row {
-                    if finished {
-                        break;
+                "as the row landed".to_string()
+            }
+            DropAt::AdmissionInFlight => {
+                let in_flight = std::future::poll_fn(|cx| {
+                    if admission.as_mut().poll(cx).is_ready() {
+                        return std::task::Poll::Ready(true);
                     }
-                    finished = poll_once(admission.as_mut()).await;
-                }
-                format!("{after_row} polls after the row")
+                    if services.delivery.admissions_in_flight() > Some(0) {
+                        std::task::Poll::Ready(false)
+                    } else {
+                        std::task::Poll::Pending
+                    }
+                });
+                finished = tokio::time::timeout(deadline(), in_flight)
+                    .await
+                    .expect("the admission task never started");
+                assert!(
+                    !finished,
+                    "the caller finished inside the poll that spawned"
+                );
+                "with its admission in flight".to_string()
             }
         };
+        let witness = matches!(case, DropAt::AdmissionInFlight);
         drop(admission);
         // Let any admission the dropped caller started finish.
         services.delivery.flush().await.unwrap();
@@ -708,14 +728,15 @@ async fn a_dropped_caller_never_leaves_a_compact_admitted_untracked() {
         );
         if finished {
             assert_eq!((admitted, recorded.len()), (1, 1), "finished {label}");
-        } else if admitted > 0 {
-            admitted_after_drop += 1;
+        }
+        if witness {
+            assert_eq!(
+                (admitted, recorded.len()),
+                (1, 1),
+                "dropped {label}: the admission completes without its caller"
+            );
         }
     }
-    assert!(
-        admitted_after_drop > 0,
-        "some case dropped the caller with the admission in flight"
-    );
 }
 
 /// #184 review (bobcat): a refused compact is acked `done` on the queue for

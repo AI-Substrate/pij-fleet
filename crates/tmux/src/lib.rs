@@ -120,7 +120,7 @@ const SUBMIT_CHUNK_PAUSE: Duration = Duration::from_millis(10);
 /// text. 4 s covers six launches at the worst observed latency (3.3 s); a
 /// staged body normally takes tens of milliseconds, so the bound only lengthens
 /// the rare tail in which the human's input stays disabled.
-const SUBMIT_STAGE_LIMIT: Duration = Duration::from_secs(4);
+pub const SUBMIT_STAGE_LIMIT: Duration = Duration::from_secs(4);
 /// The watchdog that restores input if the daemon never does. It must outlast
 /// the stage bound plus an abort's notice paste and restore (three more
 /// launches, 1.7 s at the worst observed latency): an earlier watchdog takes
@@ -166,6 +166,8 @@ pub struct TmuxAdapter {
     /// Whether the orphan sweep may claim sinks written before tap ledgers
     /// existed. Only the default server's adapter does (plan 185 ruling).
     claims_legacy_sinks: bool,
+    /// The staging bound; [`SUBMIT_STAGE_LIMIT`] outside tests.
+    stage_limit: Duration,
 }
 
 #[derive(Debug)]
@@ -203,6 +205,7 @@ impl TmuxAdapter {
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
             claims_legacy_sinks: true,
+            stage_limit: SUBMIT_STAGE_LIMIT,
         }
     }
     /// Limit listings, new windows, and destructive guards to `session`.
@@ -222,6 +225,7 @@ impl TmuxAdapter {
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
             claims_legacy_sinks: true,
+            stage_limit: SUBMIT_STAGE_LIMIT,
         }
     }
 
@@ -243,6 +247,7 @@ impl TmuxAdapter {
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
             claims_legacy_sinks: true,
+            stage_limit: SUBMIT_STAGE_LIMIT,
         }
     }
 
@@ -267,6 +272,7 @@ impl TmuxAdapter {
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
             claims_legacy_sinks: false,
+            stage_limit: SUBMIT_STAGE_LIMIT,
         }
     }
 
@@ -286,6 +292,15 @@ impl TmuxAdapter {
     #[must_use]
     pub fn with_control_mode(mut self, enabled: bool) -> Self {
         self.control = Arc::new(self.control.with_enabled(enabled));
+        self
+    }
+
+    /// Override the staging bound. Production keeps [`SUBMIT_STAGE_LIMIT`]; a
+    /// real-process test passes it through `pij_testkit::time::scaled`, as
+    /// every budget on a real launch is, so a loaded machine can stretch it.
+    #[must_use]
+    pub fn with_stage_limit(mut self, limit: Duration) -> Self {
+        self.stage_limit = limit;
         self
     }
 
@@ -417,10 +432,10 @@ impl TmuxAdapter {
         staged.paste_open = true;
         let mut start = 0;
         while start < text.len() {
-            if started.elapsed() >= SUBMIT_STAGE_LIMIT {
+            if started.elapsed() >= self.stage_limit {
                 return Err(self.error(format!(
                     "staging for pane {:?} exceeded {:?}; body was not submitted",
-                    staged.pane, SUBMIT_STAGE_LIMIT
+                    staged.pane, self.stage_limit
                 )));
             }
             let mut end = text.len().min(start + SUBMIT_CHUNK_BYTES);
@@ -436,10 +451,10 @@ impl TmuxAdapter {
         }
         self.paste_bytes_owned(staged, b"\x1b[201~")?;
         staged.paste_open = false;
-        if started.elapsed() >= SUBMIT_STAGE_LIMIT {
+        if started.elapsed() >= self.stage_limit {
             return Err(self.error(format!(
                 "staging for pane {:?} exceeded {:?}; body was not submitted",
-                staged.pane, SUBMIT_STAGE_LIMIT
+                staged.pane, self.stage_limit
             )));
         }
         self.require_staged(staged)?;

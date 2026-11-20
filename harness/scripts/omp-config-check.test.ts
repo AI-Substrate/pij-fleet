@@ -43,6 +43,11 @@ describe("omp-config-check (F219)", () => {
 		// R260-001: nested below worktree is not worktree.clone (OMP answers true).
 		["clone nested below worktree", "worktree:\n  unrelated:\n    clone: false\n"],
 		["clone false then overridden", "worktree:\n  clone: false\n  clone: true\n"],
+		["an inline mapping with clone on", "worktree: {clone: true}\n"],
+		[
+			"an inline mapping overridden by a block",
+			"worktree: {clone: false}\nworktree:\n  clone: true\n",
+		],
 	])("fails with %s", (_, config) => {
 		expect(ompConfigFindings(repo(config), noOmp)).toEqual([
 			".omp/config.yml does not set worktree:\n  clone: false",
@@ -57,5 +62,15 @@ describe("omp-config-check (F219)", () => {
 
 	it("reads the committed block with its comments", () => {
 		expect(setsCloneFalse("# why\nworktree:\n  clone: false # F219\n")).toBe(true);
+	});
+
+	// R260-002: a valid inline mapping is the same YAML value.
+	it.each([
+		"worktree: {clone: false}\n",
+		"worktree: { mode: x, clone: false }\n",
+		"worktree:\n  clone: true\nworktree: {clone: false} # last wins\n",
+	])("reads an inline mapping: %j", (config) => {
+		expect(setsCloneFalse(config)).toBe(true);
+		expect(ompConfigFindings(repo(config), noOmp)).toEqual([]);
 	});
 });

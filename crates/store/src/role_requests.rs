@@ -419,6 +419,30 @@ impl SqliteOrchestration {
         .transpose()
     }
 
+    /// Where request `id` is, a closed one included: [`Self::role_request`]
+    /// reads only open requests, and closing one moves it to
+    /// `closed_role_requests` (review of #289). `None` for an unknown id. One
+    /// primary-key read of each table.
+    pub async fn role_request_state(&self, id: &str) -> Result<Option<RequestState>> {
+        require_current_schema(&self.pool).await?;
+        let state: Option<String> = sqlx::query_scalar(
+            "SELECT state FROM role_requests WHERE id = ?1 \
+             UNION ALL SELECT 'closed' FROM closed_role_requests WHERE id = ?1 LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        state
+            .map(|state| {
+                RequestState::parse(&state).ok_or_else(|| PijError::Adapter {
+                    adapter: "store/role_requests".into(),
+                    message: format!("request {id} has an unknown state `{state}`"),
+                })
+            })
+            .transpose()
+    }
+
     /// `role`'s queued requests in `project` that a holder of `instance` can
     /// take, oldest first: those for that instance and those for any holder.
     pub async fn queued_role_requests(

@@ -377,9 +377,16 @@ async fn wait_for_dead_pane_to_close(state: &AppState, seat: &SeatId) {
 /// Whether tmux lists `pane`, asked of the live control client only. No live
 /// client, a failed read, or no answer by `deadline` answers `false` (pane
 /// state unknown): the caller stops waiting and the locked observation decides
-/// as before. The control client's reply wait blocks its thread (up to its 3 s
-/// reply timeout), so the read runs on a blocking-pool thread and is abandoned
-/// at the deadline; it never holds a runtime worker or the caller.
+/// as before. The control client's reply wait blocks its thread, so the read
+/// runs on a blocking-pool thread and the caller stops waiting for it at the
+/// deadline; it never holds a runtime worker or the caller.
+///
+/// R275-FU-01: the deadline bounds the caller, not the worker. A started
+/// blocking task cannot be cancelled: its reply wait ends at the client's 3 s
+/// reply timeout, but the state-lock acquisition, the pipe write and any
+/// control-client child reaping around it are outside that bound, so under a
+/// stuck control path an abandoned worker can outlive the deadline, and
+/// repeated calls can leave one such worker each.
 async fn pane_listed_without_launch(
     state: &AppState,
     pane: &str,

@@ -3816,13 +3816,12 @@ async fn a_cancelled_assign_waiter_never_strands_its_drain() {
     );
     let mut state = None;
     for _ in 0..200 {
-        state = rig
-            .store
-            .role_request("req-owned")
-            .await
-            .unwrap()
-            .map(|request| request.state);
-        if state == Some(RequestState::Delivered) {
+        // `role_request_state`, not `role_request`: a closed request has left
+        // `role_requests`, so only this read can see it (review of #289).
+        state = rig.store.role_request_state("req-owned").await.unwrap();
+        // Either end state stops the poll: a Closed request fails at once on
+        // the assert below, rather than after the whole budget (R273 sibling).
+        if matches!(state, Some(RequestState::Delivered | RequestState::Closed)) {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -3831,6 +3830,46 @@ async fn a_cancelled_assign_waiter_never_strands_its_drain() {
         state,
         Some(RequestState::Delivered),
         "the drain finished on its own"
+    );
+    rig.server.abort();
+}
+
+/// Review of #289: a withdrawn request leaves `role_requests` for
+/// `closed_role_requests`, so `role_request` reads it as missing; only
+/// `role_request_state` says it closed. A poll that waits for an end state
+/// must read the latter, or a close looks like "not yet" for its whole budget.
+#[tokio::test]
+async fn a_withdrawn_request_reads_closed_not_missing() {
+    use pij_store::RequestState;
+    let repo = repo("pij-requests-closed-state");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles_and_prime(rig.addr, &repo, &["--prime", "pij-holder"]).await;
+    let queued = send_to(rig.addr, &repo.main, "role:reviewer", "req-gone", json!({})).await;
+    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
+    assert_eq!(
+        rig.store.role_request_state("req-gone").await.unwrap(),
+        Some(RequestState::Queued)
+    );
+    let withdrawn = call_as(
+        rig.addr,
+        "/v1/requests",
+        &["requests", "withdraw", "req-gone", "--why", "the prime"],
+        &repo.main,
+        "%51",
+    )
+    .await;
+    assert_eq!(withdrawn["ok"], true, "{withdrawn}");
+    assert!(
+        rig.store.role_request("req-gone").await.unwrap().is_none(),
+        "the open read no longer sees it"
+    );
+    assert_eq!(
+        rig.store.role_request_state("req-gone").await.unwrap(),
+        Some(RequestState::Closed)
+    );
+    assert_eq!(
+        rig.store.role_request_state("req-unknown").await.unwrap(),
+        None
     );
     rig.server.abort();
 }
