@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"head": "7ec3e17654",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:280",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "pij-rs --json ping and /bin/ps -p 87210 -o pid=,lstart=,time=,%cpu=,rss= at four scheduled0/80/160/240s readings; just spawn-rate --seconds 20 --json once; reuse prior control receipt, no cross-bounce subtraction.",
+					"exit_code": 0,
+					"log": "87210/7ec3e17654/samestart throughout; control-client1→1 all4samples, spawns442→453(+11first80s,last160s0), no newcounterkeys. TIME42.03CPU-s/239.902324s=17.519630%;OLS17.548891%. Machine772.2/s over20s. CPU comparisonnotcausal."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "280 live deployment receipt — daemon87210 /7ec3e17654\n\nFour readings05:22:27.242569–05:26:27.252836UTC,0/80/160/240s. PID, commit and ps process-start identity stayed identical. Below are WITHIN-DEPLOYED-PROCESS before/after deltas, not subtraction across the bounce.\n\n## Launches\n\nspawns.total442→453: +11 /240.009527s =0.045832/s. All11were in the first80s; last160s+0. tmux.control-client1→1 at ALL FOUR readings:0new control-client launches,0/s. No newly observed by_op keys, and the exact280production diff adds no launch site. These are different proofs: an unchanged live counter-key set alone cannot inventory source launch sites.\n\n| Call site | Before | After | Delta | Delta/s |\n|---|---:|---:|---:|---:|\n|ddocs.community|6|8|2|0.008333|\n|gh.delivered|1|1|0|0.000000|\n|git.community|7|14|7|0.029166|\n|ps.registration-native-process|131|131|0|0.000000|\n|ps.sidecar-process-group|1|1|0|0.000000|\n|ps.tmux-harness-process-tree|2|2|0|0.000000|\n|tmux.clear-options tap owner|1|2|1|0.004167|\n|tmux.control-client|1|1|0|0.000000|\n|tmux.pipe-pane attach|144|144|0|0.000000|\n|tmux.pipe-pane detach|1|2|1|0.004167|\n|tmux.rename-window|3|3|0|0.000000|\n|tmux.set-options tap owner|144|144|0|0.000000|\n\nOnly existing community writes and tap cleanup grew. No observed list/capture/tap-owner read-fallback launch growth; the healthy control client needed no replacement. This proves the expected steady control-client behavior in this window, not how a frozen lock holder performs.\n\n## CPU/context\n\nCPU TIME0:35.88→1:17.91:42.03CPU-s /239.902324s between ps observations =17.519630% of one core; four-point fit17.548891%.80s intervals17.822716%,17.812629%,16.923970%. RSS168480→175072KiB (+6592KiB). Snapshot ps%CPU was not used.\n\n| Four-minute window | CPU (% one core) | Completed responses/s |20s machine launches/s |\n|---|---:|---:|---:|\n|Historical85c38c1c19 control (2c4df0f7)|22.540680|16.874643|323.0|\n|Deployed7ec3e17654|17.519630|12.641165|772.2|\n\nCPU is5.02105percentage points below that earlier22.54% window. This is observational, NOT savings attributed to280: different PID/build, early post-bounce window, lower completed-response rate and much higher machine launches. No matched immediate pre-bounce workload was captured. The open CPU item therefore has a lower observed reading, not a proven root cause or closure.\n\nExecuted `just spawn-rate --seconds 20 --json` ONCE alongside the window. It reported772.2new PIDs/s; sampled710.4/s. Command attribution is lower-bound (node108.3/s,bash88.8/s,451.4/s gone before identification). No daemon children were observed by that lower-bound sampler, which is not proof of zero: the daemon's exact4mincounter shows11. The canonical probe continuously polls libproc for20s and launches edge probe children; it is not zero-perturbation and its20s interval is not the whole4minaverage.\n\nReceipt:/tmp/performance-280-7ec3e176-window.json; raw ping/ps snapshots, every call-site delta, exact sampler timestamps/stdout, intervals and historical baseline retained. No sample/build/test/reload/restart or fleet changes by this seat."
+		}
+	]
+}
