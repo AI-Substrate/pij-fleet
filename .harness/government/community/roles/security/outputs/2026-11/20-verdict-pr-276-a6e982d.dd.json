@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f658-28af-7e53-9a69-6baccfdd735d",
+				"date": "2026-11-20",
+				"head": "a6e982da1b7554bdcb09d6748dbf62e7f3487800",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44644860367/job/135984736086",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:276",
+				"writer": "pij-remarkable-horse",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 276",
+					"exit_code": 0,
+					"log": "FINAL at a6e982da1b7554bdcb09d6748dbf62e7f3487800; clean detached worktree; five checks passed"
+				},
+				{
+					"command": "gh pr diff 276 --name-only",
+					"exit_code": 0,
+					"log": "Exactly crates/daemon/tests/directory_http.rs and docs/difficulties.md; no product-code change"
+				},
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci",
+					"exit_code": 0,
+					"log": "CI run 44644860367 attempt 1; successful job 135984736086; JUnit artifact 14587328879: 2595 tests, zero failures/errors/skips; changed directory_http test passed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS\nPR: #276\nHead: a6e982da1b7554bdcb09d6748dbf62e7f3487800\nScope: the complete two-file test-and-ledger diff, under C21, C33 and C34.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No security vulnerabilities found | - |\n\nThe change is confined to crates/daemon/tests/directory_http.rs and the D-F193-2 ledger entry in docs/difficulties.md. No production code, runtime authority checks, configuration, dependency manifests, lockfiles, or production process-launch sites change. The test waits for the intended delivered state rather than treating an intermediate delivering state as completion; this does not add a runtime capability or weaken a production security boundary. No new secrets or C21 private home paths were found in the changed text, including the ledger entry.\n\nThe correctness review separately owns terminal-state fail-fast behavior and the unchanged test claim. No new security fix or follow-up is required.\n\nEvidence:\n- just pr-freeze 276: FINAL at the full requested head; clean detached worktree; all five checks passed.\n- CI run 44644860367 completed successfully on attempt 1 at the exact head. Successful Rust job 135984736086 uploaded JUnit artifact 14587328879; selected by the successful job's upload log, not artifact name alone. Artifact metadata independently matches the head.\n- Parsed JUnit: 2595 tests, zero failures, errors or skips. a_revived_holder_takes_what_its_role_queued_while_it_was_gone passed in 0.268 seconds.\n- harness boot --json: advisory ready=false because the read-only worktree has no node_modules. No dependencies were installed or linked, no local builds or mutations were run, and no full local ship gate is claimed. Exact-head CI is the execution proof.\n\nThe review worktree was not edited. Session evidence is retained outside it. Harness feedback remains the existing read-only review-proof improvement: import successful-job artifacts by exact ID and expose unavailable local tooling without attempting ambient package tools; no new product-code concern was discovered.\n"
+		}
+	]
+}
