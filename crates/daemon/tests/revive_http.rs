@@ -213,6 +213,117 @@ async fn revive_observed_dead_tombstones_before_relaunch_and_cites_seq() {
     assert_ne!(revived.pane, prior.pane);
 }
 
+/// F200: an OMP seat that quit cleanly is dead before tmux closes its pane.
+/// The revive waits for the pane (bounded) and then revives, where it used to
+/// refuse `E-RS-REVIVE-LIVE` until a retry happened to land after the close.
+#[tokio::test]
+async fn a_cleanly_quit_seat_revives_once_its_pane_closes() {
+    use pij_core::ports::TmuxPort;
+    let f = fixture(Arc::new(FakeLiveness::new())).await;
+    f.tmux.arrange_pane("%old");
+    let prior = target();
+    let before = f.services.registry.put(prior.clone()).await.unwrap();
+    let tmux = Arc::clone(&f.tmux);
+    let closes = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        tmux.kill("%old").await.unwrap();
+    });
+    let started = std::time::Instant::now();
+    let body = post(&f, &request()).await;
+    closes.await.unwrap();
+    assert_eq!(body["ok"], true, "{body}");
+    assert!(started.elapsed() >= std::time::Duration::from_millis(500));
+    let events = f
+        .services
+        .spine
+        .tail(Some(&prior.id), before)
+        .await
+        .unwrap();
+    let tombstone: Value = serde_json::from_str(&events[0].payload).unwrap();
+    assert_eq!(tombstone["reason"], "revive-observed-dead");
+    assert_eq!(
+        tombstone["observation"]["pane_present"], false,
+        "{tombstone}"
+    );
+}
+
+/// F200's brake is unchanged: a dead seat whose pane never closes is still
+/// refused, once the bounded wait (5 s, a pane read every 250 ms) is spent,
+/// and nothing is retired or launched. Every wait read is launch-free: the
+/// only pane read that may fork is the locked observation main already made.
+#[tokio::test]
+async fn a_dead_seat_whose_pane_stays_is_still_refused_after_the_bound() {
+    let f = fixture(Arc::new(FakeLiveness::new())).await;
+    f.tmux.arrange_pane("%old");
+    let prior = target();
+    let before = f.services.registry.put(prior.clone()).await.unwrap();
+    let started = std::time::Instant::now();
+    let body = post(&f, &request()).await;
+    let waited = started.elapsed();
+    assert_eq!(body["details"]["code"], "E-RS-REVIVE-LIVE", "{body}");
+    assert_eq!(
+        body["details"]["observation"]["pane_present"], true,
+        "{body}"
+    );
+    assert!(
+        waited >= std::time::Duration::from_secs(5) && waited < std::time::Duration::from_secs(6),
+        "{waited:?}"
+    );
+    let calls = f.tmux.calls();
+    let count = |name: &str| calls.iter().filter(|call| call.as_str() == name).count();
+    let waits = count("list_panes_without_launch");
+    assert!((20..=21).contains(&waits), "{waits} launch-free pane reads");
+    assert_eq!(count("list_panes"), 1, "{calls:?}");
+    unchanged(&f, &prior, before).await;
+}
+
+/// F200 never launches to wait: with no live tmux control client the wait
+/// ends at once and the locked observation refuses as main did.
+#[tokio::test]
+async fn a_dead_seat_with_no_control_client_is_refused_without_waiting() {
+    let f = fixture(Arc::new(FakeLiveness::new())).await;
+    f.tmux.arrange_pane("%old");
+    f.tmux.lose_control_client();
+    let prior = target();
+    let before = f.services.registry.put(prior.clone()).await.unwrap();
+    let started = std::time::Instant::now();
+    let body = post(&f, &request()).await;
+    assert_eq!(body["details"]["code"], "E-RS-REVIVE-LIVE", "{body}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+    let calls = f.tmux.calls();
+    let count = |name: &str| calls.iter().filter(|call| call.as_str() == name).count();
+    assert_eq!(count("list_panes_without_launch"), 1, "{calls:?}");
+    assert_eq!(count("list_panes"), 1, "{calls:?}");
+    unchanged(&f, &prior, before).await;
+}
+
+/// F200's bound holds against a slow control client: each pane read takes 2 s
+/// here, and the wait still ends at 5 s (a read in flight at the deadline is
+/// left behind), then the locked observation refuses as before.
+#[tokio::test]
+async fn a_stalled_pane_read_never_stretches_the_bound() {
+    let f = fixture(Arc::new(FakeLiveness::new())).await;
+    f.tmux.arrange_pane("%old");
+    f.tmux
+        .stall_launch_free_reads(std::time::Duration::from_secs(2));
+    let prior = target();
+    let before = f.services.registry.put(prior.clone()).await.unwrap();
+    let started = std::time::Instant::now();
+    let body = post(&f, &request()).await;
+    let waited = started.elapsed();
+    assert_eq!(body["details"]["code"], "E-RS-REVIVE-LIVE", "{body}");
+    assert!(
+        waited >= std::time::Duration::from_secs(5)
+            && waited < std::time::Duration::from_millis(5_600),
+        "{waited:?}"
+    );
+    unchanged(&f, &prior, before).await;
+}
+
 #[tokio::test]
 async fn revive_retired_harness_succeeds_and_audits_override() {
     let f = fixture_with_retired_harnesses(Arc::new(FakeLiveness::new()), vec![Harness::Pi]).await;

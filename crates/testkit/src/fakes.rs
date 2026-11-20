@@ -1960,6 +1960,9 @@ struct TmuxState {
     standing_capture: Option<String>,
     /// No live control client: `capture_without_launch` answers `None`.
     control_down: bool,
+    /// How long each `list_panes_without_launch` blocks its thread before it
+    /// answers, as a slow control client's reply wait does; zero answers at once.
+    launch_free_stall: Duration,
     typing: bool,
     /// What tmux reports for `#{pane_pid}`/`#{pane_current_path}`, per pane.
     ///
@@ -2164,6 +2167,20 @@ impl FakeTmux {
     pub fn without_control_client(self) -> Self {
         self.state.lock().expect("fake tmux mutex").control_down = true;
         self
+    }
+
+    /// The live tmux control client goes away under a running fake: every
+    /// `*_without_launch` read answers `None` from now on.
+    pub fn lose_control_client(&self) {
+        self.state.lock().expect("fake tmux mutex").control_down = true;
+    }
+
+    /// Every `list_panes_without_launch` from now on takes `stall` to answer.
+    pub fn stall_launch_free_reads(&self, stall: Duration) {
+        self.state
+            .lock()
+            .expect("fake tmux mutex")
+            .launch_free_stall = stall;
     }
 
     /// Arrange a live pane tap without prescribing its bytes.
@@ -2598,10 +2615,17 @@ impl TmuxPort for FakeTmux {
     }
 
     async fn list_panes_without_launch(&self) -> Result<Option<Vec<Pane>>> {
+        let stall = {
+            let mut state = self.state.lock().expect("fake tmux mutex");
+            state
+                .recorder
+                .record("list_panes_without_launch".to_string());
+            state.launch_free_stall
+        };
+        if !stall.is_zero() {
+            std::thread::sleep(stall);
+        }
         let mut state = self.state.lock().expect("fake tmux mutex");
-        state
-            .recorder
-            .record("list_panes_without_launch".to_string());
         if state.control_down {
             return Ok(None);
         }
