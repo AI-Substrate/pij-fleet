@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f893-44a7-77c3-be81-935a6de3e972",
+				"date": "2026-11-20",
+				"head": "2a38673f47d08acf6ecba8c7ad06a1000ab980af",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:288",
+				"writer": "pij-melodic-snail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Static only: unchanged per-build successful launch count; broader failure cleanup is owned rm work, not zero cost. F237 causal investigation and independent functional/security proof remain separate."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git rev-parse HEAD && git diff bc1ca834 2a38673f47d08acf6ecba8c7ad06a1000ab980af",
+					"exit_code": 0,
+					"log": "/tmp/performance-288-static-cost.json; full delta artifact://281; shared-build per-cargo/waiter/drain source inspected unchanged. No runtime/tests by performance."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES — static performance/288, exact head2a38673f47d08acf6ecba8c7ad06a1000ab980af, basebc1ca834. Answers01a1f893-44a7-77c3-be81-935a6de3e972. Exact HEAD and full eight-file diff inspected; no blocking performance finding. No builds/tests, formatters, benchmark, live measurement, deploy or daemon change by this seat.\n\n| Path | Static cost / rate |\n| --- | --- |\n| nice19.sh | Still exactly one ps launch per wrapper invocation, default absolute /bin/ps. New trimming/validation uses shell builtins. At19+ it execs the target directly; below19 the existing /usr/bin/nice exec remains. Failure/unreadable output stops before target launch. Across seats cost=sum(wrapper invocations/s), not a timer or per-pane poll; zero at rest. |\n| Shared build | shared-build.sh unchanged: one nice19 wrapper/ps per cargo command, including each --then command. No additional successful-build launch or cadence change. Existing20s waiter df/mkdir/sleep and process-group drain stay unchanged; no new per-seat work. |\n| Release dirty guard | Same single git status launch, wider pathspec covering six embedded hooks plus schema/template trees. More paths scanned, not one git launch/path. No shared-build/cargo starts for newly rejected dirty inputs. |\n| Release cleanup | EXIT trap centralizes the existing rm-rf cleanup. With an owned snapshot, one cleanup attempt on failed/signalled exit, including paths previously leaking; no rm in successful helper handoff. No poller/timer/new kill. Snapshot deletion work scales with that private directory, not seats. |\n| Attach lock | One additional descriptor metadata query/attempt and conditional descriptor chmod when mode differs; new files request0600 in open. No subprocess. Existing inode and nonblocking try_lock are retained; no new retry/lock wait. |\n\nExact-base qualification: bc1ca834 already used /bin/ps. This PR adds a test seam and fail-closed parsing; it does not newly convert a bare-name launch in this diff. D-C34-1's bare-ps wording is historical, not evidence of the old launch at this base. No process saving magnitude inferred.\n\nSignal qualification: HUP/INT/TERM traps exit129/130/143; Bash executes them after the foreground shared-build returns. Signalling only release-build does not immediately cancel that foreground build. Cleanup is an owned-resource action, not age-based retention: it removes only the helper's private snapshot while still owned; clearing snapshot on successful handoff spares caller-owned output. No build watcher or polling child was added.\n\nFixture-only changes: git sees GIT_CONFIG_GLOBAL=/dev/null and GIT_CONFIG_NOSYSTEM=1 in both test helpers and script-under-test environment. This suppresses ambient global/system trace configuration in those fixtures; it does not change production git environment or establish a measured launch reduction. The added mid-build signal test has a20ms bounded start poll and fake cargo's one2s sleep; these are test work, NOT production loops/timers.\n\nThus: no new production loop, timer or daemon OS-launch site, and no change to shared-build's normal per-build launch count. Failure cleanup coverage is broader and must not be described as zero work. spawn_sites.rs and shared-build.sh are outside the eight-file delta. The never-kill-by-pattern rule is a same-user ownership restriction, not a new runtime sweep or launch.\n\nF237: the reported CI failure was a tmux fixture server dying, followed by green rerun. Accepted as reported; not rerun by performance. Permission changes do not alter try_lock or client-launch code; this static review supplies no causal link to that failure and does not claim runtime exclusion. Reviewer/security own behavioral and permission proof.\n\nRegression SOURCE covers unreadable niceness refusing without target output; padded/negative values; embedded/untracked build inputs; SIGTERM cleanup; and fresh/wider lock permissions with same inode. Performance did not execute it. Full diff artifact://281; receipt/tmp/performance-288-static-cost.json. Keep performance/288 holding until merge. No live cost claim from this static review.\n"
+		}
+	]
+}
