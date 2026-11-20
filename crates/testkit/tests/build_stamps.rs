@@ -587,17 +587,27 @@ impl Drop for OldDaemon {
 }
 
 /// `bounce-rs` against a running old daemon with `tmux` faked by `tmux` (none
-/// faked: `None`): the scratch, and whether it succeeded. `lsof` names the old
-/// daemon, then a free port, then the new daemon.
+/// faked: `None`): the scratch, and whether it succeeded. `lsof` on PATH names
+/// the old daemon, then a free port, then the new daemon.
 fn bounce_with_tmux(old: &OldDaemon, tmux: Option<&str>, env: &[(&str, &str)]) -> (PathBuf, bool) {
+    // F245: who holds a refused socket is asked of `/usr/sbin/lsof` by its
+    // absolute path (here the `PIJ_BOUNCE_LSOF` seam), never PATH's `lsof`,
+    // which fails that question. It answers `$FAKE_HELD`, fails with
+    // `$FAKE_LSOF_U_FAILS`, or never finishes with `$FAKE_LSOF_U_HANGS`.
     let lsof = format!(
-        "n=$(cat '@OUT@/lsof.n' 2>/dev/null || echo 0); n=$((n + 1)); echo $n > '@OUT@/lsof.n'\n\
+        "case \"$*\" in *-U*) exit 3 ;; esac\n\
+         n=$(cat '@OUT@/lsof.n' 2>/dev/null || echo 0); n=$((n + 1)); echo $n > '@OUT@/lsof.n'\n\
          case $n in 1) echo {} ;; 2) ;; *) echo 4242 ;; esac; exit 0",
         old.pid
     );
-    let mut fakes = vec![("lsof", lsof.as_str())];
+    let socket_lsof = "[ -n \"$FAKE_LSOF_U_HANGS\" ] && exec /bin/sleep 60\n\
+                       [ -n \"$FAKE_LSOF_U_FAILS\" ] && exit 1\n\
+                       printf '%s\\n' \"$FAKE_HELD\"";
+    let mut fakes = vec![("lsof", lsof.as_str()), ("socket-lsof", socket_lsof)];
     fakes.extend(tmux.map(|body| ("tmux", body)));
-    try_run_faked("bounce-rs", env, &[], &fakes)
+    let mut env = env.to_vec();
+    env.push(("PIJ_BOUNCE_LSOF", "@OUT@/bin/socket-lsof"));
+    try_run_faked("bounce-rs", &env, &[], &fakes)
 }
 
 /// F242: before it signals the old daemon, `bounce-rs` switches `_pij`'s
@@ -629,19 +639,133 @@ fn bounce_rs_switches_destroy_unattached_off_before_the_signal() {
     }
 }
 
+/// A tmux whose connect is refused, as tmux says it: its socket is a real
+/// file at `@OUT@/real/$FAKE_SOCK_NAME` (default `default`), `@OUT@/alias`
+/// is another spelling of `@OUT@/real` (bee's `/tmp` and `/private/tmp`),
+/// `@OUT@/real/a^Ab` is a file named with a caret, `@OUT@/real/o<tab>x` one
+/// with a tab, and `@OUT@/shut` is a
+/// directory nobody can search. `$FAKE_NO_SOCK` leaves the socket out.
+const REFUSED_TMUX: &str = "mkdir -p '@OUT@/real' '@OUT@/shut' && chmod 000 '@OUT@/shut'\n\
+     ln -sfn '@OUT@/real' '@OUT@/alias'\n\
+     : > '@OUT@/real/a^Ab'; : > \"@OUT@/real/o$(printf '\\t')x\"\n\
+     sock=\"@OUT@/real/${FAKE_SOCK_NAME:-default}\"; [ -n \"$FAKE_NO_SOCK\" ] || : > \"$sock\"\n\
+     printf 'no server running on %s\\n' \"$sock\" >&2; exit 1";
+
+fn unshut(scratch: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(scratch.join("shut"), std::fs::Permissions::from_mode(0o700));
+}
+
 /// F242: no server, or no `_pij` (a first boot), has nothing to protect.
 #[test]
 fn bounce_rs_goes_on_when_tmux_has_nothing_to_protect() {
+    // A refused socket no process holds (`lsof -U` names others only).
+    let others = [("FAKE_HELD", "n@OUT@/real")];
     for said in [
-        "no server running on /tmp/tmux-1/default",
-        "error connecting to /tmp/tmux-1/default (No such file or directory)",
-        "no such session: _pij:",
+        None,
+        Some("error connecting to /tmp/tmux-1/default (No such file or directory)"),
+        Some("no such session: _pij:"),
     ] {
         let old = OldDaemon::start();
-        let tmux = format!("echo '{said}' >&2; exit 1");
-        let (scratch, ok) = bounce_with_tmux(&old, Some(&tmux), &[]);
-        assert!(ok, "{said}: the bounce goes on");
-        assert!(old.stopped(), "{said}: the old daemon is stopped");
+        let tmux = said.map_or_else(
+            || REFUSED_TMUX.to_string(),
+            |said| format!("echo '{said}' >&2; exit 1"),
+        );
+        let (scratch, ok) = bounce_with_tmux(&old, Some(&tmux), &others);
+        assert!(ok, "{said:?}: the bounce goes on");
+        assert!(old.stopped(), "{said:?}: the old daemon is stopped");
+        unshut(&scratch);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+}
+
+/// F245: tmux says `no server running on <socket>` when its connect is
+/// refused, and on Darwin a live server with a full listen backlog refuses
+/// too. The bounce goes on only when no process holds that socket; one that
+/// is held, or holders that cannot be read, refuse it, unless
+/// `PIJ_BOUNCE_UNSAFE=1`. #298 round 2: a holder is the socket by device and
+/// inode whatever its spelling (bee's alias), lsof's escapes are decoded and
+/// a name it can't spell exactly refuses (sawfish), and so does any bound
+/// path that can't be looked at.
+#[test]
+fn bounce_rs_goes_on_after_a_refusal_only_when_nothing_holds_the_socket() {
+    for (env, refused_bounce) in [
+        (vec![("FAKE_HELD", "n@OUT@/real/default")], true),
+        (vec![("FAKE_HELD", "n@OUT@/alias/default")], true),
+        (
+            vec![
+                ("FAKE_SOCK_NAME", "t\tb"),
+                ("FAKE_HELD", r"n@OUT@/alias/t\tb"),
+            ],
+            true,
+        ),
+        (
+            vec![
+                ("FAKE_SOCK_NAME", r"back\b"),
+                ("FAKE_HELD", r"n@OUT@/real/back\\b"),
+            ],
+            true,
+        ),
+        (vec![("FAKE_HELD", "n@OUT@/real/a^Ab")], true),
+        (vec![("FAKE_HELD", "n@OUT@/real/unlinked")], true),
+        (vec![("FAKE_HELD", "n@OUT@/shut/sock")], true),
+        (vec![("FAKE_LSOF_U_FAILS", "1")], true),
+        (
+            vec![("FAKE_NO_SOCK", "1"), ("FAKE_HELD", "n@OUT@/real")],
+            true,
+        ),
+        (vec![("FAKE_HELD", "n@OUT@/real\nn->0x1")], false),
+        // Another socket, named with a tab lsof escapes: decoded, it is there
+        // and is not this socket.
+        (vec![("FAKE_HELD", r"n@OUT@/real/o\tx")], false),
+        (
+            vec![
+                ("FAKE_HELD", "n@OUT@/alias/default"),
+                ("PIJ_BOUNCE_UNSAFE", "1"),
+            ],
+            false,
+        ),
+    ] {
+        let old = OldDaemon::start();
+        let (scratch, ok) = bounce_with_tmux(&old, Some(REFUSED_TMUX), &env);
+        assert_eq!(!ok, refused_bounce, "{env:?}: refused");
+        assert_eq!(
+            old.stopped(),
+            !refused_bounce,
+            "{env:?}: the old daemon stopped"
+        );
+        unshut(&scratch);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+}
+
+/// F245 round 2 (snail): the holder read is bounded like the tmux call. An
+/// `lsof` that never finishes is killed after 1 to 5 s and refuses the bounce
+/// (fail closed), well before the fake's 60 s; `PIJ_BOUNCE_UNSAFE=1` goes on.
+#[test]
+fn bounce_rs_refuses_when_the_holder_read_does_not_finish() {
+    let refused = "echo 'no server running on /tmp/tmux-1/default' >&2; exit 1";
+    for (env, refused_bounce) in [
+        (vec![("FAKE_LSOF_U_HANGS", "1")], true),
+        (
+            vec![("FAKE_LSOF_U_HANGS", "1"), ("PIJ_BOUNCE_UNSAFE", "1")],
+            false,
+        ),
+    ] {
+        let old = OldDaemon::start();
+        let started = std::time::Instant::now();
+        let (scratch, ok) = bounce_with_tmux(&old, Some(refused), &env);
+        let took = started.elapsed();
+        assert_eq!(!ok, refused_bounce, "{env:?}: refused");
+        assert_eq!(
+            old.stopped(),
+            !refused_bounce,
+            "{env:?}: the old daemon stopped"
+        );
+        assert!(
+            took < pij_testkit::time::scaled(std::time::Duration::from_secs(20)),
+            "{env:?}: bounded, took {took:?}"
+        );
         let _ = std::fs::remove_dir_all(&scratch);
     }
 }

@@ -2301,31 +2301,16 @@ impl TestSession {
 
 impl Drop for TestSession {
     fn drop(&mut self) {
-        let killed = Command::new("tmux")
+        // F245: the teardown's postcondition is the server's own process
+        // gone, never kill-server's status (CI's tmux printed "server exited
+        // unexpectedly" after test bodies that passed, F228) and never a
+        // failing tmux command (a live server with a full backlog refuses
+        // connections on Darwin). Only then do its socket and the control
+        // client's attach lock go (F241).
+        let pid = pij_testkit::tmux::server_pid(&self.server);
+        let _ = Command::new("tmux")
             .args(["-L", &self.server, "kill-server"])
             .output();
-        // kill-server can exit non-zero while the server does go: CI's tmux
-        // printed "server exited unexpectedly" after test bodies that passed
-        // (F228). The teardown's postcondition is "no server", not
-        // kill-server's status (F27, as in pane_observer's fixture).
-        let gone = || {
-            Command::new("tmux")
-                .args(["-L", &self.server, "list-sessions"])
-                .output()
-                .is_ok_and(|output| !output.status.success())
-        };
-        assert!(
-            killed.as_ref().is_ok_and(|output| output.status.success())
-                || gone()
-                || std::thread::panicking(),
-            "failed to tear down isolated tmux server {}: {:?}",
-            self.server,
-            killed.map(|output| String::from_utf8_lossy(&output.stderr).into_owned())
-        );
-        // F238/F241: tmux leaves the socket after kill-server, and the
-        // control client's attach lock sits beside it, in tmux's own shared
-        // directory; both go only once nothing answers on the socket
-        // (R295-002).
-        pij_testkit::tmux::finish_server(&pij_testkit::tmux::socket_path(&self.server));
+        pij_testkit::tmux::finish_server(&pij_testkit::tmux::socket_path(&self.server), pid);
     }
 }

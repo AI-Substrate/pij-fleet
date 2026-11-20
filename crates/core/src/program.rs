@@ -181,6 +181,20 @@ pub fn real_uid() -> u32 {
 /// points it at (F238).
 pub const OPEN_NO_FOLLOW: i32 = nix::libc::O_NOFOLLOW;
 
+/// Whether a process with `pid` exists, by `kill(pid, 0)` in-process (no
+/// launch): `Some(false)` only on `ESRCH`, `Some(true)` when it exists (ours,
+/// or another user's: `EPERM`), `None` when the call fails any other way, or
+/// the pid does not fit. A zombie still exists until it is reaped (F245).
+#[must_use]
+pub fn process_exists(pid: u32) -> Option<bool> {
+    let pid = nix::unistd::Pid::from_raw(i32::try_from(pid).ok().filter(|pid| *pid > 0)?);
+    match nix::sys::signal::kill(pid, None) {
+        Ok(()) | Err(nix::errno::Errno::EPERM) => Some(true),
+        Err(nix::errno::Errno::ESRCH) => Some(false),
+        Err(_) => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::{OsStr, OsString};

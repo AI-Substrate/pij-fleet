@@ -376,6 +376,45 @@ describe("just shared-build", () => {
 		expect(statSync(lib).mtimeMs).toBeGreaterThan(1_000_000_000);
 	});
 
+	it("removes a stamp it cannot replace, so another tree's build never leaves an earlier one trusted (F246)", async () => {
+		const f = fixture();
+		const lib = join(f.worktree, "crates", "alpha", "src", "lib.rs");
+		const other = join(f.root, "other");
+		mkdirSync(join(other, "crates", "alpha", "src"), { recursive: true });
+		writeFileSync(join(other, "crates", "alpha", "src", "lib.rs"), "\n");
+		spawnSync("git", ["init", "-q", other], { env: { ...process.env, ...HERMETIC_GIT } });
+		const stamp = join(f.target, ".pij-shared-build-tree");
+		const noMktemp = join(f.root, "no-mktemp");
+		executable(noMktemp, "exit 1");
+		// This tree finished here; then the other tree builds a binary outside
+		// any deps (so no scan sees it) and can't write its stamps.
+		expect((await run(f, ["--", "build"], { ARTIFACT: "1" })).code).toBe(0);
+		const failed = await run({ ...f, worktree: other }, ["--", "build"], {
+			ARTIFACT: "1",
+			ARTIFACT_AT: "debug/pij-rs",
+			PIJ_SHARED_BUILD_MKTEMP: noMktemp,
+		});
+		expect(failed.code).toBe(0);
+		utimesSync(lib, 1_000_000, 1_000_000);
+		await run(f, ["--", "build"]);
+		expect(statSync(lib).mtimeMs).toBeGreaterThan(1_000_000_000);
+		expect(failed.stderr).toContain(`could not write ${stamp}; removed it`);
+		// A stamp that can be neither replaced nor removed refuses before cargo.
+		const before = readFileSync(f.log, "utf8");
+		chmodSync(f.target, 0o555);
+		try {
+			const refused = await run({ ...f, worktree: other }, ["--", "build"], {
+				PIJ_SHARED_BUILD_MKTEMP: noMktemp,
+			});
+			expect(refused.code).toBe(7);
+			expect(refused.stderr).toContain(`could not write or remove ${stamp}`);
+		} finally {
+			chmodSync(f.target, 0o755);
+		}
+		expect(readFileSync(f.log, "utf8")).toBe(before);
+		expect(readFileSync(stamp, "utf8")).toBe(`finished ${f.worktree}\n`);
+	});
+
 	it("names the seat in the owner line from PIJ_SESSION_ID or whoami when PIJ_ID is unset, else the user", async () => {
 		const f = fixture();
 		const whoami = join(f.root, "fake-whoami");

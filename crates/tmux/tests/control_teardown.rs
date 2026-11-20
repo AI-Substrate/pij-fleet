@@ -110,8 +110,9 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
+        let pid = pij_testkit::tmux::server_pid(&self.label);
         let _ = self.tmux(&["kill-server"]);
-        pij_testkit::tmux::finish_server(&pij_testkit::tmux::socket_path(&self.label));
+        pij_testkit::tmux::finish_server(&pij_testkit::tmux::socket_path(&self.label), pid);
         let _ = std::fs::remove_dir_all(&self.taps);
     }
 }

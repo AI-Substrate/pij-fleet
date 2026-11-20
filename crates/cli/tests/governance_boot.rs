@@ -213,9 +213,10 @@ impl Drop for PrivateTmux {
             let _ = self.server.child.kill();
             let _ = self.server.child.wait();
         }
-        // F241: the socket tmux leaves behind, and pij's attach lock beside it.
+        // F241: the socket tmux leaves behind, and pij's attach lock beside it,
+        // once the foreground server (this fixture's own child) is gone (F245).
         if let Some(socket) = &self.socket {
-            pij_testkit::tmux::finish_server(socket);
+            pij_testkit::tmux::finish_server(socket, Some(self.server.child.id()));
         }
     }
 }

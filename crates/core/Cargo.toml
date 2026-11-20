@@ -20,8 +20,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 # `access(X_OK)` for `program`'s PATH search (plan 182, review of #84 N2): the
-# test `posix_spawnp` applies, which `std` does not expose. Used nowhere else.
-nix = { workspace = true, features = ["user"] }
+# test `posix_spawnp` applies, which `std` does not expose; `kill(pid, 0)` for
+# `program::process_exists` (F245), the same. Used nowhere else.
+nix = { workspace = true, features = ["signal", "user"] }
 
 # Test substrate only: the shared fakes and the hand-rolled executor. `@dev` is
 # what keeps it out of the shipped crate, and the arch gate enforces the suffix.

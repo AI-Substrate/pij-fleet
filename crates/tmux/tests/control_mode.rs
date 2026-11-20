@@ -219,10 +219,11 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
+        let pid = pij_testkit::tmux::server_pid(&self.name);
         let _ = Command::new("tmux")
             .args(["-L", &self.name, "kill-server"])
             .output();
-        pij_testkit::tmux::finish_server(&pij_testkit::tmux::socket_path(&self.name));
+        pij_testkit::tmux::finish_server(&pij_testkit::tmux::socket_path(&self.name), pid);
         let _ = fs::remove_dir_all(&self.dir);
     }
 }

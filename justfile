@@ -755,10 +755,29 @@ bounce-rs:
       # tmux on this PATH is a failure, never a skip (F244). Bounded (P293-001):
       # the call has 1 to 2 s on the clock (bash's SECONDS), then is killed, and
       # gets 1 to 2 s more to go (F244); one that outlives that is left. No
-      # server or no `_pij` (a first boot: nothing to protect) and success go on
-      # to the signal; a timeout, a missing tmux or any other failure refuses
-      # the bounce with the old daemon untouched, unless PIJ_BOUNCE_UNSAFE=1
-      # says a human checked.
+      # server (no socket, or a refused one no process holds, F245) or no
+      # `_pij` (a first boot: nothing to protect) and success go on to the
+      # signal; a timeout, a missing tmux or any other failure refuses the
+      # bounce with the old daemon untouched, unless PIJ_BOUNCE_UNSAFE=1 says a
+      # human checked.
+      #
+      # bounded <pid> <seconds>: wait on the clock for a background job, at
+      # most 1 to <seconds> s, then kill -9 it and give it 1 to 2 s more to go.
+      # Returns the job's own status, 124 once it was killed, or 125 if it
+      # outlived kill -9 (left, never waited on). Absolute /bin/sleep per poll.
+      bounded() {
+        local pid=$1 limit=$2 since=$SECONDS
+        while kill -0 "$pid" 2>/dev/null && [ $((SECONDS - since)) -lt "$limit" ]; do /bin/sleep 0.1; done
+        if kill -0 "$pid" 2>/dev/null; then
+          kill -9 "$pid" 2>/dev/null || true
+          since=$SECONDS
+          while kill -0 "$pid" 2>/dev/null && [ $((SECONDS - since)) -lt 2 ]; do /bin/sleep 0.1; done
+          if kill -0 "$pid" 2>/dev/null; then return 125; fi
+          wait "$pid" 2>/dev/null || true
+          return 124
+        fi
+        wait "$pid"
+      }
       label="${PIJ_TMUX_SERVER:-}"
       if tmux_bin=$(command -v tmux); then
         set_err="${built%/*}/destroy-unattached.err"
@@ -770,24 +789,70 @@ bounce-rs:
           "$tmux_bin" set-option -t _pij: destroy-unattached off </dev/null >/dev/null 2>"$set_err" &
         fi
         setter=$!
-        since=$SECONDS
-        while kill -0 "$setter" 2>/dev/null && [ $((SECONDS - since)) -lt 2 ]; do /bin/sleep 0.1; done
-        if kill -0 "$setter" 2>/dev/null; then
-          kill -9 "$setter" 2>/dev/null || true
-          since=$SECONDS
-          while kill -0 "$setter" 2>/dev/null && [ $((SECONDS - since)) -lt 2 ]; do /bin/sleep 0.1; done
-          if kill -0 "$setter" 2>/dev/null; then
-            unsafe="tmux did not answer in 2 s and outlived kill -9 (pid $setter)"
-          else
-            wait "$setter" 2>/dev/null || true
-            unsafe="tmux did not answer in 2 s"
-          fi
-        elif wait "$setter"; then
+        status=0
+        bounded "$setter" 2 || status=$?
+        if [ "$status" = 125 ]; then
+          unsafe="tmux did not answer in 2 s and outlived kill -9 (pid $setter)"
+        elif [ "$status" = 124 ]; then
+          unsafe="tmux did not answer in 2 s"
+        elif [ "$status" = 0 ]; then
           unsafe=""
         else
           why=$(<"$set_err")
           case "$why" in
-            "no server running on"* | "error connecting to "*"(No such file or directory)"* | "no such session: _pij"* | "can't find session"*) unsafe="" ;;
+            "no server running on "*)
+              # F245: tmux says this when its connect() is refused, and on
+              # Darwin a live server with a full listen backlog refuses too.
+              # Go on only if no process of ours holds that socket: one
+              # /usr/sbin/lsof (PIJ_BOUNCE_LSOF is a test seam), bounded like
+              # tmux, with 1 to 5 s (it reads every process's sockets). A
+              # timeout, or lsof failing, refuses.
+              #
+              # #298 round 2: a bound path matches by device and inode
+              # (`-ef`), never by spelling (bee: tmux's /private/tmp/… is
+              # lsof's /tmp/…). lsof escapes bytes (`\\`, `\n`, `\t`, `\xHH`,
+              # which printf %b decodes) and writes byte 1 and the two
+              # characters `^A` alike, so a `^` refuses (sawfish). Any bound
+              # path that can't be looked at now (`-e` fails: unlinked, or a
+              # permission) refuses too: it might be this socket by another
+              # name. In-shell: no launch per line.
+              sock="${why#no server running on }"
+              held_out="${built%/*}/socket-holders.out"
+              LC_ALL=C "${PIJ_BOUNCE_LSOF:-/usr/sbin/lsof}" -nP -a -U -u "$(id -u)" -F n </dev/null >"$held_out" 2>/dev/null &
+              reader=$!
+              status=0
+              bounded "$reader" 5 || status=$?
+              if [ "$status" = 124 ] || [ "$status" = 125 ]; then
+                unsafe="tmux was refused, and lsof did not say in 5 s what holds $sock"
+              elif [ "$status" != 0 ]; then
+                unsafe="tmux was refused, and what holds $sock could not be read"
+              elif [ ! -e "$sock" ]; then
+                unsafe="tmux was refused, and $sock could not be looked at"
+              else
+                unsafe=""
+                while IFS= read -r line; do
+                  case $line in
+                    n/*) ;;
+                    *) continue ;;
+                  esac
+                  case $line in
+                    *^*)
+                      unsafe="tmux was refused, and lsof named a socket it could not spell exactly (${line#n})"
+                      break
+                      ;;
+                  esac
+                  printf -v name '%b' "${line#n}"
+                  if ! [ -e "$name" ]; then
+                    unsafe="tmux was refused, and lsof named $name, which could not be looked at"
+                    break
+                  elif [ "$name" -ef "$sock" ]; then
+                    unsafe="tmux was refused, but a process holds $sock (a live server with a full backlog)"
+                    break
+                  fi
+                done <"$held_out"
+              fi
+              ;;
+            "error connecting to "*"(No such file or directory)"* | "no such session: _pij"* | "can't find session"*) unsafe="" ;;
             *) unsafe="tmux failed: ${why:-no diagnostic}" ;;
           esac
         fi
