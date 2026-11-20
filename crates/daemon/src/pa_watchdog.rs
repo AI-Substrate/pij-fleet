@@ -1361,6 +1361,11 @@ fn stale_extensions(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly>
     // The daemon's own stamps, parsed once per digest.
     let copilot = trees.copilot.as_deref().and_then(reported_tree);
     let omp = trees.omp.as_deref().and_then(reported_tree);
+    // The commit `ping` reports; a build without the stamp says so.
+    let daemon = services.build_commit.as_deref().map_or_else(
+        || "an unstamped commit".to_string(),
+        |commit| format!("commit {commit}"),
+    );
     rows.iter()
         .filter_map(|row| {
             let stamp = match row.seat.harness {
@@ -1379,16 +1384,22 @@ fn stale_extensions(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly>
             if tree == stamp {
                 return None;
             }
-            let prefix = reported_build(prefix)
-                .unwrap_or_else(|| format!("unparseable ({} bytes)", prefix.len()));
+            // F239: a commit and a tree are both ten hex characters, so each
+            // id is named for what it is; the PA once read the tree as a commit.
+            let source = match reported_build(prefix) {
+                Some(hash) if hash.starts_with("hash:") => format!("source {hash}"),
+                Some(commit) => format!("commit {commit}"),
+                None => format!("an unparseable build ({} bytes)", prefix.len()),
+            };
             Some(FleetAnomaly {
                 seat: row.seat.id.clone(),
                 kind: "stale-extension".to_string(),
                 detail: format!(
-                    "seat-reported extension tree {tree} (seat-reported build {prefix}), daemon \
-                     built with {stamp}. Reload the seat's extension (Copilot: extensions_reload; \
-                     OMP: /reload), or revive it if its launch flags changed; if the extension is \
-                     the newer, the daemon needs `just bounce-rs`"
+                    "seat-reported extension from {source} (extension tree {tree}), daemon built \
+                     from {daemon} (extension tree {stamp}). Reload the seat's extension \
+                     (Copilot: extensions_reload; OMP: /reload), or revive it if its launch \
+                     flags changed; if the extension is the newer, the daemon needs `just \
+                     bounce-rs`"
                 ),
             })
         })
