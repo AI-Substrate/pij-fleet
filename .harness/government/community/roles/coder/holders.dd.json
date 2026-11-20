@@ -1396,6 +1396,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-forthcoming-silkworm",
 					"why": "R288-FU-01 release-build signal-test sensor + tiger retro"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T11:38:16.392Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f238",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F238 control-client exit never races destroy-unattached; lock keyed by socket path (prime re-ruling; jumps queue)"
 				}
 			]
 		}
