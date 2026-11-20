@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
@@ -45,10 +45,19 @@ interface Fixture {
 	env: NodeJS.ProcessEnv;
 }
 
+/**
+ * Git that reads no user or system config. A global `trace2.eventtarget` hands
+ * every git command to a machine-wide daemon (git-ai), which then writes into
+ * the fixture's .git after the command returned: teardown raced it and failed
+ * ENOTEMPTY. The script under test runs its git with the same environment.
+ */
+const HERMETIC_GIT = { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+
 const git = (repo: string, ...args: string[]) =>
 	spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], {
 		cwd: repo,
 		encoding: "utf8",
+		env: { ...process.env, ...HERMETIC_GIT },
 	});
 
 /** A checkout with the paths the stamp names; `marker` makes its commit its own. */
@@ -60,6 +69,12 @@ function checkout(root: string, name: string, marker: string): { repo: string; c
 		"crates/core/tests/fixtures/control-commands.json",
 		"crates/core/src/lib.rs",
 		".omp/models.yml",
+		// R271-002: embedded by crates from outside crates/.
+		"harness/scripts/claude-stop-pij.sh",
+		".dd/schemas/pij/role/schema.json",
+		"templates/roles/pm/v1/role.dd.json",
+		// Not built in: a script no crate embeds.
+		"harness/scripts/unrelated.sh",
 	]) {
 		mkdirSync(join(repo, file, ".."), { recursive: true });
 		writeFileSync(join(repo, file), `${file} ${marker}\n`);
@@ -93,6 +108,8 @@ function fixture(): Fixture {
 			'ok) printf \'#!/bin/sh\\necho "pij-rs 0.1.0 (%s)"\\n\' "$PIJ_BUILD_COMMIT" > "$CARGO_TARGET_DIR/release/pij-rs" ;;',
 			'foreign) printf \'#!/bin/sh\\necho "pij-rs 0.1.0 (0123456789)"\\n\' > "$CARGO_TARGET_DIR/release/pij-rs" ;;',
 			"fail) echo 'error[E0308]: mismatched types' >&2; exit 101 ;;",
+			// hang: a build still running when the helper is signalled.
+			'hang) touch "$LOG.started"; sleep 2; printf \'#!/bin/sh\\necho "pij-rs 0.1.0 (%s)"\\n\' "$PIJ_BUILD_COMMIT" > "$CARGO_TARGET_DIR/release/pij-rs" ;;',
 			"esac",
 		].join("\n"),
 	);
@@ -118,6 +135,7 @@ function fixture(): Fixture {
 		commit,
 		env: {
 			...process.env,
+			...HERMETIC_GIT,
 			PATH: `${bin}:${process.env.PATH}`,
 			CARGO_TARGET_DIR: target,
 			PIJ_SHARED_TARGET: undefined,
@@ -226,8 +244,13 @@ describe("release-build.sh, the one deploy build (F226)", () => {
 		for (const [file, change] of [
 			["crates/core/src/lib.rs", "uncommitted source\n"],
 			["crates/core/src/new.rs", "untracked source\n"],
+			["harness/scripts/claude-stop-pij.sh", "an edited embedded hook\n"],
+			[".dd/schemas/pij/role/schema.json", "{}\n"],
+			["templates/roles/pm/v1/role.dd.json", "{}\n"],
+			["templates/roles/new/v1/role.dd.json", "an untracked template\n"],
 		] as const) {
 			const dirty = fixture();
+			mkdirSync(join(dirty.repo, file, ".."), { recursive: true });
 			writeFileSync(join(dirty.repo, file), change);
 			const run = build(dirty, "ok");
 			expect(run.status, file).toBe(1);
@@ -237,7 +260,29 @@ describe("release-build.sh, the one deploy build (F226)", () => {
 			expect(existsSync(dirty.log), "nothing was built").toBe(false);
 		}
 		writeFileSync(join(f.repo, ".omp/models.yml"), "a local model override\n");
+		writeFileSync(join(f.repo, "harness/scripts/unrelated.sh"), "not built in\n");
 		const run = build(f, "ok");
 		expect(run.status, run.stderr).toBe(0);
+	});
+
+	// R271-003: a helper signalled mid-build leaves no snapshot behind. Only the
+	// helper is signalled, as a parent killing it would: the build it waits on
+	// finishes, then the trap removes the snapshot and exits 143.
+	it("removes its snapshot when it is terminated mid-build", async () => {
+		const f = fixture();
+		const child = spawn("bash", [SCRIPT], {
+			cwd: f.repo,
+			env: { ...f.env, FAKE_CARGO: "hang" },
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		const exited = new Promise<number | null>((done) => child.on("exit", (code) => done(code)));
+		for (let waited = 0; !existsSync(`${f.log}.started`); waited += 20) {
+			expect(waited, "the build started").toBeLessThan(20_000);
+			await new Promise((resolve) => setTimeout(resolve, 20));
+		}
+		expect(snapshots(f)).toHaveLength(1);
+		child.kill("SIGTERM");
+		expect(await exited).toBe(143);
+		expect(snapshots(f)).toEqual([]);
 	});
 });
