@@ -480,7 +480,10 @@
 					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
 					"instance_key": "293",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #293 merged (0587a4166110)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-melodic-snail",
+					"to": "2026-11-20T15:03:28.268Z",
 					"why": "#293 F242 cost (required)"
 				}
 			]

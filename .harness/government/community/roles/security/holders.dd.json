@@ -837,7 +837,10 @@
 					"harness_session": "d51a86ca-038f-4bfc-9e31-bc07c5696e89",
 					"instance_key": "293",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #293 merged (0587a4166110)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-zany-quelea",
+					"to": "2026-11-20T15:03:28.268Z",
 					"why": "#293 F242 security"
 				}
 			]

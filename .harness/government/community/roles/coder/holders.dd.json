@@ -1442,7 +1442,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f242",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #293 merged (0587a4166110)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-20T15:03:28.268Z",
 					"why": "F242 HIGH: daemon shutdown releases control first, bounded HTTP drain, bounce-rs sets destroy-unattached off pre-signal (prime)"
 				}
 			]
