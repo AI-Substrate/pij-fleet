@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f652-3c62-75c0-b9bc-c6baf0d586d6",
+				"date": "2026-11-20",
+				"head": "10c8debed4cd5a46080ca96fda669f8c69140298",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:275",
+				"writer": "pij-correct-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C34 follow-up R275-FU-01: qualify abandoned-worker lifetime; the 3s reply timeout does not bound mutex/pipe/reaping waits.",
+				"C34 follow-up R275-FU-02: make tight wall-clock and exact poll-count witnesses load-tolerant without weakening M6."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 275",
+					"exit_code": 0
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --test revive_http -- --nocapture",
+					"exit_code": 0,
+					"log": "23/23 pristine; 23/23 after M5/M6 restoration"
+				},
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44642525540/job/135982311068"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Round 2 (C34 final): PASS WITH NOTES\n\nSubject: pr:275\nHead: 10c8debed4cd5a46080ca96fda669f8c69140298\nDelta baseline: fffd75d08efb49e5875ad0efbebcf901c455bb73 (verified ancestor).\nScope: the one fix commit; the round-1 review stands for unchanged code.\n\n## Both round-1 blockers are closed\n\n**R275-001: closed.** Every helper pane read, including the first, now reaches `TmuxPort::list_panes_without_launch` (`crates/daemon/src/http/revive.rs:352-354,367-391`). Its production implementation uses `control.query_live`, which cannot start a client or take the fork fallback. The original, locked observation remains the launch-capable read. The final pane refusal/retirement decision was not changed.\n\n**R275-002: closed.** The helper establishes one monotonic deadline before its first pane read, caps each sleep to the remaining budget, offloads the synchronously blocking reader and applies `timeout_at` to its JoinHandle (`revive.rs:352-393`). A late read no longer holds the helper's continuation or a runtime worker until its reply. This bounds the added pane-settling wait, not the entire HTTP request: registry/liveness work, the subsequent locked observation and launch retain their existing behavior.\n\nUnknown is not accepted as absence. `false` from the helper only stops waiting; the locked branch obtains its own fresh observation and refuses if the process is active or pane presence is not `Some(false)` (`revive.rs:585-592`). If that fresh observation instead establishes the pane is gone and the original eligibility conditions hold, a revive is legitimate. Neither an abandoned read nor its result grants authority. The wait is still outside the spawn lock, and the authority checks/launch serialization are unchanged.\n\n## Independent execution receipts\n\nAll local cargo runs used the repository's existing shared target through `just shared-build`: serialized, niceness 19, four jobs/test threads, incremental compilation off. Only an owned disposable worktree was mutated; the detached review worktree was not edited.\n\n- Pristine head: `just shared-build -- test --locked -p pij-daemon --test revive_http -- --nocapture`: PASS, 23/23, 6.86 s test execution.\n- M5, replace the helper's launch-free read with `list_panes().await.map(Some)`: `just shared-build -- test --locked -p pij-daemon --test revive_http a_dead_seat_with_no_control_client_is_refused_without_waiting -- --exact --nocapture`: CAUGHT, exit 101. The request took 5.006497208 s and failed the under-one-second assertion; compilation succeeded.\n- M6, await the blocking JoinHandle without `timeout_at`: `just shared-build -- test --locked -p pij-daemon --test revive_http a_stalled_pane_read_never_stretches_the_bound -- --exact --nocapture`: CAUGHT, exit 101. The measured request took 6.53249725 s and failed the 5.6-second upper bound; compilation succeeded.\n- Both mutations were reversed using explicit patches; `git diff --exit-code` proved source restoration before the restored-head run.\n- Restored head, same complete `revive_http` command: PASS again, 23/23, 6.87 s test execution. The clean disposable worktree was removed without force; the review checkout remains clean.\n- `just pr-freeze 275`: PASS, both remote head sources agree on the full head, main base, CLEAN, latest checks successful.\n- Exact-head CI: successful run 44642525540, rust-test job 135982311068, upload-log-selected JUnit artifact 14587688651: 2599 tests, zero failures/errors/skips; all 23 revive tests and six spawn-site tests pass. The stalled-read testcase's total 6.575 s includes runtime teardown waiting for detached work, not a measured HTTP-deadline failure.\n\n## C34 follow-ups, not final-round blocks\n\n**R275-FU-01 (shared with security): qualify abandoned-worker lifetime/cost.** Reads are sequential within one helper: at most one unfinished blocking job per invocation, including at most one abandoned at timeout/cancellation. N simultaneous invocations can therefore leave N jobs; requests are not coalesced or admission-limited by seat. On the ordinary reply path, the receiver times out after three seconds. However, that is not an unconditional whole-worker lifetime bound: the existing synchronous mutex acquisition, pipe writes and control-client child reaping are outside `REPLY_TIMEOUT` (`crates/tmux/src/control.rs:171-175,245-291,397-410`). Under a stuck control path, repeated abandoned requests can accumulate blocking work. Preserve this distinction in cost claims; any further admission/deadline hardening is follow-up scope, not a new block on this clean-quit fix.\n\nDetached work owns only the tmux Arc and runtime handle. It can finish existing control-client bookkeeping/cleanup, but holds no registry snapshot, caller authority or revive continuation. Per-command reply channels/FIFO and original-client correlation prevent a late result answering a different revive.\n\n**R275-FU-02: make timing/count witnesses load-tolerant.** The new under-one-second and 5.6-second upper bounds, the tightened six-second bound, and the 20..21 exact read count depend on scheduler responsiveness (`crates/daemon/tests/revive_http.rs:268-275,292-295,319-322`). They do not use `scaled()`. They time a fake rather than real child processes, so the narrow real-child scaling mandate is not itself violated, but the small unscaled scheduling margin is not a robust loaded-fleet guarantee. Keep the production five-second deadline fixed; encode scheduling slack or deterministic time without losing the M6 failure. This is a C34 follow-up.\n\nCost: no steady-state work; only explicit revive requests. At most 21 launch-free pane-read jobs and one in-process liveness read per qualifying wait; concurrent requests multiply those jobs, not OS process launches. This is a pane-presence brake, not a changed revival policy. Live candidate before/after proof remains the author's explicitly deferred post-merge/bounce receipt.\n\n## Harness feedback\n\nmagicWand: a scoped review/mutation command producing baseline, mutant and restoration receipts while preserving the review checkout and serializing the shared target.\n\ndifficulties: a dependency-free review checkout cannot run its local JS gates (C25 prohibits borrowing node_modules by symlink). `harness boot --json` returned advisory `ready:false`. Full `harness checks --json` was attempted, then stopped after its broad work held the shared target while the restored-source test queued; no complete local gate result or green pass is claimed. The restored targeted run passed after the inventory was stopped. Exact-head CI is the JS/full-suite proof. A useful harness improvement is a review mode that selects exact-head CI evidence before taking the shared build target for a local inventory that cannot pass without JS tooling.\n"
+		}
+	]
+}
