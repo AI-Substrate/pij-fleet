@@ -467,7 +467,10 @@
 					"harness_session": "01a1f2c1-73ff-70b7-ac14-f3d6ebd63159",
 					"instance_key": "292",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "#292 merged and F238 deployed after-note complete; pm-001 requests release; F242 review will use its own PR holding",
+					"released_by": "pij-melodic-snail",
 					"seat": "pij-melodic-snail",
+					"to": "2026-11-20T13:51:57.341Z",
 					"why": "pm-001 explicitly requests retaining performance/292 after merge for F238 deployed performance follow-through"
 				}
 			]
