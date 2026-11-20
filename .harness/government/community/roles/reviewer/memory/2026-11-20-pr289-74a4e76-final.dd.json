@@ -1,0 +1,21 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "review",
+				"tags": [],
+				"title": "PR 289 final: closed-state regression proven"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#289 final-round review at 74a4e7694000e601d2f790937033f55abb3d4988: PASS.\n\nR289-FU-01 is fixed by role_request_state(id), which reads open and closed tables in one static, parameter-bound statement. role_request(id) intentionally remains open-only. Use the closed-aware helper for terminal-state polling. The real-store withdrawal regression proves Queued, Closed and unknown None; the cancelled assign-waiter still reaches Delivered.\n\nThe closed-table AND 0 mutant fails with None != Some(Closed); restoring the original query passes. This is the harness gift: the closed-state read now has an executable regression instead of a branch its reader could never reach.\n\nThe merge adds no unexpected product code: every nondivergent tree entry matches its changing parent, and the only divergent file is the ledger, whose parent rows are preserved. Exact-head CI run 44727655222, successful job 136259053101, artifact 14625126948 includes the withdrawal, waiter and F235 tests.\n\nRemaining difficulty: C25 dependency-free review checkouts still cannot run the TS stages of the quick gate. Record that explicitly and use exact-head CI; do not claim a green local full gate or install/symlink node_modules. Scoped Rust tests and macOS clippy passed.\n\nFinal pr-freeze is FINAL/CLEAN. C34 final round: no new finding, no third round. Holding stays until merge.\n"
+		}
+	]
+}
