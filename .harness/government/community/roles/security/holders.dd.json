@@ -800,6 +800,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-elated-ermine",
 					"why": "#291 F239 security"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T12:09:37.075Z",
+					"harness": "copilot",
+					"harness_session": "a14a7452-08b8-4578-900f-1919501d83b0",
+					"instance_key": "290",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-suitable-trout",
+					"why": "#290 F237 security"
 				}
 			]
 		}
