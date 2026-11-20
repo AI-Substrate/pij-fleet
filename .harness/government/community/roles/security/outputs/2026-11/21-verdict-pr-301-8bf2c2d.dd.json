@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fb2b-d3d6-72d3-bc47-49c646c7e052",
+				"date": "2026-11-21",
+				"head": "8bf2c2d03862cf07ac8aeefd527a3f6c8cdbcbb3",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:301",
+				"writer": "pij-uncertain-antelope",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"S301-N1: open daemon.log.new / .1.new with create_new after remove (O_EXCL), plus a symlink-plant regression; same-UID only under C33"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "standalone rustc repro of Rotation::rotate with a symlink planted at daemon.log.new and at daemon.log.1.new",
+					"exit_code": 0,
+					"log": "victim 35 -> 0 bytes in both cases; .new case left daemon.log -> victim"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict: #301 at 8bf2c2d03862cf07ac8aeefd527a3f6c8cdbcbb3, PASS WITH NOTES\n\nScope: crates/cli/src/daemon_log.rs (all of it), main.rs wiring, identity.rs comment, spawn_sites.rs N2 sensor, the docs/RUNBOOK/difficulties diffs. Static review plus one standalone repro. No cargo build, no daemon started, live ~/.pij-rs/daemon.log not touched (only `ls -l` for its mode).\n\n## What holds\n- **adopt guard** (daemon_log.rs:338-348): `symlink_metadata` plus dev/ino against the inherited fd. A symlinked daemon.log is never managed (test at :970).\n- **The trim never truncates the adopted inode in place** (keep_tail :397-417). It copies the tail to a new `.1`, then unlinks the *name*. Shifts are `rename`, which replaces names and never follows links. So hard links to the old log and the old file's bytes elsewhere survive. Each operation touches only a fixed name under `<state>/daemon.log*`.\n- **Modes**: the fresh `daemon.log`, `.new` and `.1.new` are created 0600 (:369, :406). A renamed file keeps its mode. Nothing widens. The trimmed `.1` of today's 0644 log becomes 0600, so it tightens.\n- **Steering the template map** (admit, :509-560): a new template is always written, and eviction or expiry only forgets, so the next line is written. Eviction is a **brake** on suppression: remove it and the map suppresses the same set or more. A caller-controlled line can hide another line only by matching its template exactly (the same words, the same seat name), and that line still shows up as a count with its template. Flooding distinct templates defeats dedup, but rotation still bounds the size.\n- **Secrets / C21**: no new data is logged. A summary repeats a template already written once, with its digits blanked. The rotation note gives a byte count and the file name. The io errors carry no paths. The docs use `~/.pij-rs` / `<state-dir>`, with no home paths.\n- **N1** (identity.rs): the reworded comment says accurately that walk links are bare pids, with no start-time check, and that pid reuse could in principle lead to `host`. This matches my per-hop ancestry note of 2026-11-21.\n- **No new launches** in daemon_log. The `gh` RESOLVED_ELSEWHERE entry is a settings-resolved `&Path`, as before.\n\n## Notes (none blocking)\n\n**S301-N1 (low; same-UID only under C33): `.new` / `.1.new` are opened create+truncate and follow symlinks.**\ndaemon_log.rs:364-370 and :401-407 use `create(true).truncate(true)` with no `O_NOFOLLOW`/`O_EXCL`. A symlink planted at `daemon.log.new` or `daemon.log.1.new` therefore makes rotation **truncate a file outside the state dir**. In the `.new` case, the rename at :389 then installs the link as `daemon.log`. The daemon keeps writing its log into the outside file, and every later start declines to manage it (adopt refuses symlinks), so the log is unbounded again.\n\nRepro: the verbatim `Rotation` code, compiled standalone, with cap 100 and a 200-byte log, against a victim file in a scratch dir.\n- With `daemon.log.new` linked to the victim: the victim went from 35 to 0 bytes and `daemon.log` became `-> victim`.\n- With `daemon.log.1.new` linked to the victim: the victim went from 35 to 0 bytes and `daemon.log.1` became `-> victim`.\n\nWhy this is not a block: planting needs write access to the state dir. The default `~/.pij-rs` is user-owned 0755, and C33 sets the trust boundary at the user account. A `--state-dir` / `PIJ_RS_STATE_DIR` in an other-UID-writable directory would make it cross-UID, so the claim \"the trim can only touch the state dir's own daemon.log\" holds only under C33.\n\nSuggested fix, about 4 lines: `remove_file` the staging name (ignoring NotFound), then open with `create_new(true)` (O_EXCL refuses any existing name, a dangling link included). Add a regression test that plants both links and asserts the victim is unchanged. If you fix it now I will re-check; otherwise carry it as a stretch item.\n\n**S301-N2 (informational): the repeat key is `DefaultHasher::new()`, SipHash with fixed public keys** (:511-514). Two templates that collide on 64 bits merge, and the second is reported under the first's text. Finding a second preimage of a chosen security line is about 2^64 of work, so this is not practical. `RandomState`, or comparing the stored template, would remove it.\n\n**S301-N3 (informational, forensic):** lines that differ only in digits merge by design, such as repeated `caller pid N not descended from host M` refusals within 60 s. The first is written whole, and the later pids show up only as a count. That is acceptable for a size bound, and the docs state it.\n\n## Not done / limits\n- No cargo build or test run (static review plus the standalone rustc repro). Exact-head CI is 5/5 per the freeze.\n- No second-UID test.\n- Concurrent-bounce rotation races (two #90 daemons renaming each other's live file) are availability and log-loss issues in the reviewer's lane, not a confidentiality or containment issue.\n"
+		}
+	]
+}
