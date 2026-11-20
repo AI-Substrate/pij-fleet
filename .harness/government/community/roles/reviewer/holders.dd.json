@@ -2170,7 +2170,10 @@
 					"harness_session": "8754052e-e5ea-4ec5-9711-89fc659723d7",
 					"instance_key": "276",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #276 merged (df01a3380f89)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-correct-ocelot",
+					"to": "2026-11-20T00:40:19.666Z",
 					"why": "#276 R273-001 test fix, after #275"
 				}
 			]
