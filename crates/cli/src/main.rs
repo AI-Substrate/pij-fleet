@@ -3156,8 +3156,12 @@ async fn run_daemon(
             // Installed before the readiness line, not on the first poll of
             // ctrl_c(): a SIGINT sent as soon as "listening on" appears must
             // shut down cleanly rather than take the default action (F27).
+            // SIGTERM (launchd's stop) too, so the tmux control client leaves
+            // through its teardown rather than with the process (F238).
             let interrupt =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt());
+            let terminate =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
             println!(
                 "pij-rs daemon: listening on {} · key {} (0600) · offline={} · paired with {}",
                 daemon.addr,
@@ -3195,11 +3199,20 @@ async fn run_daemon(
                     daemon.addr
                 ),
             }
-            match interrupt {
-                Ok(mut interrupt) => {
+            match (interrupt, terminate) {
+                (Ok(mut interrupt), Ok(mut terminate)) => {
+                    tokio::select! {
+                        _ = interrupt.recv() => {}
+                        _ = terminate.recv() => {}
+                    }
+                }
+                (Ok(mut interrupt), Err(error)) => {
+                    eprintln!("pij-rs: could not install the terminate handler: {error}");
                     interrupt.recv().await;
                 }
-                Err(error) => eprintln!("pij-rs: could not install the interrupt handler: {error}"),
+                (Err(error), _) => {
+                    eprintln!("pij-rs: could not install the interrupt handler: {error}");
+                }
             }
             println!("pij-rs daemon: shutting down");
             match daemon.shutdown().await {

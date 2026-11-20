@@ -169,6 +169,18 @@ fn executable(path: &Path) -> bool {
         && nix::unistd::access(path, nix::unistd::AccessFlags::X_OK).is_ok()
 }
 
+/// This process's real user id: the one tmux names its socket directory by
+/// (`tmux-<uid>`, F238).
+#[must_use]
+pub fn real_uid() -> u32 {
+    nix::unistd::getuid().as_raw()
+}
+
+/// The `open(2)` flag that refuses a symlink as the last path component: a
+/// lock file beside a tmux socket must be pij's own file, never one a link
+/// points it at (F238).
+pub const OPEN_NO_FOLLOW: i32 = nix::libc::O_NOFOLLOW;
+
 #[cfg(test)]
 mod tests {
     use std::ffi::{OsStr, OsString};

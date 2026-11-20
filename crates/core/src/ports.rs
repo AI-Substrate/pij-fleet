@@ -1000,6 +1000,11 @@ pub trait TmuxPort: Send + Sync {
     /// All panes tmux currently reports.
     async fn list_panes(&self) -> Result<Vec<Pane>>;
 
+    /// End any persistent tmux client this port holds, cleanly, for good
+    /// (F238): a daemon shutting down calls it after its workers stop. It
+    /// blocks for at most a bounded teardown. Ports without one do nothing.
+    fn release_control(&self) {}
+
     /// The pane's foreground process and working folder, asked of tmux directly.
     ///
     /// `Ok(None)` means the pane is GONE — a distinct fact from a tmux failure,

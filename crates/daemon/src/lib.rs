@@ -324,6 +324,9 @@ pub struct Daemon {
     session_warmup: tokio::task::JoinHandle<()>,
     /// Sender notices for parked deliveries; aborted, then joined, at shutdown.
     park_notices: tokio::task::JoinHandle<()>,
+    /// Its tmux client, released last at shutdown so `_pij` is handled before
+    /// the control client goes (F238).
+    tmux: Arc<dyn TmuxPort>,
 }
 
 impl Daemon {
@@ -390,6 +393,10 @@ impl Daemon {
                     })
             },
         );
+        // Every worker that reads tmux has stopped. The control client leaves
+        // through its bounded teardown, never by the process dying (F238).
+        let tmux = Arc::clone(&self.tmux);
+        let _ = tokio::task::spawn_blocking(move || tmux.release_control()).await;
         // Join work we own first. Both this join and physical pool cleanup share
         // one deadline: leaked leases must never turn stop into another wedge.
         let deadline = tokio::time::Instant::now() + SHUTDOWN_DRAIN_TIMEOUT;
@@ -1024,6 +1031,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         ..config.clone()
     };
     let services = build_services(&bound_config, &pane_signal_dir).await?;
+    let control_tmux = Arc::clone(&services.tmux);
 
     // 4. Resolve this machine's identity. FALLIBLE, and therefore BEFORE the
     //    publish: hostname lookup can fail and a configured alias can be empty.
@@ -1292,6 +1300,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         key,
         event_bus,
         delivery,
+        tmux: control_tmux,
         store_pools,
         shutdown,
         joined,
