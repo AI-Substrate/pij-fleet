@@ -743,7 +743,10 @@
 					"harness_session": "aa2e246e-ec9e-489a-b082-c2fcf262e139",
 					"instance_key": "286",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #286 merged (a89e8cb64452)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-inner-koi",
+					"to": "2026-11-20T09:57:11.272Z",
 					"why": "#286 F199 security"
 				}
 			]
