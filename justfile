@@ -727,7 +727,15 @@ bounce-rs:
     sh harness/scripts/install-pij-rs.sh "$built" "$bin" >/dev/null
     bin="$bin/pij-rs"
     old=$(lsof -nP -iTCP:7461 -sTCP:LISTEN -t || true)
-    [ -n "$old" ] && kill "$old" && sleep 0.5
+    # F238: SIGINT, the daemon's graceful stop, so its tmux control client leaves
+    # through its teardown; then wait for the old pid (at most 30 s, as
+    # `pij-rs daemon bounce` does) before the new one starts. SIGKILL only past that.
+    if [ -n "$old" ]; then
+      kill -INT "$old" 2>/dev/null || true
+      i=0
+      while kill -0 "$old" 2>/dev/null && [ "$i" -lt 150 ]; do sleep 0.2; i=$((i + 1)); done
+      if kill -0 "$old" 2>/dev/null; then echo "bounce-rs: pid $old did not stop in 30s; killing it" >&2; kill -9 "$old" 2>/dev/null || true; fi
+    fi
     # Telegram worker is OPT-IN by env (crates/daemon/src/lib.rs); a bare restart silently turns it off.
     # The idle-holder nudge is OFF in a bare daemon (Config::idle_nudge, F144) and ON from this recipe
     # and rs-autostart (F147); `PIJ_IDLE_NUDGE=0 just bounce-rs` turns it off for one bounce.

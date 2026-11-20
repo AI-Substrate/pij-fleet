@@ -169,6 +169,13 @@ fn executable(path: &Path) -> bool {
         && nix::unistd::access(path, nix::unistd::AccessFlags::X_OK).is_ok()
 }
 
+/// This process's real user id: the one tmux names its socket directory by
+/// (`tmux-<uid>`, F238).
+#[must_use]
+pub fn real_uid() -> u32 {
+    nix::unistd::getuid().as_raw()
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::{OsStr, OsString};

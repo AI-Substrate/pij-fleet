@@ -25,7 +25,19 @@
 //! the setup's `destroy-unattached on`, SIGSEGV the tmux 3.6a server and take
 //! every pane on it down. The lock is a brake: it can only delay or refuse an
 //! attach. While another process holds it, reads are skipped ([`Query::Busy`])
-//! rather than forked, so contention launches nothing and nothing waits.
+//! rather than forked, so contention launches nothing and nothing waits. The
+//! lock is keyed by the server's socket path (F238), so every pij process
+//! using one server, whatever its state root, takes the same one.
+//!
+//! A client leaves through [`Live`]'s teardown (F238): over its own still
+//! attached pipe it kills `_pij` when it is `_pij`'s only client and `_pij`
+//! holds only the control pane, and otherwise switches `_pij`'s
+//! `destroy-unattached` off; only then is it killed. Leaving it to
+//! `destroy-unattached` crashed tmux (3.4, and rarely 3.6a): a client that is
+//! dead but not yet lost does not count as attached, so `_pij` was destroyed
+//! under it, and its own `client-detached` notify read the destroyed session.
+//! `destroy-unattached` stays on while attached, so a client that dies
+//! uncleanly (SIGKILL, a crash) still has `_pij` cleaned up, at that risk.
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -68,6 +80,22 @@ const SESSIONS_SUBSCRIPTION: &str = "pij-sessions";
 /// alone: the client stays, and so does the server.
 const ALONE: &str =
     "#{&&:#{==:#{server_sessions},1},#{&&:#{==:#{session_windows},1},#{==:#{window_panes},1}}}";
+/// F238: the teardown a leaving client runs while still attached. `_pij` with
+/// this client as its only client and nothing but the control pane is killed;
+/// any other `_pij` stays, with `destroy-unattached` off so no later exit can
+/// destroy it under a dying client. Untargeted: it applies to this client's
+/// own session, `_pij`.
+const TEARDOWN: [&str; 5] = [
+    "if-shell",
+    "-F",
+    "#{&&:#{==:#{session_attached},1},#{&&:#{==:#{session_windows},1},#{==:#{window_panes},1}}}",
+    "kill-session",
+    "set-option destroy-unattached off",
+];
+/// How long a leaving client waits for its teardown's answer before it is
+/// killed anyway: a healthy server answers in milliseconds, and a dead pipe
+/// or a frozen server must never hold an exit (F238).
+const TEARDOWN_WAIT: Duration = Duration::from_secs(1);
 
 /// One command's answer: its output lines, or tmux's error lines.
 pub(crate) type Reply = std::result::Result<Vec<Vec<u8>>, Vec<Vec<u8>>>;
@@ -176,6 +204,8 @@ struct Waiters {
     dead: bool,
     /// Died because `_pij` was the only session: wait before restarting.
     alone: bool,
+    /// The reader has stopped: nothing written now can be answered.
+    closed: bool,
 }
 
 struct Live {
@@ -185,9 +215,39 @@ struct Live {
 }
 
 impl Drop for Live {
+    /// Every way a client leaves (the adapter dropped, a replacement after a
+    /// slow or lost reply, `_pij` alone, a daemon shutting down) comes here.
     fn drop(&mut self) {
+        self.leave();
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+impl Live {
+    /// F238: run [`TEARDOWN`] over the still-attached pipe and wait for its
+    /// answer, at most [`TEARDOWN_WAIT`], so the server has handled `_pij`
+    /// before this client can be lost. A pipe that is already closed (the
+    /// reader stopped, or the write fails) is not waited on.
+    fn leave(&mut self) {
+        let line = command_line(&TEARDOWN.map(OsString::from)).expect("teardown quotes");
+        let (sender, receiver) = mpsc::sync_channel(1);
+        {
+            let Ok(mut waiters) = self.waiters.lock() else {
+                return;
+            };
+            if waiters.closed {
+                return;
+            }
+            waiters.queue.push_back(sender);
+        }
+        let written = self
+            .stdin
+            .write_all(format!("{line}\n").as_bytes())
+            .and_then(|()| self.stdin.flush());
+        if written.is_ok() {
+            let _ = receiver.recv_timeout(TEARDOWN_WAIT);
+        }
     }
 }
 
@@ -197,6 +257,8 @@ struct State {
     retry_after: Option<Instant>,
     /// When this client first found another process attaching (F229).
     contended_since: Option<Instant>,
+    /// [`ControlClient::release`] ran: no client starts again.
+    released: bool,
 }
 
 /// What a read over the control client came to.
@@ -226,10 +288,41 @@ pub(crate) struct ControlClient {
     binary: OsString,
     server: Option<String>,
     enabled: bool,
-    /// The lock file attach and setup hold (F229): one per server, in the
-    /// adapter's state root.
-    attach_lock: PathBuf,
+    /// The lock attach and setup hold (F229, F238).
+    attach_lock: AttachLock,
     state: Mutex<State>,
+}
+
+/// Where a client's attach lock lives.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AttachLock {
+    /// Beside the server's socket (F238), so every pij process using that
+    /// server takes the same lock whatever its state root. The directory is
+    /// tmux's own and is never created here: tmux refuses a socket directory
+    /// it did not make private, and without it there is no server to attach.
+    Socket(PathBuf),
+    /// A custom executable's (fakes and wrappers): its socket is not pij's to
+    /// know, so the lock stays in the adapter's state root, made if absent.
+    Private(PathBuf),
+}
+
+impl AttachLock {
+    /// The lock for the real `tmux` on `server`.
+    pub(crate) fn for_socket(server: Option<&str>) -> Self {
+        Self::Socket(socket_attach_lock_path(&socket_path(server)))
+    }
+
+    fn take(&self) -> io::Result<File> {
+        match self {
+            Self::Socket(path) => lock_attach(path),
+            Self::Private(path) => {
+                if let Some(dir) = path.parent() {
+                    fs::create_dir_all(dir)?;
+                }
+                lock_attach(path)
+            }
+        }
+    }
 }
 
 impl std::fmt::Debug for ControlClient {
@@ -241,15 +334,12 @@ impl std::fmt::Debug for ControlClient {
 }
 
 impl ControlClient {
-    /// `state_root` is the adapter's tap root (the daemon's
-    /// `<state>/pane-signals`); the attach lock lives there.
     pub(crate) fn new(
         binary: OsString,
         server: Option<String>,
         enabled: bool,
-        state_root: &Path,
+        attach_lock: AttachLock,
     ) -> Self {
-        let attach_lock = attach_lock_path(state_root, server.as_deref());
         Self {
             binary,
             server,
@@ -262,6 +352,11 @@ impl ControlClient {
     #[cfg(test)]
     pub(crate) fn enabled(&self) -> bool {
         self.enabled
+    }
+
+    #[cfg(test)]
+    pub(crate) fn attach_lock(&self) -> &AttachLock {
+        &self.attach_lock
     }
 
     /// The program the control client would launch.
@@ -299,6 +394,16 @@ impl ControlClient {
         }
     }
 
+    /// End the live client for good (a daemon shutting down, F238): it leaves
+    /// through its teardown, and no read starts another one; reads fork.
+    pub(crate) fn release(&self) {
+        let live = self.state.lock().ok().and_then(|mut state| {
+            state.released = true;
+            state.live.take()
+        });
+        drop(live);
+    }
+
     fn ask(&self, args: &[OsString], may_start: bool) -> Query {
         if !self.enabled || !is_read(args) {
             return Query::Fork;
@@ -322,7 +427,10 @@ impl ControlClient {
                 }
             }
             if state.live.is_none() {
-                if !may_start || state.retry_after.is_some_and(|at| Instant::now() < at) {
+                if !may_start
+                    || state.released
+                    || state.retry_after.is_some_and(|at| Instant::now() < at)
+                {
                     return Query::Fork;
                 }
                 match self.start() {
@@ -393,7 +501,7 @@ impl ControlClient {
         // F229: no other client may attach to this server until this one's
         // setup has answered. Released when `_attach` drops, on every return.
         // A held lock refuses at once; `ask` skips reads until it frees.
-        let _attach = lock_attach(&self.attach_lock)?;
+        let _attach = self.attach_lock.take()?;
         pij_core::spawns::record("tmux.control-client");
         // `-N`: no server means no client; never start one just to read it.
         // `-A`: attach to `_pij`, creating it first if it is absent.
@@ -468,14 +576,51 @@ impl ControlClient {
     }
 }
 
-/// The attach lock for `server` (`None`: the default server) under
-/// `state_root`. Keyed by the `-L` label, so isolated fixture servers never
-/// wait on the operator's. A dot file, never `*.raw`: the orphan-tap sweep
-/// cannot take it for a sink.
+/// The attach lock for a custom executable's `server` (`None`: its default)
+/// under `state_root` ([`AttachLock::Private`]). Keyed by the `-L` label. A
+/// dot file, never `*.raw`: the orphan-tap sweep cannot take it for a sink.
 #[must_use]
 pub fn attach_lock_path(state_root: &Path, server: Option<&str>) -> PathBuf {
-    let label: String = server
-        .unwrap_or("default")
+    state_root.join(format!(
+        ".control-attach-{}.lock",
+        lock_label(server.unwrap_or("default"))
+    ))
+}
+
+/// The socket tmux itself uses: for `server` (`-L`) or, with none, the one
+/// `$TMUX` names (a process started inside tmux), else the default.
+/// Otherwise `$TMUX_TMPDIR` (or `/tmp`), resolved, then `tmux-<uid>/<label>`,
+/// as tmux builds it.
+#[must_use]
+pub fn socket_path(server: Option<&str>) -> PathBuf {
+    if server.is_none()
+        && let Some(own) = std::env::var("TMUX")
+            .ok()
+            .and_then(|value| value.split(',').next().map(str::to_string))
+            .filter(|path| !path.is_empty())
+    {
+        return PathBuf::from(own);
+    }
+    let dir = std::env::var_os("TMUX_TMPDIR")
+        .filter(|dir| !dir.is_empty())
+        .map_or_else(|| PathBuf::from("/tmp"), PathBuf::from);
+    let dir = fs::canonicalize(&dir).unwrap_or(dir);
+    dir.join(format!("tmux-{}", pij_core::program::real_uid()))
+        .join(server.unwrap_or("default"))
+}
+
+/// The attach lock beside `socket` (F238): a dot file in tmux's socket
+/// directory, one per server, shared by every pij process that uses it.
+#[must_use]
+pub fn socket_attach_lock_path(socket: &Path) -> PathBuf {
+    let name = socket
+        .file_name()
+        .map_or_else(|| "default".into(), |name| name.to_string_lossy());
+    socket.with_file_name(format!(".{}.pij-control-attach.lock", lock_label(&name)))
+}
+
+fn lock_label(label: &str) -> String {
+    label
         .chars()
         .map(|ch| {
             if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
@@ -484,8 +629,7 @@ pub fn attach_lock_path(state_root: &Path, server: Option<&str>) -> PathBuf {
                 '_'
             }
         })
-        .collect();
-    state_root.join(format!(".control-attach-{label}.lock"))
+        .collect()
 }
 
 /// Take the exclusive attach lock at `path` now or refuse (F229): never
@@ -493,16 +637,13 @@ pub fn attach_lock_path(state_root: &Path, server: Option<&str>) -> PathBuf {
 /// worker. The kernel releases an `flock` when its holder's last descriptor
 /// closes, so a holder that died never blocks anyone. A held lock is
 /// [`io::ErrorKind::WouldBlock`]: the start is refused, never made without
-/// the lock.
+/// the lock. Its directory must exist ([`AttachLock::take`]).
 ///
 /// S280-001: the file is private (0600) whatever the umask, and one left
 /// wider is narrowed through this descriptor before locking, so its inode,
 /// the lock's identity, never changes. Another user who could open it could
 /// otherwise hold the lock and keep this daemon's clients from starting.
 pub(crate) fn lock_attach(path: &Path) -> io::Result<File> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
     let file = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -587,10 +728,13 @@ fn send(live: &mut Live, line: &str) -> Option<mpsc::Receiver<Reply>> {
 
 /// Route each closed block to the oldest waiter. Blocks before the handshake
 /// sentinel (the attach command's own block) have no waiter and are dropped.
+///
+/// `_pij` alone ends the client for reads at once (its caller replaces it),
+/// but reading goes on until the pipe closes, so the leaving client's
+/// teardown is still answered (F238).
 fn read_replies(mut stdout: impl BufRead, waiters: &Mutex<Waiters>) {
     let mut framer = Framer::default();
     let mut ready = false;
-    let mut alone = false;
     let mut line = Vec::new();
     loop {
         line.clear();
@@ -605,8 +749,11 @@ fn read_replies(mut stdout: impl BufRead, waiters: &Mutex<Waiters>) {
             None => {}
             Some(Frame::Exit) => break,
             Some(Frame::Alone) => {
-                alone = true;
-                break;
+                if let Ok(mut waiters) = waiters.lock() {
+                    waiters.dead = true;
+                    waiters.alone = true;
+                    waiters.queue.clear();
+                }
             }
             Some(Frame::Reply(reply)) => {
                 if !ready {
@@ -624,7 +771,7 @@ fn read_replies(mut stdout: impl BufRead, waiters: &Mutex<Waiters>) {
     }
     if let Ok(mut waiters) = waiters.lock() {
         waiters.dead = true;
-        waiters.alone = alone;
+        waiters.closed = true;
         waiters.queue.clear();
     }
 }
@@ -632,8 +779,9 @@ fn read_replies(mut stdout: impl BufRead, waiters: &Mutex<Waiters>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ATTACH_LOCK_WAIT, Frame, Framer, Live, REPLY_TIMEOUT, State, Waiters, attach_lock_held,
-        attach_lock_path, command_line, forget, is_read, lock_attach, still_waiting_for_attach,
+        ATTACH_LOCK_WAIT, Frame, Framer, Live, REPLY_TIMEOUT, State, TEARDOWN_WAIT, Waiters,
+        attach_lock_held, attach_lock_path, command_line, forget, is_read, lock_attach,
+        still_waiting_for_attach,
     };
     use std::ffi::OsString;
     use std::fs;
@@ -843,7 +991,16 @@ mod tests {
         );
     }
 
+    /// A client whose reader has stopped: dropping it waits on nothing.
     fn idle_client() -> Live {
+        let live = unanswered_client();
+        live.waiters.lock().expect("waiters").closed = true;
+        live
+    }
+
+    /// A client nothing ever answers (`cat`, its output discarded), as a
+    /// frozen server or a lost reply looks to a leaving client.
+    fn unanswered_client() -> Live {
         let mut child = Command::new("cat")
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
@@ -855,6 +1012,43 @@ mod tests {
             stdin,
             waiters: Arc::new(Mutex::new(Waiters::default())),
         }
+    }
+
+    /// F238: a teardown nobody answers holds the exit for at most
+    /// [`TEARDOWN_WAIT`], then the client is killed and reaped anyway.
+    #[test]
+    fn an_unanswered_teardown_is_bounded_and_the_client_still_goes() {
+        let live = unanswered_client();
+        let pid = live.child.id();
+        let started = Instant::now();
+        drop(live);
+        let took = started.elapsed();
+        assert!(took >= TEARDOWN_WAIT, "it waited for the answer: {took:?}");
+        assert!(
+            took < TEARDOWN_WAIT + pij_testkit::time::scaled(Duration::from_secs(2)),
+            "bounded: {took:?}"
+        );
+        assert!(!process_alive(pid), "the client was killed and reaped");
+    }
+
+    /// F238: a client whose pipe is already closed (its reader stopped, as
+    /// when tmux exited it) is not waited on at all.
+    #[test]
+    fn a_closed_client_leaves_without_waiting() {
+        let live = idle_client();
+        let pid = live.child.id();
+        let started = Instant::now();
+        drop(live);
+        assert!(started.elapsed() < TEARDOWN_WAIT, "{:?}", started.elapsed());
+        assert!(!process_alive(pid));
+    }
+
+    fn process_alive(pid: u32) -> bool {
+        Command::new("/bin/kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
     }
 
     /// S4: when a client dies every waiter in flight wakes at once. A waiter
@@ -871,6 +1065,7 @@ mod tests {
             live: Some(replacement),
             retry_after: None,
             contended_since: None,
+            released: false,
         };
         forget(&mut state, &old_waiters);
         assert!(
@@ -886,10 +1081,12 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        std::env::temp_dir().join(format!(
+        let dir = std::env::temp_dir().join(format!(
             "pij-attach-lock-{label}-{}-{nanos}",
             std::process::id()
-        ))
+        ));
+        fs::create_dir_all(&dir).expect("lock dir");
+        dir
     }
 
     /// F229: each server has its own attach lock, so an isolated fixture

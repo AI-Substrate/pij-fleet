@@ -3,7 +3,7 @@
 mod control;
 mod ledger;
 
-pub use control::{CONTROL_SESSION, attach_lock_path};
+pub use control::{CONTROL_SESSION, attach_lock_path, socket_attach_lock_path, socket_path};
 mod parse;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -196,7 +196,7 @@ impl TmuxAdapter {
                 OsString::from("tmux"),
                 None,
                 true,
-                &tap_root,
+                control::AttachLock::for_socket(None),
             )),
             binary: OsString::from("tmux"),
             server: None,
@@ -216,7 +216,7 @@ impl TmuxAdapter {
                 OsString::from("tmux"),
                 None,
                 true,
-                &tap_root,
+                control::AttachLock::for_socket(None),
             )),
             binary: OsString::from("tmux"),
             server: None,
@@ -238,7 +238,7 @@ impl TmuxAdapter {
                 binary.clone(),
                 None,
                 false,
-                &tap_root,
+                control::AttachLock::Private(control::attach_lock_path(&tap_root, None)),
             )),
             binary,
             server: None,
@@ -263,7 +263,7 @@ impl TmuxAdapter {
                 OsString::from("tmux"),
                 Some(server.clone()),
                 true,
-                &tap_root,
+                control::AttachLock::for_socket(Some(&server)),
             )),
             binary: OsString::from("tmux"),
             server: Some(server),
@@ -896,6 +896,10 @@ impl TmuxPort for TmuxAdapter {
     async fn list_panes(&self) -> Result<Vec<Pane>> {
         let output = self.stdout("list-panes", &self.list_args())?;
         parse_panes(&output)
+    }
+
+    fn release_control(&self) {
+        self.control.release();
     }
 
     async fn pane_process(&self, pane: &str) -> Result<Option<PaneProcess>> {
@@ -1850,6 +1854,31 @@ mod control_defaults {
                 .control
                 .enabled()
         );
+    }
+
+    /// F238: the lock is the server's, not the daemon's. Two adapters for one
+    /// server with different state roots take the same lock, beside its
+    /// socket; another server takes another; a fake executable keeps its own
+    /// in its state root, never the live server's.
+    #[test]
+    fn one_server_one_attach_lock_whatever_the_state_root() {
+        use super::control::{AttachLock, socket_path};
+        let (a, b) = (
+            std::env::temp_dir().join("a"),
+            std::env::temp_dir().join("b"),
+        );
+        let lock = |adapter: &TmuxAdapter| adapter.control.attach_lock().clone();
+        let srv = lock(&TmuxAdapter::for_server("srv", &a));
+        assert_eq!(srv, lock(&TmuxAdapter::for_server("srv", &b)));
+        assert_ne!(srv, lock(&TmuxAdapter::for_server("other", &a)));
+        let AttachLock::Socket(path) = &srv else {
+            panic!("a real server's lock is its socket's: {srv:?}");
+        };
+        assert_eq!(path.parent(), socket_path(Some("srv")).parent());
+        let AttachLock::Private(fake) = lock(&TmuxAdapter::with_binary("fake-tmux", &a)) else {
+            panic!("a fake executable keeps its own lock");
+        };
+        assert!(fake.starts_with(&a), "{}", fake.display());
     }
 }
 
