@@ -705,7 +705,7 @@ _pij-bins-path-check:
 # Rebuild pij-rs from THIS checkout and restart the production rs daemon in one act
 # (sub-second gap; clients reconnect). Standing order after any rs merge. Verifies pid change + ping.
 bounce-rs:
-    #!/usr/bin/env sh
+    #!/usr/bin/env bash
     set -eu
     # PIJ_IDLE_NUDGE reaches the daemon (and the LaunchAgent plist) only as 1 or 0: any
     # other value is refused here, before anything is built, stopped or written (#196 S196-001).
@@ -728,13 +728,27 @@ bounce-rs:
     bin="$bin/pij-rs"
     old=$(lsof -nP -iTCP:7461 -sTCP:LISTEN -t || true)
     # F238: SIGINT, the daemon's graceful stop, so its tmux control client leaves
-    # through its teardown; then wait for the old pid (at most 30 s, as
-    # `pij-rs daemon bounce` does) before the new one starts. SIGKILL only past that.
+    # through its teardown; then wait for the old pid before the new one starts.
+    # The wait is on the clock, not a count (bash's SECONDS, whole seconds): it
+    # ends 29 to 30 s after the signal, plus at most one 0.2 s sleep. Only then
+    # SIGKILL, and a second wait (4 to 5 s) for the pid to go. A daemon still
+    # there, or a port still held, after that starts nothing: two daemons are
+    # worse than none. Absolute /bin/sleep: no PATH search per poll (AGENTS.md).
     if [ -n "$old" ]; then
       kill -INT "$old" 2>/dev/null || true
-      i=0
-      while kill -0 "$old" 2>/dev/null && [ "$i" -lt 150 ]; do sleep 0.2; i=$((i + 1)); done
-      if kill -0 "$old" 2>/dev/null; then echo "bounce-rs: pid $old did not stop in 30s; killing it" >&2; kill -9 "$old" 2>/dev/null || true; fi
+      since=$SECONDS
+      while kill -0 "$old" 2>/dev/null && [ $((SECONDS - since)) -lt 30 ]; do /bin/sleep 0.2; done
+      if kill -0 "$old" 2>/dev/null; then
+        echo "bounce-rs: pid $old did not stop in 30s; killing it" >&2
+        kill -9 "$old" 2>/dev/null || true
+        since=$SECONDS
+        while kill -0 "$old" 2>/dev/null && [ $((SECONDS - since)) -lt 5 ]; do /bin/sleep 0.2; done
+      fi
+      held=$(lsof -nP -iTCP:7461 -sTCP:LISTEN -t || true)
+      if kill -0 "$old" 2>/dev/null || [ -n "$held" ]; then
+        echo "bounce-rs: pid $old is still running or :7461 is still held (by ${held:-nothing}); no daemon was started. Stop it, then run just bounce-rs again." >&2
+        exit 1
+      fi
     fi
     # Telegram worker is OPT-IN by env (crates/daemon/src/lib.rs); a bare restart silently turns it off.
     # The idle-holder nudge is OFF in a bare daemon (Config::idle_nudge, F144) and ON from this recipe

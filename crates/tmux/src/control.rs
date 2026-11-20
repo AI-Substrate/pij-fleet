@@ -31,18 +31,23 @@
 //!
 //! A client leaves through [`Live`]'s teardown (F238): over its own still
 //! attached pipe it kills `_pij` when it is `_pij`'s only client and `_pij`
-//! holds only the control pane, and otherwise switches `_pij`'s
-//! `destroy-unattached` off; only then is it killed. Leaving it to
+//! holds only the control client's own idle pane, and otherwise switches
+//! `_pij`'s `destroy-unattached` off; only then is it killed. Leaving it to
 //! `destroy-unattached` crashed tmux (3.4, and rarely 3.6a): a client that is
 //! dead but not yet lost does not count as attached, so `_pij` was destroyed
 //! under it, and its own `client-detached` notify read the destroyed session.
-//! `destroy-unattached` stays on while attached, so a client that dies
-//! uncleanly (SIGKILL, a crash) still has `_pij` cleaned up, at that risk.
+//! `destroy-unattached` stays on while attached, and only while `_pij` holds
+//! nothing but the idle pane, so a client that dies uncleanly (SIGKILL, a
+//! crash) still has `_pij` cleaned up, at that risk. The whole exit is
+//! bounded: the teardown is written and answered on its own thread, waited on
+//! for at most [`TEARDOWN_WAIT`], and the killed client is reaped within
+//! [`REAP_WAIT`] or handed to a thread that reaps it.
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, BufRead, BufReader, Write};
+use std::os::fd::AsFd;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -81,21 +86,29 @@ const SESSIONS_SUBSCRIPTION: &str = "pij-sessions";
 const ALONE: &str =
     "#{&&:#{==:#{server_sessions},1},#{&&:#{==:#{session_windows},1},#{==:#{window_panes},1}}}";
 /// F238: the teardown a leaving client runs while still attached. `_pij` with
-/// this client as its only client and nothing but the control pane is killed;
-/// any other `_pij` stays, with `destroy-unattached` off so no later exit can
-/// destroy it under a dying client. Untargeted: it applies to this client's
-/// own session, `_pij`.
+/// this client as its only client, one window and one pane, that pane the
+/// control client's own idle one (its start command, as [`NOT_CONTROL_PANE`]
+/// tells it), is killed. Any other `_pij` stays, with `destroy-unattached` off
+/// so no later exit can destroy it under a dying client: a pane that is real
+/// work is never killed, even when it is all `_pij` holds. Untargeted: it
+/// applies to this client's own session, `_pij`.
 const TEARDOWN: [&str; 5] = [
     "if-shell",
     "-F",
-    "#{&&:#{==:#{session_attached},1},#{&&:#{==:#{session_windows},1},#{==:#{window_panes},1}}}",
+    "#{&&:#{==:#{session_attached},1},#{&&:#{==:#{session_windows},1},#{&&:#{==:#{window_panes},1},#{m:*sleep 2147483647*,#{pane_start_command}}}}}",
     "kill-session",
     "set-option destroy-unattached off",
 ];
-/// How long a leaving client waits for its teardown's answer before it is
-/// killed anyway: a healthy server answers in milliseconds, and a dead pipe
-/// or a frozen server must never hold an exit (F238).
+/// How long a leaving client waits for its teardown to be written and
+/// answered before it is killed anyway: a healthy server answers in
+/// milliseconds, and a dead pipe, a full one or a frozen server must never
+/// hold an exit (F238).
 const TEARDOWN_WAIT: Duration = Duration::from_secs(1);
+/// How long a killed client is given to be reaped before a thread takes it
+/// over, so a process that outlives SIGKILL never holds an exit (F238).
+const REAP_WAIT: Duration = Duration::from_secs(1);
+/// How often a killed client is checked while it is reaped.
+const REAP_POLL: Duration = Duration::from_millis(5);
 
 /// One command's answer: its output lines, or tmux's error lines.
 pub(crate) type Reply = std::result::Result<Vec<Vec<u8>>, Vec<Vec<u8>>>;
@@ -209,46 +222,87 @@ struct Waiters {
 }
 
 struct Live {
-    child: Child,
+    /// Taken by [`Drop`], which kills it and reaps it, or hands it on.
+    child: Option<Child>,
     stdin: ChildStdin,
     waiters: Arc<Mutex<Waiters>>,
 }
 
 impl Drop for Live {
     /// Every way a client leaves (the adapter dropped, a replacement after a
-    /// slow or lost reply, `_pij` alone, a daemon shutting down) comes here.
+    /// slow or lost reply, `_pij` alone, a daemon shutting down) comes here,
+    /// and none of it waits longer than [`TEARDOWN_WAIT`] plus [`REAP_WAIT`].
     fn drop(&mut self) {
         self.leave();
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            reap(child);
+        }
     }
 }
 
 impl Live {
     /// F238: run [`TEARDOWN`] over the still-attached pipe and wait for its
-    /// answer, at most [`TEARDOWN_WAIT`], so the server has handled `_pij`
-    /// before this client can be lost. A pipe that is already closed (the
-    /// reader stopped, or the write fails) is not waited on.
+    /// answer, so the server has handled `_pij` before this client can be
+    /// lost. The waiter is queued and the line written on a thread of its
+    /// own, so a full pipe (a client that stopped reading) holds that thread,
+    /// never this one: this waits at most [`TEARDOWN_WAIT`] for the whole of
+    /// it, and not at all once the thread has given up (the pipe is closed,
+    /// or the write failed). After the kill that follows, a blocked write
+    /// fails and the reader's close releases the waiter, so the thread ends.
     fn leave(&mut self) {
-        let line = command_line(&TEARDOWN.map(OsString::from)).expect("teardown quotes");
-        let (sender, receiver) = mpsc::sync_channel(1);
-        {
-            let Ok(mut waiters) = self.waiters.lock() else {
-                return;
-            };
-            if waiters.closed {
-                return;
-            }
-            waiters.queue.push_back(sender);
-        }
-        let written = self
-            .stdin
-            .write_all(format!("{line}\n").as_bytes())
-            .and_then(|()| self.stdin.flush());
-        if written.is_ok() {
-            let _ = receiver.recv_timeout(TEARDOWN_WAIT);
+        let Ok(pipe) = self.stdin.as_fd().try_clone_to_owned() else {
+            return;
+        };
+        let waiters = Arc::clone(&self.waiters);
+        let (done, finished) = mpsc::sync_channel::<()>(1);
+        let spawned = std::thread::Builder::new()
+            .name("pij-tmux-leave".to_string())
+            .spawn(move || {
+                // Dropped on every return, which ends the exit's wait.
+                let _done = done;
+                let (sender, receiver) = mpsc::sync_channel(1);
+                {
+                    let Ok(mut waiters) = waiters.lock() else {
+                        return;
+                    };
+                    if waiters.closed {
+                        return;
+                    }
+                    waiters.queue.push_back(sender);
+                }
+                let line = command_line(&TEARDOWN.map(OsString::from)).expect("teardown quotes");
+                let mut pipe = File::from(pipe);
+                if pipe
+                    .write_all(format!("{line}\n").as_bytes())
+                    .and_then(|()| pipe.flush())
+                    .is_ok()
+                {
+                    let _ = receiver.recv_timeout(TEARDOWN_WAIT);
+                }
+            });
+        if spawned.is_ok() {
+            let _ = finished.recv_timeout(TEARDOWN_WAIT);
         }
     }
+}
+
+/// Reap a killed client within [`REAP_WAIT`]; one still there by then is
+/// handed to a thread that reaps it whenever it goes, so it never holds the
+/// exit and never stays a zombie.
+fn reap(mut child: Child) {
+    let deadline = Instant::now() + REAP_WAIT;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) | Err(_) => return,
+            Ok(None) => std::thread::sleep(REAP_POLL),
+        }
+    }
+    let _ = std::thread::Builder::new()
+        .name("pij-tmux-reap".to_string())
+        .spawn(move || {
+            let _ = child.wait();
+        });
 }
 
 #[derive(Default)]
@@ -298,23 +352,35 @@ pub(crate) struct ControlClient {
 pub(crate) enum AttachLock {
     /// Beside the server's socket (F238), so every pij process using that
     /// server takes the same lock whatever its state root. The directory is
-    /// tmux's own and is never created here: tmux refuses a socket directory
-    /// it did not make private, and without it there is no server to attach.
-    Socket(PathBuf),
+    /// tmux's own and is never created here: without it there is no server
+    /// to attach. Taken there only while that directory is private as tmux
+    /// requires (S292-001); otherwise `fallback`, in the adapter's state root.
+    Socket { path: PathBuf, fallback: PathBuf },
     /// A custom executable's (fakes and wrappers): its socket is not pij's to
     /// know, so the lock stays in the adapter's state root, made if absent.
     Private(PathBuf),
 }
 
 impl AttachLock {
-    /// The lock for the real `tmux` on `server`.
-    pub(crate) fn for_socket(server: Option<&str>) -> Self {
-        Self::Socket(socket_attach_lock_path(&socket_path(server)))
+    /// The lock for the real `tmux` on `server`, falling back to one under
+    /// `state_root` beside a socket directory others could write to.
+    pub(crate) fn for_socket(server: Option<&str>, state_root: &Path) -> Self {
+        Self::Socket {
+            path: socket_attach_lock_path(&socket_path(server)),
+            fallback: attach_lock_path(state_root, server),
+        }
     }
 
     fn take(&self) -> io::Result<File> {
         match self {
-            Self::Socket(path) => lock_attach(path),
+            Self::Socket { path, fallback } => {
+                let dir = path.parent().unwrap_or(Path::new("/"));
+                if private_socket_dir(&fs::symlink_metadata(dir)?) {
+                    lock_attach(path)
+                } else {
+                    Self::Private(fallback.clone()).take()
+                }
+            }
             Self::Private(path) => {
                 if let Some(dir) = path.parent() {
                     fs::create_dir_all(dir)?;
@@ -323,6 +389,18 @@ impl AttachLock {
             }
         }
     }
+}
+
+/// S292-001: a socket directory a lock may sit in, as tmux itself requires of
+/// it: a real directory (not a link), ours or root's and sticky, and not
+/// writable by group or others unless sticky. Anywhere else another user
+/// could plant or swap the file, so the lock stays in the state root.
+fn private_socket_dir(meta: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let sticky = meta.mode() & 0o1000 != 0;
+    meta.is_dir()
+        && (meta.uid() == pij_core::program::real_uid() || (meta.uid() == 0 && sticky))
+        && (meta.mode() & 0o022 == 0 || sticky)
 }
 
 impl std::fmt::Debug for ControlClient {
@@ -525,7 +603,7 @@ impl ControlClient {
             .name("pij-tmux-control".to_string())
             .spawn(move || read_replies(BufReader::new(stdout), &reader_waiters))?;
         let mut live = Live {
-            child,
+            child: Some(child),
             stdin,
             waiters,
         };
@@ -534,16 +612,19 @@ impl ControlClient {
         // applies to this client and its session, `_pij`.
         //
         // `_pij` is destroyed with its last client only while it holds nothing
-        // but the control pane. A window or pane that lands there from
-        // elsewhere (an untargeted command run outside tmux) switches that off
-        // for good, and a later client does not switch it back on.
+        // but the control client's own idle pane (F238: told apart by its
+        // start command, not by a count, so a real pane left alone there is
+        // never destroyed). A window or pane that lands there from elsewhere
+        // (an untargeted command run outside tmux) switches that off, and a
+        // later client switches it back on only once `_pij` again holds just
+        // the idle pane.
         let subscription = format!("{SESSIONS_SUBSCRIPTION}::{ALONE}");
         let keep = "set-option destroy-unattached off";
         for setup in [
             [
                 "if-shell",
                 "-F",
-                "#{&&:#{==:#{session_windows},1},#{==:#{window_panes},1}}",
+                "#{&&:#{==:#{session_windows},1},#{&&:#{==:#{window_panes},1},#{m:*sleep 2147483647*,#{pane_start_command}}}}",
                 "set-option destroy-unattached on",
             ]
             .as_slice(),
@@ -643,14 +724,31 @@ fn lock_label(label: &str) -> String {
 /// wider is narrowed through this descriptor before locking, so its inode,
 /// the lock's identity, never changes. Another user who could open it could
 /// otherwise hold the lock and keep this daemon's clients from starting.
+///
+/// S292-001: opened without following a symlink (and close-on-exec, as std
+/// opens every file), then checked through the descriptor before anything is
+/// changed: a regular file, ours, with one link. A planted link or hard link
+/// is refused, never narrowed or locked.
 pub(crate) fn lock_attach(path: &Path) -> io::Result<File> {
+    use std::os::unix::fs::MetadataExt;
     let file = OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
         .mode(0o600)
+        .custom_flags(pij_core::program::OPEN_NO_FOLLOW)
         .open(path)?;
-    if file.metadata()?.permissions().mode() & 0o777 != 0o600 {
+    let meta = file.metadata()?;
+    if !meta.is_file() || meta.uid() != pij_core::program::real_uid() || meta.nlink() != 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "{} is not a private lock file (a link, or not ours)",
+                path.display()
+            ),
+        ));
+    }
+    if meta.permissions().mode() & 0o777 != 0o600 {
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
     }
     match file.try_lock() {
@@ -779,17 +877,20 @@ fn read_replies(mut stdout: impl BufRead, waiters: &Mutex<Waiters>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ATTACH_LOCK_WAIT, Frame, Framer, Live, REPLY_TIMEOUT, State, TEARDOWN_WAIT, Waiters,
-        attach_lock_held, attach_lock_path, command_line, forget, is_read, lock_attach,
-        still_waiting_for_attach,
+        ATTACH_LOCK_WAIT, AttachLock, Frame, Framer, Live, REAP_WAIT, REPLY_TIMEOUT, State,
+        TEARDOWN_WAIT, Waiters, attach_lock_held, attach_lock_path, command_line, forget, is_read,
+        lock_attach, private_socket_dir, reap, socket_attach_lock_path, still_waiting_for_attach,
     };
+    use pij_testkit::time::scaled;
     use std::ffi::OsString;
-    use std::fs;
-    use std::io;
+    use std::fs::{self, File};
+    use std::io::{self, Write};
+    use std::os::fd::AsFd;
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::path::Path;
     use std::process::{Command, Stdio};
-    use std::sync::{Arc, Mutex};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex, mpsc};
     use std::time::{Duration, Instant};
 
     fn feed(framer: &mut Framer, text: &str) -> Vec<Frame> {
@@ -1008,7 +1109,7 @@ mod tests {
             .expect("cat");
         let stdin = child.stdin.take().expect("stdin");
         Live {
-            child,
+            child: Some(child),
             stdin,
             waiters: Arc::new(Mutex::new(Waiters::default())),
         }
@@ -1019,13 +1120,13 @@ mod tests {
     #[test]
     fn an_unanswered_teardown_is_bounded_and_the_client_still_goes() {
         let live = unanswered_client();
-        let pid = live.child.id();
+        let pid = live.child.as_ref().expect("child").id();
         let started = Instant::now();
         drop(live);
         let took = started.elapsed();
         assert!(took >= TEARDOWN_WAIT, "it waited for the answer: {took:?}");
         assert!(
-            took < TEARDOWN_WAIT + pij_testkit::time::scaled(Duration::from_secs(2)),
+            took < TEARDOWN_WAIT + scaled(Duration::from_secs(2)),
             "bounded: {took:?}"
         );
         assert!(!process_alive(pid), "the client was killed and reaped");
@@ -1036,11 +1137,97 @@ mod tests {
     #[test]
     fn a_closed_client_leaves_without_waiting() {
         let live = idle_client();
-        let pid = live.child.id();
+        let pid = live.child.as_ref().expect("child").id();
         let started = Instant::now();
         drop(live);
         assert!(started.elapsed() < TEARDOWN_WAIT, "{:?}", started.elapsed());
         assert!(!process_alive(pid));
+    }
+
+    /// P292-001: a client that stopped reading, its pipe full, cannot hold the
+    /// exit. The blocked write is the leave thread's, never the exit's: the
+    /// exit gives up after [`TEARDOWN_WAIT`], kills and reaps the client, and
+    /// the kill fails the blocked writes.
+    #[test]
+    fn a_client_that_stopped_reading_cannot_hold_its_exit() {
+        let mut child = Command::new("/bin/sleep")
+            .arg("30")
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("sleep");
+        let stdin = child.stdin.take().expect("stdin");
+        let pid = child.id();
+        // Fill the pipe: the filler blocks once it is full.
+        let mut filler = File::from(stdin.as_fd().try_clone_to_owned().expect("dup"));
+        let written = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&written);
+        let filling = std::thread::spawn(move || {
+            let chunk = [0_u8; 1024];
+            while filler.write_all(&chunk).is_ok() {
+                counted.fetch_add(chunk.len(), Ordering::SeqCst);
+            }
+        });
+        let mut last = 0;
+        loop {
+            std::thread::sleep(Duration::from_millis(50));
+            let now = written.load(Ordering::SeqCst);
+            if now >= 16 * 1024 && now == last {
+                break;
+            }
+            last = now;
+        }
+        let live = Live {
+            child: Some(child),
+            stdin,
+            waiters: Arc::new(Mutex::new(Waiters::default())),
+        };
+        let (gone, went) = mpsc::channel();
+        std::thread::spawn(move || {
+            let started = Instant::now();
+            drop(live);
+            let _ = gone.send(started.elapsed());
+        });
+        let took = went.recv_timeout(TEARDOWN_WAIT + REAP_WAIT + scaled(Duration::from_secs(2)));
+        if took.is_err() {
+            let _ = Command::new("/bin/kill")
+                .args(["-9", &pid.to_string()])
+                .status();
+        }
+        let took = took.expect("a full pipe held the exit");
+        assert!(
+            took >= TEARDOWN_WAIT,
+            "it gave the teardown its time: {took:?}"
+        );
+        assert!(!process_alive(pid), "the client was killed and reaped");
+        filling.join().expect("the kill failed the filler's write");
+    }
+
+    /// F238: a killed client still there after [`REAP_WAIT`] (one stuck in the
+    /// kernel looks so; here one never killed) holds the exit no longer, and a
+    /// thread reaps it once it goes, so it is never left a zombie.
+    #[test]
+    fn a_client_that_outlives_its_kill_is_handed_to_a_reaper() {
+        let child = Command::new("/bin/sleep").arg("30").spawn().expect("sleep");
+        let pid = child.id();
+        let started = Instant::now();
+        reap(child);
+        let took = started.elapsed();
+        assert!(took >= REAP_WAIT, "it waited for the reap: {took:?}");
+        assert!(
+            took < REAP_WAIT + scaled(Duration::from_secs(1)),
+            "bounded: {took:?}"
+        );
+        let _ = Command::new("/bin/kill")
+            .args(["-9", &pid.to_string()])
+            .status();
+        let deadline = Instant::now() + scaled(Duration::from_secs(2));
+        while process_alive(pid) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            !process_alive(pid),
+            "reaped by the thread, not left a zombie"
+        );
     }
 
     fn process_alive(pid: u32) -> bool {
@@ -1126,6 +1313,88 @@ mod tests {
         assert_eq!(mode(&wide), 0o600);
         assert_eq!(fs::metadata(&wide).expect("lock").ino(), inode, "same file");
         fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    /// F238: the socket-side lock sits in tmux's directory, which may be
+    /// shared or custom. A symlink at its path is refused, never followed: no
+    /// file is created, opened, locked or narrowed through it.
+    #[test]
+    fn a_symlinked_attach_lock_is_refused_not_followed() {
+        let dir = lock_dir("link");
+        let target = dir.join("elsewhere");
+        let link = socket_attach_lock_path(&dir.join("srv"));
+        std::os::unix::fs::symlink(&target, &link).expect("link");
+        assert!(lock_attach(&link).is_err(), "a dangling link is refused");
+        assert!(!target.exists(), "nothing was created through it");
+
+        fs::write(&target, b"").expect("a file the link points at");
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).expect("mode");
+        assert!(lock_attach(&link).is_err(), "a link to a file is refused");
+        let mode = fs::metadata(&target).expect("target").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644, "the target was never opened and narrowed");
+        fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    /// S292-001: a hard link to a file of ours is refused too, and left as it
+    /// was: the lock is a file with one name.
+    #[test]
+    fn a_hard_linked_attach_lock_is_refused() {
+        let dir = lock_dir("hard");
+        let target = dir.join("elsewhere");
+        fs::write(&target, b"").expect("a file of ours");
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).expect("mode");
+        let link = socket_attach_lock_path(&dir.join("srv"));
+        fs::hard_link(&target, &link).expect("hard link");
+        assert!(lock_attach(&link).is_err());
+        let mode = fs::metadata(&target).expect("target").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644, "never narrowed");
+        fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    /// S292-001: the lock sits beside the socket only in a directory as
+    /// private as tmux requires; one that is a link, root's without the
+    /// sticky bit, or writable by others without it is not.
+    #[test]
+    fn only_a_private_socket_directory_holds_the_lock() {
+        let private = |path: &Path| private_socket_dir(&fs::symlink_metadata(path).expect("meta"));
+        let dir = lock_dir("dirs");
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).expect("mode");
+        assert!(private(&dir), "ours, 0700");
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o777)).expect("mode");
+        assert!(!private(&dir), "ours, but anyone may write");
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o1777)).expect("mode");
+        assert!(private(&dir), "ours and sticky");
+        let link = std::env::temp_dir().join(format!("pij-attach-dir-link-{}", std::process::id()));
+        let _ = fs::remove_file(&link);
+        std::os::unix::fs::symlink(&dir, &link).expect("link");
+        assert!(!private(&link), "a link to a directory is not one");
+        fs::remove_file(&link).expect("clean up link");
+        assert!(!private(Path::new("/usr")), "root's, not sticky");
+        fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    /// S292-001: beside a socket directory others may write to, the lock is
+    /// taken in the state root instead, and nothing is made in that directory.
+    #[test]
+    fn a_shared_socket_directory_falls_back_to_the_state_root() {
+        let shared = lock_dir("shared");
+        fs::set_permissions(&shared, fs::Permissions::from_mode(0o777)).expect("mode");
+        let state = lock_dir("state").join("pane-signals");
+        let lock = AttachLock::Socket {
+            path: socket_attach_lock_path(&shared.join("srv")),
+            fallback: attach_lock_path(&state, Some("srv")),
+        };
+        drop(lock.take().expect("taken in the state root"));
+        assert!(attach_lock_path(&state, Some("srv")).exists());
+        assert!(
+            !socket_attach_lock_path(&shared.join("srv")).exists(),
+            "nothing made beside the shared socket"
+        );
+        fs::set_permissions(&shared, fs::Permissions::from_mode(0o700)).expect("mode");
+        drop(lock.take().expect("taken beside the socket"));
+        assert!(socket_attach_lock_path(&shared.join("srv")).exists());
+        fs::remove_dir_all(shared).expect("clean up");
+        fs::remove_dir_all(state.parent().expect("state")).expect("clean up");
     }
 
     /// F229: a held lock refuses a start at once (the caller holds the state

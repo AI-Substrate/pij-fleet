@@ -186,6 +186,51 @@ fn a_control_session_holding_real_work_is_kept() {
     assert_eq!(server.destroy_unattached(), "off");
 }
 
+/// Review of #292 (R292-001): a window lands in `_pij`, then the control
+/// client's own idle window is closed. `_pij` is then one window and one
+/// pane, as when alone, but that pane is real work: the leaving client keeps
+/// it, and a later client's attach does not switch `destroy-unattached` back
+/// on under it. `leave` is how the first client goes: dropped, or released.
+fn a_real_pane_left_alone_survives(name: &str, leave: impl FnOnce(TmuxAdapter)) {
+    let Some(server) = Server::start_or_skip(name) else {
+        return;
+    };
+    let adapter = server.adapter();
+    server.attach(&adapter);
+    let target = format!("={CONTROL_SESSION}:");
+    let idle = server.run(&["list-windows", "-t", &target, "-F", "#{window_id}"]);
+    let idle = String::from_utf8_lossy(&idle.stdout).trim().to_string();
+    server.run(&["new-window", "-d", "-t", &target, "cat"]);
+    server.run(&["kill-window", "-t", &idle]);
+    leave(adapter);
+    assert!(
+        server.has_session(CONTROL_SESSION),
+        "a real pane alone in _pij is never killed"
+    );
+    assert_eq!(server.destroy_unattached(), "off");
+
+    let later = server.adapter();
+    server.attach(&later);
+    assert_eq!(
+        server.destroy_unattached(),
+        "off",
+        "an attach switches it on only for the idle pane"
+    );
+    drop(later);
+    let panes = server.run(&["list-panes", "-t", &target, "-F", "#{pane_current_command}"]);
+    assert_eq!(String::from_utf8_lossy(&panes.stdout).trim(), "cat");
+}
+
+#[test]
+fn a_real_pane_left_alone_in_the_control_session_survives_a_drop() {
+    a_real_pane_left_alone_survives("lone-drop", drop);
+}
+
+#[test]
+fn a_real_pane_left_alone_in_the_control_session_survives_a_release() {
+    a_real_pane_left_alone_survives("lone-release", |adapter| adapter.release_control());
+}
+
 /// The daemon's graceful shutdown (F238): `release_control` sends the client
 /// out through its teardown, and no read afterwards attaches another one.
 #[test]

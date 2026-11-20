@@ -196,7 +196,7 @@ impl TmuxAdapter {
                 OsString::from("tmux"),
                 None,
                 true,
-                control::AttachLock::for_socket(None),
+                control::AttachLock::for_socket(None, &tap_root),
             )),
             binary: OsString::from("tmux"),
             server: None,
@@ -216,7 +216,7 @@ impl TmuxAdapter {
                 OsString::from("tmux"),
                 None,
                 true,
-                control::AttachLock::for_socket(None),
+                control::AttachLock::for_socket(None, &tap_root),
             )),
             binary: OsString::from("tmux"),
             server: None,
@@ -263,7 +263,7 @@ impl TmuxAdapter {
                 OsString::from("tmux"),
                 Some(server.clone()),
                 true,
-                control::AttachLock::for_socket(Some(&server)),
+                control::AttachLock::for_socket(Some(&server), &tap_root),
             )),
             binary: OsString::from("tmux"),
             server: Some(server),
@@ -1867,14 +1867,15 @@ mod control_defaults {
             std::env::temp_dir().join("a"),
             std::env::temp_dir().join("b"),
         );
-        let lock = |adapter: &TmuxAdapter| adapter.control.attach_lock().clone();
-        let srv = lock(&TmuxAdapter::for_server("srv", &a));
-        assert_eq!(srv, lock(&TmuxAdapter::for_server("srv", &b)));
-        assert_ne!(srv, lock(&TmuxAdapter::for_server("other", &a)));
-        let AttachLock::Socket(path) = &srv else {
-            panic!("a real server's lock is its socket's: {srv:?}");
+        let socket = |adapter: &TmuxAdapter| match adapter.control.attach_lock().clone() {
+            AttachLock::Socket { path, .. } => path,
+            AttachLock::Private(path) => panic!("a real server's lock is its socket's: {path:?}"),
         };
-        assert_eq!(path.parent(), socket_path(Some("srv")).parent());
+        let srv = socket(&TmuxAdapter::for_server("srv", &a));
+        assert_eq!(srv, socket(&TmuxAdapter::for_server("srv", &b)));
+        assert_ne!(srv, socket(&TmuxAdapter::for_server("other", &a)));
+        assert_eq!(srv.parent(), socket_path(Some("srv")).parent());
+        let lock = |adapter: &TmuxAdapter| adapter.control.attach_lock().clone();
         let AttachLock::Private(fake) = lock(&TmuxAdapter::with_binary("fake-tmux", &a)) else {
             panic!("a fake executable keeps its own lock");
         };
