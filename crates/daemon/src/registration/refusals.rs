@@ -51,10 +51,12 @@ impl RefusalWindow {
         if told.contains_key(&key) {
             return false;
         }
+        // Oldest first; among pairs told at the same instant, the least
+        // (seat, code), so the victim never depends on hash order (R277).
         if told.len() >= PAIRS
             && let Some(oldest) = told
                 .iter()
-                .min_by_key(|(_, at)| **at)
+                .min_by(|(a, at_a), (b, at_b)| at_a.cmp(at_b).then_with(|| a.cmp(b)))
                 .map(|(key, _)| key.clone())
         {
             told.remove(&oldest);
@@ -129,6 +131,24 @@ mod tests {
         assert!(window.admit("pij-0", "refused", later));
         assert_eq!(window.evicted(), 2);
         assert_eq!(window.held(), PAIRS);
+    }
+
+    /// R277: pairs told at one instant are evicted in (seat, code) order,
+    /// never in hash order.
+    #[test]
+    fn equal_times_evict_the_least_pair_first() {
+        let window = RefusalWindow::default();
+        let start = Instant::now();
+        // Inserted in reverse, so insertion order cannot pick the victim.
+        for n in (0..PAIRS).rev() {
+            assert!(window.admit(&format!("pij-{n:03}"), "refused", start));
+        }
+        assert!(window.admit("pij-zzz", "refused", start));
+        assert_eq!(window.evicted(), 1);
+        assert!(window.admit("pij-000", "refused", start), "the least went");
+        // Telling it again evicted the next least, pij-001; pij-002 stays.
+        assert!(!window.admit("pij-002", "refused", start));
+        assert!(window.admit("pij-001", "refused", start));
     }
 
     #[test]

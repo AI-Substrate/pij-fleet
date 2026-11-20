@@ -14,7 +14,7 @@ use pij_core::ports::TmuxPort;
 use pij_testkit::block_on;
 use pij_testkit::contract::{TmuxContractFixture, tmux_contract};
 use pij_testkit::fakes::FakeTmux;
-use pij_tmux::{ORPHAN_TAP_GRACE, TAP_TRIM_BYTES, TmuxAdapter, tap_sink_path};
+use pij_tmux::{ORPHAN_TAP_GRACE, SUBMIT_STAGE_LIMIT, TAP_TRIM_BYTES, TmuxAdapter, tap_sink_path};
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 static TRANSACTION_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -706,7 +706,10 @@ async fn staging_at_the_measured_launch_tail_still_submits() {
         shell_literal(&session.server)
     );
     write_executable(&wrapper, &script);
-    let tmux = TmuxAdapter::with_binary(&wrapper, &session.tap_root);
+    // The production bound, scaled like every budget on a real launch: at
+    // load 24.9 the injected 2.1 s plus real launch time ran past 4 s.
+    let tmux = TmuxAdapter::with_binary(&wrapper, &session.tap_root)
+        .with_stage_limit(pij_testkit::time::scaled(SUBMIT_STAGE_LIMIT));
     let pane = tmux
         .list_panes()
         .await

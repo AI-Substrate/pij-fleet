@@ -611,3 +611,17 @@ sha256 = "83074b34be30bb014dc95e75e75da41a3df77b800c05363a3b620ce93ff753fe"
 bytes = 815
 note = "The same live Claude 2.1.328 prompt after one Down: '❯ Yes, I trust this folder' highlighted. F215."
 answer = "folder_trust_prompt(Claude) matches; the highlight is the trust row, so the next key is Enter."
+
+[[fixture]]
+path = "harnesses/claude-2.1.329-folder-trust-short.txt"
+sha256 = "243b8f104644fc2bb0e83f3b64e7b1b7d9cc25d95b670fe9540fe31def324696"
+bytes = 199
+note = "Live Claude Code 2.1.329 in a fresh folder under /tmp, 60x12 pane: the prompt is taller than the pane, so 'Accessing workspace:' has scrolled off the top; both menu rows ('❯ No, exit' highlighted) and 'Enter to confirm · Esc to cancel' stay at the bottom. Captured for R264's C34 follow-up, which asked whether a real short pane keeps the heading. It does not."
+answer = "folder_trust_prompt(Claude) matches on the menu rows above the footer row; the highlight is on 'No, exit', so the next key is Down."
+
+[[fixture]]
+path = "harnesses/claude-2.1.329-folder-trust-narrow.txt"
+sha256 = "d0e331b23cf51e01423efc04345eee23a25895eb8a78c521729fc172e4cdf881"
+bytes = 544
+note = "Live Claude Code 2.1.329 in a fresh folder under /tmp, 34x30 pane: the prose wraps but every row the parser reads ('Accessing workspace:', both menu rows, the footer) stays whole. R264's C34 follow-up."
+answer = "folder_trust_prompt(Claude) matches on the heading; next key Down."

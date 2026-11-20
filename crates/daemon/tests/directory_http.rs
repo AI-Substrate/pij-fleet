@@ -3822,7 +3822,9 @@ async fn a_cancelled_assign_waiter_never_strands_its_drain() {
             .await
             .unwrap()
             .map(|request| request.state);
-        if state == Some(RequestState::Delivered) {
+        // Either end state stops the poll: a Closed request fails at once on
+        // the assert below, rather than after the whole budget (R273 sibling).
+        if matches!(state, Some(RequestState::Delivered | RequestState::Closed)) {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;

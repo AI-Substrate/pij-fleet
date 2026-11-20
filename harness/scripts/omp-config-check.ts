@@ -24,7 +24,8 @@ export type OmpClone = (root: string) => boolean | undefined;
 
 /**
  * `clone: false` as a direct child of a top-level `worktree:` block (at the
- * block's first child indent, never deeper), comments ignored; the last such
+ * block's first child indent, never deeper), or in a top-level inline mapping
+ * `worktree: {clone: false}` (R260-002), comments ignored; the last such
  * `clone` wins, as in YAML.
  */
 export function setsCloneFalse(yaml: string): boolean {
@@ -38,6 +39,11 @@ export function setsCloneFalse(yaml: string): boolean {
 		if (indent === 0) {
 			inWorktree = /^worktree:\s*$/.test(line);
 			childIndent = undefined;
+			const inline = /^worktree:\s*\{(.*)\}\s*$/.exec(line)?.[1];
+			for (const entry of inline?.split(",") ?? []) {
+				const value = /^\s*clone:\s*(\S+?)\s*$/.exec(entry)?.[1];
+				if (value !== undefined) clone = value;
+			}
 			continue;
 		}
 		if (!inWorktree) continue;
