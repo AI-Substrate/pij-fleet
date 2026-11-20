@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-20",
+				"hook": "Open before adding a 'recovered'/'ready' signal, in-memory dedupe or edge state, a daemon wait bound, or a paused-clock test that does real store IO",
+				"tags": [
+					"277",
+					"275",
+					"review",
+					"readiness",
+					"dedupe",
+					"tests"
+				],
+				"title": "Readiness signals, restart-proof edge state, and test traps from #275/#277 reviews"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- \"Ready\" must be POSITIVE evidence from the daemon (a returned claim, even an empty page), never our own client timeout (a late 401 looks the same) and never a bare re-register (a daemon that registers but refuses every claim then flaps the banner each retry; store.test `bounded backoff` catches it). Daemon native claims now answer empty at NATIVE_IDLE_ANSWER (55 s) < extension 65 s.\n- Edge/dedupe state kept in memory must survive a restart (rebuild once from the last spine event per seat, OnceCell on every path that reads it) and a bounded dedupe must never suppress an UNSEEN key: evict oldest + count it (ping).\n- Reviewers (ocelot/calm-badger) check \"no launch\" claims literally: TmuxPort::list_panes forks when the control client is in backoff; use list_panes_without_launch. A tokio timeout can't preempt a sync-blocking read (control.query_live blocks up to 3 s): run it via spawn_blocking + Handle::block_on and abandon at the deadline.\n- Mutations: a guard enforced in two places (pre-check AND select arm) needs both removed or the mutation falsely \"survives\".\n- Paused tokio time + real SQLite/HTTP is fragile (sqlx pool-acquire and reqwest timeouts run on the virtual clock): make the bound a per-service value with a #[cfg(test)] setter and test in real time.\n- Tests that pin \"a refusal writes nothing\" break when you add an audit event: filter exactly that kind; keep \"invalid evidence reaches no registry statement\" (don't add registry reads on refusal paths).\n- Two PRs both appending the last docs/difficulties.md row always conflict; rebase, `conflict://N` @both, range-diff.\n"
+		}
+	]
+}
