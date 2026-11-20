@@ -1,0 +1,72 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1f956-da41-73d2-8980-b5c4cbd6d827",
+				"date": "2026-11-21",
+				"head": "d17dae35a62fd7fbf88a17f230a0603d77fafdc4",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:293",
+				"writer": "pij-sufficient-clam",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"P293-001: bound the tmux helper before SIGINT and make its timeout disposition explicit."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 293",
+					"exit_code": 0
+				},
+				{
+					"command": "just shared-build: focused serve, daemon_stop, released-adapter tests and scoped macOS clippy",
+					"exit_code": 0,
+					"log": "pr293-focused-tests.log"
+				},
+				{
+					"command": "just shared-build: late-release ordering mutant",
+					"exit_code": 101,
+					"log": "pr293-mutation-ordering.log"
+				},
+				{
+					"command": "just shared-build: unbounded HTTP drain mutant",
+					"exit_code": 101,
+					"log": "pr293-mutation-drain.log"
+				},
+				{
+					"command": "just shared-build: store cancellation and event-bus cancellation/flush tests",
+					"exit_code": 0,
+					"log": "pr293-cancellation-tests.log"
+				},
+				{
+					"command": "private frozen-server probe of exact pre-signal bounce block",
+					"exit_code": 0,
+					"log": "pr293-bounce-stall.log"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "pr293-harness-checks.log"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR 293 correctness review, round 1\n\nHead: d17dae35a62fd7fbf88a17f230a0603d77fafdc4\nBase: 288d0d078fe0ef524a3e56c87a94ae8f6a382d88\nRequest: 01a1f956-da41-73d2-8980-b5c4cbd6d827\nReviewer: pij-sufficient-clam\n\n## A. Verdict\n\nBLOCK: P293-001. The new pre-SIGINT tmux command has no deadline.\nThe review worktree remains read-only, and reviewer/293 stays held until merge.\n\n## B. Summary\n\nThe HTTP stream wedge and release ordering are fixed at this head. The release\nis launched before the joins; the live-client teardown runs outside its state\nmutex, and a read waits for its reply outside that mutex. The released flag\nprevents a subsequent read from starting another control client.\n\nThe HTTP listener stops accepting, graceful requests receive the fixed drain,\nand the sole watch sender is dropped after the drain. Remaining connection\nfutures then drop their sockets. This is a TCP EOF witness, not a promise of\nsuccessful HTTP body completion or automatic CLI reconnection.\n\n## C. Findings\n\n| ID | Severity | Location | Disposition |\n|---|---|---|---|\n| P293-001 | HIGH | justfile:746-756 | Bound the new tmux helper before SIGINT. |\n| N293-001 | Nonblocking inherited limit | crates/cli/src/main.rs:2276-2306; docs/how/pij-rs-api.md:166-172 | CLI tail exits on stream EOF/error; do not claim all streaming clients reconnect. |\n\n## D. Blocking reproduction\n\nThe exact added pre-signal block was extracted from the reviewed justfile and\nrun against a newly created private tmux server. Only that server's recorded\nPID was stopped. A marker stood in for the daemon signal; no live daemon was\nsignalled.\n\nWith the private server frozen, the helper remained pending after 2.010 s and\nthe signal marker had not run. Resuming that server allowed set-option to\nfinish, and only then did the marker run. A frozen server can therefore hold\nthe bounce indefinitely before its existing 30 s post-signal deadline starts.\nThe private server was resumed and removed.\n\nRound 2 should bound the helper, clean up only the helper process it owns, and\nmake the timeout disposition explicit: signal after a diagnosed best-effort\nfailure, or refuse the bounce without falsely claiming the protection ran.\n\n## E. Proof ceilings and preserved behavior\n\n- Early release: crates/daemon/src/lib.rs:359-407;\n  crates/tmux/src/control.rs:477-482,494-566. Teardown is outside the adapter\n  state mutex; query reply waiting is also outside it. The permanent released\n  adapter test verifies that later reads do not reattach.\n- HTTP drain: crates/daemon/src/serve.rs:44-95; both daemon listeners receive\n  SHUTDOWN_DRAIN_TIMEOUT. The open-stream test reads raw TCP EOF; the slow\n  request test finishes inside the drain. Workers/control joins retain their\n  existing timing properties, so HTTP <= 5 s plus store drain <= 5 s is not\n  a universal bound on the entire shutdown.\n  The cutoff is a policy: it decides to drop connections after the grace.\n  The pre-signal tmux option is a brake: it can only spare `_pij` on client exit.\n- Admitted writes: crates/store/src/migrate.rs:43-56 owns store writes across\n  caller cancellation; events/mod.rs:99-172 retains the publication guard;\n  delivery/mod.rs:1229-1269 owns delivery continuation and compensation.\n  The existing cancellation tests establish commit/publication ownership.\n  They are not an exhaustive proof of every filesystem/external side effect.\n  Work not admitted before cancellation may never run; completion past the\n  final store-drain deadline is not promised.\n- OMP event supervision retries both normal stream completion and errors\n  (daemon-http.ts:374-451); its cursor/key-refresh fixture is covered by\n  exact-head CI. Native Copilot receives through its existing retrying inbox\n  loop; its local node:test contracts passed.\n- Tail's exit on EOF/error predates this PR: the baseline SIGKILL also ended\n  the connection. It is not a newly introduced correctness block.\n- Cost: the watch/select adds O(open connections) memory/poll work without a\n  new connection task or daemon launch site. Release is once per stop; the\n  helper is one process per bounce; post-release reads use existing fork\n  sites. Performance owns live before/after receipts. No live bounce was run.\n- Socket/environment security is owned by security/293. A source-verified\n  explicit -S ownership-check candidate was handed to that holder with its\n  unverified limits; this correctness review does not substitute a security\n  verdict or a two-user reproduction.\n\n## F. Commands and results\n\nAll cargo commands used just shared-build, its one shared target/lock,\nniceness 19 and four jobs. No node_modules was installed or symlinked.\n\n| Command | Result |\n|---|---|\n| just pr-freeze 293 | FINAL at the requested full head; all latest CI jobs passed. |\n| git diff --check 288d0d07 d17dae35 | Passed. |\n| shared-build: test -p pij-daemon --lib serve::tests -- --nocapture | Passed: 5 tests, 2.02 s test runtime. |\n| shared-build: test -p pij-cli --test daemon_stop -- --nocapture | Passed: 1 test, 5.89 s including fixture boot. |\n| shared-build: test -p pij-tmux --test control_teardown a_released_adapter_leaves_through_its_teardown_and_never_reattaches -- --nocapture | Passed: 1 test, 0.15 s. |\n| shared-build: clippy -p pij-daemon -p pij-cli -p pij-tmux --all-targets -- -D warnings | Passed on macOS. |\n| Ordering mutation: release moved after tokio::join!, test -p pij-cli --test daemon_stop -- --nocapture | CAUGHT: exit 101, `_pij was not handled while the stream was open`. |\n| Unbounded-drain mutation: test -p pij-daemon --lib serve::tests::an_open_stream_does_not_hold_the_stop -- --nocapture | CAUGHT: exit 101, `the stop is not held by the stream: Elapsed(())`, 7.01 s. |\n| shared-build: test -p pij-store --test cancellation -- --nocapture | Passed: 1 test, including caller abort and timeout, 0.07 s. |\n| shared-build: test -p pij-daemon --lib events::governance_cancellation_tests -- --nocapture | Passed: 4 tests, 0.23 s. |\n| shared-build: build --locked -p pij-cli --bin pij-rs | Passed after the mutation runs, restoring the shared debug binary from the exact reviewed head; no install or live restart. |\n| harness boot | NOT-READY advisory: linked-worktree dependencies absent. |\n| harness checks --quick | Exit 1: local TS tools missing / ambient Biome incompatible; native Copilot, SDK contract and pij-skill stages passed. Heavy stages skipped. Exact-head CI supplies TS proof under C25. |\n\nLocal review receipt filenames: pr293-focused-tests.log,\npr293-mutation-ordering.log, pr293-mutation-drain.log,\npr293-cancellation-tests.log, pr293-bounce-stall.log,\npr293-harness-checks.log.\n\nExact baseline command:\n\n```bash\nPIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test -p pij-daemon --lib serve::tests -- --nocapture --then test -p pij-cli --test daemon_stop -- --nocapture --then test -p pij-tmux --test control_teardown a_released_adapter_leaves_through_its_teardown_and_never_reattaches -- --nocapture --then clippy -p pij-daemon -p pij-cli -p pij-tmux --all-targets -- -D warnings\n```\n\nExact cancellation command:\n\n```bash\nPIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test -p pij-store --test cancellation -- --nocapture --then test -p pij-daemon --lib events::governance_cancellation_tests -- --nocapture\n```\n\nMutation commands ran only in the isolated committed-source archive:\n\n```bash\nPIJ_SHARED_TARGET=<checkout-target> just shared-build -- test -p pij-cli --test daemon_stop -- --nocapture\nPIJ_SHARED_TARGET=<checkout-target> just shared-build -- test -p pij-daemon --lib serve::tests::an_open_stream_does_not_hold_the_stop -- --nocapture\n```\n\n## G. Harness feedback\n\nmagicWand: a permanent pre-signal timeout fixture that proves the stop deadline\nbegins before any potentially blocking helper.\n\ndifficulties:\n- degrading: checks in a dependency-free review worktree invoke missing local\n  TS tools and an incompatible ambient formatter instead of returning the\n  dependency-not-ready advisory that boot already exposes.\n- annoying: raw TCP EOF tests cannot establish actual CLI tail reconnection;\n  the client's inherited exit behavior must be distinguished from extension\n  supervision and from a complete HTTP response.\n\nCaptured in the reviewer-specific harness observation bucket. Encode the\ntimeout fixture with the round-2 fix; do not expand this PR into new shutdown\nmachinery or unrelated client changes.\n\n## H. Handover\n\nPM already routed P293-001 to the coder for round 2. Re-review only the helper\ndeadline/failure disposition and security holder's requested repairs at the\nnew exact head. The prime owns the first postmerge bounce of the old daemon\nand the second bounce proving the new shutdown. Reviewer holding remains.\n"
+		}
+	]
+}
