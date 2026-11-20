@@ -2357,6 +2357,16 @@
 					"seat": "pij-bright-felidae",
 					"to": "2026-11-20T10:37:24.496Z",
 					"why": "#287 F236 review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T10:49:22.059Z",
+					"harness": "copilot",
+					"harness_session": "30ea0189-c8dd-4928-9c98-01e1cf7bdc19",
+					"instance_key": "288",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-curved-tiger",
+					"why": "#288 C34 i review"
 				}
 			]
 		}
