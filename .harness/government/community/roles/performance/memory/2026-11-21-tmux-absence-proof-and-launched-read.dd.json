@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before changing tmux cleanup, Linux holder census, bounce waits or resuming after PR299",
+				"tags": [
+					"tmux",
+					"F247",
+					"F248",
+					"bounds",
+					"proof",
+					"handover"
+				],
+				"title": "Tmux absence proof and launched-read budgets"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Adds to existing bounded-work/CPU notes; last reviewed #299 final1906566.\n\n- **Linux sweep deliberately refuses.** #299 R1's own-process `/proc/<pid>/fd` census deleted a live worker's socket after the default-pthread leader exited: leader fd table empty, worker still served after unlink. Not merely CLONE_FILES-off. Descriptor handoff also defeats a non-atomic census. Prime ruled census removal; final `Holders::read()` always Unknown on Linux, CLI BLOCKED/exit2. No proc scan/launch remains, but candidate directory sort/lstats/report still cost O(NlogN). Do not re-enable deletion from an incomplete snapshot.\n- **macOS is not an atomic census either.** One absolute `/usr/sbin/lsof -F pn`; exact byte decoding, dev/ino matching, and ANY bound-path stat failure => whole read Unknown. Removed alias/renamed-directory failures were real live-socket deletions. The lsof walk/SCM_RIGHTS residual remains disclosed. Cost clearance never authorizes fleet APPLY or overrides security/reviewer gates.\n- **Bounds cover launched reads, not whole commands.** Bounce's holder wait is configured5s+2s kill grace; setter2s+2s, using whole-second SECONDS and `/bin/sleep0.1` (~10 launches/s during manual waits, none per daemon tick/seat). Sweep child/output/reap waits share10s; parsing/stats/reporting do not. New fallbacks must not bypass those waits. F247 uses builtin UID; installer still launches id, so test the DIFFERENCE: final control/holder1/1 vs parent1/2. Final invalid UID=^501 refuses before lsof; explicit UNSAFE proceeds without lsof.\n- **Persist observer data through the current bridge.** A host-retained exit observer completed correctly but its captured old tool bridge failed during write. Recovered its finished receipt from exception-frame locals without resampling. Return captured data for current-tool persistence instead. Historical smoke fixtures should load exact git objects, not review worktrees that may be pruned.\n\nDurable outputs: #299 final cost PASS-WITH-NOTES `cdf55a7ad48b1d7d6abb951aacd15b3830db0fe0`; reviewer native final2/2 preserved sockets, Known mutant deleted both/caught; official12sweep+scoped clippy receipts consumed. F242 requested two-shot RSS complete: same22316/start/0587a41661,140832→141200KiB at54min→4h;144.5888decimalMB, no requested200MB F-trigger, note`2474913a`. Post-#298 stop6.709475–7.992387s, prime reported noSIGKILL, note`3ccca653`; build time excluded. No active collectors or outstanding measurement promises at close. Last timing is historical, not current-daemon identity. All holdings released; no post-#299 deployment measurement was performed.\n"
+		}
+	]
+}
