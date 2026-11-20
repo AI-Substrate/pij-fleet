@@ -933,6 +933,16 @@
 					"seat": "pij-collective-tarsier",
 					"to": "2026-11-20T21:19:16.328Z",
 					"why": "verdict on #300 (issue #85 daemon launch leftovers)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T22:55:15.570Z",
+					"harness": "copilot",
+					"harness_session": "38b34967-a1dc-40f0-9c4f-972eed197195",
+					"instance_key": "301",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-uncertain-antelope",
+					"why": "verdict on #301 (issue #90 daemon.log bound)"
 				}
 			]
 		}
