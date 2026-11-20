@@ -262,6 +262,12 @@ export class RustRuntimeSession {
 	private activityUnsupported = false;
 	/** The last state the daemon accepted; shutdown repairs a seat left `working`. */
 	private activityPublished: "working" | "idle" | undefined;
+	/**
+	 * The latest turn state, a queued or in-flight publication included: the
+	 * state a context-only report sends, never the last one acknowledged (review
+	 * of #286; the rule the Copilot extension's `activityObserved` follows, F230).
+	 */
+	private activityObserved: "working" | "idle" = "idle";
 	/** F199: a human has run /pij in this session, so reload/new can run. */
 	private controlArmed = false;
 
@@ -343,9 +349,12 @@ export class RustRuntimeSession {
 		this.controlArmed = false;
 	}
 
-	/** F199: tell the daemon this session's control context, with its turn state. */
+	/**
+	 * F199: tell the daemon this session's control context, with the turn state
+	 * of this moment, so it queues behind any transition already sent.
+	 */
 	private reportControlContext(): void {
-		this.publishActivity(this.activityPublished ?? (this.pi.isIdle() ? "idle" : "working"));
+		this.publishActivity(this.activityObserved);
 	}
 
 	async boot(input: RustBootInput): Promise<{ readonly id: string; readonly role?: string }> {
@@ -399,6 +408,8 @@ export class RustRuntimeSession {
 		this.registry.seed(fromRustDescriptor(accepted));
 		this.self = acceptedId;
 		process.env.PIJ_SESSION_ID = acceptedId;
+		// This session's own state, not what a previous lifecycle last published.
+		this.activityObserved = this.pi.isIdle() ? "idle" : "working";
 		this.reportControlContext();
 		await this.flush();
 		await this.recoverInbox(acceptedId, this.client, lifecycle);
@@ -706,6 +717,7 @@ export class RustRuntimeSession {
 	 * publishes only when the daemon last accepted `working`.
 	 */
 	private publishActivity(state: "working" | "idle", shutdown?: AbortSignal): void {
+		this.activityObserved = state;
 		const seat = this.self;
 		const client = this.client;
 		if (seat === "" || this.activityUnsupported) return;
