@@ -2325,6 +2325,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-glorious-smelt",
 					"why": "#284 F230 review"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-20T08:58:31.049Z",
+					"harness": "copilot",
+					"harness_session": "446540c6-4ae8-4820-9800-274bd0adcedf",
+					"instance_key": "286",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-level-rhinoceros",
+					"why": "#286 F199 review"
 				}
 			]
 		}
