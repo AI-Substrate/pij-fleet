@@ -1328,7 +1328,10 @@
 					"harness_session": "aa358e02-6f68-4ca0-88ce-59ef10419c81",
 					"instance_key": "331",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "#331 merged b1c7fedc",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-selected-deer",
+					"to": "2026-11-21T20:52:56.207Z",
 					"why": "#331 F259a R1 verdict"
 				}
 			]
