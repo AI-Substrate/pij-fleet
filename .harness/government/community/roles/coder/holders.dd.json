@@ -1614,7 +1614,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f257",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "work finished (f257 merged/closed; f257 branch delivered, PR is prime/Jordan's); prime asked 2026-11-22",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-21T20:52:45.521Z",
 					"why": "F257 Unisphere: count every active-model switch as pending (branch only, no PR)"
 				},
 				{
