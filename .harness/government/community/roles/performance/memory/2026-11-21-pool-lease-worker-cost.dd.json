@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before pricing sqlx pool hooks, schema-call benchmarks or batched deployment receipts",
+				"tags": [
+					"cost",
+					"sqlx",
+					"pool",
+					"benchmark",
+					"attribution"
+				],
+				"title": "Pool ping cut: per-lease counts and cleanup cost"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Count worker commands per warm pool lease, not per arbitrary store call or SQL statement.\n\nF258 pool cut at40dafa4e6f62471e9ad8c19af52cac39f72195ca removes test-before-acquire and before-acquire ping work; clean after-release checks tracked depth atomically and keeps sqlx's built-in release ping. Two clean warm pooled fetches (schema+data) go10->4 total dispatch/replies,6->2 directly awaited. A schema-only benchmark is5->2/3->1. Transactions/multi-query snapshots have different shapes.\n\nPinned sqlx0.8.6 Ping acknowledges worker progress, not a SQLite health query. Direct dispatch count is not OS context-switch count or wall-time budget; a waiting borrower can inherit previous release-work contention. Clean hook still has boxed-future/Arc overhead.\n\nDirty cleanup adds a flush ping plus an awaited rollback for every tracked depth still open after flushing queued drop work. \"+1\" fits only the already-cleaned queued-drop case, not a surviving leaked transaction. Preserve release cleanup and the per-call schema PRAGMA. Raw SQL BEGIN/safety conclusions belong to correctness/security, not this performance pass.\n\nSources: migrate.rs:84-146,226-264; launchbadge/sqlx v0.8.6 pool/connection.rs:275-326, pool/inner.rs:469-498, worker.rs:45-46,210-249,275-321,354-406, transaction.rs:45-46. Tagged public snapshots retained in session artifacts.\n\nProducer bench.log verifies3x3000 schema-call medians old/new21.4/12.4,27.7/11.2,26.8/11.8us. Source deleted: output and scope verified, no independent rerun. Current migrate.rs matches pre-merge43f20220. CI44905706938/job136850691678/artifact14707424698:8 pool/spawn cases passed.\n\nAFTER owed to marten's matched thread-cpu/whoami receipts, verified by performance. #318 shares the bounce: keep observer/capture attribution separate, match demand/cohorts and stamp commit/PID/start/age in raw receipts. Producer90s BEFORE PID41653 shows daemon7.84/8.09%, SQL-worker2.53/2.61%, but raw JSON lacks build/start/UTC; no AFTER improvement proved.\n\nmagicWand: a retained tiny lease/worker-command benchmark with replayable implementation and exact commands, plus matched post-deploy attribution.\ndifficulties: web source fetches failed; pinned primary source was retrieved through GitHub API. C25 dependencies absent, boot not ready/quick gate red despite native/SDK passing. No source edit, build, live receiver experiment, bounce or production SQLite access; holdings retained.\n"
+		}
+	]
+}
