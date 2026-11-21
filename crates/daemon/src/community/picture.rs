@@ -1558,12 +1558,26 @@ mod tests {
         let security: Vec<Assignment> = ["319", "320", "321", "322"]
             .iter()
             .enumerate()
-            .map(|(n, pr)| held("security", pr, "pij-deer", &format!("2026-11-2{n}T00:00:00Z")))
+            .map(|(n, pr)| {
+                held(
+                    "security",
+                    pr,
+                    "pij-deer",
+                    &format!("2026-11-2{n}T00:00:00Z"),
+                )
+            })
             .collect();
         let performance: Vec<Assignment> = ["320", "321", "322"]
             .iter()
             .enumerate()
-            .map(|(n, pr)| held("performance", pr, "pij-elephant", &format!("2026-11-2{n}T00:00:00Z")))
+            .map(|(n, pr)| {
+                held(
+                    "performance",
+                    pr,
+                    "pij-elephant",
+                    &format!("2026-11-2{n}T00:00:00Z"),
+                )
+            })
             .collect();
         assert_eq!(one_holder(&security), Vec::<Value>::new());
         assert_eq!(one_holder(&performance), Vec::<Value>::new());

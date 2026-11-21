@@ -884,11 +884,46 @@ async fn per_pr_instances_of_a_one_holder_role_are_never_duplicate_holders() {
     with_roles(rig.addr, &repo).await;
     let dir = |argv: &'static [&'static str]| call(rig.addr, "/v1/directory", argv, &repo.main);
     for argv in [
-        &["directory", "assign", "pm-001/319", "pij-holder", "--why", "r"][..],
-        &["directory", "assign", "pm-001/320", "pij-holder", "--why", "r"],
-        &["directory", "assign", "pm-001/321", "pij-holder", "--why", "r"],
-        &["directory", "assign", "pm-001/322", "pij-holder", "--why", "r"],
-        &["directory", "assign", "pm-001/323", "pij-second", "--why", "r"],
+        &[
+            "directory",
+            "assign",
+            "pm-001/319",
+            "pij-holder",
+            "--why",
+            "r",
+        ][..],
+        &[
+            "directory",
+            "assign",
+            "pm-001/320",
+            "pij-holder",
+            "--why",
+            "r",
+        ],
+        &[
+            "directory",
+            "assign",
+            "pm-001/321",
+            "pij-holder",
+            "--why",
+            "r",
+        ],
+        &[
+            "directory",
+            "assign",
+            "pm-001/322",
+            "pij-holder",
+            "--why",
+            "r",
+        ],
+        &[
+            "directory",
+            "assign",
+            "pm-001/323",
+            "pij-second",
+            "--why",
+            "r",
+        ],
     ] {
         let assigned = dir(argv).await;
         assert_eq!(assigned["ok"], true, "{argv:?}: {assigned}");
@@ -898,13 +933,25 @@ async fn per_pr_instances_of_a_one_holder_role_are_never_duplicate_holders() {
         );
     }
     let viewed = view(rig.addr, &repo).await;
-    assert_eq!(role_of(&viewed, "pm-001")["live"].as_array().unwrap().len(), 5, "{viewed}");
+    assert_eq!(
+        role_of(&viewed, "pm-001")["live"].as_array().unwrap().len(),
+        5,
+        "{viewed}"
+    );
     assert!(
         action(&viewed, "pm-001", "two-live-holders").is_none(),
         "{viewed}"
     );
 
-    let twice = dir(&["directory", "assign", "pm-001/322", "pij-second", "--why", "r"]).await;
+    let twice = dir(&[
+        "directory",
+        "assign",
+        "pm-001/322",
+        "pij-second",
+        "--why",
+        "r",
+    ])
+    .await;
     assert_eq!(
         twice["data"]["warning"],
         "W-ONE-HOLDER: pm-001 is a one-holder role and pij-holder still holds pm-001/322",
