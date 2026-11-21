@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ffce-7417-76b1-9ddd-aa5760ce310a",
+				"date": "2026-11-22",
+				"head": "55b3cbb44c32033d23ed19b462d0cb4571149fe2",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:331",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"AFTER after fixed deployment: exact head/PID and matched total/live/owed/roster/kinds counts with open-delivery and unrelated-job cohorts; counts prove shape, not Rust latency."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "nice -n 19 python /Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr331-r2-query-probe.py",
+					"exit_code": 0,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr331-r2-query-cost.log"
+				},
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci (CI run 44945945864, successful job 136973157286, artifact 14724000886)",
+					"exit_code": 0,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr331-r2-rust-ci.log"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr331-r2-checks.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES -- performance/331, ROUND 2 FINAL, exact head 55b3cbb44c32033d23ed19b462d0cb4571149fe2.\n\nScope: only 0a8490fc85894b394f4d268b3971e72f605c7a9a -> 55b3cbb44c32033d23ed19b462d0cb4571149fe2. No merge delta. The original cost verdict's all-open-jobs qualification is corrected on the real queue path. This verdict does not clear another role's correctness findings.\n\nCost verified from source and exact SQL:\n\n- Queue::owed_recipients owns the debt answer. SqliteQueue's two prefix arms use the covering jobs_claimable(state,kind,id) index with bound kind ranges. Each arm enumerates pending and running: TWO EXPLAIN SEARCH nodes mean FOUR underlying state/prefix range probes, not two unconditional B-tree seeks. The bounds are delivery: <= kind < delivery; and delivery-control: <= kind < delivery-control;. Only open rows of those prefixes enter the answer; no payload/body decoding or unrelated-open-job scan is needed.\n- Each owed arm uses a temporary ORDER BY B-tree; the UNION merges and deduplicates recipients. Registry::list_live_with walks seats_live, materializes/distincts the JSON names, and performs a primary-key lookup per named recipient, including names that turn out already live or absent. Its named arm sorts for final ordering. There is no full seats-table/history walk. Price row visits as live seats L + open delivery/control rows J + distinct owed names D, PLUS index seek heights, sorting/deduplication, O(D) name/JSON allocation and returned-seat decoding. O(L+J+D) describes the row-visit shape, not a complete CPU or memory ceiling.\n- Splitting the answer adds one queue operation: PRAGMA user_version + the owed SELECT. The real roster stage now executes two schema reads and two SELECTs (four application SQL statements), versus two statements at R1. A nonempty kinds list adds the unchanged peek's schema read and SELECT, giving six before dispatch versus four. Existing sqlx worker/pool overhead is additional. No write transaction, schema migration, new timer, poll, hook, process launch or spawn site is added.\n- The unchanged configurable drain cadence defaults to 5 s (nominal 0.2 passes/s, 720/hour); existing native-receiver deadline wakes remain, so that is not a hard pass-rate cap. The new cost occurs on every actual drain pass, once per queue, not once per seat. Existing kinds construction, peek, claim, transport and native reconciliation are not reimplemented by this patch.\n- Backend qualification: FakeQueue enumerates ALL its live/claimed rows under its mutex and builds a BTreeSet; it does not have the real SQL range bound. The default Registry method still reads the full roster and uses Vec::contains for retired membership (worst-case N x D comparisons). A queue returning None explicitly retains the old full-list path. These compatibility/test paths must not inherit the real SQLite path's narrowed cost claim.\n\nIndependent proof:\n\n1. nice -n 19 python <session-files>/pr331-r2-query-probe.py -- PASS. Uses the SQL and kind constants extracted from this immutable checkout, applies its committed migrations through schema 50 to an in-memory SQLite 3.54.1 database, and touches no live store. Fixture: 300 seats, 20 live, 4 open delivery/control rows owing 3 recipients, 201 other open rows. Result: 3 owed, 23 roster; owed 216 VM instructions, roster 897. Adding 2,000 unrelated OPEN jobs, then 2,000 DONE delivery jobs, then 2,000 retired unowed seats leaves both counts and VM instruction totals unchanged. This proves candidate/VM-work shape on the fixture, not equal elapsed time or constant index height. EXPLAIN and the IN-loop SeekGE opcodes confirm the range probes. Dropping jobs_claimable or seats_live refuses loudly. Receipt: pr331-r2-query-cost.log.\n2. Exact-head CI run 44945945864, successful rust-test job 136973157286, artifact 14724000886 selected from that job's upload receipt: cargo nextest run --locked --workspace --profile ci -- PASS; 2,848 cases, zero failure/error/skipped. The roster equivalence, EXPLAIN/index-refusal, and assembled RealRegistry + RealSpine + FakeQueue retired-recipient tests all PASS. All five latest PR checks pass. I did not rerun the reviewer's witness or author mutants; those are not independently claimed here.\n3. just pr-freeze 331 -- FINAL at the requested SHA, CLEAN detached worktree, main e3673fb9, no migration, exact-head CI green.\n4. Local harness boot --json reports ready=false (vitest absent). harness checks --quick --json -- exit 1: eight dependency/ambient-tool failures; native contracts, SDK and pij-skill stages pass; heavy Rust/route/smoke stages skipped. No local full-gate pass is claimed. C25 respected: no node_modules links or dependency install; no local cargo build, live lapse, renewal, bounce or store copy.\n\nBenchmark and AFTER: the author's 7.37 -> 0.91 ms (owed alone 0.10 ms) is a Python/sqlite3 copy benchmark covering query/fetch, Python kinds, JSON and peek, not Rust/sqlx/pool/dispatch or a measured live-daemon speedup. Original execution is author evidence, not my rerun. R1's passive BEFORE remains applicable to unchanged main; no extra launch sampler was needed for this no-launch delta. AFTER is owed after the fixed deployment: record exact deployed head/PID and matched total/live/owed/roster/kinds counts, plus the open delivery/control versus unrelated-job cohort. Matched counts validate deployed workload shape; they do not establish Rust latency or attribute whole-daemon CPU.\n\nHarness lesson: the highest-leverage follow-up is a deterministic drain-roster cost receipt exposing the matched counts and actual Rust preparation timing, with the unrelated-open-job fixture as its backpressure. Captured as DL-001; the isolated query probe is preserved for reuse. Encoding a production sensor is outside this read-only final-round scope, not a blocker.\n"
+		}
+	]
+}
