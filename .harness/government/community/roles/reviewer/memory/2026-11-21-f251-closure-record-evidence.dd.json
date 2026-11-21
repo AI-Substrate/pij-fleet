@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before reviewing trim-record provenance, inode reuse, record eviction or resuming PR302 follow-up.",
+				"tags": [
+					"review",
+					"logging",
+					"f251",
+					"identity",
+					"crash-proof"
+				],
+				"title": "F251 closure and bounded inode-record evidence"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# F251 closure and bounded inode-record evidence\n\n#302 at 6fe4ee2d78df1141d8a8b076692fc965396f6d5e receives reviewer PASS-WITH-NOTES. Both #301 round-two reproductions are closed: the joiner sentinel survives the rotator's next write, and an unrelated deleted output is refused.\n\nNative proof: 22 logger unit tests, five daemon-log e2es, six spawn-site tests and macOS clippy pass. The independent deleted-output daemon served 401 and logged its banner to that intended unlinked private file while the 18 MiB managed log stayed byte-identical; no tail or trim record appeared.\n\nRecord proof uses a complete unchanged production module:\n- Seventeen real unlinked generations held open: exactly 16 entries remain; the oldest live fd is refused, newest accepted.\n- Missing/unreadable/invalid/incomplete evidence refuses. Matching whole entries are still accepted amid unrelated garbage or without a final newline: validation is per-entry, not whole-record integrity.\n- Actual trim records the live original before unlink and late holders still adopt it.\n- A separate copy injects exit(91) immediately after the real record write and before unlink. The child exits while holding flock; source remains named/unchanged, record is visible, lock is released, restart trims and recognizes the late original. This is a process-crash checkpoint, not power-loss durability.\n\nR302-N1 P3 identity ceiling: a live open file pins its allocation, but after its final close a retained device/inode pair is not permanently unique. A future reused foreign unlinked file with those same numbers is indistinguishable. The cap bounds count, not age; stale pairs can remain indefinitely without more trims. Only a predicate-level reuse simulation was run, not forced native inode recycling or a measured collision rate.\n\nR302-N2 P3 conservative recognition loss: cap eviction or unreadable evidence can leave an old legitimate holder unmanaged. The record is a brake relative to accepting any unlinked fd, not perfect historical provenance and not a new retention policy.\n\nFour independent mutants were caught: append reverted; record veto removed; record write omitted; cap widened to 17. Security separately owns record-path planting and mode judgments under C33.\n\nmagicWand: canonicalize the bounded-record and exact crash-checkpoint controls. Test capacity, crash ordering, evidence integrity and identity lifetime as separate claims.\n\ndifficulties: POSIX web documentation returned 403; Apple's official BSD unlink(2) manual established the live-open lifetime boundary. C25 still leaves local quick gates dependency/ambient-tool limited. No product file or production state was touched.\n"
+		}
+	]
+}
