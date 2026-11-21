@@ -1,0 +1,58 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fdb8-6e00-7693-a0b3-55a1ae5075f7",
+				"date": "2026-11-21",
+				"head": "4771b4b3d7ac93dd836be90cc3ca5d5d2dd5fb36",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:317",
+				"writer": "pij-complex-alpaca",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N317-1 (non-blocking): liveness_reads counts checks, including no-op checks, not always physical reads; qualify its denominator"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib -- whoami reviewer_317 --nocapture",
+					"exit_code": 0,
+					"log": "pr317-boundary-baseline.log and pr317-boundary-restored.log: 7/7 passed before and after mutation; real pool wait, identical GET/POST bytes, early refusal count"
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib reviewer_317 -- --nocapture",
+					"exit_code": 101,
+					"log": "pr317-boundary-mutant.log: premature span close killed on boundary assertion; 10 us versus 80 ms pool hold, successful compilation"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14704165009/zip",
+					"exit_code": 0,
+					"log": "Exact-head successful job 136818279375, run 44894876595: 2790 JUnit cases, no failures"
+				},
+				{
+					"command": "just pr-freeze 317",
+					"exit_code": 0,
+					"log": "Final recheck: exact 4771b4b head, FINAL/CLEAN, latest checks green, no migration"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer/317 — round 1\n\nHead: `4771b4b3d7ac93dd836be90cc3ca5d5d2dd5fb36`.\n\n**Verdict: PASS WITH NOTES.** No blocking correctness finding. The real-pool boundary oracle is GREEN -> RED -> GREEN.\n\nThe whoami response construction, identity selection, status codes, and failure handling are unchanged. GET and POST add a task-local timing scope around the same resolver future. Ping intentionally gains the aggregate `requests.whoami` field. The new counters are not read by any decision path.\n\n`seat_list`, liveness, Codex, role, and FYI spans start before their async calls, so connection-acquire waits, worker-thread hops, and scheduler delay remain inside the relevant stage. The successful encode span includes envelope construction and serialization. The spans do not overlap. Unstaged resolver/refusal work remains in the route total, not silently assigned to a database read.\n\nCompleted handler returns, including early refusals and errors, reach `time_whoami`'s counter flush. A guard drops inside its scope on those returns; the error response construction is charged to the failing stage, while `encode` is the successful-response span. Authentication/body-extraction rejections occur before these handler scopes and remain visible in the outer route counters. Cancellation is not counted as a completed handler, consistent with the existing request-timing layer.\n\nTask-local `Cell` state is isolated per scoped future and is not shared across spawned tasks. Published totals use relaxed atomic additions; snapshots are deliberately non-transactional, as the existing metrics contract documents. Per-request stage accumulation saturates, global atomic totals wrap at `u64::MAX`, and neither path panics from ordinary overflow.\n\n**N317-1 (non-blocking):** `liveness_reads` counts calls to the liveness check, not always physical process reads (`crates/daemon/src/http/identity.rs:1488-1491,416-425`). `resolve_seat` increments before `process_gone`; that helper returns immediately for missing process identity or remote descriptors. Label it as checks/attempts, or count only at the actual probe, before using it as a syscall/read denominator.\n\nNo new poll, timer, sweep, process launch, or admission policy/brake. Recording cost is per handler call: two clock reads per stage, task-local updates, an Arc clone/drop, and up to nine relaxed counter additions. Liveness-stage work scales with the eligible rows actually examined; other shared-resolver routes pay clock/task-local checks but publish no whoami counts. Snapshot construction adds six fixed metric names per ping, not caller-selected identities. Live overhead measurement is the separately assigned performance role's proof.\n\n## Validation\n\n`just pr-freeze 317`: exit 0, FINAL, CLEAN, exact requested head, all five latest checks successful, no migration.\n\nExact-head CI run `44894876595`, successful rust-test job `136818279375`, upload-log-selected artifact `14704165009`: 2,790 JUnit cases, no failures. The six route-counter tests and seven whoami-related controls inspected all passed. Both TS checks and Rust lint passed.\n\nLocal `harness boot`: advisory, `ready:false` because the detached worktree has no dependencies; no installation or node_modules symlink. All local behavior probes run from an isolated exact-head archive through shared-build at niceness 19, with four jobs and the resolved shared target. No live daemon mutation or bounce.\n\nBoundary baseline: `just shared-build -- test -p pij-daemon --lib -- whoami reviewer_317 --nocapture`: exit 0, seven tests passed. The new test exhausts the fresh store's four connections, polls an actual POST whoami to its acquire wait, releases them after 80 ms, and requires that wait in `seat_list`. It also compares successful GET/POST response bytes and counts an early unknown-seat refusal.\n\nBoundary mutant: move `drop(list)` before the asserted-ID `registry.get(...).await`; `just shared-build -- test -p pij-daemon --lib reviewer_317 -- --nocapture`: exit 101, the exact boundary assertion failed with `seat_list: 10` microseconds despite the 80 ms pool hold. Compilation and the response-byte comparison succeeded. The production file was then restored byte-for-byte (`cmp` against the frozen checkout); the original seven-test command returned exit 0 again, 7/7 passed.\n\nEvidence retained: `pr317-boundary-witness.rs`, `pr317-boundary-mutation.patch`, baseline/mutant/restored logs, and `pr317-junit.zip`. Only reviewer-owned temporary source archives are cleaned up; the detached product worktree remains unchanged.\n\n**Harness lesson:** retain the real-pool route-level boundary test; the shipped helper test proves accumulator scoping but not placement around a real async read.\n"
+		}
+	]
+}
