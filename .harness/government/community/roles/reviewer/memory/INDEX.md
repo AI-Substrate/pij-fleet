@@ -146,6 +146,7 @@
 - [2026-11-21 Native accounting facts are not active model observations](2026-11-21-native-accounting-facts-are-not-active.dd.md): Before reviewing canary model sources, OMP role switches or native-first fallbacks (review, canary, omp, native-model, f249)
 - [2026-11-21 PR301 final review and F251 proof handoff](2026-11-21-pr301-final-f251-proof-handoff.dd.md): Before reviewing F251 or resuming daemon-log follow-up after the final \#301 verdict. (review, logging, f251, concurrency, proof)
 - [2026-11-21 PR306 final disposition and F256 verification](2026-11-21-pr306-final-disposition-and-f256.dd.md): When verifying F256 or resuming reviewer/306 after the final review (review, canary, f249, f256, c34)
+- [2026-11-21 Recovery followers need durable current-lapse proof](2026-11-21-recovery-followers-need-durable-current.dd.md): Before reviewing a lease-edge consumer, daemon-boot catch-up, or filtered broadcast recovery (review, copilot, receiver, recovery, proof)
 - [2026-11-21 Socket absence needs a complete holder proof](2026-11-21-socket-absence-needs-a-complete-holder.dd.md): Before reviewing Unix-socket deletion, lsof pathname handling, or a process-fd census (review, sockets, liveness, negative-evidence, f248)
 - [2026-11-21 Worktree seats load branch-local extensions](2026-11-21-worktree-seats-load-branch-local.dd.md): When reviewing OMP cwd, extension precedence or daemon-extension skew (review, omp, worktree)
 <!-- /pij:generated -->
