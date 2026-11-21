@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before splitting shutdown phases into tasks or citing per-phase duration and cancellation safety",
+				"tags": [
+					"review",
+					"shutdown",
+					"ownership",
+					"logging",
+					"f267"
+				],
+				"title": "Shutdown task ownership and timer origin are separate proofs"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Open when shutdown work is moved into spawned tasks or phase durations are cited.\n\nF267 step2 passed29 controls and killed four mutants: phase task separation,\nprintable naming, clear-on-SpawnHold-Drop and stop-first selection. SpawnHold\nclears metadata before releasing the owned mutex on return and unwind; revive\nuses the same hold through prechecks and launch.\n\nDistinguish three guarantees. A normally returned shutdown joins all twelve\nphase tasks before flush/store close. Dropping the join future detaches its\nalready-spawned task; a latch proved work finished after cancellation. A release\nstarted before the join can finish after an empty HTTP drain; that order was\nalso unconstrained before this change. The real private-tmux/open-stream ordering\ntest passed at the reviewed head.\n\nTimers on already-running HTTP/release work are remaining join waits, not full\nsignal-to-completion times. Separate tasks fix shared-task starvation but do not\nchange where those timers begin. Main's CLI awaits shutdown without cancelling.\n\nMagic wand: keep normal return, panic, cancellation and timer-origin witnesses\nas separate shutdown proof rows instead of generalizing one green timing test.\n"
+		}
+	]
+}
