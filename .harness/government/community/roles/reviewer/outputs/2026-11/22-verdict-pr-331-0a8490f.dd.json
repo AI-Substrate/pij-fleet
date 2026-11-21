@@ -1,0 +1,73 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff91-0541-7e22-a078-517668ca4457",
+				"date": "2026-11-22",
+				"head": "0a8490fc85894b394f4d268b3971e72f605c7a9a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:331",
+				"writer": "pij-written-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"B331-01: correlate the indexed roster with the actual injected queue authority; preserve retired pending work in supported RealRegistry/RealSpine/FakeQueue configurations."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 331",
+					"exit_code": 0,
+					"log": "FINAL0a8490fc85894b394f4d268b3971e72f605c7a9a; clean exact head, latest checks pass"
+				},
+				{
+					"command": "just shared-build -- clippy --locked -p pij-core -p pij-store -p pij-daemon --all-targets -- -D warnings",
+					"exit_code": 0,
+					"log": "pr331-baseline.log: original macOS clippy,2roster,27auth and2drain controls passed"
+				},
+				{
+					"command": "actual DrainWorker mixed-backend regression",
+					"exit_code": 101,
+					"log": "pr331-edge-probes.log: RealRegistry+RealSpine+FakeQueue accepted; retired pending job handled0,pendingtrue, intended assertion failed"
+				},
+				{
+					"command": "same mixed fixture with only old full-roster selection",
+					"exit_code": 0,
+					"log": "pr331-full-roster-control.log:handled1,pendingfalse"
+				},
+				{
+					"command": "query/index/late-error controls",
+					"exit_code": 0,
+					"log": "pr331-controls-and-plan.log:3roster/index tests passed, named missing indexes refused, late closed-pool lease read logged and spared"
+				},
+				{
+					"command": "private current test binary with full/paid selector mutants",
+					"exit_code": 101,
+					"log": "pr331-full-mutant.log:12vs8 and300vs23; pr331-paid-mutant.log:10vs8. Both intended mutants killed."
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "pr331-harness-checks.log:8dependency/ambient failures; separate exact-head CI proof under C25"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: BLOCK\n\nPR #331, round 1, exact head 0a8490fc85894b394f4d268b3971e72f605c7a9a.\nAnswers 01a1ff91-0541-7e22-a078-517668ca4457.\n\nThe indexed roster works for the shared real SQL queue, but its unconditional use changes a supported mixed-backend configuration. Both requested query mutants are killed; index and late-lease error controls pass.\n\n## B331-01 [P2]: the registry's jobs table is not always the drain's queue\n\nLocations: crates/daemon/src/pointer/worker.rs:230-233; crates/store/src/registry.rs:514-524,642-655; composition at crates/daemon/src/lib.rs:556-622.\n\n`drain_once` always asks the registry for `list_live_or_owed`. The SqliteRegistry implementation decides retired-seat debt from `jobs` in its OWN pool. However, `build_services` supports opting into real ports independently: it requires Real Spine with Real Registry, but accepts Real Registry + Real Spine + Fake Queue. That fake queue's pending jobs do not exist in the registry's SQL pool.\n\nIndependent actual-consumer witness: use that supported configuration, register a Claude seat, enqueue a body while it is live, then tombstone it. The retired row and pending fake-queue job are both confirmed. New drain result: handled=0, pending=true. The selector never sees the fake queue's debt, so another unchanged tick will also omit the retired recipient rather than terminalizing its work.\n\nChanging ONLY the roster selection to the former full `Registry::list` gives handled=1, pending=false in the same fixture. This is a selector-induced behavior regression, not an unsupported backend-pair refusal or a timing guess.\n\nRequired: use the indexed cross-table roster only when its jobs authority is the queue actually being drained. Retain a safe superset for supported mixed/injected configurations. Do not globally revert the all-real cost improvement.\n\n## Requested checks\n\n- Shared real store: `build_services` gives the real registry and real queue the same persistent pool. There the SQL is a safe roster for the unchanged consumer: all live seats, plus retired IDs with pending/running rows in either delivery family. The consumer then applies its existing OMP/Pi and native-body exclusions, so the roster is intentionally not the smallest possible drain set.\n- States/kinds: Queue::peek and claim operate on pending/running rows; the drain derives only delivery/control kinds. Done/failed or other-family rows add no claimable kind. Unknown-seat suffixes would not occur in the former registry list either. A retired pending/running eligible row in the same pool is included.\n- Ordering: disjoint live/retired branches avoid duplicate live seats; owed IDs are DISTINCT; final ORDER BY id preserves registry order. Queue's own job-ID claim ordering is unchanged.\n- Fakes: FakeRegistry/default implementations return the full roster, a superset. That does NOT cover the RealRegistry/FakeQueue combination in B331-01.\n- Revive timing: the roster read is a snapshot, not a transaction held through later queue claims. A previously unowed retired seat revived/enqueued after that read can first become eligible on a later drain pass. In the shared real store the row/job remain durable, and the next query includes the live or now-owed seat. `handle_claim` still rereads the recipient before tombstone and delivery decisions. No new all-tick atomicity or wall-latency guarantee is claimed.\n- Required indexes: actual adapter calls with either `seats_live` OR `jobs_claimable` dropped return a named `no such index` Adapter error. There is no quiet full-scan fallback. This deliberate schema/plan dependency is acceptable provided a migration changing those names changes the reader and tests too; the existing schema-version guard remains.\n- N328-R1-01: closed. A private-store failure induced during the process read reached the LAST lease read, logged the failure, returned None and left the recovery ledger empty. The earlier 27 recovery controls all passed. Logging does not weaken the fail-closed brake.\n- Policy: no new deletion/retention or delivery policy is intended. The selector is a read optimization and must preserve the queue's necessary roster; B331-01 violates that requirement in one supported topology. The late lease check remains a BRAKE.\n\n## Nonblocking cost qualifications\n\nThe actual plan walks `seats_live`, seeks `jobs_claimable` by STATE, then applies the prefix filters. Consequently row visits include ALL open queue jobs, not only open delivery rows; DISTINCT and ORDER BY use temporary B-trees. Historical seats are not scanned. Price this accurately rather than equating a state seek with a delivery-prefix seek.\n\nThe supplied 7.53 ms to 0.86 ms receipt is a Python benchmark over a copied store, not an independently measured native Rust/sqlx live drain tick. Performance's 77dfda1 pass-with-notes records these qualifications and explicitly does not clear the mixed-queue correctness gap. Deploy AFTER remains owed; no live store mutation or bounce was performed.\n\nPark notice/F276 and PA's intentionally full-roster scope reads are unchanged in this diff. The one-shot boot timer/shared deadline and restart-only late guard work are now correctly distinguished in the lapse documentation. No new loop, poll or process launch appears; this changes the existing five-second drain's read path.\n\n## Validation\n\nAll Rust work used an isolated exact-head archive, canonical shared target, `just shared-build`, niceness 19, four jobs and no incremental compilation.\n\n| Proof | Result |\n|---|---|\n| `just pr-freeze 331` | FINAL at this full head; CLEAN; five latest checks passed, including the corrected delivers run; no migration |\n| `just shared-build -- clippy --locked -p pij-core -p pij-store -p pij-daemon --all-targets -- -D warnings` | macOS passed |\n| `just shared-build -- test --locked -p pij-store --test registry_live_or_owed -- --nocapture` | Original 2/2 passed; later mutation-off run 3/3 including both missing indexes |\n| `just shared-build -- test --locked -p pij-daemon --lib auth_recovery::tests -- --nocapture` | 27/27 passed |\n| Existing tombstoned-recipient and real-queue/fake-registry drain tests | Both passed |\n| Mixed queue consumer witness, original indexed selector | Intended assertion failed, handled=0/pending=true |\n| Same mixed fixture, ONLY old full-roster selection restored | Passed, handled=1/pending=false |\n| Forced closed private pool during process read | Passed: late lease error logged, None outcome, no acting ledger entry |\n| Full LIST_SQL selector mutant | Exit 101; both original roster tests failed, including 300 rows versus 23 |\n| Done/failed-counted-as-owed mutant | Exit 101; original equivalence assertion failed, 10 IDs versus 8 |\n| CI 44939879412/job 136954525361, successful-upload artifact 14721114262 | Five focused original controls independently parsed as passed |\n| `harness boot`; `harness checks --quick` | Boot advisory ready=false; quick gate exit 1 from eight dependency/ambient-tool failures; exact-head CI is separate C25 proof |\n\nThe mixed-mode RED ran before mutation selection was added. The old-full control changes only query selection. Mutation test executables were copied under the shared-build lock using the executable actually emitted for that target; the stale previous-target filename was not used for reported mutant results. All source instrumentation is restored byte-identically before cleanup.\n\nRetained session receipts: pr331-baseline.log, pr331-edge-probes.log, pr331-controls-and-plan.log, pr331-full-roster-control.log, pr331-full-mutant.log, pr331-paid-mutant.log and pr331-harness-checks.log. Consumer regression source is preserved as pr331-mixed-queue-regression.rs. No original product checkout was edited; no dependency links or installs.\n\nHarness magicWand: test the optimized relation against the ACTUAL consumer and its selected queue authority, not only a constant-level SQL equivalence. Also make test-binary copying follow Cargo's emitted target artifact rather than a stale basename.\n\nHold reviewer/331 until merge. Reviewer/330 round 2 follows.\n"
+		}
+	]
+}
