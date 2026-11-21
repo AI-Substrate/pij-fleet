@@ -1,0 +1,63 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fedb-726d-7171-8905-534fc7fb80bd",
+				"date": "2026-11-22",
+				"head": "eebc7023719fcdf1df3edc8cd14e83955fb9a5bb",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:322",
+				"writer": "pij-anonymous-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"new (C34 follow-up) N322-R2-01: senderless ordinary/native claims can recycle indefinitely and block their serial key; name quarantine/terminal-cleanup or explicit operator diagnosis, not a universal three-expiry bound."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test -p pij-store --test message_sender --test queue --test pr322_review -- --skip review_mutant --nocapture --then test -p pij-daemon --lib review322 -- --skip review_mutant --nocapture --then test --no-fail-fast -p pij-store -p pij-daemon --lib --test pr322_review review_mutant -- --nocapture",
+					"exit_code": 101,
+					"log": "session-local pr322-r2-probes.log;63 positive controls pass;4 mutants killed;ordinary claim after4expiries RUNNING/attempt4/budget0 then explicit cleanup progresses"
+				},
+				{
+					"command": "just shared-build -- clippy --locked -p pij-daemon -p pij-store -p pij-testkit --lib -- -D warnings",
+					"exit_code": 0,
+					"log": "session-local pr322-r2-clippy.log;production exact-head macOS"
+				},
+				{
+					"command": "inspect CI44922138243/job136900289680 successful artifact14714272344",
+					"exit_code": 0,
+					"log": "JUnit2827cases,zero failures;new ACK/sender-control/legacy/migration cases pass"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "session-local pr322-r2-harness-checks.log;eight dependency/ambient-tool failures;native/SDK/skill pass;heavy stages skipped"
+				},
+				{
+					"command": "just pr-freeze 322",
+					"exit_code": 0,
+					"log": "FINAL exacthead;CI5/5,CLEAN,adds50above49"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES at eebc7023719fcdf1df3edc8cd14e83955fb9a5bb, final round under C34.\n\nB322-01 and B322-02 are closed:\n- The final ledger writer now refuses an empty sender. The original real-store\n  generic enqueue({}) -> claim -> ack witness produces an explicit error,\n  leaves the claim RUNNING, writes ZERO new wildcard rows, and queues the named\n  sender's same-ID message independently. Fake ACK preserves the running claim\n  too. Removing the writer guard restores the NEW '' row and AlreadyDelivered\n  collapse, killing the original oracle.\n- A fully real registry/queue/spine control witness now treats self and parent\n  same-ID controls independently: self's refusal is durable; parent queues and\n  executes its own control; self's later retry still returns its own refusal.\n  Mutants ignoring sender, omitting the scoped record, and dropping the legacy\n  brake each fail their intended oracle. Delimiter/UTF-8 key controls pass.\nSources: store/queue.rs:1837-1887,1949-1960; testkit/fakes.rs:1561-1575;\ndaemon/delivery/mod.rs:1093-1142,2770-2815,3175-3184.\n\nThe RUNNING claim question is not universally bounded:\nRefusing ACK rolls back the transaction; it adds no timer, retry task or\nautomatic quarantine. While the invalid claim is RUNNING it blocks only that\nserial key, not other recipients. Ordinary Queue::claim, used by native/manual\nCopilot reads and generic readers, releases an expired BODY claim back to pending.\nIt has no three-expiry lifetime budget. A real-store control forced FOUR expired\nordinary leases: the same row was claimed again each time, remained RUNNING with\nattempt=4 and lease_expirations=0, while another serial key progressed. The ACK\nerror is visible; the row's running state and original payload remain inspectable.\nAn explicit terminal plain ACK freed it, and the queued named-sender message\nthen claimed and delivered. Plain terminalization writes no delivery ledger row.\n\nThis differs from OMP/Pi's claim_extension path, which has the three-expiry\nbudget and a Working brake, and from expired control claims, which fail rather\nthan replay. The native ordinary claim lease is300s; the existing <=15s empty-wait\nbackstop is not a lifetime retry cap.\nNormal producer paths I traced still use guarded delivery constructors and named\nsenders; the production generic enqueue sites are sidecar/remote-send jobs.\nNo new caller-facing normal delivery route to a senderless job was demonstrated.\nGeneric/legacy/corrupt direct rows remain a meaningful operational limit.\nSources: queue.rs:109-237,747-766; delivery/mod.rs:2290-2339,2370-2402;\npointer/worker.rs:289-302; http/mod.rs:5510-5564,5623-5657.\n\nnew (C34 follow-up) N322-R2-01:\nName an invalid senderless native/ordinary claim's quarantine or terminal-cleanup\npolicy, or provide explicit operator diagnosis/repair; do not call the job's\nlifetime bounded because one claim lease is bounded. This is not a new retry\nscheduler or a newly exposed ingress, and does not reopen the final-writer fix.\n\nLegacy refusal / identity answers:\n- New product refusals write BOTH the scoped delivery.control-refused record\n  and a delivery.outcome with from present, before the queue ACK. The scoped\n  key uses the sender's UTF-8 byte length and its exact id; another sender/id\n  pair cannot substitute a delimiter boundary.\n- The match-any legacy brake is specifically absent/null from on an old-shaped\n  control refusal, not every fallback read. The code also permits a fallback\n  NEW refusal from the SAME sender; that is ordinary own-sender replay, not\n  match-any legacy replay. A generated new refusal from another sender cannot\n  take that branch. Legacy behavior is identified by payload shape, not a\n  migration-date predicate; all new product refusal writers supply from.\n- The dedicated scoped record is necessary: another sender's later outcome can\n  overwrite the latest unscoped outcome for the raw id. The missing-record\n  mutant then requeues self's previously refused control, and our real-store\n  witness catches it.\n- C33/raw-body sender assertion remains the stated inherited limit. Control\n  admission still derives its actor through the existing control authorization;\n  this PR does not grant a new caller identity or execution permission.\n\nMigration / cost / merge:\nMigration0050 is byte-for-byte unchanged from round1. Its row-preservation and\nlegacy-row retry test passes again; the independent mid-migration-error rollback\nand two-open idempotence control passes at R2 too. The final merge is clean and\nthe freeze still checks0050 above main's0049.\nNo new periodic timer, process launch or retry job. Each control admission adds\nthe scoped refusal read plus fallback when absent; each is a schema read and\nseat/kind JSON-key search, not an O(1) message index guarantee. Each terminal\nrefusal also writes the extra scoped event. A stuck ordinary body claim can\nrecycle at existing claim opportunities; that is covered by the note above.\nThe PR now distinguishes point-key pairs, payload parsing, settlement history\nand snapshot index sizes. Release store-open0.796/0.576s figures remain the\nperformance receipt from prior head c0cae51, not a fresh R2 full-bounce benchmark.\n\nValidation:\n- Exact-head session archive, real SQLite and fake tmux, no source edits to the\n  review checkout. Shared target/nice19/four jobs: message_sender3/3, queue50/50,\n  independent store controls7/7, real control/key controls3/3; total63 positives.\n- Four/four source mutants killed: final writer without sender guard, refusal\n  sender ignored, scoped refusal not written, legacy brake removed. Mutation\n  batch exit101 is expected; no positive-control failure.\n- Production macOS clippy -Dwarnings for daemon/store/testkit libs: exit0.\n- CI44922138243, successful rust-testjob136900289680, successful artifact\n  14714272344: independently parsed2,827 cases, zero failures; original sender,\n  migration, held-expiry and new/legacy control cases passed.\n- harness checks --quick: exit1, eight dependency/ambient-tool failures;\n  native contracts, SDK and pij-skill passed; heavy stages skipped. No C25\n  dependency links or repeated unbounded workspace suite. No full local green.\n- just pr-freeze322: final publication is bound to this exact head, CI5/5,\n  CLEAN, migration50 over49. No production DB write, working-seat spawn or bounce.\n\nHarness lesson: refusal at the final writer protects identity, but is not a\nterminal row policy. Test ACK atomicity, claim recovery, queue progress and\nsender-scoped negative replay as separate proof obligations.\n"
+		}
+	]
+}
