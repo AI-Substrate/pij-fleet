@@ -1,0 +1,55 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff52-da4a-7a63-8729-99d5dc58a906",
+				"date": "2026-11-22",
+				"head": "c515a664c8a86d80621a7a13df3bfd9e07e54e8a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "performance",
+				"subject": "pr:327",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 327",
+					"exit_code": 0
+				},
+				{
+					"command": "git diff --check 062aa0a..HEAD; git diff --quiet 062aa0a HEAD -- crates/daemon crates/store crates/core crates/harnesses .copilot .omp harness",
+					"exit_code": 0,
+					"log": "Only testkit fake/shared contract changed; real-adapter runtime source identical."
+				},
+				{
+					"command": "gh run view 44934137381 --repo AI-Substrate/pij-fleet --job 136936972357 --log; gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14718966611/zip; Python XML parse",
+					"exit_code": 0,
+					"log": "2838 cases, zero failed/error/skipped; both fake/SQLite queue-contract runners, real-store/native F275 witnesses and six spawn-site guards passed; 24 selected cases passed."
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Eight dependency/ambient-tool failures; pij-skill/native/SDK pass, heavy Rust/route/smoke skipped; local gate not green, separate C25 exact-head CI proof."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "ROUND 2 performance verdict: PASS (final round, C34).\nSubject: pr:327\nHead: c515a664c8a86d80621a7a13df3bfd9e07e54e8a\nAnswers: 01a1ff52-da4a-7a63-8729-99d5dc58a906\n\nThe delta from reviewed062aa0a touches only crates/testkit/src/fakes.rs and contract.rs. Real store, daemon, core, harness/extension and version-helper paths are unchanged. No new production loop, timer, poll, launch, SQL statement or resource-cost regression is introduced. R1's cost PASS carries forward; no new performance notes owed.\n\nThe fake now borrows the claimed row, validates its delivery kind, then parses/checks the sender, and only then removes/terminalizes or records it. Misfiled claims return before mutation and avoid sender parsing. Valid fake claims retain the previous one borrowed lookup plus one removal; the ordering changes, not the lookup count. No whole-job clone, SQL operation or new worker is added. The existing fake mutex still covers the synchronous operation with no await.\n\nThe shared contract adds two focused scenarios to its existing runners: a misfiled sender-less claim stays running/untouched after refusal; an own-kind sender-less claim ends terminally and frees its successor. Both fake and SQLite call this same contract. This improves the proof surface without changing real-adapter runtime cost.\n\nCarried R1 model: a real sender-less ack makes one failed-row primary-key UPDATE/COMMIT in its existing transaction instead of the prior tentative done UPDATE/ROLLBACK, then returns the refusal. It creates no wildcard ledger/park/notice or retry timer. Named-ack SQL is unchanged. The corrected control-replay model remains1/2 JSON-history-filtering spine calls plus one durable control-refused fact per refused-control ack.\n\nValidation:\n- just pr-freeze 327: FINAL at the full head, CLEAN, all five latest checks passed, main/head schema50, no migration.\n- git diff --check 062aa0a..HEAD: passed. git diff --quiet 062aa0a HEAD -- crates/daemon crates/store crates/core crates/harnesses .copilot .omp harness: passed. Detached worktree clean.\n- Exact-head CI44934137381/job136936972357, artifact14718966611 selected from its successful upload log. Independently parsed JUnit:2,838 cases, zero failures/errors/skipped. Both fake_queue_honours_the_queue_contract and the_sqlite_queue_honours_the_same_contract_the_fake_does ran and passed; the store/native terminal-refusal witnesses and all six spawn-site guards passed. Twenty-four selected queue/native/spawn cases passed overall.\n- Source call sites verified: testkit/tests/contract_over_fakes.rs:61-63 and store/tests/queue.rs:41-43. Changed ordering: testkit/src/fakes.rs:1554-1582; shared cases: testkit/src/contract.rs:1373-1444.\n- No local real/fake comparison or M2 rerun by this performance seat; the independent correctness reviewer owns those. This cost pass does not replace that verdict.\n- harness boot ready=false (missing vitest); harness checks --quick --json exit1, eight dependency/ambient-tool failures; pij-skill/native/SDK pass, heavy Rust/route/smoke skipped. Local gate is not green; C25 exact-head CI remains separate proof. No dependency links/install or Rust build.\n- No live probe, production DB access, bounce or runtime mutation. A fresh live cost window would not exercise this fake-only delta, so none was taken. Only the owned CI download is temporary; evidence persists in session files.\n\nThe F275 real terminal transition remains the previously reviewed POLICY for a refused row; R2 introduces no different real policy or destructive operation. Hold performance/327 until merge; other holds unchanged.\n\nHarness lesson: put validation-order/no-mutation expectations in the shared contract, so a cheaper fake cannot silently prove a different state machine from SQLite.\n"
+		}
+	]
+}
