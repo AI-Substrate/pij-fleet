@@ -1651,7 +1651,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f261",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #311 merged (35dd41ac9172)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-21T10:11:23.293Z",
 					"why": "F261 lapse edge triggers auth_recovery extension-lost (8h Entra loss)"
 				}
 			]

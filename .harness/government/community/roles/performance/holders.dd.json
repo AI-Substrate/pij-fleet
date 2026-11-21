@@ -610,7 +610,10 @@
 					"harness_session": "47e80593-e44d-4cdb-9374-bad44ae70ec8",
 					"instance_key": "311",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #311 merged (35dd41ac9172)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-minimum-ocelot",
+					"to": "2026-11-21T10:11:23.293Z",
 					"why": "verdict on #311 (F261)"
 				},
 				{
