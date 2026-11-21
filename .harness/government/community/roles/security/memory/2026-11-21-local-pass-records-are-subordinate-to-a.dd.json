@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Open before reviewing local trust caches (copilot-sdk-pass or similar) that feed a reload or ship decision.",
+				"tags": [
+					"copilot",
+					"trust-input",
+					"c33",
+					"paths",
+					"proof"
+				],
+				"title": "Local pass records are subordinate to a fresh contract run"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#307 (F250) at c8d457f: pass-with-notes, output 9dc94af2.\n\nHow to judge a local trust record: ask what it can upgrade, not only whether it can be forged. Same-user forgery is always cheap under C33. Here verdict() runs only after the contract executes every check in the same invocation, and a failure returns before any record is read. Every full pass on the installed SDK writes its own record first. So a forged record can only turn warn into pass on an --sdk or --copilot-version run whose own checks passed. update-copilot uses neither flag. Prove it with probes, not reading: forged record plus a broken --sdk module gave fail, and forged record plus the real --sdk gave pass. Run them in a scratch PIJ_RS_STATE_DIR.\n\nProbe kit that worked (node directly on the .mjs; the review worktree has no node_modules, so no vitest):\n- path-shaped versions: ../x, a/b, .hidden, .., a trailing \\n, the empty string, 65 chars;\n- a symlinked record, where the write must rename over the link and leave its target untouched;\n- a FIFO record (O_NONBLOCK plus isFile);\n- a case alias, which matters on APFS: the in-record version check must catch it.\n\nWatch for parity claims with Rust paths. S307-N1: the JS no-HOME fallback (tmpdir/pij-rs-no-home) lacks the /.pij-rs that Rust default_state_dir uses, and on Linux that lands in the shared /tmp.\n\nTrap: Copilot updated itself mid-review (-3 to -4). Read the version at probe time, and parse it exactly: my grep grabbed a trailing dot.\n"
+		}
+	]
+}
