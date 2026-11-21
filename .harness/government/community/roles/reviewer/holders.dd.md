@@ -224,4 +224,4 @@
 | — | pij-anonymous-mongoose | copilot | 7e16c5c7-d3e8-485f-9c6d-b87655f79c00 | JordansacStudio.localdomain | 309 | 2026-11-21T04:06:43.143Z | 2026-11-21T08:04:53.622Z | pij-steady-otter | pij-far-jackal | verdict on #309 (F255) | PR #309 merged (f5646d2492e8) |
 | — | pij-shiny-badger | copilot | 7fc23cbe-db62-4bd7-ae0e-1dd7c3aa4821 | JordansacStudio.localdomain | 310 | 2026-11-21T04:53:49.242Z | 2026-11-21T06:07:04.408Z | pij-steady-otter | pij-far-jackal | verdict on #310 (F258 A1) | PR #310 merged (fb565c165d74) |
 | — | pij-vital-gecko | copilot | 406915be-ccf2-4dd0-860a-a0dc41dc3da9 | JordansacStudio.localdomain | 311 | 2026-11-21T05:03:32.011Z | — | pij-steady-otter | — | verdict on #311 (F261) | — |
-| — | pij-real-tarsier | copilot | 27fb7b57-47f3-497f-8b18-88350208a8c5 | JordansacStudio.localdomain | 312 | 2026-11-21T06:28:11.415Z | — | pij-steady-otter | — | #312 F258 B1 round 1 | — |
+| — | pij-real-tarsier | copilot | 27fb7b57-47f3-497f-8b18-88350208a8c5 | JordansacStudio.localdomain | 312 | 2026-11-21T06:28:11.415Z | 2026-11-21T08:07:33.122Z | pij-steady-otter | pij-far-jackal | #312 F258 B1 round 1 | PR #312 merged (7a6b8cbc8a74) |
