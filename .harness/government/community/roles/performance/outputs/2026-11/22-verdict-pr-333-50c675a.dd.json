@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a2000c-6d92-7720-9a8e-0afd471fd43c",
+				"date": "2026-11-22",
+				"head": "50c675ac58318d9303a062b890ec649d47806cea",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:333",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Carried AFTER: authorized fixed stop/deploy, actual pane/head/PID counts, observer duration vs4731ms, batch/fallback read launches and control-release order; never compare counters across PIDs."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci (CI44952182632/job136992317259/artifact14725543639)",
+					"exit_code": 0,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr333-rust-ci.log"
+				},
+				{
+					"command": "git diff --check a6694f95..HEAD",
+					"exit_code": 0
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr333-checks.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES -- performance/333, ROUND 1, exact head 50c675ac58318d9303a062b890ec649d47806cea.\n\nThe executable delta is one pre-send predicate in detach_pane_taps: a listed, owned pane already clear (no pipe and no marker) takes the existing release_tap path instead of entering pending. It reuses the INITIAL tap_states snapshot; no additional read, timer, loop, kernel launch or spawn site is added. Ownership selection remains unchanged. This is a BRAKE on issuing tmux commands: removing it sends the same panes or more. The existing local map removal/sink unlink now happens before command construction; it is not cost-free, but adds no new kind of side effect.\n\nLaunch bound unchanged: let P be the initial input and A the owned, still-attached entries admitted to pending. Healthy writes are greedy 8KiB byte-packed chunks of A, not a universal ceil(P/130); with uniform widths C panes/chunk, ceil(A/C). Approximately130 assumes typical pane-ID widths;145 attached taps still need2. A clear-only set needs the initial read and existing release/unlink work, but0 batch writes.\n\nEvery continuing batch round still removes pending entries, so aggregate counted batch writes B<=A<=P; successful chunks are not resent. This is NOT an all-process stop bound or a per-target-attempt guarantee under mixed vanish/failure. Scoped reads remain normally1+B+convergence rereads; existing control startup/fallback reads can launch. Snapshot/vector/ownership/unlink work remains. The2s remains convergence grace, not child/stop wall-time ceiling. The docs correctly qualify these costs. No steady-state per-seat work is introduced: this path runs on stop or explicit tap retirement.\n\nProof: source diff against main a6694f956dd9fc319148fed06e5fe9d956a16c37 read in full; detach byte helpers, progress loop and release helper inspected. Exact-head CI44952182632/job136992317259, successful-upload artifact14725543639: cargo nextest run --locked --workspace --profile ci PASS,2854cases, zero failures/errors/skips. New real-adapter regression asserts all3results OK, exactly1launch, the clear pane absent from argv and sinks removed. Existing300tap, exited-middle and foreign-tap bounds also PASS. Author old-adapter/no-pre-release RED receipts in PR comment7069563182 inspected, not independently rerun; the reviewer owns its original sequence and concurrent stop-attribution cases.\n\njust pr-freeze333 FINAL/CLEAN at this exact head; git diff --check a6694f95..HEAD PASS. Local harness boot ready=false; harness checks --quick --json exit1 (eight dependency/ambient-tool failures; native/SDK/skill pass, heavy stages skipped). No local Rust build, node_modules link, live tap mutation or bounce. No fresh cost window claimed for this command-removal-only delta.\n\nCarried AFTER: an authorized fixed deployment/stop must retain actual pane counts, head/PID, observer duration versus the historical4731ms cohort, and batch/read-fallback/release-order receipts. The historical count was reported~145, not stamped by that log; never compare daemon counters across PID resets. This cost verdict does not settle the correctness of every concurrent pane-state ordering.\n"
+		}
+	]
+}
