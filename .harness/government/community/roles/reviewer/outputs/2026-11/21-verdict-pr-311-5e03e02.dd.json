@@ -1,0 +1,68 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fd56-a367-7473-9565-74cae1b9ab67",
+				"date": "2026-11-21",
+				"head": "5e03e0219a1a04fd3120355024bb72c28039a9de",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:311",
+				"writer": "pij-vital-gecko",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"new: R311-C34-01 (nonblocking): gap storms can repeatedly reconcile all native seats without a separate rate cap; outstanding() is three indexed SELECTs per seat. Preserve this qualification with performance/deploy AFTER receipts."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 311",
+					"exit_code": 0,
+					"log": "FINAL/CLEAN at 5e03e0219a1a04fd3120355024bb72c28039a9de; CI 5/5; transient UNKNOWN cleared on recheck"
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=$(bash harness/scripts/cargo-target.sh) just shared-build -- test --locked -p pij-daemon --lib auth_recovery --then clippy --locked -p pij-daemon --lib -- -D warnings",
+					"exit_code": 0,
+					"log": "review-311-r2-original.log: recovery 22/22; scoped macOS clippy passed"
+				},
+				{
+					"command": "just shared-build -- test --offline --manifest-path <review-session-probe>/Cargo.toml -p review-311-r2-probe --lib -- --nocapture (session path normalized)",
+					"exit_code": 0,
+					"log": "review-311-r2-probes.log: 6/6, including pre-subscription, ring overwrite, renewal, positive control, overlap and abort/join"
+				},
+				{
+					"command": "nice -n 19 python3 <review-session>/review-311-r2-validate.py (session path normalized)",
+					"exit_code": 0,
+					"log": "review-311-r2-validation.log: seven guard mutants killed; restored recovery baseline 22/22; full-gate nonzero result separately recorded"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "review-311-r2-harness-checks.log: Rust/smoke/route/native/SDK/skill passed; eight C25 dependency/tooling-limited checks failed; attribution warned"
+				},
+				{
+					"command": "Exact-head successful CI JUnit, run 44883027136 job 136782244035 artifact 14698713239",
+					"exit_code": 0,
+					"log": "2781 cases, zero failures; daemon library 1060/1060; recovery 22/22"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "**PASS WITH NOTES — #311, round 2 of 2 (C34 final), head 5e03e0219a1a04fd3120355024bb72c28039a9de.**\n\n**B311-01 closed; N311-01 closed for the reported queued-renewal case.** The three independent round-one probes now pass: a durable lapse before subscription queues one restart; a lapse overwritten by unrelated events queues one restart; a successful heartbeat/renewal before handling queues none. The overflow probe waits for initial reconciliation to finish before flooding the ring, so attachment catch-up cannot substitute for gap recovery. The live-edge positive control also passes.\n\n`crates/daemon/src/auth_recovery.rs:566-672` attaches before reconciling, reattaches/reconciles after a gap, and acts only on a current undecided lapse. `outstanding()` checks the latest of lapse, renewal and acting recovery; the live path additionally checks the exact event sequence. These prevent replay after a renewal, a previous decision or an earlier daemon's decision whose cooldown has expired. The lapse remains the POLICY input; current-edge validation, process identity, idle, composer and cooldown are BRAKES.\n\n**Overlap and shutdown:** reconciliation and live consumption run serially inside the one follower. F212 can race it, but both use the same per-seat ledger lock and budget. An additional competing-consumer fixture produced exactly one restart control and one acting recovery event. This proves the bounded acting side effects, not that every possible duplicate call is eliminated. The existing low check/act race after a freshness read remains as security described; it is not a new block.\n\nThe fresh subscription has a fresh dropped counter: zero on normal closure breaks; a nonzero gap causes reattachment/reconciliation. The follower's Services also retains the bus sender, so daemon shutdown relies on the explicit abort/join, not eventual bus EOF. A fake liveness read held a lapse decision while its one-slot ring overflowed; abort/join completed, cancelled, with no control queued. The #309/#310 merges preserve both `extension_lost` and `spawn_waits`; the follower is still spawned once and aborted/joined. No new follower shutdown hang found. This is not a claim to resolve the separately owned F267 diagnosis or to have bounced the fleet.\n\n**Mutation proof:** seven independent guard mutants were killed by their intended single-test assertions: omit attachment reconcile; omit gap reconcile; use non-ending live subscription; ignore renewal; ignore prior recovery decisions; bypass the live sequence recheck; accept unreadable liveness. The restored snapshot then passed all 22 recovery tests. The isolated archive differed in production only by exposing the private module; the review worktree was unchanged.\n\n**new — R311-C34-01, nonblocking cost qualification:** continuous overflow can cause repeated serialized full-native-seat reconciles; there is no independent rate cap/backoff. It is event-driven, not an idle poller, and adds no timer or launch site. One reconcile is one roster read plus one `outstanding()` API call per live native Copilot seat; that call performs **three indexed per-kind SELECTs** in one read transaction (`crates/store/src/spine.rs:59-65,367-395`), not one SQL SELECT. CPU also scales with total broadcast event rate and payload size before filtering. Keep this qualification with performance's post-deploy AFTER receipts; no live before/after cost effect is claimed here.\n\n**Validation:** final `just pr-freeze 311` is FINAL/CLEAN at this exact head, CI 5/5. A transient GitHub UNKNOWN merge state was rechecked and cleared. Successful CI run 44883027136, job 136782244035, artifact ID 14698713239: 2,781 cases, zero failures; daemon library 1,060/1,060 and recovery 22/22. Local original-tree recovery tests 22/22 and scoped macOS clippy passed. Isolated probes 6/6; seven mutants killed; restored baseline 22/22.\n\n`harness checks` was run and exited 1: **Rust, smoke, route inventory, native Copilot contracts, SDK contracts and skill checks passed**; eight dependency/tooling-limited checks failed in the node_modules-less C25 tree, and attribution warned. No dependencies were installed/symlinked, and no full-local-pass claim is made. No working seat was lapsed or restarted; no bounce.\n\nThe harness gift is the now-encoded attachment/overflow/renewal regression set, plus the isolated overlap/cancellation proof. I retain reviewer/311 until merge.\n"
+		}
+	]
+}
