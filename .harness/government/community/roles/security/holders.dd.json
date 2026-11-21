@@ -1195,7 +1195,10 @@
 					"harness_session": "aa358e02-6f68-4ca0-88ce-59ef10419c81",
 					"instance_key": "321",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #321 merged (3c14199f5150)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-selected-deer",
+					"to": "2026-11-21T14:50:28.963Z",
 					"why": "#321 F258 pool cut round 1 (reuse)"
 				},
 				{
