@@ -70,37 +70,63 @@ fn the_testkit_names_are_the_product_s() {
 /// R295-002, F245: a server whose process is still running after its
 /// `kill-server` (failed, or here never run) keeps its socket and lock, so it
 /// is never orphaned or made to look gone, and the fixture's teardown reports
-/// it within its bound. An unknown pid keeps them too (fail closed).
+/// it within its bound. An unknown pid keeps them too (fail closed). The
+/// fixtures' own bound is long (F263), so this one is short.
 #[test]
 fn a_server_that_outlives_its_kill_keeps_its_socket_and_is_reported() {
+    const WAIT: std::time::Duration = std::time::Duration::from_millis(300);
     let tmux = PrivateTmux::start();
     let pid = tmux.pid().expect("new-session -P names the server's pid");
     let (socket, lock) = attached(&tmux);
     let started = std::time::Instant::now();
     assert_eq!(
-        pij_testkit::tmux::remove_server_files(&socket, Some(pid)),
+        pij_testkit::tmux::remove_server_files_within(&socket, Some(pid), WAIT),
         Err(pij_testkit::tmux::Kept::Running(pid)),
         "a running server is reported"
     );
     let took = started.elapsed();
     assert!(
-        took >= pij_testkit::tmux::SERVER_GONE_WAIT
-            && took
-                < pij_testkit::tmux::SERVER_GONE_WAIT
-                    + pij_testkit::time::scaled(std::time::Duration::from_secs(1)),
+        took >= WAIT && took < WAIT + pij_testkit::time::scaled(std::time::Duration::from_secs(1)),
         "bounded: {took:?}"
     );
     assert_eq!(
-        pij_testkit::tmux::remove_server_files(&socket, None),
+        pij_testkit::tmux::remove_server_files_within(&socket, None, WAIT),
         Err(pij_testkit::tmux::Kept::Unknown),
         "an unknown pid proves nothing"
     );
     assert!(!gone(&socket), "a live server keeps its socket");
     assert!(!gone(&lock), "and its lock");
-    let reported =
-        std::panic::catch_unwind(|| pij_testkit::tmux::finish_server(&socket, Some(pid)));
+    let reported = std::panic::catch_unwind(|| {
+        pij_testkit::tmux::finish_server_within(&socket, Some(pid), WAIT);
+    });
     assert!(reported.is_err(), "the teardown fails the test");
     assert!(!gone(&socket) && !gone(&lock), "still kept");
     drop(tmux);
     assert!(gone(&socket) && gone(&lock), "killed, then both go");
+}
+
+/// F263: `kill-server` returns before its server has exited (it still has to
+/// kill its panes), so the teardown waits for that end state rather than the
+/// command: the server's process is gone and its files removed, with no
+/// spare moment allowed between the two.
+#[test]
+fn a_killed_server_is_waited_for_until_its_process_is_gone() {
+    for _ in 0..5 {
+        let tmux = PrivateTmux::start();
+        let pid = tmux.pid().expect("new-session -P names the server's pid");
+        let (socket, lock) = attached(&tmux);
+        let killed = std::process::Command::new("tmux")
+            .args(["-L", tmux.name(), "kill-server"])
+            .output()
+            .expect("kill-server");
+        assert!(killed.status.success());
+        assert_eq!(
+            pij_testkit::tmux::remove_server_files(&socket, Some(pid)),
+            Ok(()),
+            "the server is waited for"
+        );
+        assert_eq!(pij_core::program::process_exists(pid), Some(false));
+        assert!(gone(&socket) && gone(&lock));
+        drop(tmux);
+    }
 }
