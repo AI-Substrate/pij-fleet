@@ -183,12 +183,13 @@ pub(crate) async fn reap_with_reason(
     tombstone_reason: Option<&str>,
 ) -> Result<(ReapReceipt, Vec<SeatDescriptor>)> {
     let mut retired = Vec::new();
-    // Only live rows can be reaped (F258: not every retired row, every 5 s).
-    let live = SeatFilter {
+    // Only live rows can be reaped, and only live rows are counted (F258: not
+    // every retired row, every 5 s).
+    let live = || SeatFilter {
         live_only: true,
         ..SeatFilter::default()
     };
-    let seats = registry.list(live).await?;
+    let seats = registry.list(live()).await?;
     let before = seats.len();
     let mut receipt = ReapReceipt {
         dry_run,
@@ -266,12 +267,7 @@ pub(crate) async fn reap_with_reason(
         }
     }
     if !dry_run {
-        receipt.after = registry
-            .list(SeatFilter::default())
-            .await?
-            .iter()
-            .filter(|seat| seat.tombstoned_at.is_none())
-            .count();
+        receipt.after = registry.list(live()).await?.len();
     }
     Ok((receipt, retired))
 }

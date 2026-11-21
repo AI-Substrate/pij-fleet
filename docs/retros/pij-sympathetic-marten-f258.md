@@ -17,3 +17,4 @@
 - A 2.5 GB live store and 3,212 seat rows (F259) make pane lookups scan; B1 adds the index.
 - R310-F001 is the shape a whole-second store clock invites: any "next instant after now" read is a second read of a clock the first read (the claim) already consumed. Pass the first read's time to the second, never re-read the clock between them.
 - Round 1's mutant outputs lived only in this session; the reviewer rightly could not credit them. Round 2 writes each mutant run to a log under `/tmp/f258-receipts/` and quotes it in the PR.
+- R315-F001: I narrowed the reaper's first list and missed the second one, 80 lines further down the same function. Cutting a read means changing every read of that kind on the path, so grep the whole function for the call (`.list(`), not just the line the diagnosis named. The test that holds it records every call through a spy, rather than one.
