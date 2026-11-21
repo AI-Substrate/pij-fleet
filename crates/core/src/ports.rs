@@ -647,15 +647,26 @@ pub trait Queue: Send + Sync {
         })
     }
 
-    /// F260: end the hold on one parked body at once, so it is never recovered.
-    /// True when its sender is owed an expiry notice: the message is not
-    /// delivered, and no other copy of it (a same-id resend) is still queued,
-    /// running or held for this recipient. False when it was recovered,
-    /// delivered, has a copy still on its way, or is not this recipient's park.
+    /// F260: end the hold on one parked body at once, so it is never recovered,
+    /// and decide its sender's expiry notice (F270: a three-way answer, so a
+    /// decision that can never change is recorded once, not re-made every sweep).
+    /// [`HoldExpiry::Owed`]: the message is not delivered, and no other copy of
+    /// it (a same-id resend) is still queued, running or held for this
+    /// recipient. [`HoldExpiry::Deferred`]: such a copy is still on its way.
+    /// [`HoldExpiry::Settled`]: it was recovered, delivered, or is not this
+    /// recipient's park.
     ///
     /// This default REFUSES, so no expiry notice is sent for a body that might
     /// still be delivered.
-    async fn expire_native_hold(&self, job: JobId, recipient: &SeatId) -> Result<bool> {
+    ///
+    /// [`HoldExpiry::Owed`]: crate::delivery::HoldExpiry::Owed
+    /// [`HoldExpiry::Deferred`]: crate::delivery::HoldExpiry::Deferred
+    /// [`HoldExpiry::Settled`]: crate::delivery::HoldExpiry::Settled
+    async fn expire_native_hold(
+        &self,
+        job: JobId,
+        recipient: &SeatId,
+    ) -> Result<crate::delivery::HoldExpiry> {
         let _ = (job, recipient);
         Err(crate::error::PijError::Adapter {
             adapter: "queue".to_string(),
@@ -771,14 +782,17 @@ pub trait Queue: Send + Sync {
     /// synchronous failure must call [`Self::forget_delivered`]. A hard crash
     /// between the two is the NAMED residual window.
     ///
-    /// The ledger key is `(recipient, sender_machine, msg_id)`: a forwarded
-    /// message's id lives in its machine's namespace (plan 164 review F02), and
-    /// `None` is a local sender.
+    /// The ledger key is `(recipient, sender_machine, msg_id, sender)`: a
+    /// forwarded message's id lives in its machine's namespace (plan 164 review
+    /// F02), `None` is a local sender, and an id is only unique per sender seat
+    /// (F270: the same id from two seats is two messages). A ledger row from
+    /// before F270 records no sender and matches any.
     async fn note_delivered(
         &self,
         recipient: &SeatId,
         msg_id: &str,
         sender_machine: Option<&str>,
+        sender: &SeatId,
         origin: DeliveryOrigin,
     ) -> Result<Option<DeliveryOrigin>>;
 
@@ -791,10 +805,13 @@ pub trait Queue: Send + Sync {
         recipient: &SeatId,
         msg_id: &str,
         sender_machine: Option<&str>,
+        sender: &SeatId,
     ) -> Result<()>;
 
-    /// Whether a delivery of `msg_id` to `recipient` was ever admitted: recorded
-    /// as delivered, or present as a delivery job in any state. Read-only.
+    /// Whether a delivery of `msg_id` from `sender` to `recipient` was ever
+    /// admitted: recorded as delivered, or present as a delivery job in any
+    /// state. Read-only. Another seat's message under the same id is not this
+    /// one (F270).
     ///
     /// The FYI namespace is separate and deliberately not consulted.
     async fn admitted(
@@ -802,6 +819,7 @@ pub trait Queue: Send + Sync {
         recipient: &SeatId,
         msg_id: &str,
         sender_machine: Option<&str>,
+        sender: &SeatId,
     ) -> Result<bool>;
 
     /// Return a CLAIMED job to pending, after `delay`, counting the attempt.

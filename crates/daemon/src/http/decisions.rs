@@ -1227,6 +1227,7 @@ mod tests {
                 &f.worker,
                 "newer-message",
                 None,
+                &SeatId::from("pij-sender"),
                 DeliveryOrigin::InjectedToTransport,
             )
             .await
@@ -1486,6 +1487,7 @@ mod tests {
                 &f.worker,
                 &old_id,
                 None,
+                &SeatId::from("pij-sender"),
                 DeliveryOrigin::InjectedToTransport,
             )
             .await
@@ -1557,6 +1559,7 @@ mod tests {
                 &f.worker,
                 "newer-message",
                 None,
+                &SeatId::from("pij-sender"),
                 DeliveryOrigin::InjectedToTransport,
             )
             .await
