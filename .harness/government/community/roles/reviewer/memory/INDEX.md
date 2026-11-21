@@ -182,6 +182,7 @@
 - [2026-11-22 R327 kind validation precedes terminal policy](2026-11-22-r327-kind-validation-precedes-terminal.dd.md): When verifying the R327 fake-queue fix or resuming the queued R326 review (review, handover, queue, kind, f275)
 - [2026-11-22 Retry fixtures and active keyed launch evidence](2026-11-22-retry-fixtures-and-active-keyed-launch.dd.md): Before reviewing startup retries or cleanup of evidence for an operation key (review, fixtures, spawn, f254, f265)
 - [2026-11-22 Shutdown task ownership and timer origin are separate proofs](2026-11-22-shutdown-task-ownership-and-timer-origin.dd.md): Before splitting shutdown phases into tasks or citing per-phase duration and cancellation safety (review, shutdown, ownership, logging, f267)
+- [2026-11-22 Stop inference cannot equate attachment with failure](2026-11-22-stop-inference-cannot-equate-attachment.dd.md): Before clearing batch error isolation or reusing a retained tap after unavailable verification (review, tmux, f267, causality, c34)
 - [2026-11-22 Timed-out buffered bytes are not delivered bytes](2026-11-22-timed-out-buffered-bytes-are-not.dd.md): When reviewing buffered read timeouts or resuming PR327 R2 after R326 (review, logging, timeout, eof, handover, f273)
 - [2026-11-22 Tmux batch transport and persistent failure progress](2026-11-22-tmux-batch-transport-and-persistent.dd.md): Before batching tmux commands or judging shutdown cancellation, ownership and cost proof (review, tmux, batching, recovery, cost, f267)
 <!-- /pij:generated -->
