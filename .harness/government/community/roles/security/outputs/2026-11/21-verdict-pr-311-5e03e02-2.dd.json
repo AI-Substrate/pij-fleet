@@ -1,0 +1,39 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fd56-a500-7823-ab8a-64e7408b383a",
+				"date": "2026-11-21",
+				"head": "5e03e0219a1a04fd3120355024bb72c28039a9de",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:311",
+				"writer": "pij-strong-hedgehog",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"new: a failed renewed-edge spine write leaves a stale lapse that a later reconcile may /restart on a healthy seat (bounded by the brakes)",
+				"new: a local event-bus flood forces gap reconciles (one roster read plus one per-seat spine read each); for performance",
+				"new: Told/Pending lapse decisions are unrecorded, so they are re-decided at a later reconcile after the window"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict, #311 (F261) round 2 at 5e03e0219a1a04fd3120355024bb72c28039a9de: PASS WITH NOTES. This stands, unchanged, from b40ed24, written at the same head before this request; republished to answer it with the new notes listed under \"new\". The head is FINAL (CI 5/5, CLEAN). This was a source review only: no build or live probe.\n\nRound-1 scope stays closed:\n- There is no way to forge or cause a lapse on another seat. Only the daemon produces the lapse edge (tell_receiver_edge), and heartbeats are gated on identity, so a foreign caller can only renew a seat's lease.\n- The wire still refuses extension-lost.\n- The idle and composer brakes are unchanged.\n- A dead, recycled or unreadable process gives Exited, never /restart.\n- Both earlier notes are closed: there is now a test for an Err from the liveness port, and the api row names the /bin/ps fallback.\n\nR2:\n- outstanding() is a BRAKE. A lapse is decided only when it is the seat's latest of {lapsed, renewed, seat.auth_recovery}, and on the live path only when it has the same seq.\n- Reconcile reaches only daemon-written, undecided lapses, and every decision still goes through on_lapse with its scope and brakes.\n- Reconcile and the live events run one after the other in the one follower task, and decisions for one seat are serialized by the per-seat slot against F212 reports.\n\nnew (not regressions of round-1 scope; for the prime):\n1. A stale lapse can restart a healthy seat (low). tell_receiver_edge is best-effort, so if the `renewed` spine write fails, `lapsed` stays latest while the extension is alive. The next boot or gap reconcile may then /restart a healthy seat. That is bounded by idle, an empty composer, a live process and the 30 min window, and it is a same-session restart.\n2. A local caller can force gap reconciles, a cost question for performance. Flooding the event bus forces broadcast lag, and each gap costs one roster read plus one indexed read per live native Copilot seat. Decisions stay bounded by outstanding() and the window.\n3. A lapse decided as Told or Pending records no event, so it stays outstanding and can be decided again at a later reconcile after the window. The seat is still deaf then, so this is consistent with the policy.\n4. Carried from round 1: a TOCTOU on a seat revived between the lapse and the decision, and an older daemon losing the window brake once when it cannot parse \"exited\".\n"
+		}
+	]
+}
