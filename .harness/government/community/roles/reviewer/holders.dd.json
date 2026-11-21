@@ -2778,7 +2778,10 @@
 					"harness_session": "7e16c5c7-d3e8-485f-9c6d-b87655f79c00",
 					"instance_key": "320",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #320 merged (0a2d6117c7ac)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-anonymous-mongoose",
+					"to": "2026-11-21T15:30:21.113Z",
 					"why": "#320 F268 round 1 (reuse)"
 				},
 				{
