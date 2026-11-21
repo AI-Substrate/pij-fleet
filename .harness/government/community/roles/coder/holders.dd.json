@@ -1641,7 +1641,10 @@
 					"harness_session": "01a1fc4a-7efc-73dc-9a53-d2cd3bbd674c",
 					"instance_key": "f260",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #314 merged (9fe020545bad)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-famous-nightingale",
+					"to": "2026-11-21T11:34:20.436Z",
 					"why": "F260 lapsed-receiver refusal parks and redelivers (HIGH)"
 				},
 				{

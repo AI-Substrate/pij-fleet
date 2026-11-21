@@ -1123,7 +1123,10 @@
 					"harness_session": "c303906c-16ef-485d-a33a-567611a23baf",
 					"instance_key": "314",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #314 merged (9fe020545bad)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-considerable-tapir",
+					"to": "2026-11-21T11:34:20.436Z",
 					"why": "#314 F260 round 1"
 				},
 				{
