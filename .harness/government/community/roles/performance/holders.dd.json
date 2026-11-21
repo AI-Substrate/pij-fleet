@@ -612,6 +612,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-minimum-ocelot",
 					"why": "verdict on #311 (F261)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T06:28:17.133Z",
+					"harness": "copilot",
+					"harness_session": "bc68da5f-4b5d-47a0-8ab4-0425bfc1bbc1",
+					"instance_key": "312",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-precious-sparrow",
+					"why": "#312 F258 B1 round 1"
 				}
 			]
 		}
