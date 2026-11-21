@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Read when resuming pm-001 after the 22 Nov 05:00 compaction, before waking a cold prime, or after a mass seat death",
+				"tags": [
+					"resume",
+					"cost",
+					"seats",
+					"recovery",
+					"lanes"
+				],
+				"title": "21-22 Nov night: cold prime batching, reviewer reuse, mass-death recovery, and the in-flight lanes"
+			}
+		},
+		{
+			"name": "body",
+			"value": "State at 05:00 22 Nov (LOG.md is authoritative; packets in session files/msgs/):\n- Live daemon: the bounce for #327/#328/#329 was running (before that 83182 at 85fe143e). #326 READY with the prime.\n- #330 (F267 step 3, marten, 1c998e7): heading for BLOCK from written-mongoose (B330-01: one batched tmux command is too long at ~300 panes and retries unchanged, 34 launches in 2 s; B330-02: a dead middle pane aborts the rest, 46 launches) and from helpful-elephant (performance, revising its pass). It's DIRTY vs main. Round 2 for marten: chunk the command, tolerate missing panes per pane, never retry an identical failing command, merge main. The AFTER is the bounce's \"pane observer: ended after N ms\" vs 4731 ms at ~145 panes.\n- Open lanes: falcon on F259a (drain_once list_live_or_owed plus park_notice live_only; PA watchdog deliberately LEFT on the full scan, its readers need dead rows). nightingale on F276 (terminalize open jobs of seats tombstoned >7 d, undelivered:recipient-retired, live senders told only, dry-run count first). marten on #330 round 2.\n- Review seats (all children; reuse them, they hold per-PR roles): complex-alpaca (reviewer), selected-deer (security, Claude), helpful-elephant (performance), written-mongoose (reviewer). alpaca bloats: tell it to publish then end its turn so the PA's compact can run.\nLessons:\n1. A cold prime costs ~$5-6 to wake (E-RS-COLD-WAKE). If several READYs are close, hold the first, batch, and wake once with --force --reason. Keep the draft in msgs/ (ready-328-held.md).\n2. A cold verdict seat (400k+) is cheaper to replace than to wake: spawn a fresh seat in a detached worktree at the deployed commit for an AFTER, and assign it the role; ask the PA to compact the old one before its next round.\n3. Mass death (F271, 13:25Z 21 Nov) was an osk seat's `pkill -f ... -u UID -P PID`: BSD pkill treats trailing flags as patterns, which matched --no-ask-user on every Copilot seat. After a mass death, revive every child with OPEN work (not only the ones the prime lists), check role holds came back, and send each a resume note listing its requests and saying to rerun anything killed. F271 (1), launch-time denies, is PARKED by Jordan: never restart it without his word.\n4. pr-freeze NOT FINAL for UNKNOWN mergeability or a delivers rerun is transient: retry in 30-60 s. DIRTY after a sibling merges is common: have the coder merge main; reviewers re-check only the merge delta, at the new head.\n5. Verify a hung test's ancestry before killing it (pid only, the seat's own run), then tell the owning seat. It led to F273's shared-build test limit.\n6. Kill-by-pattern and delete-by-pattern are both banned (F262, AGENTS.md rule 6). Repeat it in every packet's rules.\n"
+		}
+	]
+}
