@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"kind": "note",
+				"role": "reviewer",
+				"subject": "pr:306",
+				"writer": "pij-secondary-starfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "harness checks --json",
+					"exit_code": 1,
+					"log": "review-session checks-306-r2.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Completed local-gate addendum for reviewer verdict adb679b at head 89a82bf8ec10ca7ba8902f2070df7efb8560542f: harness checks --json exited 1. Rust fmt/clippy/tests, route inventory, smoke, native Copilot contracts and pij-skill passed. Eight TS/tooling stages failed in the dependency-free C25 review tree (missing tsx/vitest and incompatible ambient Biome); Copilot SDK compatibility and attribution stages warned. No green full local gate is claimed. Exact-head CI remains the completed TS proof. The product worktree is still clean. The final pass-with-notes verdict and prime-accepted F256 disposition are unchanged."
+		}
+	]
+}
