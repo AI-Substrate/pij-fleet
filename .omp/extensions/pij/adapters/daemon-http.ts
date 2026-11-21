@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -97,6 +98,18 @@ export function restartWaitMs(env: NodeJS.ProcessEnv): number {
  * and inbox reconnect on their own, and the turn-boundary hooks answer at once, as the CLI's do.
  */
 const WAITS_OUT_RESTART: ReadonlySet<string> = new Set(["/v1/send", "/v1/spawn"]);
+/**
+ * F255: the route whose request carries its own key (a spawn's `spawn_id`). Within the restart
+ * wait, a send the daemon may have read but never answered (a bounce cut it) and a stopping
+ * daemon's 503 are sent again with the same key; the daemon answers a second send with the seat
+ * the first launched, never a second one.
+ */
+const KEYED_RESEND_ROUTE = "/v1/spawn";
+
+/** F255: a spawn's key, minted before its first send, in the shape pij-rs mints: `s-` + 32 hex. */
+export function mintSpawnId(): string {
+	return `s-${randomBytes(16).toString("hex")}`;
+}
 
 /** Resolve extension transport controls: explicit environment, then Rust defaults. */
 export function daemonLocation(
@@ -202,10 +215,16 @@ export class PijDaemonClient {
 			readonly accept_inbound: boolean;
 			readonly role?: string;
 			readonly caller?: { readonly PIJ_SESSION_ID: string; readonly TMUX_PANE?: string };
+			readonly spawn_id?: string;
 		},
 		signal?: AbortSignal,
 	): Promise<RustSeatDescriptor> {
-		return this.post<RustSeatDescriptor>("/v1/spawn", request, signal);
+		// F255: keyed before the first send, so a resend never launches twice.
+		return this.post<RustSeatDescriptor>(
+			"/v1/spawn",
+			{ ...request, spawn_id: request.spawn_id ?? mintSpawnId() },
+			signal,
+		);
 	}
 
 	register(claim: Registration): Promise<RustSeatDescriptor> {
@@ -519,32 +538,40 @@ export class PijDaemonClient {
 	 * doubling to 4 s, for up to RESTART_WAIT_MS (pauses and wall clock alike), then refused naming
 	 * a restart. Only a refused connection: nothing reached the daemon, so a write cannot happen
 	 * twice. A timeout, a reset or any reply is answered as before, and a call cancelled while it
-	 * waits is never sent again (S219-N001).
+	 * waits is never sent again (S219-N001). F255: the keyed spawn route also sends again after
+	 * any other failed send and after a 503 (the daemon was stopping and launched nothing).
+	 * R309-02: the wait runs from the first failed send, not the first send, so a spawn that
+	 * waited longer than RESTART_WAIT_MS for its seat before a bounce cut it still sends again.
 	 */
 	private async waitingOutRestart(
 		path: string,
 		send: () => Promise<Response>,
 		signal: AbortSignal | undefined,
 	): Promise<Response> {
-		const waits = WAITS_OUT_RESTART.has(path.split("?")[0] ?? path);
-		const deadline = Date.now() + RESTART_WAIT_MS;
+		const route = path.split("?")[0] ?? path;
+		const waits = WAITS_OUT_RESTART.has(route);
+		const keyed = route === KEYED_RESEND_ROUTE;
+		let deadline: number | undefined;
 		let budget = RESTART_WAIT_MS;
 		let pause = RESTART_FIRST_PAUSE_MS;
 		for (;;) {
 			try {
-				return await send();
+				const response = await send();
+				if (!keyed || response.status !== 503) return response;
+				await response.body?.cancel();
 			} catch (error) {
-				if (!waits || signal?.aborted || !isConnectionRefused(error)) throw error;
-				if (pause > budget || Date.now() + pause > deadline) {
-					throw new Error(
-						`the daemon is restarting or down: retry, or run pij-rs ping (${this.location.addr} refused connections for ${RESTART_WAIT_MS / 1_000} s)`,
-					);
-				}
-				await (this.deps.sleep ?? sleep)(pause, signal ?? new AbortController().signal);
-				signal?.throwIfAborted();
-				budget -= pause;
-				pause = Math.min(pause * 2, RESTART_MAX_PAUSE_MS);
+				if (!waits || signal?.aborted || !(keyed || isConnectionRefused(error))) throw error;
 			}
+			deadline ??= Date.now() + RESTART_WAIT_MS;
+			if (pause > budget || Date.now() + pause > deadline) {
+				throw new Error(
+					`the daemon is restarting or down: retry, or run pij-rs ping (${this.location.addr} refused connections for ${RESTART_WAIT_MS / 1_000} s)`,
+				);
+			}
+			await (this.deps.sleep ?? sleep)(pause, signal ?? new AbortController().signal);
+			signal?.throwIfAborted();
+			budget -= pause;
+			pause = Math.min(pause * 2, RESTART_MAX_PAUSE_MS);
 		}
 	}
 
