@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a20037-e3fb-7b22-931e-4f02c932210b",
+				"date": "2026-11-22",
+				"head": "b9f87dcfe21f50f00f19413a710a02d40f36ad9a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:332",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"AFTER unchanged: exact deployed head/PID; oldeligible345 ->0 after ~6 successful eligible batches, young32 spared; live-sender notice admissions/audits/no duplicates, sender liveness qualified."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci (CI44955718962/job137003231710/artifact14726863847)",
+					"exit_code": 0,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr332-r2-rust-ci.log"
+				},
+				{
+					"command": "Both-parent runtime comparisons and git diff --check0e6eba27..HEAD",
+					"exit_code": 0,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr332-r2-merge-proof.log"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr332-r2-checks.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES -- performance/332, ROUND 2 FINAL, exact head b9f87dcfe21f50f00f19413a710a02d40f36ad9a.\n\nDelta-only review. The R1 cost qualifications in governed f5f327f remain:64 updates/128 canonical retirement facts per ACTUAL sweep, not all candidate work, bytes, notices, launches or a64/minute bound; the debug copy timing is not a full-sweep/CPU benchmark. Policy remains the tombstoned recipient; age, revive exclusion, successful reads/re-read and LIMIT remain BRAKES. This cost verdict does not replace the independent reviewer's destructive-ordering verdict.\n\nB332-01 fix adds one Option<ReviveIntent> field to each SpawnHold (None on ordinary holds). carry moves the existing intent into that field; it adds no heap allocation, map entry, scan, schema/queue call, timer, polling loop, process launch or spawn site. Per hold/revive storage and handoff work are O(1), plus the EXISTING intent's owned seat string. The existing map insert/count/decrement/removal occurs once per intent; only its owner/lifetime changes. The existing sweep's revives() still clones active distinct keys O(R): a cancelled-but-running revive now remains in R until its launch finishes, correctly extending the brake. O(1) field size is not an O(1) sweep or a bounded launch lifetime.\n\nThe intent is taken before pane/lock waits as before. carry follows lock acquisition without an intervening await. The unchanged launch_seat_locked moves SpawnHold into the existing owned task; launch_owned drops it immediately after put_lifting_owner_close succeeds and retains it through its existing rollback/failure paths. Normal return and panic drop the owned Option. No new task, timeout or retry mechanism is introduced; a stalled launch can retain its existing protection until completion. Stop still waits on the existing launch lock; hard exit or a stop past its existing bound can lose the in-memory brake, as disclosed. These constraints are not new resource ceilings.\n\nMerge separated from fix:27069fd9->b70441ad is the intent fix/tests/docs; b70441ad->b9f87dc imports #333's four files. F276 revive/tests/spawn-waits/park/store/constant files match the feature parent; final tmux files match main71771aee and the previously reviewed50c675a. Imported #330 runtime files match its reviewed6d855e8 version at a6694f95. Queue SQL/constants and AGENTS.md are unchanged from R1. No merge-added retirement tick or launch. Existing detach bounds and qualifications carry unchanged.\n\nValidation: exact-head CI44955718962/job137003231710, successful-upload artifact14726863847: cargo nextest run --locked --workspace --profile ci PASS;2,866 cases, zero failure/error/skipped. Both actual-handler cancellation/lock-wait witnesses and the carried-intent panic test PASS; retirement LIMIT/EXPLAIN and imported clear-pane regression also PASS. I did not rerun the reviewer's causal fixture or M7/M8; CI is not a claim of independent mutant execution. Both-parent source comparisons and git diff --check0e6eba27..HEAD PASS. just pr-freeze332 FINAL/CLEAN at requested head; all latest checks PASS, schema50/no migration. Local boot remains ready=false; harness checks --quick --json exit1 with eight dependency/ambient-tool failures; native/SDK/skill pass, heavy stages skipped. No local build, node_modules link, live store write, bounce or working-seat mutation.\n\nAFTER unchanged and still owed after the fixed deployment: match head/PID; age-qualified old-open count should reach0 after roughly six SUCCESSFUL eligible batches for the unchanged345-row cohort, with32young initially spared. Verify terminal outcomes and live-sender notice admissions/audits (15 only if those3senders remain live), no duplicate admissions. Revives, new work and changing sender liveness can alter those numbers. Preserve the existing guarded read-only BEFORE; do not equate parked facts with notices or compare quiet AFTER CPU to its startup window.\n\nHarness lesson: guard memory follows the actual operation's owner, not its waiter. Preserve both a cancellation-through-row witness and a failure-release witness; a constant-size RAII field does not imply a constant-duration protected operation.\n"
+		}
+	]
+}
