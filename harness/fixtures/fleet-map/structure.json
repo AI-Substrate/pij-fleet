@@ -41,7 +41,7 @@
           "stops": [{ "id": "b2s", "name": "Stacked on it", "pr": 23, "state": "blocked", "waitingOn": "b2" }]
         },
         { "id": "b3", "name": "Merged ahead", "pr": 24, "state": "merged", "repo": "example-org/other.repo" },
-        { "id": "b4", "name": "Waiting on you", "state": "waiting", "waitingOn": "A decision" }
+        { "id": "b4", "name": "Waiting on you", "state": "waiting", "waitingOn": "A decision", "note": "</script><!-- <script>alert(1)</script> -->" }
       ]
     },
     {
