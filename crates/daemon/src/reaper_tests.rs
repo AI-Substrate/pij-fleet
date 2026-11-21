@@ -1016,3 +1016,91 @@ async fn a_reap_lists_only_live_rows_and_counts_them() {
         "dry run: one live list; sweep: a live list before and after"
     );
 }
+
+/// F271b: a sweep that retires five seats records one `death.mass` event and
+/// wakes the live PA once; the next sweep, with nothing new, stays quiet.
+#[tokio::test]
+async fn a_sweep_retiring_five_seats_wakes_the_pa_once() {
+    use pij_core::model::Harness;
+
+    let (mut services, _store) = services().await;
+    // OMP and paneless, like the obituary tests' parent: the wake queues, so
+    // its body can be read back off the PA's delivery queue.
+    let live = |id: &str, pid: u32| {
+        let mut seat = SeatDescriptor::new(id, Harness::Omp, "/work");
+        seat.proc = Some(ProcIdentity { pid, proc_start: 7 });
+        seat
+    };
+    let prime = live("pij-prime", 4_001);
+    let mut pa = live("pij-pa", 4_002);
+    pa.parent = Some(prime.id.clone());
+    services.liveness = Arc::new(
+        FakeLiveness::new()
+            .with_proc(prime.proc.unwrap())
+            .with_proc(pa.proc.unwrap()),
+    );
+    services.tmux = Arc::new(FakeTmux::new());
+    services.registry.put(prime.clone()).await.unwrap();
+    let before = services.registry.put(pa.clone()).await.unwrap();
+    services
+        .roles
+        .assert_role(&prime.id, &pa.id, Some("pa".into()))
+        .await
+        .expect("the prime asserts its PA");
+    for n in 0..5_u32 {
+        let mut seat = SeatDescriptor::new(format!("pij-dead-{n}"), Harness::Copilot, "/work");
+        seat.pane = Some(format!("%9{n}"));
+        seat.proc = Some(ProcIdentity {
+            pid: 9_000 + n,
+            proc_start: 1,
+        });
+        services.registry.put(seat).await.unwrap();
+    }
+
+    let mass = Mutex::new(crate::death_sweep::MassDeath::default());
+    let receipt = crate::death_sweep::sweep_and_alarm(&services, &mass, 1_000_000)
+        .await
+        .unwrap();
+    assert_eq!(receipt.reaped.len(), 5, "{receipt:?}");
+    let events = services.spine.tail(None, before).await.unwrap();
+    let alarms: Vec<Value> = events
+        .iter()
+        .filter(|event| event.kind == "death.mass")
+        .map(|event| serde_json::from_str(&event.payload).unwrap())
+        .collect();
+    assert_eq!(alarms.len(), 1, "{events:?}");
+    assert_eq!(alarms[0]["in_sweep"], 5);
+    assert_eq!(alarms[0]["by_harness"], json!({"copilot": 5}));
+    assert_eq!(alarms[0]["wakes"].as_array().unwrap().len(), 1);
+    assert_eq!(alarms[0]["wakes"][0]["pa"], "pij-pa");
+    assert_eq!(alarms[0]["wakes"][0]["delivery"], "queued", "{}", alarms[0]);
+    let (_, job) = services
+        .queue
+        .peek(&["delivery:pij-pa".to_string()])
+        .await
+        .unwrap()
+        .expect("the PA's wake is queued");
+    let message: pij_core::model::Msg = serde_json::from_str(&job.payload).unwrap();
+    assert!(
+        message
+            .body
+            .starts_with("[pij] mass death: 5 seats retired in one sweep, 5 in the last 60 s (copilot 5): pij-dead-"),
+        "{}",
+        message.body
+    );
+
+    let after = events.last().unwrap().seq.unwrap();
+    crate::death_sweep::sweep_and_alarm(&services, &mass, 1_005_000)
+        .await
+        .unwrap();
+    assert!(
+        !services
+            .spine
+            .tail(None, after)
+            .await
+            .unwrap()
+            .iter()
+            .any(|event| event.kind == "death.mass"),
+        "nothing new died: no second alarm"
+    );
+}

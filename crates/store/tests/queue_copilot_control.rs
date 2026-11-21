@@ -99,7 +99,12 @@ async fn overlap_guard_contract(queue: &dyn Queue) {
         .ack_delivery(typed, DeliveryOrigin::InjectedToTransport)
         .await
         .unwrap();
-    assert!(queue.admitted(&seat, "c-1", None).await.unwrap());
+    assert!(
+        queue
+            .admitted(&seat, "c-1", None, &SeatId::from("pij-sender"))
+            .await
+            .unwrap()
+    );
     let (_, claimed) = queue.claim(&bodies, "native").await.unwrap().unwrap();
     assert_eq!(claimed.dedupe_key, "b-2");
 }
@@ -140,7 +145,12 @@ async fn ordering_contract(queue: &dyn Queue) {
 async fn bookkeeping_contract(queue: &dyn Queue) {
     let seat = SeatId::from(SEAT);
     enqueued(queue, control("c-held")).await;
-    assert!(queue.admitted(&seat, "c-held", None).await.unwrap());
+    assert!(
+        queue
+            .admitted(&seat, "c-held", None, &SeatId::from("pij-sender"))
+            .await
+            .unwrap()
+    );
     let (id, _) = queue
         .claim(&[control_kind(&seat)], "drain")
         .await

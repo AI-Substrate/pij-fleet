@@ -1759,7 +1759,7 @@ async fn already_admitted(
     };
     for told in candidates {
         if store
-            .limit_notification_admitted(pinned, &limit_msg_id(*told, request))
+            .limit_notification_admitted(pinned, &limit_msg_id(*told, request), pij_core::BG_ACTOR)
             .await?
         {
             return Ok(Some(*told));
@@ -1788,7 +1788,10 @@ async fn arrival(
     delivered_at: u64,
 ) -> Option<Arrival> {
     let store = services.governance.store();
-    match store.message_reached_at(holder.as_str(), &request.id).await {
+    match store
+        .message_reached_at(holder.as_str(), &request.id, &request.requester)
+        .await
+    {
         Ok(Some(at)) => return Some(Arrival::Reached(at.max(delivered_at))),
         Ok(None) => {}
         Err(cause) => {

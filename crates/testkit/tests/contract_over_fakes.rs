@@ -151,7 +151,7 @@ fn fake_queue_defer_running_preserves_identity_body_attempt_and_delay() {
         let original = Job {
             kind: "delivery:pij-recipient".to_string(),
             serial_key: "pij-recipient".to_string(),
-            payload: r#"{"recipient":"not-authority","msg_id":"not-authority","body":"keep me"}"#
+            payload: r#"{"from":"pij-sender","recipient":"not-authority","msg_id":"not-authority","body":"keep me"}"#
                 .to_string(),
             dedupe_key: "stored-message".to_string(),
             dedupe_origin: None,
@@ -163,6 +163,7 @@ fn fake_queue_defer_running_preserves_identity_body_attempt_and_delay() {
                     &SeatId::from("pij-recipient"),
                     "prior-message",
                     None,
+                    &SeatId::from("pij-sender"),
                     DeliveryOrigin::ReaderRead
                 )
                 .await
@@ -226,7 +227,9 @@ fn fake_queue_defer_running_preserves_identity_body_attempt_and_delay() {
         assert_eq!(
             queue
                 .enqueue_delivery(Job {
-                    payload: "duplicate must not replace the body".to_string(),
+                    payload:
+                        r#"{"from":"pij-sender","body":"duplicate must not replace the body"}"#
+                            .to_string(),
                     ..original.clone()
                 })
                 .await
@@ -266,7 +269,7 @@ fn fake_queue_defer_pending_replaces_the_schedule_from_the_current_clock() {
         let original = Job {
             kind: "delivery:pij-pending".to_string(),
             serial_key: "pij-pending".to_string(),
-            payload: "pending body".to_string(),
+            payload: r#"{"from":"pij-sender","body":"pending body"}"#.to_string(),
             dedupe_key: "pending-message".to_string(),
             dedupe_origin: None,
             attempt: 0,
@@ -330,13 +333,13 @@ fn fake_queue_defer_zero_releases_pending_and_running_without_reordering_fifo() 
             let first = Job {
                 kind: "delivery:pij-fifo".to_string(),
                 serial_key: "pij-fifo".to_string(),
-                payload: "first body".to_string(),
+                payload: r#"{"from":"pij-sender","body":"first body"}"#.to_string(),
                 dedupe_key: "first-message".to_string(),
                 dedupe_origin: None,
                 attempt: 0,
             };
             let second = Job {
-                payload: "second body".to_string(),
+                payload: r#"{"from":"pij-sender","body":"second body"}"#.to_string(),
                 dedupe_key: "second-message".to_string(),
                 ..first.clone()
             };
@@ -403,7 +406,7 @@ fn fake_queue_defer_absent_or_terminal_is_not_live_and_preserves_delivery_eviden
         let original = Job {
             kind: "delivery:pij-terminal".to_string(),
             serial_key: "pij-terminal".to_string(),
-            payload: "terminal body".to_string(),
+            payload: r#"{"from":"pij-sender","body":"terminal body"}"#.to_string(),
             dedupe_key: "terminal-message".to_string(),
             dedupe_origin: None,
             attempt: 0,
@@ -570,7 +573,9 @@ fn fake_queue_release_deferred_preserves_body_attempt_ledger_and_active_reader()
         let original = Job {
             kind: "delivery:pij-release".to_string(),
             serial_key: "pij-release".to_string(),
-            payload: r#"{"recipient":"not-authority","msg_id":"not-authority"}"#.to_string(),
+            payload:
+                r#"{"from":"pij-sender","recipient":"not-authority","msg_id":"not-authority"}"#
+                    .to_string(),
             dedupe_key: "release-message".to_string(),
             dedupe_origin: None,
             attempt: 0,
@@ -581,6 +586,7 @@ fn fake_queue_release_deferred_preserves_body_attempt_ledger_and_active_reader()
                 &recipient,
                 "prior-message",
                 None,
+                &SeatId::from("pij-sender"),
                 DeliveryOrigin::ReaderRead,
             )
             .await
@@ -835,7 +841,7 @@ fn fake_queue_enforces_its_per_recipient_delivered_id_bound() {
         let job = |recipient: &str, msg_id: &str| Job {
             kind: format!("delivery:{recipient}"),
             serial_key: recipient.to_string(),
-            payload: "{}".to_string(),
+            payload: r#"{"from":"pij-sender"}"#.to_string(),
             dedupe_key: msg_id.to_string(),
             dedupe_origin: None,
             attempt: 0,

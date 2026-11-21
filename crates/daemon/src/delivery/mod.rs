@@ -1047,12 +1047,16 @@ impl DeliveryService {
         Ok(())
     }
 
-    /// F260: end one held body's hold now, so it is never recovered. True
-    /// when its sender is owed an expiry notice (see [`Queue::expire_native_hold`]).
+    /// F260: end one held body's hold now, so it is never recovered, and
+    /// decide its sender's expiry notice (see [`Queue::expire_native_hold`]).
     ///
     /// # Errors
     /// Queue failures.
-    pub(crate) async fn expire_native_hold(&self, job: JobId, recipient: &SeatId) -> Result<bool> {
+    pub(crate) async fn expire_native_hold(
+        &self,
+        job: JobId,
+        recipient: &SeatId,
+    ) -> Result<pij_core::delivery::HoldExpiry> {
         let _guard = self.native_lock.lock().await;
         self.queue.expire_native_hold(job, recipient).await
     }
@@ -1120,25 +1124,45 @@ impl DeliveryService {
         // Serialize request-id replay with terminal control ACKs and keep the
         // admission event ahead of an extension's immediate execution outcome.
         let _delivery_order = self.event_bus.socket_delivery_order.lock().await;
-        if let Some(event) = self
+        // F270 (B322-02): a refusal replays only to its own sender. Two seats
+        // that may both control the target (itself, its parent) each own their
+        // id. A refusal recorded before F270 names no sender, so it replays to
+        // any (a brake, as the ledger's '' rows are).
+        let recorded = match self
             .event_bus
-            .latest_matching_message(&msg.to, OUTCOME_EVENT_KIND, &msg.msg_id)
+            .latest_matching_message(
+                &msg.to,
+                CONTROL_REFUSED_KIND,
+                &control_refusal_key(&msg.from, &msg.msg_id),
+            )
             .await?
         {
+            Some(event) => Some(event),
+            None => {
+                self.event_bus
+                    .latest_matching_message(&msg.to, OUTCOME_EVENT_KIND, &msg.msg_id)
+                    .await?
+            }
+        };
+        if let Some(event) = recorded {
             #[derive(Deserialize)]
             struct RecordedOutcome {
                 outcome: DeliveryOutcome,
                 control_outcome: Option<ControlOutcome>,
+                from: Option<SeatId>,
             }
             let recorded: RecordedOutcome =
                 serde_json::from_str(&event.payload).map_err(|error| PijError::Adapter {
                     adapter: "daemon/delivery".into(),
                     message: format!("invalid control receipt: {error}"),
                 })?;
-            if matches!(
-                recorded.control_outcome,
-                Some(ControlOutcome::Refused { .. })
-            ) {
+            let own = recorded.from.as_ref().is_none_or(|from| from == &msg.from);
+            if own
+                && matches!(
+                    recorded.control_outcome,
+                    Some(ControlOutcome::Refused { .. })
+                )
+            {
                 return Ok(Receipt {
                     msg_id: msg.msg_id,
                     outcome: recorded.outcome,
@@ -1341,15 +1365,19 @@ impl DeliveryService {
         Ok(Some(receipt))
     }
 
-    /// Whether a delivery of `msg_id` to `recipient` was ever admitted
+    /// Whether `pij-bg`'s delivery of `msg_id` to `recipient` was ever admitted
     /// (recorded as delivered, or queued in any state). FYIs are not consulted.
     ///
-    /// Daemon-local senders only (`pij-bg`): a local message's origin is `None`.
+    /// Daemon notices only: the sender is `pij-bg` and the origin local. Another
+    /// seat's message under the same id is never this notice (F270), so a seat
+    /// that sends `park-notice-<job>` first cannot make the real one look sent.
     ///
     /// # Errors
     /// Store failures.
     pub async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
-        self.queue.admitted(recipient, msg_id, None).await
+        self.queue
+            .admitted(recipient, msg_id, None, &SeatId::from(pij_core::BG_ACTOR))
+            .await
     }
 
     /// How many FYIs wait for `seat`.
@@ -1647,6 +1675,7 @@ impl DeliveryService {
                                 &to,
                                 &msg.msg_id,
                                 msg.from_machine.as_deref(),
+                                &msg.from,
                                 DeliveryOrigin::InjectedToTransport,
                             )
                             .await?
@@ -1662,6 +1691,7 @@ impl DeliveryService {
                                             &to,
                                             &msg.msg_id,
                                             msg.from_machine.as_deref(),
+                                            &msg.from,
                                         )
                                         .await?;
                                     match self
@@ -1688,6 +1718,7 @@ impl DeliveryService {
                                             &to,
                                             &msg.msg_id,
                                             msg.from_machine.as_deref(),
+                                            &msg.from,
                                         )
                                         .await?;
                                     return Err(error);
@@ -1723,6 +1754,7 @@ impl DeliveryService {
                                     &to,
                                     &msg.msg_id,
                                     msg.from_machine.as_deref(),
+                                    &msg.from,
                                     DeliveryOrigin::TypedToPane,
                                 )
                                 .await?
@@ -1748,6 +1780,7 @@ impl DeliveryService {
                                                 &to,
                                                 &msg.msg_id,
                                                 msg.from_machine.as_deref(),
+                                                &msg.from,
                                             )
                                             .await?;
                                         // Keep admission evidence ahead of a worker's completion.
@@ -1798,6 +1831,7 @@ impl DeliveryService {
                                                 &to,
                                                 &msg.msg_id,
                                                 msg.from_machine.as_deref(),
+                                                &msg.from,
                                             )
                                             .await?;
                                         return Err(error);
@@ -2763,20 +2797,42 @@ impl DeliveryService {
             // Refusal is observed before the queue ACK. Persist that terminal
             // answer first so an ambiguous ACK never turns an identical request
             // into a new destructive operation after the runtime becomes armed.
+            // F270 (B322-02): it is its sender's answer alone, so it is kept
+            // under the sender and id, and the outcome names the sender.
+            let receipt = Receipt {
+                msg_id: payload.message.msg_id.clone(),
+                outcome: DeliveryOutcome::Refused {
+                    reason: reason.clone(),
+                },
+                at: (self.clock)()?,
+                cold_check: None,
+                warning: None,
+            };
+            let sender = &payload.message.from;
+            self.event_bus
+                .publish(Event {
+                    seq: None,
+                    v: 1,
+                    at: receipt.at,
+                    kind: CONTROL_REFUSED_KIND.to_string(),
+                    seat: Some(recipient.clone()),
+                    payload: serde_json::json!({
+                        "msg_id": control_refusal_key(sender, &receipt.msg_id),
+                        "message_id": receipt.msg_id,
+                        "from": sender,
+                        "outcome": receipt.outcome,
+                        "control_outcome": outcome,
+                    })
+                    .to_string(),
+                })
+                .await?;
             publish_outcome_with_control(
                 &self.event_bus,
                 &recipient,
-                &Receipt {
-                    msg_id: payload.message.msg_id.clone(),
-                    outcome: DeliveryOutcome::Refused {
-                        reason: reason.clone(),
-                    },
-                    at: (self.clock)()?,
-                    cold_check: None,
-                    warning: None,
-                },
+                &receipt,
                 "extension-stream",
                 Some(outcome),
+                Some(sender),
             )
             .await?;
             self.queue.ack(job_id, Outcome::Done).await?;
@@ -2809,6 +2865,7 @@ impl DeliveryService {
                 "inbox"
             },
             control_outcome,
+            None,
         )
         .await?;
         Ok(ack)
@@ -2918,7 +2975,7 @@ pub(crate) async fn publish_delivery_outcome(
     receipt: &Receipt,
     transport: &str,
 ) -> Result<()> {
-    publish_outcome_with_control(event_bus, seat, receipt, transport, None).await
+    publish_outcome_with_control(event_bus, seat, receipt, transport, None, None).await
 }
 
 async fn publish_outcome_with_control(
@@ -2927,6 +2984,7 @@ async fn publish_outcome_with_control(
     receipt: &Receipt,
     transport: &str,
     control_outcome: Option<&ControlOutcome>,
+    from: Option<&SeatId>,
 ) -> Result<()> {
     let transport = match &receipt.outcome {
         DeliveryOutcome::Delivered {
@@ -2939,6 +2997,7 @@ async fn publish_outcome_with_control(
         outcome: &receipt.outcome,
         transport,
         control_outcome,
+        from,
     })
     .map_err(|error| PijError::Adapter {
         adapter: "daemon/delivery".to_string(),
@@ -3136,6 +3195,20 @@ struct OutcomeEvent<'a> {
     transport: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     control_outcome: Option<&'a ControlOutcome>,
+    /// A refused control's sender (F270, B322-02): its refusal is that
+    /// sender's alone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from: Option<&'a SeatId>,
+}
+
+/// F270 (B322-02): a refused control, on the target seat, keyed by
+/// [`control_refusal_key`] so a replay seeks its own sender's refusal.
+pub(crate) const CONTROL_REFUSED_KIND: &str = "delivery.control-refused";
+
+/// The sender and id of a refused control, length-prefixed so no seat and id
+/// pair can spell another's key.
+fn control_refusal_key(from: &SeatId, msg_id: &str) -> String {
+    format!("{}:{}:{msg_id}", from.as_str().len(), from.as_str())
 }
 
 /// Where a message came from, which decides whether it may reach a transport.
@@ -3915,6 +3988,159 @@ mod tests {
                 .claim_inbox(&recipient.id, false)
                 .await
                 .expect("no replay claim")
+                .is_empty()
+        );
+    }
+
+    /// F270 (B322-02): a refused control is its sender's answer alone. The
+    /// target's own control is refused; its parent's control under the same
+    /// id is a new request, queued and executed; the target's retry still
+    /// replays its refusal.
+    #[tokio::test]
+    async fn a_refused_control_never_answers_another_senders_same_id() {
+        use pij_core::control::ControlOutcome;
+        let fixture = fixture(FakeTransport::unreachable());
+        let mut recipient = bound("pij-refused-control");
+        recipient.harness = Harness::Omp;
+        recipient.pane = Some("%control".into());
+        register(&fixture, recipient.clone()).await;
+        let control = |from: &SeatId| Msg {
+            from: from.clone(),
+            to: recipient.id.clone(),
+            body: String::new(),
+            msg_id: "same-control-id".into(),
+            from_machine: None,
+            in_reply_to: None,
+            command: Some("new".into()),
+        };
+        let parent = SeatId::from("pij-parent");
+        let refused = ControlOutcome::Refused {
+            reason: "not armed".into(),
+        };
+        fixture
+            .service
+            .accept_control(control(&recipient.id))
+            .await
+            .expect("own control");
+        let claims = fixture
+            .service
+            .claim_inbox(&recipient.id, false)
+            .await
+            .expect("claim");
+        fixture
+            .service
+            .acknowledge_inbox(
+                &recipient.id,
+                claims[0].job_id,
+                &Default::default(),
+                Some(&refused),
+            )
+            .await
+            .expect("refusal ack");
+
+        let theirs = fixture
+            .service
+            .accept_control(control(&parent))
+            .await
+            .expect("parent control");
+        assert!(
+            !matches!(theirs.outcome, DeliveryOutcome::Refused { .. }),
+            "the parent's control is not the target's refusal: {theirs:?}"
+        );
+        let claims = fixture
+            .service
+            .claim_inbox(&recipient.id, false)
+            .await
+            .expect("claim parent control");
+        assert_eq!(claims.len(), 1, "the parent's control is queued");
+        assert_eq!(claims[0].message.from, parent);
+        let executed = fixture
+            .service
+            .acknowledge_inbox(
+                &recipient.id,
+                claims[0].job_id,
+                &Default::default(),
+                Some(&ControlOutcome::Executed),
+            )
+            .await
+            .expect("parent control executed");
+        assert_eq!(executed.origin, DeliveryOrigin::ReaderRead);
+
+        let again = fixture
+            .service
+            .accept_control(control(&recipient.id))
+            .await
+            .expect("own retry");
+        assert_eq!(
+            again.outcome,
+            DeliveryOutcome::Refused {
+                reason: "not armed".into()
+            },
+            "the target's own retry still replays its refusal"
+        );
+        assert!(
+            fixture
+                .service
+                .claim_inbox(&recipient.id, false)
+                .await
+                .expect("no replay claim")
+                .is_empty()
+        );
+    }
+
+    /// F270 (B322-02): a refusal recorded before F270 names no sender, so it
+    /// still replays to any sender (a brake): an upgrade never turns a refused
+    /// control into a new execution.
+    #[tokio::test]
+    async fn a_refusal_recorded_before_f270_still_replays() {
+        let fixture = fixture(FakeTransport::unreachable());
+        let mut recipient = bound("pij-legacy-refusal");
+        recipient.harness = Harness::Omp;
+        recipient.pane = Some("%control".into());
+        register(&fixture, recipient.clone()).await;
+        fixture
+            .spine
+            .append(Event {
+                seq: None,
+                v: 1,
+                at: 1,
+                kind: OUTCOME_EVENT_KIND.to_string(),
+                seat: Some(recipient.id.clone()),
+                payload: serde_json::json!({
+                    "msg_id": "legacy-control",
+                    "outcome": {"outcome": "refused", "reason": "not armed"},
+                    "transport": "extension-stream",
+                    "control_outcome": {"outcome": "refused", "reason": "not armed"},
+                })
+                .to_string(),
+            })
+            .await
+            .expect("legacy refusal");
+        let replay = fixture
+            .service
+            .accept_control(Msg {
+                from: "pij-parent".into(),
+                to: recipient.id.clone(),
+                body: String::new(),
+                msg_id: "legacy-control".into(),
+                from_machine: None,
+                in_reply_to: None,
+                command: Some("new".into()),
+            })
+            .await
+            .expect("replay");
+        assert_eq!(
+            replay.outcome,
+            DeliveryOutcome::Refused {
+                reason: "not armed".into()
+            }
+        );
+        assert!(
+            fixture
+                .service
+                .claim_inbox(&recipient.id, false)
+                .await
+                .expect("no claim")
                 .is_empty()
         );
     }

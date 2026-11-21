@@ -188,18 +188,17 @@ impl SpawnWaits {
         }
     }
 
-    /// The lock a launch holds until its row is written (the spawn lock).
-    pub fn launch_lock(&self) -> Arc<tokio::sync::Mutex<()>> {
-        Arc::clone(&self.launches)
+    /// Take the spawn lock, held until a launch's row is written. Waits for
+    /// any launch holding it.
+    pub async fn hold(self: &Arc<Self>) -> SpawnHold {
+        SpawnHold {
+            _guard: Arc::clone(&self.launches).lock_owned().await,
+            waits: Arc::clone(self),
+        }
     }
 
-    /// F264: the holder of the spawn lock names what it launches (each holder
-    /// overwrites it as it starts, so it is never an earlier holder's).
-    pub fn set_launching(&self, what: String) {
-        *self.launching.lock().expect("spawn waits launching") = Some(what);
-    }
-
-    /// What the holder of the spawn lock last said it launches.
+    /// What the holder of the spawn lock says it launches, while it holds it
+    /// (F264); `None` when nobody does, or the holder has not said yet.
     pub fn launching(&self) -> Option<String> {
         self.launching
             .lock()
@@ -408,6 +407,31 @@ impl SpawnWaits {
     fn hand_off(&self, launch: Launch, reason: String) {
         let settle = Arc::clone(&self.settle);
         tokio::spawn(async move { settle.report(&launch, &reason).await });
+    }
+}
+
+/// The spawn lock, held (F267 step 2): what the holder launches is named
+/// only through it, and cleared when it is released, before the lock is, so
+/// a stop that gives up waiting never names an earlier holder's launch.
+pub struct SpawnHold {
+    _guard: tokio::sync::OwnedMutexGuard<()>,
+    waits: Arc<SpawnWaits>,
+}
+
+impl SpawnHold {
+    /// Name what this holder launches, for a stop that gives up on it. It
+    /// goes to daemon.log, so text that is not one printable line (F133)
+    /// names nothing: a BRAKE, it can only leave the stop's log vaguer.
+    pub fn name(&self, what: String) {
+        let named = pij_core::render::is_one_line(&what).then_some(what);
+        *self.waits.launching.lock().expect("spawn waits launching") = named;
+    }
+}
+
+impl Drop for SpawnHold {
+    fn drop(&mut self) {
+        // Before `_guard`, so before the next holder can name its own.
+        *self.waits.launching.lock().expect("spawn waits launching") = None;
     }
 }
 
@@ -914,6 +938,49 @@ mod tests {
         assert_eq!(settled.order.len(), SETTLED_KEPT);
         assert!(!settled.launches.contains_key("s-k0"), "the oldest goes");
         assert!(settled.launches.contains_key(&format!("s-k{SETTLED_KEPT}")));
+    }
+
+    /// F267 step 2 (deer new-2, mongoose N3): the name goes with the hold.
+    /// A launch that names itself and then releases the lock (it refused, or
+    /// wrote its row) leaves nothing named, so a stop that gives up on the
+    /// next holder, which has not named itself yet, never blames the last.
+    #[tokio::test]
+    async fn a_released_hold_leaves_no_launch_named() {
+        let (waits, _recorded) = waits();
+        let first = waits.hold().await;
+        first.name("seat pij-first".to_string());
+        assert_eq!(waits.launching().as_deref(), Some("seat pij-first"));
+        let next = tokio::spawn({
+            let waits = Arc::clone(&waits);
+            async move { waits.hold().await }
+        });
+        tokio::task::yield_now().await;
+        drop(first);
+        let next = next.await.expect("next holder");
+        assert_eq!(
+            waits.launching(),
+            None,
+            "the next holder has not named itself"
+        );
+        next.name("seat pij-next".to_string());
+        assert_eq!(waits.launching().as_deref(), Some("seat pij-next"));
+        drop(next);
+        assert_eq!(waits.launching(), None);
+        tokio::time::timeout(Duration::from_secs(1), waits.stop())
+            .await
+            .expect("a stop finds the lock free");
+    }
+
+    /// F267 step 2 (deer new-1): a name that is not one printable line is
+    /// never handed to a stop to log, wherever the holder names itself.
+    #[tokio::test]
+    async fn a_name_that_could_forge_a_log_line_names_nothing() {
+        let (waits, _recorded) = waits();
+        let hold = waits.hold().await;
+        hold.name("a spawn into /tmp/x\npij-rs: forged".to_string());
+        assert_eq!(waits.launching(), None);
+        hold.name("a spawn into /tmp/x\u{1b}[2J".to_string());
+        assert_eq!(waits.launching(), None);
     }
 
     /// The close command quotes what a shell would split or expand.

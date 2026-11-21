@@ -3489,6 +3489,137 @@ async fn the_same_id_held_for_two_recipients_reaches_each_once_on_renewal() {
     clock.abort();
 }
 
+/// Every body `seat` receives from here on, claimed and acknowledged one at a
+/// time, as `(sender, body)`.
+async fn drain_bodies(
+    client: &reqwest::Client,
+    addr: std::net::SocketAddr,
+    delivery: &crate::delivery::DeliveryService,
+    seat: &SeatId,
+    identity: &NativeInboxIdentity,
+) -> Vec<(String, String)> {
+    let mut bodies = Vec::new();
+    for _ in 0..8 {
+        let claims = native_http_claims(client, addr, seat, identity).await;
+        let Some(claim) = claims.first() else {
+            break;
+        };
+        bodies.push((claim.message.from.to_string(), claim.message.body.clone()));
+        delivery
+            .acknowledge_inbox(seat, claim.job_id, identity, None)
+            .await
+            .unwrap();
+    }
+    bodies.sort();
+    bodies
+}
+
+/// F270 (a): a msg_id is unique per sender seat only. Another seat that sends
+/// the same id to the same recipient sends its own message: it never collapses
+/// into the first seat's, and the recipient receives both.
+#[tokio::test(start_paused = true)]
+async fn another_seats_reused_id_is_delivered_as_its_own_message() {
+    let clock = manual_receiver_clock();
+    let store = FreshStore::new();
+    let services = hold_services(&store, pij_core::delivery::NATIVE_HOLD_SECS).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    let delivery = services.delivery.clone();
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    progress_heartbeat(&client, addr, &heartbeat_request(&seat.id, &identity)).await;
+    for from in ["pij-first", "pij-second"] {
+        let mut msg = body_msg(from, &seat.id, "f270-shared-id");
+        msg.body = format!("from {from}");
+        let receipt = delivery.accept(msg).await.unwrap();
+        assert!(
+            matches!(receipt.outcome, DeliveryOutcome::Queued { .. }),
+            "{receipt:?}"
+        );
+    }
+    assert_eq!(
+        drain_bodies(&client, addr, &delivery, &seat.id, &identity).await,
+        [
+            ("pij-first".to_string(), "from pij-first".to_string()),
+            ("pij-second".to_string(), "from pij-second".to_string()),
+        ]
+    );
+    server.abort();
+    clock.abort();
+}
+
+/// F270 (a): another seat reusing a held message's id cannot silence that
+/// message's expiry notice. The first sender is told its body was NOT
+/// delivered; the other seat's body is its own message, delivered once on
+/// renewal.
+#[tokio::test(start_paused = true)]
+async fn another_seats_reused_id_never_silences_an_expiry_notice() {
+    let clock = manual_receiver_clock();
+    let store = FreshStore::new();
+    let services = hold_services(&store, pij_core::delivery::NATIVE_HOLD_SECS).await;
+    let (seat, identity) = contract_identity();
+    let (sender, sender_identity) = native_sender(seat.folder.as_str());
+    services.registry.put(seat.clone()).await.unwrap();
+    services.registry.put(sender.clone()).await.unwrap();
+    let notifier = services.clone();
+    let (delivery, queue, spine) = (
+        services.delivery.clone(),
+        services.queue.clone(),
+        services.spine.clone(),
+    );
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    let request = heartbeat_request(&seat.id, &identity);
+    progress_heartbeat(&client, addr, &request).await;
+    tokio::time::advance(Duration::from_secs(61)).await;
+    delivery
+        .heartbeat_native_receiver(&sender.id, &sender_identity, 1, 1, None)
+        .await
+        .unwrap();
+    let mut mine = body_msg(sender.id.as_str(), &seat.id, "f270-reused-id");
+    mine.body = "mine".into();
+    let mut theirs = body_msg("pij-intruder", &seat.id, "f270-reused-id");
+    theirs.body = "theirs".into();
+    for msg in [mine, theirs] {
+        let held = delivery.accept(msg).await.unwrap();
+        assert!(matches!(held.outcome, DeliveryOutcome::Held { .. }));
+    }
+    // The first sender's hold ends; the other seat's has not.
+    let parked = parked_fact(&spine, "f270-reused-id").await;
+    let mut payload: Value = serde_json::from_str(&parked.payload).unwrap();
+    let job = payload["jobId"].as_i64().unwrap();
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::query("UPDATE jobs SET not_before = 1 WHERE id = ?1")
+        .bind(job)
+        .execute(&pool)
+        .await
+        .unwrap();
+    payload["heldUntil"] = 1.into();
+    let over = pij_core::model::Event {
+        payload: payload.to_string(),
+        ..parked
+    };
+    crate::park_notice::notify(&notifier, &over).await.unwrap();
+    let (_, notice) = queue
+        .peek(&[delivery_kind(&sender.id)])
+        .await
+        .unwrap()
+        .expect("the first sender is told its body was NOT delivered");
+    let notice: pij_core::model::Msg = serde_json::from_str(&notice.payload).unwrap();
+    assert_eq!(
+        notice.msg_id,
+        crate::park_notice::expiry_notice_id(JobId(job as u64))
+    );
+    // The renewal returns only the other seat's body, once.
+    progress_heartbeat(&client, addr, &request).await;
+    assert_eq!(
+        drain_bodies(&client, addr, &delivery, &seat.id, &identity).await,
+        [("pij-intruder".to_string(), "theirs".to_string())]
+    );
+    server.abort();
+    clock.abort();
+}
+
 /// F260: a recipient closed (or retired) while it holds a body can never
 /// renew: the next sweep ends the hold and tells the sender, without waiting
 /// out the hold.
@@ -4043,10 +4174,11 @@ mod gap {
             recipient: &SeatId,
             msg_id: &str,
             sender_machine: Option<&str>,
+            sender: &SeatId,
             origin: DeliveryOrigin,
         ) -> Result<Option<DeliveryOrigin>> {
             self.inner
-                .note_delivered(recipient, msg_id, sender_machine, origin)
+                .note_delivered(recipient, msg_id, sender_machine, sender, origin)
                 .await
         }
         async fn forget_delivered(
@@ -4054,9 +4186,10 @@ mod gap {
             recipient: &SeatId,
             msg_id: &str,
             sender_machine: Option<&str>,
+            sender: &SeatId,
         ) -> Result<()> {
             self.inner
-                .forget_delivered(recipient, msg_id, sender_machine)
+                .forget_delivered(recipient, msg_id, sender_machine, sender)
                 .await
         }
         async fn admitted(
@@ -4064,8 +4197,11 @@ mod gap {
             recipient: &SeatId,
             msg_id: &str,
             sender_machine: Option<&str>,
+            sender: &SeatId,
         ) -> Result<bool> {
-            self.inner.admitted(recipient, msg_id, sender_machine).await
+            self.inner
+                .admitted(recipient, msg_id, sender_machine, sender)
+                .await
         }
         async fn retry(&self, job: JobId, delay: Duration) -> Result<()> {
             self.inner.retry(job, delay).await

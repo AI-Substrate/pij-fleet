@@ -13,6 +13,7 @@ const CLAUDE_ACCEPT_SETTINGS: &str = r#"{"crossSessionInbound":"accept"}"#;
 /// verdict seat then sat on that dialog after every verdict. Every launch,
 /// including `--resume` (revive), takes these.
 const COPILOT_NO_ASK_USER: &str = "--no-ask-user";
+const COPILOT_NO_AUTO_UPDATE: &str = "COPILOT_AUTO_UPDATE=false";
 const CLAUDE_NO_ASK_USER: &str = "AskUserQuestion";
 
 /// Facts known by the launcher and the exact command it will execute.
@@ -191,6 +192,14 @@ pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
             // drops images; every Claude model the proxy serves has vision.
             "COPILOT_PROVIDER_VISION=true".to_string(),
         ]);
+    }
+    if input.harness == Harness::Copilot {
+        // F271c (D-F208-2): a seat runs the version built into the installed
+        // binary, the one `just update-copilot` checks, never a newer package
+        // another Copilot downloaded into the shared cache, and never
+        // downloads one itself. It also stops the plugin updates Copilot runs
+        // at session start.
+        args.push(COPILOT_NO_AUTO_UPDATE.to_string());
     }
     args.push(harness_executable);
     // Each CLI's own resume spelling, first, so a subcommand (codex) parses.
@@ -453,7 +462,10 @@ mod tests {
     fn resume_uses_each_harness_spelling() {
         for (harness, expected) in [
             (Harness::Claude, vec!["claude", "--resume", "S-1"]),
-            (Harness::Copilot, vec!["copilot", "--resume=S-1"]),
+            (
+                Harness::Copilot,
+                vec!["COPILOT_AUTO_UPDATE=false", "copilot", "--resume=S-1"],
+            ),
             (Harness::Omp, vec!["omp", "--resume=S-1"]),
             (Harness::Pi, vec!["pi", "--session", "S-1"]),
             (Harness::Codex, vec!["codex", "resume", "S-1"]),
@@ -486,6 +498,41 @@ mod tests {
                     .any(|pair| pair == ["--disallowedTools", "AskUserQuestion"]),
                 "{args:?}"
             );
+        }
+    }
+
+    /// F271c: a Copilot seat, spawned or revived, runs with auto-update off,
+    /// set in the `env` prefix ahead of the executable; no other harness
+    /// gets the variable.
+    #[test]
+    fn only_copilot_launches_with_auto_update_off() {
+        for resume in [None, Some("S-1".to_string())] {
+            for harness in [
+                Harness::Copilot,
+                Harness::Claude,
+                Harness::Omp,
+                Harness::Pi,
+                Harness::Codex,
+            ] {
+                let mut request = input(harness);
+                request.resume = resume.clone();
+                let args = build_spawn_plan(request).expect("plan").args;
+                let executable = args
+                    .iter()
+                    .position(|arg| arg == harness.as_str())
+                    .expect("executable");
+                assert_eq!(
+                    args[..executable].contains(&"COPILOT_AUTO_UPDATE=false".to_string()),
+                    harness == Harness::Copilot,
+                    "{harness}: {args:?}"
+                );
+                assert!(
+                    !args[executable..]
+                        .iter()
+                        .any(|arg| arg.starts_with("COPILOT_AUTO_UPDATE")),
+                    "{harness}: never after the executable"
+                );
+            }
         }
     }
 
@@ -558,11 +605,17 @@ mod tests {
             assert_eq!(
                 plan.args,
                 [
-                    vec![
-                        format!("{PIJ_SESSION_ID}=pij-assigned"),
-                        format!("{PIJ_SPAWN_ID}=spawn-assigned"),
-                        harness_executable.to_string()
-                    ],
+                    {
+                        let mut prefix = vec![
+                            format!("{PIJ_SESSION_ID}=pij-assigned"),
+                            format!("{PIJ_SPAWN_ID}=spawn-assigned"),
+                        ];
+                        if harness == Harness::Copilot {
+                            prefix.push("COPILOT_AUTO_UPDATE=false".to_string());
+                        }
+                        prefix.push(harness_executable.to_string());
+                        prefix
+                    },
                     expected_harness_args
                         .into_iter()
                         .map(str::to_string)
@@ -595,7 +648,7 @@ mod tests {
         proxied.copilot_provider = Some(wiring());
         let args = build_spawn_plan(proxied).expect("proxied plan").args;
         assert_eq!(
-            &args[..8],
+            &args[..9],
             [
                 "PIJ_SESSION_ID=pij-assigned",
                 "PIJ_SPAWN_ID=spawn-assigned",
@@ -604,6 +657,7 @@ mod tests {
                 "COPILOT_PROVIDER_MODEL_ID=claude-opus-5.5",
                 "COPILOT_PROVIDER_MAX_PROMPT_TOKENS=936000",
                 "COPILOT_PROVIDER_VISION=true",
+                "COPILOT_AUTO_UPDATE=false",
                 "copilot",
             ]
         );
@@ -612,7 +666,12 @@ mod tests {
                 .any(|pair| pair == ["--model", "claude-opus-5.5-1m"])
         );
         let plain = build_spawn_plan(input(Harness::Copilot)).expect("plain plan");
-        assert!(!plain.args.iter().any(|arg| arg.starts_with("COPILOT_")));
+        assert!(
+            !plain
+                .args
+                .iter()
+                .any(|arg| arg.starts_with("COPILOT_PROVIDER_"))
+        );
     }
 
     /// Row 20: no other harness can be wired to the proxy.
@@ -777,6 +836,7 @@ mod tests {
             assert_eq!(
                 &plan.args[2..],
                 [
+                    "COPILOT_AUTO_UPDATE=false",
                     "copilot",
                     "--yolo",
                     "--no-ask-user",

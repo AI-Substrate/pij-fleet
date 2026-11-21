@@ -343,9 +343,9 @@ A match reports `spawned pij worker <id>`. Otherwise the tool reports `spawned, 
 - **It survives a restart.** The spine records `spawn.launched` (`{spawn_id, pane, parent}`, written before the seat's row), `spawn.answered` (`{spawn_id, outcome: bound|dispatched|failed-bound}`, written once the answer naming the seat is built) and `spawn.reported` (`{spawn_id, pane, parent, reason, close, notice}`, written once the parent's notice is admitted; or `withheld: "no live parent" | "no parent recorded" | "parent lookup failed: …"`). At boot, every live spawned row with `spawn.launched` and neither of the others is unsettled, bound or not (the case of pij-sure-eagle, which sat 22 h unused): a bound one is handed to its parent at once, an unbound one when it binds. A notice that was not admitted writes no `spawn.reported`, so the next boot tries again. Rows from before F211 have no `spawn.launched` and are left alone. Cost: two spine writes per spawn on the success path, one indexed read per live spawned row at boot, no launch. There is no prime fallback: a seat whose parent is gone is recorded as withheld, and stays visible in `pij list`.
 - **A spawn sent again launches once (F255).** A daemon stop drops whatever is still open when its 5 s drain ends, and a spawn waiting for its seat usually is: on 2026-11-21 one registered while its caller got EOF, the caller sent it again, and got a second seat. So a spawn carries the caller's key, HTTP `spawn_id` (`s-` and 32 lowercase hex digits, the shape the daemon mints; anything else refuses). `pij-rs spawn` and `pij_spawn` mint it before the first send and, within the restart wait (counted from the first failed send, never the first send), send the same request again after a send that got no answer (a closed or reset connection) or a 503. The daemon looks the key up first, under the spawn lock, from the seats' spawn-id index. No row: it launches as before, with the key as the spawn id. A live row: it answers as the first send would have, waited on until the seat binds (or at once with `no_wait`), and launches nothing; that request now watches the launch in place of the lost one, keeping a binding already known, so the parent is not also told. A launch already settled with a bound seat (its caller answered, or its parent told) is answered from its row and never re-armed, so it is never reported twice. Refused, launching nothing (BRAKES): no live row (`… has since closed; a spawn id launches once`), or a row for a different request (harness, folder, parent or explicit id differ). The resend's own `model`, `wait_seconds`, `no_wait` and `trust_folder` govern its answer: the model check is the first send's (`build_spawn_plan` passes the requested model through unchanged), and a resend with `trust_folder` may answer that launch's own folder-trust prompt (the last sender's opt-in). A caller that sends no key gets a daemon-minted id, and a resend launches again, as before.
 - **The launch belongs to the daemon, not the request (F255, R309-01).** From classification through the row write a spawn runs in its own task, which holds the spawn lock; the request only waits on it. A request cut in that segment (a client gone, a stop's drain) leaves the task to write the row, and a resend of the same key waits on the lock and finds it. After the row, the task waits for the bind only while its request is there; once the request goes, its watch is left unsettled and a later bind reaches the parent (F211). A caller already gone wins even over an answer ready at once (a `no_wait` dispatch, F264), so no launch is settled as answered for nobody.
-- **A resend never re-arms a settled launch (F264).** The resend reads its row under the spawn lock, but a registration binds and reports without that lock, so the row it holds can say unbound after the seat bound and its parent was told. The daemon remembers each launch it settled (answered, or handed to the parent) and whether its seat is known to be bound, so a launch settled bound is never watched again, whatever the resend's row says; one dispatched unbound and not bound since is watched again. The record is a BRAKE (it only ever withholds a watch), keeps the newest 256 launches (`SETTLED_KEPT`; a resend's window is milliseconds), and goes with the daemon: after a restart the spine's `spawn.answered` and `spawn.reported` stand in.
-- **A stopping daemon starts no spawn (F255).** The stop tells the spawn path first, before the drain: a spawn not yet past its check answers HTTP 503, `details.code` `E-RS-STOPPING`, with nothing launched, and `pij-rs` and `pij_spawn` send it again to the next daemon. The stop then takes the spawn lock, bounded by the 5 s drain, so every launch already past the check has written its row before tmux is released and the HTTP drain starts. If that bound runs out, the stop goes on without it and logs `stopping without waiting longer for a spawn launch to write its row`, naming the seat, spawn id and folder the lock holder last named (F264): that launch's pane may then have no row, so the next daemon cannot find it by its key, and it is closed by hand. A daemon killed outright (SIGKILL, a crash) in that segment leaves the same. Cost: one indexed seats read per keyed spawn; a record of at most 256 settled launches in memory; one task per spawn, for that spawn's own life; no loop, no launch.
-- **Every shutdown phase is logged (F267).** `pij-rs shutdown: <phase>: started` and `…: ended after <ms>ms` for the spawn-launch join, the park notices, the HTTP drain (claim waits and streams), each worker loop, the sidecars, the governance observer, the tmux control release, the delivery and event flush and the store close; then `pij-rs daemon: shutdown returned after <ms>ms; exiting`. A stop that hangs names its phase: the last `started` without its `ended`, or, after `exiting`, the runtime's wait for a blocking task. Two lines per phase per stop; nothing at run time.
+- **A resend never re-arms a settled launch (F264).** The resend reads its row under the spawn lock, but a registration binds and reports without that lock, so the row it holds can say unbound after the seat bound and its parent was told. The daemon remembers each launch it settled (answered, or handed to the parent) and whether its seat is known to be bound, so a launch settled bound is never watched again, whatever the resend's row says; one dispatched unbound and not bound since is watched again. The record is a BRAKE (it only ever withholds a watch) and keeps the newest 256 launches (`SETTLED_KEPT`): the 257th settled pushes out the oldest, whatever its state, and a resend of that one is treated as before F264 (a resend's window is milliseconds, so 256 settles inside it is not a fleet's rate). It lives only in memory and is not rebuilt at boot: after a restart the spine's `spawn.answered` and `spawn.reported` keep the boot's recovery from handing a settled launch over again, but a resend arriving at the new daemon reads only its row, as before F264.
+- **A stopping daemon starts no spawn (F255).** The stop tells the spawn path first, before the drain: a spawn not yet past its check answers HTTP 503, `details.code` `E-RS-STOPPING`, with nothing launched, and `pij-rs` and `pij_spawn` send it again to the next daemon. The stop then takes the spawn lock, bounded by the 5 s drain, so every launch already past the check has written its row before tmux is released and the HTTP drain starts. If that bound runs out, the stop goes on without it and logs `stopping without waiting longer for a spawn launch to write its row`, naming what the lock's current holder said it launches (F264): its folder once that is known to be one printable line, then the seat, spawn id and folder once its id is chosen (a revive names its seat from the start); nothing if it has not said yet. The holder names itself only through its hold on the lock, and the name goes when the hold does, before the next holder can take the lock (F267), so the log never names an earlier launch, nor text that is not one printable line (F133). That launch's pane may then have no row, so the next daemon cannot find it by its key, and it is closed by hand. A daemon killed outright (SIGKILL, a crash) in that segment leaves the same. Cost: one indexed seats read per keyed spawn; a record of at most 256 settled launches in memory; one task per spawn, for that spawn's own life; no loop, no launch.
+- **Every shutdown phase is logged (F267).** `pij-rs shutdown: <phase>: started` and `…: ended after <ms>ms` for the spawn-launch join, the park notices, the HTTP drain (claim waits and streams), each worker loop, the sidecars, the governance observer, the tmux control release, the delivery and event flush and the store close; then `pij-rs daemon: shutdown returned after <ms>ms; exiting`. A stop that hangs names its phase: the last `started` without its `ended`, or, after `exiting`, the runtime's wait for a blocking task. The phases that run together (the HTTP drain, the worker loops, the sidecars, the governance observer) each run in their own task, so one that blocks its thread (the pane observer's tmux calls are blocking process launches) holds back only itself and logs its own end: on 2026-11-21, with them in one task, every one of them logged the same 11305 ms. The pane observer's stop wins over its next tick (`biased`, as the lifecycle and supervise loops already did), so its stop never waits behind one more pass. Two lines per phase per stop; one task per concurrent phase per stop; nothing at run time.
 
 **A folder-trust prompt refuses the spawn at once (F215).** Copilot and Claude ask whether to trust a folder they have not seen before they start, and a seat never registers while the question is open. The registration wait already reads the pane every 50 ms. It now keeps the whole screen from that one read: Claude draws its prompt at the top of a tall pane, so the bottom 20 rows the log keeps can be blank. When [`trust.rs`](../../crates/harnesses/src/trust.rs) finds the harness's prompt there, the spawn answers at once with HTTP 409 and the usual F211 `details`. Its `reason` names the prompt, the folder (from the request, never from the pane) and the trust row, and says the pane is left live on the prompt. The keys it names come from the row highlighted on that screen, never from the prompt's default (R264-001): Enter alone only when the trust row is highlighted; otherwise Up or Down to it first, naming what Enter would choose now; with no highlighted row in view, the trust row and no key.
 
@@ -723,19 +723,24 @@ gets its own committed `queued` outcome (`native-receiver-renewed`) on the
 recipient's seat, and the renewed edge is published: H returned bodies cost one
 queue transaction plus H + 1 commits. The ordinary claim then delivers each
 body, once. A held copy of a message already delivered, or beside a live copy of
-it for the same recipient, is never returned. A send also tells the lapse edge
-when it finds the lapse first, so its renewal always returns it.
+it from the same sender to the same recipient, is never returned. A send also
+tells the lapse edge when it finds the lapse first, so its renewal always
+returns it.
 
 This is **policy**: such bodies used to die. Two brakes bound it. A send that
 finds `NATIVE_HOLD_LIMIT` (64) bodies already held for its recipient is
-refused, as before. Bodies already queued when the lease lapses were accepted
-before it and are all held, never discarded to fit, so held rows per recipient
-are bounded by the larger of 64 and the queue at the lapse. Rows parked before
-F260 carry no hold (`not_before` 0) and are never returned by a renewal (their
-senders were told to resend); the manual `pij inbox` pull still recovers them.
-An expiry notice is owed only while no other copy of the message (a same-id
-resend) is still queued, running or held for the recipient; a copy of the same id for
-another recipient never blocks a recovery.
+refused, as before. That is an admission brake, not a ceiling on held rows: it
+counts parked holds only. Bodies already queued when the lease lapses were
+accepted before it and are all held, never discarded to fit; and while a manual
+CLI read (`pij inbox`) holds the head, bodies a send admits wait pending,
+uncounted, until a later reconciliation parks them. So H, the rows a renewal
+returns, is whatever was held: price a renewal with the actual H, not with 64.
+Rows parked before F260 carry no hold (`not_before` 0) and are never returned
+by a renewal (their senders were told to resend); the manual `pij inbox` pull
+still recovers them. An expiry notice is owed only while no other copy of the
+message (a same-id resend from the same sender) is still queued, running or
+held for the recipient; a copy of the same id for another recipient, or from
+another seat, never blocks a recovery or silences a notice (F270).
 
 The sender hears twice at most. At the park, an FYI from `pij-bg`
 (`park-notice-<job_id>`) says the body is HELD, not refused, and must not be
@@ -749,11 +754,43 @@ the sender never reads "do not resend" after "resend". A body returned or
 delivered first owes nothing, and one expired first is never returned after.
 The sweep is the existing one (every 60 seconds); nothing new runs. It walks
 every `delivery.parked` fact in its 24-hour lookback, historical ones included,
-so its work follows park volume over that day, not the rows held now. A park
-recovered before its deadline is checked for expiry again on every sweep after
-the deadline until it leaves the lookback, because "not owed" is not recorded
-(D-F260-4, a follow-up). Rows are not deleted: the hold bounds when a body can
-be returned, not how long its row is kept.
+so its work follows park volume over that day, not the rows held now. Ending a
+hold decides one of three things (F270): **owed** (the notice is sent),
+**deferred** (another copy of the message from the same sender is still
+queued, running or held: decided again on a later sweep), or **settled** (the
+body was recovered or delivered first: never owed). A settled decision is
+recorded once as `delivery.park-expiry-settled` (`{msg_id: "park-seq-<seq of
+the park fact>", message_id, job_id, recipient}`, on the sender's seat), and
+every later sweep of that park stops at that one spine read: no native lock, no
+queue write (before F270, D-F260-4, it was decided again under the lock in a
+write transaction every sweep until the park left the lookback). Each probe of
+that decision is one seek: the ledger's unique key, the live unique index, and
+the unexpired range of `jobs_native_held` (migration 0050), so a message's
+expired or finished history is never visited. Rows are not deleted: the hold
+bounds when a body can be returned, not how long its row is kept.
+
+**A message is (recipient, sender machine, sender seat, msg_id)** (F270,
+migration 0050). A msg_id is chosen by its sender, so it is unique per sender
+only: the same id from two seats to one recipient is two messages, and both are
+delivered. An exact retry from the same seat is still one message. Before
+F270 the second seat's message collapsed into the first: its body was never
+delivered and its receipt still said `queued`, and since F260 a reused id could
+also silence the first message's expiry notice. The sender seat is the
+delivery payload's `from` (`jobs.dedupe_sender`, a VIRTUAL generated column)
+and `delivered_messages.sender_seat`. Ledger rows written before 0050 have
+sender `''`, which matches any sender, so a retry across the upgrade still
+finds its delivery (a brake: removing it only delivers more); every new row
+names its sender. A delivery or claim that names none is refused, and so is
+the ack of a delivery whose payload names none (the final ledger writer, so no
+path, generic enqueue included, can write a new `''` row; the claim stays
+running). A refused control (`delivery.control-refused`, keyed by its sender
+and id) replays only to that sender: a parent's control under the target's
+refused id is a new request. A refusal recorded before F270 names no sender
+and still replays to any (a brake). Decision answers keep their store-side
+check unscoped on purpose: the answer id is minted per decision by the
+daemon, and the answering parent can change. Per-sender identity is as strong
+as `from`: a raw `/v1/send` caller asserts its own `from` outside replies
+(C33, unchanged by F270).
 
 Pane deliveries (plan 184) add two terminal outcomes, each publishing a
 sender-addressed `delivery.parked` with transport `pty`. They cover Claude seats
@@ -1448,8 +1485,10 @@ why) through the same writer, then indexes it in the store (migration 0032) and,
 in that same store transaction, sets the seat's role (ruling C1): `pa` for the
 role `pa`, `pm` for `pm` or `pm-<n>`, `worker` otherwise; a prime is never
 re-roled. Then it calls the after-assign hook (ruling C6), which s05 uses to
-drain the role queue. A second live holder of a one-holder role succeeds with
-`data.warning` `W-ONE-HOLDER`. The envelope carries `commit`, `path`, the `row`
+drain the role queue. A second live holder of a one-holder role's same holding
+(the bare role, or the same instance) succeeds with `data.warning`
+`W-ONE-HOLDER`; a different per-PR instance (`<role>/<n>`) is no second holder
+(F272). The envelope carries `commit`, `path`, the `row`
 as written, `seat_role` and `flushed` (pending close-ends this write carried to the branch;
 only those lose their pending mark).
 
@@ -1850,7 +1889,7 @@ project:
 |---|---|---|
 | `no-live-holder` | requests wait and no holder's seat is live: one action per `instance` of the waiting requests (`""` for any holder, which waits only while the role has no live holder at all) | `pij-rs revive <last holder of that instance>` (when there was one), `pij directory assign <role>[/<instance>] '<seat>' --why '<why>'`, so the assign drains those requests |
 | `waiting-with-live-holder` (F193) | requests wait for an instance (or any holder) that a live holder can take: one action per such `instance`. A holder that comes back drains its own queue (below), so this names the fix for anything that raced it | `pij directory release <role>[/<instance>] <holder> --why requeue`, then `pij directory assign` the same, in order (the assign drains the queue) |
-| `two-live-holders` | a one-holder role has two or more live holders | names each holder with its unanswered delivered requests (a `--reply none` request expects no answer and is not counted, F150); while two or more have open work, nothing (a deliberate second holder, plan 215, F90); else `pij directory release <role>[/<instance>] <seat>` for each but the one with open work, or the newest |
+| `two-live-holders` | a one-holder role has two or more live seats on the same holding: the bare role, or one instance (`instance`, `""` for the bare role; one action per such holding). A per-PR instance (`<role>/<n>`) is its own holding, so one seat on several instances, or seats on different ones, is no duplicate (F272) | names each holder with its unanswered delivered requests (a `--reply none` request expects no answer and is not counted, F150); while two or more have open work, nothing (a deliberate second holder, plan 215, F90); else `pij directory release <role>[/<instance>] <seat>` for each but the one with open work, or the newest |
 | `memory-stale` | the role's last two closes (`picture::MEMORY_CLOSES`) both fall on a day after its newest memory note, or it has none | `pij directory memory add <role> --title … --hook … --body-file '<path to the note>'` |
 
 A missing core or security role stays in `prompts` (s03). A workstream step
@@ -2539,6 +2578,14 @@ A never-bound seat's obituary says `it never registered a process` in place of `
 A send receipt proves only its recorded delivery strength: queued is not parent observation. Parents need not poll for child deaths. A parent that is tombstoned or itself observed-dead in the same sweep receives no notice; the daemon counts these suppressions in one line, `death sweep: N notice(s) withheld — recipient dead too`, rather than flooding dead parents after a reboot.
 
 Obituary preparation, send and audit failures are isolated per seat: log the error, continue with the remaining parents, then report `death sweep: N notice(s) failed` once. A failed obituary does not roll back retirement or gain an automatic retry.
+
+**Mass death (F271b).** When one sweep retires **5 or more** seats, or **10 or more** have been retired within the last **60 s**, the daemon raises one alarm: it wakes every live PA (`pa` role, not tombstoned, not a relay) once through the ordinary PA wake path (audited like any cold wake, reason `mass-death`), then records a `death.mass` spine event with no seat and the payload `in_sweep`, `in_window`, `window_ms`, `thresholds`, `by_harness`, `seats` (every retired id in the window, oldest first) and `wakes` (each PA's delivery outcome and cold-check, or the PA lookup's error). At most one alarm fires per 60 s; deaths in that quiet minute fold into the window. The PA's message:
+
+```text
+[pij] mass death: <n> seats retired in one sweep, <m> in the last 60 s (<harness> <count>, …): <id>, … (+<k> more). Many at once means a shared cause (a kill by pattern, an update, tmux): find it before reviving. Spine: death.mass.
+```
+
+It names at most 20 seats; the event names them all. The count lives in memory on the sweep task, so a daemon restart forgets it, which can only delay an alarm, never raise a false one. It adds no loop, timer or launch: a compare per sweep, and on firing one live-seat list, one role read and one delivery per PA. Per-seat obituaries are unchanged.
 
 ## PA watchdog
 

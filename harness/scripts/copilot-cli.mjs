@@ -3,15 +3,17 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 /**
- * The CLI version `copilot` (or COPILOT_BIN) runs now, or undefined when it is
- * not installed. Offline: it never checks for or downloads an update.
+ * The CLI version a pij seat runs, or undefined when Copilot is not installed.
+ * Offline, and with auto-update off exactly as every seat launches (F271c), so
+ * it reports the version built into the installed binary, never a newer
+ * package another Copilot left in the shared cache.
  * @returns {Promise<string | undefined>}
  */
 export async function installedVersion() {
 	const binary = process.env.COPILOT_BIN || "copilot";
 	try {
 		const { stdout } = await promisify(execFile)(binary, ["--version"], {
-			env: { ...process.env, COPILOT_OFFLINE: "true" },
+			env: { ...process.env, COPILOT_OFFLINE: "true", COPILOT_AUTO_UPDATE: "false" },
 			encoding: "utf8",
 			timeout: 10_000,
 		});
