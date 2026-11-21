@@ -498,6 +498,17 @@ impl Registry for SqliteRegistry {
         rows.iter().map(row_to_descriptor).collect()
     }
 
+    async fn list_launched(&self, spawn_id: &str) -> Result<Vec<SeatDescriptor>> {
+        require_current_schema(&self.pool).await?;
+        // `seats_by_spawn` (migration 0003) answers this.
+        let rows = sqlx::query("SELECT * FROM seats WHERE spawn_id = ?1 ORDER BY id")
+            .bind(spawn_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        rows.iter().map(row_to_descriptor).collect()
+    }
+
     async fn tombstone(&self, seat: &SeatId, reason: &str) -> Result<Seq> {
         self.publish_tombstone(seat.clone(), reason.to_string(), None)
             .await

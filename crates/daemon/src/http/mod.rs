@@ -637,11 +637,13 @@ fn router_with_optional_federation(
     .with_spawn_waits(Arc::clone(&services.spawn_waits))
     .with_return_hook(crate::delivery::role_send::return_hook(&services))
     .with_carry_hook(crate::carry::carry_hook(&services));
+    // R309-01: the spawn lock is the one the daemon's stop joins.
+    let spawn_lock = services.spawn_waits.launch_lock();
     let state = AppState {
         services,
         auth: config.auth,
         machine_alias: config.machine_alias,
-        spawn_lock: Arc::new(tokio::sync::Mutex::new(())),
+        spawn_lock,
         typing_lock: Arc::new(tokio::sync::Mutex::new(())),
         double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_grace_ms: resolve_typing_grace_ms(),
@@ -1433,7 +1435,7 @@ pub(crate) async fn launch_seat(
     existing_policy: ExistingSeatPolicy,
     command_name: &'static str,
 ) -> Response {
-    let spawn_guard = state.spawn_lock.lock().await;
+    let spawn_guard = Arc::clone(&state.spawn_lock).lock_owned().await;
     launch_seat_locked(
         state,
         request,
@@ -1446,14 +1448,58 @@ pub(crate) async fn launch_seat(
 }
 
 /// The caller retains the same guard from revive observation through launch.
+///
+/// R309-01: the launch runs in its own task, which owns the guard. A request
+/// that goes away (its connection cut by a stop's drain, or its client gone)
+/// drops only its wait for the answer: the task still writes the row it
+/// launched a pane for, holding the spawn lock until then, so a resend of the
+/// same key and [`crate::spawn_waits::SpawnWaits::stop`] both wait for that
+/// row. After the row, the task waits for the bind only while its caller is
+/// there; once the caller goes, it stops waiting, and the unsettled watch
+/// hands the seat to the parent (F211), as a dropped request always did.
 async fn launch_seat_locked(
     state: &AppState,
     request: SpawnRequest,
     existing_policy: ExistingSeatPolicy,
     command_name: &'static str,
-    spawn_guard: tokio::sync::MutexGuard<'_, ()>,
+    spawn_guard: tokio::sync::OwnedMutexGuard<()>,
     revive_receipt: Option<revive::Receipt>,
 ) -> Response {
+    let owner = state.clone();
+    // Never sent: dropped with this request, it tells the task its caller went.
+    let (caller, gone) = tokio::sync::oneshot::channel::<()>();
+    let launch = tokio::spawn(async move {
+        launch_owned(
+            &owner,
+            request,
+            existing_policy,
+            command_name,
+            spawn_guard,
+            revive_receipt,
+            gone,
+        )
+        .await
+    });
+    let answer = launch.await;
+    drop(caller);
+    answer.unwrap_or_else(|error| internal(command_name, format!("the launch failed: {error}")))
+}
+
+async fn launch_owned(
+    state: &AppState,
+    request: SpawnRequest,
+    existing_policy: ExistingSeatPolicy,
+    command_name: &'static str,
+    spawn_guard: tokio::sync::OwnedMutexGuard<()>,
+    revive_receipt: Option<revive::Receipt>,
+    gone: tokio::sync::oneshot::Receiver<()>,
+) -> Response {
+    // F255: once the daemon is stopping, no launch starts; the caller sends
+    // it again to the next daemon. Checked under the spawn lock, so a launch
+    // is either refused here or past its row write before the stop.
+    if state.services.spawn_waits.stopping() {
+        return stopping_refused(command_name);
+    }
     if let Some(id) = request.id.as_ref()
         && id.as_str().trim().is_empty()
     {
@@ -1550,10 +1596,39 @@ async fn launch_seat_locked(
     }
 
     // The caller's spawn guard keeps classification, observed launch, and the
-    // descriptor write in one daemon-local critical section.
-    let spawn_id = match mint_spawn_id() {
-        Ok(spawn_id) => spawn_id,
-        Err(error) => return internal(command_name, error),
+    // descriptor write in one daemon-local critical section. F255: a keyed
+    // spawn sent again finds its launch's row here, under the same guard, and
+    // is answered with that seat; it never launches twice.
+    let spawn_id = match request.spawn_id.take() {
+        Some(key) => {
+            if !is_spawn_id(&key) {
+                return refused(
+                    command_name,
+                    "spawn_id must be `s-` and 32 lowercase hex digits, as pij mints it",
+                );
+            }
+            let launched = match state.services.registry.list_launched(&key).await {
+                Ok(launched) => launched,
+                Err(error) => return internal(command_name, error),
+            };
+            if !launched.is_empty() {
+                return answer_again(
+                    state,
+                    command_name,
+                    request,
+                    &key,
+                    launched,
+                    spawn_guard,
+                    gone,
+                )
+                .await;
+            }
+            key
+        }
+        None => match mint_spawn_id() {
+            Ok(spawn_id) => spawn_id,
+            Err(error) => return internal(command_name, error),
+        },
     };
     let (seat_id, displaced) = match request.id.clone() {
         Some(id) => match state.services.registry.get(&id).await {
@@ -1770,13 +1845,180 @@ async fn launch_seat_locked(
         }
     };
     drop(spawn_guard);
+    answer_launch(
+        state,
+        command_name,
+        Waiting {
+            descriptor,
+            pane: pane.id,
+            requested_model,
+            trust_folder,
+            no_wait,
+            wait_seconds,
+            revive_receipt,
+            watch,
+            status_path,
+            log_path,
+            gone,
+        },
+    )
+    .await
+}
 
-    if no_wait {
-        let answer = spawn_success(command_name, descriptor, revive_receipt);
-        watch.answered("dispatched");
-        return answer;
+/// F255: a keyed spawn sent again after its answer was lost (a daemon bounce
+/// cut it). `launched` is every row naming its key. The live one is answered
+/// as the first send would have been: waited on until it binds, or at once
+/// with `no_wait`. Nothing is launched. BRAKES, each of which only refuses:
+/// no live row, or a row for a different request (harness, folder, parent or
+/// explicit id), since a key repeats one request.
+async fn answer_again(
+    state: &AppState,
+    command_name: &'static str,
+    request: SpawnRequest,
+    key: &str,
+    launched: Vec<SeatDescriptor>,
+    spawn_guard: tokio::sync::OwnedMutexGuard<()>,
+    gone: tokio::sync::oneshot::Receiver<()>,
+) -> Response {
+    let Some(seat) = launched
+        .iter()
+        .find(|seat| seat.tombstoned_at.is_none())
+        .cloned()
+    else {
+        let closed = launched.first().map_or("", |seat| seat.id.as_str());
+        return refused(
+            command_name,
+            format!(
+                "spawn {key} already launched seat {closed}, which has since closed; a spawn id \
+                 launches once, so send the spawn with a new one"
+            ),
+        );
+    };
+    if seat.harness != request.harness
+        || seat.folder != request.cwd
+        || seat.parent != request.parent
+        || request.id.as_ref().is_some_and(|id| *id != seat.id)
+    {
+        return refused(
+            command_name,
+            format!(
+                "spawn {key} launched seat {} for a different request (its harness, folder, \
+                 parent or id differ); a spawn id is sent again only with the request it keys",
+                seat.id
+            ),
+        );
     }
+    let (Some(launch), Some(pane)) = (crate::spawn_waits::Launch::of(&seat), seat.pane.clone())
+    else {
+        return refused(
+            command_name,
+            format!(
+                "spawn {key} names seat {}, which has no pane to wait on",
+                seat.id
+            ),
+        );
+    };
+    // R309-03: a launch already settled with a bound seat is never re-armed.
+    let watch = state
+        .services
+        .spawn_waits
+        .watch_again(launch, seat.proc.is_some());
+    drop(spawn_guard);
+    let (status_path, log_path) = spawn_evidence_paths(key);
+    answer_launch(
+        state,
+        command_name,
+        Waiting {
+            descriptor: seat,
+            pane,
+            requested_model: request.model,
+            trust_folder: request.trust_folder,
+            no_wait: request.no_wait,
+            wait_seconds: request.wait_seconds.unwrap_or(DEFAULT_SPAWN_WAIT_SECONDS),
+            revive_receipt: None,
+            watch,
+            status_path,
+            log_path,
+            gone,
+        },
+    )
+    .await
+}
 
+/// A launch whose row is written, as its spawn answers it.
+struct Waiting {
+    descriptor: SeatDescriptor,
+    pane: String,
+    requested_model: Option<String>,
+    trust_folder: bool,
+    no_wait: bool,
+    wait_seconds: u64,
+    revive_receipt: Option<revive::Receipt>,
+    watch: crate::spawn_waits::WaitGuard,
+    status_path: PathBuf,
+    log_path: PathBuf,
+    /// Resolves when the request waiting on this answer goes away.
+    gone: tokio::sync::oneshot::Receiver<()>,
+}
+
+/// Answer a launch: at once with `no_wait`, else once its seat binds, its
+/// child exits, its pane goes, or the wait runs out; or stop waiting when
+/// the caller goes (R309-01), leaving the watch unsettled (F211).
+async fn answer_launch(state: &AppState, command_name: &'static str, waiting: Waiting) -> Response {
+    let Waiting {
+        descriptor,
+        pane,
+        requested_model,
+        trust_folder,
+        no_wait,
+        wait_seconds,
+        revive_receipt,
+        watch,
+        status_path,
+        log_path,
+        gone,
+    } = waiting;
+    let answer = async move {
+        if no_wait {
+            let answer = spawn_success(command_name, descriptor, revive_receipt);
+            watch.answered("dispatched");
+            return answer;
+        }
+        wait_for_bind(
+            state,
+            command_name,
+            descriptor,
+            pane,
+            requested_model,
+            trust_folder,
+            wait_seconds,
+            revive_receipt,
+            watch,
+            status_path,
+            log_path,
+        )
+        .await
+    };
+    tokio::select! {
+        answer = answer => answer,
+        _ = gone => StatusCode::NO_CONTENT.into_response(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn wait_for_bind(
+    state: &AppState,
+    command_name: &'static str,
+    descriptor: SeatDescriptor,
+    pane: String,
+    requested_model: Option<String>,
+    trust_folder: bool,
+    wait_seconds: u64,
+    revive_receipt: Option<revive::Receipt>,
+    watch: crate::spawn_waits::WaitGuard,
+    status_path: PathBuf,
+    log_path: PathBuf,
+) -> Response {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(wait_seconds);
     let mut last_output = String::new();
     let failed = |seat: SeatDescriptor,
@@ -1808,7 +2050,7 @@ async fn launch_seat_locked(
         // One read of the whole screen: the log keeps its bottom rows, and a
         // folder-trust prompt (F215) is looked for in all of it, because
         // Claude draws its prompt at the top of a tall pane.
-        if let Ok(screen) = state.services.tmux.capture(&pane.id, u32::MAX).await {
+        if let Ok(screen) = state.services.tmux.capture(&pane, u32::MAX).await {
             let tail = last_lines(&screen, 20);
             if !tail.trim().is_empty() {
                 last_output = tail;
@@ -1817,7 +2059,7 @@ async fn launch_seat_locked(
                 pij_harnesses::trust::folder_trust_prompt(descriptor.harness, &screen)
             {
                 let blocked = match (trust_folder, prompt.next_key()) {
-                    (false, _) => Some(trust_prompt_refusal(&prompt, &descriptor, &pane.id)),
+                    (false, _) => Some(trust_prompt_refusal(&prompt, &descriptor, &pane)),
                     (true, None) => Some(format!(
                         "is waiting on {} for {}, and --trust-folder can't see which row is \
                          highlighted, so it pressed nothing; the pane is left live on the prompt",
@@ -1830,7 +2072,7 @@ async fn launch_seat_locked(
                             state
                                 .services
                                 .tmux
-                                .press_key(&pane.id, key)
+                                .press_key(&pane, key)
                                 .await
                                 .err()
                                 .map(|error| {
@@ -1873,7 +2115,7 @@ async fn launch_seat_locked(
                 let actual = bound.model.as_deref().unwrap_or("no-model");
                 let footer_deadline = tokio::time::Instant::now() + Duration::from_secs(8);
                 loop {
-                    if let Ok(output) = state.services.tmux.capture(&pane.id, 20).await
+                    if let Ok(output) = state.services.tmux.capture(&pane, 20).await
                         && !output.trim().is_empty()
                     {
                         let footer_visible = output.contains(actual);
@@ -1943,7 +2185,7 @@ async fn launch_seat_locked(
             }
         }
         let pane_exists = match state.services.tmux.list_panes().await {
-            Ok(panes) => panes.iter().any(|listed| listed.id == pane.id),
+            Ok(panes) => panes.iter().any(|listed| listed.id == pane),
             Err(error) => {
                 let reason = format!("could not list tmux panes while waiting: {error}");
                 return failed(
@@ -4721,7 +4963,13 @@ fn encode_frame(frame: StreamFrame) -> io::Result<String> {
         .map_err(io::Error::other)
 }
 
-fn mint_spawn_id() -> Result<String> {
+/// A fresh spawn id: `s-` and 32 lowercase hex digits from the OS's
+/// randomness. The daemon mints one for an unkeyed spawn; a client mints its
+/// key the same way before the first send (F255).
+///
+/// # Errors
+/// The OS refused randomness.
+pub fn mint_spawn_id() -> Result<String> {
     let mut bytes = [0_u8; 16];
     getrandom::fill(&mut bytes).map_err(|error| PijError::Adapter {
         adapter: "spawn".to_string(),
@@ -4733,6 +4981,18 @@ fn mint_spawn_id() -> Result<String> {
         write!(&mut id, "{byte:02x}").expect("writing to a String cannot fail");
     }
     Ok(id)
+}
+
+/// Whether `key` has the shape [`mint_spawn_id`] gives (F255). A BRAKE: a
+/// caller's key names an evidence file and a launch environment variable, so
+/// nothing else is ever accepted.
+fn is_spawn_id(key: &str) -> bool {
+    key.strip_prefix("s-").is_some_and(|hex| {
+        hex.len() == 32
+            && hex
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
 }
 
 pub(crate) fn system_time_ms() -> Result<u64> {
@@ -5172,6 +5432,22 @@ fn control_session_refused(command: &str) -> Response {
     envelope(StatusCode::BAD_REQUEST, &answer)
 }
 
+/// The stable code for a spawn that reaches a stopping daemon (F255).
+pub const STOPPING_CODE: &str = "E-RS-STOPPING";
+
+/// Nothing was launched: the caller sends the spawn again once the next
+/// daemon is up. `pij-rs` and the pij extension do, with the same key.
+fn stopping_refused(command: &str) -> Response {
+    let mut answer: Envelope<()> = Envelope::refused(
+        command,
+        ErrorKind::Refused,
+        "the daemon is stopping, so nothing was launched; send the spawn again once it is \
+         back (pij-rs ping)",
+    );
+    answer.details = Some(serde_json::json!({ "code": STOPPING_CODE }));
+    envelope(StatusCode::SERVICE_UNAVAILABLE, &answer)
+}
+
 pub(crate) fn internal(command: &str, error: impl std::fmt::Display) -> Response {
     envelope(
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -5415,10 +5691,10 @@ pub(crate) fn test_state(services: Services) -> AppState {
             Arc::clone(&services.roles),
         )
         .with_native_delivery(Arc::clone(&services.delivery)),
+        spawn_lock: services.spawn_waits.launch_lock(),
         services,
         auth: AuthRing::local("key".to_string()),
         machine_alias: "local".to_string(),
-        spawn_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_lock: Arc::new(tokio::sync::Mutex::new(())),
         double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
