@@ -3077,7 +3077,7 @@ async fn an_idle_native_claim_is_answered_empty_at_the_daemons_bound() {
 }
 
 /// F231: an idle native claim's wait is held time in ping, not active: the
-/// claim's passes between waits are what `active_us` sums.
+/// claim's passes between waits (one here, F258) are what `active_us` sums.
 #[tokio::test]
 async fn an_idle_native_claims_wait_is_held_time_and_only_its_passes_are_active() {
     let store = FreshStore::new();
@@ -3121,6 +3121,464 @@ async fn an_idle_native_claims_wait_is_held_time_and_only_its_passes_are_active(
         "only the passes are active: {inbox}"
     );
     server.abort();
+}
+
+/// F258: how long a claim wait may take to hear of new work and still show it
+/// woke on that work, not at [`crate::delivery::CLAIM_WAIT_BACKSTOP`].
+fn before_backstop(budget: Duration) -> Duration {
+    pij_testkit::time::scaled(budget).min(crate::delivery::CLAIM_WAIT_BACKSTOP / 2)
+}
+
+/// A native claim waiting on the real store, as the extension's long poll.
+fn waiting_claim(
+    delivery: &Arc<DeliveryService>,
+    seat: &SeatId,
+    identity: &NativeInboxIdentity,
+) -> tokio::task::JoinHandle<pij_core::error::Result<crate::delivery::NativeInboxPage>> {
+    let (delivery, seat, identity) = (Arc::clone(delivery), seat.clone(), identity.clone());
+    tokio::spawn(async move { delivery.claim_native_inbox(&seat, true, &identity).await })
+}
+
+/// F258: a waiting native claim does not poll. An enqueue to its seat
+/// publishes the seat's `delivery.outcome`, and that wakes it.
+#[tokio::test]
+async fn an_enqueue_wakes_a_waiting_native_claim() {
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    let waiting = waiting_claim(&services.delivery, &seat.id, &identity);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    services
+        .delivery
+        .send("pij-peer".into(), seat.id.clone(), "wake")
+        .await
+        .unwrap();
+    let page = tokio::time::timeout(before_backstop(Duration::from_secs(3)), waiting)
+        .await
+        .expect("the enqueue wakes the wait, not the backstop")
+        .unwrap()
+        .unwrap();
+    assert_eq!(page.claims.len(), 1, "{:?}", page.held_reason);
+    assert_eq!(page.claims[0].message.body, "wake");
+}
+
+/// F258: a row that falls due on a timer wakes the wait at its `not_before`,
+/// with no event to wake it and no poll.
+#[tokio::test]
+async fn a_delayed_row_wakes_a_waiting_native_claim_when_it_falls_due() {
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    services
+        .delivery
+        .send("pij-peer".into(), seat.id.clone(), "later")
+        .await
+        .unwrap();
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::query("UPDATE jobs SET not_before = unixepoch() + 3 WHERE kind = ?1")
+        .bind(delivery_kind(&seat.id))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let page = tokio::time::timeout(
+        before_backstop(Duration::from_secs(6)),
+        services
+            .delivery
+            .claim_native_inbox(&seat.id, true, &identity),
+    )
+    .await
+    .expect("woken when the row falls due, not at the backstop")
+    .unwrap();
+    let waited = started.elapsed();
+    assert_eq!(page.claims.len(), 1, "{:?}", page.held_reason);
+    assert_eq!(page.claims[0].message.body, "later");
+    assert!(
+        waited >= Duration::from_millis(1_900),
+        "claimed before it was due: {waited:?}"
+    );
+}
+
+/// F258: a claim its receiver never acknowledged lapses on the ordinary claim
+/// lease. The lapse wakes a waiting claim, which takes the body again.
+#[tokio::test]
+async fn a_lapsing_claim_wakes_a_waiting_native_claim_at_its_lease() {
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    services
+        .delivery
+        .send("pij-peer".into(), seat.id.clone(), "unacknowledged")
+        .await
+        .unwrap();
+    let first = services
+        .delivery
+        .claim_native_inbox(&seat.id, false, &identity)
+        .await
+        .unwrap()
+        .claims
+        .remove(0);
+    let lease = i64::try_from(Config::default().claim_lease_secs).unwrap();
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::query("UPDATE jobs SET claimed_at = unixepoch() - ?1 + 3 WHERE id = ?2")
+        .bind(lease)
+        .bind(i64::try_from(first.job_id.0).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let page = tokio::time::timeout(
+        before_backstop(Duration::from_secs(6)),
+        services
+            .delivery
+            .claim_native_inbox(&seat.id, true, &identity),
+    )
+    .await
+    .expect("woken when the claim lapses, not at the backstop")
+    .unwrap();
+    let waited = started.elapsed();
+    assert_eq!(page.claims.len(), 1, "{:?}", page.held_reason);
+    assert_eq!(page.claims[0].job_id, first.job_id);
+    assert_eq!(page.claims[0].attempt, first.attempt + 1);
+    assert!(
+        waited >= Duration::from_millis(1_900),
+        "taken again before its lease lapsed: {waited:?}"
+    );
+}
+
+/// F258: with no poll, a replaced incarnation's waiting claim learns of the
+/// replacement at its next wake. It is refused there, and the work queued
+/// for the replacement stays queued.
+#[tokio::test]
+async fn a_replaced_incarnations_waiting_claim_is_refused_at_its_next_wake() {
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (mut seat, old_identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    let waiting = waiting_claim(&services.delivery, &seat.id, &old_identity);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    seat.proc = Some(ProcIdentity {
+        pid: 13800,
+        proc_start: 20260905130000,
+    });
+    seat.harness_session = Some("replacement-session".into());
+    services.registry.put(seat.clone()).await.unwrap();
+    let replacement = NativeInboxIdentity {
+        native_session: seat.harness_session.clone(),
+        pid: seat.proc.map(|proc| proc.pid),
+        proc_start: seat.proc.map(|proc| proc.proc_start),
+    };
+    // The replacement attests its receiver (an empty claim), so the send
+    // below is queued for it rather than refused.
+    services
+        .delivery
+        .claim_native_inbox(&seat.id, false, &replacement)
+        .await
+        .unwrap();
+    let receipt = services
+        .delivery
+        .send("pij-peer".into(), seat.id.clone(), "for the replacement")
+        .await
+        .unwrap();
+    assert!(
+        matches!(receipt.outcome, DeliveryOutcome::Queued { .. }),
+        "{:?}",
+        receipt.outcome
+    );
+    let refused = tokio::time::timeout(before_backstop(Duration::from_secs(3)), waiting)
+        .await
+        .expect("the enqueue wakes the stale wait")
+        .unwrap()
+        .expect_err("a replaced incarnation is refused");
+    assert!(refused.to_string().contains("incarnation"), "{refused}");
+    let (job, _) = services
+        .queue
+        .peek(&[delivery_kind(&seat.id)])
+        .await
+        .unwrap()
+        .expect("the work is still queued");
+    assert!(
+        services
+            .queue
+            .claimed_delivery(job)
+            .await
+            .unwrap()
+            .is_none(),
+        "the stale wait never claimed it"
+    );
+}
+
+/// Review R310-F001: a row that falls due in the gap between a pass's empty
+/// claim and its next-due read still wakes the wait, at once, not at the
+/// 15 s backstop. [`gap::GapQueue`] holds that read until just after the row
+/// falls due, so the gap is the test's, not luck's.
+#[tokio::test]
+async fn a_row_falling_due_between_the_claim_and_its_next_due_read_still_wakes_the_wait() {
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    let gap = Arc::new(gap::GapQueue::new(services.queue.clone()));
+    let delivery = Arc::new(
+        DeliveryService::new(
+            services.registry.clone(),
+            gap.clone(),
+            services.transport.clone(),
+            services.interaction.clone(),
+            services.event_bus.clone(),
+        )
+        .unwrap(),
+    );
+    delivery
+        .send("pij-peer".into(), seat.id.clone(), "crossing")
+        .await
+        .unwrap();
+    // Due two whole seconds out, so the wait's first pass claims nothing.
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    let due: i64 = sqlx::query_scalar(
+        "UPDATE jobs SET not_before = unixepoch() + 2 WHERE kind = ?1 RETURNING not_before",
+    )
+    .bind(delivery_kind(&seat.id))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let due_at = std::time::UNIX_EPOCH + Duration::from_secs(u64::try_from(due).unwrap());
+    gap.hold_reads_until(due_at + Duration::from_millis(50));
+    let page = tokio::time::timeout(
+        before_backstop(Duration::from_secs(6)),
+        delivery.claim_native_inbox(&seat.id, true, &identity),
+    )
+    .await
+    .expect("the crossed instant wakes the wait at once, not at the backstop")
+    .unwrap();
+    assert_eq!(page.claims.len(), 1, "{:?}", page.held_reason);
+    assert_eq!(page.claims[0].message.body, "crossing");
+}
+
+mod gap {
+    //! A SQLite queue whose next-due read waits for a set instant, so the
+    //! instant a row falls due lands between a claim and that read.
+
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, SystemTime};
+
+    use async_trait::async_trait;
+    use pij_core::error::Result;
+    use pij_core::fyi::HeldFyi;
+    use pij_core::model::{DeliveryDeferral, DeliveryOrigin, Event, Job, JobId, Outcome, SeatId};
+    use pij_core::ports::{
+        AttachFyis, BatchEnqueue, DeferOutcome, DeliveryAck, DeliveryEnqueue, ExtensionClaim,
+        ExtensionLease, ParkedDelivery, ParkingEvidence, Queue, ReleaseOutcome, Spine,
+    };
+
+    pub(super) struct GapQueue {
+        inner: Arc<dyn Queue>,
+        reads_after: Mutex<Option<SystemTime>>,
+    }
+
+    impl GapQueue {
+        pub(super) fn new(inner: Arc<dyn Queue>) -> Self {
+            Self {
+                inner,
+                reads_after: Mutex::new(None),
+            }
+        }
+
+        /// Every next-due read waits until the wall clock passes `at`.
+        pub(super) fn hold_reads_until(&self, at: SystemTime) {
+            *self.reads_after.lock().unwrap() = Some(at);
+        }
+    }
+
+    #[async_trait]
+    impl Queue for GapQueue {
+        async fn next_claimable_in(
+            &self,
+            kinds: &[String],
+            since: SystemTime,
+        ) -> Result<Option<Duration>> {
+            let after = *self.reads_after.lock().unwrap();
+            if let Some(wait) = after.and_then(|at| at.duration_since(SystemTime::now()).ok()) {
+                tokio::time::sleep(wait).await;
+            }
+            self.inner.next_claimable_in(kinds, since).await
+        }
+        async fn enqueue(&self, job: Job) -> Result<JobId> {
+            self.inner.enqueue(job).await
+        }
+        async fn enqueue_all(&self, jobs: Vec<Job>) -> Result<BatchEnqueue> {
+            self.inner.enqueue_all(jobs).await
+        }
+        async fn enqueue_delivery(&self, job: Job) -> Result<DeliveryEnqueue> {
+            self.inner.enqueue_delivery(job).await
+        }
+        async fn claim(&self, kinds: &[String], worker: &str) -> Result<Option<(JobId, Job)>> {
+            self.inner.claim(kinds, worker).await
+        }
+        async fn claim_extension(
+            &self,
+            kinds: &[String],
+            worker: &str,
+            lease: ExtensionLease,
+            at: u64,
+            spine: &dyn Spine,
+            recovery_allowed: bool,
+        ) -> Result<ExtensionClaim> {
+            self.inner
+                .claim_extension(kinds, worker, lease, at, spine, recovery_allowed)
+                .await
+        }
+        async fn peek_parked(&self, kinds: &[String]) -> Result<Vec<ParkedDelivery>> {
+            self.inner.peek_parked(kinds).await
+        }
+        async fn recover_native_delivery(&self, job: JobId, recipient: &SeatId) -> Result<bool> {
+            self.inner.recover_native_delivery(job, recipient).await
+        }
+        async fn park_delivery(
+            &self,
+            job: JobId,
+            recipient: &SeatId,
+            attempt: u32,
+            evidence: &ParkingEvidence<'_>,
+            spine: &dyn Spine,
+        ) -> Result<(Option<Job>, Vec<Event>)> {
+            self.inner
+                .park_delivery(job, recipient, attempt, evidence, spine)
+                .await
+        }
+        async fn live_payloads(&self, kinds: &[String]) -> Result<Vec<String>> {
+            self.inner.live_payloads(kinds).await
+        }
+        async fn peek(&self, kinds: &[String]) -> Result<Option<(JobId, Job)>> {
+            self.inner.peek(kinds).await
+        }
+        async fn claimed_delivery(&self, job: JobId) -> Result<Option<Job>> {
+            self.inner.claimed_delivery(job).await
+        }
+        async fn terminal_delivery_state(
+            &self,
+            job: JobId,
+            recipient: &SeatId,
+        ) -> Result<Option<&'static str>> {
+            self.inner.terminal_delivery_state(job, recipient).await
+        }
+        async fn heartbeat_delivery(
+            &self,
+            job: JobId,
+            recipient: &SeatId,
+            attempt: u32,
+        ) -> Result<bool> {
+            self.inner.heartbeat_delivery(job, recipient, attempt).await
+        }
+        async fn ack(&self, job: JobId, outcome: Outcome) -> Result<()> {
+            self.inner.ack(job, outcome).await
+        }
+        async fn ack_delivery(&self, job: JobId, origin: DeliveryOrigin) -> Result<DeliveryAck> {
+            self.inner.ack_delivery(job, origin).await
+        }
+        async fn note_delivered(
+            &self,
+            recipient: &SeatId,
+            msg_id: &str,
+            sender_machine: Option<&str>,
+            origin: DeliveryOrigin,
+        ) -> Result<Option<DeliveryOrigin>> {
+            self.inner
+                .note_delivered(recipient, msg_id, sender_machine, origin)
+                .await
+        }
+        async fn forget_delivered(
+            &self,
+            recipient: &SeatId,
+            msg_id: &str,
+            sender_machine: Option<&str>,
+        ) -> Result<()> {
+            self.inner
+                .forget_delivered(recipient, msg_id, sender_machine)
+                .await
+        }
+        async fn admitted(
+            &self,
+            recipient: &SeatId,
+            msg_id: &str,
+            sender_machine: Option<&str>,
+        ) -> Result<bool> {
+            self.inner.admitted(recipient, msg_id, sender_machine).await
+        }
+        async fn retry(&self, job: JobId, delay: Duration) -> Result<()> {
+            self.inner.retry(job, delay).await
+        }
+        async fn record_delivery_deferral(
+            &self,
+            job: JobId,
+            reason: &str,
+            draft_sha: Option<&str>,
+            at: u64,
+            spine: &dyn Spine,
+        ) -> Result<Vec<Event>> {
+            self.inner
+                .record_delivery_deferral(job, reason, draft_sha, at, spine)
+                .await
+        }
+        async fn delivery_deferrals(&self, recipient: &SeatId) -> Result<Vec<DeliveryDeferral>> {
+            self.inner.delivery_deferrals(recipient).await
+        }
+        async fn defer(&self, job: JobId, delay: Duration) -> Result<DeferOutcome> {
+            self.inner.defer(job, delay).await
+        }
+        async fn release_deferred(&self, job: JobId) -> Result<ReleaseOutcome> {
+            self.inner.release_deferred(job).await
+        }
+        async fn hold_fyi(&self, fyi: &HeldFyi, spine: &dyn Spine) -> Result<Vec<Event>> {
+            self.inner.hold_fyi(fyi, spine).await
+        }
+        async fn claim_fyis(
+            &self,
+            recipient: &SeatId,
+            via: &str,
+            at: u64,
+            spine: &dyn Spine,
+        ) -> Result<(Vec<HeldFyi>, Vec<Event>)> {
+            self.inner.claim_fyis(recipient, via, at, spine).await
+        }
+        async fn enqueue_delivery_carrying_fyis(
+            &self,
+            job: Job,
+            via: &str,
+            at: u64,
+            attach: AttachFyis,
+            spine: &dyn Spine,
+        ) -> Result<(DeliveryEnqueue, Vec<Event>)> {
+            self.inner
+                .enqueue_delivery_carrying_fyis(job, via, at, attach, spine)
+                .await
+        }
+        async fn pending_fyi_count(&self, recipient: &SeatId) -> Result<u64> {
+            self.inner.pending_fyi_count(recipient).await
+        }
+        async fn enqueue_fyi_flush(
+            &self,
+            job: Job,
+            via: &str,
+            at: u64,
+            attach: AttachFyis,
+            spine: &dyn Spine,
+        ) -> Result<(Option<DeliveryEnqueue>, Vec<Event>)> {
+            self.inner
+                .enqueue_fyi_flush(job, via, at, attach, spine)
+                .await
+        }
+        async fn read_claimed_fyis(
+            &self,
+            recipient: &SeatId,
+            claimed_at_ms: u64,
+        ) -> Result<Vec<HeldFyi>> {
+            self.inner.read_claimed_fyis(recipient, claimed_at_ms).await
+        }
+    }
 }
 
 #[tokio::test(start_paused = true)]

@@ -82,6 +82,13 @@ impl Queue for FailFirstClaim {
     async fn peek(&self, kinds: &[String]) -> Result<Option<(JobId, Job)>> {
         self.inner.peek(kinds).await
     }
+    async fn next_claimable_in(
+        &self,
+        kinds: &[String],
+        since: std::time::SystemTime,
+    ) -> Result<Option<Duration>> {
+        self.inner.next_claimable_in(kinds, since).await
+    }
     async fn claimed_delivery(&self, job: JobId) -> Result<Option<Job>> {
         self.inner.claimed_delivery(job).await
     }
@@ -695,6 +702,13 @@ impl Queue for RefuseFirstDelivery {
     }
     async fn peek(&self, kinds: &[String]) -> Result<Option<(JobId, Job)>> {
         self.inner.peek(kinds).await
+    }
+    async fn next_claimable_in(
+        &self,
+        kinds: &[String],
+        since: std::time::SystemTime,
+    ) -> Result<Option<Duration>> {
+        self.inner.next_claimable_in(kinds, since).await
     }
     async fn claimed_delivery(&self, job: JobId) -> Result<Option<Job>> {
         self.inner.claimed_delivery(job).await
