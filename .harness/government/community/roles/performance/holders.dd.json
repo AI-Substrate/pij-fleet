@@ -736,6 +736,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-neat-dove",
 					"why": "post-deploy AFTER for #318 (fresh seat; elephant cold)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T14:52:05.048Z",
+					"harness": "copilot",
+					"harness_session": "500ac256-4ce2-4065-b691-b2fc9e2a01ce",
+					"instance_key": "321",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-neat-dove",
+					"why": "post-deploy AFTER for #321 (fresh seat; elephant cold)"
 				}
 			]
 		}
