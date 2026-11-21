@@ -637,11 +637,13 @@ fn router_with_optional_federation(
     .with_spawn_waits(Arc::clone(&services.spawn_waits))
     .with_return_hook(crate::delivery::role_send::return_hook(&services))
     .with_carry_hook(crate::carry::carry_hook(&services));
+    // R309-01: the spawn lock is the one the daemon's stop joins.
+    let spawn_lock = services.spawn_waits.launch_lock();
     let state = AppState {
         services,
         auth: config.auth,
         machine_alias: config.machine_alias,
-        spawn_lock: Arc::new(tokio::sync::Mutex::new(())),
+        spawn_lock,
         typing_lock: Arc::new(tokio::sync::Mutex::new(())),
         double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_grace_ms: resolve_typing_grace_ms(),
@@ -1433,7 +1435,7 @@ pub(crate) async fn launch_seat(
     existing_policy: ExistingSeatPolicy,
     command_name: &'static str,
 ) -> Response {
-    let spawn_guard = state.spawn_lock.lock().await;
+    let spawn_guard = Arc::clone(&state.spawn_lock).lock_owned().await;
     launch_seat_locked(
         state,
         request,
@@ -1446,13 +1448,51 @@ pub(crate) async fn launch_seat(
 }
 
 /// The caller retains the same guard from revive observation through launch.
+///
+/// R309-01: the launch runs in its own task, which owns the guard. A request
+/// that goes away (its connection cut by a stop's drain, or its client gone)
+/// drops only its wait for the answer: the task still writes the row it
+/// launched a pane for, holding the spawn lock until then, so a resend of the
+/// same key and [`crate::spawn_waits::SpawnWaits::stop`] both wait for that
+/// row. After the row, the task waits for the bind only while its caller is
+/// there; once the caller goes, it stops waiting, and the unsettled watch
+/// hands the seat to the parent (F211), as a dropped request always did.
 async fn launch_seat_locked(
     state: &AppState,
     request: SpawnRequest,
     existing_policy: ExistingSeatPolicy,
     command_name: &'static str,
-    spawn_guard: tokio::sync::MutexGuard<'_, ()>,
+    spawn_guard: tokio::sync::OwnedMutexGuard<()>,
     revive_receipt: Option<revive::Receipt>,
+) -> Response {
+    let owner = state.clone();
+    // Never sent: dropped with this request, it tells the task its caller went.
+    let (caller, gone) = tokio::sync::oneshot::channel::<()>();
+    let launch = tokio::spawn(async move {
+        launch_owned(
+            &owner,
+            request,
+            existing_policy,
+            command_name,
+            spawn_guard,
+            revive_receipt,
+            gone,
+        )
+        .await
+    });
+    let answer = launch.await;
+    drop(caller);
+    answer.unwrap_or_else(|error| internal(command_name, format!("the launch failed: {error}")))
+}
+
+async fn launch_owned(
+    state: &AppState,
+    request: SpawnRequest,
+    existing_policy: ExistingSeatPolicy,
+    command_name: &'static str,
+    spawn_guard: tokio::sync::OwnedMutexGuard<()>,
+    revive_receipt: Option<revive::Receipt>,
+    gone: tokio::sync::oneshot::Receiver<()>,
 ) -> Response {
     // F255: once the daemon is stopping, no launch starts; the caller sends
     // it again to the next daemon. Checked under the spawn lock, so a launch
@@ -1572,8 +1612,16 @@ async fn launch_seat_locked(
                 Err(error) => return internal(command_name, error),
             };
             if !launched.is_empty() {
-                return answer_again(state, command_name, request, &key, launched, spawn_guard)
-                    .await;
+                return answer_again(
+                    state,
+                    command_name,
+                    request,
+                    &key,
+                    launched,
+                    spawn_guard,
+                    gone,
+                )
+                .await;
             }
             key
         }
@@ -1811,6 +1859,7 @@ async fn launch_seat_locked(
             watch,
             status_path,
             log_path,
+            gone,
         },
     )
     .await
@@ -1828,7 +1877,8 @@ async fn answer_again(
     request: SpawnRequest,
     key: &str,
     launched: Vec<SeatDescriptor>,
-    spawn_guard: tokio::sync::MutexGuard<'_, ()>,
+    spawn_guard: tokio::sync::OwnedMutexGuard<()>,
+    gone: tokio::sync::oneshot::Receiver<()>,
 ) -> Response {
     let Some(seat) = launched
         .iter()
@@ -1868,7 +1918,11 @@ async fn answer_again(
             ),
         );
     };
-    let watch = state.services.spawn_waits.watch(launch);
+    // R309-03: a launch already settled with a bound seat is never re-armed.
+    let watch = state
+        .services
+        .spawn_waits
+        .watch_again(launch, seat.proc.is_some());
     drop(spawn_guard);
     let (status_path, log_path) = spawn_evidence_paths(key);
     answer_launch(
@@ -1885,6 +1939,7 @@ async fn answer_again(
             watch,
             status_path,
             log_path,
+            gone,
         },
     )
     .await
@@ -1902,10 +1957,13 @@ struct Waiting {
     watch: crate::spawn_waits::WaitGuard,
     status_path: PathBuf,
     log_path: PathBuf,
+    /// Resolves when the request waiting on this answer goes away.
+    gone: tokio::sync::oneshot::Receiver<()>,
 }
 
 /// Answer a launch: at once with `no_wait`, else once its seat binds, its
-/// child exits, its pane goes, or the wait runs out.
+/// child exits, its pane goes, or the wait runs out; or stop waiting when
+/// the caller goes (R309-01), leaving the watch unsettled (F211).
 async fn answer_launch(state: &AppState, command_name: &'static str, waiting: Waiting) -> Response {
     let Waiting {
         descriptor,
@@ -1918,13 +1976,49 @@ async fn answer_launch(state: &AppState, command_name: &'static str, waiting: Wa
         watch,
         status_path,
         log_path,
+        gone,
     } = waiting;
-    if no_wait {
-        let answer = spawn_success(command_name, descriptor, revive_receipt);
-        watch.answered("dispatched");
-        return answer;
+    let answer = async move {
+        if no_wait {
+            let answer = spawn_success(command_name, descriptor, revive_receipt);
+            watch.answered("dispatched");
+            return answer;
+        }
+        wait_for_bind(
+            state,
+            command_name,
+            descriptor,
+            pane,
+            requested_model,
+            trust_folder,
+            wait_seconds,
+            revive_receipt,
+            watch,
+            status_path,
+            log_path,
+        )
+        .await
+    };
+    tokio::select! {
+        answer = answer => answer,
+        _ = gone => StatusCode::NO_CONTENT.into_response(),
     }
+}
 
+#[allow(clippy::too_many_arguments)]
+async fn wait_for_bind(
+    state: &AppState,
+    command_name: &'static str,
+    descriptor: SeatDescriptor,
+    pane: String,
+    requested_model: Option<String>,
+    trust_folder: bool,
+    wait_seconds: u64,
+    revive_receipt: Option<revive::Receipt>,
+    watch: crate::spawn_waits::WaitGuard,
+    status_path: PathBuf,
+    log_path: PathBuf,
+) -> Response {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(wait_seconds);
     let mut last_output = String::new();
     let failed = |seat: SeatDescriptor,
@@ -5597,10 +5691,10 @@ pub(crate) fn test_state(services: Services) -> AppState {
             Arc::clone(&services.roles),
         )
         .with_native_delivery(Arc::clone(&services.delivery)),
+        spawn_lock: services.spawn_waits.launch_lock(),
         services,
         auth: AuthRing::local("key".to_string()),
         machine_alias: "local".to_string(),
-        spawn_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_lock: Arc::new(tokio::sync::Mutex::new(())),
         double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_grace_ms: DEFAULT_TYPING_GRACE_MS,

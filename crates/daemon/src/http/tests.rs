@@ -4331,7 +4331,7 @@ async fn a_stopping_daemon_launches_nothing() {
     .await;
     let tmux = Arc::new(FakeTmux::new());
     services.tmux = tmux.clone();
-    services.spawn_waits.stop();
+    services.spawn_waits.stop().await;
     let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
     let (status, refused) = post_spawn(addr, &keyed_spawn(KEY, Some(5))).await;
     assert_eq!(status, 503, "{refused}");
@@ -4345,6 +4345,239 @@ async fn a_stopping_daemon_launches_nothing() {
             .is_empty()
     );
     server.abort();
+}
+
+/// R309-01: holds the row write of the launch keyed [`KEY`] until released,
+/// a deterministic point between `new_window` and the descriptor write.
+struct HeldRowWrite {
+    inner: Arc<FakeRegistry>,
+    reached: tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    release: tokio::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+}
+
+impl HeldRowWrite {
+    async fn hold(&self, descriptor: &SeatDescriptor) {
+        if descriptor.spawn_id.as_deref() != Some(KEY) {
+            return;
+        }
+        if let Some(reached) = self.reached.lock().await.take() {
+            let _ = reached.send(());
+        }
+        if let Some(release) = self.release.lock().await.take() {
+            let _ = release.await;
+        }
+    }
+}
+
+#[async_trait]
+impl Registry for HeldRowWrite {
+    async fn get(&self, seat: &SeatId) -> Result<Option<SeatDescriptor>> {
+        self.inner.get(seat).await
+    }
+    async fn put(&self, descriptor: SeatDescriptor) -> Result<Seq> {
+        self.put_reporting(descriptor).await.map(|(seq, _)| seq)
+    }
+    async fn put_reporting(
+        &self,
+        descriptor: SeatDescriptor,
+    ) -> Result<(Seq, pij_core::ports::PutBinding)> {
+        self.hold(&descriptor).await;
+        self.inner.put_reporting(descriptor).await
+    }
+    async fn put_reporting_keeping_parent(
+        &self,
+        descriptor: SeatDescriptor,
+    ) -> Result<(Seq, pij_core::ports::PutBinding)> {
+        self.hold(&descriptor).await;
+        self.inner.put_reporting_keeping_parent(descriptor).await
+    }
+    async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>> {
+        self.inner.list(filter).await
+    }
+    async fn tombstone(&self, seat: &SeatId, reason: &str) -> Result<Seq> {
+        self.inner.tombstone(seat, reason).await
+    }
+    async fn tombstone_if_unchanged(
+        &self,
+        expected: SeatDescriptor,
+        reason: String,
+    ) -> Result<Seq> {
+        self.inner.tombstone_if_unchanged(expected, reason).await
+    }
+    async fn set_activity(
+        &self,
+        seat: &SeatId,
+        state: pij_core::model::SystemState,
+        reason: Option<&str>,
+    ) -> Result<Option<Seq>> {
+        self.inner.set_activity(seat, state, reason).await
+    }
+}
+
+/// R309-01: a daemon whose launch of [`KEY`] stops at its row write until
+/// `release` is sent; `reached` fires when it gets there.
+async fn held_row_daemon() -> (
+    AppState,
+    Arc<FakeRegistry>,
+    Arc<FakeTmux>,
+    tokio::sync::oneshot::Receiver<()>,
+    tokio::sync::oneshot::Sender<()>,
+) {
+    let registry = Arc::new(FakeRegistry::new());
+    let mut services = test_services(
+        registry.clone(),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    let tmux = Arc::new(FakeTmux::new());
+    services.tmux = tmux.clone();
+    let (reached_tx, reached) = tokio::sync::oneshot::channel();
+    let (release, release_rx) = tokio::sync::oneshot::channel();
+    services.registry = Arc::new(HeldRowWrite {
+        inner: registry.clone(),
+        reached: tokio::sync::Mutex::new(Some(reached_tx)),
+        release: tokio::sync::Mutex::new(Some(release_rx)),
+    });
+    (
+        super::test_state(services),
+        registry,
+        tmux,
+        reached,
+        release,
+    )
+}
+
+fn spawn_launch(state: &AppState) -> tokio::task::JoinHandle<Response> {
+    let state = state.clone();
+    tokio::spawn(async move {
+        super::launch_seat(
+            &state,
+            keyed_spawn(KEY, None),
+            ExistingSeatPolicy { allow_absent: true },
+            "pij spawn",
+        )
+        .await
+    })
+}
+
+/// R309-01: the request is dropped after its pane is launched and before its
+/// row is written (a stop's drain cut, or a client gone). The row is still
+/// written, and the same key sent again waits for it and answers with that
+/// seat: one pane, one row.
+#[tokio::test]
+async fn a_request_cut_before_its_row_still_writes_it_and_a_resend_launches_nothing() {
+    let (state, registry, tmux, reached, release) = held_row_daemon().await;
+    let first = spawn_launch(&state);
+    reached.await.expect("the launch reached its row write");
+    assert_eq!(launches(&tmux), 1);
+    first.abort();
+    let _ = first.await;
+    let again = spawn_launch(&state);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!again.is_finished(), "the resend waits for the first row");
+    release.send(()).expect("release the row write");
+    let answer = tokio::time::timeout(Duration::from_secs(5), again)
+        .await
+        .expect("the resend is answered")
+        .expect("resend task");
+    assert_eq!(answer.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(answer.into_body(), usize::MAX)
+        .await
+        .expect("answer body");
+    let answer: serde_json::Value = serde_json::from_slice(&body).expect("answer JSON");
+    assert_eq!(answer["data"]["spawn_id"], KEY);
+    let rows = registry.list(SeatFilter::default()).await.unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(answer["data"]["id"], rows[0].id.as_str());
+    assert_eq!(launches(&tmux), 1, "launched once");
+}
+
+/// R309-01: the daemon's stop waits for a launch already past its check to
+/// write its row, and refuses any spawn after it.
+#[tokio::test]
+async fn the_stop_waits_for_a_launch_past_its_check_to_write_its_row() {
+    let (state, registry, tmux, reached, release) = held_row_daemon().await;
+    let first = spawn_launch(&state);
+    reached.await.expect("the launch reached its row write");
+    let waits = Arc::clone(&state.services.spawn_waits);
+    let stop = tokio::spawn(async move { waits.stop().await });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!stop.is_finished(), "the stop waits for the row");
+    release.send(()).expect("release the row write");
+    tokio::time::timeout(Duration::from_secs(5), stop)
+        .await
+        .expect("the stop returns once the row is written")
+        .expect("stop task");
+    assert_eq!(registry.list(SeatFilter::default()).await.unwrap().len(), 1);
+    let _ = first.await;
+    let refused = spawn_launch(&state).await.expect("refusal");
+    assert_eq!(refused.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(launches(&tmux), 1);
+}
+
+/// R309-01 with F211: the launch task outlives its request only to write the
+/// row. Once the request is gone it stops waiting, so its watch is left
+/// unsettled and a later bind hands the seat to the parent.
+#[tokio::test]
+async fn a_request_gone_while_waiting_leaves_its_seat_to_the_parent() {
+    let registry = Arc::new(FakeRegistry::new().with_seat(SeatDescriptor::new(
+        "pij-parent",
+        Harness::Omp,
+        "/abs/tree",
+    )));
+    let spine = Arc::new(FakeSpine::new());
+    let mut services = test_services(
+        registry.clone(),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        spine.clone(),
+    )
+    .await;
+    services.tmux = Arc::new(FakeTmux::new());
+    let state = super::test_state(services);
+    let waiting = {
+        let state = state.clone();
+        tokio::spawn(async move {
+            super::launch_seat(
+                &state,
+                keyed_spawn(KEY, Some(30)),
+                ExistingSeatPolicy { allow_absent: true },
+                "pij spawn",
+            )
+            .await
+        })
+    };
+    let mut row = None;
+    for _ in 0..200 {
+        row = registry.list_launched(KEY).await.unwrap().pop();
+        if row.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let row = row.expect("the launch wrote its row");
+    waiting.abort();
+    let _ = waiting.await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    state
+        .services
+        .spawn_waits
+        .bound(KEY, &row.id, row.pane.as_deref());
+    let mut reported = Vec::new();
+    for _ in 0..200 {
+        reported = spine
+            .tail(Some(&row.id), Seq(0))
+            .await
+            .expect("seat events")
+            .into_iter()
+            .filter(|event| event.kind == crate::spawn_waits::REPORTED)
+            .collect();
+        if !reported.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(reported.len(), 1, "the parent is told once");
 }
 
 /// F211: the spine record of a launch, as `/v1/spawn` writes it.

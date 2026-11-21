@@ -540,6 +540,8 @@ export class PijDaemonClient {
 	 * twice. A timeout, a reset or any reply is answered as before, and a call cancelled while it
 	 * waits is never sent again (S219-N001). F255: the keyed spawn route also sends again after
 	 * any other failed send and after a 503 (the daemon was stopping and launched nothing).
+	 * R309-02: the wait runs from the first failed send, not the first send, so a spawn that
+	 * waited longer than RESTART_WAIT_MS for its seat before a bounce cut it still sends again.
 	 */
 	private async waitingOutRestart(
 		path: string,
@@ -549,7 +551,7 @@ export class PijDaemonClient {
 		const route = path.split("?")[0] ?? path;
 		const waits = WAITS_OUT_RESTART.has(route);
 		const keyed = route === KEYED_RESEND_ROUTE;
-		const deadline = Date.now() + RESTART_WAIT_MS;
+		let deadline: number | undefined;
 		let budget = RESTART_WAIT_MS;
 		let pause = RESTART_FIRST_PAUSE_MS;
 		for (;;) {
@@ -560,6 +562,7 @@ export class PijDaemonClient {
 			} catch (error) {
 				if (!waits || signal?.aborted || !(keyed || isConnectionRefused(error))) throw error;
 			}
+			deadline ??= Date.now() + RESTART_WAIT_MS;
 			if (pause > budget || Date.now() + pause > deadline) {
 				throw new Error(
 					`the daemon is restarting or down: retry, or run pij-rs ping (${this.location.addr} refused connections for ${RESTART_WAIT_MS / 1_000} s)`,

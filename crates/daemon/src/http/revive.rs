@@ -455,7 +455,7 @@ pub(super) async fn revive_seat(
     // No pre-lock registry read decides anything: a second revive must observe
     // the new incarnation, not the same dead predecessor that the first
     // request is about to replace.
-    let spawn_guard = state.spawn_lock.lock().await;
+    let spawn_guard = Arc::clone(&state.spawn_lock).lock_owned().await;
     let prior = match state.services.registry.get(&request.id).await {
         Ok(Some(prior)) => prior,
         Ok(None) => {

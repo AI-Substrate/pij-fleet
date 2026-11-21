@@ -358,10 +358,13 @@ impl Daemon {
         // all of SHUTDOWN_DRAIN_TIMEOUT. A tmux read after the release (a
         // worker's last tick, a request still in flight) forks one client, as
         // any read does without a control client.
-        // F255: no spawn starts once the stop begins. One already past its
-        // check writes its row, and a keyed caller cut off in its wait sends
-        // it again to the next daemon, which answers with that seat.
-        self.spawn_waits.stop();
+        // F255: no spawn starts once the stop begins, and every launch already
+        // past its check writes its row before anything else stops (R309-01:
+        // its task holds the spawn lock until then, and `stop` takes it), with
+        // tmux still up. Bounded: a wedged launch never wedges the stop. A
+        // keyed caller cut off in its wait sends it again to the next daemon,
+        // which answers with that row's seat.
+        let _ = tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, self.spawn_waits.stop()).await;
         let _ = self.shutdown.send(true);
         let _ = self.governance_shutdown.send(());
         let tmux = Arc::clone(&self.tmux);
