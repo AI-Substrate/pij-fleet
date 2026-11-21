@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a20075-f57e-76c0-b29a-ec5a43df6092",
+				"date": "2026-11-22",
+				"head": "8f705b4ee8308018e235f2c64ed77912e3bc8133",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:334",
+				"writer": "pij-vertical-marmot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"B334-R1-01: refresh the receiver edge at the final restart submission boundary; retain the renewal-between-pane-reads regression."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 334",
+					"exit_code": 0,
+					"log": "FINAL at 8f705b4ee8308018e235f2c64ed77912e3bc8133; five exact-head CI checks SUCCESS"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib review334_ -- --nocapture",
+					"exit_code": 101,
+					"log": "Isolated exact-head source: renewal during settle typed 1 restart, expected 0; post-renewal admission passed; reproduced twice with production files unchanged."
+				},
+				{
+					"command": "three isolated just shared-build guard mutants",
+					"exit_code": 101,
+					"log": "Unreadable-as-idle, draft-as-idle and stale-row-at-drain each killed by an existing behavioral assertion; restored afterwards."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# BLOCK - #334 round 1\n\nRole: reviewer/334. Head: 8f705b4ee8308018e235f2c64ed77912e3bc8133.\n\n## B334-R1-01: renewal during the drain's settle still types an obsolete restart\n\n`crates/daemon/src/pointer/worker.rs:419-440` reads the receiver edge and runs\n`restart_overtaken` before `copilot_control_held` waits 250 ms between its pane\nreads (`worker.rs:552-565`). The same earlier edge is then reused by the\nduplicate brake. There is no receiver-edge refresh before command submission.\n\nReproduction on an isolated exact-head source copy, with no product-source\nchanges: enqueue the parent's restart while the latest edge is a lapse and\nthe row remains Working; let the pane show an empty idle composer; publish\nrenewed after the first launch-free capture, during the settle. The control\nthen types `/restart`: expected 0 submissions, observed 1. This models a\nhuman restart renewing the extension while an older parent control is being\nclaimed, or a restarted drain without the earlier in-memory duplicate entry.\nIt violates the promised \"queued before renewal -> fail untyped\" rule and\ncan restart an already recovered Copilot again.\n\nRequired fix: refresh the receiver edge after the slow checks at the final\nsubmission boundary and apply the overtaken-control brake to that fresh edge.\nKeep the narrow regression that renews specifically between pane reads, plus\nthe positive case admitting a new restart after renewal. No new policy is\nneeded: these are one-directional brakes, not policies.\n\n## Other requested conclusions\n\n- The supported captured screens classify correctly: both composer layouts,\n  narrow footer, status text other than Working, multi-line drafts, unknown\n  rows and missing/mismatched composer boundaries. A status lacking the busy\n  markers and all footer markers holds as unreadable. No busy/draft-to-Idle\n  misclassification was reproduced on the supported fixtures; this does not\n  certify arbitrary future Copilot layouts.\n- The drain selects lapsed from the latest spine receiver edge, but only at\n  the initial read: B334-R1-01 is the missing refresh. F261 separately rechecks\n  the in-memory renewal before recording/queuing.\n- A restart admitted after a renewal still types: the independent positive\n  regression passes. Ordinary heartbeat renewals do not emit a new renewed\n  edge unless ending a told lapse (`delivery/mod.rs:509-533`).\n- The duplicate grace lasts 60 seconds in daemon memory, not across a daemon\n  restart. `worker.rs:569-596` explicitly describes that limit; the API calls\n  it \"in the daemon's memory\" and says that past 60 seconds it types as before.\n- The merge is clean. `git diff --check` passes; the difficulty ledger retains\n  D-F276-1, D-F276-2 and D-F278-1, adding only D-F279-1 against main 3707709e.\n- Cost from source: no new timer, loop or daemon launch site. Existing drain\n  claims are at most one per seat per 5-second pass, with 1-second to 5-minute\n  backoff. Each Copilot control adds a latest-edge read; lapsed claims take\n  one or two launch-free captures in place of registry-state reads. A restart\n  against a renewed edge also reads its admission. `capture_without_launch`\n  uses `query_live`, which never starts/replaces a client and returns None\n  when unavailable, causing HOLD. The independent performance role owns live\n  rate receipts and the after-deploy measurement.\n\n## Verification\n\nAll cargo commands used the existing target through `just shared-build` at\nniceness 19, four jobs, serialized by its lock. No live seat was restarted,\ntyped into, or bounced. Product worktree remains clean and at the exact head.\n\n| Command / proof | Result |\n|---|---|\n| `just pr-freeze 334` | FINAL at the full head above; all five exact-head CI checks SUCCESS |\n| `just shared-build -- test --locked -p pij-harnesses copilot_turn` | 3 passed |\n| `just shared-build -- test --locked -p pij-daemon --lib auth_recovery` | 29 passed |\n| `just shared-build -- clippy --locked -p pij-harnesses -p pij-daemon --all-targets -- -D warnings` | macOS pass |\n| `git diff --check 3707709e...HEAD` | pass |\n| `harness boot` | advisory ready:false; no local vitest |\n| `harness checks --quick` | exit 1: eight TS/tooling checks unavailable/failing in the dependency-free C25 review tree; native contracts and skill check pass; heavy/live stages skipped |\n| Isolated `just shared-build -- test --locked -p pij-daemon --lib review334_ -- --nocapture` | renewal-during-settle FAIL: 1 typed, expected 0; restart-admitted-after-renewal PASS |\n\nIndependent mutants, each isolated and reverted after its run:\n\n| Mutant | Existing test killing it | Result |\n|---|---|---|\n| Unknown footer row -> Idle, not Unreadable | `copilot_turn::tests::idle_needs_the_footer_under_an_empty_composer` | exit 101; Idle != Unreadable |\n| Non-empty composer -> Idle, not Draft | `copilot_turn::tests::text_in_the_composer_is_a_draft` | exit 101; Idle != Draft |\n| A lapsed drain also consults the stale published row | `auth_recovery::tests::a_restart_control_waits_for_a_lapsed_seats_pane` | exit 101; stale Working row held: 0 typed, expected 1 |\n\n## Harness lesson\n\nmagicWand: extend the existing recovery suite with a fake-tmux capture barrier\nthat publishes a receiver renewal between the two pane reads. Testing renewal\nonly before a drain claim misses the asynchronous gap this brake introduces.\nThe isolated review regression demonstrates the exact failing sensor to retain.\n\ndifficulties: the dependency-free review tree cannot satisfy the full TS\ninventory under C25; the first recovery selector used its source-file name\nand selected zero tests, corrected to the actual `auth_recovery` module (29).\nShared target contention was handled by the existing lock, never another target.\nNo product or governance ledger was edited by hand.\n\n## Minimal regression to retain\n\nAdd to the existing `auth_recovery_tests.rs` suite; it uses that suite's fleet,\nedge, parent-restart and drain helpers, and never accesses a live pane:\n\n```rust\n#[tokio::test]\nasync fn review334_renewal_during_settle_closes_restart_untyped() {\n    let fleet = fleet(SystemState::Working, None).await;\n    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;\n    parent_restart(&fleet, \"parent-before-renewal\").await;\n    let worker = drain(&fleet);\n    let renew = async {\n        let started = Instant::now();\n        while !fleet.tmux.calls().iter().any(|call| {\n            call == &format!(\"capture_without_launch:{PANE}\")\n        }) {\n            assert!(started.elapsed() < Duration::from_secs(5));\n            tokio::time::sleep(Duration::from_millis(1)).await;\n        }\n        edge(&fleet, crate::delivery::NATIVE_RECEIVER_RENEWED, Some(SEAT)).await;\n    };\n    let (result, ()) = tokio::join!(worker.drain_once(), renew);\n    result.unwrap();\n    assert_eq!(restarts_typed(&fleet), 0);\n    assert!(controls(&fleet).await.is_empty());\n}\n```\n"
+		}
+	]
+}
