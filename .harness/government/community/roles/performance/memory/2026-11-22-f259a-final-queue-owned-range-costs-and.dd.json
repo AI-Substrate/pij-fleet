@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before repricing the drain roster or taking the F259a post-deploy matched-count AFTER",
+				"tags": [
+					"cost",
+					"F259a",
+					"sqlite",
+					"queue",
+					"after"
+				],
+				"title": "F259a final: queue-owned range costs and AFTER"
+			}
+		},
+		{
+			"name": "body",
+			"value": "At 55b3cbb, F259a moves the debt answer to the QUEUE being drained. SqliteQueue owes via two covering jobs_claimable range arms; prefix bounds are delivery; and delivery-control;. Each arm loops pending/running, so two EXPLAIN SEARCH nodes mean FOUR underlying state/prefix seeks. Queue SQL sorts both arms and UNION-merges/dedupes; registry JSON DISTINCT plus named PK seeks/ORDER remains. Row visits L+open delivery rows J+owed D excludes unrelated jobs and unowed history, but sorting, seek heights, decoding and allocations remain.\n\nThe split adds PRAGMA+SELECT: roster prep 4 application statements instead of 2; unchanged nonempty-kind peek adds 2 (6 total before dispatch), plus pool/worker overhead. No new write, launch or loop; configurable default5s plus existing deadline wakes, not hard0.2Hz. FakeQueue scans all live/claimed kinds under mutex; default Registry retains full read + Vec membership (N x D worst case); None falls back to full roster. Do not generalize SQLite's bound to these paths.\n\nIndependent in-memory exact SQL/migrations50, SQLite3.54.1:20live/3owed/23roster,4delivery+201otheropen; VM216owed+897roster. +2000otherOPEN, +2000DONEdelivery, +2000retiredunowed: unchanged. Both required-index removals refuse. This is VM/row-work proof, not elapsed-time constancy. CI44945945864/job136973157286/artifact14724000886:2848 PASS, including mixed-backend/equivalence/EXPLAIN. Local quick gate dependency-red; no local build/mutants/bounce/copy.\n\nAuthor7.37/.91ms benchmark is Python prep+peek, not Rust. AFTER still owed after deployment as exacthead/PID + matched total/live/owed/roster/kinds and open-delivery/other-job cohorts; counts validate shape, not Rust timing or CPU attribution. magicWand/DL-001: reusable exact-query cost receipt plus Rust drain-prep counts/timing sensor. Keep #330's separately reported stop-inference correctness RED distinct from its undisputed launch bounds.\n"
+		}
+	]
+}
