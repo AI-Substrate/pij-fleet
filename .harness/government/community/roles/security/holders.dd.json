@@ -1008,6 +1008,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-dynamic-alligator",
 					"why": "verdict on #306 (F249)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T02:24:03.178Z",
+					"harness": "copilot",
+					"harness_session": "f28cd4ff-f0b1-4c95-af70-4ae77babe36d",
+					"instance_key": "307",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-visual-wildfowl",
+					"why": "verdict on #307 (F250)"
 				}
 			]
 		}
