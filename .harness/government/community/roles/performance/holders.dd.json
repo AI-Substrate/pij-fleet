@@ -734,7 +734,10 @@
 					"harness_session": "500ac256-4ce2-4065-b691-b2fc9e2a01ce",
 					"instance_key": "318",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "#318/#321 authorized live AFTER notes published and verified (25d142ad,59236faa); cohort/cause limits explicit; PM summaries sent",
+					"released_by": "pij-neat-dove",
 					"seat": "pij-neat-dove",
+					"to": "2026-11-21T15:08:03.908Z",
 					"why": "post-deploy AFTER for #318 (fresh seat; elephant cold)"
 				},
 				{
@@ -744,7 +747,10 @@
 					"harness_session": "500ac256-4ce2-4065-b691-b2fc9e2a01ce",
 					"instance_key": "321",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "#318/#321 authorized live AFTER notes published and verified (25d142ad,59236faa); cohort/cause limits explicit; PM summaries sent",
+					"released_by": "pij-neat-dove",
 					"seat": "pij-neat-dove",
+					"to": "2026-11-21T15:08:03.908Z",
 					"why": "post-deploy AFTER for #321 (fresh seat; elephant cold)"
 				}
 			]
