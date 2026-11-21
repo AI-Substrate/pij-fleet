@@ -1671,6 +1671,16 @@
 					"seat": "pij-cultural-falcon",
 					"to": "2026-11-21T10:11:23.293Z",
 					"why": "F261 lapse edge triggers auth_recovery extension-lost (8h Entra loss)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T21:39:44.482Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f279",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F279 GO (prime 2026-11-22): lapsed receiver stale busy state blocks restart"
 				}
 			]
 		}
