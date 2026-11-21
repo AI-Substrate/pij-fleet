@@ -946,6 +946,16 @@
 					"seat": "pij-uncertain-antelope",
 					"to": "2026-11-21T00:12:59.641Z",
 					"why": "verdict on #301 (issue #90 daemon.log bound)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T00:43:54.698Z",
+					"harness": "copilot",
+					"harness_session": "1cc7bdd2-6ced-4485-aaee-7b318980cf71",
+					"instance_key": "303",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-overseas-eel",
+					"why": "verdict on #303 (F252 fleet-map standalone)"
 				}
 			]
 		}
