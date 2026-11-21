@@ -1362,6 +1362,16 @@
 					"seat": "pij-selected-deer",
 					"to": "2026-11-21T22:15:30.023Z",
 					"why": "#333 F278 R1 verdict"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T23:34:20.464Z",
+					"harness": "copilot",
+					"harness_session": "f6c77f53-f7e9-4caf-8585-f3b11e698569",
+					"instance_key": "334",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-intense-kingfisher",
+					"why": "#334 F279 R1 verdict (fresh seat; C35-approved)"
 				}
 			]
 		}
