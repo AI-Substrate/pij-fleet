@@ -2539,6 +2539,16 @@
 					"seat": "pij-quiet-moth",
 					"to": "2026-11-21T00:12:59.641Z",
 					"why": "verdict on #301 (issue #90 daemon.log bound)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T00:43:53.924Z",
+					"harness": "copilot",
+					"harness_session": "3ba3d0e7-9394-4ce2-b413-ad14d00a5177",
+					"instance_key": "303",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-smooth-wildebeest",
+					"why": "verdict on #303 (F252 fleet-map standalone)"
 				}
 			]
 		}
