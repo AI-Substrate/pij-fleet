@@ -2573,7 +2573,10 @@
 					"harness_session": "e890c89b-8a69-4dfa-8467-db4964c8dca3",
 					"instance_key": "304",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #304 merged (eb1ab2c60a8a)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-northern-cricket",
+					"to": "2026-11-21T01:33:36.526Z",
 					"why": "verdict on #304 (#42 OMP worktree spawn)"
 				},
 				{

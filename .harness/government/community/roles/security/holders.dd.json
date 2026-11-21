@@ -980,7 +980,10 @@
 					"harness_session": "3f997bcc-d475-49a2-8481-d6e2701bccf2",
 					"instance_key": "304",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #304 merged (eb1ab2c60a8a)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-sufficient-angelfish",
+					"to": "2026-11-21T01:33:36.526Z",
 					"why": "verdict on #304 (#42 OMP worktree spawn)"
 				},
 				{
