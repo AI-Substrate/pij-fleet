@@ -28,10 +28,24 @@
 #                       unless that is already set (F126)
 #   PIJ_ID              seat id for the owner line; else $PIJ_SESSION_ID (set in
 #                       every harness seat), else `pij-rs whoami`, else $USER
+#   PIJ_SHARED_BUILD_TEST_LIMIT
+#                       the longest one `cargo test` command may run, in whole
+#                       minutes (or seconds with an s suffix), stretched by
+#                       PIJ_TEST_TIME_SCALE; 0 for none. Default 20 (F273).
 #
 # Exit: cargo's status, or 2 usage, 3 disk floor, 4 --timeout, 5 stale lock,
 # 6 the --copy-out copy failed, 7 the build stamp could be neither written
-# nor removed.
+# nor removed, 8 a `cargo test` ran past its limit.
+#
+# F273: one hung test held the lock for 41 minutes with four builds waiting.
+# A `cargo test` past PIJ_SHARED_BUILD_TEST_LIMIT is stopped: the script names
+# every process still running in cargo's own process group (the test binary,
+# and any child it re-executed, by its command line), stops that group and
+# only it (never anything matched by name), and releases the lock. A POLICY on
+# elapsed time, deciding only over this run's own group. Cost: one sleeping
+# watchdog (a subshell and its /bin/sleep, in their own group) per test
+# command, gone when it ends; one ps only when the limit is hit.
+#
 # A stale lock (its owner pid is gone) is reported with the command that clears
 # it and never cleared here: whether that build is really over is the caller's
 # call, not this script's.
@@ -146,6 +160,32 @@ export CARGO_BUILD_JOBS="$JOBS"
 export RUST_TEST_THREADS="${RUST_TEST_THREADS:-$JOBS}"
 printf 'shared-build: cargo jobs: %s (PIJ_CARGO_JOBS), test threads: %s (RUST_TEST_THREADS)\n' "$CARGO_BUILD_JOBS" "$RUST_TEST_THREADS" >&2
 
+# F273: the test limit, in seconds, scaled; empty for none.
+TEST_LIMIT="${PIJ_SHARED_BUILD_TEST_LIMIT:-20}"
+case "$TEST_LIMIT" in
+0) test_limit_secs="" ;;
+[1-9]*s) test_limit_secs=${TEST_LIMIT%s} ;;
+[1-9]*) test_limit_secs=$TEST_LIMIT ;;
+*) test_limit_secs="bad" ;;
+esac
+case "$test_limit_secs" in
+"") ;;
+*[!0-9]*) refuse 2 "PIJ_SHARED_BUILD_TEST_LIMIT takes whole minutes (or seconds with an s suffix), or 0 for none, not '$TEST_LIMIT'" ;;
+*)
+	case "$TEST_LIMIT" in
+	*s) ;;
+	*) test_limit_secs=$((10#$test_limit_secs * 60)) ;;
+	esac
+	scale="${PIJ_TEST_TIME_SCALE:-}"
+	scale="${scale// /}"
+	if [ -n "$scale" ] && [ "$scale" != 1 ]; then
+		test_limit_secs=$(/usr/bin/awk -v s="$scale" -v t="$test_limit_secs" \
+			'BEGIN { if (s !~ /^[0-9]+(\.[0-9]+)?$/ || s + 0 < 1) exit 1; printf "%d", t * s + 0.5 }') ||
+			refuse 2 "PIJ_TEST_TIME_SCALE must be a number of at least 1, not '$scale'"
+	fi
+	;;
+esac
+
 target="${PIJ_SHARED_TARGET:-}"
 [ -n "$target" ] || refuse 2 "PIJ_SHARED_TARGET is not set: name the shared cargo target directory (absolute)"
 case "$target" in
@@ -225,6 +265,8 @@ seat=$(seat_id)
 
 held=0
 child=""
+watchdog=""
+overran=0
 
 release() {
 	if [ "$held" = 1 ]; then
@@ -251,7 +293,17 @@ drain() {
 	done
 }
 
+# F273: the test limit's watchdog runs in its own process group (a subshell
+# and its sleep); this stops that group, which is this script's own job.
+stop_watchdog() {
+	[ -n "$watchdog" ] || return 0
+	kill -TERM -- "-$watchdog" 2>/dev/null
+	wait "$watchdog" 2>/dev/null
+	watchdog=""
+}
+
 on_signal() {
+	stop_watchdog
 	if [ -n "$child" ]; then
 		drain "$child"
 		wait "$child" 2>/dev/null
@@ -264,6 +316,7 @@ on_signal() {
 # Any other exit with cargo running (an untrapped signal such as USR1, which
 # bash still runs this trap for) drains its group before the lock goes (F48).
 on_exit() {
+	stop_watchdog
 	[ -z "$child" ] || drain "$child"
 	release
 }
@@ -274,6 +327,8 @@ trap 'on_signal 143' TERM
 # A closed terminal sends HUP: cargo runs in its own group and would otherwise
 # keep building, holding the lock's target, with nothing waiting (F48).
 trap 'on_signal 129' HUP
+# The watchdog's signal that a test command ran past its limit (F273).
+trap 'overran=1' USR2
 
 # Free KiB on the volume holding the target (or its nearest existing parent).
 # Builtins only past the one df: this runs once per poll while waiting.
@@ -414,19 +469,55 @@ niced=(/bin/sh "$here/nice19.sh")
 
 # One cargo command, niced, in its own process group, drained after. In the
 # background under `wait`, so a signal is handled at once rather than after
-# cargo finishes; `set -m` gives the job its own process group.
+# cargo finishes; `set -m` gives the job its own process group. A `cargo test`
+# gets a watchdog (F273), in its own group too: past the limit it signals
+# this script, whose trap ends the `wait`.
+USR2_NUMBER=$(kill -l USR2)
 run_cargo() { # <cargo args>...
 	local status
 	set -m
 	${niced[@]+"${niced[@]}"} cargo "$@" &
 	child=$!
+	if [ "$1" = test ] && [ -n "$test_limit_secs" ]; then
+		overran=0
+		(/bin/sleep "$test_limit_secs" && kill -USR2 "$$") &
+		watchdog=$!
+	fi
 	set +m
-	wait "$child"
-	status=$?
+	while :; do
+		wait "$child"
+		status=$?
+		[ "$overran" = 1 ] || break
+		overran=0
+		kill -0 -- "-$child" 2>/dev/null && overrun "$@"
+		# Its group ended as the limit fell: a wait the trap cut short
+		# waits again for cargo's own status.
+		[ "$status" -eq $((128 + USR2_NUMBER)) ] || break
+	done
+	stop_watchdog
 	# Whatever cargo left running in its group must not outlive the hold.
 	drain "$child"
 	child=""
 	return "$status"
+}
+
+# F273: name what still runs in cargo's group (the test binary, and any child
+# it re-executed, by command line), stop that group and only it, and leave
+# the lock to the EXIT trap. Exit 8.
+overrun() { # <cargo args>...
+	local running="" pgid rest
+	while read -r pgid rest; do
+		[ "$pgid" = "$child" ] && running="$running
+  $rest"
+	done < <(/bin/ps -ax -o pgid=,pid=,etime=,command=)
+	printf 'shared-build: cargo %s ran past its test limit of %ss (PIJ_SHARED_BUILD_TEST_LIMIT=%s, PIJ_TEST_TIME_SCALE=%s); still running in its process group %s (pid, elapsed, command):%s\n' \
+		"$*" "$test_limit_secs" "$TEST_LIMIT" "${PIJ_TEST_TIME_SCALE:-1}" "$child" "$running" >&2
+	printf 'shared-build: stopping that process group, and only it, then releasing %s\n' "$lock" >&2
+	stop_watchdog
+	drain "$child"
+	wait "$child" 2>/dev/null
+	child=""
+	exit 8
 }
 
 export CARGO_TARGET_DIR="$target"

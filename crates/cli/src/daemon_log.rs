@@ -54,6 +54,13 @@ const TEMPLATE_SHOWN: usize = 240;
 pub(crate) const ROTATE_AT: u64 = 16 * 1024 * 1024;
 /// Rotated files kept: `daemon.log.1` (newest) to `daemon.log.{KEEP}`.
 pub(crate) const KEEP: usize = 3;
+/// F273: the longest one read of a stream waits. macOS sometimes loses the
+/// wakeup a writer's `shutdown(Write)` sends to a reader already blocked in
+/// `recv` (both ends then read "not connected", and the reader sleeps on):
+/// about 1 in 80,000 under load, measured. The next read sees the end at
+/// once, so a bounded read turns that hang into at most this delay. One idle
+/// wake a second per stream (two per daemon); no launch.
+pub(crate) const READ_RECHECK: Duration = Duration::from_secs(1);
 
 pub(crate) struct DaemonLog {
     stdout: LogStream,
@@ -164,11 +171,12 @@ impl Drop for LogStream {
     }
 }
 
-/// Read one stream's lines and hand each to the shared sink. While any repeat
-/// is being counted the read waits at most one window, so a burst that
-/// stops still gets its summary; otherwise it blocks with no timer at all.
+/// Read one stream's lines and hand each to the shared sink. A read waits at
+/// most [`READ_RECHECK`] (F273), and while any repeat is being counted at
+/// most one window, so a burst that stops still gets its summary.
 fn pump(input: UnixStream, shared: &Mutex<Shared>, output: usize) -> io::Result<()> {
-    let mut armed = false;
+    let mut armed = READ_RECHECK;
+    input.set_read_timeout(Some(armed))?;
     let mut input = BufReader::new(input);
     let mut line = Vec::new();
     loop {
@@ -190,15 +198,17 @@ fn pump(input: UnixStream, shared: &Mutex<Shared>, output: usize) -> io::Result<
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             Err(error) => return Err(error),
         }
-        let (counting, window) = {
+        let wait = {
             let shared = lock(shared);
-            (shared.repeats.counting(), shared.repeats.window)
+            if shared.repeats.counting() {
+                shared.repeats.window.min(READ_RECHECK)
+            } else {
+                READ_RECHECK
+            }
         };
-        if counting != armed {
-            input
-                .get_ref()
-                .set_read_timeout(counting.then_some(window))?;
-            armed = counting;
+        if wait != armed {
+            input.get_ref().set_read_timeout(Some(wait))?;
+            armed = wait;
         }
     }
 }
@@ -1009,7 +1019,12 @@ mod tests {
         }
         let root = pij_testkit::fresh_dir("pij-daemon-log-panic");
         let path = root.join("daemon.log");
-        let output = Command::new(std::env::current_exe().unwrap())
+        // F273: wait on the child itself, bounded, its stderr in a file: a
+        // child that never exits fails this test loudly, naming itself,
+        // instead of holding the run (one hung here 41 min, its log readers
+        // asleep in `recv` after their streams had ended).
+        let stderr_path = root.join("child.stderr");
+        let mut child = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "daemon_log::tests::captures_raw_panic_output_and_flushes_during_unwind",
@@ -1017,13 +1032,34 @@ mod tests {
             ])
             .env(CHILD_LOG, &path)
             .env("RUST_BACKTRACE", "0")
+            .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .output()
+            .stderr(File::create(&stderr_path).unwrap())
+            .spawn()
             .unwrap();
+        let budget = pij_testkit::time::scaled(Duration::from_secs(60));
+        let started = Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if started.elapsed() >= budget {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "the re-exec'd child (pid {}) had not exited after {:?} of a {budget:?} budget, so it was killed; its stderr: {}; its log: {}",
+                    child.id(),
+                    started.elapsed(),
+                    fs::read_to_string(&stderr_path).unwrap_or_default(),
+                    fs::read_to_string(&path).unwrap_or_default()
+                );
+            }
+            thread::sleep(Duration::from_millis(20));
+        };
         assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
+            status.success(),
+            "{status}: {}",
+            fs::read_to_string(&stderr_path).unwrap_or_default()
         );
         let lines = payloads(&fs::read(&path).unwrap());
         for expected in [
