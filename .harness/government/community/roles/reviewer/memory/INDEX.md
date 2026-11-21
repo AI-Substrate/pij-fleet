@@ -157,5 +157,6 @@
 - [2026-11-21 Recovery followers need durable current-lapse proof](2026-11-21-recovery-followers-need-durable-current.dd.md): Before reviewing a lease-edge consumer, daemon-boot catch-up, or filtered broadcast recovery (review, copilot, receiver, recovery, proof)
 - [2026-11-21 Shared-build must run from the manifest source tree](2026-11-21-shared-build-must-run-from-the-manifest.dd.md): When reviewing in an isolated archive or testing with an out-of-tree Cargo manifest (review, shared-build, proof, artifacts)
 - [2026-11-21 Socket absence needs a complete holder proof](2026-11-21-socket-absence-needs-a-complete-holder.dd.md): Before reviewing Unix-socket deletion, lsof pathname handling, or a process-fd census (review, sockets, liveness, negative-evidence, f248)
+- [2026-11-21 Whoami boundaries need a real pool wait](2026-11-21-whoami-boundaries-need-a-real-pool-wait.dd.md): When reviewing per-stage handler telemetry or task-local timing boundaries (review, telemetry, pool, mutation, f258)
 - [2026-11-21 Worktree seats load branch-local extensions](2026-11-21-worktree-seats-load-branch-local.dd.md): When reviewing OMP cwd, extension precedence or daemon-extension skew (review, omp, worktree)
 <!-- /pij:generated -->
