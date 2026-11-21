@@ -1,0 +1,69 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ffa3-bc1a-7023-8845-f3af590a9b72",
+				"date": "2026-11-22",
+				"head": "6d855e82239fac4abf1f064505bc1f5b35ee9b04",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:330",
+				"writer": "pij-written-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"B330-R2-01: failure attribution can abandon a healthy tap after a valid previous verification failure; do not equate first still-attached pane with stopped command.",
+				"C34 follow-up: carry grace-only wording; batch-write bound excludes fallback/control-start processes."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 330",
+					"exit_code": 0,
+					"log": "FINAL6d855e82239fac4abf1f064505bc1f5b35ee9b04,CLEAN,latestchecks pass"
+				},
+				{
+					"command": "just shared-build -- clippy --locked -p pij-tmux -p pij-daemon --all-targets -- -D warnings",
+					"exit_code": 0,
+					"log": "pr330-r2-baseline.log: macOS clippy, original2probes and committed300distinct/exited/foreign controls passed"
+				},
+				{
+					"command": "actual adapter stop-inference recovery witness",
+					"exit_code": 101,
+					"log": "pr330-r2-stop-inference.log: earlier closed/unmarked retained pane errors; later LIVE pane wrongly marked failed and stays piped/marked"
+				},
+				{
+					"command": "same copied test with private closed-first causal control",
+					"exit_code": 0,
+					"log": "pr330-r2-causal-control.log:all3resultsOk, laterlivepipe0/unmarked"
+				},
+				{
+					"command": "private copied executable with no-chunk and abort-first mutants",
+					"exit_code": 101,
+					"log": "pr330-r2-no-chunk.log:commandtooLong;pr330-r2-abort-first.log:1vs2launches. Both intended mutants killed."
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "pr330-r2-harness-checks.log:8dependency/ambient failures; separate exact-head CI proof under C25"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: BLOCK\n\nPR #330, round 2 of 2, exact head 6d855e82239fac4abf1f064505bc1f5b35ee9b04.\nAnswers 01a1ffa3-bc1a-7023-8845-f3af590a9b72.\n\nThe original oversized-command and ordinary exited-middle witnesses now pass. One requested stop-identification check still produces a real wrong result: a later healthy tap is abandoned and falsely named as the failed command. This is an actual correctness blocker within the intended failed-verification recovery path, not an optional inventory or hardening request. No broad third review round is requested.\n\n## B330-R2-01 [P2]: a converged earlier pane can cause a healthy pane to be dropped\n\nLocations: crates/tmux/src/lib.rs:1629-1632,1671-1689.\n\nThe failed-launch branch assumes that the first chunk pane still piped/marked is where tmux stopped. That does not hold when an earlier pane's command can fail even though its tap is already closed and its marker already clear.\n\nThe state is reachable through existing, supported recovery:\n\n1. A live tap's detach command succeeds, but its verifying read is unavailable. The adapter correctly returns Err and retains its local ownership/sink rather than assuming completion.\n2. The actual tap is now pipe=0, marker absent. Its process exits with remain-on-exit, leaving that pane listed. The same adapter still owns the retained local entry.\n3. Detach is called with that earlier pane followed by two live owned taps. The earlier pane is placed in `pending` despite its already-converged state. tmux stops there with `target pane has exited`.\n4. Verification sees the earlier pane unpiped/unmarked, and the next live pane still attached. The code removes that LIVE pane as the purported failed command, returns an error naming it, and never detaches it.\n\nIndependent actual-adapter result at the unmodified head: `[Ok(()), Err(wrong live pane), Ok(())]`; the middle LIVE pane retains pipe=1, its marker and sink. The fixture uses one controlled verification-read failure and a real private tmux process exit, not forged ownership or invented pane output.\n\nCausal control: changing only the private review copy to release already-verified closed/unmarked local taps before constructing commands makes the same fixture return `[Ok(()), Ok(()), Ok(())]`, with the live tap detached. This diagnoses the assumption; it is not a product patch.\n\nRequired: do not attribute an earlier command failure to a later attached pane. Handle already-converged retained entries before sending, or otherwise establish the actual stopped command while preserving the live suffix. Current failure isolation is therefore not fully clear.\n\n## Checks that passed\n\n- B330-01: 8 KiB chunking resolves the original transport limit. `detach_pair`/`detach_args` use the same argument sequence; `detach_chunk_len` counts each string's actual bytes plus NUL and each inter-pair separator plus NUL. Legal tmux numeric pane IDs are ASCII, so `str.len` matches the packed argument bytes, and longer IDs reduce chunk count. Half of the current 16 KiB message ceiling leaves protocol-field headroom.\n- Both ORIGINAL reviewer probes passed at this head. The minimum-width/repeated-ID 300-entry probe completed in one write/31.876417 ms because the first chunk's verified state resolved duplicate entries. The retained-exited-middle probe completed in two writes/58.274417 ms, with both live sinks removed.\n- The separate committed 300-DISTINCT-tap test passed its two-to-four distinct-write, all-detached checks. The committed exited-middle/singleton test and 32-pane foreign-tap test passed.\n- Both requested mutants are killed: disabling chunking restores `command too long`; aborting every pending pane on the first failure gives one launch where the exited-middle test requires two.\n- Ownership and argument construction remain unchanged in safety. Pane IDs are separate arguments, and tap sink paths are not shell command text.\n- A vanished pane can be pruned from the verifying snapshot. However, the `any vanished` heuristic is not proof of the exact failing clause, and the first-attached inference has the concrete failure above. The launch-count bound alone does not prove correct failure attribution.\n- The main merge is clean and retains the previously reviewed F267 shutdown wiring, observer, phase cancellation and alarm rendering. The intersecting fake-queue/no-sender merge changes do not overwrite the detach API. No unrelated re-review was conducted.\n\n## C34 follow-up\n\nCarry the existing wording note: the cost table still says the two-second bound caps wall time, although the source and other text correctly describe convergence grace. It does not interrupt blocking calls. The aggregate bound is batch WRITES, not all fallback/control-start processes, and about 130 panes is byte/ID-width dependent. These are nonblocking carried notes, not a request for round 3.\n\nThe provided fleet BEFORE remains 4731 ms at about 145 panes; AFTER is owed after an authorized deploy. No fleet bounce, working-seat renewal/lapse or live tap mutation was induced.\n\n## Evidence\n\n| Proof | Result |\n|---|---|\n| `just pr-freeze 330` | FINAL at the full head; CLEAN; five latest checks passed |\n| `just shared-build -- clippy --locked -p pij-tmux -p pij-daemon --all-targets -- -D warnings` | macOS passed |\n| `just shared-build -- test --locked -p pij-tmux --test control_mode review_ -- --nocapture --test-threads=1` before adding the new stop probe | Both original reviewer witnesses passed |\n| Committed 300-distinct, exited-middle/singleton, and foreign-32 exact selectors | All passed |\n| `just shared-build -- test --locked -p pij-tmux --test control_mode review_a_previous_verify_failure_does_not_blame_a_later_live_pane -- --nocapture` | Exit 101, intended healthy-pane-attribution assertion failed; live pipe/marker/sink retained |\n| Same copied executable, private closed-first causal control | Passed; all three results Ok and later live state 0/unmarked |\n| Copied executable, no-chunk mutant | Exit 101 at the intended 300-tap assertion, `command too long` |\n| Copied executable, abort-first mutant | Exit 101: one launch versus two |\n| CI 44942090241/job 136961315539, successful-upload artifact 14721972507 | Three focused committed corrected-path tests independently parsed as passed |\n| `harness boot`; `harness checks --quick` | Boot advisory ready=false; quick gate exit 1 from eight dependency/ambient-tool failures; separate C25 exact-head CI proof |\n\nAll local builds/tests used an isolated exact-head archive through canonical shared-build, niceness 19, four jobs and no incremental compilation. The wrong-result witness ran before temporary mutation/causal-control selectors were added. The test binary was copied out while the build lock was held; both mutation-off controls and the original witnesses passed separately.\n\nTemporary source edits are restored byte-identically before named cleanup; the original product checkout remains clean. Retained session receipts: pr330-r2-baseline.log, pr330-r2-stop-inference.log, pr330-r2-causal-control.log, pr330-r2-no-chunk.log, pr330-r2-abort-first.log and pr330-r2-harness-checks.log. Expanded regression source is preserved as pr330-r2-stop-regression.rs.\n\nHarness magicWand: carry already-converged retained entries through failure-isolation tests. A fresh attached tap and a retained entry after an unavailable verification are different valid states; a write-count bound is not a correctness oracle for which pane failed.\n\nHold reviewer/330 until merge. Reviewer/331 round 2 follows.\n"
+		}
+	]
+}
