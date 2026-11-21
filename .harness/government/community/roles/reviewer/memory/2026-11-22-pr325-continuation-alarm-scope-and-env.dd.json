@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "When resuming reviewer/325 at 9a77968 before its R1 verdict",
+				"tags": [
+					"review",
+					"handover",
+					"alarm",
+					"copilot",
+					"f271"
+				],
+				"title": "PR325 continuation: alarm scope and env"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#325 R1 is unfinished at 9a77968f9528cd7cd099e4fcb5693e745b0f1a2d. Request: 01a1fef6-106b-7a43-8847-fcbb389e6717. No verdict published. Other held PRs in this context have been released; reviewer/325 remains live.\n\nVerified: 11 daemon and 22 spawn tests pass in the owned exact-head archive, including added exact-60-second/restart and six-normal-tombstone controls. The private fake installedVersion probe proves inherited auto-update=true is overridden and offline=true retained. Exact-head JUnit: run 44923632187, successful job 136904824249, artifact 14715036912, 2821 cases, no failures.\n\nFindings are qualifications, not current blockers: alarm counts only sweep retirements, not normal close tombstones. Restart forgets BOTH the window and cooldown, so it can miss a split storm or permit two alarms within a minute across processes. Spawn/revive share the protected SpawnPlan; an existing/adopted seat or an in-Copilot /restart is not retrofitted. Coder accepted both and updated the PR body while holding the code head. Four source/docs wording updates remain notes owed. CLI docs confirm the env but do not document /restart inheritance.\n\nResume: shell 145 is the no-alarm/M1 run; read its completion receipt, do not credit partial output. Archive currently contains M1's `if true || ...` threshold bypass plus two reviewer tests. Restore M1, run cooldown/M2 and spawn-env/M6 independently, then restore and rerun baseline. Session artifacts: pr325-probe, pr325-baseline.log, pr325-no-alarm-mutant.log, pr325-reviewer-controls.patch, pr325-verdict-draft.md. Preserve receipts; clean only owned paths. Re-freeze, publish with full head and --answers, retain role until merge.\n\nMagicWand: explicit process-lifetime limits and restart-boundary oracles prevent overselling an in-memory alarm. Cost is O(recent + retired), not zero while the recent deque is populated.\n"
+		}
+	]
+}

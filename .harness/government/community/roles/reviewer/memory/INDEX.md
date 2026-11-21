@@ -170,6 +170,7 @@
 - [2026-11-22 Duplicate advice keys include the instance](2026-11-22-duplicate-advice-keys-include-the.dd.md): When reviewing role duplicate-holder advice, assignment warnings or per-PR holdings (review, roles, instance, release, f272)
 - [2026-11-22 Final-writer refusal is not a terminal claim policy](2026-11-22-final-writer-refusal-is-not-a-terminal.dd.md): Before reviewing an ACK rejection that leaves a delivery running, or a senderless legacy refusal fallback (review, queue, identity, claim, c34, f270)
 - [2026-11-22 Pool depth means managed transactions only](2026-11-22-pool-depth-means-managed-transactions.dd.md): When reviewing sqlx pool cleanup, cancellation, worker pings or schema-check cost (review, sqlite, pool, cancellation, f258)
+- [2026-11-22 PR325 continuation: alarm scope and env](2026-11-22-pr325-continuation-alarm-scope-and-env.dd.md): When resuming reviewer/325 at 9a77968 before its R1 verdict (review, handover, alarm, copilot, f271)
 - [2026-11-22 R319 ordering repair and observer budget](2026-11-22-r319-ordering-repair-and-observer-budget.dd.md): When reviewing shutdown-order deflakes or timing-budget changes after R319 closure (review, tmux, ordering, c34, f263)
 - [2026-11-22 Shutdown task ownership and timer origin are separate proofs](2026-11-22-shutdown-task-ownership-and-timer-origin.dd.md): Before splitting shutdown phases into tasks or citing per-phase duration and cancellation safety (review, shutdown, ownership, logging, f267)
 <!-- /pij:generated -->
