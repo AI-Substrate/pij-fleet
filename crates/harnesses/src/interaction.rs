@@ -40,8 +40,50 @@ struct ComposerState {
     last_edit_at: Option<Instant>,
     uncertainty_since: Option<Instant>,
     self_injection: Option<SelfInjection>,
-    /// Drains of this pane's tap the gate began (fresh injection reads).
-    tap_drains: u64,
+    /// Drains of this pane's tap the gate began and finished (fresh
+    /// injection reads).
+    tap_drains: TapDrains,
+}
+
+/// The gate's own drains of a pane's tap (F266): how many began and how many
+/// ended (done, failed or cancelled). A drain takes bytes the pane observer
+/// would otherwise have seen, so the observer trusts a capture as unchanged
+/// only across a span in which no drain began, and none was in flight.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TapDrains {
+    /// Drains begun.
+    pub started: u64,
+    /// Drains finished, however they finished.
+    pub ended: u64,
+}
+
+impl TapDrains {
+    /// The count of finished drains when none is in flight; `None` while one
+    /// is, since its bytes may still be taken after any capture.
+    #[must_use]
+    pub fn settled(self) -> Option<u64> {
+        (self.started == self.ended).then_some(self.ended)
+    }
+}
+
+/// Ends one gate drain when dropped: on success, on error and on
+/// cancellation alike.
+struct DrainEnd<'a> {
+    gate: &'a InteractionGate,
+    pane: &'a str,
+}
+
+impl Drop for DrainEnd<'_> {
+    fn drop(&mut self) {
+        self.gate
+            .panes
+            .lock()
+            .expect("interaction gate mutex")
+            .entry(self.pane.to_string())
+            .or_default()
+            .tap_drains
+            .ended += 1;
+    }
 }
 
 impl ComposerState {
@@ -148,11 +190,9 @@ pub struct ObservedComposer {
     pub last_edit_at: Option<Instant>,
     /// When recognition was first lost, while it still is.
     pub uncertainty_since: Option<Instant>,
-    /// How many times the gate has begun draining this pane's tap (F266). A
-    /// drain takes bytes the pane observer would otherwise have seen, whether
-    /// or not the read after it succeeded, so the observer replays nothing
-    /// across a change in this count.
-    pub tap_drains: u64,
+    /// The gate's own drains of this pane's tap (F266): the pane observer
+    /// replays nothing across a drain begun, or one still in flight.
+    pub tap_drains: TapDrains,
 }
 
 /// Outcome of a pane transaction whose input was owned before observation.
@@ -533,12 +573,12 @@ impl InteractionGate {
     /// [`ObservedComposer::tap_drains`] alone, without cloning the composer:
     /// the pane observer reads it for every pane on every tick (F266).
     #[must_use]
-    pub fn tap_drains(&self, pane: &str) -> u64 {
+    pub fn tap_drains(&self, pane: &str) -> TapDrains {
         self.panes
             .lock()
             .expect("interaction gate mutex")
             .get(pane)
-            .map_or(0, |state| state.tap_drains)
+            .map_or_else(TapDrains::default, |state| state.tap_drains)
     }
 
     /// Re-drain the live tap and re-capture the composer at the send boundary.
@@ -556,14 +596,17 @@ impl InteractionGate {
         }
         // A pane tap contains rendered OUTPUT, not input events. Drain it to keep
         // the boundary fresh, but never translate output bytes into human typing.
-        // Counted before the drain: whatever it takes, and however the read
-        // after it ends, the observer's last capture no longer stands (F266).
+        // Counted when it begins and again when it ends, however it ends: a
+        // capture taken while it is in flight may miss the bytes it takes,
+        // so it must not become the observer's baseline (F266, R318-001).
         self.panes
             .lock()
             .expect("interaction gate mutex")
             .entry(pane.to_string())
             .or_default()
-            .tap_drains += 1;
+            .tap_drains
+            .started += 1;
+        let _end = DrainEnd { gate: self, pane };
         self.tmux.drain_pane_tap(pane).await?;
         Ok(true)
     }

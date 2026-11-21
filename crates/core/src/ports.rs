@@ -204,8 +204,10 @@ pub trait Registry: Send + Sync {
 /// What [`TmuxPort::attach_pane_tap`] found (F266).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TapAttach {
-    /// This adapter's own pipe was already live: every byte the pane wrote
-    /// since it attached is in the sink.
+    /// The adapter already tracks this sink and tmux reports the pane's pipe
+    /// open. That does not prove the reader process is alive: a dead reader
+    /// shows as an open pipe until the pane next writes, after which tmux
+    /// closes it and the next attach answers [`TapAttach::Attached`].
     Kept,
     /// A pipe was started (a first attach, an adopted orphan, or a repair of
     /// one that had vanished): bytes the pane wrote before it were never
