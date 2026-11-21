@@ -104,6 +104,21 @@ process means the restart did not take (they are told to `/exit`, then
 `pij-rs revive <seat>`), and one from the new process means the login needs renewing
 (`/login`). Each decision that acts is a `seat.auth_recovery` spine event.
 
+One loss the extension cannot report at all (F261). Eight hours after a
+Copilot process starts, its enterprise sign-in lapses: Copilot flips its
+managed-extension policy from Allowed to Pending and force-kills this extension
+(its host log ends `=== force-killed ===`), on an idle seat, so no run fails and
+no `session.error` is emitted. The daemon sees only the lease stop renewing. Its
+`native.receiver.lapsed` edge runs the same decision with kind `extension-lost`,
+after reading in-process that the seat's recorded process (pid and start) is
+still running: then the same brakes and the shared 30 min window apply, and a
+fresh process brings the extension back. A process that is gone is never
+restarted; its parent and primes are told to `pij-rs revive <seat>`. A lapse
+its receiver renews before it is decided is spared, and one told before the
+daemon's follower attached (a lapse a restart restores is not told again) or
+lost to a lagging subscription is decided when the follower reconciles the
+lapses outstanding on the spine, at attachment and after any gap.
+
 New manual sessions receive an ordinary memorable Pij ID from the daemon, just
 like spawned seats. The native session ID remains the internal resume key.
 Existing addresses, including earlier hash-style IDs, are preserved; this does

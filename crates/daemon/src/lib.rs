@@ -329,6 +329,9 @@ pub struct Daemon {
     session_warmup: tokio::task::JoinHandle<()>,
     /// Sender notices for parked deliveries; aborted, then joined, at shutdown.
     park_notices: tokio::task::JoinHandle<()>,
+    /// F261: decides each Copilot lease lapse (event-driven); aborted, then
+    /// joined, at shutdown.
+    extension_lost: tokio::task::JoinHandle<()>,
     /// Its tmux client, released FIRST at shutdown, alongside the stop of every
     /// worker and before the HTTP drain can hold anything, so `_pij` is handled
     /// before the control client goes (F238, F242).
@@ -379,6 +382,11 @@ impl Daemon {
         // notifies it (`park_notice::LOOKBACK_MS`), and a notice admitted twice
         // is impossible because its id is derived from the parked job.
         let _ = self.park_notices.await;
+        // F261: a lapse decision cut here is decided by nobody. A restart it
+        // had queued is a durable control; its recovery event is the brake
+        // the next daemon reads.
+        self.extension_lost.abort();
+        let _ = self.extension_lost.await;
         let (
             served,
             drained,
@@ -1271,6 +1279,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         pa_watchdog_tick,
     );
     let park_notices = tokio::spawn(park_notice::follow(services.clone()));
+    let extension_lost = tokio::spawn(auth_recovery::follow_lapses(services.clone()));
     // F190: once at start, redo any native-session-boundary carry a crash or
     // an older daemon left unrecorded. One roster read; no loop.
     {
@@ -1346,6 +1355,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         governance_observer,
         session_warmup,
         park_notices,
+        extension_lost,
         spawn_waits,
     })
 }
