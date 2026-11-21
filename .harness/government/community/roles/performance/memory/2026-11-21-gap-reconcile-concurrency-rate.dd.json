@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before pricing gap-triggered reconciliation or claiming a serial loop has a rate cap",
+				"tags": [
+					"cost",
+					"events",
+					"gaps",
+					"review"
+				],
+				"title": "Gap reconcile: concurrency versus rate"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Gap reconciliation: concurrency bounds are not rate bounds\n\nPR311 R2 at 5e03e0219a1a04fd3120355024bb72c28039a9de adds an attach-time reconcile and gap-ending live subscription. One follower performs reconciliation and live-event handling serially. Each replacement subscription has a fresh dropped counter, so an old count cannot cause retries forever; a new gap is needed. This bounds concurrent scans to one and avoids a scheduled-rescan backlog. It does NOT impose a scans/second cooldown: persistent total-broadcast pressure can repeatedly overflow the ring while an O(native seats) scan runs.\n\nFor a fixed N native seats and G recovered gaps, the follower performs G+1 roster-list passes and (G+1)*N latest_matching calls, plus conditional decisions. registry.list returns all live Copilot rows and native filtering is in Rust. outstanding() passes three kinds to latest_matching; the SQLite implementation executes THREE indexed LIMIT1 seeks, a schema check and transaction setup/rollback per call. A single port call is not a single SQLite read. The 30-minute restart/notice window bounds remedies, not this scan/read work. Event-count ring capacity is bounded (default1024), not a proof of bounded bytes independent of payloads or a numerical CPU budget.\n\nFinal-round performance verdict: PASS-WITH-NOTES; no demonstrated normal-use cost breach or performance regression. Repeated gap scan pressure and three-seek pricing are explicitly new C34 non-blocking follow-up notes. AFTER belongs to the authorized deploy owner, with gap/pass count, duration and seat count included alongside CPU/RSS/spawn receipts. Retain R1 BEFORE as historical, not proof of R2 cost.\n\nProof: pr-freeze FINAL/CI5-of-5 at the exact head; run44883027136, successful job136782244035 selected artifact14698713239. JUnit has30 relevant PASS cases:22 auth recovery, two no-ps liveness, six launch sensors, including pre-attach, one-slot overwrite, renewed and previously-decided suppression, delayed live-edge recheck and unreadable liveness. No local Rust compile/mutant run or live lapse/restart/bounce. New review tree stayed clean; boot ready=false and quick checks exit1 under C25, native/SDK contracts pass. No installs or links.\n\nmagicWand: a read-only recovery-cost receipt reporting gap/pass count, pass duration, scanned native-seat count and port-call versus SQL-seek count alongside CPU/RSS/spawn deltas.\n\ndifficulties: exact locked-toolchain proof lives in CI for a dependency-free review tree; ambient quick-gate failures are not product regressions. Serial execution and passing gap correctness tests do not establish a numerical steady-state rate cap. Do not add final-round machinery without evidence that ordinary fleet traffic breaches the budget.\n"
+		}
+	]
+}
