@@ -367,6 +367,13 @@ pub fn control_kind(seat: &SeatId) -> String {
     format!("delivery-control:{seat}")
 }
 
+/// The terminal outcome of a delivery whose payload names no sender seat
+/// (F275). Its ack cannot record it (a new ledger row must name its sender,
+/// F270), so the refused ack fails the row in the same transaction: it is
+/// never claimed again and never blocks its recipient's serial key. Not a
+/// park: there is no sender to tell.
+pub const NO_SENDER_OUTCOME: &str = "undelivered:no-sender";
+
 /// Whether a body contains a terminal control character that a stock composer
 /// cannot represent losslessly. Linefeed remains ordinary body text.
 #[must_use]

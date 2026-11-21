@@ -1561,10 +1561,22 @@ impl Queue for FakeQueue {
 
     async fn ack_delivery(&self, job: JobId, origin: DeliveryOrigin) -> Result<DeliveryAck> {
         let mut state = self.state.lock().expect("fake queue mutex");
-        // F270 (B322-01): the final ledger writer refuses a new '' row; the
-        // claim stays running, as the real queue's rolled-back ack leaves it.
-        if let Some((claimed, _)) = state.claimed.get(&job.0) {
-            require_job_sender(claimed)?;
+        // F275: a delivery that names no sender can never be recorded (F270);
+        // its refused ack fails it, as the real queue does in one transaction.
+        if let Some(Err(refused)) = state
+            .claimed
+            .get(&job.0)
+            .map(|(claimed, _)| require_job_sender(claimed))
+        {
+            let (failed, _) = state.claimed.remove(&job.0).expect("claimed above");
+            state.completed.insert(job.0, (failed, "failed"));
+            state.acked.push((
+                job,
+                Outcome::Failed {
+                    reason: pij_core::delivery::NO_SENDER_OUTCOME.to_string(),
+                },
+            ));
+            return Err(refused);
         }
         let Some((claimed, _worker)) = state.claimed.remove(&job.0) else {
             return Err(PijError::Adapter {

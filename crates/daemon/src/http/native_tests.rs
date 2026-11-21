@@ -4402,6 +4402,71 @@ async fn native_sqlite_malformed_claim_is_held_without_ack() {
     );
 }
 
+/// F275: a well-formed native claim whose message names no sender cannot be
+/// recorded (F270). Its refused ack fails it as `undelivered:no-sender` at
+/// once, so it is never re-claimed and the next message to the seat is
+/// claimable straight away, not after a lease or never.
+#[tokio::test]
+async fn native_sender_less_claim_fails_at_its_ack_and_frees_the_seat() {
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    let job = services
+        .queue
+        .enqueue(Job {
+            kind: delivery_kind(&seat.id),
+            serial_key: seat.id.0.clone(),
+            payload: json!({
+                "from": "", "to": seat.id, "body": "no sender", "msg_id": "no-sender-275",
+            })
+            .to_string(),
+            dedupe_key: "no-sender-275".into(),
+            dedupe_origin: None,
+            attempt: 0,
+        })
+        .await
+        .unwrap();
+    services
+        .delivery
+        .send("pij-peer".into(), seat.id.clone(), "after it")
+        .await
+        .unwrap();
+    let page = services
+        .delivery
+        .claim_native_inbox(&seat.id, false, &identity)
+        .await
+        .unwrap();
+    assert_eq!(page.claims[0].job_id, job);
+    services
+        .delivery
+        .acknowledge_inbox(&seat.id, job, &identity, None)
+        .await
+        .expect_err("a sender-less body cannot be recorded");
+    assert!(
+        services
+            .queue
+            .claimed_delivery(job)
+            .await
+            .unwrap()
+            .is_none(),
+        "the refused ack ended the claim"
+    );
+    let next = services
+        .delivery
+        .claim_native_inbox(&seat.id, false, &identity)
+        .await
+        .unwrap();
+    assert_eq!(
+        next.claims
+            .iter()
+            .map(|claim| claim.message.body.as_str())
+            .collect::<Vec<_>>(),
+        ["after it"],
+        "the seat's next message is claimable at once"
+    );
+}
+
 #[tokio::test]
 async fn shim_and_direct_service_cannot_bypass_native_claim_or_ack() {
     let store = FreshStore::new();
