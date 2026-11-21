@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a2000c-6b6b-7081-9457-be3378c305f6",
+				"date": "2026-11-22",
+				"head": "50c675ac58318d9303a062b890ec649d47806cea",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:333",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 333 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at 50c675a"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #333 round 1 at 50c675ac58318d9303a062b890ec649d47806cea: pass\n\nThe diff is a one-line condition change in crates/tmux/src/lib.rs, plus a test and docs. CI 5/5 SUCCESS at this head.\n\n## Ownership still decides\nThe changed line runs only after the unchanged ownership check:\n- a pane with a local tap uses the path this daemon recorded;\n- otherwise the listed marker must exist and equal `expected_tap_sink(pane)`, or the pane is refused (\"no owned tap\" / \"foreign tap\") and skipped.\n\n## A pane released without sending can't be a foreign tap\nThe new branch needs the pane listed with NO pipe and NO marker. A pane with no marker can only get past the ownership check through the local branch, meaning this daemon started that tap and recorded its path. `release_tap` then removes only this daemon's own entry from `self.taps` and unlinks that recorded sink path (F262: a path it created and recorded). It sends no tmux command, so it can't close anyone's pipe.\n\nPre-existing, unchanged: an owned pane that someone else has re-piped reads as attached and is sent the detach, as before this PR.\n\n## No unsafe tmux error text\nThe change adds no logging. The only error text in this path is the existing `release_tap` \"could not remove tap sink\" message (the sink path and an io error) and the round-2 detach error string. Both go to the result and the local stderr only, never into argv, an option, a path or a seat message.\n\nThe change can only remove sends, never add one. No secrets, lockfile or .npmrc changes.\n"
+		}
+	]
+}
