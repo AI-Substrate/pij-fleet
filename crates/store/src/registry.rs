@@ -10,7 +10,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use sqlx::{Pool, Row, Sqlite};
 
-use pij_core::delivery::{CONTROL_KIND_PREFIX, DELIVERY_KIND_PREFIX};
 use pij_core::error::{PijError, Result};
 use pij_core::model::{
     Event, Harness, ProcIdentity, SeatDescriptor, SeatId, SemanticState, Seq, SystemState,
@@ -511,11 +510,15 @@ impl Registry for SqliteRegistry {
         rows.iter().map(row_to_descriptor).collect()
     }
 
-    async fn list_live_or_owed(&self) -> Result<Vec<SeatDescriptor>> {
+    async fn list_live_with(&self, also: &[SeatId]) -> Result<Vec<SeatDescriptor>> {
         require_current_schema(&self.pool).await?;
-        let rows = sqlx::query(LIST_LIVE_OR_OWED_SQL)
-            .bind(DELIVERY_KIND_PREFIX)
-            .bind(CONTROL_KIND_PREFIX)
+        let also = serde_json::to_string(&also.iter().map(SeatId::as_str).collect::<Vec<_>>())
+            .map_err(|error| PijError::Adapter {
+                adapter: "store/registry".to_string(),
+                message: format!("could not encode the named seats: {error}"),
+            })?;
+        let rows = sqlx::query(LIST_LIVE_WITH_SQL)
+            .bind(also)
             .fetch_all(&self.pool)
             .await
             .map_err(adapter_error)?;
@@ -631,25 +634,18 @@ pub const LIST_LIVE_SQL: &str = "SELECT * FROM seats INDEXED BY seats_live \
        AND ?5 <> 0 \
      ORDER BY id";
 
-/// [`Registry::list_live_or_owed`] (F259a): the live rows from `seats_live`,
-/// then each retired seat named by an open delivery row (`?1` the
-/// `delivery:` prefix, `?2` the `delivery-control:` one), read from
-/// `jobs_claimable` (state, kind) and found by primary key. The delivery
-/// drain asks it every 5 s; it visits no other retired row, where `LIST_SQL`
-/// scanned every seat row ever written. `CROSS JOIN` keeps the open rows the
-/// outer loop, and `INDEXED BY` makes SQLite refuse the query if either
-/// index is ever gone. Public so the cost test explains THIS query.
-pub const LIST_LIVE_OR_OWED_SQL: &str = "SELECT * FROM seats INDEXED BY seats_live \
+/// [`Registry::list_live_with`] (F259a): the live rows from `seats_live`,
+/// then each retired seat named in `?1` (a JSON array of ids), found by
+/// primary key. The delivery drain asks it every 5 s with the recipients its
+/// queue still owes a row; it visits no other retired row, where `LIST_SQL`
+/// scanned every seat row ever written. `CROSS JOIN` keeps the named ids the
+/// outer loop, and `INDEXED BY` makes SQLite refuse the query if
+/// `seats_live` is ever gone. Public so the cost test explains THIS query.
+pub const LIST_LIVE_WITH_SQL: &str = "SELECT * FROM seats INDEXED BY seats_live \
      WHERE tombstoned_at IS NULL \
      UNION ALL \
-     SELECT seats.* FROM ( \
-         SELECT DISTINCT CASE WHEN substr(kind, 1, length(?1)) = ?1 \
-             THEN substr(kind, length(?1) + 1) \
-             ELSE substr(kind, length(?2) + 1) END AS id \
-         FROM jobs INDEXED BY jobs_claimable \
-         WHERE state IN ('pending', 'running') \
-           AND (substr(kind, 1, length(?1)) = ?1 OR substr(kind, 1, length(?2)) = ?2) \
-     ) AS owed CROSS JOIN seats ON seats.id = owed.id \
+     SELECT seats.* FROM (SELECT DISTINCT value AS id FROM json_each(?1)) AS named \
+     CROSS JOIN seats ON seats.id = named.id \
      WHERE seats.tombstoned_at IS NOT NULL \
      ORDER BY id";
 
