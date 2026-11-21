@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "When reviewing local contract-pass caches, provenance freshness or staged JSON publication.",
+				"tags": [
+					"review",
+					"copilot",
+					"sdk",
+					"atomicity",
+					"proof"
+				],
+				"title": "Local SDK passes rerun the canary; atomicity is testable"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Review #307 at c8d457f348ad36857dd8aab16301206fce8b083f, round 1: pass-with-notes, no blocking correctness findings.\n\nLocal SDK-pass records do not skip the SDK canary: the current checks run on every invocation, and any failure takes precedence over floor/local verification. contract_commit is provenance only (valid hash or null), not an invalidation key. An older commit can count, but an ordinary successful installed-SDK run replaces it with fresh provenance. Do not invent a commit-equality requirement without considering this order.\n\nAtomic publication can be behavior-tested without racing sleeps. Wrap fs.promises.open, syncBuiltinESMExports, and replace the returned writable FileHandle.writeFile with two writes separated by a reader assertion. A reader must still get the old whole JSON after half the staging body is written, after fsync, and immediately before rename, then the new whole JSON after rename. Restoring built-in exports in finally is essential. An in-place O_TRUNC/write mutant fails the first assertion. This closes W2's publication-visibility proof gap; it does not prove power-loss durability. Magic wand: promote this fixture into the existing local-pass test suite rather than calling rename untestable.\n\nIndependent receipt: 11 mutants killed (10 source guards with unmutated passing controls, plus W2); 13 updater stub scenarios; actual installed CLI 1.0.115-4 passed 7/7 in scratch state, both SDK/version overrides wrote no record, and blocked state storage visibly warned. Never run the real updater in a review.\n\nDifficulty: dependency-free detached review trees cannot run Vitest under C25. harness boot correctly reports advisory NOT-READY. Exact-head CI run 44855223303 supplied the TS proof (2410 passed, 8 skipped; local-pass 15 and updater 13). Scratch dependency-free Node probes provide additional local proof without installing/symlinking node_modules. The product worktree remained clean.\n"
+		}
+	]
+}
