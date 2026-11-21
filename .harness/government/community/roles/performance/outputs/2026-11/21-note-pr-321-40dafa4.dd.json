@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"head": "40dafa4e6f62471e9ad8c19af52cac39f72195ca",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:321",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh api \"repos/launchbadge/sqlx/contents/sqlx-core/src/pool/connection.rs?ref=v0.8.6\" -H \"Accept: application/vnd.github.raw+json\"",
+					"exit_code": 0,
+					"log": "Pinned v0.8.6 source retrieved; release ping verified after after_release"
+				},
+				{
+					"command": "git --no-pager diff 43f20220..HEAD -- crates/store/src/migrate.rs",
+					"exit_code": 0,
+					"log": "No differences"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Exact-command appendix for verdict 276f6e5: the source evidence field summarizes several fetches. One reproducible fetch is `gh api \"repos/launchbadge/sqlx/contents/sqlx-core/src/pool/connection.rs?ref=v0.8.6\" -H \"Accept: application/vnd.github.raw+json\"` (returned the pinned source). The code-equivalence command was `git --no-pager diff 43f20220..HEAD -- crates/store/src/migrate.rs` (no differences). Benchmark and BEFORE fields summarize reading the retained logs/JSON and checking their numbers; no benchmark rerun is claimed. Verdict remains PASS-WITH-NOTES."
+		}
+	]
+}
