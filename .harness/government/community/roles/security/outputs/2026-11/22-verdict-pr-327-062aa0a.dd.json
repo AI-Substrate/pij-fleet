@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff1f-e94d-7832-8caa-c1a1125bf8fa",
+				"date": "2026-11-22",
+				"head": "062aa0af90a81f393d81286304c4fecfd392c7ca",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:327",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "diff <(git diff 4830d73^1 4830d73 -- crates) <(git diff 85fe143e 062aa0a -- crates)",
+					"exit_code": 0,
+					"log": "identical"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security for #327 at 062aa0a: pass. This carries forward my verdict 3ed9983 at 4830d73. Delta check: 062aa0a is one merge of main at 85fe143e (#325). The PR's own crates/ diff against the merged main (85fe143e..062aa0a) is byte-identical to 4830d73's own diff against its parent, so the F275 code is unchanged. The PR-only files are unchanged: queue.rs, core/delivery.rs, testkit fakes, two test files and two docs. Everything else in 4830d73..062aa0a is #325's content, already reviewed in its own PR (45b9f78 plus note 8c71209). The round-1 findings hold: the refused ack fails only its own row (WHERE id = ?1 AND state = 'running') and only when that row's own payload-derived dedupe_sender is ''. Legacy pre-0050 jobs keep their sender, because the column is VIRTUAL and computed from the stored payload. Another seat's message cannot be ended this way. The terminal outcome is the constant undelivered:no-sender, plus a job id, so it leaks nothing. CI 5/5 at this head."
+		}
+	]
+}
