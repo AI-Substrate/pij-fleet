@@ -1,0 +1,61 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff52-d9d2-7bf2-9585-0d28349010a0",
+				"date": "2026-11-22",
+				"head": "c515a664c8a86d80621a7a13df3bfd9e07e54e8a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:327",
+				"writer": "pij-complex-alpaca",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build --timeout 300s -- test --no-fail-fast -p pij-store -p pij-testkit --test message_sender --test queue --test contract_over_fakes -- reviewer_327 no_ack_writes_a_sender_less_ledger_row the_same_id_from_two_seats migration_0050 fake_queue_honours_the_queue_contract the_sqlite_queue_honours_the_same_contract_the_fake_does --nocapture",
+					"exit_code": 0,
+					"log": "pr327-r2-controls.log: seven controls passed"
+				},
+				{
+					"command": "same selected batch with M2 sender-before-kind mutant",
+					"exit_code": 101,
+					"log": "pr327-r2-m2.log: two intended oracle failures; five controls pass"
+				},
+				{
+					"command": "same selected batch after byte-for-byte fake restoration",
+					"exit_code": 0,
+					"log": "pr327-r2-restored.log: seven controls passed"
+				},
+				{
+					"command": "gh run view 44934137381; inspect successful artifact 14718966611",
+					"exit_code": 0,
+					"log": "pr327-r2-junit.zip: 2838 Rust cases; zero errors/failures"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "pr327-r2-local-checks.json: dependency/tool limited; no local full-green claim"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR327 R2 — PASS\n\nHead: `c515a664c8a86d80621a7a13df3bfd9e07e54e8a`\nRequest: `01a1ff52-d9d2-7bf2-9585-0d28349010a0`\n\n**R327-001 is closed.** `crates/testkit/src/fakes.rs:1554-1581`, `FakeQueue::ack_delivery`, reads the still-claimed job under its mutex, validates its exact delivery/control kind against the serial key, and only then applies sender-less terminalization or removes a valid named claim for recording. SQLite already had this order. Missing/not-running and wrong-kind refusals therefore do not mutate the claim; valid sender-less ACKs still end only their own row.\n\nThe entire R2 delta is `crates/testkit/src/fakes.rs` plus the shared `queue_contract` regression. Production queue, delivery service, migration and HTTP code are unchanged, so the R1 transaction/legacy/visibility findings carry over.\n\nThe shared contract now checks both complementary outcomes: a misfiled blank-sender refusal leaves a row running, while an own-kind blank-sender refusal ends it and frees its seat for the next message. The reviewer comparison additionally exercises blank and named senders under a mismatched delivery prefix and a non-delivery kind, checks SQLite's kind/serial/payload/state/outcome remain intact, checks the fake records no terminal ACK, checks both retain serial ownership, and then verifies an ordinary ACK releases that ownership.\n\nThe older named-sender divergence is the same refusal-before-mutation boundary. Existing fake ACK callers inspected use valid matching kinds or already-nonrunning claims; none depended on deleting a running wrong-kind named claim. Final-head CI also passes the existing suite.\n\n**Cost:** no production change in this round; no loop, poll, timer or launch added. Kind validation and both fake state changes remain synchronous under the same mutex. The R1 per-refused-ACK primary-key UPDATE and control-replay history-filtering cost are unchanged.\n\n**Policy/brake:** failing a sender-less own-kind row remains the F275 terminal-outcome POLICY. Exact-kind validation is a brake on mutation: removing it lets wrong-kind rows be ended or recorded too.\n\n**CI and local gate:** CI run `44934137381` is successful at this exact head. Successful-job artifact `14718966611` contains 2,838 Rust cases with zero errors/failures, including both shared queue contracts, the sender-less ACK/native regression and migration 0050 compatibility. Node 22 reports 2,416 passing TS cases. Local `harness boot` is NOT-READY without worktree dependencies; `harness checks --quick --json` exits 1 on missing TS tools/dependencies and incompatible ambient Biome, with skill/native/SDK stages passing and heavy stages skipped. No local full-green gate is claimed, no dependencies were installed or symlinked, and nothing was deployed.\n\n**Independent controls:** one `just shared-build --timeout 300s -- test --no-fail-fast -p pij-store -p pij-testkit --test message_sender --test queue --test contract_over_fakes -- reviewer_327 no_ack_writes_a_sender_less_ledger_row the_same_id_from_two_seats migration_0050 fake_queue_honours_the_queue_contract the_sqlite_queue_honours_the_same_contract_the_fake_does --nocapture` invocation passed all seven selected tests: five sender/identity/migration/reviewer controls plus both real/fake shared contracts. All four wrong-kind combinations retained their serial ownership until an ordinary ACK, including named rows and kinds whose generated sender is empty by design. Receipt: `pr327-r2-controls.log`; extra oracle: `pr327-r2-oracles.patch`.\n\n**M2 independently killed:** moved only the fake's sender check ahead of exact-kind validation. The same no-fail-fast batch ran all seven tests: five remained green, including the real shared contract, while both the reviewer R1 comparison and the shipped fake shared contract failed on their intended assertions. The former observed an illicit terminal ACK for the mismatched blank-sender row; the latter failed at `contract.rs:1399` because a following ordinary ACK could no longer find a running claim. No compilation/infrastructure failure is credited as a mutant kill. Receipts: `pr327-r2-m2.patch`, `pr327-r2-m2.log`. The fake source was then restored byte-for-byte to the pinned head.\n\n**Restored controls:** the identical scoped seven-test batch passed again after byte-for-byte fake-source restoration (exit 0; `pr327-r2-restored.log`). Sequence: 7 GREEN -> M2's 2 intended RED / 5 GREEN -> 7 GREEN.\n\n**C34 closeout:** no new finding or notes owed. Keep the shared non-mutation/terminalization contract together: it is the permanent harness improvement this repair contributes. Detached product worktree remained clean; all extra code and mutations were confined to an owned archive, and no live daemon/seat/database was changed.\n"
+		}
+	]
+}
