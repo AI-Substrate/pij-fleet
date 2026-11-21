@@ -766,7 +766,10 @@
 					"harness_session": "2c4d4a94-b597-4f4e-b664-302f3c41c5ee",
 					"instance_key": "325",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #325 merged (85fe143e51c5)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-helpful-elephant",
+					"to": "2026-11-21T17:14:39.476Z",
 					"why": "#325 F271b/c round 1"
 				},
 				{

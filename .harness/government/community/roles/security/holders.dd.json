@@ -1253,7 +1253,10 @@
 					"harness_session": "aa358e02-6f68-4ca0-88ce-59ef10419c81",
 					"instance_key": "325",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #325 merged (85fe143e51c5)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-selected-deer",
+					"to": "2026-11-21T17:14:39.476Z",
 					"why": "#325 F271b/c round 1"
 				},
 				{
