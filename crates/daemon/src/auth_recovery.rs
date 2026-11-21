@@ -558,14 +558,27 @@ pub(crate) fn notice(seat: &SeatDescriptor, action: Action, cause: Cause) -> Str
     }
 }
 
+/// F268: the least time between two reconciles. A gap that comes sooner
+/// (a flood of broadcast events overflowing the ring, again and again)
+/// waits out the rest of it before attaching again and reconciling, so a gap
+/// storm costs at most one reconcile per this. A BRAKE: it delays a reconcile,
+/// never skips one, and the lapse it finds is the same.
+pub(crate) const RECONCILE_MIN_INTERVAL: Duration = Duration::from_secs(10);
+
 /// F261: follow `native.receiver.lapsed` and decide each lapse of a Copilot
 /// seat. Event-driven: no timer, nothing per tick, one decision per lapse
 /// edge (told once per lapse). A lapse the live subscription cannot deliver
 /// (told before it attached, or overwritten in the broadcast ring) is found
-/// by [`reconcile`], at attachment and after every gap (B311-01).
+/// by [`reconcile`], at attachment and after every gap (B311-01), at most
+/// once per [`RECONCILE_MIN_INTERVAL`] (F268).
 pub async fn follow_lapses(services: Services) {
+    follow_lapses_every(services, RECONCILE_MIN_INTERVAL).await;
+}
+
+pub(crate) async fn follow_lapses_every(services: Services, min_interval: Duration) {
     let mut lapses = attach(&services);
     reconcile(&services).await;
+    let mut reconciled = tokio::time::Instant::now();
     loop {
         while let Some(event) = lapses.next().await {
             let (Some(seat), Some(seq)) = (event.seat.as_ref(), event.seq) else {
@@ -582,8 +595,12 @@ pub async fn follow_lapses(services: Services) {
         eprintln!(
             "pij-rs auth recovery: {dropped} events overwritten before the lapse follower read them; reconciling"
         );
+        // Attached only after the wait, so nothing overflows meanwhile; the
+        // reconcile after it finds what was told in it.
+        tokio::time::sleep_until(reconciled + min_interval).await;
         lapses = attach(&services);
         reconcile(&services).await;
+        reconciled = tokio::time::Instant::now();
     }
     eprintln!("pij-rs auth recovery: native.receiver.lapsed subscription ended");
 }
@@ -627,10 +644,18 @@ pub(crate) async fn reconcile(services: &Services) {
     }
 }
 
+/// F268: a lapse decided with nothing to do (`told`: they were already told
+/// in the window; `pending`: the restart is still queued). Acting decisions
+/// are `seat.auth_recovery` events; this marks the rest decided, so a later
+/// reconcile does not decide that lapse again. Never read as a recovery
+/// fact, so it never moves the window.
+pub(crate) const LAPSE_HELD_KIND: &str = "seat.auth_recovery.lapse_held";
+
 /// The seat's undecided lapse: its latest receiver edge or recovery decision,
 /// when that is a `native.receiver.lapsed`. A renewal since (N311-01), a
 /// decision since (already handled, live or by an earlier reconcile or
-/// daemon) or a failed read is none: a BRAKE, it can only spare the seat.
+/// daemon, acting or held, F268) or a failed read is none: a BRAKE, it can
+/// only spare the seat.
 async fn outstanding(services: &Services, seat: &SeatId) -> Option<Seq> {
     match services
         .spine
@@ -640,6 +665,7 @@ async fn outstanding(services: &Services, seat: &SeatId) -> Option<Seq> {
                 crate::delivery::NATIVE_RECEIVER_LAPSED,
                 crate::delivery::NATIVE_RECEIVER_RENEWED,
                 AUTH_RECOVERY_KIND,
+                LAPSE_HELD_KIND,
             ],
         )
         .await
@@ -686,13 +712,46 @@ pub(crate) async fn on_lapse(
     if row.harness != Harness::Copilot || row.tombstoned_at.is_some() {
         return Ok(None);
     }
+    // F268 (B320-01): a receiver that renewed its lease with this daemon is
+    // back, though its `renewed` may not be on the spine yet (a failed append
+    // is told again at its next heartbeat): never restarted for the lapse it
+    // ended. A BRAKE, it only spares; a failed read spares too. Nothing is
+    // recorded, so the lapse stays outstanding until that `renewed` lands,
+    // or is decided by a reconcile that finds the lease lapsed again.
+    match services.delivery.native_receiver_renewed(seat).await {
+        Ok(false) => {}
+        Ok(true) => return Ok(None),
+        Err(error) => {
+            eprintln!("auth recovery: the receiver lease of {seat} not read: {error}");
+            return Ok(None);
+        }
+    }
     let reporter = Incarnation {
         pid: proc.pid,
         proc_start: proc.proc_start,
     };
-    handle(services, &row, reporter, Cause::ExtensionLost, now_ms)
-        .await
-        .map(Some)
+    let outcome = handle(services, &row, reporter, Cause::ExtensionLost, now_ms).await?;
+    // F268: a decision that recorded nothing marks the lapse decided. A
+    // failed write leaves it outstanding, decided again later, as before.
+    if matches!(outcome.action, Action::Told | Action::Pending)
+        && let Err(error) = services
+            .event_bus
+            .publish(Event {
+                seq: None,
+                v: 1,
+                at: now_ms,
+                kind: LAPSE_HELD_KIND.to_string(),
+                seat: Some(row.id.clone()),
+                payload: json!({ "action": outcome.action, "at": now_ms }).to_string(),
+            })
+            .await
+    {
+        eprintln!(
+            "auth recovery: held lapse of {} not recorded: {error}",
+            row.id
+        );
+    }
+    Ok(Some(outcome))
 }
 
 #[cfg(test)]
