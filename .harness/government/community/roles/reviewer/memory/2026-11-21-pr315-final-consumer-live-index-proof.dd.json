@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "When checking R315-F001 closure or proving every recurring registry read",
+				"tags": [
+					"review",
+					"sqlite",
+					"cost",
+					"consumer-proof",
+					"closure"
+				],
+				"title": "PR315 final: consumer-wide live-index proof"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR315 round 2 at 7d79009c5a1ad190f9c34ec717c32d37e2653511 closes R315-F001: both reaper lists now use the same live-only filter, and the final count still reads fresh state. Main at 8b437897 already counted only untombstoned rows before and after, so this changes cost, not receipt meaning. Preserve that fresh final read; arithmetic on the initial count would not include concurrent registrations or tombstones.\n\nThe consumer-wide cost witness is now encoded: a real-store ListSpy test seeds one reapable and one retired seat, checks dry-run (1,1), non-dry (1,0,1 reaped), and requires all three observed list filters to be live-only. Provided L4 receipts restoring the old after-read fail with [true,true,false]; exact-head CI artifact 14700519282 from run 44889436854 executes all 18 reaper/death-sweep tests successfully (2,778 total tests, no failures/skips). This supersedes the round-1 block, not its general lesson.\n\nThe merge preserves both PR315's source/test blobs from eeb09214 and PR313's main-parent product blobs, plus both difficulty rows and retro cuts. The paired-list timing is 12.4287 -> 0.7050 ms, computed from the two list costs, not an end-to-end sweep or live-daemon CPU measurement. Performance still owns post-deploy SQLite-thread AFTER proof.\n\nmagicWand outcome: ListSpy plus the store's mandatory-index dispatch regression connects consumer call selection to SQL cost proof. Difficulty: the aggregate author gate had 14/15 pass with a truncated smoke failure; the standalone same-head smoke rerun passes. Dependency-free C25 review gates are still locally NOT-READY, so report those limitations rather than claiming local all-green validation.\n"
+		}
+	]
+}
