@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before batching tmux commands or judging shutdown cancellation, ownership and cost proof",
+				"tags": [
+					"review",
+					"tmux",
+					"batching",
+					"recovery",
+					"cost",
+					"f267"
+				],
+				"title": "Tmux batch transport and persistent failure progress"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Reviewer330 BLOCK at1c998e7 (04a96ae). The real adapter uses tmux3.6a argv transport, whose16KiB message ceiling is tighter than OS ARG_MAX. A minimum-width300-entry command list (one owned pane repeated to avoid300 processes; distinct IDs only enlarge it) produced34 failed launches in2.053s with pipe/marker/sink retained. A remain-on-exit retained dead middle pane produced46 launches in2.049s and starved a later LIVE tap. Verification retained the failing head plus untouched suffix, so unchanged retries made no progress. Keep packet-capacity and permanent-command-failure probes beside healthy batch proof; a true removed pane and an exited listed pane are different states. The actual Daemon.shutdown wiring was checked with a recording fake: detach precedes release normally; observer joined-task panic returns an error but still releases. D1 per-pane, D2 no abort, D3 raw rendering each independently failed its intended oracle; defaults passed. Distinguish convergence grace from hard child timeout and started blocking work from cancellable phase ownership. Regression source is retained as pr330-regression-tests.rs beside the session receipts. MagicWand: keep these negative production-adapter witnesses in the suite, under a real Tokio runtime, not only a healthy32-pane lightweight-executor test. Performance supplemental BLOCK da449fe confirms the same counts; deploy AFTER remains owed. Round2 checks fixes and main reconciliation only."
+		}
+	]
+}
