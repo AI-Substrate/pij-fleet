@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Open before reviewing pane-observer skips, replays or gate caching that could look like a typing-gate weakening.",
+				"tags": [
+					"typing-gate",
+					"pane-observer",
+					"f258",
+					"brake"
+				],
+				"title": "Observer state is not the send boundary"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F258 D1 (#313 at 8dd6105, pass-with-notes): every production pane-typing site goes through submit_with_owned_input, which captures fresh twice (look, then under acquired input) and types only on that capture's composer_idle; socket delivery and F212 auth recovery use fresh_injection_verdict. Non-fresh permits_injection is tests-only. So observer staleness (replay up to CAPTURE_BACKSTOP 30 s) only brakes at the boundary: a stale held composer makes a differing fresh capture set last_edit_at=now (HumanTyping). Re-check this call-site inventory (grep submit_with_owned_input, fresh_injection_verdict, permits_injection, observed) before trusting it on a later PR: a new caller of the non-fresh gate would turn observer staleness into a policy input. Open notes: the replay gate-holds guard had no witness; a drain-then-Err fresh read and a silently repaired tap leave last capture un-invalidated."
+		}
+	]
+}
