@@ -1055,7 +1055,10 @@
 					"harness_session": "adf51d95-c150-4c06-8ac4-03470d3f9ab4",
 					"instance_key": "310",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #310 merged (fb565c165d74)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-noble-silkworm",
+					"to": "2026-11-21T06:07:04.408Z",
 					"why": "verdict on #310 (F258 A1)"
 				},
 				{

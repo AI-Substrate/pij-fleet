@@ -1625,7 +1625,10 @@
 					"harness_session": "01a1fc0f-987f-71c8-9cbf-48a141c983dc",
 					"instance_key": "f258",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #310 merged (fb565c165d74)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-sympathetic-marten",
+					"to": "2026-11-21T06:07:04.408Z",
 					"why": "F258 daemon idle cost: inbox per-completion, whoami rate, cards (diagnosis first)"
 				},
 				{
