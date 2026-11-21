@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before changing fake ACK refusal ordering or reading the R327 closure evidence",
+				"tags": [
+					"review",
+					"queue",
+					"kind",
+					"parity",
+					"mutation",
+					"f275"
+				],
+				"title": "R327 final parity proof covers named wrong kinds"
+			}
+		},
+		{
+			"name": "body",
+			"value": "R327 R2 c515a66 closes R327-001; governed PASS fe118759. The fake now validates exact delivery/control kind versus serial key before sender terminalization or removal, under one mutex, matching SQLite. Its shipped shared queue contract pins both sides: a wrong-kind blank-sender refusal leaves the claim running; an own-kind blank-sender refusal ends it and releases the seat.\n\nIndependent comparison also covers a named sender and the non-delivery telegram kind (whose generated sender is empty by design), alongside the original empty/mismatched-prefix case. All four leave SQLite kind/serial/payload/state/outcome intact and record no fake terminal ACK. Both queues keep serial ownership until ordinary ack(Done), then permit the next claim. Inspected old fake callers did not rely on wrong-kind named removal; existing full-head CI is green.\n\nReceipts: 7 controls GREEN, M2 sender-before-kind gives 2 intended RED (original comparison and shipped fake shared contract) plus 5 GREEN including real shared contract, byte-identical restoration then 7 GREEN. One no-fail-fast cargo batch per phase, nice19/4 jobs/shared target. CI artifact14718966611 has2838 cases and no errors/failures. No new finding/notes owed, no production delta or loop/launch. Local TS gates stay dependency-limited, not green. Logs/patches in session files; owned source archive cleaned at closeout.\n\nMagicWand: preserve the shared refusal-nonmutation and terminalization assertions together. Testing Err alone certifies neither ownership nor fake/real parity.\n"
+		}
+	]
+}
