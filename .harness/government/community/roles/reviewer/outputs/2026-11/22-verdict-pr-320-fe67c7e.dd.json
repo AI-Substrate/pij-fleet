@@ -1,0 +1,64 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fe9e-a004-7fb1-9927-478ace0a70ca",
+				"date": "2026-11-22",
+				"head": "fe67c7e26d89c3abbc18b5cd139f77714fba56c1",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:320",
+				"writer": "pij-anonymous-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"new (C34 follow-up) N320-R2-01: a stale healthy lapse can be restarted if boot reconciliation wins before a current-daemon attestation/heartbeat; boot grace alone is not proof.",
+				"new (C34 follow-up) N320-R2-02: a heartbeat after the one-shot lease brake during awaited liveness can still precede a queued restart; name and test the decision linearization boundary."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib auth_recovery::tests:: -- --nocapture",
+					"exit_code": 101,
+					"log": "session-local pr320-r2-probes.log;35 positive tests passed;exactly3 mutants killed;both original real-SQLite witnesses GREEN"
+				},
+				{
+					"command": "just shared-build -- clippy --locked -p pij-daemon --lib -- -D warnings",
+					"exit_code": 0,
+					"log": "session-local pr320-r2-clippy.log;exact production head/macOS"
+				},
+				{
+					"command": "gh run view 44916010230 --job 136881650728 --log; inspect successful artifact14712271121",
+					"exit_code": 0,
+					"log": "session-local pr320-r2-ci.log;JUnit2816cases,zero failures"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "session-local pr320-r2-harness-checks.log;eight dependency/ambient-tool failures;native/SDK/skill pass;heavy stages skipped,no workspace rerun"
+				},
+				{
+					"command": "just pr-freeze 320",
+					"exit_code": 0,
+					"log": "FINAL exact head;CI5/5,CLEAN,schema49,no migration"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES at fe67c7e26d89c3abbc18b5cd139f77714fba56c1, final round under C34.\n\nThe two original witnesses are closed at this head:\n- B320-01: review_f268_failed_renewal_must_not_restart_a_live_receiver_before_retry\n  now queues ZERO controls after a mechanical renewal whose audit append failed.\n  on_lapse's new current-daemon lease brake spares it despite the stale spine.\n  Dropping that brake restores ONE restart and fails the original oracle.\n- B320-02: review_second_expiry_after_failed_renewal now yields TWO lapse edges\n  and ONE restart after the prior acting window expired. Keeping renewal debt\n  apart from native_lapsed preserves the second real loss. Re-marking native_lapsed\n  on a failed renewal restores ONE edge / ZERO controls and fails the oracle.\n- The original next-heartbeat retry control passes; dropping renewal debt on\n  failure kills it. Held bodies still return once, new live sends are not parked,\n  and the held-decision window, gap catch-up and prompt-abort controls pass.\n\nThe new brake is a BRAKE, not a replacement POLICY: it only spares, and a failed\nlease read spares without recording a decision. The debt set is keyed by seat,\nremoved after successful audit and pruned with the existing live-native roster;\nit no longer authorizes lapse-edge suppression.\n\nNew notes owed (C34 follow-ups, not regressions introduced by R2):\n\nN320-R2-01 — startup protection is ordering-dependent, not durable.\nThe current-daemon lease proof is deliberately not restored from the stale\nspine. Replacing the delivery service with a fresh one on the same real\nregistry/queue/spine after an unrecorded renewal gives a boot-grace live receiver\nbut native_receiver_renewed=false: reconcile queues ONE restart. If that receiver\nheartbeats with the new service first (and its new audit also fails), reconcile\nqueues ZERO. Thus a healthy extension whose reattachment/heartbeat loses the\nboot race is not covered merely by delivery's boot grace.\nThe exclusion preserves F261's required recovery of a genuinely lost extension\nat attachment; counting every boot-grace seat as renewed would suppress it.\nInitial native attestation/registration also initializes the lease entry, so\nreattachment can supply the brake before the first heartbeat; the helper means\n\"current matching lease entry\", not literally \"a heartbeat was observed\".\nSources: delivery/mod.rs:417-427,639-679,783-796.\nName this startup tradeoff explicitly; a future ordering change must keep the\nexisting pre-attachment lost-extension control. The probe reconstructs the\nservice state, not a real daemon bounce, which was forbidden.\n\nN320-R2-02 — the lease brake is one snapshot before awaited decision work.\non_lapse checks the lease and releases native_lock before handle obtains/uses\nthe per-seat ledger and awaits liveness/composer/store work\n(auth_recovery.rs:721-733,260-339; delivery/mod.rs:783-796).\nA deterministic LivenessPort latch held a decision AFTER the brake had returned\nfalse. While held, the registered receiver renewed, its audit failed, and the\ncurrent lease read became true. Releasing liveness still produced Action::Restart\nand ONE queued control. This is not covered by a before-call brake test, and it\nalso existed without R2's brake. Any future final-check/serialization repair\nmust respect the native-lock/control-admission lock order, not simply hold the\nglobal native mutex across the whole recovery handler.\nThese two newly characterized boundaries do not negate the GREEN original\norderings, but they prohibit a blanket all-interleaving or post-bounce claim.\n\nMerge, identity and cost:\n- The final merge preserves the R2 production hunks. Its inherited TapAttach\n  signature adjustment matches main's port change; diff whitespace check passes.\n  The reviewer checkout is detached and unchanged.\n- The brake matches the current registry incarnation's PID, process start and\n  native session, then its in-memory lease age, under native_lock. A previous\n  incarnation's lease cannot supply this proof. It grants no new sender authority.\n- No new timer, subscriber, task or process launch. One extra registry call and\n  lease lookup per eligible lapse check; gap reconciliation is bounded to once\n  per ten seconds after completion, not heartbeat/live-event throughput.\n- As performance noted, every renewing heartbeat also checks the owed set;\n  default lease/3 recommends twenty seconds, not a server-side rate cap. The\n  existing receiver reconciliation prunes the new set by roster membership,\n  potentially O(owed entries * live Copilot roster) comparisons. Audit-only\n  retries no longer repeat successful held-body recovery; return-stage failure\n  still can. No measured live CPU-saving claim is made.\n\nValidation:\n- Exact-head session-local archive, real SQLite registry/queue/spine, private\n  fake tmux/liveness and one failed renewed-append injection. A one-second\n  test-only lease preserves the original failure ordering without live receiver\n  mutation. Mutation hooks were confined to that source and selected by each\n  test's name; default controls use the exact production branches.\n- `just shared-build -- test -p pij-daemon --lib auth_recovery::tests:: -- --nocapture`\n  with the canonical shared target/nice19/four jobs: exit101 as expected,\n  THIRTY-FIVE positive tests passed and exactly THREE mutants failed. No other\n  failure: drop brake, drop owed retry, and re-mark lapse. Both original\n  real-SQLite witnesses passed, as did the stated boundary characterizations.\n- `just shared-build -- clippy --locked -p pij-daemon --lib -- -D warnings`\n  at the exact production checkout: exit0, local macOS compilation clean.\n- Exact-head CI run44916010230, successful rust-testjob136881650728, successful\n  upload artifact14712271121: independently parsed 2,816 cases, zero failures;\n  the six scoped renewal/second-expiry/retry/gap/boot/held-decision tests passed.\n- `harness checks --quick`: exit1, eight missing-dependency/ambient-tool stages\n  failed; native contracts, SDK and pij-skill passed. Route inventory, full Rust\n  and smoke were skipped. No dependency links were created under C25. Per PM's\n  no-workspace-rerun instruction after the known daemon_log hang, no unbounded\n  full suite was rerun. This is not a green local full gate.\n- `just pr-freeze 320`: FINAL at the exact full head, CI5/5, CLEAN, schema49,\n  no migration. No live spawn, lapse/renewal, bounce or production DB write.\n\nHighest-value harness encoding: preserve the failure -> consumer -> next-lifetime\nmatrix, and distinguish lease proof at check time from proof held through the\ndecision and from proof after a new daemon starts.\n"
+		}
+	]
+}
