@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fc74-1cfc-7bc1-a7ba-8ccf7755888d",
+				"date": "2026-11-21",
+				"head": "92787c46d0fef581b36fe93e426d90b671f502a1",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:310",
+				"writer": "pij-noble-silkworm",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict, #310 at 92787c46d0fef581b36fe93e426d90b671f502a1: PASS WITH NOTES.\n\nThe change only replaces the wait's sleep (delivery/mod.rs:2278-2297). Claims, authority and the event filter are unchanged.\n\n1. Can a caller suppress another seat's wake? No.\n   - The wake subscription is `EventFilter::kinds([delivery.outcome (+steer.changed)]).for_seat(seat)` (mod.rs:1989-1996). `matches` requires `event.seat == Some(seat)` (core/events.rs:43-51).\n   - Another seat's events are rejected in memory and cannot reach this waiter's select.\n   - The timed read is per-seat too: `kinds = [delivery_kind(seat)]` (mod.rs:1988). Another seat's rows can't move the instant.\n   - The nap is `min(due, 15 s)`, so a caller can only make it shorter, never longer. A huge not_before is clamped to the backstop.\n   - The only way to silence a wake is broadcast lag. `subscribe_live` has ends_on_gap=false, so a lagged waiter drops events silently.\n   - That costs a lost wake, now bounded by CLAIM_WAIT_BACKSTOP (15 s) instead of the old 500 ms tick. No message is lost; the queue is durable.\n   - Note N1: the worst case of an event flood goes from about 0.5 s to 15 s of added delivery latency. Availability only, bounded, and it heals itself. Acceptable.\n\n2. Starvation or DoS shape:\n   - Fan-out: every broadcast event wakes all ~76 subscriber tasks. Each task runs only the in-memory filter and returns Pending. Nothing touches SQLite unless the event is that seat's own.\n   - So a flood costs O(waiters) cheap polls per event, with no claim passes. That is the same as before the PR (the event branch already existed); the PR removes the 152/s timer passes.\n   - Timed wakes: a sender can schedule delayed rows into a victim's queue (already true via send). Each distinct second fires at most one pass, and that pass claims the now-due row, so it is useful work, not amplification.\n   - No spin: NEXT_CLAIMABLE_SQL counts only `due > unixepoch()`. A due row held behind its serial key's running claim drops out of the MIN, so the next nap is that claim's lapse or the backstop, never zero in a loop. A ZERO nap happens only on a clock-boundary race, once per due second.\n   - Negative or overflowing values: `u64::try_from(due).unwrap_or(0)` → ZERO, and due is always > now anyway. The lease is bounded at construction.\n   - The lease matches: the timed branch runs only for native (Copilot plain `queue.claim`, ordinary lease) or during-turn. OMP/Pi `claim_extension` (extension lease) is not timed, so `claimed_at + claim_lease_secs` is the right lapse for the rows it governs.\n\n3. Identity revalidation on every pass:\n   - Yes, unchanged. Each loop iteration re-runs `inbox_recipient(seat, identity)` under native_lock before any claim (mod.rs:~2005).\n   - It also runs `revalidate_inbox_observation` after the claim and again before hand-off (mod.rs:2158, 2236). A failure returns the job with `retry(ZERO)`.\n   - The PR only changes how long the loop sleeps between passes.\n   - Note N2: a replaced incarnation's wait now lingers up to 15 s (was 0.5 s) before its next pass refuses it. It holds one connection and one subscription meanwhile, but it CANNOT claim: the refusal runs before any claim, and the work stays queued (the test asserts this). Not a security regression.\n\n4. Subscription lifetime: the subscription is a stack local of the request future, so it is dropped on return or cancel. No per-wait leak introduced. (Reviewer owns the full check.)\n\n5. Public-repo hygiene:\n   - The diff adds no secrets, tokens or local paths. There are no lockfile, .npmrc or CI changes and no new process launches (no shell or path-injection surface). It reads no credential files.\n\nNot mutation-checked by me (to avoid a build at fleet load):\n- Note N3 (pre-existing, not owed): no test has a second seat's events fail to wake a waiter. Dropping `.for_seat` would pass every new test, because they are single-seat. That mutant would bring back cross-seat amplification (every seat's outcome wakes all 76 waiters into a claim pass), which is exactly this PR's cost class. A two-seat pass-count assertion would pin it. Suggested, not blocking.\n"
+		}
+	]
+}
