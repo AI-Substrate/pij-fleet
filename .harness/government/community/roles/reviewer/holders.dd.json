@@ -2638,7 +2638,10 @@
 					"harness_session": "7e16c5c7-d3e8-485f-9c6d-b87655f79c00",
 					"instance_key": "309",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #309 merged (f5646d2492e8)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-anonymous-mongoose",
+					"to": "2026-11-21T08:04:53.622Z",
 					"why": "verdict on #309 (F255)"
 				},
 				{
