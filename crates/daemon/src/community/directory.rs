@@ -497,12 +497,16 @@ impl DirectoryService {
             // A retired role routes, owns and needs nothing (plan 206).
             if !retired {
                 let holders_mode = meta["holders"].as_str().unwrap_or("one");
-                let live_holders = mine
+                let live_holders: Vec<&Assignment> = mine
                     .iter()
+                    .copied()
                     .filter(|row| row.to.is_none() && live_seats.contains(&row.seat))
-                    .count();
-                // Read only when two-live-holders fires (plan 215, F90).
-                let open: HashMap<String, u64> = if holders_mode == "one" && live_holders > 1 {
+                    .collect();
+                // Read only when two-live-holders fires (plan 215, F90; F272:
+                // per-PR instances are not duplicates).
+                let open: HashMap<String, u64> = if holders_mode == "one"
+                    && !picture::duplicate_holders(&live_holders).is_empty()
+                {
                     self.store
                         .unanswered_by_holder(project, id)
                         .await
@@ -1550,13 +1554,24 @@ impl DirectoryService {
                         ));
                         continue;
                     }
+                    // F272: only another seat on the same holding (the bare
+                    // role, or the same instance) duplicates it.
                     let warning = (holders_mode(root, &draft.role)? == "one")
-                        .then(|| rows.iter().find(|held| held.to.is_none()))
+                        .then(|| {
+                            rows.iter().find(|held| {
+                                held.to.is_none()
+                                    && held.instance == draft.instance
+                                    && held.seat != draft.seat
+                            })
+                        })
                         .flatten()
                         .map(|other| {
                             format!(
-                                "W-ONE-HOLDER: {} is a one-holder role and {} still holds it",
-                                draft.role, other.seat
+                                "W-ONE-HOLDER: {} is a one-holder role and {} still holds {}{}",
+                                draft.role,
+                                other.seat,
+                                draft.role,
+                                instance_suffix(&draft.instance)
                             )
                         });
                     let mut new = draft.clone();
