@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fd41-0a20-74b2-9dfc-88e2350122d0",
+				"date": "2026-11-21",
+				"head": "916de5628b586eee641053915de5227806c5e050",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:315",
+				"writer": "pij-sure-urial",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R315-F001: use live_only for the fresh receipt.after read and correct the reaper cost/timing claim in round 2."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 315",
+					"exit_code": 0,
+					"log": "FINAL at 916de5628b586eee641053915de5227806c5e050; all five latest checks successful."
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14699603162/zip",
+					"exit_code": 0,
+					"log": "CI 44885298204, rust-test job 136789170807: JUnit 2773 executed, zero failures/skips; five index tests and 17 reaper/death-sweep tests pass."
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Review worktree lacks local TypeScript dependencies; ambient Biome is incompatible. C25: no dependency provisioning; exact-head CI supplies TS proof."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "BLOCK - round 1, exact head 916de5628b586eee641053915de5227806c5e050.\n\nR315-F001 (P2, cost/core scope): the non-dry reaper still materializes the entire roster every sweep.\n\ncrates/daemon/src/reaper.rs:268-274 computes receipt.after with registry.list(SeatFilter::default()), then discards tombstoned descriptors in Rust. death_sweep::sweep always calls this with dry_run=false (crates/daemon/src/death_sweep.rs:90-98), including ticks that reap nothing. Thus the automatic 5-second loop still performs one full LIST_SQL scan and decodes every historical seat per tick. The supplied 6.26 -> 0.34 ms timing measures only the initial list, not both reads in a sweep. The PR's reaper scaling claim is therefore incomplete: the final count remains O(all historical seats), not O(live seats).\n\nFix in this PR's round 2, not a new hardening project: fetch live_only again for receipt.after and take that vector's length, just as the initial count does. Keep the final fresh read; do not replace it with before-minus-reaped arithmetic, which would lose concurrent registration/tombstone effects. Correct the cost row and qualify the timing as a per-list measurement. A focused recording-registry regression that rejects an unfiltered list on either read would defend the actual consumer, rather than only an exported query constant. This is the same recurring F258 read and a small completion of the stated optimization.\n\nOther requested checks pass:\n\n- Reaper behavior: the initial SQL restriction is equivalent to the previous Rust restriction for valid registry rows. Already tombstoned seats were never candidates or receipt entries. A row tombstoned between list and get is still skipped (reaper.rs:210-212); a row changed after get is still refused by the full-descriptor comparison under the write transaction (registry.rs:61-77). A revive omitted from an already-tombstoned snapshot waits until the next sweep exactly as before. Obituaries still come only from successful conditional tombstones, with their captured descriptors; parent retirement is separately checked by get. No new revival/retirement path or lost holding cleanup was introduced.\n- Query equivalence: all five bindings, SELECT *, and ORDER BY id are preserved. The live branch requires tombstoned_at IS NULL and live_only=true; harness, folder and parent remain bound predicates. Pane selection still precedes live selection, giving the pane-index seek even with both filters set. The local probe compared complete rows/order against LIST_SQL for 1,250 combinations, including empty versus absent fields, null columns, both filters together and quote-bearing values: all equal. Tombstone/remembership also passed.\n- Migration: 0049 adds an index only, with no archival or row rewrite. The actual migration applied to an isolated 50,000-row v48 schema (200 live), preserving every column of every row and passing integrity_check; user_version became 49. CREATE INDEX itself is not manually repeatable, but normal open/reopen is ledger-idempotent; the real sqlx reopening and historical-upgrade regressions passed on this exact head. An older v48 binary does NOT operate on a v49 DB: the unchanged directional schema guards intentionally refuse at open and public operations. This is existing compatibility policy, not a new fallback.\n- Mandatory-index proof: both indexed queries refused after their index was dropped; the generic query still answered. I read the author-provided L1, L2 and L3 logs and their exact-head PR comment: removing the partial predicate, routing live reads to LIST_SQL, and routing pane reads to LIST_SQL each failed the intended committed assertion. I did not rerun Rust mutants or build in the read-only worktree. R312-N1 is closed by the production Registry::list dispatch test.\n- Resource classification: no new timer, poll or process launch. The observer remains one live-list read per daemon every 600 ms, now walking live entries; the reaper remains one sweep per daemon every 5 s, with R315-F001's residual final scan. Index insert/revive and tombstone maintenance is per affected seat write, not per tick. No new retention POLICY is added: the existing death evidence remains the decision; unknown evidence and conservative pane checks remain BRAKES. Live AFTER SQLite-thread CPU is still owed post-deploy to performance; no daemon bounce or live-store write was performed.\n\nEvidence:\n\n- just pr-freeze 315: FINAL at the full head; five latest checks passed, CLEAN, migration 49 above main's 48.\n- CI run 44885298204, successful rust-test job 136789170807, artifact 14699603162 (junit-linux): 2,773 tests executed, zero failures and zero skips. This includes both live-index tests, all three pane-index tests, all 17 reaper/death-sweep tests, real reopening/historical upgrades, and future-schema refusal.\n- Local nice-19 Python/std-library SQLite probe: exit 0; extracted this head's real SQL constants and migrations, used only in-memory databases; 1,250 parity controls passed, 108 live index entries, seats_live plan, both missing-index refusals, 50,000-row upgrade intact.\n- Author mutation receipts: PR comment 7059968172 and L1/L2/L3 logs corroborated; green logs show 2/2 live and 3/3 pane tests.\n- harness boot: dependency NOT-READY. harness checks --quick: exit 1 from missing local TS dependencies/ambient wrong-version Biome; heavy stages intentionally not run in this read-only tree. Author receipts show full Rust/smoke/route gates passed and subsequent quick checks passed after dependency provisioning. These local setup failures are not this PR's code finding; TS proof remains exact-head CI under C25.\n\nHarness lesson/magicWand: cost proofs should observe every Registry::list call made by the real sweep, including receipt bookkeeping. EXPLAIN and row-parity tests of the selected constant cannot expose a second unchanged full-list consumer. Encode that narrow consumer witness with the round-2 fix. The known docs/difficulties.md merge conflict should preserve both rows.\n"
+		}
+	]
+}
