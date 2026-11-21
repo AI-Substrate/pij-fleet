@@ -55,6 +55,11 @@ async fn fleet(state: SystemState, draft: Option<&str>) -> Fleet {
         crate::build_services(&config, &Path::new(&store.path()).with_extension("signals"))
             .await
             .expect("real store services");
+    // F274: no boot wait unless a test asks for one (each fleet is a fresh
+    // daemon, so every lapse would otherwise wait one 60 s lease).
+    services
+        .delivery
+        .set_native_boot_wait(Duration::from_millis(1));
     let tmux = Arc::new(FakeTmux::new());
     match draft {
         Some(text) => tmux.arrange_composer_text(PANE, text),
@@ -111,6 +116,7 @@ async fn report(fleet: &Fleet, reporter: Incarnation, now_ms: u64) -> super::Out
     )
     .await
     .unwrap()
+    .expect("a report always has an outcome")
 }
 
 /// Every live control queued for the coder, as its payload.
@@ -229,7 +235,8 @@ async fn a_draft_in_the_composer_spares_the_seat() {
         10 * MINUTE,
     )
     .await
-    .unwrap();
+    .unwrap()
+    .expect("a report always has an outcome");
     assert_eq!(outcome.action, Action::Notify);
     assert!(
         controls(&fleet).await.is_empty(),
@@ -873,6 +880,95 @@ async fn a_receiver_renewed_since_its_lapse_is_never_restarted() {
     follower.abort();
     assert!(queued.is_empty(), "{queued:?}");
     assert!(told(&fleet, PARENT).await.is_empty());
+}
+
+/// The coder's receiver heartbeats, as its extension does.
+async fn heartbeat(delivery: &crate::delivery::DeliveryService) {
+    let identity = crate::delivery::NativeInboxIdentity {
+        native_session: Some("native-212".into()),
+        pid: Some(FIRST.pid),
+        proc_start: Some(FIRST.proc_start),
+    };
+    delivery
+        .heartbeat_native_receiver(&SeatId::from(SEAT), &identity, 1, 1, None)
+        .await
+        .expect("the receiver renews");
+}
+
+/// The coder's queued controls once `wait` has passed.
+async fn controls_after(fleet: &Fleet, wait: Duration) -> Vec<String> {
+    tokio::time::sleep(wait).await;
+    controls(fleet).await
+}
+
+/// F274 (a): a lapse outstanding when the daemon starts (an earlier daemon
+/// told it) waits one lease after the boot when this daemon has not heard
+/// from the seat: a receiver that heartbeats within that wait is spared; one
+/// that stays silent is restarted once the wait is over.
+#[tokio::test]
+async fn a_lapse_at_boot_waits_one_lease_for_its_receiver() {
+    for heard in [true, false] {
+        let mut fleet = fleet(SystemState::Idle, None).await;
+        running(&mut fleet);
+        native(&fleet, false).await;
+        let wait = Duration::from_millis(1_500);
+        fleet.services.delivery.set_native_boot_wait(wait);
+        edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+        let follower = tokio::spawn(super::follow_lapses(fleet.services.clone()));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            controls(&fleet).await.is_empty(),
+            "heard={heard}: decided before the wait"
+        );
+        if heard {
+            heartbeat(&fleet.services.delivery).await;
+        }
+        let queued = controls_after(&fleet, Duration::from_millis(2_500)).await;
+        follower.abort();
+        assert_eq!(
+            queued.len(),
+            usize::from(!heard),
+            "heard={heard}: {queued:?}"
+        );
+    }
+}
+
+/// A kernel whose process read lets the coder's receiver heartbeat first, as
+/// a renewal landing while the lapse decision reads the process.
+struct RenewsWhileRead {
+    delivery: Arc<crate::delivery::DeliveryService>,
+}
+
+#[async_trait::async_trait]
+impl pij_core::ports::LivenessPort for RenewsWhileRead {
+    async fn proc_start(&self, pid: u32) -> pij_core::error::Result<Option<u64>> {
+        heartbeat(&self.delivery).await;
+        Ok((pid == FIRST.pid).then_some(FIRST.proc_start))
+    }
+}
+
+/// F274 (b): a renewal that lands after the lapse's lease brake was read,
+/// while the decision reads the process, still spares the seat: the lease is
+/// read again just before a restart is recorded or queued.
+#[tokio::test]
+async fn a_renewal_during_the_lapse_decision_spares_the_seat() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    native(&fleet, false).await;
+    fleet.services.liveness = Arc::new(RenewsWhileRead {
+        delivery: Arc::clone(&fleet.services.delivery),
+    });
+    assert!(lapse(&fleet, super::now_ms()).await.is_none(), "spared");
+    assert!(controls(&fleet).await.is_empty());
+    assert!(
+        fleet
+            .services
+            .spine
+            .latest_matching(&SeatId::from(SEAT), &[super::AUTH_RECOVERY_KIND])
+            .await
+            .unwrap()
+            .is_none(),
+        "nothing recorded"
+    );
 }
 
 /// A kernel whose process table cannot be read.

@@ -10,6 +10,7 @@
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
+use pij_core::error::PijError;
 use pij_core::model::{Envelope, ErrorKind, Harness, SeatId};
 use serde::Deserialize;
 
@@ -92,7 +93,15 @@ pub(crate) async fn handle(
     )
     .await
     {
-        Ok(outcome) => envelope(StatusCode::OK, &Envelope::ok(COMMAND, outcome)),
+        Ok(Some(outcome)) => envelope(StatusCode::OK, &Envelope::ok(COMMAND, outcome)),
+        // Only a lapse is spared by a renewal; a report never reaches it.
+        Ok(None) => internal(
+            COMMAND,
+            PijError::Adapter {
+                adapter: "daemon/auth-recovery".to_string(),
+                message: "a report was spared as a renewed lapse".to_string(),
+            },
+        ),
         Err(error) => internal(COMMAND, error),
     }
 }

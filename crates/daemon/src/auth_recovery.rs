@@ -255,6 +255,8 @@ pub(crate) struct Outcome {
 /// Act on one lost login for `seat`, in `reporter`: the extension's own report
 /// (the route has checked `reporter` is the seat's current process), or the
 /// daemon's lease lapse ([`follow_lapses`]), whose process is checked here.
+/// `None`: a lapse whose receiver renewed before its restart was queued
+/// (F274), so nothing was done or recorded; a report always has an outcome.
 ///
 /// # Errors
 /// Store failures reading or recording the decision: nothing was sent.
@@ -264,7 +266,7 @@ pub(crate) async fn handle(
     reporter: Incarnation,
     cause: Cause,
     now_ms: u64,
-) -> pij_core::error::Result<Outcome> {
+) -> pij_core::error::Result<Option<Outcome>> {
     let slot = services.auth_recovery.slot(&seat.id);
     let mut last = slot.lock().await;
     let now = Instant::now();
@@ -296,6 +298,21 @@ pub(crate) async fn handle(
     let mut action = decide(last.as_ref(), now, reporter, alive, || settled, || free);
     let mut msg_id = None;
     if action == Action::Restart {
+        // F274 (b): a lapse is decided from reads that take time (the
+        // process, the composer). Its receiver may have renewed meanwhile,
+        // so the lease is read again here, the last step before anything is
+        // recorded or queued: the decision linearizes at this read. A renewal
+        // after it meets a restart decided while the lease had lapsed. A
+        // BRAKE: it only spares; a failed read spares too.
+        if cause == Cause::ExtensionLost
+            && services
+                .delivery
+                .native_receiver_renewed(&seat.id)
+                .await
+                .unwrap_or(true)
+        {
+            return Ok(None);
+        }
         let id = format!("auth-restart:{}:{now_ms}", seat.id);
         // Persist before mutate: the window starts before the control exists.
         record(
@@ -342,11 +359,11 @@ pub(crate) async fn handle(
         }
         Action::Restart | Action::Pending | Action::Told => Vec::new(),
     };
-    Ok(Outcome {
+    Ok(Some(Outcome {
         action,
         msg_id,
         told,
-    })
+    }))
 }
 
 /// The seat's last acting decision from the spine, for a daemon that has none
@@ -703,6 +720,17 @@ pub(crate) async fn on_lapse(
     seat: &SeatId,
     now_ms: u64,
 ) -> pij_core::error::Result<Option<Outcome>> {
+    // F274 (a): a seat this daemon has not heard from since it started has
+    // no lease here yet, so whether its receiver is back cannot be read: the
+    // lapse waits until one lease after the boot, by when a live receiver
+    // has renewed (and is spared below) and a dead one has not. A BRAKE: it
+    // delays the decision, never skips it.
+    let mut now_ms = now_ms;
+    if let Some(until) = services.delivery.unheard_since_boot(seat).await {
+        let waited = until.saturating_duration_since(tokio::time::Instant::now());
+        tokio::time::sleep_until(until).await;
+        now_ms = now_ms.saturating_add(u64::try_from(waited.as_millis()).unwrap_or(u64::MAX));
+    }
     let Some(row) = services.registry.get(seat).await? else {
         return Ok(None);
     };
@@ -730,7 +758,10 @@ pub(crate) async fn on_lapse(
         pid: proc.pid,
         proc_start: proc.proc_start,
     };
-    let outcome = handle(services, &row, reporter, Cause::ExtensionLost, now_ms).await?;
+    let Some(outcome) = handle(services, &row, reporter, Cause::ExtensionLost, now_ms).await?
+    else {
+        return Ok(None);
+    };
     // F268: a decision that recorded nothing marks the lapse decided. A
     // failed write leaves it outstanding, decided again later, as before.
     if matches!(outcome.action, Action::Told | Action::Pending)
