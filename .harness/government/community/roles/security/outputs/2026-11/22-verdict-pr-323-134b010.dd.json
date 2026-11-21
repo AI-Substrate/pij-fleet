@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1feaf-ef3b-7c52-a9cd-617520d58038",
+				"date": "2026-11-22",
+				"head": "134b0109a468024892eccf161392e1272d3bfa58",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:323",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 323 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at 134b010"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #323 round 1 at 134b0109a468024892eccf161392e1272d3bfa58: pass\n\nStatic review of picture.rs, community/directory.rs and core/directory.rs, in a detached worktree. CI 5/5 SUCCESS at this head.\n\n## Can the new grouping hide a real duplicate holder, letting two seats both act on one PR?\nNo authority changes. `duplicate_holders` only drives ADVICE: the Next actions, the directory JSON, the open-work read gate and the W-ONE-HOLDER warning. Assignment was already allowed with a warning, and still is. Who can act on a role or instance is decided elsewhere: E-RS-ROLE-HOLDERS routing and `pij output`'s writer check are unchanged in this diff. So hiding a duplicate here could at worst mean a missed warning, never a grant.\n- Grouping is by exact `instance` (with '' as the bare role). A group is flagged when it contains any seat other than its first, so two distinct seats on the same holding are always flagged, and a seat holding the same instance twice is not. The case that is no longer flagged is one seat on the bare role plus another seat on `<role>/<n>`. They are different holdings with different routing addresses, so they are not one PR held twice. Whether that mix should warn is a policy question for the reviewer, not a security one.\n\n## Can the release advice ever target the wrong seat?\nNo. Each action is built from one group, whose rows all share an instance. Every command is `pij directory release <address(row)> <row.seat>`, using that row's own role/instance and seat, and filtered with `row.seat != kept.seat`. So the kept seat is never targeted, and a release for /322 cannot name /320. When two or more holders have open work, it prints no commands, as before. Commands pass `printable(row)`, and every word goes through the existing `command()` quoting, unchanged.\n\nNo secrets, lockfile or `.npmrc` changes.\n"
+		}
+	]
+}
