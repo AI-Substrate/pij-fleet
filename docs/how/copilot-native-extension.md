@@ -296,7 +296,11 @@ and skips its session-start plugin updates. A seat's version changes only when
 the installed binary does. `copilot update` says it downloads into the package
 cache and that the download "applies at your next launch, as long as auto-update
 is still enabled then", so it may not move seats forward on its own; how the
-installed binary itself is replaced is not yet proven (F271c).
+installed binary itself is replaced is not yet proven (F271c). Only launches pij
+builds carry the variable: a spawn or revive `SpawnPlan`. A Copilot seat already
+running when this shipped, an adopted seat pij never launched, and a seat
+restarted inside Copilot (`/restart` is not a new `SpawnPlan`) are not
+retrofitted; they keep auto-update on until pij spawns or revives them.
 
 **Copilot outside pij still updates itself.** A Copilot you start by hand (the
 prime's, say) checks for updates at startup and applies a download at its next

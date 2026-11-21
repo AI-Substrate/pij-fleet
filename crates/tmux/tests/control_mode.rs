@@ -1120,3 +1120,332 @@ fn a_held_attach_lock_skips_reads_without_launching_or_waiting() {
         "the one launch is the control client: {launched:?}"
     );
 }
+
+/// F267 step 3: a stop detaches every tap the daemon owns in ONE tmux launch,
+/// and its reads ride the control client: never a launch or a read per pane.
+/// The per-pane path launched about two processes a pane and forked its
+/// reads after the release; at ~145 panes it took 4.7 s of a stop. A pane
+/// gone meanwhile is released; a listed pane with another owner's tap is
+/// refused and its tap keeps running.
+#[test]
+fn detaching_many_taps_launches_once_and_leaves_a_foreign_tap_alone() {
+    const PANES: usize = 32;
+    let mut server = Server::start();
+    for _ in server.panes.len()..PANES {
+        server.run(&["new-window", "-d", "-t", "work", "exec sleep 600"]);
+    }
+    server.panes = server
+        .run(&["list-panes", "-s", "-t", "work", "-F", "#{pane_id}"])
+        .lines()
+        .map(str::to_string)
+        .collect();
+    assert_eq!(server.panes.len(), PANES);
+    let taps = server.dir.join("taps");
+    let adapter = server.adapter(true);
+    let (foreign, owned) = server.panes.split_last().expect("panes");
+    let gone = &owned[0];
+    block_on(async {
+        for pane in owned {
+            adapter
+                .attach_pane_tap(pane, &pij_tmux::tap_sink_path(&taps, pane))
+                .await
+                .expect("attach");
+        }
+    });
+    // Detach taps that are capturing, as every real one is: a pipe reads live
+    // once tmux forks `sh -c 'cat >> sink'`, before that shell opens the sink,
+    // and a detach inside that window lets the late `>>` recreate it
+    // (D-F267-4). A key's tty echo is output the tap must carry.
+    for pane in owned {
+        server.run(&["send-keys", "-t", pane, "x"]);
+    }
+    let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(5));
+    for pane in owned {
+        let sink = pij_tmux::tap_sink_path(&taps, pane);
+        while std::fs::metadata(&sink).map_or(0, |meta| meta.len()) == 0 {
+            assert!(Instant::now() < deadline, "{pane}'s tap captured nothing");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    server.run(&["pipe-pane", "-t", foreign, "cat >/dev/null"]);
+    server.run(&[
+        "set-option",
+        "-p",
+        "-t",
+        foreign,
+        "@pij-tap-sink",
+        "/elsewhere.raw",
+    ]);
+    server.run(&["kill-pane", "-t", gone]);
+    block_on(async {
+        adapter.list_panes().await.expect("warm the control client");
+        let before = server.launches().len();
+        let started = Instant::now();
+        let results = adapter.detach_pane_taps(&server.panes).await;
+        let took = started.elapsed();
+        let launched = server.launches()[before..].to_vec();
+        assert_eq!(
+            launched.len(),
+            1,
+            "detaching {PANES} taps launched more than once: {launched:#?}"
+        );
+        assert!(launched[0].starts_with("-u pipe-pane"), "{launched:#?}");
+        assert!(
+            took < pij_testkit::time::scaled(Duration::from_secs(5)),
+            "detaching {PANES} taps took {took:?}"
+        );
+        let (refused, released) = results.split_last().expect("results");
+        let refused = refused.as_ref().expect_err("a foreign tap is refused");
+        assert!(
+            refused
+                .to_string()
+                .contains("refusing to detach foreign tap"),
+            "{refused}"
+        );
+        for (pane, result) in owned.iter().zip(released) {
+            result
+                .as_ref()
+                .unwrap_or_else(|error| panic!("{pane}: {error}"));
+            assert!(
+                !pij_tmux::tap_sink_path(&taps, pane).exists(),
+                "{pane}'s sink outlived its detach"
+            );
+        }
+    });
+    let states = server.run(&[
+        "list-panes",
+        "-s",
+        "-t",
+        "work",
+        "-F",
+        "#{pane_id} #{pane_pipe} #{@pij-tap-sink}",
+    ]);
+    for line in states.lines() {
+        let expected = if line.starts_with(&format!("{foreign} ")) {
+            format!("{foreign} 1 /elsewhere.raw")
+        } else {
+            format!("{} 0 ", line.split(' ').next().unwrap_or_default())
+        };
+        assert_eq!(line, expected, "{states}");
+    }
+}
+
+/// `work` on a current-thread tokio runtime with its timer: the detach waits
+/// with tokio's `sleep`, which `block_on` cannot drive. Round 1's adapter
+/// reached that sleep only on the paths these tests pin (#330 review).
+fn on_tokio<T>(work: impl std::future::Future<Output = T>) -> T {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .expect("tokio runtime")
+        .block_on(work)
+}
+
+/// Run `lines` as one tmux `source-file`: hundreds of commands in one client
+/// and no argv limit, for fixtures too large for one command line.
+fn source(server: &Server, name: &str, lines: &[String]) {
+    let script = server.dir.join(name);
+    fs::write(&script, lines.join("\n") + "\n").expect("write tmux script");
+    server.run(&["source-file", script.to_str().expect("utf8 path")]);
+}
+
+/// Wait until each pane's tap has captured something: a detach inside the
+/// window after an attach lets the tap's late `cat >>` recreate its sink
+/// (D-F267-4), and every real tap is long past it.
+fn wait_capturing(server: &Server, taps: &std::path::Path, panes: &[String]) {
+    let keys: Vec<String> = panes
+        .iter()
+        .map(|pane| format!("send-keys -t {pane} x"))
+        .collect();
+    source(server, "capture.tmux", &keys);
+    let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(10));
+    for pane in panes {
+        let sink = pij_tmux::tap_sink_path(taps, pane);
+        while fs::metadata(&sink).map_or(0, |meta| meta.len()) == 0 {
+            assert!(Instant::now() < deadline, "{pane}'s tap captured nothing");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+}
+
+/// Every pane's pipe state and owner marker, `<pane> <pipe> <marker>` a line.
+fn tap_states(server: &Server) -> Vec<String> {
+    server
+        .run(&[
+            "list-panes",
+            "-s",
+            "-t",
+            "work",
+            "-F",
+            "#{pane_id} #{pane_pipe} #{@pij-tap-sink}",
+        ])
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+/// #330 review B330-01: a teardown of more taps than one tmux command can
+/// carry. tmux 3.6a refuses a command whose arguments pass about 16 KB
+/// (`command too long`) before running any of it, so one list for 300 panes
+/// (about 18 KB) detached nothing and was resent, identical, every 25 ms for
+/// 2 s. Chunked, the teardown takes a few launches, each different.
+#[test]
+fn a_teardown_past_tmux_command_limit_detaches_every_tap_in_a_few_distinct_launches() {
+    const PANES: usize = 300;
+    let mut server = Server::start();
+    let windows: Vec<String> = (server.panes.len()..PANES)
+        .map(|_| "new-window -d -t work 'exec sleep 600'".to_string())
+        .collect();
+    source(&server, "windows.tmux", &windows);
+    server.panes = server
+        .run(&["list-panes", "-s", "-t", "work", "-F", "#{pane_id}"])
+        .lines()
+        .map(str::to_string)
+        .collect();
+    assert_eq!(server.panes.len(), PANES);
+    let taps = server.dir.join("taps");
+    fs::create_dir_all(&taps).expect("tap dir");
+    // Owned by marker, as a previous daemon's taps are after a restart.
+    let attach: Vec<String> = server
+        .panes
+        .iter()
+        .flat_map(|pane| {
+            let sink = pij_tmux::tap_sink_path(&taps, pane);
+            let sink = sink.to_str().expect("utf8 sink");
+            [
+                format!("set-option -p -t {pane} @pij-tap-sink '{sink}'"),
+                format!("pipe-pane -O -t {pane} 'cat >> {sink}'"),
+            ]
+        })
+        .collect();
+    source(&server, "attach.tmux", &attach);
+    wait_capturing(&server, &taps, &server.panes);
+    let adapter = server.adapter(true);
+    on_tokio(async {
+        adapter.list_panes().await.expect("warm the control client");
+        let before = server.launches().len();
+        let started = Instant::now();
+        let results = adapter.detach_pane_taps(&server.panes).await;
+        let took = started.elapsed();
+        for (pane, result) in server.panes.iter().zip(&results) {
+            result
+                .as_ref()
+                .unwrap_or_else(|error| panic!("{pane}: {error}"));
+        }
+        let launched = server.launches()[before..].to_vec();
+        assert!(
+            (2..=4).contains(&launched.len()),
+            "{} launches for {PANES} taps: {launched:#?}",
+            launched.len()
+        );
+        let distinct: std::collections::BTreeSet<&String> = launched.iter().collect();
+        assert_eq!(
+            distinct.len(),
+            launched.len(),
+            "a detach command was sent twice"
+        );
+        assert!(
+            took < pij_testkit::time::scaled(Duration::from_secs(10)),
+            "detaching {PANES} taps took {took:?}"
+        );
+    });
+    for line in tap_states(&server) {
+        let pane = line.split(' ').next().unwrap_or_default();
+        assert_eq!(line, format!("{pane} 0 "), "{pane} kept its pipe or marker");
+        assert!(
+            !pij_tmux::tap_sink_path(&taps, pane).exists(),
+            "{pane}'s sink outlived its detach"
+        );
+    }
+}
+
+/// #330 review B330-02: an exited pane (kept by `remain-on-exit`) is still
+/// listed, and `pipe-pane` on it fails with `target pane has exited`. In one
+/// list that failure stopped every pane after it, round after round, so a
+/// live tap behind it was never detached. That pane alone keeps its marker
+/// and sink and is named; the taps after it detach, in one more launch.
+#[test]
+fn an_exited_pane_mid_batch_never_holds_back_the_taps_after_it() {
+    let mut server = Server::start();
+    let exited = server
+        .run(&[
+            "new-window",
+            "-d",
+            "-P",
+            "-F",
+            "#{pane_id}",
+            "-t",
+            "work",
+            "exec cat",
+        ])
+        .trim()
+        .to_string();
+    server.run(&["set-option", "-w", "-t", &exited, "remain-on-exit", "on"]);
+    let (first, last) = (server.panes[1].clone(), server.panes[2].clone());
+    server.panes = vec![first.clone(), exited.clone(), last.clone()];
+    let taps = server.dir.join("taps");
+    let adapter = server.adapter(true);
+    on_tokio(async {
+        for pane in &server.panes {
+            adapter
+                .attach_pane_tap(pane, &pij_tmux::tap_sink_path(&taps, pane))
+                .await
+                .expect("attach");
+        }
+    });
+    wait_capturing(&server, &taps, &server.panes);
+    // The capture left `x` on cat's line: Enter ends it, then EOF ends cat.
+    server.run(&["send-keys", "-t", &exited, "Enter", "C-d"]);
+    let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(5));
+    while server
+        .run(&["display-message", "-p", "-t", &exited, "#{pane_dead}"])
+        .trim()
+        != "1"
+    {
+        assert!(Instant::now() < deadline, "{exited} never exited");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    on_tokio(async {
+        adapter.list_panes().await.expect("warm the control client");
+        let before = server.launches().len();
+        let results = adapter.detach_pane_taps(&server.panes).await;
+        let launched = server.launches()[before..].to_vec();
+        assert_eq!(launched.len(), 2, "{launched:#?}");
+        assert_ne!(launched[0], launched[1], "a detach command was sent twice");
+        results[0].as_ref().expect("the tap before the exited pane");
+        results[2].as_ref().expect("the tap after the exited pane");
+        let refused = results[1]
+            .as_ref()
+            .expect_err("the exited pane's tap stays");
+        assert!(
+            refused
+                .to_string()
+                .contains(&format!("pipe-pane detach failed for pane {exited:?}")),
+            "{refused}"
+        );
+        // The observer retires one pane at a time through the same method
+        // (mongoose #330 note 3): the exited pane alone costs one launch and
+        // an error, never a launch every 25 ms until the grace runs out.
+        let before = server.launches().len();
+        adapter
+            .detach_pane_tap(&exited)
+            .await
+            .expect_err("the exited pane's tap still cannot be detached");
+        let launched = server.launches()[before..].to_vec();
+        assert_eq!(launched.len(), 1, "{launched:#?}");
+    });
+    let sink = pij_tmux::tap_sink_path(&taps, &exited);
+    for line in tap_states(&server) {
+        let pane = line.split(' ').next().unwrap_or_default();
+        if pane == exited {
+            assert!(
+                line.ends_with(sink.to_str().expect("utf8 sink")),
+                "the exited pane keeps its marker: {line}"
+            );
+        } else if pane == first || pane == last {
+            assert_eq!(line, format!("{pane} 0 "), "{pane} kept its pipe or marker");
+        }
+    }
+    assert!(sink.exists(), "the exited pane's sink is retained");
+    assert!(!pij_tmux::tap_sink_path(&taps, &last).exists());
+}

@@ -2985,14 +2985,22 @@ impl TmuxPort for FakeTmux {
         }
     }
 
-    async fn detach_pane_tap(&self, pane: &str) -> Result<()> {
+    async fn detach_pane_taps(&self, panes: &[String]) -> Vec<Result<()>> {
         let mut state = self.state.lock().expect("fake tmux mutex");
-        state.recorder.record(format!("detach_pane_tap:{pane}"));
-        state.taps.remove(pane).ok_or_else(|| PijError::Adapter {
-            adapter: "fake-tmux".to_string(),
-            message: format!("pane {pane:?} has no attached tap"),
-        })?;
-        Ok(())
+        panes
+            .iter()
+            .map(|pane| {
+                state.recorder.record(format!("detach_pane_tap:{pane}"));
+                state
+                    .taps
+                    .remove(pane)
+                    .map(|_| ())
+                    .ok_or_else(|| PijError::Adapter {
+                        adapter: "fake-tmux".to_string(),
+                        message: format!("pane {pane:?} has no attached tap"),
+                    })
+            })
+            .collect()
     }
 
     async fn kill(&self, pane: &str) -> Result<()> {
