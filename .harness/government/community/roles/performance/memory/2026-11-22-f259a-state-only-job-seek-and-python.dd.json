@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before pricing the live-or-owed drain roster or verifying its post-deploy AFTER",
+				"tags": [
+					"cost",
+					"F259a",
+					"sqlite",
+					"roster",
+					"benchmark",
+					"after"
+				],
+				"title": "F259a: state-only job seek and Python prep benchmark scope"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F259a at0a8490f removes retired seat-row scan/decode, but jobs_claimable seeks STATE only then applies substr(kind). Price ALL pending/running jobs Q, not just deliveries; plus DISTINCT/ORDER temp B-trees and D target PK lookups. Exact SQL/schema50/SQLite3.54.1 fixture20 live+3 owed:23 returned/969 VM instructions; +2000 other OPEN jobs:23/20962; +2000 other DONE or retired-unowed rows:no extra instructions. Dropping either required index refuses loudly. Sources:registry.rs:511-522,641-659; registry_live_or_owed.rs:41-238.\n\nFalcon's7.53/.86ms medians(3297->302 rows,1992->275 kinds;133 live/377 open) are PYTHON roster/fetchall materialization+kinds/json+peek, NOT Rust decode/pool/dispatch. Original copy deleted; retrospective saved eval code/output read, not rerun. Both claimable-kind intersections were EMPTY.720/hour projects cumulative elapsedPython5.42/.62s, not SQL-only or daemonCPU. Prefix ranges must cover BOTH delivery: and delivery-control:; delivery. upper bound excludes bodies.\n\nR1 PASS-WITH-NOTES, AFTER owed after deploy with real Rust/cohort timing; ping has no drain-stage sensor. Passive24869/e3673fb93c,20.014131s:spawns0,CPU+.69s,RSS103824KiB stable; machine283.4 launches/s, no sampled daemon children. Not drain AFTER. CI44939879412/job136954525361/artifact14721114262:2847 cases, zero failed/error/skipped; ten focused tests pass. No build/mutants/live DB copy or bounce; quick gate dependency-red. A future copy replay must use a unique recorded owned path, not the saved fixed shared destination.\n\nmagicWand: unrelated-open-job candidate witness plus actual Rust drain-preparation/row-count receipt. #330 remains separately BLOCKed.\n"
+		}
+	]
+}
