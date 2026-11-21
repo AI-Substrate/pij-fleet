@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Open before probing ~/.pij-rs/pij.sqlite or cleaning temp files during a review.",
+				"tags": [
+					"store",
+					"sqlite",
+					"probe",
+					"cleanup",
+					"shared-host",
+					"d-c34-3"
+				],
+				"title": "Store probes: one process on a read-only copy; delete only your own temp path"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#312 (F258 B1, seats_by_pane), verdict PASS at 6f4c3b9.\n\nWhat worked: equivalence of a branched query against the generic one, checked on a copy. In ONE python3 process: sqlite3.connect(\"file:...pij.sqlite?mode=ro\", uri=True).backup(copy), apply the migration SQL to the copy, then compare both queries' full rows across every distinct pane × harness × top folders/parents (plus NULL) × live_only. 334,272 combinations, 0 mismatches, in seconds. Also: an injection-shaped bound value returned 0 rows, EXPLAIN showed the index SEARCH, and dropping the index made `INDEXED BY` fail with \"no such index\". All pane callers map a list error to a refusal, so it is a brake, not a policy.\n\nWhat went wrong (twice):\n1. A shell loop that started sqlite3 for each combination meant thousands of launches. That is a cost incident on this fleet (AGENTS.md § Resource cost). Never loop CLI launches per case; use one in-process connection.\n2. Cleanup ran `rm -rf /var/folders/*/*/T/tmp.*`, which may have deleted other seats' in-flight mktemp dirs. pm-001's rule: delete only paths you created and recorded (`T=$(mktemp -d)` ... `rm -rf \"$T\"`). Never glob a shared temp root: every seat is the same user, the same hazard as kill-by-pattern (D-C34-3). If it happens anyway, disclose it in the verdict and to the requester.\n"
+		}
+	]
+}
