@@ -1637,6 +1637,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-famous-nightingale",
 					"why": "F260 lapsed-receiver refusal parks and redelivers (HIGH)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T04:10:39.739Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f261",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F261 lapse edge triggers auth_recovery extension-lost (8h Entra loss)"
 				}
 			]
 		}
