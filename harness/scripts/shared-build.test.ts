@@ -89,6 +89,9 @@ function fixture(): Fixture {
 			'[ -n "$WORKER" ] && ( i=0; while [ $i -lt 25 ]; do echo "tick $1" >> "$LOG"; sleep 0.2; i=$((i+1)); done ) </dev/null >/dev/null 2>&1 &',
 			// An orphaned sleep must not hold the test's stderr pipe open.
 			'[ -n "$NAP" ] && sleep "$NAP" </dev/null >/dev/null 2>&1',
+			// A test binary that never ends (F273): `HANG` names it; it runs only
+			// for `cargo test`, in cargo's group, as libtest's binary does.
+			'[ -n "$HANG" ] && [ "$1" = test ] && "$HANG" </dev/null >/dev/null 2>&1',
 			// An artifact in the profile's deps, as a real build leaves (F243).
 			// `ARTIFACT_AT` puts it elsewhere, relative to the target (a target triple's layout).
 			'[ -n "$ARTIFACT_AT" ] || ARTIFACT_AT=debug/deps/libalpha.rlib',
@@ -134,6 +137,10 @@ function fixture(): Fixture {
 			NAP: "",
 			WORKER: "",
 			NICENESS: "",
+			HANG: "",
+			HANG_PID: join(root, "hang.pid"),
+			PIJ_SHARED_BUILD_TEST_LIMIT: undefined,
+			PIJ_TEST_TIME_SCALE: undefined,
 			ARTIFACT: "",
 			ARTIFACT_AT: "",
 			FAKE_TASKPOLICY: "none",
@@ -601,6 +608,72 @@ describe("just shared-build", () => {
 		expect(result.stderr).toContain("gave up after --timeout 2s");
 		expect(log(f)).toEqual([]);
 		expect(existsSync(join(f.lock, "owner"))).toBe(true);
+	});
+
+	it("stops a `cargo test` past its limit by name, in its own process group only, and releases the lock (F273)", async () => {
+		const f = fixture();
+		// The hung test binary, and a bystander running the same file outside
+		// the run's group: only the run's own group is ever stopped.
+		const hung = join(f.root, "bin", "pij_rs-0123abcd");
+		executable(hung, 'echo $$ > "$HANG_PID"\n/bin/sleep 600');
+		const bystander = spawn(hung, [], {
+			detached: true,
+			stdio: "ignore",
+			env: { ...f.env, HANG_PID: join(f.root, "bystander.pid") },
+		});
+		const started = Date.now();
+		const result = await run(f, ["--", "test", "--then", "build"], {
+			HANG: hung,
+			PIJ_SHARED_BUILD_TEST_LIMIT: "1s",
+			PIJ_TEST_TIME_SCALE: "2",
+		});
+		expect(result.code).toBe(8);
+		expect(result.stderr).toContain(
+			"cargo test ran past its test limit of 2s (PIJ_SHARED_BUILD_TEST_LIMIT=1s, PIJ_TEST_TIME_SCALE=2)",
+		);
+		expect(result.stderr).toContain("pij_rs-0123abcd");
+		expect(result.stderr).toContain("/bin/sleep 600");
+		expect(result.stderr).toContain("stopping that process group, and only it");
+		expect(Date.now() - started).toBeLessThan(15_000);
+		expect(existsSync(f.lock)).toBe(false);
+		expect(log(f).filter((line) => line.startsWith("start"))).toEqual([
+			`start test target=${f.target} incremental=0`,
+		]);
+		const hungPid = Number(readFileSync(join(f.root, "hang.pid"), "utf8"));
+		expect(() => process.kill(hungPid, 0)).toThrow();
+		const bystanderPid = bystander.pid;
+		if (bystanderPid === undefined) throw new Error("the bystander never started");
+		expect(() => process.kill(bystanderPid, 0)).not.toThrow();
+		// Its own group (detached): the bystander and its sleep, nothing else.
+		process.kill(-bystanderPid, "SIGKILL");
+	});
+
+	it("limits only `cargo test`, never past a finished run, and refuses a malformed limit before the lock (F273)", async () => {
+		const f = fixture();
+		const quick = await run(f, ["--", "test", "--then", "build"], {
+			PIJ_SHARED_BUILD_TEST_LIMIT: "1s",
+			NAP: "0.2",
+		});
+		expect(quick.code).toBe(0);
+		expect(quick.stderr).not.toContain("ran past");
+		const slowBuild = await run(f, ["--", "build"], {
+			PIJ_SHARED_BUILD_TEST_LIMIT: "1s",
+			NAP: "1.5",
+		});
+		expect(slowBuild.code).toBe(0);
+		const none = await run(f, ["--", "test"], { PIJ_SHARED_BUILD_TEST_LIMIT: "0", NAP: "1.5" });
+		expect(none.code).toBe(0);
+		for (const [name, value] of [
+			["PIJ_SHARED_BUILD_TEST_LIMIT", "soon"],
+			["PIJ_TEST_TIME_SCALE", "0.5"],
+		]) {
+			const before = log(f).length;
+			const bad = await run(f, ["--", "test"], { [name]: value });
+			expect(bad.code).toBe(2);
+			expect(bad.stderr).toContain(name);
+			expect(log(f)).toHaveLength(before);
+			expect(existsSync(f.lock)).toBe(false);
+		}
 	});
 
 	it("takes one lock for a symlink and its real directory, and builds into the physical path", async () => {
