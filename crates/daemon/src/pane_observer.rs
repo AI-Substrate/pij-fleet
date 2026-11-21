@@ -569,18 +569,19 @@ impl PaneObserver {
         }
     }
 
+    /// F267 step 3: every tracked tap in one adapter call (one read, one
+    /// launch, one verifying read), not one pane at a time: at ~145 panes the
+    /// per-pane path took 4.7 s of the stop (2026-11-22 bounce).
     async fn detach_all(&self) -> Result<()> {
         let panes = self.tracked_panes();
+        let results = self.tmux.detach_pane_taps(&panes).await;
         let mut first_error = None;
-        for pane in panes {
-            if let Err(error) = self.tmux.detach_pane_tap(&pane).await {
+        for (pane, result) in panes.iter().zip(results) {
+            if let Err(error) = result {
                 first_error.get_or_insert(error);
             }
-            self.panes
-                .lock()
-                .expect("pane observer mutex")
-                .remove(&pane);
-            self.gate.record_unknown(&pane);
+            self.panes.lock().expect("pane observer mutex").remove(pane);
+            self.gate.record_unknown(pane);
         }
         match first_error {
             Some(error) => Err(error),
@@ -1530,6 +1531,20 @@ mod tests {
         observer.observe_once().await.expect("attach live tap");
         let sink = observer.sink_path(&pane.id);
         assert!(sink.exists());
+        // Detach a tap that is capturing, as every real one is: tmux reports
+        // the pipe live once it forks `sh -c 'cat >> sink'`, before that shell
+        // has opened the sink, and a detach inside that window (now a few ms,
+        // F267 step 3) lets the late `>>` create the sink again (D-F267-4).
+        session.run(["send-keys", "-t", &pane.id, "captured", "Enter"]);
+        let deadline =
+            std::time::Instant::now() + pij_testkit::time::scaled(Duration::from_secs(5));
+        while std::fs::metadata(&sink).map_or(0, |meta| meta.len()) == 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the tap captured nothing"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
 
         let mut descriptor = registry
             .get(&SeatId::from("pij-observed-0"))
@@ -2216,8 +2231,8 @@ mod tests {
         async fn sweep_orphan_taps(&self) -> Result<pij_core::ports::TapSweep> {
             self.inner.sweep_orphan_taps().await
         }
-        async fn detach_pane_tap(&self, pane: &str) -> Result<()> {
-            self.inner.detach_pane_tap(pane).await
+        async fn detach_pane_taps(&self, panes: &[String]) -> Vec<Result<()>> {
+            self.inner.detach_pane_taps(panes).await
         }
         async fn kill(&self, pane: &str) -> Result<()> {
             self.inner.kill(pane).await
