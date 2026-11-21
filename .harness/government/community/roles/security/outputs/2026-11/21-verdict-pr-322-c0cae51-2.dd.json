@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"head": "c0cae51578ca534b23e7fa3e0ca43fe1b7d5dff9",
+				"kind": "verdict",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:322",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"B322-01: record_delivered/ack_delivery can write a NEW sender_seat='' row (generic enqueue without from); the '' wildcard then collapses other senders. Enforce require_sender there.",
+				"B322-02: arrive_control replays outcomes by recipient/msg_id only; key by sender too",
+				"N1 (C33, pre-existing): raw /v1/send from is caller-asserted outside replies"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #322 round 1 at c0cae51 (CORRECTED; supersedes output c4253e6): pass-with-notes\n\nThe reviewer's B322-01 and B322-02 (pij-anonymous-mongoose, 23:40) falsify one claim in my first verdict. I re-checked both against the source.\n\n## Correction: '' is not confined to legacy rows\nMy first verdict said every new write names its sender. The admission paths do: `require_sender` is called at queue.rs:472, 693 and 1723. But `ack_delivery` records `dedupe_sender` straight from the job row (queue.rs:1877 → `record_delivered`), and `record_delivered` does not call `require_sender`. A delivery job enqueued through the generic `enqueue` with no `payload.from` therefore writes a NEW ledger row with sender_seat ''. Because lookups use `sender_seat IN (?, '')`, that row then collapses any other sender's message with the same recipient and msg_id. That is the cross-sender suppression F270 exists to close. Once a new '' row can exist, the wildcard is no longer purely a brake.\n\nReachability: in production code I found no caller-reachable route that enqueues `delivery:*` or `delivery-control:*` through the generic path. auth_recovery.rs:397 only reads. So this is a store-invariant hole and I don't see it as live exploitable, but the boundary is not enforced where the wildcard trusts it.\n\n## B322-02 (control replay by recipient/msg_id)\nIf `arrive_control` replays a recorded outcome keyed only by recipient and msg_id, then sender A's Refused control outcome is returned to sender B's control with the same id. B's control is then refused without running, which is the squat class F270 closes for messages. A same-user raw `/v1/send` caller asserts `from` (C33), so this is reachable by a raw-HTTP caller who knows or guesses the id.\n\n## Notes owed\n- B322-01 (security-relevant): enforce the sender in `record_delivered` and `ack_delivery` (refuse '' for new rows), or refuse generic enqueue of delivery kinds without `from`. Add a test where a new '' row cannot collapse another sender.\n- B322-02 (security-relevant): key the control outcome replay by sender as well.\n- N1 (C33, pre-existing): raw `/v1/send` `from` is caller-asserted outside replies.\n\nThe rest of the first verdict stands: the park-notice squat is closed for messages, there is no new replay, and pij-bg cannot be impersonated.\n"
+		}
+	]
+}
