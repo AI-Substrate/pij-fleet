@@ -6,10 +6,10 @@ import {
 	COLD_WAKE_CODE,
 	DaemonRefusalError,
 	type FyiClaimRequest,
-	isHeldFyi,
 	isRetiredSeatRefusal,
 	type Registration,
 	type RustSeatDescriptor,
+	receiptVerdict,
 	type SeatCloseAnswer,
 } from "../core/daemon-wire.js";
 import { memorableIdentitySeed } from "../core/discovery.js";
@@ -563,7 +563,8 @@ export class RustRuntimeSession {
 		options: RustSendOptions = {},
 	): Promise<{
 		readonly msgId: string;
-		readonly held: boolean;
+		/** What the receipt says happened (`queued`, `held: <why>`, ...); see `receiptVerdict`. */
+		readonly verdict: string;
 		readonly coldCheck?: string;
 		readonly warning?: string;
 	}> {
@@ -625,7 +626,7 @@ export class RustRuntimeSession {
 		if (threaded !== undefined && inReplyTo === threaded) this.lastInbound.delete(replyKey);
 		return {
 			msgId,
-			held: isHeldFyi(receipt),
+			verdict: receiptVerdict(receipt),
 			...(receipt.cold_check === undefined ? {} : { coldCheck: receipt.cold_check }),
 			...(receipt.warning === undefined ? {} : { warning: receipt.warning }),
 		};

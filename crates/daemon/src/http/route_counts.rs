@@ -28,6 +28,14 @@
 //! length to a task-local the layer scopes around each request, so
 //! `active_us` is the handler's wall time less what it spent waiting.
 //! `active_us / (ok + refused)` is the route's cost per call.
+//!
+//! F258 diagnosis: `whoami` also sums its time by stage (the pane's seat-list
+//! read, the liveness reads, the Codex check, the role read, the FYI count,
+//! the envelope encode) and the rows its seat lists returned, so a reading
+//! says where its handler time goes. Each stage is a [`StageSpan`] that adds
+//! its length to a task-local only [`time_whoami`] scopes; outside a whoami it
+//! records nothing. Same cost shape: two `Instant::now()` per stage, relaxed
+//! adds once per request, no lock, no allocation.
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -150,6 +158,7 @@ pub struct RouteCounts {
     paths: Box<[(&'static str, PathCounts)]>,
     unmatched: Outcomes,
     seat_shapes: [AtomicU64; SEAT_SHAPES],
+    whoami: WhoamiCounts,
 }
 
 /// One route's counts as `ping` reports them. `active_us` is the handler
@@ -174,6 +183,8 @@ pub struct RequestCounts {
     /// fixed order, e.g. `"scope=local"` or `"here&sizes"`; `"(none)"` for a
     /// bare request.
     pub seats_queries: BTreeMap<String, u64>,
+    /// `whoami`'s handler time by stage (F258 diagnosis).
+    pub whoami: WhoamiStageCounts,
 }
 
 impl RouteCounts {
@@ -190,6 +201,7 @@ impl RouteCounts {
                 .collect(),
             unmatched: Outcomes::default(),
             seat_shapes: std::array::from_fn(|_| AtomicU64::new(0)),
+            whoami: WhoamiCounts::default(),
         }
     }
 
@@ -257,6 +269,7 @@ impl RouteCounts {
             total,
             routes,
             seats_queries,
+            whoami: self.whoami.read(),
         }
     }
 }
@@ -329,6 +342,140 @@ pub(crate) async fn count_request(
         success,
         spent,
     );
+    response
+}
+
+/// A stage of a `whoami` request (F258 diagnosis).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WhoamiStage {
+    /// The registry read of the seats that record the caller's pane (or the
+    /// asserted id's row).
+    SeatList,
+    /// Reading whether each live seat's recorded process is still there.
+    Liveness,
+    /// The Codex caller's thread check.
+    Codex,
+    /// The seat's role read.
+    Role,
+    /// The held-FYI count.
+    Fyi,
+    /// Serialising the answer.
+    Encode,
+}
+
+/// The stage names `ping` reports, in [`WhoamiStage`] order.
+const WHOAMI_STAGES: [&str; 6] = ["seat_list", "liveness", "codex", "role", "fyi", "encode"];
+
+/// One whoami's stage times, accumulated in its task.
+#[derive(Clone, Copy, Default)]
+struct StageTimes {
+    us: [u64; WHOAMI_STAGES.len()],
+    list_rows: u64,
+    liveness_reads: u64,
+}
+
+tokio::task_local! {
+    /// The current whoami's stage times (F258).
+    static WHOAMI_TIMES: Cell<StageTimes>;
+}
+
+fn with_times(update: impl FnOnce(&mut StageTimes)) {
+    let _ = WHOAMI_TIMES.try_with(|times| {
+        let mut current = times.get();
+        update(&mut current);
+        times.set(current);
+    });
+}
+
+/// While it lives, the current whoami is in its stage; its length is added
+/// when it drops. Outside a whoami it records nothing.
+pub(crate) struct StageSpan(WhoamiStage, Instant);
+
+impl StageSpan {
+    pub(crate) fn start(stage: WhoamiStage) -> Self {
+        Self(stage, Instant::now())
+    }
+}
+
+impl Drop for StageSpan {
+    fn drop(&mut self) {
+        let spent = u64::try_from(self.1.elapsed().as_micros()).unwrap_or(u64::MAX);
+        let stage = self.0 as usize;
+        with_times(|times| times.us[stage] = times.us[stage].saturating_add(spent));
+    }
+}
+
+/// The current whoami's seat list returned `rows` rows.
+pub(crate) fn note_list_rows(rows: usize) {
+    let rows = u64::try_from(rows).unwrap_or(u64::MAX);
+    with_times(|times| times.list_rows = times.list_rows.saturating_add(rows));
+}
+
+/// The current whoami read one seat's process liveness.
+pub(crate) fn note_liveness_read() {
+    with_times(|times| times.liveness_reads = times.liveness_reads.saturating_add(1));
+}
+
+#[derive(Default)]
+struct WhoamiCounts {
+    calls: AtomicU64,
+    us: [AtomicU64; WHOAMI_STAGES.len()],
+    list_rows: AtomicU64,
+    liveness_reads: AtomicU64,
+}
+
+impl WhoamiCounts {
+    fn record(&self, times: StageTimes) {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        for (total, spent) in self.us.iter().zip(times.us) {
+            if spent != 0 {
+                total.fetch_add(spent, Ordering::Relaxed);
+            }
+        }
+        self.list_rows.fetch_add(times.list_rows, Ordering::Relaxed);
+        self.liveness_reads
+            .fetch_add(times.liveness_reads, Ordering::Relaxed);
+    }
+
+    fn read(&self) -> WhoamiStageCounts {
+        WhoamiStageCounts {
+            calls: self.calls.load(Ordering::Relaxed),
+            stages_us: WHOAMI_STAGES
+                .iter()
+                .zip(&self.us)
+                .map(|(name, total)| ((*name).to_string(), total.load(Ordering::Relaxed)))
+                .collect(),
+            list_rows: self.list_rows.load(Ordering::Relaxed),
+            liveness_reads: self.liveness_reads.load(Ordering::Relaxed),
+        }
+    }
+}
+
+/// `whoami`'s stage times as `ping` reports them (F258 diagnosis). Each
+/// entry of `stages_us` is summed over `calls`, in microseconds; the route's
+/// `active_us` less their sum is the rest (auth, body, refusal paths).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WhoamiStageCounts {
+    pub calls: u64,
+    pub stages_us: BTreeMap<String, u64>,
+    /// Seat rows the seat-list reads returned (a pane keeps its retired rows).
+    pub list_rows: u64,
+    /// Process liveness reads made.
+    pub liveness_reads: u64,
+}
+
+/// Run one whoami with its stage times scoped, and record them.
+pub(crate) async fn time_whoami(
+    counts: &RouteCounts,
+    whoami: impl Future<Output = Response>,
+) -> Response {
+    let (response, times) = WHOAMI_TIMES
+        .scope(Cell::new(StageTimes::default()), async {
+            let response = whoami.await;
+            (response, WHOAMI_TIMES.with(Cell::get))
+        })
+        .await;
+    counts.whoami.record(times);
     response
 }
 
@@ -527,5 +674,47 @@ mod tests {
             poll.active_us >= us(WORK) && poll.active_us < us(WAIT),
             "the wait is not active time: {poll:?}"
         );
+    }
+
+    /// F258: a whoami's stages add up under its own scope; a stage outside a
+    /// whoami (another route sharing `resolve_seat`) records nothing.
+    #[tokio::test]
+    async fn whoami_stages_count_only_inside_a_whoami() {
+        use std::time::Duration;
+        const WORK: Duration = Duration::from_millis(3);
+        const OUTSIDE: Duration = Duration::from_millis(400);
+        let counts = table();
+        {
+            let _outside = StageSpan::start(WhoamiStage::SeatList);
+            note_list_rows(50);
+            std::thread::sleep(OUTSIDE);
+        }
+        for _ in 0..2 {
+            let _ = time_whoami(&counts, async {
+                {
+                    let _list = StageSpan::start(WhoamiStage::SeatList);
+                    std::thread::sleep(WORK);
+                }
+                note_list_rows(7);
+                note_liveness_read();
+                let _fyi = StageSpan::start(WhoamiStage::Fyi);
+                std::thread::sleep(WORK);
+                Response::default()
+            })
+            .await;
+        }
+        let whoami = counts.snapshot().whoami;
+        let us = u64::try_from(WORK.as_micros()).unwrap();
+        assert_eq!(
+            (whoami.calls, whoami.list_rows, whoami.liveness_reads),
+            (2, 14, 2),
+            "{whoami:?}"
+        );
+        let list = whoami.stages_us["seat_list"];
+        let fyi = whoami.stages_us["fyi"];
+        let outside = u64::try_from(OUTSIDE.as_micros()).unwrap();
+        assert!(list >= 2 * us && list < outside, "{whoami:?}");
+        assert!(fyi >= 2 * us, "{whoami:?}");
+        assert_eq!(whoami.stages_us["role"], 0, "{whoami:?}");
     }
 }

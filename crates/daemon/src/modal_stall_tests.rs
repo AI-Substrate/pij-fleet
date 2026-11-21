@@ -755,12 +755,13 @@ async fn the_dialogs_own_text_reaches_no_record_message_or_view() {
     assert!(!seen.contains(CANARY), "pane text leaked: {seen}");
 }
 
-/// Review F001 (round 2): a real `Refused` receipt is not acceptance. A native
-/// Copilot parent whose receiver lease doesn't match its current incarnation
-/// refuses the tell; once its receiver renews, the next round tells it with
-/// the same message id. The PA, told on the first round, stays told once.
+/// Review F001 (round 2), then F260: a native Copilot parent whose receiver
+/// lease doesn't match its current incarnation gets the tell HELD, which is
+/// acceptance (never re-sent). Once its receiver renews, the held tell goes
+/// back to its queue under the same message id, and no round tells it again.
+/// The PA, told on the first round, stays told once.
 #[tokio::test]
-async fn a_refused_tell_is_retried_until_the_native_receiver_recovers() {
+async fn a_tell_to_a_lapsed_native_receiver_is_held_and_queued_when_it_recovers() {
     use crate::delivery::NativeInboxIdentity;
     use pij_core::model::ProcIdentity;
 
@@ -806,12 +807,11 @@ async fn a_refused_tell_is_retried_until_the_native_receiver_recovers() {
         told_now(watchdog.round(&services, INTERVAL, at(1)).await.unwrap()),
         vec![
             (format!("{p}-pa"), "queued".to_string()),
-            (format!("{p}-pm"), "refused".to_string()),
+            (format!("{p}-pm"), "held".to_string()),
         ]
     );
     let stall = services.watchdogs().modal_stalls().await.unwrap().remove(0);
-    assert_eq!(stall.told, vec![SeatId::from(format!("{p}-pa"))]);
-    assert_eq!(stall.attempts.get(&parent), Some(&1));
+    assert_eq!(stall.told.len(), 2, "held is acceptance");
     let msg_id = format!("modal-stall:{p}-asking:{}:{p}-pm", stall.quiet_seq);
     let outcomes = |events: Vec<pij_core::model::Event>| -> Vec<serde_json::Value> {
         events
@@ -820,35 +820,15 @@ async fn a_refused_tell_is_retried_until_the_native_receiver_recovers() {
             .map(|event| serde_json::from_str(&event.payload).unwrap())
             .collect()
     };
-    let refused = outcomes(
-        services
-            .spine
-            .tail(Some(&parent), pij_core::model::Seq(0))
-            .await
-            .unwrap(),
-    );
-    assert!(
-        refused
-            .iter()
-            .any(|outcome| outcome["msg_id"] == msg_id.as_str()
-                && outcome["outcome"]["outcome"] == "refused"),
-        "{refused:?}"
-    );
 
-    // The current incarnation's receiver renews: the parent is told now, with
-    // the same message id, and only the parent.
+    // The current incarnation's receiver renews: the held tell is queued for
+    // the parent under its own id, and no round tells anyone again.
     services
         .delivery
         .heartbeat_native_receiver(&parent, &identity(1371), 1, 1, None)
         .await
         .unwrap();
-    let retried = told_now(watchdog.round(&services, INTERVAL, at(2)).await.unwrap());
-    assert_eq!(retried.len(), 1, "{retried:?}");
-    assert_eq!(retried[0].0, format!("{p}-pm"));
-    assert_ne!(retried[0].1, "refused");
-    assert!(told_now(watchdog.round(&services, INTERVAL, at(3)).await.unwrap()).is_empty());
-    let stall = services.watchdogs().modal_stalls().await.unwrap().remove(0);
-    assert_eq!(stall.told.len(), 2);
+    assert!(told_now(watchdog.round(&services, INTERVAL, at(2)).await.unwrap()).is_empty());
     let latest = outcomes(
         services
             .spine
@@ -858,11 +838,8 @@ async fn a_refused_tell_is_retried_until_the_native_receiver_recovers() {
     )
     .pop()
     .unwrap();
-    assert_eq!(
-        latest["msg_id"],
-        msg_id.as_str(),
-        "the retry keeps the stable id"
-    );
+    assert_eq!(latest["msg_id"], msg_id.as_str(), "the stable id");
+    assert_eq!(latest["outcome"]["outcome"], "queued");
     assert_eq!(told(&services, &format!("{p}-pa")).await.len(), 1);
 }
 

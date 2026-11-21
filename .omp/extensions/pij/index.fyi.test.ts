@@ -269,6 +269,31 @@ describe("pij extension — fyi and turn activity (plan 158)", () => {
 			expect(result.content[0]?.text).toMatch(/^held \(fyi\) .+ -> pij-peer$/);
 		});
 
+		// F260: the tool said `queued` for a refused receipt, and the message died.
+		it.each([
+			[{ outcome: "queued" }, "queued"],
+			[{ outcome: "delivered", origin: "injected-to-transport" }, "delivered"],
+			[
+				{ outcome: "held", reason: "native-receiver-lapsed: held" },
+				"held: native-receiver-lapsed: held",
+			],
+			[
+				{ outcome: "refused", reason: "native-extension-unavailable: lapsed" },
+				"refused: native-extension-unavailable: lapsed",
+			],
+		])("renders the receipt outcome %o as %s", async (outcome, verdict) => {
+			seat = await bootSeat(
+				fakeDaemon({
+					pendingFyis: 0,
+					send: (body) => envelope("pij send", { msg_id: body.msg_id, outcome, at: 1 }),
+				}),
+			);
+			const result = (await seat.send({ to: "pij-peer", message: "the FINAL" })) as {
+				content: Array<{ text: string }>;
+			};
+			expect(result.content[0]?.text).toMatch(new RegExp(`^${verdict} \\S+ -> pij-peer$`));
+		});
+
 		it("refuses fyi with a control command before reaching the daemon", async () => {
 			const daemon = fakeDaemon({ pendingFyis: 0 });
 			seat = await bootSeat(daemon);
