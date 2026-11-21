@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fd3c-baa3-72d0-8a58-5c33056d09df",
+				"date": "2026-11-21",
+				"head": "8dd610594a1194320106f15233242e8764870b35",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:313",
+				"writer": "pij-neat-gull",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict: #313 at 8dd610594a1194320106f15233242e8764870b35 — PASS WITH NOTES\n\nScope: diff origin/main(7a6b8cbc)...8dd6105 (9 files). Merge commit only folds #312; no conflict residue. No lockfile, .npmrc, refs/notes, credential or launch changes. Secret/home-path scan of the diff: empty.\n\n## Q1. Can the skip let an injection or /restart type into a draft the observer no longer sees? No.\nEvery production pane-typing site goes through `InteractionGate::submit_with_owned_input` (delivery/mod.rs:1550, pointer/worker.rs:522/620/706, cheap_return.rs:204), which calls `injection_observation` twice (look, then again under acquired input) and types only when THAT capture's `composer_idle` is true. `injection_observation` drains the tap, lists panes and captures itself (interaction.rs:557ff); `composer_idle` comes from that capture alone. Socket delivery (delivery/mod.rs:1911) and F212 auth-recovery `composer_free` (auth_recovery.rs:334, needs permitted && composer_idle) also use `fresh_injection_verdict`. The non-fresh `permits_injection` has no production caller (grep: tests only). No production code reads `observed()` or observer knowledge for a decision except `replay()` itself.\nWhere stale observer state does reach the fresh path it only brakes: a fresh recognised capture that differs from a stale held composer sets `last_edit_at = now` → HumanTyping deferral (later, never earlier); an Unrecognised fresh capture sets uncertainty now → `permits_with_additional_veto(.., true)` returns false. Removing the replay makes the gate see no fewer drafts at the boundary: the skip is not a policy input to typing.\nMutation: M4 (fresh verdict answers from held state) RED per PR comment 7059426240 — matches my reading of the witness test.\n\n## Q2. Can a pane's own output make the observer replay a stale Blank? Not past the boundary.\nA pane cannot hide output from `pipe-pane -O` short of driving tmux itself (same user; it could equally send-keys — not a trust boundary the gate claims). Typing moves the cursor (forces capture); tap bytes force capture; knowledge Unknown/PendingClear never replays; observer capture/drain errors `set_unknown` (gate uncertain → no replay). Worst case is observer-side staleness ≤ CAPTURE_BACKSTOP (30 s, M3 RED), and the boundary re-captures regardless.\n\n## Prime's checks\n1. Injection takes its own capture: yes (above).\n2. Replay ageing: `decide` is the old loop body moved verbatim; replay passes tap_active=false as a repeat capture of an unchanged screen did. Twin-observer test + M5/M6 RED.\n3. Backstop: `now - last.at >= 30 s` → BackstopDue → capture; M3 RED.\n\n## Notes (non-blocking; correctness, not security — none reaches a typing decision)\n- S313-N1: the \"gate still holds that composer\" guard in `replay()` has no witness. No test runs an observer pass AFTER a fresh injection changed the gate (the injection test asserts and stops). Mutant `holds = true` would, by reading, stay green; its effect would be a stale Blank replay calling `record_composer_cleared` over a draft the fresh capture recorded — the next fresh capture then defers as HumanTyping, so it only brakes. Suggest one assertion: after `permits_injection_fresh` sees the draft, one more observer pass captures (not replays).\n- S313-N2: two staleness windows the doc comment does not cover: (a) `injection_observation` drains the tap, then a `list_panes`/`capture` Err returns with the gate unchanged and certain (the comment says \"when it could not read the screen, the gate is uncertain\" — true only for Unrecognised, not for Err); (b) `attach_pane_tap` returning Ok on an already-tracked pane (a vanished pipe repaired, e.g. after respawn-pane or a foreign `pipe-pane` toggle) does not clear `last`, so bytes written while the pipe was gone are lost and the pane may replay until cursor/tap/backstop. Both bounded by 30 s and fresh at the boundary. Optional: clear `last` on a repaired attach.\n\n## Counters\nSix unlabelled u64 relaxed atomics: no pane ids, no cardinality or privacy exposure; overflow at ~2.9 MB/s is ~10^5 years (fetch_add wraps silently, harmless). Snapshot is not cross-field atomic (fine for rates).\n\n## Evidence\nRead: pane_observer.rs 440-560, 618-720 + tests 1784-1960; interaction.rs 300-810; call-site greps above. CI 5/5 at head; `just pr-freeze 313` FINAL per request. I ran no build or mutant (read-only worktree; reviewer holds mutation); M1-M6 receipts are the coder's.\n"
+		}
+	]
+}
