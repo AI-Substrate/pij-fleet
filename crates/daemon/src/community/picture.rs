@@ -499,8 +499,10 @@ pub fn actions_weighing(
         }));
     }
 
-    if holders == "one" && holding.len() > 1 {
-        out.push(two_live_holders(project, role, &holding, open));
+    if holders == "one" {
+        for group in duplicate_holders(&holding) {
+            out.push(two_live_holders(project, role, &group, open));
+        }
     }
 
     let mut closes: Vec<&str> = rows
@@ -602,7 +604,28 @@ fn waiting_with_live_holder(
     })
 }
 
-/// Two or more live holders on a one-holder role (req-12). A second holder
+/// The live holdings of a one-holder role that duplicate each other (F272):
+/// each group is two or more seats on the same instance, or on the bare role
+/// (instance `""`). A per-PR instance (`<role>/<n>`) is its own holding, so
+/// one seat on several instances, or seats on different ones, is no group.
+/// `holding` is sorted oldest first, and so is each group.
+pub fn duplicate_holders<'a>(holding: &[&'a Assignment]) -> Vec<Vec<&'a Assignment>> {
+    let mut groups: Vec<Vec<&Assignment>> = Vec::new();
+    for row in holding {
+        match groups
+            .iter_mut()
+            .find(|group| group[0].instance == row.instance)
+        {
+            Some(group) => group.push(row),
+            None => groups.push(vec![row]),
+        }
+    }
+    groups.retain(|group| group.iter().any(|row| row.seat != group[0].seat));
+    groups
+}
+
+/// Two or more live holders of one holding (a one-holder role's bare role,
+/// or one instance of it; see [`duplicate_holders`]) (req-12). A second holder
 /// can be on purpose, such as a temporary second verdict seat while requests
 /// queue (plan 215, F90), so `open` (each holder's unanswered delivered
 /// requests) decides: while two or more holders have open work, it names them
@@ -626,11 +649,26 @@ fn two_live_holders(
             }
         })
         .collect();
-    let lead = format!(
-        "{role} is a one-holder role with {} live holders ({})",
-        holding.len(),
-        named.join("; ")
-    );
+    let instance = &holding[0].instance;
+    let lead = if instance.is_empty() {
+        format!(
+            "{role} is a one-holder role with {} live holders ({})",
+            holding.len(),
+            named.join("; ")
+        )
+    } else {
+        format!(
+            "{} has {} live holders ({})",
+            address(holding[0]),
+            holding.len(),
+            named.join("; ")
+        )
+    };
+    let instance = if instance.is_empty() {
+        std::borrow::Cow::Borrowed("")
+    } else {
+        pij_core::render::name(instance)
+    };
     let mut busy: Vec<&str> = holding
         .iter()
         .filter(|row| count(row) > 0)
@@ -641,6 +679,7 @@ fn two_live_holders(
     if busy.len() > 1 {
         return json!({
             "role": role,
+            "instance": instance,
             "condition": "two-live-holders",
             "says": format!("{lead}; each has open work, so release one once its work ends"),
             "commands": [],
@@ -657,12 +696,13 @@ fn two_live_holders(
     };
     json!({
         "role": role,
+        "instance": instance,
         "condition": "two-live-holders",
         "says": format!(
             "{lead}; release all but one ({} kept here: {reason})",
             pij_core::render::seat(&kept.seat)
         ),
-        "commands": holding.iter().filter(|row| !std::ptr::eq(**row, kept) && printable(row)).map(|row| command(&[
+        "commands": holding.iter().filter(|row| row.seat != kept.seat && printable(row)).map(|row| command(&[
             "pij",
             "directory",
             "release",
@@ -1487,6 +1527,84 @@ mod tests {
                 "pij directory release reviewer pij-a --why 'a one-holder role had 2 live holders' --project fleet"
             ]),
             "with no open work the newest is kept: {idle}"
+        );
+    }
+
+    /// F272: per-PR instances (`<role>/<n>`) are separate holdings, so one
+    /// seat holding several, or seats holding different ones, are not
+    /// duplicate holders of a one-holder role. Duplicates are two live seats
+    /// on the same instance, or two on the bare role.
+    #[test]
+    fn per_pr_instances_are_never_duplicate_holders() {
+        let held = |role: &str, instance: &str, seat: &str, from: &str| {
+            let mut held = row(seat, from, None, None);
+            held.role = role.into();
+            held.instance = instance.into();
+            held
+        };
+        let one_holder = |rows: &[Assignment]| {
+            actions(
+                "fleet",
+                &rows[0].role,
+                "one",
+                &rows.iter().collect::<Vec<_>>(),
+                &live(&["pij-deer", "pij-elephant", "pij-other", "pij-bare"]),
+                &[],
+                None,
+            )
+        };
+        // Today's shape (2026-11-21): security on #319..#322 by one seat,
+        // performance on #320..#322 by another.
+        let security: Vec<Assignment> = ["319", "320", "321", "322"]
+            .iter()
+            .enumerate()
+            .map(|(n, pr)| held("security", pr, "pij-deer", &format!("2026-11-2{n}T00:00:00Z")))
+            .collect();
+        let performance: Vec<Assignment> = ["320", "321", "322"]
+            .iter()
+            .enumerate()
+            .map(|(n, pr)| held("performance", pr, "pij-elephant", &format!("2026-11-2{n}T00:00:00Z")))
+            .collect();
+        assert_eq!(one_holder(&security), Vec::<Value>::new());
+        assert_eq!(one_holder(&performance), Vec::<Value>::new());
+        // Different seats on different instances, or one on the bare role
+        // beside instance holders, are not duplicates either.
+        let mut spread = security.clone();
+        spread.push(held("security", "323", "pij-other", "2026-11-25T00:00:00Z"));
+        spread.push(held("security", "", "pij-bare", "2026-11-26T00:00:00Z"));
+        assert_eq!(one_holder(&spread), Vec::<Value>::new());
+
+        // Two live seats on security/322: one action, for that instance only.
+        let mut twice = spread.clone();
+        twice.push(held("security", "322", "pij-other", "2026-11-27T00:00:00Z"));
+        let acts = one_holder(&twice);
+        assert_eq!(conditions(&acts), ["two-live-holders"], "{acts:?}");
+        assert_eq!(acts[0]["instance"], "322");
+        assert!(
+            acts[0]["says"]
+                .as_str()
+                .unwrap()
+                .starts_with("security/322 has 2 live holders (pij-deer; pij-other)"),
+            "{acts:?}"
+        );
+        assert_eq!(
+            acts[0]["commands"],
+            json!([
+                "pij directory release security/322 pij-deer --why 'a one-holder role had 2 live holders' --project fleet"
+            ])
+        );
+
+        // Two live seats on the bare role still get the advice, and only they.
+        let mut bare = spread;
+        bare.push(held("security", "", "pij-other", "2026-11-28T00:00:00Z"));
+        let acts = one_holder(&bare);
+        assert_eq!(conditions(&acts), ["two-live-holders"], "{acts:?}");
+        assert_eq!(acts[0]["instance"], "");
+        assert_eq!(
+            acts[0]["commands"],
+            json!([
+                "pij directory release security pij-bare --why 'a one-holder role had 2 live holders' --project fleet"
+            ])
         );
     }
 

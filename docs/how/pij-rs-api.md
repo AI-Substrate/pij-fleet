@@ -1448,8 +1448,10 @@ why) through the same writer, then indexes it in the store (migration 0032) and,
 in that same store transaction, sets the seat's role (ruling C1): `pa` for the
 role `pa`, `pm` for `pm` or `pm-<n>`, `worker` otherwise; a prime is never
 re-roled. Then it calls the after-assign hook (ruling C6), which s05 uses to
-drain the role queue. A second live holder of a one-holder role succeeds with
-`data.warning` `W-ONE-HOLDER`. The envelope carries `commit`, `path`, the `row`
+drain the role queue. A second live holder of a one-holder role's same holding
+(the bare role, or the same instance) succeeds with `data.warning`
+`W-ONE-HOLDER`; a different per-PR instance (`<role>/<n>`) is no second holder
+(F272). The envelope carries `commit`, `path`, the `row`
 as written, `seat_role` and `flushed` (pending close-ends this write carried to the branch;
 only those lose their pending mark).
 
@@ -1850,7 +1852,7 @@ project:
 |---|---|---|
 | `no-live-holder` | requests wait and no holder's seat is live: one action per `instance` of the waiting requests (`""` for any holder, which waits only while the role has no live holder at all) | `pij-rs revive <last holder of that instance>` (when there was one), `pij directory assign <role>[/<instance>] '<seat>' --why '<why>'`, so the assign drains those requests |
 | `waiting-with-live-holder` (F193) | requests wait for an instance (or any holder) that a live holder can take: one action per such `instance`. A holder that comes back drains its own queue (below), so this names the fix for anything that raced it | `pij directory release <role>[/<instance>] <holder> --why requeue`, then `pij directory assign` the same, in order (the assign drains the queue) |
-| `two-live-holders` | a one-holder role has two or more live holders | names each holder with its unanswered delivered requests (a `--reply none` request expects no answer and is not counted, F150); while two or more have open work, nothing (a deliberate second holder, plan 215, F90); else `pij directory release <role>[/<instance>] <seat>` for each but the one with open work, or the newest |
+| `two-live-holders` | a one-holder role has two or more live seats on the same holding: the bare role, or one instance (`instance`, `""` for the bare role; one action per such holding). A per-PR instance (`<role>/<n>`) is its own holding, so one seat on several instances, or seats on different ones, is no duplicate (F272) | names each holder with its unanswered delivered requests (a `--reply none` request expects no answer and is not counted, F150); while two or more have open work, nothing (a deliberate second holder, plan 215, F90); else `pij directory release <role>[/<instance>] <seat>` for each but the one with open work, or the newest |
 | `memory-stale` | the role's last two closes (`picture::MEMORY_CLOSES`) both fall on a day after its newest memory note, or it has none | `pij directory memory add <role> --title … --hook … --body-file '<path to the note>'` |
 
 A missing core or security role stays in `prompts` (s03). A workstream step

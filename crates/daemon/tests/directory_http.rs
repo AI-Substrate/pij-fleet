@@ -873,6 +873,55 @@ async fn assign_and_release_write_holders_set_seat_roles_and_call_the_hook_once_
     rig.server.abort();
 }
 
+/// F272: per-PR instances of a one-holder role (`<role>/<n>`) are separate
+/// holdings. One seat on several, or two seats on different ones, is no
+/// second holder: no W-ONE-HOLDER and no release advice in the view. Two
+/// seats on the same instance still get both, for that instance alone.
+#[tokio::test]
+async fn per_pr_instances_of_a_one_holder_role_are_never_duplicate_holders() {
+    let repo = repo("pij-directory-instances");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let dir = |argv: &'static [&'static str]| call(rig.addr, "/v1/directory", argv, &repo.main);
+    for argv in [
+        &["directory", "assign", "pm-001/319", "pij-holder", "--why", "r"][..],
+        &["directory", "assign", "pm-001/320", "pij-holder", "--why", "r"],
+        &["directory", "assign", "pm-001/321", "pij-holder", "--why", "r"],
+        &["directory", "assign", "pm-001/322", "pij-holder", "--why", "r"],
+        &["directory", "assign", "pm-001/323", "pij-second", "--why", "r"],
+    ] {
+        let assigned = dir(argv).await;
+        assert_eq!(assigned["ok"], true, "{argv:?}: {assigned}");
+        assert!(
+            assigned["data"].get("warning").is_none(),
+            "{argv:?}: {assigned}"
+        );
+    }
+    let viewed = view(rig.addr, &repo).await;
+    assert_eq!(role_of(&viewed, "pm-001")["live"].as_array().unwrap().len(), 5, "{viewed}");
+    assert!(
+        action(&viewed, "pm-001", "two-live-holders").is_none(),
+        "{viewed}"
+    );
+
+    let twice = dir(&["directory", "assign", "pm-001/322", "pij-second", "--why", "r"]).await;
+    assert_eq!(
+        twice["data"]["warning"],
+        "W-ONE-HOLDER: pm-001 is a one-holder role and pij-holder still holds pm-001/322",
+        "{twice}"
+    );
+    let viewed = view(rig.addr, &repo).await;
+    let two = action(&viewed, "pm-001", "two-live-holders").expect("pm-001/322 has two");
+    assert_eq!(two["instance"], "322");
+    assert_eq!(
+        two["commands"],
+        json!([
+            "pij directory release pm-001/322 pij-holder --why 'a one-holder role had 2 live holders' --project fleet"
+        ])
+    );
+    rig.server.abort();
+}
+
 /// AC4: close ends holdings; a refused end stays pending and the next write
 /// for the project carries it.
 #[tokio::test]
