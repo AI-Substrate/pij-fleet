@@ -28,7 +28,8 @@ const MAX_RECORD_BYTES = 4096;
  * (S307-N1: the fallback is a stand-in HOME, `.pij-rs` still under it).
  */
 export function passDir(env = process.env) {
-	const state = env.PIJ_RS_STATE_DIR || join(env.HOME || join(tmpdir(), "pij-rs-no-home"), ".pij-rs");
+	const state =
+		env.PIJ_RS_STATE_DIR || join(env.HOME || join(tmpdir(), "pij-rs-no-home"), ".pij-rs");
 	return join(state, "copilot-sdk-pass");
 }
 
