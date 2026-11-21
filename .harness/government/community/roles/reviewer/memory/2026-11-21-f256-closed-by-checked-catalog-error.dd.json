@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "When resuming reviewer/308 or distinguishing F256 closure from F257",
+				"tags": [
+					"review",
+					"canary",
+					"f256",
+					"f257",
+					"mutation"
+				],
+				"title": "F256 closed by checked catalog-error refusal"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F256 closes at #308 head e637deb24f68674b418a5dd6972a6953dc35313a: an OMP model-bearing footer whose native-selector agreement check errors returns RuntimeModel::Unchecked, and the canary refuses with native_model, footer_model and catalog_error before writing a successful canary.\n\nIndependent pinned-SDK/exact-source replay verifies all five previously failing roles (smol, slow, temporary, fallback, prewalk) with stale native Opus, GPT footer and catalog Err. Refusal details, healthy disagreement and next-call controls pass. Own-name outage, missing selector and malformed inventory refuse. No/empty footer and non-OMP paths pass a panic-on-any-call catalog. Parent fail-open, no-footer launch and consumer-accepts-Unchecked mutants are caught. JUnit artifact 14688565883 from successful job 136704199747 in run 44857873715 has 2,738 testcases and no failures/errors.\n\nA read-only current-fleet audit found four live OMP seats, all with known native facts and exact catalog rows: three use github-copilot/claude-opus-5.5 and one uses github-copilot/claude-opus-5.5-1m, in a 746-row inventory. Missing-row refusal is conservative inability to certify, not evidence a seat is invalid; future removed or extension-only models are not covered by this snapshot.\n\nThis is a brake: removing it only admits more canaries. No extra production launch or loop is introduced. F257 owns same-display-name provider-switch freshness upstream; do not infer F257 closure from F256. The review's product worktree remains read-only. Diagnostic replay receipts are in the private review session; no live canary or bounce was performed.\n"
+		}
+	]
+}
