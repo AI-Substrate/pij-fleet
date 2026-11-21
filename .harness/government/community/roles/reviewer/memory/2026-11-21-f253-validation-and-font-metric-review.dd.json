@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "When reviewing fleet-map colour/PR validation, font changes or argv proof.",
+				"tags": [
+					"fleet-map",
+					"validation",
+					"fonts",
+					"mutation"
+				],
+				"title": "F253 validation and font metric review"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR 305 at 52ffd6c146b8515fff631ec1fd6c8b49ec408894: pass-with-notes, no correctness blocker. F253 closes the known unescaped card colour/PR and external-font paths. Nine dependency-free contract groups and nine independent mutations pass; exact-head Node 22/24 CI each has fleet-map 18/18.\n\nGenerator and page both retain positive safe-integer PR numbers and 3/6-digit hex colours. Lookup uses the same PR validator as serialization; a valid child remains discoverable under an invalid parent. Keep a real argv receipt rather than relying solely on a warning-string absence.\n\nInherited exception: assignColours treats falsy colour fields as missing, fills/persists them before validation, and emits no invalid-colour warning. Nonempty invalid colours are warned/fallback-only without rewriting.\n\nCharacter-count layout is not font-metric independence. With the new system stack, actual Chrome box checks show tiny role-pill overruns: fixture pm-100 about 1.9 px, current-structure pm-001 about 0.9 px. Measure the text bbox against its actual remaining pill bounds, not an assumed uniform padding. Geometry constants/layout code are unchanged.\n\nChrome rendered fixture, hostile raw-data and copied current-structure standalone pages with no resource entries/page errors. Six hostile card paths stayed inert. No source/live-output writes, dependency installation or linking; local harness quick gate remains dependency-limited under C25.\n\nmagicWand: encode the browser text-containment and dependency-free mutation probes as a supported review recipe. Session artifacts and the governed verdict preserve the proof design and its nonblocking font/defaulting notes.\n"
+		}
+	]
+}
