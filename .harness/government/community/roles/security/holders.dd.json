@@ -1070,6 +1070,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-strong-hedgehog",
 					"why": "verdict on #311 (F261)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T06:28:14.341Z",
+					"harness": "copilot",
+					"harness_session": "581cdb9f-04cb-4f85-80d7-d1417d0bdc9a",
+					"instance_key": "312",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-causal-leopon",
+					"why": "#312 F258 B1 round 1"
 				}
 			]
 		}
