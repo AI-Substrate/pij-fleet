@@ -1,0 +1,58 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fcca-9d39-7523-8039-6170a51884d5",
+				"date": "2026-11-21",
+				"head": "6f4c3b9010109bf5532864e48dcaa59d97603050",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:312",
+				"writer": "pij-precious-sparrow",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After the prime deploys B1, repeat the matched 60-second whoami active/held, CPU/RSS, load/cohort and exact launch window, then the separate 20-second machine sampler."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 312",
+					"exit_code": 0
+				},
+				{
+					"command": "Independent exact-query copy probe at nice 19; SQLite 3.54.1, 3252 rows, 216 filter combinations",
+					"exit_code": 0
+				},
+				{
+					"command": "Paired pij-rs --json ping and single-PID /bin/ps samples, 60.033353 seconds",
+					"exit_code": 0
+				},
+				{
+					"command": "harness/scripts/nice19.sh just spawn-rate --seconds 20 --json",
+					"exit_code": 0
+				},
+				{
+					"command": "gh API successful rust-test artifact 14695023977 at the full reviewed SHA; 2754 tests, zero errors/failures",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Performance verdict: PR 312, round 1\n\n**PASS WITH NOTES** at `6f4c3b9010109bf5532864e48dcaa59d97603050`.\nNo performance block. Deployed AFTER is owed; this is not a claim that the\ndaemon has already become cheaper.\n\n## Cost and scope\n\nThe PR adds no loop, poll, timer, cache or process-launch site. It changes\nthe in-process SQL used by each pane-filtered registry list, including whoami\nand adopt. Copilot status lines retain their existing 10-second refresh:\nrequest rate scales with sessions, plus Claude hooks and explicit callers.\nThe packet's roughly 8-10 calls/s is a historical baseline, not a cap.\n\nBefore: a full historical-seat walk in id-index order. After: a pane-index\nseek, matching-row reads, and a temporary B-tree for `ORDER BY id`.\n`EXPLAIN QUERY PLAN` explicitly reports that remaining sort. With N seats\nand K matches, the lookup is bounded by the seek and K rather than a full\nN-row scan; sorting can still cost O(K log K). Storage is O(N), and inserts\nand updates that assign pane maintain one additional index. Mechanical\nstate-only updates do not add pane-index maintenance.\n\nThis is non-destructive: it introduces no deletion policy or safety brake.\nThe intentional missing-index refusal is a cost invariant, not a retention\nor authorization policy.\n\n## Independent SQL receipt\n\nCommand: `nice -n 19 python3 pr312_probe.py sql <receipt.json>`, from the\nexact-head review checkout. The session-local probe reads the two SQL\nconstants directly from `crates/store/src/registry.rs`, opens the live\nsource with `mode=ro` and `query_only`, copies only the seats table and its\nexisting indexes in one read transaction, and closes the source before\nany writes. Every migration, insert, update and drop below ran on the\ndisposable copy. That copy was deleted on completion.\n\nNovember 21, 2026, 06:31:49 UTC; SQLite 3.54.1; 3,252 seat rows;\n1,738 distinct non-null panes; busiest pane 112 rows. Seven batches of\n200 cached executions after 20 warmups, fetching every result column:\n\n| Lookup | CPU ms before -> after | Wall ms before -> after |\n|---|---|---|\n| Busiest, 112 rows | 0.730 -> 0.224 | 0.732 -> 0.227 |\n| One row | 0.528 -> 0.00868 | 0.531 -> 0.00869 |\n| Absent pane | 0.517 -> 0.00557 | 0.519 -> 0.00558 |\n\nAll three new plans say `SEARCH seats USING INDEX seats_by_pane (pane=?)`,\nthen `USE TEMP B-TREE FOR ORDER BY`; the generic plan says\n`SCAN seats USING INDEX sqlite_autoindex_seats_1`.\nThe direction and reduced visited work are reproduced. These timings\ninclude Python tuple materialization and are not a reproduction of the\nauthor's sqlite3 CLI ratios, cold-cache behavior or SQLx route latency.\n\nMigration 0048 added 45,056 bytes (44 KiB) to this seats-only database.\nOne measured run took 7.698 ms wall / 1.828 ms CPU; integrity_check was ok.\nThis measures the index build on the existing seat population, not a copy\nof the entire 2.48 GB store or its boot sequence.\n\nWrite probe: median of seven 1,000-row rolled-back batches, no durable\ncommit/fsync latency. CPU microseconds per statement:\n\n| Statement | Before | After | Extra |\n|---|---:|---:|---:|\n| Insert | 3.294 | 3.729 | 0.435 |\n| Change pane | 1.271 | 1.822 | 0.551 |\n| Assign the same pane | 1.235 | 1.695 | 0.460 |\n| State-only update | 1.295 | 1.274 | No measurable increase |\n\nThese are index-maintenance microprobes, not end-to-end event-sourced\nregistry transaction timings. Their absolute overhead is small.\n\n216 combinations of harness, folder, parent, pane and live-only filters\nreturned identical full rows in identical order between the two queries.\nDropping the index on the copy made the new SQL refuse with\n`no such index: seats_by_pane`, as intended.\n\n## Live BEFORE receipt\n\nCommand: `nice -n 19 python3 pr312_probe.py live <receipt.json>`;\ntwo `pij-rs --json ping` reads and single-PID `/bin/ps` samples.\nNovember 21, 2026, 06:31:59.581 -> 06:32:59.615 UTC:\n\n- Same PID 31125, deployed commit `fb565c165d`, process start\n  November 21, 2026, 16:06:56 local time; interval 60.033353 s.\n- Whoami ok count 14,944 -> 15,614: 670 completions, zero refusals,\n  11.1605 calls/s. active_us 28,847,447 -> 30,258,359:\n  1,410,912 us, **2.10584 ms active wall time/completion**; held_us stayed 0.\n- Daemon cumulative CPU 288.32 -> 299.83 seconds:\n  **19.173% of one core**, not whoami's exclusive CPU.\n  RSS 140,304 -> 130,992 KiB.\n- One-minute host load 97.551 -> 111.161. Registry cohorts stayed\n  84 Copilot, 106 Claude and 6 OMP untombstoned rows; those counts are\n  not a process-liveness census or exact status-line consumer counts.\n- Exact daemon launches 989 -> 998: 9 in total, 0.1499/s.\n  Only `ddocs.community` +2 and `git.community` +7 changed.\n  Every tmux and process-probe site was flat; site deltas reconcile to total.\n\nSeparate subsequent `harness/scripts/nice19.sh just spawn-rate --seconds 20 --json`:\n20.0 seconds, PID 31125, **269.3 machine launches/s**, sampled 250.9/s;\nattributed daemon children 0.4/s lower bound. Attribution is sampled,\nnot exact; the statusline script-marker count misses exec'd native\nstatusline processes. This busy sampler did not overlap the CPU window.\nThese are BEFORE readings only and do not establish a feature-specific\nwhole-machine launch reduction.\n\n## Proof and remaining notes\n\n`just pr-freeze 312`: FINAL at the exact full SHA, main base, CLEAN,\nlatest CI 5/5, migration 48 above main's 47. `git diff --check` passed;\nthe detached checkout stayed clean. Relative to the merge's main parent,\nonly the five B1 files differ; both D-F258-1 and D-F258-2 are present.\n\nExact-head CI run 44875077557, attempt 1, succeeded. Its successful\nrust-test job 136757885002 uploaded artifact **14695023977**; that\nartifact's head_sha is the full reviewed SHA. JUnit contains 2,754 cases,\nzero failures/errors, including both registry_pane_index tests and the\nforward/reopen migration tests. No local cargo build or test was started.\n`harness boot` was attempted: advisory NOT-READY because this C25\nread-only checkout has no node_modules. Local TS and the full\n`harness checks` were not run or represented as green; TS proof is the\nexact-head CI, and full local gate evidence remains the author's PR receipt.\n\nOptional test improvement, not a block (C34): the cost test explains the\nexported SQL constant, not the statement actually selected by\n`SqliteRegistry::list`. Removing the runtime branch would leave its\nplan assertion intact. An executed-query cost tripwire would close that\nfuture-regression gap; the current branch is visibly wired correctly.\n\n**Owed after the prime's deploy:** repeat the same PID/start/commit-bound\n60-second whoami active/held, launch-site, CPU/RSS, host-load and cohort\nwindow, plus the separate 20-second machine launch sampler. Do not\ninfer deployed CPU savings from this SQL-only result.\n\n**magicWand:** one read-only cost-window command that captures route\nactive/held deltas, PID/start/build, CPU/RSS, load and registry cohorts\ntogether, with a separate machine sampler.\n\n**difficulties:** C25 makes local TS/full-gate proof unavailable here;\nthe author and independent SQL probes use different engines/materialization\npaths, so their absolute timings must retain their protocols.\nPerformance/312 remains held until merge.\n"
+		}
+	]
+}
