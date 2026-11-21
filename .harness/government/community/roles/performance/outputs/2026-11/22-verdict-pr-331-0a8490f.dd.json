@@ -1,0 +1,73 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff91-05d4-79a0-bb9a-1c2f661274e5",
+				"date": "2026-11-22",
+				"head": "0a8490fc85894b394f4d268b3971e72f605c7a9a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:331",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Price ALL pending/running job candidates: state seek plus residual kind filter, DISTINCT/ORDER work and target PK lookups; not only open delivery rows.",
+				"7.53/.86ms is Python roster materialization+kinds+peek, excluding Rust decode/pool/dispatch; original copy gone, empty kind intersection, cumulative elapsed-time projection is not SQL-only/CPU.",
+				"AFTER owed after deploy with matched counts and actual Rust drain-stage timing/profile. Current ping lacks that sensor; use unique owned copy paths for any replay."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 331",
+					"exit_code": 0
+				},
+				{
+					"command": "git diff --check origin/main...HEAD",
+					"exit_code": 0
+				},
+				{
+					"command": "Exact LIST_LIVE_OR_OWED_SQL in-memory schema50 EXPLAIN/VM/drop-index probe",
+					"exit_code": 0,
+					"log": "23 rows:969 VM steps; +2000 unrelated OPEN jobs20962, DONE/history additions no increase. seats_live/PK seeks, state-only jobs_claimable; DISTINCT/ORDER temp B-trees; both missing indexes refuse. files/pr331-query-cost.log."
+				},
+				{
+					"command": "Read producer retrospective f259a-drain-bench.py, without execution",
+					"exit_code": 0,
+					"log": "Reported7.53/.86ms,3297/302 rows,133 live/377 open, median50; Python materialization/filter/json/peek only; zero open drain kinds. No original copy/log or independent timing replay."
+				},
+				{
+					"command": "gh run view 44939879412 --repo AI-Substrate/pij-fleet --job 136954525361 --log; gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14721114262/zip; Python XML parse",
+					"exit_code": 0,
+					"log": "2847 cases, zero failed/error/skipped; ten selected roster/guard/spawn tests passed."
+				},
+				{
+					"command": "Passive pij-rs --json ping/ps pair plus just spawn-rate --seconds 20",
+					"exit_code": 0,
+					"log": "BEFORE24869/e3673fb93c,20.014131s:spawns0,CPU+.69s,RSS103824KiB unchanged; machine283.4 launches/s, no sampled daemon children. Not drain-specific/AFTER."
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Eight dependency/ambient-tool failures; pij-skill/native/SDK pass, Rust/route/smoke skipped; local gate not green, separate C25 exact-head CI proof."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "ROUND 1 performance verdict: PASS-WITH-NOTES.\nSubject: pr:331\nHead: 0a8490fc85894b394f4d268b3971e72f605c7a9a\nAnswers: 01a1ff91-05d4-79a0-bb9a-1c2f661274e5\n\nThe real drain now avoids walking/decoding the retired seat history. Source, exact-query EXPLAIN and CI support that improvement. No new loop, timer, process launch or per-seat worker is added. No demonstrated normal-use resource-cost breach blocks this head. Two qualifications are required: the owed arm visits ALL open jobs, and the7.53/.86ms measurement is a Python roster/peek benchmark, not a Rust drain tick.\n\nVerified source/plan cost:\n- Existing registry call is replaced, not supplemented: one schema check and one roster SELECT, followed by the same kind filtering/peek/dispatch paths. The default5s drain cadence and existing lease-deadline wake path are unchanged.\n- seats_live is a partial(id) index for tombstoned_at IS NULL. Its scan visits live rows L; the historical retired seat table is not scanned.\n- jobs_claimable covers(state, kind, id). EXPLAIN narrows it by state only: SEARCH jobs USING COVERING INDEX jobs_claimable(state=?). The substr(kind...) predicates are residual. Every pending/running index row Q is tested, including non-delivery queues; closed job history is skipped. Thus \"O(live + open delivery rows)\" is too narrow.\n- Delivery/control target IDs are derived from kind, distincted through a temp B-tree, then looked up in seats by primary key under CROSS JOIN. The owed arm also uses a temp B-tree for ORDER BY. Budget L+ALL open-job candidate work, distinct/order work and D distinct-target primary-key lookups; full descriptor decode is only for returned live/retired-owed rows. Row-count reduction alone is not the whole cost model.\n- Exact-source query, schema50, SQLite3.54.1, private in-memory fixture:20 live+3 owed returned23 rows in969 VM instructions. Adding2,000 unrelated OPEN jobs kept23 rows but raised work to20,962 instructions. Adding2,000 unrelated DONE jobs or2,000 retired seats owed nothing did not increase that instruction count. This is candidate-work evidence, not elapsed-time/Rust performance.\n- Independently dropping seats_live or jobs_claimable in that private fixture made the query fail explicitly with \"no such index\". No silent full-scan fallback exists. The real adapter propagates query errors to the drain's existing error path.\n- Fakes use the unchanged whole-roster default, a superset; they do not prove optimized real-store timing. Shared kind-prefix constants preserve the strings. Park notice and the PA watchdog are unchanged here, deliberately retaining their current work/scope.\n- #328's late-error change adds a log line on an already-failing lease read and still returns None. No extra lease read/retry is added. The new doc correctly names the one-shot shared boot deadline and up to two guards' SQL/native-lock work, without a restart-latency ceiling.\n\nCopy benchmark scope:\n- Falcon supplied the retrospectively saved eval-cell code/docstring in f259a-drain-bench.py. Reported copy:3,297 seats,133 live;241 pending+136 running jobs. Old/new medians over50 iterations:7.53/.86ms; returned rows3297/302 and kind strings1992/275.\n- I read the code, did not rerun it. Each timed iteration is Python sqlite3 roster execute/fetchall(row materialization), a Python implementation of the kinds filter, json.dumps(kinds), then peek SQL/fetchone. It does NOT run Rust row_to_descriptor, schema/pool/async overhead, tmux, claim or handle_claim.\n- No drain kind had an open job on that snapshot: both intersections were equal and EMPTY. This establishes the sampled empty-peek preparation case, not matching productive dispatch behavior under load. The original copy is gone and there is no separate original execution log; the figures are author-reported, with the saved code/output inspected.\n- At nominal720 scheduled ticks/hour, those medians project to about5.42s/.62s of cumulative elapsed PYTHON preparation time, not measured SQL-only time or daemon CPU. No full Rust/live8.8x improvement or future10k-row ceiling is asserted.\n\nNonblocking notes owed:\n1. Correct the scaling row to include ALL pending/running job candidates, distinct/sort work and target PK lookups. A delivery-prefix range optimization is optional if other-queue work matters; any follow-up must cover both body/control prefixes and verify its actual plan. Current semantics need no new index to pass this review.\n2. Relabel7.53/.86ms as the Python roster/kinds/peek benchmark, explicitly excluding Rust decode/pool/dispatch. Keep empty-peek snapshot and projected elapsed-time/hour qualifications.\n3. AFTER owed after deploy: matched workload/cohort counts and an actual Rust drain-preparation timing/profile, separating this roster query from native reconciliation, park notice, watchdog and dispatch work. The current ping exposes no drain-stage timing; whole-daemon CPU alone cannot prove the claimed drain improvement. A replay should allocate its own recorded copy path, not reuse the saved script's fixed shared COPY destination.\n\nValidation:\n- just pr-freeze 331: FINAL at the full head, CLEAN, five latest checks passed, schema50, no migration. Fixes:F259 is the expected parser spelling for F259a.\n- git diff --check origin/main...HEAD: passed; detached tree clean.\n- Exact-head CI44939879412/job136954525361, successful-upload artifact14721114262. Independently parsed JUnit:2847 cases, zero failures/errors/skipped; ten focused cases passed: roster equivalence/plan, boot-wait/late-renewal guards and all six spawn-site guards.\n- Exact SQL plan/candidate/drop-index probes ran only in memory; log:files/pr331-query-cost.log. No local Rust build or producer mutant rerun.\n- Passive BEFORE: PID24869/commite3673fb93c, UTC2026-11-21T19:32:48.635134Z to19:33:08.651957Z,20.014131s. Spawn counters flat(delta0); CPU1:45.35->1:46.04(+.69s, about3.45% of one core), RSS103824KiB unchanged. No drain-specific metric exposed. This is not F259a AFTER or drain-site cost.\n- Nearby concurrent just spawn-rate --seconds 20:283.4 machine launches/s,253.5/s sampled; no daemon children sampled. Other fleet/observer work is included and exact matching boundaries are not logged; no feature saving is attributed.\n- harness boot ready=false(missing vitest); harness checks --quick --json exit1, eight dependency/ambient-tool failures; pij-skill/native/SDK pass, heavy Rust/route/smoke skipped. Local gate is not green; C25 exact-head CI is separate proof. No dependencies installed/linked.\n- No direct live DB access/copy, bounce or runtime mutation by this seat. Benchmark source was read only; no shared copy/scratch path was removed. Only the owned CI download is temporary; receipts persist in session files.\n\nSources: registry.rs:511-522,641-659; migrations/0049_seats_live.sql:10 and0002_queue.sql:39; core/ports.rs:174-185; pointer/worker.rs:230-287; registry_live_or_owed.rs:41-238; auth_recovery.rs:303-324. No archive/deletion policy is introduced; the late failure handling remains a BRAKE. This performance pass does not clear another role's correctness/security verdict.\n\nHold performance/331 until merge; AFTER remains owed. #330's supplemental BLOCK is already published and is not cleared by this separate verdict. Harness lesson: pin visits of unrelated open jobs and expose Rust drain-preparation timing/row counts in an existing receipt, rather than infer it from returned rows or Python materialization.\n"
+		}
+	]
+}
