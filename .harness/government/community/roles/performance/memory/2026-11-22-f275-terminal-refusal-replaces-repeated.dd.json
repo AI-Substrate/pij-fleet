@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before pricing sender-less acks or resuming the unpublished PR327 cost verdict after convergence",
+				"tags": [
+					"cost",
+					"F275",
+					"claims",
+					"transaction",
+					"proof"
+				],
+				"title": "F275: terminal refusal replaces repeated claim cost"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F275 supersedes the F270 generic senderless-ack lifetime note for a refusal that reaches ack_delivery: at4830d73, the existing schema/BEGIN/PK SELECT is followed by one failed/no-sender PK UPDATE and COMMIT, then Err. It replaces the prior tentative done UPDATE/ROLLBACK; it is not an additional transaction or timer. Returning Err after commit does not undo it in owned_write. Named acks keep the same SQL with an extra cheap empty-string branch. Sources: queue.rs:1837-1910; migrate.rs:43-56.\n\nThe successor is queued BEFORE the refused ack in both real-store witnesses and claims on the next pass without sleep/plain-ack cleanup. That proves immediate queue eligibility, not client latency. The failed history row is retained, no park/expiry notice is created, and fully unparseable native payloads still hold. Do not extend the new lifetime conclusion to payloads that never reach this refusal.\n\nF270 control cost correction is accepted:1/2 total JSON-history-filtering calls plus one durable control-refused fact per refused-control ack; source unchanged. R1 cost draft PASS, NOT published: the immediate pre-publication pr-freeze changed from FINAL to NOT FINAL (merge DIRTY against updated main), so the guarded writer never ran. Hold /327 for PM convergence/exact-head routing. Independent correctness/security not cleared. Exact-head CI44928137771/job136918646248/artifact14716607248:2835 cases, zero failed/error/skipped; twelve selected cases pass. No local build/mutants/live probe; C25 quick gate remains dependency-red.\n\nmagicWand: preserve the successor-before-refusal witness as the deterministic lifecycle proof, rather than infer retirement from claim leases.\n"
+		}
+	]
+}
