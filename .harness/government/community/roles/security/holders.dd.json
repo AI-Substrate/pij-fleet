@@ -1175,7 +1175,10 @@
 					"harness_session": "aa358e02-6f68-4ca0-88ce-59ef10419c81",
 					"instance_key": "319",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #319 merged (96d7e738648e)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-selected-deer",
+					"to": "2026-11-21T16:36:45.908Z",
 					"why": "#319 F263 round 1 (reuse idle seat)"
 				},
 				{
