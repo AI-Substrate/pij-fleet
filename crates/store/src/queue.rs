@@ -1866,6 +1866,31 @@ impl Queue for SqliteQueue {
             };
             require_delivery_job(&claimed)?;
 
+            let sender: String = row.try_get("dedupe_sender").map_err(adapter_error)?;
+            if sender.is_empty() {
+                // F275: a delivery that names no sender can never be recorded
+                // (F270), so its refused ack ends it here, in this transaction:
+                // left running, it would be re-claimed after every lease and
+                // block its recipient's serial key indefinitely.
+                sqlx::query(
+                    "UPDATE jobs SET state = 'failed', outcome = ?2, acked_at = unixepoch() \
+                     WHERE id = ?1 AND state = 'running'",
+                )
+                .bind(job.0 as i64)
+                .bind(pij_core::delivery::NO_SENDER_OUTCOME)
+                .execute(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+                tx.commit().await.map_err(adapter_error)?;
+                return Err(PijError::Adapter {
+                    adapter: "store/queue".to_string(),
+                    message: format!(
+                        "a delivery must name its sender seat; job {} failed as {}",
+                        job.0,
+                        pij_core::delivery::NO_SENDER_OUTCOME
+                    ),
+                });
+            }
             sqlx::query(
                 "UPDATE jobs SET state = 'done', outcome = NULL, acked_at = unixepoch() \
              WHERE id = ?1 AND state = 'running'",
@@ -1874,7 +1899,6 @@ impl Queue for SqliteQueue {
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?;
-            let sender: String = row.try_get("dedupe_sender").map_err(adapter_error)?;
             record_delivered(
                 &mut tx,
                 job,
