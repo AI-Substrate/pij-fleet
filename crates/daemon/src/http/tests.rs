@@ -4645,13 +4645,9 @@ impl Registry for HeldReviveRow {
     }
 }
 
-/// F276 (B332-01): a revive whose request is cancelled after its pane is
-/// launched and before its row is written still spares the seat's queued
-/// work. The launch outlives the request (R309-01) and writes the row, so
-/// the intent lives with the launch, not the request. Real registry, queue
-/// and spine; fake tmux; the actual revive handler.
-#[tokio::test]
-async fn a_cancelled_revive_spares_its_seats_queue_until_its_launch_writes_the_row() {
+/// F276: real registry, queue and spine with fake tmux, and [`RETIRED`]
+/// tombstoned eight days ago with one body queued for it.
+async fn long_retired_with_queued_work() -> (Services, pij_testkit::FreshStore, sqlx::SqlitePool) {
     let store = pij_testkit::FreshStore::new();
     let config = pij_core::config::Config {
         store_path: store.path(),
@@ -4669,8 +4665,7 @@ async fn a_cancelled_revive_spares_its_seats_queue_until_its_launch_writes_the_r
     )
     .await
     .unwrap();
-    let tmux = Arc::new(FakeTmux::new());
-    services.tmux = tmux.clone();
+    services.tmux = Arc::new(FakeTmux::new());
     services.liveness = Arc::new(FakeLiveness::new());
     for id in ["pij-live-sender", RETIRED] {
         services
@@ -4707,13 +4702,41 @@ async fn a_cancelled_revive_spares_its_seats_queue_until_its_launch_writes_the_r
         .execute(&pool)
         .await
         .unwrap();
-    let job = async || -> (String, Option<String>) {
-        sqlx::query_as("SELECT state, outcome FROM jobs WHERE kind = 'delivery:' || ?1")
-            .bind(RETIRED)
-            .fetch_one(&pool)
-            .await
-            .unwrap()
-    };
+    (services, store, pool)
+}
+
+/// The `(state, outcome)` of [`RETIRED`]'s queued body.
+async fn retired_job(pool: &sqlx::SqlitePool) -> (String, Option<String>) {
+    sqlx::query_as("SELECT state, outcome FROM jobs WHERE kind = 'delivery:' || ?1")
+        .bind(RETIRED)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// The actual revive handler for [`RETIRED`], as its own task.
+fn spawn_revive(services: &Services) -> tokio::task::JoinHandle<Response> {
+    let request: types::ReviveRequest =
+        serde_json::from_value(serde_json::json!({"id":RETIRED,"session":"fleet","fresh":true}))
+            .unwrap();
+    let state = super::test_state(services.clone());
+    tokio::spawn(super::revive::revive_seat(State(state), Ok(Json(request))))
+}
+
+fn reviving(services: &Services) -> bool {
+    services
+        .spawn_waits
+        .revives()
+        .contains(&SeatId::from(RETIRED))
+}
+
+/// F276 (B332-01): a revive whose request is cancelled after its pane is
+/// launched and before its row is written still spares the seat's queued
+/// work. The launch outlives the request (R309-01) and writes the row, so
+/// the intent lives with the launch, not the request.
+#[tokio::test]
+async fn a_cancelled_revive_spares_its_seats_queue_until_its_launch_writes_the_row() {
+    let (mut services, _store, pool) = long_retired_with_queued_work().await;
     let (reached_tx, reached) = tokio::sync::oneshot::channel();
     let (release, release_rx) = tokio::sync::oneshot::channel();
     services.registry = Arc::new(HeldReviveRow {
@@ -4721,11 +4744,7 @@ async fn a_cancelled_revive_spares_its_seats_queue_until_its_launch_writes_the_r
         reached: tokio::sync::Mutex::new(Some(reached_tx)),
         release: tokio::sync::Mutex::new(Some(release_rx)),
     });
-    let state = super::test_state(services.clone());
-    let request: types::ReviveRequest =
-        serde_json::from_value(serde_json::json!({"id":RETIRED,"session":"fleet","fresh":true}))
-            .unwrap();
-    let revive = tokio::spawn(super::revive::revive_seat(State(state), Ok(Json(request))));
+    let revive = spawn_revive(&services);
     tokio::time::timeout(Duration::from_secs(10), reached)
         .await
         .expect("the revive reaches its row write")
@@ -4734,25 +4753,19 @@ async fn a_cancelled_revive_spares_its_seats_queue_until_its_launch_writes_the_r
     revive.abort();
     let _ = revive.await;
     assert!(
-        services
-            .spawn_waits
-            .revives()
-            .contains(&SeatId::from(RETIRED)),
+        reviving(&services),
         "the launch still writing the row keeps the seat being revived"
     );
     assert!(crate::park_notice::sweep(&services).await);
-    assert_eq!(job().await, ("pending".to_string(), None));
+    assert_eq!(retired_job(&pool).await, ("pending".to_string(), None));
     release.send(()).expect("release the row write");
     for _ in 0..500 {
-        if services.spawn_waits.revives().is_empty() {
+        if !reviving(&services) {
             break;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    assert!(
-        services.spawn_waits.revives().is_empty(),
-        "the intent ends with the launch"
-    );
+    assert!(!reviving(&services), "the intent ends with the launch");
     let revived = services
         .registry
         .get(&RETIRED.into())
@@ -4761,7 +4774,38 @@ async fn a_cancelled_revive_spares_its_seats_queue_until_its_launch_writes_the_r
         .unwrap();
     assert_eq!(revived.tombstoned_at, None, "the launch wrote the live row");
     assert!(crate::park_notice::sweep(&services).await);
-    assert_eq!(job().await, ("pending".to_string(), None));
+    assert_eq!(retired_job(&pool).await, ("pending".to_string(), None));
+}
+
+/// F276: a revive still waiting for the spawn lock spares its seat. Cancelled
+/// there, it never launched, so nothing will lift the tombstone: the intent
+/// ends with the request, and the next sweep retires the work.
+#[tokio::test]
+async fn a_revive_waiting_for_the_spawn_lock_spares_its_seat_until_it_is_cancelled() {
+    let (services, _store, pool) = long_retired_with_queued_work().await;
+    let other_launch = services.spawn_waits.hold().await;
+    let revive = spawn_revive(&services);
+    for _ in 0..500 {
+        if reviving(&services) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(reviving(&services), "waiting for the lock already counts");
+    assert!(crate::park_notice::sweep(&services).await);
+    assert_eq!(retired_job(&pool).await, ("pending".to_string(), None));
+    revive.abort();
+    let _ = revive.await;
+    drop(other_launch);
+    assert!(!reviving(&services));
+    assert!(crate::park_notice::sweep(&services).await);
+    assert_eq!(
+        retired_job(&pool).await,
+        (
+            "failed".to_string(),
+            Some("undelivered:recipient-retired".to_string())
+        )
+    );
 }
 
 /// R309-01 with F211: the launch task outlives its request only to write the

@@ -748,6 +748,32 @@ mod tests {
         assert!(waits.revives().is_empty());
     }
 
+    /// F276 (B332-01): a revive intent carried by the spawn hold ends with
+    /// the hold, wherever the hold went. A launch task that panics before its
+    /// row (it will never write it) unwinds the hold, which ends the intent
+    /// and frees the lock; until then the intent stands.
+    #[tokio::test]
+    async fn a_carried_revive_intent_ends_when_its_launch_panics() {
+        let (waits, _) = waits();
+        let seat = SeatId::from("pij-reviving");
+        let mut hold = waits.hold().await;
+        hold.carry(waits.reviving(&seat));
+        let (fail, failing) = tokio::sync::oneshot::channel::<()>();
+        let launch = tokio::spawn(async move {
+            let _hold = hold;
+            let _ = failing.await;
+            panic!("the launch fails before its row");
+        });
+        tokio::task::yield_now().await;
+        assert!(waits.revives().contains(&seat), "the launch owns it");
+        fail.send(()).unwrap();
+        assert!(launch.await.unwrap_err().is_panic());
+        assert!(waits.revives().is_empty());
+        tokio::time::timeout(Duration::from_secs(1), waits.hold())
+            .await
+            .expect("the lock is free again");
+    }
+
     /// R253-001: the seat binds while the request watches, then the request
     /// is dropped unanswered. The drop comes second, so it hands off.
     #[tokio::test]
