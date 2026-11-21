@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Read before reviewing spawn cwd rules, worktree seats or extension loading.",
+				"tags": [
+					"spawn",
+					"extension-loading",
+					"worktree",
+					"c33"
+				],
+				"title": "Project-layer code loads from the seat cwd"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #304 r1 at 941b81a: PASS WITH NOTES (output 05793a9). OMP 18.16 loads cwd/.omp extensions first, deduped by name (builtin.ts:61-78, extension-module.ts:27, capability/index.ts:231-275), with no project-trust gate. Spawn --cwd is checked only for absolute+printable (http/mod.rs:1469); there is no same-repo check, before or after. The Pi linked-worktree refusal is CLI-only, a collision brake and not a trust boundary. Main's extension was never 'reviewed': it is main's working tree. Residual S304-N001: OMP review seats in a review-<pr> worktree execute the PR's .omp layer before the verdict, the same as Claude and Copilot project config already do. Raise it if untrusted-author PRs appear."
+		}
+	]
+}

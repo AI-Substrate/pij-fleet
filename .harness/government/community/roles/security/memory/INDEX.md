@@ -84,4 +84,5 @@
 - [2026-11-21 macOS bash 3.2 imports UID and EUID from the environment](2026-11-21-macos-bash-3-2-imports-uid-and-euid-from.dd.md): Read before accepting $UID/$EUID as a trusted identity in a just recipe or shell script. (shell, identity, c33, macos)
 - [2026-11-21 Path-managed logs: every reopen by name needs the join treatment](2026-11-21-path-managed-logs-every-reopen-by-name.dd.md): Open before reviewing log rotation, trim, staging files or any code that re-checks a path and then reopens it by name in the state dir. (filesystem, symlinks, fifo, rotation, c33, proof)
 - [2026-11-21 Per-hop ancestry walks and macOS-only proof](2026-11-21-per-hop-ancestry-walks-and-macos-only.dd.md): Open before reviewing in-process parent/start reads that replace a ps snapshot, or trusting CI for a macOS kernel path. (identity, process-ancestry, pid-reuse, proof, macos)
+- [2026-11-21 Project-layer code loads from the seat cwd](2026-11-21-project-layer-code-loads-from-the-seat.dd.md): Read before reviewing spawn cwd rules, worktree seats or extension loading. (spawn, extension-loading, worktree, c33)
 <!-- /pij:generated -->
