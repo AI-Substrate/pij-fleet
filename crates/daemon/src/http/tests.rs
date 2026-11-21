@@ -4572,6 +4572,198 @@ async fn the_stop_waits_for_a_launch_past_its_check_to_write_its_row() {
     assert_eq!(launches(&tmux), 1);
 }
 
+/// F276 (B332-01): holds the revive of [`RETIRED`] at its row write until
+/// released; `reached` fires when it gets there, after its pane launched.
+struct HeldReviveRow {
+    inner: Arc<dyn Registry>,
+    reached: tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    release: tokio::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+}
+
+const RETIRED: &str = "pij-long-retired";
+
+#[async_trait]
+impl Registry for HeldReviveRow {
+    async fn get(&self, seat: &SeatId) -> Result<Option<SeatDescriptor>> {
+        self.inner.get(seat).await
+    }
+    async fn put(&self, descriptor: SeatDescriptor) -> Result<Seq> {
+        self.inner.put(descriptor).await
+    }
+    async fn put_reporting(
+        &self,
+        descriptor: SeatDescriptor,
+    ) -> Result<(Seq, pij_core::ports::PutBinding)> {
+        self.inner.put_reporting(descriptor).await
+    }
+    async fn put_reporting_keeping_parent(
+        &self,
+        descriptor: SeatDescriptor,
+    ) -> Result<(Seq, pij_core::ports::PutBinding)> {
+        self.inner.put_reporting_keeping_parent(descriptor).await
+    }
+    async fn put_lifting_owner_close(
+        &self,
+        descriptor: SeatDescriptor,
+        keep_parent: bool,
+    ) -> Result<(Seq, pij_core::ports::PutBinding)> {
+        if descriptor.id.as_str() == RETIRED {
+            if let Some(reached) = self.reached.lock().await.take() {
+                let _ = reached.send(());
+            }
+            if let Some(release) = self.release.lock().await.take() {
+                let _ = release.await;
+            }
+        }
+        self.inner
+            .put_lifting_owner_close(descriptor, keep_parent)
+            .await
+    }
+    async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>> {
+        self.inner.list(filter).await
+    }
+    async fn list_live_with(&self, also: &[SeatId]) -> Result<Vec<SeatDescriptor>> {
+        self.inner.list_live_with(also).await
+    }
+    async fn tombstone(&self, seat: &SeatId, reason: &str) -> Result<Seq> {
+        self.inner.tombstone(seat, reason).await
+    }
+    async fn tombstone_if_unchanged(
+        &self,
+        expected: SeatDescriptor,
+        reason: String,
+    ) -> Result<Seq> {
+        self.inner.tombstone_if_unchanged(expected, reason).await
+    }
+    async fn set_activity(
+        &self,
+        seat: &SeatId,
+        state: pij_core::model::SystemState,
+        reason: Option<&str>,
+    ) -> Result<Option<Seq>> {
+        self.inner.set_activity(seat, state, reason).await
+    }
+}
+
+/// F276 (B332-01): a revive whose request is cancelled after its pane is
+/// launched and before its row is written still spares the seat's queued
+/// work. The launch outlives the request (R309-01) and writes the row, so
+/// the intent lives with the launch, not the request. Real registry, queue
+/// and spine; fake tmux; the actual revive handler.
+#[tokio::test]
+async fn a_cancelled_revive_spares_its_seats_queue_until_its_launch_writes_the_row() {
+    let store = pij_testkit::FreshStore::new();
+    let config = pij_core::config::Config {
+        store_path: store.path(),
+        adapters: pij_core::config::Adapters {
+            registry: pij_core::config::AdapterChoice::Real,
+            queue: pij_core::config::AdapterChoice::Real,
+            spine: pij_core::config::AdapterChoice::Real,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut services = crate::build_services(
+        &config,
+        &std::path::Path::new(&store.path()).with_extension("signals"),
+    )
+    .await
+    .unwrap();
+    let tmux = Arc::new(FakeTmux::new());
+    services.tmux = tmux.clone();
+    services.liveness = Arc::new(FakeLiveness::new());
+    for id in ["pij-live-sender", RETIRED] {
+        services
+            .registry
+            .put(SeatDescriptor::new(id, Harness::Copilot, "/tmp"))
+            .await
+            .unwrap();
+    }
+    services
+        .delivery
+        .send(
+            "pij-live-sender".into(),
+            RETIRED.into(),
+            "queued while it was gone",
+        )
+        .await
+        .unwrap();
+    services
+        .registry
+        .tombstone(&RETIRED.into(), "test: retired")
+        .await
+        .unwrap();
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite:{}", store.path()))
+        .await
+        .unwrap();
+    let eight_days_ago = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+        - 8 * 24 * 60 * 60 * 1_000;
+    sqlx::query("UPDATE seats SET tombstoned_at = ?2 WHERE id = ?1")
+        .bind(RETIRED)
+        .bind(eight_days_ago)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let job = async || -> (String, Option<String>) {
+        sqlx::query_as("SELECT state, outcome FROM jobs WHERE kind = 'delivery:' || ?1")
+            .bind(RETIRED)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+    let (reached_tx, reached) = tokio::sync::oneshot::channel();
+    let (release, release_rx) = tokio::sync::oneshot::channel();
+    services.registry = Arc::new(HeldReviveRow {
+        inner: services.registry.clone(),
+        reached: tokio::sync::Mutex::new(Some(reached_tx)),
+        release: tokio::sync::Mutex::new(Some(release_rx)),
+    });
+    let state = super::test_state(services.clone());
+    let request: types::ReviveRequest =
+        serde_json::from_value(serde_json::json!({"id":RETIRED,"session":"fleet","fresh":true}))
+            .unwrap();
+    let revive = tokio::spawn(super::revive::revive_seat(State(state), Ok(Json(request))));
+    tokio::time::timeout(Duration::from_secs(10), reached)
+        .await
+        .expect("the revive reaches its row write")
+        .expect("reached");
+    // The request goes away: a client gone, or a stop's drain cut.
+    revive.abort();
+    let _ = revive.await;
+    assert!(
+        services
+            .spawn_waits
+            .revives()
+            .contains(&SeatId::from(RETIRED)),
+        "the launch still writing the row keeps the seat being revived"
+    );
+    assert!(crate::park_notice::sweep(&services).await);
+    assert_eq!(job().await, ("pending".to_string(), None));
+    release.send(()).expect("release the row write");
+    for _ in 0..500 {
+        if services.spawn_waits.revives().is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(
+        services.spawn_waits.revives().is_empty(),
+        "the intent ends with the launch"
+    );
+    let revived = services
+        .registry
+        .get(&RETIRED.into())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(revived.tombstoned_at, None, "the launch wrote the live row");
+    assert!(crate::park_notice::sweep(&services).await);
+    assert_eq!(job().await, ("pending".to_string(), None));
+}
+
 /// R309-01 with F211: the launch task outlives its request only to write the
 /// row. Once the request is gone it stops waiting, so its watch is left
 /// unsettled and a later bind hands the seat to the parent.

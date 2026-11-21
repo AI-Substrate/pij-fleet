@@ -574,7 +574,7 @@ async fn retire_long_dead(services: &Services, seats: &[SeatDescriptor], now: u6
 /// live seats plus the retired seats the queue in use still owes a row
 /// (F259a, [`crate::pointer::live_or_owed`]), so a retired seat with nothing
 /// open costs this sweep nothing. Returns whether everything settled.
-async fn sweep(services: &Services) -> bool {
+pub(crate) async fn sweep(services: &Services) -> bool {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_millis() as u64);

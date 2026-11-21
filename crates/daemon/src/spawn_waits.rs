@@ -172,9 +172,10 @@ pub struct SpawnWaits {
     /// F264: what the holder of `launches` is launching, for a stop that
     /// gives up waiting on it.
     launching: Mutex<Option<String>>,
-    /// F276: seats with a revive request in progress, from its first wait to
-    /// its answer, counted per request. The retirement of a long-dead seat's
-    /// queue spares every seat here.
+    /// F276: seats with a revive in progress, counted per request: from the
+    /// request's first wait until its launch has written the seat's row or
+    /// failed (B332-01: the launch task owns that end, not the request). The
+    /// retirement of a long-dead seat's queue spares every seat here.
     reviving: Mutex<HashMap<SeatId, usize>>,
 }
 
@@ -199,6 +200,7 @@ impl SpawnWaits {
         SpawnHold {
             _guard: Arc::clone(&self.launches).lock_owned().await,
             waits: Arc::clone(self),
+            _revive: None,
         }
     }
 
@@ -213,7 +215,8 @@ impl SpawnWaits {
 
     /// F276: `seat` is being revived until the returned guard drops. Taken
     /// before a revive's first wait, so a revive that is only waiting (for
-    /// its dead pane to close, or for the spawn lock) already counts.
+    /// its dead pane to close, or for the spawn lock) already counts. Once
+    /// the spawn lock is held, [`SpawnHold::carry`] hands it to the launch.
     pub fn reviving(self: &Arc<Self>, seat: &SeatId) -> ReviveIntent {
         *self
             .reviving
@@ -466,6 +469,8 @@ impl Drop for ReviveIntent {
 pub struct SpawnHold {
     _guard: tokio::sync::OwnedMutexGuard<()>,
     waits: Arc<SpawnWaits>,
+    /// F276 (B332-01): a revive's intent, ended with this hold.
+    _revive: Option<ReviveIntent>,
 }
 
 impl SpawnHold {
@@ -475,6 +480,15 @@ impl SpawnHold {
     pub fn name(&self, what: String) {
         let named = pij_core::render::is_one_line(&what).then_some(what);
         *self.waits.launching.lock().expect("spawn waits launching") = named;
+    }
+
+    /// F276 (B332-01): keep a revive's intent for as long as this hold. The
+    /// launch task owns the hold until the seat's row is written, or until
+    /// the launch fails (a return or a panic unwinds it), whether or not the
+    /// request that asked for the revive is still waiting. So the seat stays
+    /// spared until it is either live again or definitely not coming back.
+    pub fn carry(&mut self, intent: ReviveIntent) {
+        self._revive = Some(intent);
     }
 }
 
