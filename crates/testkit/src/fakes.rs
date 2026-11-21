@@ -1340,6 +1340,26 @@ impl Queue for FakeQueue {
         Ok(pending.chain(claimed).min_by_key(|(id, _)| id.0))
     }
 
+    async fn owed_recipients(&self) -> Result<Option<Vec<SeatId>>> {
+        let state = self.state.lock().expect("fake queue mutex");
+        let owed: std::collections::BTreeSet<SeatId> = state
+            .live
+            .iter()
+            .map(|(_, job)| job)
+            .chain(state.claimed.values().map(|(job, _)| job))
+            .filter_map(|job| {
+                job.kind
+                    .strip_prefix(pij_core::delivery::DELIVERY_KIND_PREFIX)
+                    .or_else(|| {
+                        job.kind
+                            .strip_prefix(pij_core::delivery::CONTROL_KIND_PREFIX)
+                    })
+            })
+            .map(SeatId::from)
+            .collect();
+        Ok(Some(owed.into_iter().collect()))
+    }
+
     /// On the fake clock: a live row's `not_before` still ahead of the fake
     /// `now`. The fake clock only moves when a test advances it, so no instant
     /// can cross between a claim and this read; `since` is the real clock and

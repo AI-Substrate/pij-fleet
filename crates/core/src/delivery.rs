@@ -347,13 +347,18 @@ pub enum DeliveryRoute {
     },
 }
 
+/// What every [`delivery_kind`] starts with, before the seat id.
+pub const DELIVERY_KIND_PREFIX: &str = "delivery:";
+/// What every [`control_kind`] starts with, before the seat id.
+pub const CONTROL_KIND_PREFIX: &str = "delivery-control:";
+
 /// The queue kind owned by one recipient's inbox.
 ///
 /// Recipient-specific kinds let `Queue::claim` select one inbox without taking
 /// another seat's work. Producers and consumers must call this function rather
 /// than formatting the open string independently.
 pub fn delivery_kind(seat: &SeatId) -> String {
-    format!("delivery:{seat}")
+    format!("{DELIVERY_KIND_PREFIX}{seat}")
 }
 
 /// The kind of a Copilot seat's typed controls (plan 186).
@@ -364,7 +369,7 @@ pub fn delivery_kind(seat: &SeatId) -> String {
 /// typed control from overlapping a native body claim. Order across the two
 /// kinds is by row id among eligible rows, not strict FIFO.
 pub fn control_kind(seat: &SeatId) -> String {
-    format!("delivery-control:{seat}")
+    format!("{CONTROL_KIND_PREFIX}{seat}")
 }
 
 /// The terminal outcome of a delivery whose payload names no sender seat
