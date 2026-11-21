@@ -2790,6 +2790,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-complex-alpaca",
 					"why": "#321 F258 pool cut round 1 (reuse)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T13:24:33.478Z",
+					"harness": "copilot",
+					"harness_session": "7e16c5c7-d3e8-485f-9c6d-b87655f79c00",
+					"instance_key": "322",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-anonymous-mongoose",
+					"why": "#322 F270 round 1 (reuse)"
 				}
 			]
 		}
