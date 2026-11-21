@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fdb8-7093-7de2-9d00-8312b8c6cffa",
+				"date": "2026-11-21",
+				"head": "4771b4b3d7ac93dd836be90cc3ca5d5d2dd5fb36",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:317",
+				"writer": "pij-considerable-tapir",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict: #317 (F258 whoami stage split) at 4771b4b3d7ac93dd836be90cc3ca5d5d2dd5fb36\n\nResult: PASS. Static review of the full diff (3 files: crates/daemon/src/http/identity.rs, crates/daemon/src/http/route_counts.rs, docs/how/pij-rs-api.md). CI at this head: check (22), check (24), rust-lint, rust-test and delivers all SUCCESS; merge state CLEAN. No local build or test run.\n\n## Ask: does ping expose anything new about seats or callers?\nNo identities. The new `data.requests.whoami` object holds process-wide aggregates only:\n- `calls`;\n- `stages_us`: six summed durations, keyed by the fixed stage names in `WHOAMI_STAGES`;\n- `list_rows`;\n- `liveness_reads`.\n\nThe task-local `StageTimes` holds only `u64` values, with no seat id, pane, pid, session or caller field, and is folded into relaxed atomics once per request (`WhoamiCounts::record`). No per-caller breakdown is kept. `list_rows` is a cumulative row count, which gives at most a rough sense of fleet churn, and seat listings already show far more than that. The counters sit on the existing ping route next to the existing per-route `active_us`, so no new endpoint or access path is added. Timing is summed across all callers, which leaves no per-caller timing side channel worth naming in this same-user local trust model.\n\n## Other checks\n- Behaviour: in the code I read, the spans only record time. Early `return refusal` and `internal(...)` paths drop their span through RAII, and responses are returned unchanged. Byte-level identity is the reviewer's ask.\n- No launch, file, credential or environment access. No new dependency, lockfile or `.npmrc` change.\n- Public hygiene: no home paths, usernames, tokens or tenant strings in the added lines.\n"
+		}
+	]
+}
