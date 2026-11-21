@@ -182,7 +182,9 @@ whichever launcher started it: `just bounce-rs` (`>>`), the `just rs-autostart`
 LaunchAgent (`StandardOutPath`) or `pij-rs daemon bounce`. When that file is the
 state dir's own `daemon.log` (same device and inode; a symlink never is; or,
 for a daemon whose launcher opened it just before another daemon rotated it,
-the file now at `daemon.log.1` or one with no name left), the daemon bounds it
+the file now at `daemon.log.1`, or one with no name left that a trim recorded
+in `daemon.log.trimmed`; a deleted file nothing recorded is foreign and is
+never adopted, F251), the daemon bounds it
 itself, in-process: at 16 MiB it renames `daemon.log` to `daemon.log.1`,
 shifting `.1` to `.2` and `.2` to `.3` and dropping the old `.3`, and opens a
 fresh `daemon.log` (mode 0600) by path. That is four files of at most 17 MiB
@@ -197,15 +199,22 @@ each 16 MiB, holds an exclusive `flock` on `<state-dir>/daemon.log.lock` (a
 0600 file that stays; removing it would let two processes lock two different
 files). Under the lock the daemon re-checks which file the path names: if
 another daemon rotated it, it joins that file (`daemon log: another process
-rotated daemon.log`) instead of rotating again. A daemon that can't get the
+rotated daemon.log`) instead of rotating again. The join opens the path
+append-only, without following a symlink and without waiting, and uses it only
+if it is a regular file (a FIFO is refused at once). A daemon that can't get the
 lock in about 2 s changes nothing, says so, keeps writing to the file it has,
 and tries again a cap later: the holder is mid-rotation, so the path is in
 flux. The lock and the re-check are **brakes**: without them two rotations
 interleave and one unlinks the file the other serves into, so removing either
 makes rotation do more. Staging files (`daemon.log.new`, `daemon.log.1.new`)
-are made only under the lock, created new (`O_EXCL`) after removing any
-leftover, so a planted symlink is removed, never followed. The lock adds no
-launch and is taken only at start and at a rotation, never per line.
+are made only under the lock, created new (`O_EXCL`) and append-only after
+removing any leftover, so a planted symlink is removed, never followed, and a
+rotator's writes land after a joined daemon's, never over them. A trim reads
+its source without following a symlink and, before removing the old name,
+records that file's device and inode in `daemon.log.trimmed` (the newest 16,
+replaced whole under the lock), which is how a daemon still holding it proves
+it was the managed log. The lock adds no launch and is taken only at start and
+at a rotation, never per line.
 
 **Repeated lines (#90).** A line repeats only if the same output (one per
 destination file, so stdout and stderr to one file are one output) already
