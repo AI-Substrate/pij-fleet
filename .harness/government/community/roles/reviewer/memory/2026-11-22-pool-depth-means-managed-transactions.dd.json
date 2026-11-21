@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "When reviewing sqlx pool cleanup, cancellation, worker pings or schema-check cost",
+				"tags": [
+					"review",
+					"sqlite",
+					"pool",
+					"cancellation",
+					"f258"
+				],
+				"title": "Pool depth means managed transactions only"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR321 at 40dafa4: five fresh-store controls passed before and after three independent killed mutations. P1 cached schema and missed foreign migration; P2 skipped release cleanup and P3 moved it to acquire, both leaving the idle write lock. A tracked BEGIN queued behind a progress-handler-blocked worker was cancelled before acknowledgement and safely rolled back. A panicking managed borrower also cleaned before idle. Raw SQL BEGIN is Execute, not tracked depth: holding three other leases pinned the target and showed the same raw write-lock leak in both exact parent and head. Ping only acknowledges the worker, not disk/inode health; SQLite query errors need not discard a live worker. Production writers use begin_write/begin_with. Dirty cleanup costs a flush ping plus rollback(s), beyond the clean two warm-query 10-to-4 count. Difficulty: auto-update interrupted P1 and its orphan wrapper survived waiting; identified its own cwd/PIDs, terminated it and reran without crediting partial output. MagicWand: retain blocked-worker cancellation and managed-vs-raw transaction oracles, with explicit connection identity rather than pool-size inference."
+		}
+	]
+}
