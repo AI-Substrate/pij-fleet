@@ -1047,6 +1047,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-selected-deer",
 					"why": "verdict on #309 (F255)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T04:53:50.103Z",
+					"harness": "copilot",
+					"harness_session": "adf51d95-c150-4c06-8ac4-03470d3f9ab4",
+					"instance_key": "310",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-noble-silkworm",
+					"why": "verdict on #310 (F258 A1)"
 				}
 			]
 		}
