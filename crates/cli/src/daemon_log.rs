@@ -175,13 +175,32 @@ impl Drop for LogStream {
 /// most [`READ_RECHECK`] (F273), and while any repeat is being counted at
 /// most one window, so a burst that stops still gets its summary.
 fn pump(input: UnixStream, shared: &Mutex<Shared>, output: usize) -> io::Result<()> {
-    let mut armed = READ_RECHECK;
+    pump_every(input, shared, output, READ_RECHECK)
+}
+
+/// [`pump`] with its read bound as a parameter, so a test can make a read
+/// time out mid-line without waiting the production bound.
+fn pump_every(
+    input: UnixStream,
+    shared: &Mutex<Shared>,
+    output: usize,
+    recheck: Duration,
+) -> io::Result<()> {
+    let mut armed = recheck;
     input.set_read_timeout(Some(armed))?;
     let mut input = BufReader::new(input);
     let mut line = Vec::new();
     loop {
         match input.read_until(b'\n', &mut line) {
-            Ok(0) => return lock(shared).finish(),
+            Ok(0) => {
+                // R326-001: bytes a timed-out read kept are the stream's last
+                // line. The read that then meets EOF returns no new bytes, so
+                // they are written here or never.
+                if !line.is_empty() {
+                    lock(shared).line(output, &line, Instant::now())?;
+                }
+                return lock(shared).finish();
+            }
             Ok(_) => {
                 lock(shared).line(output, &line, Instant::now())?;
                 line.clear();
@@ -201,9 +220,9 @@ fn pump(input: UnixStream, shared: &Mutex<Shared>, output: usize) -> io::Result<
         let wait = {
             let shared = lock(shared);
             if shared.repeats.counting() {
-                shared.repeats.window.min(READ_RECHECK)
+                shared.repeats.window.min(recheck)
             } else {
-                READ_RECHECK
+                recheck
             }
         };
         if wait != armed {
@@ -887,6 +906,39 @@ mod tests {
             ]
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    /// R326-001: a stream's unterminated last line survives a read that timed
+    /// out holding it, whether EOF or the rest of the line comes next. The
+    /// writer idles 15 read bounds mid-line, so the bounded read times out
+    /// with the fragment kept before either arrives.
+    #[test]
+    fn a_fragment_held_across_a_read_timeout_is_written_once_whole() {
+        let recheck = Duration::from_millis(20);
+        for (name, rest) in [("eof", None), ("continued", Some(&b"lit\n"[..]))] {
+            let root = pij_testkit::fresh_dir(&format!("pij-daemon-log-held-{name}"));
+            let path = root.join("daemon.log");
+            let shared = unmanaged(File::create(&path).unwrap());
+            let (reader, mut writer) = UnixStream::pair().unwrap();
+            let pumping = Arc::clone(&shared);
+            let pump = thread::spawn(move || pump_every(reader, &pumping, 0, recheck));
+            match rest {
+                None => writer.write_all(b"ready\n\xffsplit").unwrap(),
+                Some(_) => writer.write_all(b"ready\n\xffsp").unwrap(),
+            }
+            thread::sleep(recheck * 15);
+            if let Some(rest) = rest {
+                writer.write_all(rest).unwrap();
+            }
+            writer.shutdown(Shutdown::Write).unwrap();
+            pump.join().unwrap().unwrap();
+            assert_eq!(
+                payloads(&fs::read(&path).unwrap()),
+                [b"ready\n".to_vec(), b"\xffsplit\n".to_vec()],
+                "{name}"
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     /// Through the real reader: a repeated template is written once, and its
