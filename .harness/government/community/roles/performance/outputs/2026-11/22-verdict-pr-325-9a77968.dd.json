@@ -1,0 +1,68 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fef6-140b-77c2-86e0-ea2961c644b5",
+				"date": "2026-11-22",
+				"head": "9a77968f9528cd7cd099e4fcb5693e745b0f1a2d",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:325",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Correct counting cost to O(window retirements + new retirements), including quiet retains; alarm serializes all IDs and joins all persisted roles/live seats before P cold-check/delivery paths.",
+				"Qualify 60s cooldown as sampled-wall-time, per daemon lifetime; not an unconditional monotonic/global PA-delivery rate ceiling.",
+				"Keep authorized AFTER distinct from untriggered BEFORE; no live deaths, alarm, revive or updater canary performed by performance."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 325",
+					"exit_code": 0
+				},
+				{
+					"command": "git diff --check origin/main...HEAD",
+					"exit_code": 0
+				},
+				{
+					"command": "gh run view 44923632187 --repo AI-Substrate/pij-fleet --job 136904824249 --log; gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14715036912/zip; Python XML parse",
+					"exit_code": 0,
+					"log": "Exact-head CI: 2821 cases, zero failed/error/skipped; three scoped tests and six spawn-site guards pass."
+				},
+				{
+					"command": "nice -n 19 node --input-type=module: import installedVersion from harness/scripts/copilot-cli.mjs; invoke once",
+					"exit_code": 0,
+					"log": "Returned 1.0.115-5 with offline and auto-update-off env; no spawn/revive canary."
+				},
+				{
+					"command": "read-only pij-rs --json ping twice with /bin/ps, 20s apart; just spawn-rate --seconds 20 concurrently",
+					"exit_code": 0,
+					"log": "BEFORE PID45441/0a2d6117c7,20.019241s: spawn delta0,CPU+.80s,RSS109984->110176KiB. Machine63.3 launches/s, no daemon children sampled. Session files/pr325-before.json and pr325-spawn-rate.log."
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Eight dependency/ambient-tool failures; pij-skill/native/SDK pass, heavy Rust/route/smoke skipped; local gate not green, separate C25 CI proof."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "ROUND 1 performance verdict: PASS-WITH-NOTES.\nSubject: pr:325\nHead: 9a77968f9528cd7cd099e4fcb5693e745b0f1a2d\nAnswers: 01a1fef6-140b-77c2-86e0-ea2961c644b5\n\nNo new periodic worker, per-seat launch, process probe or launch site is added. The alarm reuses the existing death sweep and ordinary PA delivery; the Copilot change adds one environment assignment to existing launches/version inspection. No demonstrated normal-use resource-cost breach blocks this head. The cost row needs more precise deque, role-join and alarm-rate accounting.\n\nVerified cost:\n| Path | Work and scaling |\n|---|---|\n| Death sweep counting | Existing default5s sweep (PIJ_RS_DEATH_SWEEP_MS can change it); one synchronous mutex around observe, never across an await. With W previous window retirements and R new retirements, VecDeque::retain tests W timestamps, then extend clones R seat IDs: O(W+R) per sweep. No per-live-seat counting work is added to the existing reaper. |\n| Quiet sweeps / memory | R=0 does NOT mean zero work while W>0: retain still walks the window. At default cadence, nominal0.2 window traversals/s. With an empty window, only constant overhead remains. Stored entries are retirements, not distinct current seats: re-retiring a revived ID can add another entry. IDs age out against the60s observation window; there is no hard numerical/byte cap or explicit capacity shrink. |\n| Alarm preparation | When triggered, clone all W window seat IDs, count harnesses and serialize every ID into death.mass. The PA text lists at most20 IDs, but the event and internal alarm do not. Memory/serialization are O(W), not bounded by the display limit. |\n| PA discovery | One live-registry list plus one persisted-role list, each with its schema check. join_roles loads A assignment rows into a BTreeMap and removes roles for N live descriptors: O(A log A + N log A) bookkeeping, not merely a constant PA lookup. The role query reads all persisted seat_roles, not just the P current PAs. |\n| PA fan-out | P serial wake_pa calls, one per watched live PA. Each includes the existing cold-check reads, a conditional forced-cold-wake audit write, and ordinary delivery admission/queue/outcome work. Body cloning is O(P * body bytes). One additional death.mass publication follows with its own spine transaction/broadcast. An intentional PA wake can cause harness/model work; zero new daemon launch sites is not a zero-cost PA turn. |\n| Rate | last_alarm_at suppresses alarms until the sampled now_ms advances by60,000ms, within this daemon's in-memory state. Under a normal advancing wall clock, about one fan-out batch/minute, hence P wake attempts/minute. It is not a server-global or unconditional monotonic delivery-rate ceiling: a restart forgets the cooldown/window, wall-clock jumps affect it, and now_ms is sampled before sweep/obituary/PA work. A slow sweep can compress the later actual notification times. No extra retry timer is introduced when a PA/audit/event write fails. |\n| F271c | Spawn/resume plans append COPILOT_AUTO_UPDATE=false before the existing Copilot executable; non-Copilot plans are unchanged. installedVersion still starts one copilot --version per invocation, now with the same flag plus its existing offline flag. No extra version probe, daemon tick or process launch is added. A direct niced helper run resolved1.0.115-5. No updater/plugin-download saving or installed-binary contract guarantee was measured by this performance review. |\n\nSources: death_sweep.rs:43-62,93-128,138-151,154-242,280-285; http/role.rs:262-274; store/orchestration.rs:323-332; pa_watchdog.rs:331-369,391-431; harnesses/spawn.rs:193-204; harness/scripts/copilot-cli.mjs:10-17.\n\nNotes owed (nonblocking):\n1. Correct the PR/daemon-cost row from \"O(retired), zero work when nothing died\"/\"a compare per sweep\" to O(window retirements + new retirements), including quiet traversals until the window empties. Include all window IDs, persisted-role/live-roster work, P cold-check/delivery paths and the alarm event. The20-ID display cap is not a storage/work cap.\n2. Qualify the one-per-minute claim as an in-memory, sampled-wall-time cooldown per daemon lifetime, not an unconditional real-time PA-delivery bound. Keep event generation and delivery/model cost distinct.\n3. Keep an authorized AFTER separate from this untriggered BEFORE. CI proves the alarm path runs, not its numerical live cost; no fleet deaths, revives, update, private daemon or alarm were triggered by this reviewer.\n\nRetirement policy is unchanged: the alarm observes only the seats returned by the existing reaper, rather than introducing deletion/kill/revival policy. Its window is notification state, not retention of seats. The automatic updater suppression does not prove that a manually replaced installed binary passed the local contract; the PR's stated limit remains, and launcher/restart coverage belongs to the independent correctness review.\n\nValidation:\n- just pr-freeze325: FINAL at the full head, CLEAN, five latest checks passed, no migration; main/head schema49.\n- git diff --check origin/main...HEAD: passed; detached worktree remains clean.\n- Exact-head CI44923632187/job136904824249, artifact14715036912 selected from its successful upload log. Independently parsed JUnit:2,821 cases, zero failures/errors/skipped. The mass-death threshold/window test, store-backed five-seat sweep/PA wake and Copilot env test all ran and passed, along with all six spawn-site guards.\n- No local Rust build or mutant rerun. The producer's mutation claims are not represented as independently reproduced.\n- Direct helper: nice -n19 node --input-type=module importing installedVersion from this head: passed, returned1.0.115-5 with offline/auto-update-off flags. This is one existing version-inspection launch, not an actual spawn/revive canary.\n- Read-only BEFORE: daemon PID45441, commit0a2d6117c7; UTC2026-11-21T16:37:06.095508Z for20.019241s. Every daemon spawn counter flat (delta0); cumulative CPU2:50.25->2:51.05 (+0.80s, about4.0% of one core); RSS109984->110176KiB. Process start remained2026-11-22 01:30:18 local. Receipt: files/pr325-before.json.\n- Nearby just spawn-rate --seconds20:63.3 whole-machine launches/s,60.4/s sampled, no daemon children sampled. The windows were launched concurrently, but the machine sampler does not record exact matching endpoints. The observer itself and other fleet work contribute to machine totals. No feature saving or alarm overhead is attributed to either baseline.\n- harness boot --json: ready=false, missing vitest. harness checks --quick --json: exit1, eight dependency/ambient-tool failures; pij-skill/native/SDK pass, heavy Rust/route/smoke skipped. Local gate is not green; C25 exact-head CI is separate proof. No dependencies installed or linked.\n- No product edits, bounce, production DB access, working-seat mutation or cleanup of anyone else's paths. Only the owned CI download is temporary; baseline/verdict receipts persist in session files. Hold performance/325 until merge; other holds unchanged.\n\nHarness lesson / magicWand: expose deque entries examined, alarm attempts and PA fan-out count in an existing cost receipt. Count all traversed/serialized records, not just newly retired or displayed records.\n"
+		}
+	]
+}
