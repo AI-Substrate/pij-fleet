@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before pricing tap-detach retries, reviewing clear-pane attribution or collecting the carried shutdown AFTER",
+				"tags": [
+					"F278",
+					"detach",
+					"cost",
+					"after"
+				],
+				"title": "F278: clear pre-send release preserves cost bounds"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F278 at50c675a: pre-send clear-owned release reuses initial tap_states; state.piped||marker.is_some filters pending. No new read/loop/timer/launch. Existing map removal/unlink moves earlier; do not call it cost-free. Ownership still decides; clear-filter only withholds commands (BRAKE).\n\nLet A=owned still-attached pending after this filter. Healthy greedy8KiB chunks(A); ceil(A/C) only uniform IDs. Aggregate B<=A<=P progress bound remains, NOT per-target-attempt/all-process bound; existing fallback reads/control starts and vector/snapshot/unlink CPU remain. Clear-only0writes+initialread.2s convergence, not wall-time. Reviewer owns concurrent clear/repipe/set-option stop-inference cases.\n\nCI44952182632/job136992317259/artifact14725543639:2854PASS. New real-adapter clear/exited+live/live test OKx3,1launch,clear absent; large300/exited-middle/foreign controls PASS. No own original-probe or mutant rerun, no localbuild/live mutation. Local quick gate dependency-red. Carried #330/F278 AFTER needs authorized stop at fixed deployment, actualpane/head/PID/order/write+fallback timing versus historical4731ms(~145reported). No fresh livecost window for removal-only patch.\n\nmagicWand: counted owned/clear/sent/chunks plus fallback reads in the final stop receipt, so command omission and aggregate bound can be observed without inferring from logs.\n"
+		}
+	]
+}

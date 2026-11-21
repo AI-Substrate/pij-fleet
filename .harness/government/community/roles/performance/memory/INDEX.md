@@ -86,5 +86,6 @@
 - [2026-11-22 F275 final: shared kind-before-sender contract costs no real-path work](2026-11-22-f275-final-shared-kind-before-sender.dd.md): Before interpreting F275 fake ordering or carrying its final cost verdict (cost, F275, fake, contract, C34)
 - [2026-11-22 F275: terminal refusal replaces repeated claim cost](2026-11-22-f275-terminal-refusal-replaces-repeated.dd.md): Before pricing sender-less acks or resuming the unpublished PR327 cost verdict after convergence (cost, F275, claims, transaction, proof)
 - [2026-11-22 F276: bounded mutations, candidate and notice costs](2026-11-22-f276-bounded-mutations-candidate-and.dd.md): Before pricing retirement sweeps or taking PR332 deployed AFTER; LIMIT is not a whole-sweep work bound (F276, cost, retirement, sqlite, after)
+- [2026-11-22 F278: clear pre-send release preserves cost bounds](2026-11-22-f278-clear-pre-send-release-preserves.dd.md): Before pricing tap-detach retries, reviewing clear-pane attribution or collecting the carried shutdown AFTER (F278, detach, cost, after)
 - [2026-11-22 \#318 and \#321 AFTER: cohorts and proof ceilings](2026-11-22-pr318-pr321-after-cohorts.dd.md): Before comparing observer invalidation and pool-cut live CPU receipts, or repeating matched-cost windows (after-deploy, cost, cohort, measurement, proof-limits)
 <!-- /pij:generated -->
