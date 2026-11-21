@@ -294,11 +294,16 @@ drain() {
 }
 
 # F273: the test limit's watchdog runs in its own process group (a subshell
-# and its sleep); this stops that group, which is this script's own job.
+# and its sleep); this stops that group, which is this script's own job, and
+# returns once the group is gone, so a USR2 it sent is already pending here.
+# Never `wait` on it: bash 5.2 (Linux) can block for good in `wait` on a
+# watchdog that has signalled and exited (1 run in ~20 under load, #326 CI).
 stop_watchdog() {
 	[ -n "$watchdog" ] || return 0
 	kill -TERM -- "-$watchdog" 2>/dev/null
-	wait "$watchdog" 2>/dev/null
+	while kill -0 -- "-$watchdog" 2>/dev/null; do
+		/bin/sleep 0.05
+	done
 	watchdog=""
 }
 
@@ -475,11 +480,14 @@ niced=(/bin/sh "$here/nice19.sh")
 USR2_NUMBER=$(kill -l USR2)
 run_cargo() { # <cargo args>...
 	local status
+	# A USR2 from an earlier command's watchdog has run its trap by now
+	# (stop_watchdog returned only once that watchdog was gone): never this
+	# command's overrun.
+	overran=0
 	set -m
 	${niced[@]+"${niced[@]}"} cargo "$@" &
 	child=$!
 	if [ "$1" = test ] && [ -n "$test_limit_secs" ]; then
-		overran=0
 		(/bin/sleep "$test_limit_secs" && kill -USR2 "$$") &
 		watchdog=$!
 	fi
