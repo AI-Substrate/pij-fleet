@@ -686,11 +686,14 @@ and the sender-addressed `delivery.outcome` and `delivery.parked` say the same
 same way. The hold lasts `NATIVE_HOLD_SECS` (2 hours) from when the body was
 sent, kept in the parked row's `jobs.not_before`. The heartbeat that ends a told
 lapse (`native.receiver.renewed`, which a restarted incarnation's first heartbeat
-also produces) returns every held body to the queue in one write transaction,
-oldest first, each with a `queued` outcome (`native-receiver-renewed`) on the
-recipient's seat; the ordinary claim then delivers it, once. A held copy of a
-message already delivered or already live is never returned. A send also tells
-the lapse edge when it finds the lapse first, so its renewal always returns it.
+also produces) returns every held body to the queue in one queue write
+transaction, oldest first. Then, still under the native lock, each returned body
+gets its own committed `queued` outcome (`native-receiver-renewed`) on the
+recipient's seat, and the renewed edge is published: H returned bodies cost one
+queue transaction plus H + 1 commits. The ordinary claim then delivers each
+body, once. A held copy of a message already delivered, or beside a live copy of
+it for the same recipient, is never returned. A send also tells the lapse edge
+when it finds the lapse first, so its renewal always returns it.
 
 This is **policy**: such bodies used to die. Two brakes bound it. A send that
 finds `NATIVE_HOLD_LIMIT` (64) bodies already held for its recipient is
@@ -700,7 +703,7 @@ are bounded by the larger of 64 and the queue at the lapse. Rows parked before
 F260 carry no hold (`not_before` 0) and are never returned by a renewal (their
 senders were told to resend); the manual `pij inbox` pull still recovers them.
 An expiry notice is owed only while no other copy of the message (a same-id
-resend) is still queued or held for the recipient; a copy of the same id for
+resend) is still queued, running or held for the recipient; a copy of the same id for
 another recipient never blocks a recovery.
 
 The sender hears twice at most. At the park, an FYI from `pij-bg`
@@ -713,7 +716,13 @@ hold and decides the notice in one queue write, then sends
 `delivery.park-expiry-notice`); a held FYI not yet sent by then is skipped, so
 the sender never reads "do not resend" after "resend". A body returned or
 delivered first owes nothing, and one expired first is never returned after.
-The sweep is the existing one (every 60 seconds); nothing new runs.
+The sweep is the existing one (every 60 seconds); nothing new runs. It walks
+every `delivery.parked` fact in its 24-hour lookback, historical ones included,
+so its work follows park volume over that day, not the rows held now. A park
+recovered before its deadline is checked for expiry again on every sweep after
+the deadline until it leaves the lookback, because "not owed" is not recorded
+(D-F260-4, a follow-up). Rows are not deleted: the hold bounds when a body can
+be returned, not how long its row is kept.
 
 Pane deliveries (plan 184) add two terminal outcomes, each publishing a
 sender-addressed `delivery.parked` with transport `pty`. They cover Claude seats
