@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "When reviewing fleet-map HTML inlining, network dependencies or dependency-free browser proof.",
+				"tags": [
+					"fleet-map",
+					"rendering",
+					"mutation",
+					"proof"
+				],
+				"title": "Fleet-map standalone: inline safety and DOM proof"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Fleet-map standalone review at e15098a975c8d50c00018b3bd2ae8b66819aa8a7: pass-with-notes, no correctness blocker.\n\nThe serializer escapes every less-than after stable JSON serialization; this covers keys as well as values. Independent mutation controls should retain the hostile fixture and golden bytes: removing the escape is caught separately by golden, standalone-equality, and first-script-boundary assertions. U+2028/U+2029 and plain comment closers round-trip in current Node and Chrome; they are not additional breakout characters.\n\nStandalone means no sibling data file, not network-free: the unchanged template still requests Google Fonts. For browser proof, disable DNS and isolate both the page directory and browser profile.\n\nA dump-dom contains the original script source too. Assert against the rendered viewport, not a whole-document search for the renderer's own \"empty\" markup literal. Otherwise a working page falsely appears to have its fallback.\n\nC25 remained in force: exact-head CI gave fleet-map 14/14 on Node 22 and 24. No node_modules was installed/linked. Dependency-free scratch probes covered eight contract groups and Chrome rendered 271 map SVG nodes. Boot returned not-ready; quick checks emitted missing-dependency/tool-version failures, not product failures.\n\nmagicWand: encode the dependency-free fleet-map contract/browser checks as one supported review recipe. Keep dependency-readiness diagnostics ahead of unavailable TS tools. Session probe code and the governed verdict preserve the proof design; the review checkout stayed clean.\n"
+		}
+	]
+}
