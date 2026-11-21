@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fedb-72c5-7232-9f0f-95f303264d91",
+				"date": "2026-11-22",
+				"head": "eebc7023719fcdf1df3edc8cd14e83955fb9a5bb",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:322",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N1 (C33, pre-existing, documented): raw /v1/send from is caller-asserted outside replies"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 322 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at eebc702"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #322 round 2 at eebc7023719fcdf1df3edc8cd14e83955fb9a5bb: pass-with-notes\n\nStatic review of 891417cb (the R2 fixes) and the merge eebc7023, in a detached worktree. I did not touch the live store. CI 5/5 SUCCESS at this head.\n\n## B322-01: closed for security\n`record_delivered` now refuses a sender of '' (the transaction rolls back), so no new ledger row can be a wildcard. The '' rows that remain are pre-0050 only, which restores the round-1 \"brake only\" property.\n\n**Can a stuck running claim block another seat's queue?** Not by a caller. A claim sticks only when a delivery job carries no `from`. Caller-reachable admissions (/v1/send, the shim, role sends, park notices as pij-bg) all go through `require_sender` with a daemon-admitted, non-empty `from`. As I found in round 1, there is no caller route to the generic enqueue for delivery kinds. A malformed internal payload could hold its recipient's serial lane until the claim is reaped. Whether that is bounded and visible is the reviewer's question (mongoose). It is an internal-fault availability issue, not a cross-seat lever.\n\n## B322-02: closed\n- The key is `<byte len of from>:<from>:<msg_id>`. The length prefix makes it injective: given a key, `from` is exactly the next len bytes, so no (from', msg_id') pair yields the same key as (from, msg_id). A delimiter inside a seat id or msg_id cannot collide across senders.\n- The lookup is scoped by recipient (`latest_matching_message(&msg.to, …)`).\n- The legacy fallback searches a DIFFERENT kind (OUTCOME_EVENT_KIND) by raw msg_id. So a crafted msg_id shaped like `5:alice:x` cannot reach a `delivery.control-refused` record through it. Its replay is gated by `own = recorded.from.is_none_or(== msg.from)`, and new outcome events are published with `Some(sender)` (`publish_outcome_with_control`, mod.rs:2800-2807). A post-F270 refusal therefore never replays to another sender, and only sender-less pre-F270 outcomes still replay to any sender, which is the stated brake.\n\n## Notes\n- N1 (C33, pre-existing, now documented in the PR body and pij-rs-api.md): raw /v1/send `from` is caller-asserted outside replies.\n- No new security findings for notes_owed. No secrets, lockfile or `.npmrc` changes. Migration 50 is still the highest.\n"
+		}
+	]
+}
