@@ -552,6 +552,108 @@ describe("pij-rs HTTP client", () => {
 		}
 	});
 
+	it("F255: a spawn is keyed before its first send and sent again with that key until answered", async () => {
+		const stateDir = root();
+		const keys: unknown[] = [];
+		const answers: Array<() => Response> = [
+			() => {
+				throw Object.assign(new TypeError("fetch failed"), {
+					cause: { code: "UND_ERR_SOCKET" },
+				});
+			},
+			() =>
+				new Response(
+					JSON.stringify({
+						ok: false,
+						command: "pij spawn",
+						v: 2,
+						error: "refused",
+						meta: "stopping",
+						details: { code: "E-RS-STOPPING" },
+					}),
+					{ status: 503 },
+				),
+			() => {
+				throw refused("node");
+			},
+			() =>
+				new Response(
+					JSON.stringify({
+						ok: true,
+						command: "pij spawn",
+						v: 2,
+						data: { id: "pij-one", spawn_id: keys[0], pane: "%1" },
+					}),
+				),
+		];
+		const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+			keys.push((JSON.parse(String(init?.body)) as { spawn_id?: unknown }).spawn_id);
+			const answer = answers.shift();
+			if (answer === undefined) throw new Error("sent too often");
+			return answer();
+		});
+		const client = new PijDaemonClient({ addr: "127.0.0.1:7461", stateDir }, "secret", {
+			...deps(fetchMock as unknown as typeof fetch),
+			sleep: async () => {},
+		});
+		const seat = await client.spawn({
+			harness: "claude",
+			cwd: "/abs/tree",
+			parent: "pij-a",
+			no_wait: true,
+			accept_inbound: true,
+		});
+		expect(seat.id).toBe("pij-one");
+		expect(keys).toHaveLength(4);
+		expect(keys[0]).toMatch(/^s-[0-9a-f]{32}$/);
+		expect(new Set(keys).size).toBe(1);
+	});
+
+	it("R309-02: a spawn cut after waiting longer than the restart wait is still sent again", async () => {
+		const stateDir = root();
+		let now = 1_000_000;
+		const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+		try {
+			const keys: unknown[] = [];
+			const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+				keys.push((JSON.parse(String(init?.body)) as { spawn_id?: unknown }).spawn_id);
+				if (keys.length === 1) {
+					// The first send waits 21 s for its seat, then the bounce cuts it.
+					now += 21_000;
+					throw Object.assign(new TypeError("fetch failed"), {
+						cause: { code: "UND_ERR_SOCKET" },
+					});
+				}
+				return new Response(
+					JSON.stringify({
+						ok: true,
+						command: "pij spawn",
+						v: 2,
+						data: { id: "pij-one", spawn_id: keys[0], pane: "%1" },
+					}),
+				);
+			});
+			const client = new PijDaemonClient({ addr: "127.0.0.1:7461", stateDir }, "secret", {
+				...deps(fetchMock as unknown as typeof fetch),
+				sleep: async (ms) => {
+					now += ms;
+				},
+			});
+			const seat = await client.spawn({
+				harness: "claude",
+				cwd: "/abs/tree",
+				parent: "pij-a",
+				no_wait: false,
+				accept_inbound: true,
+			});
+			expect(seat.id).toBe("pij-one");
+			expect(keys).toHaveLength(2);
+			expect(keys[1]).toBe(keys[0]);
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
 	it("caps reconnect backoff after exponential growth", async () => {
 		const stateDir = root();
 		writeFileSync(join(stateDir, "daemon.key"), "secret\n");
