@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before pricing tap-generation invalidation or observer capture rates",
+				"tags": [
+					"cost",
+					"F266",
+					"pane-observer",
+					"mutex",
+					"measurement"
+				],
+				"title": "F266: invalidation rates and shared gate locks"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Replay invalidation cost follows read starts and repairs, not completed sends.\n\nF266 adds one synchronous shared gate-mutex BTreeMap lookup per pane reaching the observer's drain path. Replay reads the counter through its existing observed() clone; no second lock was added there. At217 panes/600ms this is361.67 added acquisitions/s. refresh_live_tap adds a separate lock/entry section and pane.to_string allocation per owned-sink drain start, even for failed later work and even for an existing pane key. Owned submission reads both before and after reservation; do not equate drain starts with message count.\n\nThe generation counter and capture stamp coalesce starts between successful captures. One overlapping drain can nevertheless force TWO captures: it increments after the early snapshot, replay's observed() sees it and captures, remember saves the old stamp, and the next tick captures again. Price up to2D+R in the settled case for D starts/R repairs, not one per completed send. An already-active pane may add no capture, while failed recognition can keep later passes capturing. The gross nominal envelope is still one observer capture per pane/pass. \"Rare\" is not a rate: aggregate ping captures/skips/backstops have no fresh-start/repair cause attribution and omit injection-owned and failed captures.\n\nNo new launch site is not an absolute no-launch path: normal capture uses the persistent control client, but the inherited Query::Fork fallback launches at the old counted capture site; pipe repair retains existing mutation/reader launches. Price scope and fallback separately.\n\nEvidence: PR318 head db4e27d25972f0044234830613cdde8ae1d9066a; pane_observer.rs:464-562,674-756; interaction.rs:536-567,699-711; tmux/lib.rs:484-502,1142-1152. CI44897099855/job136824992422/artifact14703934722 reports28 relevant passing cases. Read-only reviewer did not rerun a local real-tmux fixture or mutants.\n\nLive BEFORE35dd41ac91/PID72066, UTC11:12:26.409766Z to11:12:46.430459Z on2026-11-21:20.020625s,33 passes,669 captures,5964 skips,117 backstops,201 decision panes/pass,54.4648ms wall/pass;2004.93 captures/min. CPU+1.51s, RSS114704->110640KiB, all daemon spawns flat. Separate20s machine window113.9 launches/s,101.4/s sampled,0.9/s sampled daemon descendants. These are different windows, not the217-pane cohort, and prove no AFTER cost/saving.\n\nmagicWand: extend existing ObserverCounts with drain/repair invalidation and failed-capture cause counts so the cost receipt can price added work without inference or a new poll.\ndifficulties: C25 dependencies absent; boot not ready and quick gate red despite native/SDK passes. Keep exact-head CI and producer full-gate claims distinct from local validation. No sources, dependencies or working panes changed; holdings retained.\n"
+		}
+	]
+}
