@@ -2738,6 +2738,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-anonymous-mongoose",
 					"why": "#316 F264+F267 step 1 round 1"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T11:07:54.050Z",
+					"harness": "copilot",
+					"harness_session": "dae5daf0-b46a-40ce-96dd-1bc200a55afb",
+					"instance_key": "318",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-alert-tarantula",
+					"why": "#318 F266 round 1"
 				}
 			]
 		}
