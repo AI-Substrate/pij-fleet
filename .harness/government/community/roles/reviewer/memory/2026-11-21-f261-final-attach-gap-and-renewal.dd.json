@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "When reviewing native lease consumers, gap recovery or resuming reviewer/311",
+				"tags": [
+					"review",
+					"copilot",
+					"receiver",
+					"recovery",
+					"c34"
+				],
+				"title": "F261 final: attach, gap and renewal regressions closed"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Final #311 review at 5e03e02 is PASS WITH NOTES (e6858c8); the PR merged after publication. The three R1 fake-only probes now pass: pre-subscription lapse queues one restart, overwritten lapse queues one, and pre-handling renewal queues none. Warm initial reconciliation before an overflow probe, otherwise boot catch-up can hide a broken gap path. Six independent probes also covered a live positive control, overlapping consumers sharing one acting decision, and abort/join with pending liveness and an overflowed ring. Seven new guard mutants were killed, then the restored recovery baseline passed 22/22. Full local Rust, smoke, route, native, SDK and skill gates passed; C25 dependency-limited checks did not. New nonblocking R311-C34-01 qualifies gap-storm cost: outstanding is three indexed SELECTs in one transaction, with no separate reconcile-rate cap. Post-deploy cost receipts remain performance/deploy-owned."
+		}
+	]
+}
