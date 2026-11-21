@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before reviewing receiver-edge retry or lapse recovery across a failed audit and a later real expiry",
+				"tags": [
+					"review",
+					"receiver",
+					"recovery",
+					"f268",
+					"ordering"
+				],
+				"title": "Renewal-audit retry must not hide the next receiver lifetime"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Open for receiver-edge retry or lapse recovery reviews.\n\nProducer-only renewal tests prove eventual persistence, not safe policy input\nbetween heartbeats. Use a real-store cross-service witness: lapse not yet decided,\nmechanical renewal succeeds, renewed audit append fails, then recovery reconciles\nbefore another heartbeat. At #320 head 5c219c0, receiver_reason is None but a\nrestart is queued because outstanding only sees the stale spine lapse.\n\nAudit-pending and mechanically-lapsed cannot share deduplication identity blindly.\nA receiver renewed once, lost its renewal audit, then genuinely expired before\nanother heartbeat; #320's reinserted native_lapsed mark suppressed the second\nlapse edge. If the earlier lapse was decided, recovery sees no outstanding loss.\nThe stronger probe restored a forty-minute-old decision into an empty ledger:\none edge and zero restart controls; removing only the added reinsert restored\ntwo edges and one restart. Check a later real loss, not just another audit retry.\n\nPositive controls matter: F260 returned the old held body once and a new live\nsend stayed queued, not parked. A gap during throttle sleep was caught on durable\nreconcile; daemon shutdown aborts and joins the follower, so its pending sleep\ndoes not need a separate inner stop select. Held decisions survive empty-ledger\nrestart, newer edges remain eligible, and held does not refresh the acting window.\n\nMutation controls killed no-wait, no-reinsert, ignored-held and missing-held-write\nvariants; each original upstream test passed. The isolated probe used real time\nwith a one-second test-only lease. Paused Tokio expired real SQLite pool deadlines\nbefore behavior; do not mistake those fixture failures for product evidence.\n\nMagic wand: keep renewal-failure -> policy-consumer -> next-lifetime orderings as\ndaemon regression tests, rather than stopping at the producer's next heartbeat.\n"
+		}
+	]
+}
