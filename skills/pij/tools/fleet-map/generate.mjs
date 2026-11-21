@@ -30,6 +30,9 @@ export const HEADER =
 export const STRUCTURE_FILE = "fleet-map.structure.json";
 export const DATA_FILE = "fleet-map.data.js";
 export const PAGE_FILE = "index.html";
+// The page with the data inlined: one file, for viewers that can't load a sibling script (F252).
+export const STANDALONE_FILE = "fleet-map.standalone.html";
+const DATA_TAG = `<script src="${DATA_FILE}"></script>`;
 
 const TOOL_DIR = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES = join(TOOL_DIR, "templates");
@@ -78,7 +81,8 @@ const USAGE = `pij fleet-map: a project's workstreams drawn as a metro map (stat
 Usage:
   pij fleet-map init [--dir <d>]                write the starter structure (refuses to overwrite)
   pij fleet-map generate [--structure <p>] [--out <d>] [--at <iso>] [--offline] [--project <slug>]
-                                                write ${DATA_FILE} and copy the page next to it
+                                                write ${DATA_FILE}, copy the page next to it, and
+                                                write ${STANDALONE_FILE} (the page with the data inlined)
   pij fleet-map open [--out <d>] [--launch]     print the page's file:// URL; --launch opens it
 
 Run in a project's repo, the structure is <government-root>/fleet-map/${STRUCTURE_FILE}
@@ -538,13 +542,22 @@ export function stable(v, ind = "") {
 	return JSON.stringify(v);
 }
 
+/** The data as a script. Every `<` is escaped as \u003c (inside JSON strings, the only place one can be),
+ * so the same text is safe inlined in the page: no `</script` or `<!--` can end or confuse the block. */
 export function dataText(data) {
-	return `// ${HEADER}\nwindow.FLEET_MAP = ${stable(data)};\n`;
+	return `// ${HEADER}\nwindow.FLEET_MAP = ${stable(data).replaceAll("<", "\\u003c")};\n`;
 }
 
 export function pageText(template) {
 	const end = template.indexOf("\n") + 1;
 	return `${template.slice(0, end)}<!-- ${HEADER} -->\n${template.slice(end)}`;
+}
+
+/** The page with its one data `<script src>` replaced by the data itself. */
+export function standaloneText(page, data) {
+	const parts = page.split(DATA_TAG);
+	if (parts.length !== 2) throw new Error(`the page template must load ${DATA_FILE} exactly once`);
+	return `${parts[0]}<script>\n${data}</script>${parts[1]}`;
 }
 
 // ---------- verbs ----------
@@ -588,11 +601,16 @@ function generate(flags, layout, log, warn) {
 	const sources = offline ? null : collect(structure, { cwd, project: flags["--project"] });
 	const data = buildData(structure, sources, { offline, generatedAt });
 	mkdirSync(out, { recursive: true });
-	writeFresh(join(out, DATA_FILE), dataText(data));
-	writeFresh(join(out, PAGE_FILE), pageText(readFileSync(join(TEMPLATES, PAGE_FILE), "utf8")));
+	const dataJs = dataText(data);
+	const page = pageText(readFileSync(join(TEMPLATES, PAGE_FILE), "utf8"));
+	writeFresh(join(out, DATA_FILE), dataJs);
+	writeFresh(join(out, PAGE_FILE), page);
+	writeFresh(join(out, STANDALONE_FILE), standaloneText(page, dataJs));
 	ignoredCheck(out, warn);
 	const prs = Object.keys(sources?.prs ?? {}).length;
-	log(`wrote ${join(out, PAGE_FILE)} (${prs} PRs, ${data.warnings.length} warnings)`);
+	log(
+		`wrote ${join(out, PAGE_FILE)} and ${STANDALONE_FILE} (${prs} PRs, ${data.warnings.length} warnings)`,
+	);
 }
 
 /** A warning, never a refusal, when the output sits in a repo that would track it. */

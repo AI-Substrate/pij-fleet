@@ -117,6 +117,7 @@ window.FLEET_MAP = {
         {
           "id": "b4",
           "name": "Waiting on you",
+          "note": "\u003c/script>\u003c!-- \u003cscript>alert(1)\u003c/script> -->",
           "state": "waiting",
           "waitingOn": "A decision"
         }
