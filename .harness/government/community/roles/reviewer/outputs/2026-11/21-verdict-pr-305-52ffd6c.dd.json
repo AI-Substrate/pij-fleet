@@ -1,0 +1,56 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fbb3-6684-7ae1-bfb9-f724a49ff5d9",
+				"date": "2026-11-21",
+				"head": "52ffd6c146b8515fff631ec1fd6c8b49ec408894",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:305",
+				"writer": "pij-smooth-wildebeest",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 305",
+					"exit_code": 0,
+					"log": "FINAL 52ffd6c146b8515fff631ec1fd6c8b49ec408894; five latest checks pass"
+				},
+				{
+					"command": "gh run view 44849337898 --job 136676707890 --log",
+					"exit_code": 0,
+					"log": "Node 22 exact-head CI: fleet-map 18/18; 2392 passed, 7 skipped"
+				},
+				{
+					"command": "gh run view 44849337898 --job 136676708315 --log",
+					"exit_code": 0,
+					"log": "Node 24 exact-head CI: fleet-map 18/18; 2392 passed, 7 skipped"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Intentionally dependency-free review tree: eight missing-tool/dependency or ambient-version failures; no local TS proof claimed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES - reviewer/305, round 1 of at most 2\nHead: 52ffd6c146b8515fff631ec1fd6c8b49ec408894\nBase: 098f22976cb45c4dcd0758f702ad091ef88bdc6f\n\nNo blocking correctness findings. F253 closes the reviewed injection and external-font paths. No repair round is required for this verdict; the two notes below are minor compatibility/presentation qualifications.\n\n## Validation and compatibility\n\n`generate.mjs:271-289,453-508` shares the positive-safe-integer PR rule between lookup and serialization. Numeric positive PRs survive unchanged; strings (including \"42\"), zero, negatives, fractions, booleans, objects and unsafe integers are dropped with a stop-specific warning. Actual fake-gh argv receipts contained only `pr view 7 --json` and `pr view 42 --json`; a nested valid PR under an invalid parent remained discoverable, and hostile flag strings never reached gh.\n\nThree- and six-digit hex colours retain their case and value in the generator and page. All 5 colours and 8 PR references in the current structure pass these validators. Named colours, alpha hex forms and arbitrary CSS are intentionally outside the documented contract, not accidentally misparsed valid inputs. Nonempty invalid colours produce a line/value-specific warning, fall back deterministically, and do not rewrite the structure. The page uses a muted fallback for independently supplied invalid data.\n\n`cleanData` runs before layout and recursively cleans nested stops. Independent probes preserved legitimate HTTPS links and rejected javascript, data, HTTP, protocol-relative and non-string links. The actual stop, line, crew and station card builders escaped hostile values, including quote-bearing attribute inputs. Six real keyboard-focus card paths in Chrome remained inert with hostile data supplied after generator validation: no injected image/script/SVG, no event attributes, no hostile PR row/link, no execution, and invalid paints became muted.\n\n## Fonts, fixtures and notes\n\nThe template's layout function and geometry constants are byte-identical to the base. The original, valid base fixture still generates byte-identical data. The committed golden changes are exactly the intended hostile siding colour's deterministic palette fallback and the two new diagnostics; the invalid PR is absent. Font removal changes glyph metrics even though character-count wrapping and map positions do not change.\n\nN305-1 (P3, nonblocking): `templates/index.html:344` still estimates chip width as `label.length * 6.7 + padding`. In headless Chrome 157 on macOS, 1600x900, the new system font gives fixture chip `pm-100` a text width of 47.077 px against 45.200 px remaining in its pill (about 1.9 px protrusion). A read-only copy of the current fleet structure similarly shows `pm-001` protruding about 0.9 px. Other measured nameplates/chips fit (9 fixture boxes, 13 current-structure boxes). This is a tiny presentation imperfection, not clipped functionality or a block. I did not download the former Overpass font or claim a pixel-identical before/after comparison.\n\nN305-2 (P3, inherited compatibility): `generate.mjs:386-390` treats an empty string, null, zero or false colour as missing. Existing `assignColours` fills it before the new validator and the generator persists that default without an invalid-colour warning. Thus README wording that all invalid values warn and remain untouched has this inherited exception. It is not a new loss of supported colours; qualify the wording when next touching it rather than broadening this fix.\n\nGoogle Fonts links are gone, system fonts are selected, and the no-referrer meta is present. Static standalone-resource checks pass. Chrome reported no resource entries or page errors for the fixture, the hostile-data case, and the copied current structure. The standalone pages were opened alone with isolated profiles and DNS disabled; no live fleet output was generated.\n\n## Proof\n\n- `just pr-freeze 305`: FINAL at the full head above, checked at entry and before publication; five latest CI checks pass.\n- `gh run view 44849337898 --job 136676707890 --log` and `gh run view 44849337898 --job 136676708315 --log`: exact-head Node 22 and 24 CI each show fleet-map 18/18 and 2392 tests passed, 7 skipped.\n- Session-only `review-305-probe.mjs`, run with `nice -n 19 node`: 9 contract groups passed. Nine isolated mutations were caught: card colour escaping, card PR escaping, page colour validation, page PR validation, page URL validation, restored font link, generator PR validation, generator colour validation, and script less-than escaping. These are dependency-free independent controls, not local Vitest runs.\n- Session-only `review-305-browser.mjs`, run with `nice -n 19 node --experimental-strip-types --disable-warning=ExperimentalWarning`: all three pages rendered, hostile cards were inert, resources/errors were empty; the font-fit measurements above were retained, not hidden by weakening the safety checks.\n- `git diff --check HEAD^...HEAD`: passed. Detached review tree remained clean. Temporary generation, mutant copies and browser profiles were removed.\n- `harness boot --json`: advisory not-ready due to intentionally absent node_modules. `harness checks --quick --json`: exit 1, eight missing-tool/dependency or ambient-version failures; pij-skill/copilot-native passed, SDK/trailer checks warned, heavy stages skipped. No dependencies were installed/linked. Under C25, TS proof is the exact-head CI; full local Rust/smoke gates were not rerun.\n\nCost: `cleanData` adds one O(lines + stops) traversal at page load, not a repeating loop. Steady-state launches/polls remain zero; no timer, hook or process launch was added. Existing on-demand generator collection is unchanged.\n\nHarness feedback / magicWand: retain a browser box-fit probe for font changes. Character-count wrapping stabilizes positions, not glyph widths; actual text-vs-pill bounds catch the small presentation regression that a geometry-only test cannot. The scratch mutation tool also correctly refused an output inside its copied skill directory; moving that output to a sibling respected the guard.\n"
+		}
+	]
+}
