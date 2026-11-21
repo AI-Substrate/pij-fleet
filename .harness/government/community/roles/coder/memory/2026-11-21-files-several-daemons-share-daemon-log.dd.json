@@ -1,0 +1,32 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Open before touching crates/cli/src/daemon_log.rs, any file two pij-rs processes may both write or rotate, or anything that reads the OMP footer or a seat's runtime model (canary, F249)",
+				"tags": [
+					"daemon-log",
+					"rotation",
+					"flock",
+					"races",
+					"omp",
+					"footer",
+					"canary",
+					"f251",
+					"f249",
+					"i90"
+				],
+				"title": "Files several daemons share (daemon.log): lock, re-check, prove ownership; and how OMP shows its model"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- **A file several daemons share** (bounce overlap, two starts released together): check every destructive step against a second process.\n  - Hold `flock` on `<state>/daemon.log.lock` for every look at the path, and never remove the lock file.\n  - Under the lock, re-check which inode the path names. If another daemon rotated it, join that file instead of rotating again.\n  - Staging files: remove the leftover, then create with `create_new` and `O_APPEND`.\n  - Join: open with `O_NOFOLLOW` and `O_NONBLOCK`, then fstat that it is a regular file.\n  - Trim: read the source with `O_NOFOLLOW`, and record its dev/ino in `daemon.log.trimmed` before unlinking it.\n  - Adopt a file with no name left only if that record names it.\n- **Each review round found the next race.** Write these tests first:\n  - two children held at `read go` in /bin/sh, then released together (`tests/daemon_log.rs`);\n  - a rotator and a joined writer interleaving;\n  - a deleted foreign stdout;\n  - a FIFO or symlink at the path.\n- Prove RED by swapping in the old `daemon_log.rs` (`git show <sha>:path`). The race is probabilistic: about 3 failures in 4 runs over 8 attempts.\n- **Memory bounds:** `String::truncate` keeps the allocation. Build a kept string with `String::with_capacity(n)`, and assert `capacity()` in tests.\n- **Repeat keys:** use the exact line plus the output index. Digit folding hid distinct panics. The live bursts were byte-identical lines anyway.\n- **`just shared-build --timeout N` counts minutes** (`Ns` for seconds). A self-deadlocking test sat for 54 minutes.\n- **OMP 18.16 footer:**\n  - In compact mode the model icon `⬢` is replaced by the thinking-level glyph (`○◔◑◒◕◉⟳⦸` or nerd forms). Source: `pi-tui/src/status-line/segments.ts` `modelSegment`.\n  - The display name drops `Claude `, so a catalog lookup by name must too.\n  - For the runtime model, prefer the native session record (`unisphere model.current`, basis native), except when `pending_switch` is set or the session has no call yet.\n  - To capture a live footer: spawn an OMP seat with `xd://pij_spawn` (`layout: window`, no task), run `tmux capture-pane`, then close it with `xd://pij_close`.\n"
+		}
+	]
+}
