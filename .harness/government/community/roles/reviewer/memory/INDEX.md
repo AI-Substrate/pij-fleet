@@ -169,4 +169,5 @@
 - [2026-11-22 A lease brake proves a snapshot, not boot or later awaits](2026-11-22-a-lease-brake-proves-a-snapshot-not-boot.dd.md): Before reviewing lease-based recovery across restart or renewal during a decision (review, lease, ordering, recovery, c34, f268)
 - [2026-11-22 Duplicate advice keys include the instance](2026-11-22-duplicate-advice-keys-include-the.dd.md): When reviewing role duplicate-holder advice, assignment warnings or per-PR holdings (review, roles, instance, release, f272)
 - [2026-11-22 Pool depth means managed transactions only](2026-11-22-pool-depth-means-managed-transactions.dd.md): When reviewing sqlx pool cleanup, cancellation, worker pings or schema-check cost (review, sqlite, pool, cancellation, f258)
+- [2026-11-22 R319 ordering repair and observer budget](2026-11-22-r319-ordering-repair-and-observer-budget.dd.md): When reviewing shutdown-order deflakes or timing-budget changes after R319 closure (review, tmux, ordering, c34, f263)
 <!-- /pij:generated -->
