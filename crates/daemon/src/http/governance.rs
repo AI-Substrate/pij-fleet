@@ -1983,8 +1983,21 @@ async fn blocking<T: Send + 'static>(
 /// The canary's runtime model and where it came from, or why there is none.
 #[derive(Debug, PartialEq, Eq)]
 enum RuntimeModel {
-    Observed { model: String, from: &'static str },
-    Disagree { native: String, footer: String },
+    Observed {
+        model: String,
+        from: &'static str,
+    },
+    Disagree {
+        native: String,
+        footer: String,
+    },
+    /// The footer names a model the catalog could not check against the
+    /// native one (F256).
+    Unchecked {
+        native: String,
+        footer: String,
+        error: String,
+    },
     Unobserved,
 }
 
@@ -1995,8 +2008,10 @@ enum RuntimeModel {
 ///   a name several providers share can't veto it. For OMP, a footer that
 ///   names a model is checked against the native selector's own catalog row
 ///   (S306-N2): a different model refuses, since one of the two is stale
-///   (R306-001). A catalog that can't answer leaves the check undone and the
-///   native model stands.
+///   (R306-001). A catalog that can't answer refuses too (F256): the check is
+///   the only guard against a switch the record misses, so it is a brake, and
+///   skipping it would let more canaries pass. A footer that names no model
+///   leaves the native model standing with no launch.
 /// - **Native can't answer**: the footer, resolved to its one selector for
 ///   OMP; a catalog error refuses, as before.
 async fn runtime_model(
@@ -2009,12 +2024,19 @@ async fn runtime_model(
     if let Some(native) = native.filter(|model| !model.is_empty()) {
         if harness == Harness::Omp
             && let Some(footer) = shown
-            && let Ok(false) = catalog.shows(&native, footer).await
         {
-            return Ok(RuntimeModel::Disagree {
-                native,
-                footer: footer.to_string(),
-            });
+            let footer = footer.to_string();
+            match catalog.shows(&native, &footer).await {
+                Ok(true) => {}
+                Ok(false) => return Ok(RuntimeModel::Disagree { native, footer }),
+                Err(error) => {
+                    return Ok(RuntimeModel::Unchecked {
+                        native,
+                        footer,
+                        error: error.to_string(),
+                    });
+                }
+            }
         }
         return Ok(RuntimeModel::Observed {
             model: native,
@@ -2187,6 +2209,18 @@ async fn canary_command(
             error.details["footer_model"] = json!(footer);
             return Err(error);
         }
+        RuntimeModel::Unchecked {
+            native,
+            footer,
+            error: catalog_error,
+        } => {
+            let mut error =
+                refuse("the pane footer's model could not be checked against the session record");
+            error.details["native_model"] = json!(native);
+            error.details["footer_model"] = json!(footer);
+            error.details["catalog_error"] = json!(catalog_error);
+            return Err(error);
+        }
         RuntimeModel::Unobserved => return Err(refuse("runtime model could not be observed")),
     };
     let observed_model = observed_model.as_str();
@@ -2352,11 +2386,13 @@ mod tests {
     use super::*;
 
     /// A catalog of (selector, footer names) rows, as `omp models` answers.
-    /// `resolve` panics when `no_resolve` is set: it must not run.
+    /// `resolve` panics when `no_resolve` is set, and both calls panic when
+    /// `no_launch` is: they must not run.
     struct Catalog {
         rows: Vec<(&'static str, Vec<&'static str>)>,
         down: bool,
         no_resolve: bool,
+        no_launch: bool,
     }
 
     impl Catalog {
@@ -2365,6 +2401,7 @@ mod tests {
                 rows,
                 down: false,
                 no_resolve: false,
+                no_launch: false,
             }
         }
 
@@ -2379,7 +2416,7 @@ mod tests {
     impl FooterCatalog for Catalog {
         async fn resolve(&self, shown: &str) -> Result<String> {
             assert!(
-                !self.no_resolve,
+                !self.no_resolve && !self.no_launch,
                 "the footer is resolved only without native"
             );
             if self.down {
@@ -2400,6 +2437,7 @@ mod tests {
         }
 
         async fn shows(&self, selector: &str, shown: &str) -> Result<bool> {
+            assert!(!self.no_launch, "no footer model, no catalog launch");
             if self.down {
                 return Err(Self::unavailable());
             }
@@ -2464,7 +2502,8 @@ mod tests {
     }
 
     /// R306-002: a valid native model never needs the footer's name resolved,
-    /// so a name three providers share, or a catalog that fails, can't veto it.
+    /// so a name three providers share can't veto it, and a footer with no
+    /// model needs no catalog at all.
     #[tokio::test]
     async fn native_evidence_needs_no_footer_resolution() {
         let ambiguous = Catalog {
@@ -2475,20 +2514,49 @@ mod tests {
             omp(Some(SOL), Some("GPT-6.1 Sol"), &ambiguous).await,
             observed(SOL, "native")
         );
+        assert_eq!(
+            omp(
+                Some(OPUS),
+                None,
+                &Catalog {
+                    down: true,
+                    no_launch: true,
+                    ..catalog()
+                }
+            )
+            .await,
+            observed(OPUS, "native"),
+            "a footer with no model leaves native standing, with no launch"
+        );
+    }
+
+    /// F256 (S306-003): the agreement check is the only guard against a role
+    /// switch the record misses, so a catalog that can't run it refuses. The
+    /// cross-product the reviewer replayed: stale native Opus after a switch,
+    /// the GPT footer, and `omp models` failing.
+    #[tokio::test]
+    async fn a_catalog_that_cannot_check_the_footer_refuses() {
         let down = Catalog {
             down: true,
             no_resolve: true,
             ..catalog()
         };
-        assert_eq!(
-            omp(Some(SOL), Some("GPT-6.1 Sol"), &down).await,
-            observed(SOL, "native"),
-            "a failed agreement check leaves the native model standing"
-        );
-        assert_eq!(
-            omp(Some(OPUS), None, &ambiguous).await,
-            observed(OPUS, "native")
-        );
+        for (native, footer) in [(OPUS, "GPT-5.4 mini"), (SOL, "GPT-6.1 Sol")] {
+            assert_eq!(
+                omp(Some(native), Some(footer), &down).await,
+                RuntimeModel::Unchecked {
+                    native: native.to_string(),
+                    footer: footer.to_string(),
+                    error: Catalog::unavailable().to_string(),
+                },
+                "{native} / {footer}"
+            );
+        }
+        // A native selector the catalog has no row for can't be checked either.
+        assert!(matches!(
+            omp(Some("local/unlisted"), Some("GPT-5.4 mini"), &catalog()).await,
+            RuntimeModel::Unchecked { .. }
+        ));
     }
 
     /// Without native evidence the footer answers, resolved to its one
