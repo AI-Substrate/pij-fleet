@@ -1,0 +1,58 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fff9-655e-7111-9797-7ae90c06bc6d",
+				"date": "2026-11-22",
+				"head": "0e6eba27cd689828556345bfe20c9a64931b5fb6",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:332",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"AFTER: matching deployed head/PID; eligible old-open count0 after ~6 successful batches for unchanged345, young32 spared, live-sender notice admissions/audits verified (15 if senders remain live)."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "nice -n 19 python /Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr332-before.py",
+					"exit_code": 0,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr332-before.json"
+				},
+				{
+					"command": "nice -n 19 python /Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr332-query-cost.py",
+					"exit_code": 0,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr332-query-cost.log"
+				},
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci (CI44949154264/job136983046999/artifact14725231053)",
+					"exit_code": 0,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr332-rust-ci.log"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr332-checks.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES -- performance/332, ROUND 1, exact head 0e6eba27cd689828556345bfe20c9a64931b5fb6.\n\nDestructive change reviewed as destructive: the POLICY is a tombstoned recipient's delivery work becoming terminal. The age threshold, revive-intent exclusion, successful roster read, transaction-local tombstone re-read and LIMIT64 are BRAKES: removing them can retire the same set or more. This performance verdict does not clear the reviewer's race/running-claim questions.\n\nCost verified:\n\n1. No new periodic driver, timer or kernel launch site. Retirement runs in the existing park-notice follower: once at startup, normally 60 seconds AFTER a completed sweep, 30 seconds after an unsettled sweep, and immediately when subscription lag is observed. Thus LIMIT64 is per actual sweep, NOT a hard 64/minute or whole-sweep time limit. With a fixed 345-row eligible backlog, no new arrivals, successful writes and no revive exclusions, six successful batches suffice (64x5+25); this is not an unconditional six-minute deadline.\n2. The sweep replaces one full-registry operation with F259a's queue-owned roster. The real path executes owed PRAGMA+SELECT plus registry PRAGMA+SELECT: four application SQL statements rather than two. Owed uses two prefix arms x two open states; roster visits live rows and distinct owed recipients by PK, with JSON allocation/dedup/sorting. Retirement then clones the active-revive keys into a HashSet under its mutex, O(R), and filters the roster in memory. Revive adds an average-O(1) map insert/count and decrement/remove per request; no lock is held across its waits.\n3. When the filtered recipient vector is nonempty, one extra schema read precedes ONE BEGIN IMMEDIATE/selection/update/event/COMMIT transaction. EventBus holds the GLOBAL publication ordering mutex across that operation and broadcasting; its owned publication task and the store's owned mutation task are in-process tasks, not process launches. At most64 rows are fetched and individually updated by PK, at most128 canonical spine INSERTs (two per valid message), and at most128 events returned/broadcast. Invalid message payloads still terminalize, with no park events. There is no overall transaction-duration or payload-byte cap: SQL/pool/lock waits, decoding, index maintenance and selected payload/event sizes remain costs.\n4. LIMIT bounds mutations, not all candidate work. The exact live EXPLAIN uses a seats PK seek, jobs_serial(serial_key,state), and a temporary ORDER BY B-tree. It visits chosen recipients' pending/running serial-key rows, applies the kind filter, and orders eligible candidates before returning64. Other open kinds on those SAME recipients can therefore add residual work without being retired. A jobs_claimable(state,kind) plan can avoid that residual walk; the test permits both and the query does not force one. All chosen recipients may be sought even when only64 jobs are returned. Neither observed plan walks the seats/jobs history table, but index height and temporary ordering still cost.\n5. Steady state is conditional: with the real queue's fresh live+owed roster and no aged owed seat, retirement makes no write call or transaction. The younger owed seats and all live seats still incur roster work; notification history remains paged/replayed over the existing24h lookback. If a selected seat revives before the store read, a zero-row transaction can still occur. A None/fallback queue uses the full roster and can keep selecting aged, unowed seats, so the no-transaction steady-state claim must not be generalized to it. Fake retirement clones/scans its open rows, filters membership, sorts and truncates; it is not a64-row input/byte bound.\n6. The128 spine bound covers retirement's atomic facts ONLY. Each new park also triggers the existing sender lookup, admission/audit/FYI checks, notice send-or-hold and audit append; downstream delivery can use EXISTING launch sites. Dead/missing/remote senders get none. At most one distinct notice admission per retired job is intended, but live-follow/sweep overlap and failure retries still do work, and other parks/notices already due are outside this batch's bound. After retirement drains, settled notice replay remains read work and incomplete audits can still be repaired.\n\nIndependent evidence:\n\n- Read-only live BEFORE, November22 2026 07:22:28+10 (November21 21:22:28UTC), daemon PID62796/a6694f956d, bracketed matching health identities. F276 is NOT deployed: that commit is #330's merge and its park/queue sources equal b1c7fedc. SQLite mode=ro/query_only, one read transaction, no copy or mutations. 3,297 total seats/132live;377 open delivery rows:345 eligible (>7d) across146recipients,32 young spared,0live-recipient jobs,0other-kind rows on these old seats. Eligible tombstone ages8.7386-75.2215days. Sender buckets:15 valid local-message jobs to3live senders,135pij-bg,195tombstoned senders. In-memory revive intent is not visible in this store snapshot, so345 is the age-qualified count BEFORE that brake. Exact retirement SELECT with limit64 returned64 and the indexed/temp-order plan above. Receipt: pr332-before.py/json.\n- Isolated exact-SQL/schema50/SQLite3.54.1 probe -- PASS. No live store used. 3,000 retired seats/40kDONE jobs/345eligible: selector64,15,124 VM instructions. +2,000DONE unchanged; +2,000eligible increases work while returning64; disabling LIMIT returns2,345. The fixture chose jobs_claimable and excluded unrelated open rows. A separately labelled forced-jobs_serial control, matching the LIVE plan's index, grew9,066->12,300 VM instructions with2,000 same-recipient unrelated open rows. This is candidate/VM evidence, not a Rust mutation run or timing benchmark. Receipt: pr332-query-cost.py/log.\n- Exact-head CI44949154264, successful rust-test job136983046999, artifact14725231053 selected from its upload receipt: cargo nextest run --locked --workspace --profile ci -- PASS;2,857 cases, zero failed/error/skipped. All nine focused retirement/notice/brake/mixed-backend/revive/EXPLAIN tests pass, including committed batch65->64 then1. I did not run Rust mutants or rebuild locally. The independent LIMIT-disabled probe is a selector control, not a claim to have rerun the author's M4.\n- just pr-freeze332 refreshed to FINAL/CLEAN at the requested immutable head after GitHub's transient UNKNOWN following #330's merge. All latest checks pass; no migration. Local harness boot is ready=false and harness checks --quick --json exits1 with eight dependency/ambient-tool failures; native/SDK/skill stages pass and heavy stages skipped. No full local-gate pass, node_modules link, bounce or live retirement was performed.\n\nPrice the author timing honestly: the preserved smoke.log reports DEBUG queue-method calls on a STORE COPY with2,690 candidate recipients, not the live sweep's146 aged owed recipients. Six calls took123/34/25/22/16/310ms (530ms cumulative). At a nominal60s cadence,16-310ms is approximately0.27-5.17ms observed ELAPSED queue work per wall second, not CPU usage and not full-sweep latency. Startup/lag/retry paths alter that amortization. The seventh empty call's8ms is not production steady state, where the fresh roster can avoid calling retirement. The receipt's15 are delivery.parked FACTS addressed to live senders, not15 admitted/delivered notices; notice correctness is separately exercised by CI and owed live AFTER.\n\nPassive launch receipt: the20.016641s window caught #330's daemon STARTUP on PID62796/a6694f956d, not quiet steady state. Spawns+126 =53tap attachments+53owner writes+20registration ps launches; CPU+24.40s, RSS99,984->258,128KiB. Whole-machine sampler68.4new launches/s; daemon-child lower bound5.5/s. This is an F276-OFF startup cohort, not F276 cost or a comparable quiet AFTER.\n\nAFTER owed after authorized deployment: at matching deployed head/PID, the age-qualified eligible-open count should reach0 after about six successful eligible batches for this unchanged cohort;32young jobs remain initially. Verify recipient-retired terminal outcomes and exactly the live-local-sender park-notice admissions/audits (15 if those3senders stay live), with no repeat admissions. Allow new work, evolving sender liveness and revive brakes explicitly; do not equate parked facts with actual notices or compare quiet CPU against the startup window.\n\nHarness lesson/encoding recommendation: expose an official read-only retirement dry-run receipt with head/PID, eligible rows/recipients, sender buckets and candidate plan/work. The reusable guarded BEFORE and in-memory LIMIT probe are preserved; production sensor work is outside this read-only review.\n"
+		}
+	]
+}
