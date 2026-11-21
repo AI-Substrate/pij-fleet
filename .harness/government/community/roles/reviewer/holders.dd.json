@@ -2679,6 +2679,16 @@
 					"seat": "pij-real-tarsier",
 					"to": "2026-11-21T08:07:33.122Z",
 					"why": "#312 F258 B1 round 1"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T08:32:53.911Z",
+					"harness": "copilot",
+					"harness_session": "f9d3d946-7265-4b91-a39c-9a38ad10eae7",
+					"instance_key": "313",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-skilled-flamingo",
+					"why": "#313 F258 D1 round 1"
 				}
 			]
 		}
