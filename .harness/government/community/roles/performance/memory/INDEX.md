@@ -56,6 +56,7 @@
 - [2026-11-21 PR300 launch baseline and literal tripwire limits](2026-11-21-pr300-launch-baseline-tripwire.dd.md): Before interpreting PR300 deployed cost or reviewing resolved launch helpers and literal-only sensors (pr300, launches, baseline, sensor, proof)
 - [2026-11-21 PR301 final allocation fix and bounded lock cost](2026-11-21-pr301-final-allocation-fix-and-bounded.dd.md): review-close (cost, memory, daemon-log, pr301)
 - [2026-11-21 PR301 retained allocation is not display length](2026-11-21-pr301-retained-allocation-is-not-display.dd.md): review-close (cost, memory, daemon-log, pr301)
+- [2026-11-21 PR315: price both reaper reads and preserve D1 baseline](2026-11-21-pr315-price-both-reaper-reads-and.dd.md): Before pricing complete live-row callers or comparing PR315 deployed cost (cost, sqlite, index-maintenance, baseline, proof)
 - [2026-11-21 Quiet-pane backstop averages and observer-only counters](2026-11-21-quiet-pane-backstop-averages-and.dd.md): Before pricing pane-observer replay or interpreting deployed observer counters (F258, pane-observer, counters, measurement)
 - [2026-11-21 Tmux absence proof and launched-read budgets](2026-11-21-tmux-absence-proof-and-launched-read.dd.md): Before changing tmux cleanup, Linux holder census, bounce waits or resuming after PR299 (tmux, F247, F248, bounds, proof, handover)
 <!-- /pij:generated -->
