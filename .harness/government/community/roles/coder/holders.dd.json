@@ -1552,6 +1552,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-cultural-falcon",
 					"why": "issue #42 / D-167-1 sixth strike: OMP coders spawn in their worktree (after F251, before F249)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T00:50:35.551Z",
+					"harness": "omp",
+					"harness_session": "01a1fb7c-77a6-7665-9730-8a0618c01875",
+					"instance_key": "f253",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-classical-tern",
+					"why": "F253 fleet-map innerHTML sinks and external fonts (eel S303-N1/N2)"
 				}
 			]
 		}
