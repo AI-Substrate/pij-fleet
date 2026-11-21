@@ -137,3 +137,4 @@
 | — | pij-cultural-falcon | omp | 01a1ec37-421c-73b4-b9d3-da9d4ed048ca | JordansacStudio.localdomain | f249 | 2026-11-20T22:55:16.574Z | — | pij-steady-otter | — | F249 OMP runtime model observation (footer drift) | — |
 | — | pij-cultural-falcon | omp | 01a1ec37-421c-73b4-b9d3-da9d4ed048ca | JordansacStudio.localdomain | f251 | 2026-11-21T00:01:13.288Z | — | pij-steady-otter | — | F251 daemon_log follow-ups from #301 C34 (before F249) | — |
 | — | pij-classical-tern | omp | 01a1fb7c-77a6-7665-9730-8a0618c01875 | JordansacStudio.localdomain | f252 | 2026-11-21T00:23:55.978Z | — | pij-steady-otter | — | F252 fleet-map standalone HTML (Jordan via mutual-crane) | — |
+| — | pij-cultural-falcon | omp | 01a1ec37-421c-73b4-b9d3-da9d4ed048ca | JordansacStudio.localdomain | i42 | 2026-11-21T00:44:33.236Z | — | pij-steady-otter | — | issue #42 / D-167-1 sixth strike: OMP coders spawn in their worktree (after F251, before F249) | — |
