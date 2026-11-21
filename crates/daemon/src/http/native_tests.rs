@@ -2492,8 +2492,9 @@ async fn native_quiet_busy_turn_keeps_receiver_live_and_delivers_after_completio
 }
 
 /// A dead extension stops heartbeating: its lease still expires and its jobs
-/// park. Plan 167 R3: each live sender hears about its parked job exactly once;
-/// a sender with no live seat gets nothing and the sweep does not fail.
+/// park. Plan 167 R3 / F260: each live sender hears about its held job exactly
+/// once, as an FYI that it is held, not refused (and must not be resent); a
+/// sender with no live seat gets nothing and the sweep does not fail.
 #[tokio::test(start_paused = true)]
 async fn native_lease_expiry_parks_and_tells_each_live_sender_once() {
     let clock = manual_receiver_clock();
@@ -2568,19 +2569,29 @@ async fn native_lease_expiry_parks_and_tells_each_live_sender_once() {
     }
     assert_eq!(recorded.len(), 1, "exactly one notice, none for pij-ghost");
     assert_eq!(recorded[0].seat, Some(sender.id.clone()));
-    let (_, job) = queue
-        .peek(&[delivery_kind(&sender.id)])
+    let audit: Value = serde_json::from_str(&recorded[0].payload).unwrap();
+    assert_eq!(audit["channel"], "fyi", "a held park is news, not a wake");
+    assert!(
+        queue
+            .peek(&[delivery_kind(&sender.id)])
+            .await
+            .unwrap()
+            .is_none(),
+        "nothing wakes the sender"
+    );
+    let (fyis, _) = queue
+        .claim_fyis(&sender.id, "test", 1, spine.as_ref())
         .await
-        .unwrap()
-        .expect("the notice is queued for the sender");
-    let notice: pij_core::model::Msg = serde_json::from_str(&job.payload).unwrap();
-    assert_eq!(notice.from.as_str(), pij_core::BG_ACTOR);
-    assert_eq!(
-        notice.body,
-        format!(
-            "[pij] message {} to {} was not delivered (undelivered:native-receiver-unavailable: native-extension-unavailable). Resend after the target recovers.",
+        .unwrap();
+    assert_eq!(fyis.len(), 1);
+    assert_eq!(fyis[0].sender.as_str(), pij_core::BG_ACTOR);
+    assert!(
+        fyis[0].body.starts_with(&format!(
+            "[pij] message {} to {} is HELD, not refused: its native receiver lapsed.",
             lost.msg_id, seat.id
-        )
+        )) && fyis[0].body.ends_with("Do not resend it."),
+        "{}",
+        fyis[0].body
     );
     // Replaying the same park (a lagged follower) sends nothing new.
     let parked = spine
@@ -2607,12 +2618,12 @@ async fn native_lease_expiry_parks_and_tells_each_live_sender_once() {
         "native-extension-unavailable"
     );
     // F195: the card says both: the receiver lapsed, since when, and that the
-    // process (liveness) may still run while sends are refused.
+    // process (liveness) may still run while sends are held (F260).
     let line = state["data"]["nativeReceiverLine"].as_str().unwrap();
     assert!(
         line.starts_with("native receiver: lapsed, last renewed ")
             && line.contains(&format!(
-                " ago. The process is {}, but sends to this seat are refused",
+                " ago. The process is {}, but sends to this seat are held",
                 state["data"]["liveness"].as_str().unwrap()
             )),
         "{line}"
@@ -2890,8 +2901,8 @@ async fn native_receiver_absent_after_boot_grace_remains_visible_after_parking()
     assert_eq!(
         state["data"]["nativeReceiverLine"],
         "native receiver: lapsed, not renewed by this process since the daemon started. The \
-         process is active, but sends to this seat are refused until its extension registers \
-         again."
+         process is active, but sends to this seat are held (F260) until its extension \
+         registers again."
     );
     let peek = native_http_response(
         client
@@ -3031,6 +3042,414 @@ async fn a_told_lapse_survives_a_restart_and_is_not_told_again() {
     assert_eq!(
         receiver_edges(&spine).await,
         ["native.receiver.lapsed", "native.receiver.renewed"]
+    );
+    server.abort();
+    clock.abort();
+}
+
+/// F260: real SQLite services whose native holds last `hold_secs`.
+async fn hold_services(store: &FreshStore, hold_secs: u64) -> crate::Services {
+    let mut config = Config {
+        store_path: store.path(),
+        native_hold_secs: hold_secs,
+        ..Default::default()
+    };
+    config.adapters.registry = AdapterChoice::Real;
+    config.adapters.queue = AdapterChoice::Real;
+    config.adapters.spine = AdapterChoice::Real;
+    crate::build_services(&config, std::path::Path::new("/tmp/pij-native-test-taps"))
+        .await
+        .expect("real SQLite registry, queue and spine")
+}
+
+/// F260: a native Copilot sender whose own receiver is live, so the notices it
+/// is owed queue on its extension stream, where a test reads them.
+fn native_sender(folder: &str) -> (SeatDescriptor, NativeInboxIdentity) {
+    let mut sender = SeatDescriptor::new("pij-sender", Harness::Copilot, folder);
+    sender.proc = Some(ProcIdentity {
+        pid: 4242,
+        proc_start: 4242,
+    });
+    sender.harness_session = Some("sender-session".into());
+    sender.native_extension_delivery = true;
+    let identity = NativeInboxIdentity {
+        native_session: sender.harness_session.clone(),
+        pid: Some(4242),
+        proc_start: Some(4242),
+    };
+    (sender, identity)
+}
+
+fn heartbeat_request(seat: &SeatId, identity: &NativeInboxIdentity) -> Value {
+    json!({
+        "seat":seat, "native_session":identity.native_session, "pid":identity.pid,
+        "proc_start":identity.proc_start, "observed_at":100, "observed_seq":1,
+    })
+}
+
+/// The `delivery.parked` fact for `msg_id`, as the park notice sweep reads it.
+async fn parked_fact(
+    spine: &Arc<dyn pij_core::ports::Spine>,
+    msg_id: &str,
+) -> pij_core::model::Event {
+    spine
+        .tail(None, pij_core::model::Seq(0))
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|event| {
+            event.kind == "delivery.parked"
+                && serde_json::from_str::<Value>(&event.payload).unwrap()["messageId"] == msg_id
+        })
+        .expect("the held body's park fact")
+}
+
+fn body_msg(from: &str, to: &SeatId, msg_id: &str) -> pij_core::model::Msg {
+    pij_core::model::Msg {
+        from: from.into(),
+        to: to.clone(),
+        body: "the FINAL".into(),
+        msg_id: msg_id.into(),
+        from_machine: None,
+        in_reply_to: None,
+        command: None,
+    }
+}
+
+/// F260 (the incident): a body sent to a native receiver whose lease lapsed is
+/// HELD, not dropped, and its receipt says so. Nothing reaches the lapsed
+/// receiver (F124's brake). The renewal returns it to the queue and the
+/// ordinary claim delivers it exactly once, even though the sender sent it
+/// twice under its id while it was held; later lapses deliver nothing more.
+#[tokio::test(start_paused = true)]
+async fn a_body_for_a_lapsed_receiver_is_held_and_delivered_exactly_once_on_renewal() {
+    let clock = manual_receiver_clock();
+    let store = FreshStore::new();
+    let services = hold_services(&store, pij_core::delivery::NATIVE_HOLD_SECS).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    let (delivery, queue, spine) = (
+        services.delivery.clone(),
+        services.queue.clone(),
+        services.spine.clone(),
+    );
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    let request = heartbeat_request(&seat.id, &identity);
+    progress_heartbeat(&client, addr, &request).await;
+    tokio::time::advance(Duration::from_secs(61)).await;
+    let msg = body_msg("pij-peer", &seat.id, "f260-final");
+    let held = delivery.accept(msg.clone()).await.unwrap();
+    let DeliveryOutcome::Held { reason } = &held.outcome else {
+        panic!("a lapsed receiver's body is held: {:?}", held.outcome);
+    };
+    assert!(
+        reason.starts_with("native-receiver-lapsed:") && reason.contains("do not resend"),
+        "{reason}"
+    );
+    // The send found the lapse before reconciliation did, and told it, so the
+    // renewal that returns the body is the one that ends a told lapse.
+    assert_eq!(receiver_edges(&spine).await, ["native.receiver.lapsed"]);
+    // The sender resends it under the same id while it is held.
+    let again = delivery.accept(msg).await.unwrap();
+    assert!(matches!(again.outcome, DeliveryOutcome::Held { .. }));
+    assert_eq!(queue.held_native_count(&seat.id).await.unwrap(), 2);
+    // F124's brake: nothing is claimable while the lease is lapsed.
+    delivery.reconcile_native_receivers().await.unwrap();
+    assert!(
+        queue
+            .peek(&[delivery_kind(&seat.id)])
+            .await
+            .unwrap()
+            .is_none()
+    );
+    // The receiver renews.
+    progress_heartbeat(&client, addr, &request).await;
+    assert_eq!(
+        receiver_edges(&spine).await,
+        ["native.receiver.lapsed", "native.receiver.renewed"]
+    );
+    let claims = native_http_claims(&client, addr, &seat.id, &identity).await;
+    assert_eq!(claims.len(), 1, "{claims:?}");
+    assert_eq!(claims[0].message.msg_id, "f260-final");
+    delivery
+        .acknowledge_inbox(&seat.id, claims[0].job_id, &identity, None)
+        .await
+        .unwrap();
+    assert!(
+        native_http_claims(&client, addr, &seat.id, &identity)
+            .await
+            .is_empty()
+    );
+    assert_eq!(
+        queue.held_native_count(&seat.id).await.unwrap(),
+        0,
+        "the same-id copy is delivered already, so it is no longer held"
+    );
+    // Another lapse and renewal deliver nothing more.
+    tokio::time::advance(Duration::from_secs(61)).await;
+    delivery.reconcile_native_receivers().await.unwrap();
+    progress_heartbeat(&client, addr, &request).await;
+    assert_eq!(receiver_edges(&spine).await.len(), 4);
+    assert!(
+        native_http_claims(&client, addr, &seat.id, &identity)
+            .await
+            .is_empty()
+    );
+    server.abort();
+    clock.abort();
+}
+
+/// F260 with F261: the lapsed seat is restarted (same native session, new pid
+/// and process start). The new incarnation's first heartbeat ends the told
+/// lapse, and the held body reaches it exactly once.
+#[tokio::test(start_paused = true)]
+async fn a_held_body_reaches_a_restarted_receiver_exactly_once() {
+    let clock = manual_receiver_clock();
+    let store = FreshStore::new();
+    let services = hold_services(&store, pij_core::delivery::NATIVE_HOLD_SECS).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    let (delivery, registry, spine) = (
+        services.delivery.clone(),
+        services.registry.clone(),
+        services.spine.clone(),
+    );
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    progress_heartbeat(&client, addr, &heartbeat_request(&seat.id, &identity)).await;
+    tokio::time::advance(Duration::from_secs(61)).await;
+    delivery.reconcile_native_receivers().await.unwrap();
+    let held = delivery
+        .accept(body_msg("pij-peer", &seat.id, "f260-restart"))
+        .await
+        .unwrap();
+    assert!(matches!(held.outcome, DeliveryOutcome::Held { .. }));
+    // The restart: the same seat and native session, another process.
+    let old = seat.proc.unwrap();
+    let mut restarted = seat.clone();
+    restarted.proc = Some(ProcIdentity {
+        pid: old.pid + 1,
+        proc_start: old.proc_start + 1,
+    });
+    registry.put(restarted.clone()).await.unwrap();
+    let new_identity = NativeInboxIdentity {
+        native_session: seat.harness_session.clone(),
+        pid: Some(old.pid + 1),
+        proc_start: Some(old.proc_start + 1),
+    };
+    progress_heartbeat(&client, addr, &heartbeat_request(&seat.id, &new_identity)).await;
+    assert_eq!(
+        receiver_edges(&spine).await,
+        ["native.receiver.lapsed", "native.receiver.renewed"]
+    );
+    let claims = native_http_claims(&client, addr, &seat.id, &new_identity).await;
+    assert_eq!(claims.len(), 1, "{claims:?}");
+    assert_eq!(claims[0].message.msg_id, "f260-restart");
+    delivery
+        .acknowledge_inbox(&seat.id, claims[0].job_id, &new_identity, None)
+        .await
+        .unwrap();
+    progress_heartbeat(&client, addr, &heartbeat_request(&seat.id, &new_identity)).await;
+    assert!(
+        native_http_claims(&client, addr, &seat.id, &new_identity)
+            .await
+            .is_empty()
+    );
+    server.abort();
+    clock.abort();
+}
+
+/// F260: a hold that ends before the receiver renews tells the sender, once,
+/// that the body was NOT delivered; it is never delivered after, and the
+/// sender's resend (a new message) is delivered exactly once.
+#[tokio::test(start_paused = true)]
+async fn an_expired_hold_tells_the_sender_once_and_only_its_resend_is_delivered() {
+    let clock = manual_receiver_clock();
+    let store = FreshStore::new();
+    // A hold of 0 s ends as it is made.
+    let services = hold_services(&store, 0).await;
+    let (seat, identity) = contract_identity();
+    let (sender, sender_identity) = native_sender(seat.folder.as_str());
+    services.registry.put(seat.clone()).await.unwrap();
+    services.registry.put(sender.clone()).await.unwrap();
+    let notifier = services.clone();
+    let (delivery, queue, spine) = (
+        services.delivery.clone(),
+        services.queue.clone(),
+        services.spine.clone(),
+    );
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    let request = heartbeat_request(&seat.id, &identity);
+    progress_heartbeat(&client, addr, &request).await;
+    tokio::time::advance(Duration::from_secs(61)).await;
+    delivery
+        .heartbeat_native_receiver(&sender.id, &sender_identity, 1, 1, None)
+        .await
+        .unwrap();
+    let held = delivery
+        .send(sender.id.clone(), seat.id.clone(), "the FINAL")
+        .await
+        .unwrap();
+    assert!(matches!(held.outcome, DeliveryOutcome::Held { .. }));
+    // The park notice sweep reads the park: its hold is over.
+    let parked = parked_fact(&spine, &held.msg_id).await;
+    for _ in 0..2 {
+        crate::park_notice::notify(&notifier, &parked)
+            .await
+            .unwrap();
+    }
+    let (_, notice) = queue
+        .peek(&[delivery_kind(&sender.id)])
+        .await
+        .unwrap()
+        .expect("the expiry notice wakes the sender");
+    let notice: pij_core::model::Msg = serde_json::from_str(&notice.payload).unwrap();
+    assert_eq!(notice.from.as_str(), pij_core::BG_ACTOR);
+    assert_eq!(
+        notice.body,
+        format!(
+            "[pij] message {} to {} was NOT delivered: it was held because its native receiver \
+             lapsed, and the hold ended before the receiver renewed. It will never be delivered \
+             now; resend it if it still matters.",
+            held.msg_id, seat.id
+        )
+    );
+    let audits = spine
+        .tail(None, pij_core::model::Seq(0))
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind == crate::park_notice::EXPIRY_NOTICE_KIND)
+        .count();
+    assert_eq!(audits, 1, "a replayed park tells nothing new");
+    // The receiver renews: the expired body is never delivered.
+    progress_heartbeat(&client, addr, &request).await;
+    assert!(
+        native_http_claims(&client, addr, &seat.id, &identity)
+            .await
+            .is_empty()
+    );
+    // The sender resends it, as told: that message, once.
+    let resend = delivery
+        .send(sender.id.clone(), seat.id.clone(), "the FINAL, again")
+        .await
+        .unwrap();
+    assert!(matches!(resend.outcome, DeliveryOutcome::Queued { .. }));
+    let claims = native_http_claims(&client, addr, &seat.id, &identity).await;
+    assert_eq!(
+        claims
+            .iter()
+            .map(|claim| claim.message.msg_id.as_str())
+            .collect::<Vec<_>>(),
+        [resend.msg_id.as_str()]
+    );
+    server.abort();
+    clock.abort();
+}
+
+/// F260: a recipient closed (or retired) while it holds a body can never
+/// renew: the next sweep ends the hold and tells the sender, without waiting
+/// out the hold.
+#[tokio::test(start_paused = true)]
+async fn a_recipient_closed_while_holding_ends_its_holds_and_tells_the_sender() {
+    let clock = manual_receiver_clock();
+    let store = FreshStore::new();
+    let services = hold_services(&store, pij_core::delivery::NATIVE_HOLD_SECS).await;
+    let (seat, identity) = contract_identity();
+    let (sender, sender_identity) = native_sender(seat.folder.as_str());
+    services.registry.put(seat.clone()).await.unwrap();
+    services.registry.put(sender.clone()).await.unwrap();
+    let notifier = services.clone();
+    let (delivery, queue, registry, spine) = (
+        services.delivery.clone(),
+        services.queue.clone(),
+        services.registry.clone(),
+        services.spine.clone(),
+    );
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    progress_heartbeat(&client, addr, &heartbeat_request(&seat.id, &identity)).await;
+    tokio::time::advance(Duration::from_secs(61)).await;
+    delivery
+        .heartbeat_native_receiver(&sender.id, &sender_identity, 1, 1, None)
+        .await
+        .unwrap();
+    let held = delivery
+        .send(sender.id.clone(), seat.id.clone(), "the FINAL")
+        .await
+        .unwrap();
+    assert!(matches!(held.outcome, DeliveryOutcome::Held { .. }));
+    let parked = parked_fact(&spine, &held.msg_id).await;
+    // Still held while the recipient lives: only the held FYI is owed.
+    crate::park_notice::notify(&notifier, &parked)
+        .await
+        .unwrap();
+    assert!(
+        queue
+            .peek(&[delivery_kind(&sender.id)])
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(queue.held_native_count(&seat.id).await.unwrap(), 1);
+    registry.tombstone(&seat.id, "closed").await.unwrap();
+    crate::park_notice::notify(&notifier, &parked)
+        .await
+        .unwrap();
+    let (_, notice) = queue
+        .peek(&[delivery_kind(&sender.id)])
+        .await
+        .unwrap()
+        .expect("the sender is told at once");
+    assert!(
+        notice.payload.contains("was NOT delivered"),
+        "{}",
+        notice.payload
+    );
+    assert_eq!(queue.held_native_count(&seat.id).await.unwrap(), 0);
+    server.abort();
+    clock.abort();
+}
+
+/// F260's brake: a recipient holds at most [`NATIVE_HOLD_LIMIT`] bodies; the
+/// next send is refused, as every such send was before F260.
+///
+/// [`NATIVE_HOLD_LIMIT`]: pij_core::delivery::NATIVE_HOLD_LIMIT
+#[tokio::test(start_paused = true)]
+async fn a_full_hold_refuses_the_next_body() {
+    let clock = manual_receiver_clock();
+    let store = FreshStore::new();
+    let services = hold_services(&store, pij_core::delivery::NATIVE_HOLD_SECS).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    let delivery = services.delivery.clone();
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    progress_heartbeat(&client, addr, &heartbeat_request(&seat.id, &identity)).await;
+    tokio::time::advance(Duration::from_secs(61)).await;
+    for n in 0..pij_core::delivery::NATIVE_HOLD_LIMIT {
+        let held = delivery
+            .send("pij-peer".into(), seat.id.clone(), format!("held {n}"))
+            .await
+            .unwrap();
+        assert!(matches!(held.outcome, DeliveryOutcome::Held { .. }), "{n}");
+    }
+    let refused = delivery
+        .send("pij-peer".into(), seat.id.clone(), "one too many")
+        .await
+        .unwrap();
+    let DeliveryOutcome::Refused { reason } = &refused.outcome else {
+        panic!("a full hold refuses: {:?}", refused.outcome);
+    };
+    assert!(
+        reason.starts_with("native-extension-unavailable:")
+            && reason.contains(&format!(
+                "already holds {} messages",
+                pij_core::delivery::NATIVE_HOLD_LIMIT
+            )),
+        "{reason}"
     );
     server.abort();
     clock.abort();

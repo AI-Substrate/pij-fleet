@@ -4260,7 +4260,7 @@ fn receiver_lapse_line(liveness: &str, lapse: Option<Option<Duration>>) -> Strin
     };
     format!(
         "native receiver: lapsed{since}. The process is {liveness}, but sends to this seat are \
-         refused until its extension registers again."
+         held (F260) until its extension registers again."
     )
 }
 

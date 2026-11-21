@@ -32,6 +32,8 @@ pub struct SqliteQueue {
     pool: Pool<Sqlite>,
     claim_lease_secs: i64,
     delivered_id_capacity: i64,
+    /// F260: how long a native-receiver park stays held, from `enqueued_at`.
+    native_hold_secs: i64,
 }
 
 impl SqliteQueue {
@@ -63,7 +65,19 @@ impl SqliteQueue {
             pool,
             claim_lease_secs,
             delivered_id_capacity,
-        })
+            native_hold_secs: 0,
+        }
+        .with_native_hold_secs(pij_core::delivery::NATIVE_HOLD_SECS))
+    }
+
+    /// F260: hold native-receiver parks for `seconds` from when they were sent
+    /// instead of [`pij_core::delivery::NATIVE_HOLD_SECS`]. Zero holds nothing:
+    /// a park expires as it is made. Clamped to `u32::MAX` seconds, so the
+    /// deadline `enqueued_at + seconds` never overflows SQLite's integer.
+    #[must_use]
+    pub fn with_native_hold_secs(mut self, seconds: u64) -> Self {
+        self.native_hold_secs = i64::from(u32::try_from(seconds).unwrap_or(u32::MAX));
+        self
     }
 
     /// How many rows are live (pending or running) — the dedupe assertion
@@ -758,6 +772,111 @@ impl Queue for SqliteQueue {
         .await
     }
 
+    async fn recover_held_native_deliveries(
+        &self,
+        recipient: &SeatId,
+    ) -> Result<Vec<(JobId, Job)>> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let recipient = recipient.clone();
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            // `jobs_serial (serial_key, state)`: this recipient's failed rows only.
+            let held: Vec<i64> = sqlx::query_scalar(
+                "SELECT id FROM jobs WHERE serial_key = ?1 AND state = 'failed' \
+                   AND kind = 'delivery:' || serial_key \
+                   AND outcome = 'undelivered:native-receiver-unavailable' \
+                   AND not_before > unixepoch() ORDER BY id",
+            )
+            .bind(recipient.as_str())
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            let mut recovered = Vec::with_capacity(held.len());
+            // One statement per row, in order, in one transaction: a later row
+            // sees an earlier one's live copy of the same message and stays.
+            for id in held {
+                let row = sqlx::query(
+                    "UPDATE jobs SET state = 'pending', worker = NULL, claimed_at = NULL, \
+                     acked_at = NULL, outcome = NULL, attempt = attempt + 1, not_before = unixepoch() \
+                 WHERE id = ?1 AND state = 'failed' \
+                   AND outcome = 'undelivered:native-receiver-unavailable' \
+                   AND not_before > unixepoch() \
+                   AND NOT EXISTS (SELECT 1 FROM jobs live WHERE live.id != jobs.id \
+                       AND live.state IN ('pending', 'running') AND live.dedupe_key = jobs.dedupe_key \
+                       AND live.dedupe_origin = jobs.dedupe_origin) \
+                   AND NOT EXISTS (SELECT 1 FROM delivered_messages \
+                       WHERE recipient = jobs.serial_key AND msg_id = jobs.dedupe_key \
+                       AND sender_machine = jobs.dedupe_origin) \
+                 RETURNING kind, serial_key, payload, dedupe_key, dedupe_origin, attempt",
+                )
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+                if let Some(row) = row {
+                    recovered.push((JobId(id as u64), decode_job(&row)?));
+                }
+            }
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(recovered)
+        })
+        .await
+    }
+
+    async fn held_native_count(&self, recipient: &SeatId) -> Result<u64> {
+        require_current_schema(&self.pool).await?;
+        // A held copy of a message already delivered (a same-id resend) will
+        // never be recovered, so it does not count against the limit.
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM jobs WHERE serial_key = ?1 AND state = 'failed' \
+               AND kind = 'delivery:' || serial_key \
+               AND outcome = 'undelivered:native-receiver-unavailable' \
+               AND not_before > unixepoch() \
+               AND NOT EXISTS (SELECT 1 FROM delivered_messages \
+                   WHERE recipient = jobs.serial_key AND msg_id = jobs.dedupe_key \
+                   AND sender_machine = jobs.dedupe_origin)",
+        )
+        .bind(recipient.as_str())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        Ok(u64::try_from(count).unwrap_or_default())
+    }
+
+    async fn expire_native_hold(&self, job: JobId, recipient: &SeatId) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let Ok(id) = i64::try_from(job.0) else {
+            return Ok(false);
+        };
+        let pool = self.pool.clone();
+        let recipient = recipient.clone();
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            // Ending the hold and deciding the notice is one statement: a body
+            // recovered first is pending (no notice); one expired first is
+            // never recovered (`not_before > unixepoch()` fails from now on).
+            let expired = sqlx::query(
+                "UPDATE jobs SET not_before = min(not_before, unixepoch()) \
+                 WHERE id = ?1 AND serial_key = ?2 AND kind = 'delivery:' || serial_key \
+                   AND state = 'failed' AND outcome = 'undelivered:native-receiver-unavailable' \
+                   AND NOT EXISTS (SELECT 1 FROM delivered_messages \
+                       WHERE recipient = jobs.serial_key AND msg_id = jobs.dedupe_key \
+                       AND sender_machine = jobs.dedupe_origin) \
+                 RETURNING id",
+            )
+            .bind(id)
+            .bind(recipient.as_str())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .is_some();
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(expired)
+        })
+        .await
+    }
+
     async fn park_delivery(
         &self,
         job: JobId,
@@ -772,6 +891,7 @@ impl Queue for SqliteQueue {
         };
         let pool = self.pool.clone();
         let claim_lease_secs = self.claim_lease_secs;
+        let native_hold_secs = self.native_hold_secs;
         let recipient = recipient.clone();
         let outcome = evidence.outcome;
         let reason = evidence.reason.to_owned();
@@ -783,8 +903,13 @@ impl Queue for SqliteQueue {
             at,
         };
         let mut tx = begin_write(&pool).await?;
+        // F260: a native-receiver park is held until `enqueued_at` plus the
+        // hold, in `not_before` (0 on every other parked row, and on rows
+        // parked before F260, which are therefore never held).
         let row = sqlx::query(
-            "UPDATE jobs SET state = 'failed', outcome = ?4, acked_at = unixepoch() \
+            "UPDATE jobs SET state = 'failed', outcome = ?4, acked_at = unixepoch(), \
+                 not_before = CASE WHEN ?4 = 'undelivered:native-receiver-unavailable' \
+                     THEN enqueued_at + ?6 ELSE not_before END \
              WHERE id = ?1 AND serial_key = ?2 \
                AND (state = 'running' OR (state = 'pending' AND ?4 = 'undelivered:native-receiver-unavailable')) \
                AND kind = 'delivery:' || serial_key AND attempt = ?3 \
@@ -795,15 +920,25 @@ impl Queue for SqliteQueue {
                    WHERE earlier.serial_key = jobs.serial_key AND earlier.id < jobs.id \
                      AND earlier.kind != 'delivery-control:' || jobs.serial_key \
                      AND earlier.state IN ('pending', 'running')) \
-             RETURNING kind, serial_key, payload, dedupe_key, dedupe_origin, attempt",
+             RETURNING kind, serial_key, payload, dedupe_key, dedupe_origin, attempt, not_before",
         ).bind(id).bind(recipient.as_str()).bind(i64::from(attempt)).bind(evidence.outcome.as_str())
-            .bind(claim_lease_secs)
+            .bind(claim_lease_secs).bind(native_hold_secs)
             .fetch_optional(&mut *tx).await.map_err(adapter_error)?;
         let job = row.as_ref().map(decode_job).transpose()?;
         let mut events = Vec::new();
-        if let Some(parked) = &job {
-            for mut event in pij_core::delivery::parked_events(JobId(id as u64), parked, &evidence)?
-            {
+        if let (Some(parked), Some(row)) = (&job, &row) {
+            let parked_events = if outcome == DeliveryFailure::NativeReceiverUnavailable {
+                let held_until: i64 = row.try_get("not_before").map_err(adapter_error)?;
+                pij_core::delivery::held_parked_events(
+                    JobId(id as u64),
+                    parked,
+                    &evidence,
+                    u64::try_from(held_until).unwrap_or_default().saturating_mul(1_000),
+                )?
+            } else {
+                pij_core::delivery::parked_events(JobId(id as u64), parked, &evidence)?
+            };
+            for mut event in parked_events {
                 event.seq = Some(crate::spine::append_in_transaction(&mut tx, &event).await?);
                 events.push(event);
             }

@@ -601,6 +601,52 @@ pub trait Queue: Send + Sync {
     /// Other outcomes, a foreign recipient, or a conflicting live row return false.
     async fn recover_native_delivery(&self, job: JobId, recipient: &SeatId) -> Result<bool>;
 
+    /// F260: return every body held for `recipient` (parked
+    /// native-receiver-unavailable within its hold, `jobs.not_before` in the
+    /// future) to pending, oldest first, each behind the same guards as
+    /// [`Queue::recover_native_delivery`]: never one already delivered, never
+    /// beside a live row of the same message. Rows parked before F260 carry no
+    /// hold and are never returned. Returns the recovered rows.
+    ///
+    /// This default REFUSES: a wrapper that has not implemented it must not
+    /// answer "nothing held".
+    async fn recover_held_native_deliveries(
+        &self,
+        recipient: &SeatId,
+    ) -> Result<Vec<(JobId, Job)>> {
+        let _ = recipient;
+        Err(crate::error::PijError::Adapter {
+            adapter: "queue".to_string(),
+            message: "this queue cannot hold native deliveries".to_string(),
+        })
+    }
+
+    /// F260: how many bodies are held for `recipient` now.
+    ///
+    /// This default REFUSES, so a caller enforcing the hold limit holds nothing.
+    async fn held_native_count(&self, recipient: &SeatId) -> Result<u64> {
+        let _ = recipient;
+        Err(crate::error::PijError::Adapter {
+            adapter: "queue".to_string(),
+            message: "this queue cannot hold native deliveries".to_string(),
+        })
+    }
+
+    /// F260: end the hold on one parked body at once, so it is never recovered.
+    /// True when the body is still parked undelivered (its sender is owed an
+    /// expiry notice); false when it was recovered, delivered, or is not this
+    /// recipient's native park.
+    ///
+    /// This default REFUSES, so no expiry notice is sent for a body that might
+    /// still be delivered.
+    async fn expire_native_hold(&self, job: JobId, recipient: &SeatId) -> Result<bool> {
+        let _ = (job, recipient);
+        Err(crate::error::PijError::Adapter {
+            adapter: "queue".to_string(),
+            message: "this queue cannot hold native deliveries".to_string(),
+        })
+    }
+
     /// Park only the named live head at the observed attempt. Native receiver
     /// unavailability may also park an unclaimed/deferred head; other outcomes
     /// require a running claim. Completion/reclaim races return None unchanged.

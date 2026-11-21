@@ -50,6 +50,20 @@ pub fn require_recovery_authority(shared: bool) -> Result<()> {
     Ok(())
 }
 
+/// F260: how long a body parked because its native receiver lapsed stays held
+/// for redelivery, counted from when it was sent (`jobs.enqueued_at`), so a
+/// receiver that flaps never extends it. Past this, the hold ends and the
+/// sender is told. The incident's receiver was back in 28 minutes.
+///
+/// This is POLICY: before F260 such a body was never delivered; within this
+/// bound it now is, once, through the ordinary claim after the lease renews.
+pub const NATIVE_HOLD_SECS: u64 = 2 * 60 * 60;
+
+/// F260: at most this many bodies are held for one recipient. A send that
+/// finds the recipient's holds full is refused, as every such send was before
+/// F260: a brake, since removing it only holds more.
+pub const NATIVE_HOLD_LIMIT: u64 = 64;
+
 /// Build the canonical sender receipt and recipient-observable parking fact.
 /// The queue commits these events in the same transaction as terminal state.
 ///
@@ -63,6 +77,27 @@ pub fn parked_events(
     parked_events_via(job_id, job, evidence, "extension-stream")
 }
 
+/// [`parked_events`] for a body held until `held_until_ms` for redelivery
+/// when its native receiver renews (F260). The sender receipt says `held`, not
+/// `refused`: the body may still be delivered, and is never to be resent.
+///
+/// # Errors
+/// A stored delivery payload cannot be decoded as a message.
+pub fn held_parked_events(
+    job_id: crate::model::JobId,
+    job: &crate::model::Job,
+    evidence: &crate::ports::ParkingEvidence<'_>,
+    held_until_ms: u64,
+) -> Result<Vec<crate::model::Event>> {
+    parked_events_inner(
+        job_id,
+        job,
+        evidence,
+        "extension-stream",
+        Some(held_until_ms),
+    )
+}
+
 /// [`parked_events`] for a delivery that was attempted on `transport` (a pane
 /// delivery parks with `pty`, plan 184), so the sender receipt names the path
 /// that actually failed.
@@ -74,6 +109,16 @@ pub fn parked_events_via(
     job: &crate::model::Job,
     evidence: &crate::ports::ParkingEvidence<'_>,
     transport: &str,
+) -> Result<Vec<crate::model::Event>> {
+    parked_events_inner(job_id, job, evidence, transport, None)
+}
+
+fn parked_events_inner(
+    job_id: crate::model::JobId,
+    job: &crate::model::Job,
+    evidence: &crate::ports::ParkingEvidence<'_>,
+    transport: &str,
+    held_until_ms: Option<u64>,
 ) -> Result<Vec<crate::model::Event>> {
     let message: Msg = serde_json::from_str(&job.payload).map_err(|error| PijError::Adapter {
         adapter: "delivery/parking".into(),
@@ -95,23 +140,46 @@ pub fn parked_events_via(
             payload: payload.to_string(),
         }
     };
+    let (outcome, mut parked) = match held_until_ms {
+        None => (
+            serde_json::json!({"outcome":"refused","reason":evidence.outcome.as_str()}),
+            serde_json::json!({}),
+        ),
+        Some(until) => (
+            serde_json::json!({"outcome":"held","reason":native_hold_reason(&job.serial_key, until)}),
+            serde_json::json!({"heldUntil": until}),
+        ),
+    };
+    parked["messageId"] = message.msg_id.as_str().into();
+    parked["jobId"] = serde_json::to_value(job_id).map_err(|error| PijError::Adapter {
+        adapter: "delivery/parking".into(),
+        message: format!("invalid parked job id: {error}"),
+    })?;
+    parked["recipient"] = job.serial_key.as_str().into();
+    parked["outcome"] = evidence.outcome.as_str().into();
+    parked["reason"] = evidence.reason.into();
     Ok(vec![
         event(
             "delivery.outcome",
             serde_json::json!({
                 "msg_id":message.msg_id,
-                "outcome":{"outcome":"refused","reason":evidence.outcome.as_str()},
+                "outcome":outcome,
                 "transport":transport,
             }),
         ),
-        event(
-            "delivery.parked",
-            serde_json::json!({
-                "messageId":message.msg_id, "jobId":job_id, "recipient":job.serial_key,
-                "outcome":evidence.outcome, "reason":evidence.reason,
-            }),
-        ),
+        event("delivery.parked", parked),
     ])
+}
+
+/// The reason a held body's receipt gives (F260): why, until when, and that
+/// the sender is told if it expires, so no one resends it meanwhile.
+#[must_use]
+pub fn native_hold_reason(recipient: &str, held_until_ms: u64) -> String {
+    format!(
+        "native-receiver-lapsed: the native receiver for {recipient} has not renewed its lease; \
+         held for delivery when it renews, until {held_until_ms} (Unix ms). You are told if it \
+         expires; do not resend it meanwhile"
+    )
 }
 
 /// Sender-addressed fact that a pane delivery is still held at the hold limit

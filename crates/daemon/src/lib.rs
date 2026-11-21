@@ -535,11 +535,14 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
     let spine: Arc<dyn Spine> = event_bus.clone();
     let queue: Arc<dyn Queue> = match config.adapters.queue {
         AdapterChoice::Fake => Arc::new(FakeQueue::new(config.delivered_id_capacity)?),
-        AdapterChoice::Real => Arc::new(SqliteQueue::new(
-            pool("queue")?,
-            config.claim_lease_secs,
-            config.delivered_id_capacity,
-        )?),
+        AdapterChoice::Real => Arc::new(
+            SqliteQueue::new(
+                pool("queue")?,
+                config.claim_lease_secs,
+                config.delivered_id_capacity,
+            )?
+            .with_native_hold_secs(config.native_hold_secs),
+        ),
     };
 
     // Every port is real-capable. The real socket transport remains closed for

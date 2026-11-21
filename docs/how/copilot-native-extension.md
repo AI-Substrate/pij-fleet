@@ -429,8 +429,10 @@ its queued mail is delivered when the turn ends (plan 167). `observed_at` /
 `observed_seq` are still sent but are diagnostics only. If heartbeats stop, the
 daemon wakes on the receiver deadline, parks pending/unacknowledged native bodies
 with `undelivered:native-receiver-unavailable`, emits `delivery.parked` with reason
-`native-extension-unavailable`, tells each live sender once through `pij-bg`, and
-refuses later sends with the receiver's seat named. `pij state` and `pij inbox`
+`native-extension-unavailable`, and **holds** them and later sends for up to two
+hours from each send (F260): the renewal returns them to the queue, once, and the
+sender is told by `pij-bg` that they are held, and again if the hold ends first.
+`pij state` and `pij inbox`
 show `native-extension-unavailable` separately from an active host. It does not
 silently fall back to tmux.
 

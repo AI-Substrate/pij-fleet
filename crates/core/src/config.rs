@@ -116,6 +116,10 @@ pub struct Config {
     /// hundred-seat fleet's absolute ceiling to single-digit megabytes. Once a
     /// recipient exceeds the bound, the oldest ids lose duplicate protection.
     pub delivered_id_capacity: usize,
+    /// F260: how long a body for a lapsed native receiver is held for
+    /// redelivery, from when it was sent. Policy: within it a held body is
+    /// delivered once the receiver renews; past it, its sender is told.
+    pub native_hold_secs: u64,
     /// How often the drain worker runs a pass over queued work.
     pub delivery_interval_secs: u64,
     /// How often the daemon drains pane taps and refreshes composer evidence.
@@ -205,6 +209,7 @@ impl Default for Config {
             watchdog_interval_secs: 20 * 60,
             claim_lease_secs: 5 * 60,
             delivered_id_capacity: 1_024,
+            native_hold_secs: crate::delivery::NATIVE_HOLD_SECS,
             delivery_interval_secs: 5,
             pane_observer_interval_ms: 600,
             interaction_idle_ms: 60_000,

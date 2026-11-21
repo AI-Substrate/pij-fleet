@@ -1497,6 +1497,151 @@ async fn native_receiver_parking_and_manual_recovery_preserve_body_and_history()
     );
 }
 
+/// F260: a native-receiver park is held until `enqueued_at` plus the hold. A
+/// renewal recovers it once; a hold that was ended is never recovered; and a
+/// row parked before F260 (no hold, `not_before` 0) is never recovered by a
+/// renewal, only by the explicit manual pull it always had.
+#[tokio::test]
+async fn native_holds_recover_once_within_the_hold_and_never_after_it_or_before_f260() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.unwrap();
+    let queue = SqliteQueue::new(pool.clone(), 300, 1_024).unwrap();
+    let spine = pij_store::SqliteSpine::new(pool.clone());
+    let recipient = SeatId::from("pij-reader");
+    let kinds = [String::from("delivery:pij-reader")];
+    let evidence = pij_core::ports::ParkingEvidence {
+        outcome: pij_core::model::DeliveryFailure::NativeReceiverUnavailable,
+        reason: "native-extension-unavailable",
+        at: 42,
+    };
+    let park = |id| {
+        let queue = &queue;
+        let (recipient, evidence, spine) = (&recipient, &evidence, &spine);
+        async move {
+            queue
+                .park_delivery(id, recipient, 0, evidence, spine)
+                .await
+                .unwrap()
+        }
+    };
+    let deliver = |id| {
+        let queue = &queue;
+        let kinds = &kinds;
+        async move {
+            let (claimed, _) = queue.claim(kinds, "pij-reader").await.unwrap().unwrap();
+            assert_eq!(claimed, id);
+            queue
+                .ack_delivery(id, DeliveryOrigin::ReaderRead)
+                .await
+                .unwrap();
+        }
+    };
+
+    // Held: the sender's receipt says held, with the instant it ends.
+    let held = queue
+        .enqueue(extension_body_job(&kinds[0], recipient.as_str(), "held"))
+        .await
+        .unwrap();
+    let (parked, events) = park(held).await;
+    assert!(parked.is_some());
+    let fact = |kind: &str| -> serde_json::Value {
+        serde_json::from_str(
+            &events
+                .iter()
+                .find(|event| event.kind == kind)
+                .unwrap()
+                .payload,
+        )
+        .unwrap()
+    };
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let until = fact("delivery.parked")["heldUntil"].as_u64().unwrap();
+    assert!(
+        until > now_ms + (pij_core::delivery::NATIVE_HOLD_SECS - 60) * 1_000,
+        "held for the hold, from the send: {until}"
+    );
+    assert_eq!(fact("delivery.outcome")["outcome"]["outcome"], "held");
+    assert_eq!(queue.held_native_count(&recipient).await.unwrap(), 1);
+    let recovered = queue
+        .recover_held_native_deliveries(&recipient)
+        .await
+        .unwrap();
+    assert_eq!(
+        recovered.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+        [held]
+    );
+    assert_eq!(recovered[0].1.attempt, 1);
+    assert!(
+        queue
+            .recover_held_native_deliveries(&recipient)
+            .await
+            .unwrap()
+            .is_empty(),
+        "recovered once"
+    );
+    deliver(held).await;
+    assert!(
+        !queue.expire_native_hold(held, &recipient).await.unwrap(),
+        "a delivered body owes no expiry notice"
+    );
+
+    // Expired: ending the hold owes the notice once and recovers nothing after.
+    let expired = queue
+        .enqueue(extension_body_job(&kinds[0], recipient.as_str(), "expired"))
+        .await
+        .unwrap();
+    assert!(park(expired).await.0.is_some());
+    assert!(queue.expire_native_hold(expired, &recipient).await.unwrap());
+    assert!(
+        !queue
+            .expire_native_hold(expired, &"someone-else".into())
+            .await
+            .unwrap()
+    );
+    assert_eq!(queue.held_native_count(&recipient).await.unwrap(), 0);
+    assert!(
+        queue
+            .recover_held_native_deliveries(&recipient)
+            .await
+            .unwrap()
+            .is_empty(),
+        "an ended hold is never recovered"
+    );
+
+    // Parked before F260: no hold. A renewal never recovers it (its sender was
+    // told to resend); the explicit manual pull still can.
+    let old = queue
+        .enqueue(extension_body_job(
+            &kinds[0],
+            recipient.as_str(),
+            "pre-f260",
+        ))
+        .await
+        .unwrap();
+    assert!(park(old).await.0.is_some());
+    sqlx::query("UPDATE jobs SET not_before = 0 WHERE id = ?1")
+        .bind(old.0 as i64)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        queue
+            .recover_held_native_deliveries(&recipient)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        queue
+            .recover_native_delivery(old, &recipient)
+            .await
+            .unwrap()
+    );
+}
+
 #[tokio::test]
 async fn delivery_enqueue_returns_the_persisted_not_before_after_backoff() {
     let fresh = FreshStore::new();
