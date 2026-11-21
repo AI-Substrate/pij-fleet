@@ -18,9 +18,11 @@
 //
 // Exit 0: passed, or skipped (no Copilot CLI installed, as in CI). Exit 1: the
 // installed SDK would not register pij's tools or hooks. `--json` prints one
-// report; `--record` writes the version it passed on to
-// harness/copilot-sdk-verified.json, which a later run compares against (a
-// different installed version is a `warn` until recorded).
+// report. Every full pass on the installed SDK writes a local pass for that
+// exact version under pij-rs's state dir (F250, copilot-sdk-local-pass.mjs);
+// `--record` also writes the version to harness/copilot-sdk-verified.json, the
+// committed floor CI and fresh checkouts compare against. A version neither
+// names is a `warn`.
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -28,6 +30,12 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import { installedVersion } from "./copilot-cli.mjs";
+import {
+	contractCommit,
+	passDir,
+	readLocalPass,
+	writeLocalPass,
+} from "./copilot-sdk-local-pass.mjs";
 import { verdict } from "./copilot-sdk-verdict.mjs";
 
 const repo = join(import.meta.dirname, "..", "..");
@@ -396,17 +404,37 @@ try {
 const verified = await readFile(RECORD, "utf8")
 	.then((text) => JSON.parse(text).version)
 	.catch(() => undefined);
+const passed = checks.every((one) => one.ok);
 // --record writes only after every check passed.
-const recorded = record && checks.every((one) => one.ok);
+const recorded = record && passed;
 if (recorded)
 	await writeFile(
 		RECORD,
 		`${JSON.stringify({ version, checks: checks.map((one) => one.name) }, null, "\t")}\n`,
 	);
+// F250: a full pass on the installed CLI's own SDK is recorded on this machine.
+// An overridden SDK or version checked something else, so it records nothing.
+const localDir = passDir();
+let unrecorded;
+if (passed) {
+	if (argv.includes("--sdk") || argv.includes("--copilot-version"))
+		unrecorded = "--sdk or --copilot-version named another SDK than the installed one";
+	else
+		await writeLocalPass(localDir, {
+			version,
+			passedAt: new Date(),
+			checks: checks.length,
+			contractCommit: await contractCommit(repo),
+		}).catch((error) => {
+			unrecorded = error.message;
+		});
+}
+const local = await readLocalPass(localDir, version, checks.length);
 finish({
-	...verdict({ version, verified, checks, recorded }),
+	...verdict({ version, verified, local, checks, recorded, unrecorded }),
 	version,
 	verified: recorded ? version : verified,
+	...(local ? { local } : {}),
 	checks,
 	...(checks.some((one) => !one.ok) ? { diagnostic } : {}),
 });

@@ -54,28 +54,39 @@ function updateCopilot({ next, report }: { next?: string; report: object }) {
 	return { run, updates: read("updates"), contractArgs: read("contract-args") };
 }
 
-/** A contract pass on `version`, recorded as it is with --record. */
+/** A contract pass on `version` that recorded a local pass for it (F250). */
 const passOn = (version: string) => ({
 	status: "pass",
 	version,
-	verified: version,
+	verified: "1.0.113-0",
+	local: { version, passed_at: "2026-11-21T12:00:00.000Z", checks: 1, contract_commit: null },
 	checks: [{ name: "tool declared", ok: true, detail: "ok" }],
 });
 
 describe("just update-copilot (D-F208-2)", () => {
-	it("updates, runs the contract with --record on the new version, and says the fleet may reload on a pass", () => {
+	it("updates, runs the contract on the new version, and says the fleet may reload on a local pass", () => {
 		const { run, updates, contractArgs } = updateCopilot({
 			next: "1.0.115-0",
 			report: passOn("1.0.115-0"),
 		});
 		expect(run.status, run.stdout + run.stderr).toBe(0);
 		expect(updates).toBe("updated\n");
-		expect(contractArgs).toBe("--record --json\n");
+		expect(contractArgs).toBe("--json\n");
 		expect(run.stdout).toContain("Copilot updated 1.0.114-0 -> 1.0.115-0");
 		expect(run.stdout).toContain(
-			"the contract passed on Copilot 1.0.115-0 and recorded it in harness/copilot-sdk-verified.json",
+			"the contract passed on Copilot 1.0.115-0 and recorded a local pass for it (2026-11-21T12:00:00.000Z); nothing to commit",
 		);
 		expect(run.stdout).toContain("The fleet may reload Copilot seats.");
+	});
+
+	it("a pass on the committed floor's version may reload too", () => {
+		const { local: _local, ...report } = passOn("1.0.115-0");
+		const { run } = updateCopilot({
+			next: "1.0.115-0",
+			report: { ...report, verified: "1.0.115-0" },
+		});
+		expect(run.status, run.stdout + run.stderr).toBe(0);
+		expect(run.stdout).toContain("passed on Copilot 1.0.115-0, the committed floor");
 	});
 
 	// R261-001: a pass approves only the version it checked and recorded.
@@ -83,17 +94,17 @@ describe("just update-copilot (D-F208-2)", () => {
 		[
 			"checked an older version",
 			passOn("1.0.114-0"),
-			"passed on Copilot 1.0.114-0 and recorded 1.0.114-0",
+			"passed on Copilot 1.0.114-0, verified 1.0.114-0",
 		],
 		[
 			"names no version",
 			{ status: "pass", checks: [{ name: "tool declared", ok: true, detail: "ok" }] },
-			"passed on Copilot (no version named) and recorded (nothing)",
+			"passed on Copilot (no version named), verified (nothing)",
 		],
 		[
-			"did not record the version it checked",
-			{ ...passOn("1.0.115-0"), verified: "1.0.114-0" },
-			"passed on Copilot 1.0.115-0 and recorded 1.0.114-0",
+			"recorded a local pass for another version",
+			{ ...passOn("1.0.115-0"), local: { ...passOn("1.0.114-0").local } },
+			"passed on Copilot 1.0.115-0, verified 1.0.114-0",
 		],
 	])("never says the fleet may reload when the passing contract %s", (_case, report, named) => {
 		const { run } = updateCopilot({ next: "1.0.115-0", report });
@@ -134,7 +145,7 @@ describe("just update-copilot (D-F208-2)", () => {
 		expect(run.stdout).toContain(
 			"no update available: Copilot is still 1.0.114-0; running the contract anyway",
 		);
-		expect(contractArgs).toBe("--record --json\n");
+		expect(contractArgs).toBe("--json\n");
 	});
 
 	it("never says the fleet may reload when the contract's report is unreadable", () => {
@@ -147,11 +158,39 @@ describe("just update-copilot (D-F208-2)", () => {
 describe("the contract's verdict on a Copilot version it has not verified (D-F208-2)", () => {
 	const checks = [{ name: "tool declared", ok: true }];
 
-	it("names the fix verbatim, with --record after a pass", () => {
+	it("names the fix verbatim, and no record PR, on a version nothing verified", () => {
 		const { status, summary } = verdict({ version: "1.0.115-0", verified: "1.0.114-0", checks });
 		expect(status).toBe("warn");
 		expect(summary).toContain("run just copilot-sdk-contract before reloading seats");
-		expect(summary).toContain("after a pass, run just copilot-sdk-contract --record");
+		expect(summary).not.toContain("--record");
+	});
+
+	// F250: a local pass clears the warn only for exactly its own version.
+	it("a local pass on the installed version clears the warn; one on another version does not", () => {
+		const local = (version: string) => ({ version, passed_at: "2026-11-21T12:00:00.000Z" });
+		const on3 = verdict({
+			version: "1.0.115-3",
+			verified: "1.0.115-2",
+			local: local("1.0.115-3"),
+			checks,
+		});
+		expect(on3.status).toBe("pass");
+		expect(on3.summary).toContain("verified on this machine at 2026-11-21T12:00:00.000Z");
+		expect(
+			verdict({ version: "1.0.115-3", verified: "1.0.115-2", local: local("1.0.115-2"), checks })
+				.status,
+		).toBe("warn");
+	});
+
+	it("says why a passing run recorded no local pass", () => {
+		const { status, summary } = verdict({
+			version: "1.0.115-3",
+			verified: "1.0.115-2",
+			checks,
+			unrecorded: "EACCES",
+		});
+		expect(status).toBe("warn");
+		expect(summary).toContain("recorded no local pass: EACCES");
 	});
 
 	it("a failing check is 'do not reload', whatever the record says", () => {

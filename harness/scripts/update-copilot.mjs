@@ -3,15 +3,15 @@
 //
 // F208: Copilot 1.0.113 changed its SDK's config shape, and every seat that
 // reloaded onto it silently lost pij_send and its hooks. So an update is
-// checked before any seat reloads: update, run the installed-SDK contract on
-// the new version (copilot-sdk-contract.mjs), and record it only on a pass.
+// checked before any seat reloads: update, then run the installed-SDK contract
+// on the new version (copilot-sdk-contract.mjs).
 //
 // 1. `copilot update` (seam: PIJ_COPILOT_UPDATE_CMD, an executable run with no
 //    arguments and no shell; tests use it, so no test ever updates Copilot).
-// 2. The contract with --record --json (seam: PIJ_COPILOT_SDK_CONTRACT_CMD,
-//    run the same way with those two arguments).
-// 3. Pass: the version is recorded in harness/copilot-sdk-verified.json and the
-//    fleet may reload. Anything else: exit 1, "do not reload", and why.
+// 2. The contract with --json (seam: PIJ_COPILOT_SDK_CONTRACT_CMD, run the
+//    same way with that argument). Its full pass records a local pass for the
+//    version under pij-rs's state dir (F250); nothing is committed.
+// 3. Pass: the fleet may reload. Anything else: exit 1, "do not reload", and why.
 // With no update available it says so and still runs the contract.
 import { spawn } from "node:child_process";
 import { join } from "node:path";
@@ -62,8 +62,8 @@ console.log(
 );
 
 const [contractCommand, contractArgs] = process.env.PIJ_COPILOT_SDK_CONTRACT_CMD
-	? [process.env.PIJ_COPILOT_SDK_CONTRACT_CMD, ["--record", "--json"]]
-	: [process.execPath, [CONTRACT, "--record", "--json"]];
+	? [process.env.PIJ_COPILOT_SDK_CONTRACT_CMD, ["--json"]]
+	: [process.execPath, [CONTRACT, "--json"]];
 const contract = await run(contractCommand, contractArgs, { capture: true }).catch((error) => ({
 	code: error.message,
 	stdout: "",
@@ -82,14 +82,15 @@ if (report?.status !== "pass" || contract.code !== 0) {
 		`${DO_NOT_RELOAD}. The contract on Copilot ${after} was ${report?.status ?? `unreadable (exit ${contract.code})`}${report?.summary ? `: ${report.summary}` : ""}`,
 	);
 }
-// R261-001: a pass approves a reload only for the version it checked and
-// recorded, and only if that is the version installed now. The contract reads
-// the version itself, a separate snapshot from `after`, and Copilot can replace
-// itself in between.
-if (report.version !== after || report.verified !== after)
+// R261-001: a pass approves a reload only for the version it checked and that
+// is verified (a local pass on this machine, or the committed floor), and only
+// if that is the version installed now. The contract reads the version itself,
+// a separate snapshot from `after`, and Copilot can replace itself in between.
+const verifiedNow = report.local?.version === after || report.verified === after;
+if (report.version !== after || !verifiedNow)
 	stop(
-		`${DO_NOT_RELOAD}. The contract passed on Copilot ${report.version ?? "(no version named)"} and recorded ${report.verified ?? "(nothing)"}, but Copilot ${after} is installed: run just update-copilot again`,
+		`${DO_NOT_RELOAD}. The contract passed on Copilot ${report.version ?? "(no version named)"}, verified ${report.local?.version ?? report.verified ?? "(nothing)"}, but Copilot ${after} is installed: run just update-copilot again`,
 	);
 console.log(
-	`update-copilot: the contract passed on Copilot ${report.version} and recorded it in harness/copilot-sdk-verified.json (commit it). The fleet may reload Copilot seats.`,
+	`update-copilot: the contract passed on Copilot ${report.version}${report.local?.version === after ? ` and recorded a local pass for it (${report.local.passed_at})` : ", the committed floor"}; nothing to commit. The fleet may reload Copilot seats.`,
 );
