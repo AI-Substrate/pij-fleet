@@ -954,7 +954,10 @@
 					"harness_session": "1cc7bdd2-6ced-4485-aaee-7b318980cf71",
 					"instance_key": "303",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #303 merged (9fc162c53ee2)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-overseas-eel",
+					"to": "2026-11-21T00:50:11.619Z",
 					"why": "verdict on #303 (F252 fleet-map standalone)"
 				}
 			]

@@ -1537,7 +1537,10 @@
 					"harness_session": "01a1fb7c-77a6-7665-9730-8a0618c01875",
 					"instance_key": "f252",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #303 merged (9fc162c53ee2)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-classical-tern",
+					"to": "2026-11-21T00:50:11.619Z",
 					"why": "F252 fleet-map standalone HTML (Jordan via mutual-crane)"
 				},
 				{
