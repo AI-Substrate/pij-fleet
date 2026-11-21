@@ -1109,6 +1109,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-correct-perch",
 					"why": "#315 F258 0049 round 1"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T09:26:31.942Z",
+					"harness": "copilot",
+					"harness_session": "c303906c-16ef-485d-a33a-567611a23baf",
+					"instance_key": "314",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-considerable-tapir",
+					"why": "#314 F260 round 1"
 				}
 			]
 		}
