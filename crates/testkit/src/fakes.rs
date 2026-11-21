@@ -712,9 +712,9 @@ struct QueueState {
     /// (the real queue counts from enqueue; the fake from the park).
     held_until: HashMap<u64, Duration>,
     next_id: u64,
-    /// `(recipient, sender machine, msg_id, origin)`: keyed like the real
-    /// ledger, origin in its own field (plan 164 review F02).
-    delivered: Vec<(String, Option<String>, String, DeliveryOrigin)>,
+    /// Keyed like the real ledger: recipient, sender machine, msg_id and
+    /// sender seat, origin in its own field (plan 164 review F02, F270).
+    delivered: Vec<LedgerRow>,
     /// Held FYIs with their state: `pending`, `delivered`.
     fyis: Vec<(pij_core::fyi::HeldFyi, &'static str)>,
     /// When each delivered FYI was claimed, by id (plan 159's `fyi-read`).
@@ -806,16 +806,74 @@ impl FakeQueue {
     }
 }
 
-/// One live row per `(kind, dedupe_origin, dedupe_key)`, as the real index.
+/// F270: a job's sender seat, as migration 0050 derives `jobs.dedupe_sender`:
+/// a delivery payload's `from`, '' for any other kind.
+fn job_sender(job: &Job) -> String {
+    if !(job.kind.starts_with("delivery:") || job.kind.starts_with("delivery-control:")) {
+        return String::new();
+    }
+    serde_json::from_str::<serde_json::Value>(&job.payload)
+        .ok()
+        .and_then(|payload| payload.get("from")?.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+/// One live row per `(kind, dedupe_origin, dedupe_key, sender)`, as the real
+/// index.
 fn same_live(live: &Job, job: &Job) -> bool {
     live.kind == job.kind
         && live.dedupe_origin == job.dedupe_origin
         && live.dedupe_key == job.dedupe_key
+        && job_sender(live) == job_sender(job)
 }
 
-/// Is this ledger row the delivery `job` would make?
-fn delivered_job(job: &Job, recipient: &str, machine: &Option<String>, msg_id: &str) -> bool {
-    recipient == job.serial_key && machine == &job.dedupe_origin && msg_id == job.dedupe_key
+/// One delivered-ledger row.
+struct LedgerRow {
+    recipient: String,
+    machine: Option<String>,
+    msg_id: String,
+    /// '' only on a row from before F270, which matches any sender.
+    sender: String,
+    origin: DeliveryOrigin,
+}
+
+impl LedgerRow {
+    /// Is this the delivery of `msg_id` from `sender` to `recipient`?
+    fn matches(&self, recipient: &str, machine: Option<&str>, msg_id: &str, sender: &str) -> bool {
+        self.recipient == recipient
+            && self.machine.as_deref() == machine
+            && self.msg_id == msg_id
+            && (self.sender == sender || self.sender.is_empty())
+    }
+
+    /// Is this the row the delivery of `job` would make?
+    fn of(&self, job: &Job) -> bool {
+        self.matches(
+            &job.serial_key,
+            job.dedupe_origin.as_deref(),
+            &job.dedupe_key,
+            &job_sender(job),
+        )
+    }
+}
+
+/// F270: every delivery names its sender seat, as the real queue requires.
+fn require_sender(sender: &str) -> Result<()> {
+    if sender.is_empty() {
+        return Err(PijError::Adapter {
+            adapter: "testkit/fake-queue".to_string(),
+            message: "a delivery must name its sender seat".to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// F270 (B322-01): the final ledger writer refuses a message with no sender.
+fn require_job_sender(job: &Job) -> Result<()> {
+    if job.kind.starts_with("delivery:") || job.kind.starts_with("delivery-control:") {
+        require_sender(&job_sender(job))?;
+    }
+    Ok(())
 }
 
 #[async_trait]
@@ -893,13 +951,10 @@ impl Queue for FakeQueue {
 
     async fn enqueue_delivery(&self, job: Job) -> Result<DeliveryEnqueue> {
         require_delivery_job(&job)?;
+        require_sender(&job_sender(&job))?;
         let mut state = self.state.lock().expect("fake queue mutex");
-        if let Some((_, _, _, origin)) = state
-            .delivered
-            .iter()
-            .find(|(recipient, machine, msg_id, _)| delivered_job(&job, recipient, machine, msg_id))
-        {
-            return Ok(DeliveryEnqueue::AlreadyDelivered(*origin));
+        if let Some(row) = state.delivered.iter().find(|row| row.of(&job)) {
+            return Ok(DeliveryEnqueue::AlreadyDelivered(row.origin));
         }
         if let Some(id) = state
             .live
@@ -1073,14 +1128,14 @@ impl Queue for FakeQueue {
         };
         let parked = &state.parked[index].job;
         let same = |job: &Job| {
-            job.dedupe_key == parked.dedupe_key && job.dedupe_origin == parked.dedupe_origin
+            job.kind == parked.kind
+                && job.dedupe_key == parked.dedupe_key
+                && job.dedupe_origin == parked.dedupe_origin
+                && job_sender(job) == job_sender(parked)
         };
         if state.live.iter().any(|(_, job)| same(job))
             || state.claimed.values().any(|(job, _)| same(job))
-            || state
-                .delivered
-                .iter()
-                .any(|(seat, machine, msg, _)| delivered_job(parked, seat, machine, msg))
+            || state.delivered.iter().any(|row| row.of(parked))
         {
             return Ok(false);
         }
@@ -1220,14 +1275,19 @@ impl Queue for FakeQueue {
             .count() as u64)
     }
 
-    async fn expire_native_hold(&self, id: JobId, recipient: &SeatId) -> Result<bool> {
+    async fn expire_native_hold(
+        &self,
+        id: JobId,
+        recipient: &SeatId,
+    ) -> Result<pij_core::delivery::HoldExpiry> {
+        use pij_core::delivery::HoldExpiry;
         let mut state = self.state.lock().expect("fake queue mutex");
         let Some(parked) = state.parked.iter().find(|row| {
             row.job_id == id
                 && row.job.serial_key == recipient.as_str()
                 && row.outcome == pij_core::model::DeliveryFailure::NativeReceiverUnavailable
         }) else {
-            return Ok(false);
+            return Ok(HoldExpiry::Settled);
         };
         let job = parked.job.clone();
         let now = state.now;
@@ -1235,32 +1295,30 @@ impl Queue for FakeQueue {
             .held_until
             .entry(id.0)
             .and_modify(|until| *until = (*until).min(now));
-        let same = |other: &Job| {
-            other.kind == job.kind
-                && other.dedupe_key == job.dedupe_key
-                && other.dedupe_origin == job.dedupe_origin
-        };
+        if state.delivered.iter().any(|row| row.of(&job)) {
+            return Ok(HoldExpiry::Settled);
+        }
         let sibling = state
             .live
             .iter()
-            .any(|(other, row)| *other != id && same(row))
+            .any(|(other, row)| *other != id && same_live(row, &job))
             || state
                 .claimed
                 .iter()
-                .any(|(other, (row, _))| *other != id.0 && same(row))
+                .any(|(other, (row, _))| *other != id.0 && same_live(row, &job))
             || state.parked.iter().any(|row| {
                 row.job_id != id
-                    && same(&row.job)
+                    && same_live(&row.job, &job)
                     && state
                         .held_until
                         .get(&row.job_id.0)
                         .is_some_and(|until| *until > now)
             });
-        let delivered = state
-            .delivered
-            .iter()
-            .any(|(seat, machine, msg, _)| delivered_job(&job, seat, machine, msg));
-        Ok(!delivered && !sibling)
+        Ok(if sibling {
+            HoldExpiry::Deferred
+        } else {
+            HoldExpiry::Owed
+        })
     }
 
     async fn live_payloads(&self, kinds: &[String]) -> Result<Vec<String>> {
@@ -1408,31 +1466,36 @@ impl Queue for FakeQueue {
         recipient: &SeatId,
         msg_id: &str,
         sender_machine: Option<&str>,
+        sender: &SeatId,
         origin: DeliveryOrigin,
     ) -> Result<Option<DeliveryOrigin>> {
+        require_sender(sender.as_str())?;
         let mut state = self.state.lock().expect("fake queue mutex");
-        if let Some((_, _, _, existing)) = state.delivered.iter().find(|(seat, machine, id, _)| {
-            seat == recipient.as_str() && machine.as_deref() == sender_machine && id == msg_id
-        }) {
-            return Ok(Some(*existing));
+        if let Some(row) = state
+            .delivered
+            .iter()
+            .find(|row| row.matches(recipient.as_str(), sender_machine, msg_id, sender.as_str()))
+        {
+            return Ok(Some(row.origin));
         }
-        state.delivered.push((
-            recipient.as_str().to_string(),
-            sender_machine.map(str::to_string),
-            msg_id.to_string(),
+        state.delivered.push(LedgerRow {
+            recipient: recipient.as_str().to_string(),
+            machine: sender_machine.map(str::to_string),
+            msg_id: msg_id.to_string(),
+            sender: sender.as_str().to_string(),
             origin,
-        ));
+        });
         // Same prune the real adapter applies, oldest first, so a capacity test
         // gets the same answer from either implementation.
         let seat = recipient.as_str().to_string();
         let count = state
             .delivered
             .iter()
-            .filter(|(other, _, _, _)| other == &seat)
+            .filter(|row| row.recipient == seat)
             .count();
         let mut remove = count.saturating_sub(self.delivered_id_capacity);
-        state.delivered.retain(|(other, _, _, _)| {
-            if other == &seat && remove > 0 {
+        state.delivered.retain(|row| {
+            if row.recipient == seat && remove > 0 {
                 remove -= 1;
                 false
             } else {
@@ -1447,6 +1510,7 @@ impl Queue for FakeQueue {
         recipient: &SeatId,
         msg_id: &str,
         sender_machine: Option<&str>,
+        sender: &SeatId,
     ) -> Result<bool> {
         let mut state = self.state.lock().expect("fake queue mutex");
         match &mut state.admitted_ok_left {
@@ -1467,10 +1531,13 @@ impl Queue for FakeQueue {
             kinds.contains(&job.kind)
                 && job.dedupe_key == msg_id
                 && job.dedupe_origin.as_deref() == sender_machine
+                && job_sender(job) == sender.as_str()
         };
-        Ok(state.delivered.iter().any(|(seat, machine, id, _)| {
-            seat == recipient.as_str() && machine.as_deref() == sender_machine && id == msg_id
-        }) || state.live.iter().any(|(_, job)| is_it(job))
+        Ok(state
+            .delivered
+            .iter()
+            .any(|row| row.matches(recipient.as_str(), sender_machine, msg_id, sender.as_str()))
+            || state.live.iter().any(|(_, job)| is_it(job))
             || state.claimed.values().any(|(job, _)| is_it(job))
             || state.completed.values().any(|(job, _)| is_it(job)))
     }
@@ -1480,16 +1547,25 @@ impl Queue for FakeQueue {
         recipient: &SeatId,
         msg_id: &str,
         sender_machine: Option<&str>,
+        sender: &SeatId,
     ) -> Result<()> {
         let mut state = self.state.lock().expect("fake queue mutex");
-        state.delivered.retain(|(seat, machine, id, _)| {
-            !(seat == recipient.as_str() && machine.as_deref() == sender_machine && id == msg_id)
+        state.delivered.retain(|row| {
+            !(row.recipient == recipient.as_str()
+                && row.machine.as_deref() == sender_machine
+                && row.msg_id == msg_id
+                && row.sender == sender.as_str())
         });
         Ok(())
     }
 
     async fn ack_delivery(&self, job: JobId, origin: DeliveryOrigin) -> Result<DeliveryAck> {
         let mut state = self.state.lock().expect("fake queue mutex");
+        // F270 (B322-01): the final ledger writer refuses a new '' row; the
+        // claim stays running, as the real queue's rolled-back ack leaves it.
+        if let Some((claimed, _)) = state.claimed.get(&job.0) {
+            require_job_sender(claimed)?;
+        }
         let Some((claimed, _worker)) = state.claimed.remove(&job.0) else {
             return Err(PijError::Adapter {
                 adapter: "testkit/fake-queue".to_string(),
@@ -1500,28 +1576,23 @@ impl Queue for FakeQueue {
             });
         };
         require_delivery_job(&claimed)?;
-        if !state
-            .delivered
-            .iter()
-            .any(|(recipient, machine, msg_id, _)| {
-                delivered_job(&claimed, recipient, machine, msg_id)
-            })
-        {
-            state.delivered.push((
-                claimed.serial_key.clone(),
-                claimed.dedupe_origin.clone(),
-                claimed.dedupe_key.clone(),
+        if !state.delivered.iter().any(|row| row.of(&claimed)) {
+            state.delivered.push(LedgerRow {
+                recipient: claimed.serial_key.clone(),
+                machine: claimed.dedupe_origin.clone(),
+                msg_id: claimed.dedupe_key.clone(),
+                sender: job_sender(&claimed),
                 origin,
-            ));
+            });
         }
         let recipient_count = state
             .delivered
             .iter()
-            .filter(|(recipient, _, _, _)| recipient == &claimed.serial_key)
+            .filter(|row| row.recipient == claimed.serial_key)
             .count();
         let mut remove = recipient_count.saturating_sub(self.delivered_id_capacity);
-        state.delivered.retain(|(recipient, _, _, _)| {
-            if recipient == &claimed.serial_key && remove > 0 {
+        state.delivered.retain(|row| {
+            if row.recipient == claimed.serial_key && remove > 0 {
                 remove -= 1;
                 false
             } else {
@@ -1821,15 +1892,11 @@ impl Queue for FakeQueue {
         spine: &dyn Spine,
     ) -> Result<(DeliveryEnqueue, Vec<Event>)> {
         require_delivery_job(&job)?;
+        require_sender(&job_sender(&job))?;
         // A delivered or still-queued message id creates no row, so it claims nothing.
         let known = {
             let state = self.state.lock().expect("fake queue mutex");
-            state
-                .delivered
-                .iter()
-                .any(|(recipient, machine, msg_id, _)| {
-                    delivered_job(&job, recipient, machine, msg_id)
-                })
+            state.delivered.iter().any(|row| row.of(&job))
                 || state
                     .live
                     .iter()

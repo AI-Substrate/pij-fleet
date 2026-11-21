@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pij_core::config::Config;
+use pij_core::delivery::HoldExpiry;
 use pij_core::model::{DeliveryOrigin, Job, JobId, Outcome, SeatId};
 use pij_core::ports::{DeferNoopReason, DeferOutcome, DeliveryEnqueue, Queue, ReleaseOutcome};
 use pij_store::SqliteQueue;
@@ -20,7 +21,7 @@ fn job(kind: &str, serial: &str, dedupe: &str) -> Job {
     Job {
         kind: kind.to_string(),
         serial_key: serial.to_string(),
-        payload: "{}".to_string(),
+        payload: r#"{"from":"pij-sender"}"#.to_string(),
         dedupe_key: dedupe.to_string(),
         dedupe_origin: None,
         attempt: 0,
@@ -201,10 +202,20 @@ async fn fyi_contract(queue: &dyn Queue, spine: &dyn pij_core::ports::Spine) {
             msg_id,
         )
     };
+    // Like the daemon's: the payload stays the message, sender included (F270:
+    // the sender is part of its identity).
     let attach: pij_core::ports::AttachFyis = std::sync::Arc::new(|payload, fyis| {
         let ids: Vec<&str> = fyis.iter().map(|fyi| fyi.id.as_str()).collect();
-        Ok(format!("{payload}+{}", ids.join(",")))
+        let mut payload: serde_json::Value = serde_json::from_str(payload).unwrap();
+        payload["fyis"] = ids.join(",").into();
+        Ok(payload.to_string())
     });
+    let carried = |payload: &str| {
+        serde_json::from_str::<serde_json::Value>(payload).unwrap()["fyis"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()
+    };
     let (enqueued, events) = queue
         .enqueue_delivery_carrying_fyis(carrier("m-1"), "message:m-1", 41, attach.clone(), spine)
         .await
@@ -232,7 +243,8 @@ async fn fyi_contract(queue: &dyn Queue, spine: &dyn pij_core::ports::Spine) {
         .unwrap()
         .expect("carrier row");
     assert_eq!(
-        row.payload, "{}+ride",
+        carried(&row.payload),
+        "ride",
         "the carrier carries exactly what it claimed"
     );
 
@@ -289,7 +301,7 @@ async fn fyi_contract(queue: &dyn Queue, spine: &dyn pij_core::ports::Spine) {
         .await
         .unwrap()
         .expect("flush row");
-    assert_eq!(row.payload, "{}+pile");
+    assert_eq!(carried(&row.payload), "pile");
     assert_eq!(queue.pending_fyi_count(&seat).await.unwrap(), 0);
 }
 
@@ -1196,11 +1208,8 @@ async fn control_claim_lease_brake_preserves_body_and_non_json_recovery() {
         let kind = "delivery:pij-reader";
         let mut body = job(kind, "pij-reader", "body-1");
         body.payload = payload.to_string();
-        let DeliveryEnqueue::Queued { job_id, .. } =
-            queue.enqueue_delivery(body).await.expect("enqueue")
-        else {
-            panic!("new body must queue");
-        };
+        // Stored as it is: the claim brake must cope with any row a store holds.
+        let job_id = queue.enqueue(body).await.expect("enqueue");
         queue
             .claim(&[kind.to_string()], "interrupted-client")
             .await
@@ -1583,9 +1592,10 @@ async fn native_holds_recover_once_within_the_hold_and_never_after_it_or_before_
         "recovered once"
     );
     deliver(held).await;
-    assert!(
-        !queue.expire_native_hold(held, &recipient).await.unwrap(),
-        "a delivered body owes no expiry notice"
+    assert_eq!(
+        queue.expire_native_hold(held, &recipient).await.unwrap(),
+        HoldExpiry::Settled,
+        "a delivered body owes no expiry notice, ever"
     );
 
     // Expired: ending the hold owes the notice once and recovers nothing after.
@@ -1594,12 +1604,16 @@ async fn native_holds_recover_once_within_the_hold_and_never_after_it_or_before_
         .await
         .unwrap();
     assert!(park(expired).await.0.is_some());
-    assert!(queue.expire_native_hold(expired, &recipient).await.unwrap());
-    assert!(
-        !queue
+    assert_eq!(
+        queue.expire_native_hold(expired, &recipient).await.unwrap(),
+        HoldExpiry::Owed
+    );
+    assert_eq!(
+        queue
             .expire_native_hold(expired, &"someone-else".into())
             .await
-            .unwrap()
+            .unwrap(),
+        HoldExpiry::Settled
     );
     assert_eq!(queue.held_native_count(&recipient).await.unwrap(), 0);
     assert!(
@@ -1685,17 +1699,20 @@ async fn native_hold_expiry_and_recovery_see_only_this_recipients_copies() {
         .await
         .unwrap();
     assert_ne!(first, second);
-    assert!(
-        !queue.expire_native_hold(first, &reader).await.unwrap(),
+    assert_eq!(
+        queue.expire_native_hold(first, &reader).await.unwrap(),
+        HoldExpiry::Deferred,
         "a queued copy is on its way"
     );
     park(second).await;
-    assert!(
-        !queue.expire_native_hold(first, &reader).await.unwrap(),
+    assert_eq!(
+        queue.expire_native_hold(first, &reader).await.unwrap(),
+        HoldExpiry::Deferred,
         "a held copy is on its way"
     );
-    assert!(
+    assert_eq!(
         queue.expire_native_hold(second, &reader).await.unwrap(),
+        HoldExpiry::Owed,
         "the last copy to end its hold owes the notice"
     );
     assert!(
@@ -1899,6 +1916,7 @@ async fn defer_pending_delivery_replaces_deadline_and_zero_releases_it() {
             &SeatId::from("pij-other"),
             "m-existing",
             None,
+            &SeatId::from("pij-sender"),
             DeliveryOrigin::VerifiedArrival,
         )
         .await
@@ -1967,6 +1985,7 @@ async fn defer_pending_delivery_replaces_deadline_and_zero_releases_it() {
                 &SeatId::from("pij-other"),
                 "m-existing",
                 None,
+                &SeatId::from("pij-sender"),
                 DeliveryOrigin::ReaderRead
             )
             .await
@@ -1983,7 +2002,8 @@ async fn defer_preserves_delivery_body_and_original_fifo_position() {
     let queue = SqliteQueue::new(pool.clone(), 300, 1_024).expect("valid queue policy");
     let mut original = delivered_job("pij-fifo", "m-oldest");
     original.payload =
-        "{\"text\":\"keep the full body\\nexactly\",\"metadata\":[1,2,3]}".to_string();
+        "{\"from\":\"pij-sender\",\"text\":\"keep the full body\\nexactly\",\"metadata\":[1,2,3]}"
+            .to_string();
     let oldest = queue
         .enqueue(original.clone())
         .await
@@ -2226,6 +2246,7 @@ async fn release_deferred_pending_delivery_is_immediate_without_changing_body_at
             &SeatId::from("pij-other"),
             "m-existing",
             None,
+            &SeatId::from("pij-sender"),
             DeliveryOrigin::VerifiedArrival,
         )
         .await
@@ -2704,10 +2725,11 @@ async fn note_delivered_claims_once_and_survives_reconstruction() {
     let fresh = FreshStore::new();
     let queue = crate_queue(&fresh).await;
     let recipient = SeatId::from("pij-real");
+    let sender = SeatId::from("pij-sender");
 
     assert_eq!(
         queue
-            .note_delivered(&recipient, "m-1", None, DeliveryOrigin::ReaderRead)
+            .note_delivered(&recipient, "m-1", None, &sender, DeliveryOrigin::ReaderRead)
             .await
             .expect("first claim"),
         None,
@@ -2715,7 +2737,13 @@ async fn note_delivered_claims_once_and_survives_reconstruction() {
     );
     assert_eq!(
         queue
-            .note_delivered(&recipient, "m-1", None, DeliveryOrigin::InjectedToTransport)
+            .note_delivered(
+                &recipient,
+                "m-1",
+                None,
+                &sender,
+                DeliveryOrigin::InjectedToTransport
+            )
             .await
             .expect("second claim"),
         Some(DeliveryOrigin::ReaderRead),
@@ -2727,7 +2755,13 @@ async fn note_delivered_claims_once_and_survives_reconstruction() {
     let reopened = crate_queue(&fresh).await;
     assert_eq!(
         reopened
-            .note_delivered(&recipient, "m-1", None, DeliveryOrigin::VerifiedArrival)
+            .note_delivered(
+                &recipient,
+                "m-1",
+                None,
+                &sender,
+                DeliveryOrigin::VerifiedArrival
+            )
             .await
             .expect("claim after reconstruction"),
         Some(DeliveryOrigin::ReaderRead)
@@ -2740,6 +2774,7 @@ async fn note_delivered_claims_once_and_survives_reconstruction() {
                 &SeatId::from("pij-other"),
                 "m-1",
                 None,
+                &sender,
                 DeliveryOrigin::ReaderRead
             )
             .await
@@ -2755,19 +2790,32 @@ async fn forget_delivered_releases_a_claim_on_the_real_adapter() {
     let fresh = FreshStore::new();
     let queue = crate_queue(&fresh).await;
     let recipient = SeatId::from("pij-real");
+    let sender = SeatId::from("pij-sender");
 
     queue
-        .note_delivered(&recipient, "m-2", None, DeliveryOrigin::InjectedToTransport)
+        .note_delivered(
+            &recipient,
+            "m-2",
+            None,
+            &sender,
+            DeliveryOrigin::InjectedToTransport,
+        )
         .await
         .expect("claim");
     queue
-        .forget_delivered(&recipient, "m-2", None)
+        .forget_delivered(&recipient, "m-2", None, &sender)
         .await
         .expect("release");
 
     assert_eq!(
         queue
-            .note_delivered(&recipient, "m-2", None, DeliveryOrigin::InjectedToTransport)
+            .note_delivered(
+                &recipient,
+                "m-2",
+                None,
+                &sender,
+                DeliveryOrigin::InjectedToTransport
+            )
             .await
             .expect("re-claim"),
         None,

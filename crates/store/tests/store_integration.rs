@@ -2536,6 +2536,67 @@ async fn role_requests_left_delivering_are_recovered_at_boot() {
     );
 }
 
+/// F270: another seat's message to the holder under a request's id is not
+/// that request. Boot recovery re-queues the request instead of marking it
+/// delivered, whether the other seat's message was delivered or only queued;
+/// the requester's own delivery still counts.
+#[tokio::test]
+async fn another_seats_message_under_a_request_id_is_not_its_delivery() {
+    use pij_store::{ReplyMode, RequestState, RoleRequest};
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool.clone());
+    for id in ["squatted-ledger", "squatted-job", "own-ledger"] {
+        store
+            .record_role_request(&RoleRequest {
+                id: id.into(),
+                project: "pij".into(),
+                role: "coder".into(),
+                instance: String::new(),
+                requester: "pij-asker".into(),
+                body: format!("please {id}"),
+                in_reply_to: None,
+                fyi: false,
+                reply: ReplyMode::Wake,
+                limit_ms: None,
+                state: RequestState::Delivering,
+                holder: Some("pij-coder".into()),
+                created_at: 1,
+                delivered_at: None,
+                checkin_at: None,
+                escalated_at: None,
+                answered_at: None,
+            })
+            .await
+            .expect("record");
+    }
+    sqlx::raw_sql(
+        "INSERT INTO delivered_messages (recipient, msg_id, origin, sender_seat) VALUES \
+           ('pij-coder', 'squatted-ledger', 'injected-to-transport', 'pij-squatter'), \
+           ('pij-coder', 'own-ledger', 'injected-to-transport', 'pij-asker'); \
+         INSERT INTO jobs (kind, serial_key, payload, dedupe_key, state) VALUES \
+           ('delivery:pij-coder', 'pij-coder', '{\"from\":\"pij-squatter\"}', 'squatted-job', 'done');",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        store.recover_delivering_role_requests(50).await.unwrap(),
+        (1, 2)
+    );
+    for (id, state) in [
+        ("squatted-ledger", RequestState::Queued),
+        ("squatted-job", RequestState::Queued),
+        ("own-ledger", RequestState::Delivered),
+    ] {
+        assert_eq!(
+            store.role_request(id).await.unwrap().expect("row").state,
+            state,
+            "{id}"
+        );
+    }
+}
+
 /// Review of #152, F006 (ruling C32 (3)): a reply's answer stamp and its audit
 /// event commit together. An append that fails leaves the request unanswered
 /// and writes no event; the retry answers it once with one event; a repeat,

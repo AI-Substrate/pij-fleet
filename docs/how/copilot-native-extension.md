@@ -287,13 +287,26 @@ installed, and:
   for the new shape first;
 - with no update available, says so and still runs the contract.
 
-**Copilot also updates itself.** By default it checks for updates at startup and
-applies a download at the next launch, and 17 Nov's 1.0.113 arrived that way, so
-a seat's `/restart` or relaunch can be the update. Then the first sign is the
-contract's version warning in `just doctor` and `harness checks` (`copilot-sdk`):
-`Copilot is <new>, but neither the committed floor (<old>) nor a local pass
-names it: run just copilot-sdk-contract before reloading seats.` Treat it as the
-same step: no more seat reloads until the contract has passed.
+**Seats never update themselves (F271c).** Every Copilot seat pij-rs spawns or
+revives starts with `COPILOT_AUTO_UPDATE=false` in its `env` prefix. Copilot then
+runs the version built into the installed binary, the one `copilot --version`
+reports and the contract checks, ignores any newer package another Copilot
+process downloaded into the shared cache (`~/.copilot/pkg`), downloads nothing,
+and skips its session-start plugin updates. A seat's version changes only when
+the installed binary does. `copilot update` says it downloads into the package
+cache and that the download "applies at your next launch, as long as auto-update
+is still enabled then", so it may not move seats forward on its own; how the
+installed binary itself is replaced is not yet proven (F271c).
+
+**Copilot outside pij still updates itself.** A Copilot you start by hand (the
+prime's, say) checks for updates at startup and applies a download at its next
+launch, and 17 Nov's 1.0.113 arrived that way. Whether that self-update also
+replaces the installed binary, and so the version the next seat launch gets,
+is unproven. The first sign is the contract's version warning in `just doctor`
+and `harness checks` (`copilot-sdk`): `Copilot is <new>, but neither the
+committed floor (<old>) nor a local pass names it: run just
+copilot-sdk-contract before reloading seats.` Treat it as the same step: no more
+seat reloads until the contract has passed.
 
 **Local passes (F250).** Every full pass of the contract on the installed CLI's
 own SDK writes `<state-dir>/copilot-sdk-pass/<version>.json` (pij-rs's state

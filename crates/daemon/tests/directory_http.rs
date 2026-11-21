@@ -5657,7 +5657,19 @@ async fn limit_rig_held_by(name: &str, pa: bool, target: &str, holder: &str) -> 
 /// extension would; returns when `msg_id` reached it (ms).
 async fn arrive(rig: &Rig, seat: &str, msg_id: &str) -> u64 {
     let seat_id = SeatId::from(seat);
-    if let Some(at) = rig.store.message_reached_at(seat, msg_id).await.unwrap() {
+    let requester = rig
+        .store
+        .role_request(msg_id)
+        .await
+        .unwrap()
+        .expect("the role request")
+        .requester;
+    if let Some(at) = rig
+        .store
+        .message_reached_at(seat, msg_id, &requester)
+        .await
+        .unwrap()
+    {
         return at;
     }
     for _ in 0..20 {
@@ -5675,7 +5687,7 @@ async fn arrive(rig: &Rig, seat: &str, msg_id: &str) -> u64 {
         if claim.message.msg_id == msg_id {
             return rig
                 .store
-                .message_reached_at(seat, msg_id)
+                .message_reached_at(seat, msg_id, &requester)
                 .await
                 .unwrap()
                 .expect("reached");
@@ -6541,7 +6553,16 @@ async fn a_limit_counts_from_arrival_and_the_check_in_names_the_held_time() {
     // arrival the store recorded (the ledger keeps seconds).
     let reached = rig
         .store
-        .message_reached_at("pij-holder", "req-limit")
+        .message_reached_at(
+            "pij-holder",
+            "req-limit",
+            &rig.store
+                .role_request("req-limit")
+                .await
+                .unwrap()
+                .unwrap()
+                .requester,
+        )
         .await
         .unwrap()
         .expect("reached");

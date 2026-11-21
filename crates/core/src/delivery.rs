@@ -61,10 +61,26 @@ pub const NATIVE_HOLD_SECS: u64 = 2 * 60 * 60;
 
 /// F260: a SEND finds at most this many bodies held for one recipient; the
 /// next is refused, as every such send was before F260: a brake, since
-/// removing it only holds more. Bodies already queued when the lease lapses
-/// were accepted before it and are all held, so held rows per recipient are
-/// bounded by max(this, the queue at the lapse), never discarded to fit.
+/// removing it only holds more. It is an admission brake, not a ceiling on
+/// held rows: it counts parked holds only. Bodies already queued when the
+/// lease lapses are all held, never discarded to fit, and bodies a send admits
+/// while a manual CLI read holds the head wait pending, uncounted, until a
+/// later reconciliation parks them. A renewal's work follows the actual
+/// number of held rows it finds.
 pub const NATIVE_HOLD_LIMIT: u64 = 64;
+
+/// F270: what ending one native hold decided for its sender's expiry notice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HoldExpiry {
+    /// Not delivered, and no other copy is on its way: tell the sender.
+    Owed,
+    /// Never owed for this park: the body left this hold (recovered, or parked
+    /// another way) or the message was delivered. Final for the park.
+    Settled,
+    /// Another copy of the message (a same-id resend) is still queued, running
+    /// or held for the recipient: decide again later.
+    Deferred,
+}
 
 /// Build the canonical sender receipt and recipient-observable parking fact.
 /// The queue commits these events in the same transaction as terminal state.

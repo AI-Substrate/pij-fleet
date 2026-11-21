@@ -818,7 +818,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
     let delivery = Job {
         kind: "delivery:seat-delivered".to_string(),
         serial_key: "seat-delivered".to_string(),
-        payload: "{}".to_string(),
+        payload: r#"{"from":"seat-sender"}"#.to_string(),
         dedupe_key: "delivered-1".to_string(),
         dedupe_origin: None,
         attempt: 0,
@@ -876,6 +876,48 @@ pub async fn queue_contract(queue: &dyn Queue) {
             .expect("consult delivered id"),
         DeliveryEnqueue::AlreadyDelivered(DeliveryOrigin::ReaderRead)
     );
+    // F270: identity includes the sender seat. The same id from another seat
+    // is another message, neither the delivered one nor collapsed into it; its
+    // exact retry collapses.
+    let other_seat = Job {
+        payload: r#"{"from":"seat-other-sender"}"#.to_string(),
+        ..delivery.clone()
+    };
+    let DeliveryEnqueue::Queued {
+        job_id: other_seat_id,
+        ..
+    } = queue
+        .enqueue_delivery(other_seat.clone())
+        .await
+        .expect("another seat's same id")
+    else {
+        panic!("another seat's same id is a new message, not the delivered one");
+    };
+    assert_ne!(other_seat_id, first);
+    let DeliveryEnqueue::Queued {
+        job_id: other_seat_retry,
+        ..
+    } = queue
+        .enqueue_delivery(other_seat)
+        .await
+        .expect("that seat's exact retry")
+    else {
+        panic!("that seat's retry stays queued");
+    };
+    assert_eq!(
+        other_seat_retry, other_seat_id,
+        "an exact retry from that seat collapses"
+    );
+    // A delivery that names no sender is refused: '' is reserved for ledger
+    // rows from before F270, which match any sender.
+    queue
+        .enqueue_delivery(Job {
+            payload: "{}".to_string(),
+            dedupe_key: "anonymous".to_string(),
+            ..delivery.clone()
+        })
+        .await
+        .expect_err("a delivery must name its sender");
     // Plan 164 review F02: identity is (origin, msg_id), origin in its own
     // field. The same id from a paired machine is a new message, neither the
     // delivered local one nor collapsed into it; its exact retry collapses.
@@ -912,9 +954,16 @@ pub async fn queue_contract(queue: &dyn Queue) {
     // is atomic, it reports the ORIGINAL observation rather than the new caller's
     // guess, and a released claim is claimable again.
     let claimant = SeatId::from("seat-claimed");
+    let sender = SeatId::from("seat-claim-sender");
     assert_eq!(
         queue
-            .note_delivered(&claimant, "claim-1", None, DeliveryOrigin::ReaderRead)
+            .note_delivered(
+                &claimant,
+                "claim-1",
+                None,
+                &sender,
+                DeliveryOrigin::ReaderRead
+            )
             .await
             .expect("first claim"),
         None
@@ -925,6 +974,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
                 &claimant,
                 "claim-1",
                 None,
+                &sender,
                 DeliveryOrigin::InjectedToTransport
             )
             .await
@@ -932,6 +982,32 @@ pub async fn queue_contract(queue: &dyn Queue) {
         Some(DeliveryOrigin::ReaderRead),
         "a claimed message reports what was ORIGINALLY observed"
     );
+    // F270: another seat's `claim-1` is another message, with its own claim.
+    let other_sender = SeatId::from("seat-other-claimer");
+    assert_eq!(
+        queue
+            .note_delivered(
+                &claimant,
+                "claim-1",
+                None,
+                &other_sender,
+                DeliveryOrigin::TypedToPane
+            )
+            .await
+            .expect("another seat's claim"),
+        None,
+        "another seat's `claim-1` is not this seat's `claim-1`"
+    );
+    queue
+        .note_delivered(
+            &claimant,
+            "claim-anonymous",
+            None,
+            &SeatId::from(""),
+            DeliveryOrigin::ReaderRead,
+        )
+        .await
+        .expect_err("a claim must name its sender");
     // Plan 164 review F02: the ledger key is (recipient, sender machine,
     // msg_id). The same id from a paired machine is another message, with its
     // own claim; an exact repeat from that machine is the same one.
@@ -941,6 +1017,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
                 &claimant,
                 "claim-1",
                 Some("laptop"),
+                &sender,
                 DeliveryOrigin::ReaderRead
             )
             .await
@@ -954,6 +1031,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
                 &claimant,
                 "claim-1",
                 Some("laptop"),
+                &sender,
                 DeliveryOrigin::TypedToPane
             )
             .await
@@ -961,7 +1039,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
         Some(DeliveryOrigin::ReaderRead)
     );
     queue
-        .forget_delivered(&claimant, "claim-1", None)
+        .forget_delivered(&claimant, "claim-1", None, &sender)
         .await
         .expect("release the claim");
     assert_eq!(
@@ -970,6 +1048,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
                 &claimant,
                 "claim-1",
                 Some("laptop"),
+                &sender,
                 DeliveryOrigin::TypedToPane
             )
             .await
@@ -978,7 +1057,27 @@ pub async fn queue_contract(queue: &dyn Queue) {
     );
     assert_eq!(
         queue
-            .note_delivered(&claimant, "claim-1", None, DeliveryOrigin::ReaderRead)
+            .note_delivered(
+                &claimant,
+                "claim-1",
+                None,
+                &other_sender,
+                DeliveryOrigin::ReaderRead
+            )
+            .await
+            .expect("the other seat's claim survives"),
+        Some(DeliveryOrigin::TypedToPane),
+        "a release is only the releasing seat's"
+    );
+    assert_eq!(
+        queue
+            .note_delivered(
+                &claimant,
+                "claim-1",
+                None,
+                &sender,
+                DeliveryOrigin::ReaderRead
+            )
             .await
             .expect("re-claim"),
         None,
@@ -1000,7 +1099,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
     let typing = Job {
         kind: "delivery:seat-typing".to_string(),
         serial_key: "seat-typing".to_string(),
-        payload: "{}".to_string(),
+        payload: r#"{"from":"seat-sender"}"#.to_string(),
         dedupe_key: "typing-1".to_string(),
         dedupe_origin: None,
         attempt: 0,
@@ -1115,7 +1214,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
     let held = Job {
         kind: pij_core::delivery::delivery_kind(&holder),
         serial_key: holder.to_string(),
-        payload: serde_json::json!({"to":holder,"command":null}).to_string(),
+        payload: serde_json::json!({"from":"seat-sender","to":holder,"command":null}).to_string(),
         dedupe_key: "heartbeat-body".into(),
         dedupe_origin: None,
         attempt: 0,

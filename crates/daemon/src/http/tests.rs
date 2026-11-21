@@ -38,6 +38,7 @@ impl Queue for CountingQueue {
         _recipient: &SeatId,
         _msg_id: &str,
         _sender_machine: Option<&str>,
+        _sender: &SeatId,
         _origin: DeliveryOrigin,
     ) -> Result<Option<DeliveryOrigin>> {
         // The counting request fixture models no ledger. Claiming would be a lie
@@ -54,6 +55,7 @@ impl Queue for CountingQueue {
         _recipient: &SeatId,
         _msg_id: &str,
         _sender_machine: Option<&str>,
+        _sender: &SeatId,
     ) -> Result<()> {
         Ok(())
     }
@@ -63,12 +65,15 @@ impl Queue for CountingQueue {
         recipient: &SeatId,
         msg_id: &str,
         sender_machine: Option<&str>,
+        sender: &SeatId,
     ) -> Result<bool> {
         let kind = format!("delivery:{}", recipient.as_str());
         Ok(self.jobs.lock().expect("queue mutex").iter().any(|job| {
             job.kind == kind
                 && job.dedupe_key == msg_id
                 && job.dedupe_origin.as_deref() == sender_machine
+                && serde_json::from_str::<serde_json::Value>(&job.payload)
+                    .is_ok_and(|payload| payload["from"] == sender.as_str())
         }))
     }
 
@@ -1395,7 +1400,6 @@ async fn typing_release_wakes_an_already_waiting_inbox_reader() {
         services,
         auth: AuthRing::local("key".to_string()),
         machine_alias: "local".to_string(),
-        spawn_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_lock: Arc::new(tokio::sync::Mutex::new(())),
         double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
@@ -2017,7 +2021,6 @@ async fn typing_hold_projections_follow_terminal_outcomes_and_sequence() {
             services,
             auth: AuthRing::local("key".to_string()),
             machine_alias: "local".to_string(),
-            spawn_lock: Arc::new(tokio::sync::Mutex::new(())),
             typing_lock: Arc::new(tokio::sync::Mutex::new(())),
             double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
             typing_grace_ms: DEFAULT_TYPING_GRACE_MS,

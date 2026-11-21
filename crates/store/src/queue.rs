@@ -18,6 +18,7 @@ use sqlx::{Pool, Row, Sqlite};
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use pij_core::delivery::HoldExpiry;
 use pij_core::error::{PijError, Result};
 use pij_core::model::{DeliveryFailure, DeliveryOrigin, Job, JobId, Outcome, SeatId};
 use pij_core::ports::{
@@ -392,6 +393,46 @@ fn origin_column(origin: String) -> Option<String> {
     Some(origin).filter(|origin| !origin.is_empty())
 }
 
+/// F270: a job's sender seat, exactly as migration 0050 derives
+/// `jobs.dedupe_sender`: a delivery payload's `from`, '' for any other kind.
+fn job_sender(job: &Job) -> String {
+    payload_sender(&job.kind, &job.payload)
+}
+
+fn payload_sender(kind: &str, payload: &str) -> String {
+    if !(kind.starts_with("delivery:") || kind.starts_with("delivery-control:")) {
+        return String::new();
+    }
+    serde_json::from_str::<serde_json::Value>(payload)
+        .ok()
+        .and_then(|payload| payload.get("from")?.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+/// F270: the delivered ledger's origin for one message: (recipient, sender
+/// machine, msg_id) and its sender seat, or a row from before 0050 (sender
+/// '', any sender: a brake, so a retry across the upgrade is still one
+/// message). Binds: ?1 recipient, ?2 msg_id, ?3 sender machine, ?4 sender.
+const LEDGER_ORIGIN_SQL: &str = "SELECT origin FROM delivered_messages \
+     WHERE recipient = ?1 AND sender_machine = ?3 AND msg_id = ?2 AND sender_seat IN (?4, '')";
+
+/// F270 (b): what an ended native hold's message still has: a delivery, a live
+/// copy, an unexpired held copy. Each is one seek: the ledger's unique key,
+/// the live unique index, and the unexpired range of `jobs_native_held`, so
+/// the message's expired or finished history is never visited. Binds: ?1
+/// kind, ?2 recipient, ?3 msg_id, ?4 sender machine, ?5 sender, ?6 this job.
+const HOLD_EXPIRY_PROBE_SQL: &str = "SELECT EXISTS (SELECT 1 FROM delivered_messages \
+         WHERE recipient = ?2 AND sender_machine = ?4 AND msg_id = ?3 \
+           AND sender_seat IN (?5, '')), \
+       EXISTS (SELECT 1 FROM jobs INDEXED BY jobs_dedupe_live \
+         WHERE kind = ?1 AND dedupe_origin = ?4 AND dedupe_key = ?3 \
+           AND dedupe_sender = ?5 AND state IN ('pending', 'running')), \
+       EXISTS (SELECT 1 FROM jobs INDEXED BY jobs_native_held \
+         WHERE kind = ?1 AND dedupe_origin = ?4 AND dedupe_key = ?3 \
+           AND dedupe_sender = ?5 AND not_before > unixepoch() AND id != ?6 \
+           AND state = 'failed' \
+           AND outcome = 'undelivered:native-receiver-unavailable')";
+
 fn decode_job(row: &sqlx::sqlite::SqliteRow) -> Result<Job> {
     Ok(Job {
         kind: row.try_get("kind").map_err(adapter_error)?,
@@ -427,13 +468,13 @@ impl SqliteQueue {
             // One transaction: the carrier row, the FYI transition and its receipt
             // commit together or not at all (plan 158 review HIGH-1).
             let mut tx = begin_write(&pool).await?;
-            let delivered_origin: Option<String> = sqlx::query_scalar(
-                "SELECT origin FROM delivered_messages WHERE recipient = ?1 AND msg_id = ?2 \
-                 AND sender_machine = ?3",
-            )
+            let sender = job_sender(&job);
+            require_sender(&sender)?;
+            let delivered_origin: Option<String> = sqlx::query_scalar(LEDGER_ORIGIN_SQL)
             .bind(&job.serial_key)
             .bind(&job.dedupe_key)
             .bind(job.dedupe_origin.as_deref().unwrap_or_default())
+            .bind(&sender)
             .fetch_optional(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -446,11 +487,13 @@ impl SqliteQueue {
             // it must not claim anything that body will never carry.
             let live: Option<(i64, i64)> = sqlx::query_as(
                 "SELECT id, not_before FROM jobs WHERE kind = ?1 AND dedupe_key = ?2 \
-               AND dedupe_origin = ?3 AND state IN ('pending', 'running') ORDER BY id LIMIT 1",
+               AND dedupe_origin = ?3 AND dedupe_sender = ?4 AND state IN ('pending', 'running') \
+               ORDER BY id LIMIT 1",
             )
             .bind(&job.kind)
             .bind(&job.dedupe_key)
             .bind(job.dedupe_origin.as_deref().unwrap_or_default())
+            .bind(&sender)
             .fetch_optional(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -490,6 +533,15 @@ impl SqliteQueue {
             } else {
                 attach(&job.payload, &fyis)?
             };
+            // The row's identity is derived from what is stored (F270): the
+            // carried payload must still name the same sender, or a retry of
+            // this message would no longer find it.
+            if payload_sender(&job.kind, &payload) != sender {
+                return Err(PijError::Adapter {
+                    adapter: "store/queue".to_string(),
+                    message: "attaching FYIs must keep the message's sender".to_string(),
+                });
+            }
             let (id, not_before): (i64, i64) = sqlx::query_as(
                 "INSERT INTO jobs (kind, serial_key, payload, dedupe_key, dedupe_origin, enqueued_at) \
                  VALUES (?1, ?2, ?3, ?4, ?5, unixepoch()) RETURNING id, not_before",
@@ -547,17 +599,19 @@ impl Queue for SqliteQueue {
             .map_err(adapter_error)?;
 
             let id: i64 = sqlx::query_scalar(
-                // Scoped by KIND as well as key, matching the index: the read-back
-                // must find the row this insert collapsed onto, and a global lookup
-                // would hand back a live row for a DIFFERENT recipient that happens
-                // to share a caller-chosen msg_id (review F5).
+                // Scoped by KIND and sender as well as key, matching the index:
+                // the read-back must find the row this insert collapsed onto, and
+                // a global lookup would hand back a live row for a DIFFERENT
+                // recipient (review F5) or sender (F270) that shares a
+                // caller-chosen msg_id.
                 "SELECT id FROM jobs WHERE kind = ?1 AND dedupe_key = ?2 \
-               AND dedupe_origin = ?3 AND state IN ('pending', 'running') \
+               AND dedupe_origin = ?3 AND dedupe_sender = ?4 AND state IN ('pending', 'running') \
              ORDER BY id LIMIT 1",
             )
             .bind(&job.kind)
             .bind(&job.dedupe_key)
             .bind(job.dedupe_origin.as_deref().unwrap_or_default())
+            .bind(job_sender(&job))
             .fetch_one(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -600,12 +654,13 @@ impl Queue for SqliteQueue {
                 // on exactly the row `enqueue` would have answered with.
                 let (id, live_payload): (i64, String) = sqlx::query_as(
                     "SELECT id, payload FROM jobs WHERE kind = ?1 AND dedupe_key = ?2 \
-                     AND dedupe_origin = ?3 AND state IN ('pending', 'running') \
-                     ORDER BY id LIMIT 1",
+                     AND dedupe_origin = ?3 AND dedupe_sender = ?4 \
+                     AND state IN ('pending', 'running') ORDER BY id LIMIT 1",
                 )
                 .bind(&job.kind)
                 .bind(&job.dedupe_key)
                 .bind(job.dedupe_origin.as_deref().unwrap_or_default())
+                .bind(job_sender(job))
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(adapter_error)?;
@@ -634,14 +689,14 @@ impl Queue for SqliteQueue {
         let pool = self.pool.clone();
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
+            let sender = job_sender(&job);
+            require_sender(&sender)?;
 
-            let delivered_origin: Option<String> = sqlx::query_scalar(
-                "SELECT origin FROM delivered_messages WHERE recipient = ?1 AND msg_id = ?2 \
-                 AND sender_machine = ?3",
-            )
+            let delivered_origin: Option<String> = sqlx::query_scalar(LEDGER_ORIGIN_SQL)
             .bind(&job.serial_key)
             .bind(&job.dedupe_key)
             .bind(job.dedupe_origin.as_deref().unwrap_or_default())
+            .bind(&sender)
             .fetch_optional(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -666,11 +721,13 @@ impl Queue for SqliteQueue {
 
             let (id, not_before): (i64, i64) = sqlx::query_as(
                 "SELECT id, not_before FROM jobs WHERE kind = ?1 AND dedupe_key = ?2 \
-               AND dedupe_origin = ?3 AND state IN ('pending', 'running') ORDER BY id LIMIT 1",
+               AND dedupe_origin = ?3 AND dedupe_sender = ?4 AND state IN ('pending', 'running') \
+               ORDER BY id LIMIT 1",
             )
             .bind(&job.kind)
             .bind(&job.dedupe_key)
             .bind(job.dedupe_origin.as_deref().unwrap_or_default())
+            .bind(&sender)
             .fetch_one(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -754,11 +811,13 @@ impl Queue for SqliteQueue {
              WHERE id = ?1 AND serial_key = ?2 AND kind = 'delivery:' || serial_key \
                AND state = 'failed' AND outcome = 'undelivered:native-receiver-unavailable' \
                AND NOT EXISTS (SELECT 1 FROM jobs live WHERE live.id != jobs.id \
-                   AND live.state IN ('pending', 'running') AND live.dedupe_key = jobs.dedupe_key \
-                   AND live.dedupe_origin = jobs.dedupe_origin) \
+                   AND live.kind = jobs.kind AND live.state IN ('pending', 'running') \
+                   AND live.dedupe_key = jobs.dedupe_key AND live.dedupe_origin = jobs.dedupe_origin \
+                   AND live.dedupe_sender = jobs.dedupe_sender) \
                AND NOT EXISTS (SELECT 1 FROM delivered_messages \
                    WHERE recipient = jobs.serial_key AND msg_id = jobs.dedupe_key \
-                   AND sender_machine = jobs.dedupe_origin)",
+                   AND sender_machine = jobs.dedupe_origin \
+                   AND sender_seat IN (jobs.dedupe_sender, ''))",
             )
             .bind(id)
             .bind(recipient.as_str())
@@ -805,10 +864,12 @@ impl Queue for SqliteQueue {
                    AND NOT EXISTS (SELECT 1 FROM jobs live WHERE live.id != jobs.id \
                        AND live.kind = jobs.kind \
                        AND live.state IN ('pending', 'running') AND live.dedupe_key = jobs.dedupe_key \
-                       AND live.dedupe_origin = jobs.dedupe_origin) \
+                       AND live.dedupe_origin = jobs.dedupe_origin \
+                       AND live.dedupe_sender = jobs.dedupe_sender) \
                    AND NOT EXISTS (SELECT 1 FROM delivered_messages \
                        WHERE recipient = jobs.serial_key AND msg_id = jobs.dedupe_key \
-                       AND sender_machine = jobs.dedupe_origin) \
+                       AND sender_machine = jobs.dedupe_origin \
+                       AND sender_seat IN (jobs.dedupe_sender, '')) \
                  RETURNING kind, serial_key, payload, dedupe_key, dedupe_origin, attempt",
                 )
                 .bind(id)
@@ -836,7 +897,8 @@ impl Queue for SqliteQueue {
                AND not_before > unixepoch() \
                AND NOT EXISTS (SELECT 1 FROM delivered_messages \
                    WHERE recipient = jobs.serial_key AND msg_id = jobs.dedupe_key \
-                   AND sender_machine = jobs.dedupe_origin)",
+                   AND sender_machine = jobs.dedupe_origin \
+                   AND sender_seat IN (jobs.dedupe_sender, ''))",
         )
         .bind(recipient.as_str())
         .fetch_one(&self.pool)
@@ -845,23 +907,23 @@ impl Queue for SqliteQueue {
         Ok(u64::try_from(count).unwrap_or_default())
     }
 
-    async fn expire_native_hold(&self, job: JobId, recipient: &SeatId) -> Result<bool> {
+    async fn expire_native_hold(&self, job: JobId, recipient: &SeatId) -> Result<HoldExpiry> {
         require_current_schema(&self.pool).await?;
         let Ok(id) = i64::try_from(job.0) else {
-            return Ok(false);
+            return Ok(HoldExpiry::Settled);
         };
         let pool = self.pool.clone();
         let recipient = recipient.clone();
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
             // Ending the hold and deciding the notice share one transaction: a
-            // body recovered first is pending (no notice); one expired first is
-            // never recovered (`not_before > unixepoch()` fails from now on).
+            // body recovered first is pending (settled, no notice); one expired
+            // first is never recovered (`not_before > unixepoch()` fails from now on).
             let Some(row) = sqlx::query(
                 "UPDATE jobs SET not_before = min(not_before, unixepoch()) \
                  WHERE id = ?1 AND serial_key = ?2 AND kind = 'delivery:' || serial_key \
                    AND state = 'failed' AND outcome = 'undelivered:native-receiver-unavailable' \
-                 RETURNING kind, serial_key, dedupe_key, dedupe_origin",
+                 RETURNING kind, serial_key, dedupe_key, dedupe_origin, dedupe_sender",
             )
             .bind(id)
             .bind(recipient.as_str())
@@ -870,41 +932,35 @@ impl Queue for SqliteQueue {
             .map_err(adapter_error)?
             else {
                 tx.commit().await.map_err(adapter_error)?;
-                return Ok(false);
+                return Ok(HoldExpiry::Settled);
             };
-            // Owed only if this message is not delivered and no other copy of
-            // it (a same-id resend) is still queued, running or held for this
-            // recipient: that copy may still arrive, and is told on its own.
-            let owed: bool = sqlx::query_scalar(
-                "SELECT NOT EXISTS (SELECT 1 FROM delivered_messages \
-                     WHERE recipient = ?2 AND msg_id = ?3 AND sender_machine = ?4) \
-                   AND NOT EXISTS (SELECT 1 FROM jobs other \
-                     WHERE other.id != ?5 AND other.kind = ?1 \
-                       AND other.dedupe_key = ?3 AND other.dedupe_origin = ?4 \
-                       AND (other.state IN ('pending', 'running') \
-                         OR (other.state = 'failed' \
-                           AND other.outcome = 'undelivered:native-receiver-unavailable' \
-                           AND other.not_before > unixepoch())))",
-            )
-            .bind(row.try_get::<&str, _>("kind").map_err(adapter_error)?)
-            .bind(
-                row.try_get::<&str, _>("serial_key")
-                    .map_err(adapter_error)?,
-            )
-            .bind(
-                row.try_get::<&str, _>("dedupe_key")
-                    .map_err(adapter_error)?,
-            )
-            .bind(
-                row.try_get::<&str, _>("dedupe_origin")
-                    .map_err(adapter_error)?,
-            )
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(adapter_error)?;
+            let column = |name| row.try_get::<&str, _>(name).map_err(adapter_error);
+            let (kind, serial_key) = (column("kind")?, column("serial_key")?);
+            let (key, origin, sender) = (
+                column("dedupe_key")?,
+                column("dedupe_origin")?,
+                column("dedupe_sender")?,
+            );
+            let (delivered, live, held): (bool, bool, bool) = sqlx::query_as(HOLD_EXPIRY_PROBE_SQL)
+                .bind(kind)
+                .bind(serial_key)
+                .bind(key)
+                .bind(origin)
+                .bind(sender)
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
             tx.commit().await.map_err(adapter_error)?;
-            Ok(owed)
+            // Another copy (a same-id resend) still on its way may arrive, and
+            // is told on its own: decide again once it settles.
+            Ok(if delivered {
+                HoldExpiry::Settled
+            } else if live || held {
+                HoldExpiry::Deferred
+            } else {
+                HoldExpiry::Owed
+            })
         })
         .await
     }
@@ -1660,40 +1716,42 @@ impl Queue for SqliteQueue {
         recipient: &SeatId,
         msg_id: &str,
         sender_machine: Option<&str>,
+        sender: &SeatId,
         origin: DeliveryOrigin,
     ) -> Result<Option<DeliveryOrigin>> {
         require_current_schema(&self.pool).await?;
+        require_sender(sender.as_str())?;
         let pool = self.pool.clone();
         let delivered_id_capacity = self.delivered_id_capacity;
         let recipient = recipient.clone();
         let msg_id = msg_id.to_owned();
         let sender_machine = sender_machine.unwrap_or_default().to_owned();
+        let sender = sender.clone();
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
 
-            let existing: Option<String> = sqlx::query_scalar(
-                "SELECT origin FROM delivered_messages \
-                 WHERE recipient = ?1 AND msg_id = ?2 AND sender_machine = ?3",
-            )
-            .bind(recipient.as_str())
-            .bind(&msg_id)
-            .bind(&sender_machine)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(adapter_error)?;
+            let existing: Option<String> = sqlx::query_scalar(LEDGER_ORIGIN_SQL)
+                .bind(recipient.as_str())
+                .bind(&msg_id)
+                .bind(&sender_machine)
+                .bind(sender.as_str())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
             if let Some(existing) = existing {
                 tx.commit().await.map_err(adapter_error)?;
                 return Ok(Some(decode_origin(&existing)?));
             }
 
             sqlx::query(
-                "INSERT INTO delivered_messages (recipient, msg_id, origin, sender_machine) \
-                 VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO delivered_messages (recipient, msg_id, origin, sender_machine, sender_seat) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
             )
             .bind(recipient.as_str())
             .bind(&msg_id)
             .bind(encode_origin(origin))
             .bind(&sender_machine)
+            .bind(sender.as_str())
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -1720,20 +1778,22 @@ impl Queue for SqliteQueue {
         recipient: &SeatId,
         msg_id: &str,
         sender_machine: Option<&str>,
+        sender: &SeatId,
     ) -> Result<bool> {
         require_current_schema(&self.pool).await?;
         let found: Option<i64> = sqlx::query_scalar(
             "SELECT 1 FROM delivered_messages \
-               WHERE recipient = ?1 AND msg_id = ?2 AND sender_machine = ?3 \
+               WHERE recipient = ?1 AND sender_machine = ?3 AND msg_id = ?2 \
+               AND sender_seat IN (?4, '') \
              UNION ALL \
              SELECT 1 FROM jobs WHERE kind IN ('delivery:' || ?1, 'delivery-control:' || ?1) \
-               AND dedupe_key = ?2 \
-               AND dedupe_origin = ?3 \
+               AND dedupe_origin = ?3 AND dedupe_key = ?2 AND dedupe_sender = ?4 \
              LIMIT 1",
         )
         .bind(recipient.as_str())
         .bind(msg_id)
         .bind(sender_machine.unwrap_or_default())
+        .bind(sender.as_str())
         .fetch_optional(&self.pool)
         .await
         .map_err(adapter_error)?;
@@ -1745,21 +1805,26 @@ impl Queue for SqliteQueue {
         recipient: &SeatId,
         msg_id: &str,
         sender_machine: Option<&str>,
+        sender: &SeatId,
     ) -> Result<()> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
         let recipient = recipient.clone();
         let msg_id = msg_id.to_owned();
         let sender_machine = sender_machine.unwrap_or_default().to_owned();
+        let sender = sender.clone();
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
+            // Only this sender's claim: a row from before F270 (sender '') was
+            // never a claim this caller took.
             sqlx::query(
                 "DELETE FROM delivered_messages \
-                 WHERE recipient = ?1 AND msg_id = ?2 AND sender_machine = ?3",
+                 WHERE recipient = ?1 AND sender_machine = ?3 AND msg_id = ?2 AND sender_seat = ?4",
             )
             .bind(recipient.as_str())
             .bind(msg_id)
             .bind(sender_machine)
+            .bind(sender.as_str())
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -1777,7 +1842,8 @@ impl Queue for SqliteQueue {
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
             let row = sqlx::query(
-                "SELECT kind, serial_key, dedupe_key, dedupe_origin FROM jobs WHERE id = ?1 AND state = 'running'",
+                "SELECT kind, serial_key, dedupe_key, dedupe_origin, dedupe_sender FROM jobs \
+                 WHERE id = ?1 AND state = 'running'",
             )
             .bind(job.0 as i64)
             .fetch_optional(&mut *tx)
@@ -1808,7 +1874,16 @@ impl Queue for SqliteQueue {
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?;
-            record_delivered(&mut tx, job, &claimed, origin, delivered_id_capacity).await?;
+            let sender: String = row.try_get("dedupe_sender").map_err(adapter_error)?;
+            record_delivered(
+                &mut tx,
+                job,
+                &claimed,
+                &sender,
+                origin,
+                delivered_id_capacity,
+            )
+            .await?;
             tx.commit().await.map_err(adapter_error)?;
             Ok(DeliveryAck {
                 recipient: SeatId(claimed.serial_key),
@@ -1818,6 +1893,18 @@ impl Queue for SqliteQueue {
         })
         .await
     }
+}
+
+/// F270: every new ledger row and delivery names its sender seat; '' is
+/// reserved for rows from before migration 0050, which match any sender.
+fn require_sender(sender: &str) -> Result<()> {
+    if sender.is_empty() {
+        return Err(PijError::Adapter {
+            adapter: "store/queue".to_string(),
+            message: "a delivery must name its sender seat".to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn require_delivery_job(job: &Job) -> Result<()> {
@@ -1863,9 +1950,13 @@ async fn record_delivered(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     job: JobId,
     claimed: &Job,
+    sender: &str,
     origin: DeliveryOrigin,
     delivered_id_capacity: i64,
 ) -> Result<()> {
+    // F270 (B322-01): the final ledger writer refuses a new '' row itself, so
+    // no path, generic or specialised, can mint a match-any-sender message.
+    require_sender(sender)?;
     // A hold past the threshold is remembered for the PA digest: a
     // primary-key insert on the row just written; a message the digest
     // already showed while queued keeps its flag.
@@ -1880,14 +1971,15 @@ async fn record_delivered(
     .await
     .map_err(adapter_error)?;
     sqlx::query(
-        "INSERT INTO delivered_messages (recipient, msg_id, origin, sender_machine) \
-         VALUES (?1, ?2, ?3, ?4) \
-     ON CONFLICT (recipient, sender_machine, msg_id) DO NOTHING",
+        "INSERT INTO delivered_messages (recipient, msg_id, origin, sender_machine, sender_seat) \
+         VALUES (?1, ?2, ?3, ?4, ?5) \
+     ON CONFLICT (recipient, sender_machine, msg_id, sender_seat) DO NOTHING",
     )
     .bind(&claimed.serial_key)
     .bind(&claimed.dedupe_key)
     .bind(encode_origin(origin))
     .bind(claimed.dedupe_origin.as_deref().unwrap_or_default())
+    .bind(sender)
     .execute(&mut **tx)
     .await
     .map_err(adapter_error)?;
@@ -1903,4 +1995,41 @@ async fn record_delivered(
     .await
     .map_err(adapter_error)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::Row;
+
+    /// F270 (b), performance note on #314: an ended hold's probe for other
+    /// copies seeks only UNEXPIRED holds (a range on `not_before`) and the
+    /// live index, never the message's failed or finished history.
+    #[tokio::test]
+    async fn the_hold_expiry_probe_seeks_only_unexpired_holds() {
+        let pool = crate::open("").await.expect("memory");
+        let plan: Vec<String> = sqlx::query(&format!(
+            "EXPLAIN QUERY PLAN {}",
+            super::HOLD_EXPIRY_PROBE_SQL
+        ))
+        .fetch_all(&pool)
+        .await
+        .expect("plan")
+        .iter()
+        .map(|row| row.get::<String, _>("detail"))
+        .collect();
+        let text = plan.join("\n");
+        for probe in [
+            "SEARCH delivered_messages USING COVERING INDEX sqlite_autoindex_delivered_messages_1 \
+             (recipient=? AND sender_machine=? AND msg_id=? AND sender_seat=?)",
+            "SEARCH jobs USING INDEX jobs_dedupe_live (kind=? AND dedupe_origin=? AND \
+             dedupe_key=? AND dedupe_sender=?)",
+            "SEARCH jobs USING INDEX jobs_native_held (kind=? AND dedupe_origin=? AND \
+             dedupe_key=? AND dedupe_sender=? AND not_before>?)",
+        ] {
+            assert!(
+                plan.iter().any(|line| line.starts_with(probe)),
+                "no `{probe}`:\n{text}"
+            );
+        }
+    }
 }

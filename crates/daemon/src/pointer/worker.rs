@@ -2539,10 +2539,11 @@ mod tests {
             recipient: &SeatId,
             msg_id: &str,
             sender_machine: Option<&str>,
+            sender: &SeatId,
             origin: DeliveryOrigin,
         ) -> pij_core::error::Result<Option<DeliveryOrigin>> {
             self.inner
-                .note_delivered(recipient, msg_id, sender_machine, origin)
+                .note_delivered(recipient, msg_id, sender_machine, sender, origin)
                 .await
         }
 
@@ -2551,9 +2552,10 @@ mod tests {
             recipient: &SeatId,
             msg_id: &str,
             sender_machine: Option<&str>,
+            sender: &SeatId,
         ) -> pij_core::error::Result<()> {
             self.inner
-                .forget_delivered(recipient, msg_id, sender_machine)
+                .forget_delivered(recipient, msg_id, sender_machine, sender)
                 .await
         }
         async fn admitted(
@@ -2561,8 +2563,11 @@ mod tests {
             recipient: &SeatId,
             msg_id: &str,
             sender_machine: Option<&str>,
+            sender: &SeatId,
         ) -> pij_core::error::Result<bool> {
-            self.inner.admitted(recipient, msg_id, sender_machine).await
+            self.inner
+                .admitted(recipient, msg_id, sender_machine, sender)
+                .await
         }
 
         async fn enqueue(&self, job: Job) -> pij_core::error::Result<JobId> {
