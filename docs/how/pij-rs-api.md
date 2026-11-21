@@ -112,6 +112,26 @@ to time them through, so the SQLite cost of a route is inside its
 `active_us`. Both fields are new keys beside `ok`/`refused`; nothing that read
 the earlier shape changes.
 
+`data.requests.whoami:{calls,stages_us,list_rows,liveness_reads}` splits
+`whoami`'s handler time by stage (F258 diagnosis). `stages_us` holds summed
+microseconds for each of these stages:
+
+- `seat_list`: the registry read of the pane's seat rows, or the asserted id's
+  row;
+- `liveness`: each live row's process read;
+- `codex`: the Codex caller's thread check;
+- `role`: the role read;
+- `fyi`: the held-FYI count;
+- `encode`: serialising the answer.
+
+`list_rows` counts the rows the seat lists returned; a pane keeps its retired
+rows. `liveness_reads` counts the process reads. The `POST /v1/whoami` and
+`GET /v1/whoami` routes' `active_us`, less the sum of `stages_us`, is the rest:
+auth, body extraction, and refusal paths. Each stage is timed with two
+`Instant::now()` into a task-local, and a whoami adds its stages to relaxed
+atomics once, with no lock and no allocation. Other routes share
+`resolve_seat`, and they record nothing here.
+
 `data.pane_observer:{passes,active_us,captures,capture_bytes,skipped,backstop}`
 counts the pane observer's work since start (F258). `passes` is one per tick
 (600 ms by default) and `active_us` their wall time, so `active_us / passes` is
