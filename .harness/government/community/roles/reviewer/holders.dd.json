@@ -2767,6 +2767,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-complex-alpaca",
 					"why": "#319 F263 round 1 (reuse idle seat)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T11:55:29.065Z",
+					"harness": "copilot",
+					"harness_session": "7e16c5c7-d3e8-485f-9c6d-b87655f79c00",
+					"instance_key": "320",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-anonymous-mongoose",
+					"why": "#320 F268 round 1 (reuse)"
 				}
 			]
 		}
