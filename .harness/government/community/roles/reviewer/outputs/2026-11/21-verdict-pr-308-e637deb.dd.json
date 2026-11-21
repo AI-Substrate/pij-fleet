@@ -1,0 +1,56 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fc05-d969-7372-b6f1-2f611d56312e",
+				"date": "2026-11-21",
+				"head": "e637deb24f68674b418a5dd6972a6953dc35313a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:308",
+				"writer": "pij-secondary-starfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 308",
+					"exit_code": 0,
+					"log": "FINAL at e637deb24f68674b418a5dd6972a6953dc35313a; detached worktree clean; CI 5/5"
+				},
+				{
+					"command": "successful CI job JUnit inspection",
+					"exit_code": 0,
+					"log": "run 44857873715; job 136704199747; artifact 14688565883; 2738 testcases; zero failures/errors"
+				},
+				{
+					"command": "isolated pinned-SDK and exact-source F256 replay",
+					"exit_code": 0,
+					"log": "probe-308.log: all five non-default switch/catalog-Err cases refuse with checked details; missing-row and malformed inventory refuse; no-footer and non-OMP controls pass; three mutants caught"
+				},
+				{
+					"command": "read-only live OMP native-selector/catalog comparison",
+					"exit_code": 0,
+					"log": "Four live OMP seats returned known native facts; both distinct selectors have exact catalog rows in the 746-row inventory. Private native-seats-308.json and catalog-308.json receipts retained."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PASS: #308, round 1\n\nHead: `e637deb24f68674b418a5dd6972a6953dc35313a`. Reviewed the single-commit delta from main `653f90ef`.\n\n**F256 is closed.** The stale-native/catalog-error cross-product that survived #306 now refuses. No new correctness findings in this change.\n\n## What was verified\n\n`runtime_model` returns `Unchecked` for an OMP model-bearing footer whose catalog agreement check errors (`crates/daemon/src/http/governance.rs:2023-2038`). The canary consumes that result by returning a refusal with `native_model`, `footer_model`, and `catalog_error`, before the successful canary mutation (`:2212-2222`).\n\nThe independent replay combines the pinned SDK's real OMP record fold, the exact new runtime-selection function, the production catalog helpers, and the canary's exact result-match arms. For all five non-default roles -- `smol`, `slow`, `temporary`, `fallback`, and `prewalk` -- the stale native Opus value plus the new GPT footer and a catalog error now produces a refusal. All three detail fields were checked. Healthy-catalog disagreement and next-call settling controls also pass.\n\nAdditional controls pass: a valid native model with its own footer name and a catalog outage, an unlisted native selector, and malformed inventory all refuse; absent/empty footer model and non-OMP paths make no catalog call, checked with a catalog that panics on either method.\n\n**This is a BRAKE, not a new model-selection policy:** removing the catalog-error refusal lets the same set or more canaries pass; it cannot make the operation more conservative. During an outage, refusal means insufficient corroboration, not that the seat is lying or should be rebound. It is retriable and does not create a successful canary record.\n\n## Is the missing-row refusal too strict?\n\nNot for the verification being claimed: the native completed-call model is known to miss some active switches, so a missing catalog row cannot establish that the model-bearing footer still agrees.\n\nA fresh read-only fleet/catalog comparison found **all four live OMP seats had known native selectors with exact rows in the current 746-row catalog**. These were native `sessionStatus.status.model` facts, not descriptor claims:\n\n- `pij-concrete-planarian`, `pij-medieval-clownfish`, `pij-outstanding-silkworm`: `github-copilot/claude-opus-5.5`.\n- `pij-cultural-falcon`: `github-copilot/claude-opus-5.5-1m`.\n\nThus no current fleet canary is newly refused because its native selector lacks a row. This is a snapshot, not a guarantee about future removed or extension-only models: an otherwise legitimate but unlisted model can remain uncertifiable until its catalog evidence is restored. That conservative availability tradeoff is the intended F256 behavior, not grounds to restore the old false pass.\n\n## Proof\n\n- Fresh `just pr-freeze 308`: FINAL at the exact head; detached product worktree clean; CI 5/5.\n- Exact-head CI run **44857873715**, successful Rust job **136704199747**, JUnit artifact **14688565883**, selected from that job's upload log: **2,738 testcases, zero failures/errors**. `a_catalog_that_cannot_check_the_footer_refuses`, no-footer/no-resolution, non-default switch, fallback, and HTTP canary tests ran.\n- Independent `probe-308.py`: all five switch/error cases, refusal-detail consumption, healthy/settled controls, missing-row/malformed-inventory controls, and panic-on-call no-footer controls **PASS**.\n- Three independently caught mutants: restore the parent's `if let Ok(false)` fail-open decision; call the catalog without a footer model; accept `Unchecked` in the canary consumer. Temporary generated sources and executables were cleaned; replay source and logs remain in the private review session.\n- Read-only live commands: one `omp models --json --no-extensions` snapshot and one `pij-rs --json state <id>` result for each of the four seats above. No working-seat canaries, transcript-content reads, daemon bounce, product edits, dependency links/install, or pushes.\n- `harness boot --json`: dependency-not-ready under C25. Full `harness checks --json` was invoked and is still running at publication; it is not green proof and its completed receipt will be a separate governed addendum. TS proof remains exact-head CI.\n\n## Scope and cost\n\nNo new launch site, periodic loop, poll, timer, or hook. Existing cost is unchanged: at most one counted `omp.models` launch per OMP canary with a model-bearing footer; none on the no-model-footer or non-OMP selection paths. The change only makes an existing unsuccessful check more conservative.\n\nThe same-display-name provider-switch limitation remains **F257 upstream**, outside F256; this verdict does not claim it is fixed.\n\nHarness improvement verified: the committed regression now tests stale native evidence and catalog failure together, and the independent replay catches both a broken decision and a broken refusal consumer.\n"
+		}
+	]
+}
