@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"kind": "note",
+				"role": "security",
+				"subject": "pr:325",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Addendum to security verdict 45b9f78 (#325 at 9a77968), after alpaca's pointer. alarm_body joins retired ids with seat.as_str(), not pij_core::render::seat, and the result is delivered to every live PA and to death.mass. Exposure: the death sweep reaps only the LOCAL registry (reaper::reap_with_reason on services.registry), so remote/federated ids are not involved. Every id minted since F127 passes check_seat_id: spawn at http/mod.rs:1518, and a fresh registration at registration.rs:1196. A claim that lands on an existing row keeps that row's id, so only a pre-F127 legacy row could carry a non-canonical id, and F127 states every live id fits the grammar. So I see no live injection path, and the verdict stays pass. Still, it is the one daemon-authored PA message in this PR that does not go through the closed renderer, so as defence in depth: render each id with render::seat (and the harness from its closed enum, which it already is). new (low): alarm_body should use render::seat for retired ids."
+		}
+	]
+}
