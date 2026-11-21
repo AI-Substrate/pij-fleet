@@ -1529,6 +1529,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-cultural-falcon",
 					"why": "F251 daemon_log follow-ups from #301 C34 (before F249)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T00:23:55.978Z",
+					"harness": "omp",
+					"harness_session": "01a1fb7c-77a6-7665-9730-8a0618c01875",
+					"instance_key": "f252",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-classical-tern",
+					"why": "F252 fleet-map standalone HTML (Jordan via mutual-crane)"
 				}
 			]
 		}
