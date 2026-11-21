@@ -2882,7 +2882,10 @@
 					"harness_session": "ae639be0-bf8b-4dcf-b1a3-21645f441861",
 					"instance_key": "328",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #328 merged (f46b98a6feec)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-written-mongoose",
+					"to": "2026-11-21T18:44:31.121Z",
 					"why": "#328 F274 round 1"
 				},
 				{
