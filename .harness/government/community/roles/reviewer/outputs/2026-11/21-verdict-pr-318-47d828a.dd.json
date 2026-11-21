@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fe15-165b-7fd1-8eac-8ebf691f3d6f",
+				"date": "2026-11-21",
+				"head": "47d828a9c33b855b7ad58eb7da9ecdc84fdac0a0",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:318",
+				"writer": "pij-alert-tarantula",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"new (C34 follow-up): R318-N1, clarify ordinary injection cost versus leftover-clear rereads; per-drain accounting is accepted."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 318",
+					"exit_code": 0
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-daemon --lib pane_observer::tests -- --nocapture --test-threads=4 --then test --offline --manifest-path <session-proof>/Cargo.toml reviewer_repro -- --nocapture --test-threads=1",
+					"exit_code": 0,
+					"log": "review318-r2-tests.log"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: #318, round 2 of 2\n\nHead: `47d828a9c33b855b7ad58eb7da9ecdc84fdac0a0`.\n\n**PASS WITH NOTES. R318-001 is closed.** No remaining round-1 correctness blocker. The only new note concerns wording of the per-injection cost estimate; it is nonblocking under C34.\n\n## R318-001 closure\n\n`TapDrains` records both starts and ends. Both fields are read together under the gate mutex. A settled snapshot is `Some(ended)` only when `started == ended`; a capture whose tick began with a drain pending records `None`. Replay explicitly requires a `Some` baseline and the same current settled count.\n\nConsequently, the round-1 interleaving cannot become a valid baseline: the pending capture carries `None`, the completed drain produces `Some(1)`, and the next tick captures the hidden draft. A subsequent quiet tick can replay the new settled capture.\n\nA drain entirely between capture and replay cannot create an equal-count ABA: its completion increases `ended`; outstanding overlapping drains instead make `settled()` return `None`. The gate does not reset these counts in normal operation. A drain beginning after replay's `observed()` snapshot can still race the current synchronous decision, as discussed in round 1, but the stored baseline remains older and forces the next tick to capture; it cannot recreate R318-001's indefinitely matching baseline.\n\nLocations: `crates/harnesses/src/interaction.rs:48-87,576-612`; `crates/daemon/src/pane_observer.rs:209-216,503-506,739-746`.\n\n## Can the end guard be skipped?\n\n- **Success/error:** the named `_end` local survives through the drain await; ordinary return and `?` both drop it.\n- **Panic in a spawned task:** unwinding drops the guard. The explicit spawned-panic regression observes a panic `JoinError` and settled `{ started: 1, ended: 1 }`.\n- **Cancellation after start:** aborting and joining the suspended fresh-read task drops its future and the guard. The explicit cancellation regression observes a cancelled `JoinError` and the same settled counters.\n- **Future dropped before guard creation:** before the tap-sink await finishes, neither the start counter nor the consuming drain has run. After the increment, constructing this two-reference guard has no intervening await or fallible work. Tokio cancellation is not an arbitrary interruption of those synchronous instructions.\n- **`mem::forget`:** Rust does not guarantee that destructors always run. Deliberately forgetting a pending future can leak its guard, leaving `started > ended`. That suppresses replay rather than permitting a stale baseline; the pane keeps capturing while the leaked operation remains recorded in flight. Forgetting or dropping a `JoinHandle` is different: it detaches the task, which can still finish and drop its guard. No shipped call forgets this guard/future. Process-aborting panic or process exit ends the daemon rather than leaving a running observer with a falsely settled count.\n\nThe real tmux drain executes synchronously under its tap mutex and does not leave an independently owned consuming task running after its future is dropped. The completion accounting therefore follows the actual drain ownership, not an unrelated caller lifetime.\n\n## Proof\n\n- `just pr-freeze 318`: FINAL at this exact head; clean detached checkout; latest per-check CI results pass. The older cancelled `delivers` attempt is superseded by its successful latest run.\n- `PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-daemon --lib pane_observer::tests -- --nocapture --test-threads=4 --then test --offline --manifest-path <session-proof>/Cargo.toml reviewer_repro -- --nocapture --test-threads=1`: exit 0, 22 committed observer tests and four independent reviewer tests pass. The original barrier fixture changes only the counter-type assertions for the new API; without the force-capture control, captures increase 3 -> 4, content becomes `hello`, and permission is `false`. Cancellation and spawned panic both finish at `{ started: 1, ended: 1 }`. Receipt: `review318-r2-tests.log`; retained fixture: `review318-r2-regression.rs`.\n- R318-a and R318-b mutation receipts inspected from PR comment 7062421281 and their complete logs. R318-a changes both snapshot and comparison back to `started`, and fails the barrier test's capture assertion. R318-b leaves `ended` unchanged and fails its quiet-replay restoration assertion. Both are runtime RED (21 passed, 1 failed), not compiler failures. These supplied mutants were inspected, not rerun by this reviewer.\n- Supplied `harness-checks-r2.json`: all 15 stages pass at this head. Local boot returns the expected missing-dependencies advisory; no TS dependency installation or symlinked test execution was attempted in the C25 review tree.\n- Only the scoped fix commit `1c27ae6a` and its integration at the requested head were reviewed; independently merged main changes are not a new review round.\n\n## Behavior and cost\n\nThe settled predicate is an additional brake on replay, not a new typing policy. `decide`, typing grace, ownership and tap attachment operations are unchanged. The dead-reader `Kept` documentation now matches the observed limitation rather than promising uninterrupted bytes.\n\nNo new production launch site. The observer remains one extra gate-mutex read per pane per 600 ms tick: about 362/s for 217 panes, copying two integers. Each fresh drain now adds two mutex acquisitions/key allocations. Settled extra captures are bounded by `2D + R`; a drain spanning ticks forces additional captures during that span. D/R rates and live after-deploy cost remain the performance owner's measurements, not inferred rarity.\n\n## New, nonblocking note\n\n**new: R318-N1 — clarify that approximately four drains per injection describes ordinary submission, not an upper bound for every path.** `reads_blank()` can make up to `CLEAR_REREADS` (five) additional fresh reads after clearing a staged leftover (`crates/harnesses/src/interaction.rs:18,842-850`): up to seven inside the owned-submit attempt, before an outer fresh look. Price those retry reads as D too, or remove the per-injection ceiling. The performance holder confirms this is already in its final notes as a new C34 follow-up and accepts the per-drain costs. This does not reopen R318-001 or require another code-review round.\n\n## Harness feedback\n\n**magicWand:** round 1's barrier ordering is now a committed deterministic sensor, including restoration of quiet replay. Keep cancellation/panic lifetime probes as focused harness coverage if this ownership protocol changes again; this review leaves their executable fixture and receipt as session artifacts, without changing the detached tree.\n"
+		}
+	]
+}
