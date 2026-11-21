@@ -194,62 +194,78 @@ fn two_daemons_started_together_on_an_oversized_log_keep_the_server_on_the_path(
             n += 1;
         }
         fs::write(&log_path, &old).expect("oversized log");
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .and_then(|listener| listener.local_addr())
-            .expect("a free port")
-            .port();
-        let start = |_: usize| {
-            let stdout = fs::OpenOptions::new()
-                .append(true)
-                .open(&log_path)
-                .expect("append handle, as a launcher opens it");
-            let stderr = stdout.try_clone().expect("shared daemon log");
-            Command::new("/bin/sh")
-                .args([
-                    "-c",
-                    "read go; exec \"$0\" --state-dir \"$1\" daemon --offline --bind \"$2\"",
-                ])
-                .arg(env!("CARGO_BIN_EXE_pij-rs"))
-                .arg(&state)
-                .arg(format!("127.0.0.1:{port}"))
-                .env("HOME", &root)
-                .env_remove("PIJ_RETIRED_HARNESSES")
-                .stdin(Stdio::piped())
-                .stdout(stdout)
-                .stderr(stderr)
-                .spawn()
-                .expect("start a held private daemon")
-        };
-        let mut children: Vec<Child> = (0..2).map(start).collect();
-        let mut gates: Vec<_> = children
-            .iter_mut()
-            .map(|child| child.stdin.take().expect("gate"))
-            .collect();
-        for gate in &mut gates {
-            gate.write_all(b"go\n").expect("release");
-        }
-        drop(gates);
-        let deadline = Instant::now() + Duration::from_secs(30);
-        let log = loop {
-            let log = fs::read_to_string(&log_path).unwrap_or_default();
-            let live = children
+        // The port is probed, then released for the daemons to contend for,
+        // so anything else on the machine can take it in between. Then both
+        // daemons exit unbound (no banner, nobody live): that is the probe's
+        // race, not the logger's, so it is tried again on a fresh port. The
+        // rotation at start has already run by then.
+        let mut tries = 0;
+        let (log, mut children) = loop {
+            tries += 1;
+            let port = std::net::TcpListener::bind("127.0.0.1:0")
+                .and_then(|listener| listener.local_addr())
+                .expect("a free port")
+                .port();
+            let start = |_: usize| {
+                let stdout = fs::OpenOptions::new()
+                    .append(true)
+                    .open(&log_path)
+                    .expect("append handle, as a launcher opens it");
+                let stderr = stdout.try_clone().expect("shared daemon log");
+                Command::new("/bin/sh")
+                    .args([
+                        "-c",
+                        "read go; exec \"$0\" --state-dir \"$1\" daemon --offline --bind \"$2\"",
+                    ])
+                    .arg(env!("CARGO_BIN_EXE_pij-rs"))
+                    .arg(&state)
+                    .arg(format!("127.0.0.1:{port}"))
+                    .env("HOME", &root)
+                    .env_remove("PIJ_RETIRED_HARNESSES")
+                    .stdin(Stdio::piped())
+                    .stdout(stdout)
+                    .stderr(stderr)
+                    .spawn()
+                    .expect("start a held private daemon")
+            };
+            let mut children: Vec<Child> = (0..2).map(start).collect();
+            let mut gates: Vec<_> = children
                 .iter_mut()
-                .map(|child| child.try_wait().expect("status").is_none())
-                .filter(|alive| *alive)
-                .count();
-            if log.contains("pij-rs daemon: listening on ") && live == 1 {
-                break log;
+                .map(|child| child.stdin.take().expect("gate"))
+                .collect();
+            for gate in &mut gates {
+                gate.write_all(b"go\n").expect("release");
             }
-            if Instant::now() >= deadline {
-                for child in &mut children {
-                    let _ = child.kill();
-                    let _ = child.wait();
+            drop(gates);
+            let deadline = Instant::now() + Duration::from_secs(30);
+            let served = loop {
+                let log = fs::read_to_string(&log_path).unwrap_or_default();
+                let live = children
+                    .iter_mut()
+                    .map(|child| child.try_wait().expect("status").is_none())
+                    .filter(|alive| *alive)
+                    .count();
+                let banner = log.contains("pij-rs daemon: listening on ");
+                if banner && live == 1 {
+                    break Some(log);
                 }
-                panic!(
-                    "attempt {attempt}: the serving daemon's banner never reached daemon.log ({live} live): {log}"
-                );
+                if !banner && live == 0 && tries < 5 {
+                    break None;
+                }
+                if Instant::now() >= deadline {
+                    for child in &mut children {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                    }
+                    panic!(
+                        "attempt {attempt}: the serving daemon's banner never reached daemon.log ({live} live): {log}"
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            };
+            if let Some(log) = served {
+                break (log, children);
             }
-            std::thread::sleep(Duration::from_millis(20));
         };
         assert!(!log.contains("rotation failed"), "attempt {attempt}: {log}");
         let tail = fs::read(state.join("daemon.log.1")).expect("the kept tail");

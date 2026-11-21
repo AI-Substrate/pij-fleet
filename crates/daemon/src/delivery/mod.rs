@@ -270,6 +270,10 @@ pub struct DeliveryService {
     native_edges_restored: tokio::sync::OnceCell<()>,
     /// R277-1: [`NATIVE_IDLE_ANSWER`], in ms; tests shorten it.
     native_idle_answer_ms: AtomicU64,
+    /// F274: how long after this daemon starts a lapse of a seat not yet
+    /// heard from waits before it is decided, in ms (0: one lease); tests
+    /// shorten it.
+    native_boot_wait_ms: AtomicU64,
     native_started_at: tokio::time::Instant,
     native_deadline_checked_at: tokio::sync::Mutex<tokio::time::Instant>,
     native_receiver_changed: tokio::sync::Notify,
@@ -397,6 +401,7 @@ impl DeliveryService {
                 .and_then(|value| value.parse::<u64>().ok())
                 .filter(|value| *value > 0 && *value <= i64::MAX as u64)
                 .unwrap_or(60),
+            native_boot_wait_ms: AtomicU64::new(0),
             recovery_authority_shared: true,
             admissions: tokio::sync::Mutex::new(tokio::task::JoinSet::new()),
             notes: None,
@@ -412,6 +417,13 @@ impl DeliveryService {
     pub(crate) fn set_native_idle_answer(&self, bound: Duration) {
         self.native_idle_answer_ms
             .store(bound.as_millis() as u64, Ordering::Relaxed);
+    }
+
+    /// Shorten the boot wait of [`Self::unheard_since_boot`] for a test.
+    #[cfg(test)]
+    pub(crate) fn set_native_boot_wait(&self, wait: Duration) {
+        self.native_boot_wait_ms
+            .store(wait.as_millis() as u64, Ordering::Relaxed);
     }
 
     /// Registration/claim attests the tuple, not liveness. Only the first
@@ -794,6 +806,23 @@ impl DeliveryService {
             .is_some_and(|receiver| {
                 receiver.identity.matches(&recipient) && receiver.renewed_at.elapsed() < lease
             }))
+    }
+
+    /// F274 (a): until when a lapse of `seat` waits after this daemon's boot,
+    /// `None` once the wait is over or the seat has been heard from. A seat
+    /// not heard from since the boot has no lease here yet, so whether its
+    /// receiver is back cannot be known before one lease has passed: its
+    /// first heartbeat comes within that, or it is dead.
+    pub(crate) async fn unheard_since_boot(&self, seat: &SeatId) -> Option<tokio::time::Instant> {
+        let wait = match self.native_boot_wait_ms.load(Ordering::Relaxed) {
+            0 => Duration::from_secs(self.extension_claim_lease_secs),
+            ms => Duration::from_millis(ms),
+        };
+        let until = self.native_started_at + wait;
+        if until <= tokio::time::Instant::now() {
+            return None;
+        }
+        (!self.native_receivers.lock().await.contains_key(seat)).then_some(until)
     }
 
     /// Wake at the earliest unchecked receiver lease, including the boot grace.

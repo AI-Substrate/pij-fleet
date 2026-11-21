@@ -1368,6 +1368,80 @@ pub async fn queue_contract(queue: &dyn Queue) {
             None
         );
     }
+
+    // F275 (R327-001): a delivery ack validates the claim's kind before it
+    // touches the row. A sender-less row filed under another recipient's
+    // delivery kind is refused and left exactly as it was, still running.
+    let misfiled = Job {
+        kind: "delivery:seat-elsewhere".to_string(),
+        serial_key: "seat-misfiled".to_string(),
+        payload: "{}".to_string(),
+        dedupe_key: "misfiled-no-sender".to_string(),
+        dedupe_origin: None,
+        attempt: 0,
+    };
+    let misfiled_id = queue
+        .enqueue(misfiled.clone())
+        .await
+        .expect("enqueue misfiled");
+    queue
+        .claim(std::slice::from_ref(&misfiled.kind), "misfiled-reader")
+        .await
+        .expect("claim misfiled")
+        .expect("misfiled row");
+    queue
+        .ack_delivery(misfiled_id, DeliveryOrigin::ReaderRead)
+        .await
+        .expect_err("a delivery ack requires the recipient's own kind");
+    queue
+        .ack(misfiled_id, Outcome::Done)
+        .await
+        .expect("the refused misfiled row is still running, untouched");
+    // F275: a sender-less delivery under its own kind can never be recorded
+    // (F270), so its refused ack ends it; the next message to that seat is
+    // claimable at once.
+    let anonymous = Job {
+        kind: "delivery:seat-anonymous".to_string(),
+        serial_key: "seat-anonymous".to_string(),
+        payload: "{}".to_string(),
+        dedupe_key: "no-sender".to_string(),
+        dedupe_origin: None,
+        attempt: 0,
+    };
+    let anonymous_id = queue
+        .enqueue(anonymous.clone())
+        .await
+        .expect("enqueue sender-less");
+    let after_id = queue
+        .enqueue(Job {
+            payload: r#"{"from":"seat-sender"}"#.to_string(),
+            dedupe_key: "after-no-sender".to_string(),
+            ..anonymous.clone()
+        })
+        .await
+        .expect("enqueue the next message");
+    queue
+        .claim(std::slice::from_ref(&anonymous.kind), "anonymous-reader")
+        .await
+        .expect("claim sender-less")
+        .expect("sender-less row");
+    queue
+        .ack_delivery(anonymous_id, DeliveryOrigin::ReaderRead)
+        .await
+        .expect_err("a sender-less delivery cannot be recorded");
+    queue
+        .ack(anonymous_id, Outcome::Done)
+        .await
+        .expect_err("the refused ack ended the sender-less row");
+    assert_eq!(
+        queue
+            .claim(std::slice::from_ref(&anonymous.kind), "anonymous-reader")
+            .await
+            .expect("claim the next message")
+            .map(|(id, _)| id),
+        Some(after_id),
+        "the seat's next message is claimable at once"
+    );
 }
 
 /// A seat descriptor with the shape most contract tests want.

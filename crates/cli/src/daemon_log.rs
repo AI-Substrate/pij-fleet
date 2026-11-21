@@ -54,6 +54,13 @@ const TEMPLATE_SHOWN: usize = 240;
 pub(crate) const ROTATE_AT: u64 = 16 * 1024 * 1024;
 /// Rotated files kept: `daemon.log.1` (newest) to `daemon.log.{KEEP}`.
 pub(crate) const KEEP: usize = 3;
+/// F273: the longest one read of a stream waits. macOS sometimes loses the
+/// wakeup a writer's `shutdown(Write)` sends to a reader already blocked in
+/// `recv` (both ends then read "not connected", and the reader sleeps on):
+/// about 1 in 80,000 under load, measured. The next read sees the end at
+/// once, so a bounded read turns that hang into at most this delay. One idle
+/// wake a second per stream (two per daemon); no launch.
+pub(crate) const READ_RECHECK: Duration = Duration::from_secs(1);
 
 pub(crate) struct DaemonLog {
     stdout: LogStream,
@@ -164,16 +171,36 @@ impl Drop for LogStream {
     }
 }
 
-/// Read one stream's lines and hand each to the shared sink. While any repeat
-/// is being counted the read waits at most one window, so a burst that
-/// stops still gets its summary; otherwise it blocks with no timer at all.
+/// Read one stream's lines and hand each to the shared sink. A read waits at
+/// most [`READ_RECHECK`] (F273), and while any repeat is being counted at
+/// most one window, so a burst that stops still gets its summary.
 fn pump(input: UnixStream, shared: &Mutex<Shared>, output: usize) -> io::Result<()> {
-    let mut armed = false;
+    pump_every(input, shared, output, READ_RECHECK)
+}
+
+/// [`pump`] with its read bound as a parameter, so a test can make a read
+/// time out mid-line without waiting the production bound.
+fn pump_every(
+    input: UnixStream,
+    shared: &Mutex<Shared>,
+    output: usize,
+    recheck: Duration,
+) -> io::Result<()> {
+    let mut armed = recheck;
+    input.set_read_timeout(Some(armed))?;
     let mut input = BufReader::new(input);
     let mut line = Vec::new();
     loop {
         match input.read_until(b'\n', &mut line) {
-            Ok(0) => return lock(shared).finish(),
+            Ok(0) => {
+                // R326-001: bytes a timed-out read kept are the stream's last
+                // line. The read that then meets EOF returns no new bytes, so
+                // they are written here or never.
+                if !line.is_empty() {
+                    lock(shared).line(output, &line, Instant::now())?;
+                }
+                return lock(shared).finish();
+            }
             Ok(_) => {
                 lock(shared).line(output, &line, Instant::now())?;
                 line.clear();
@@ -190,15 +217,17 @@ fn pump(input: UnixStream, shared: &Mutex<Shared>, output: usize) -> io::Result<
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             Err(error) => return Err(error),
         }
-        let (counting, window) = {
+        let wait = {
             let shared = lock(shared);
-            (shared.repeats.counting(), shared.repeats.window)
+            if shared.repeats.counting() {
+                shared.repeats.window.min(recheck)
+            } else {
+                recheck
+            }
         };
-        if counting != armed {
-            input
-                .get_ref()
-                .set_read_timeout(counting.then_some(window))?;
-            armed = counting;
+        if wait != armed {
+            input.get_ref().set_read_timeout(Some(wait))?;
+            armed = wait;
         }
     }
 }
@@ -464,15 +493,18 @@ impl Rotation {
             Ok(named) if named.file_type().is_file() => Some(open_regular_append(&self.path)?),
             _ => return Ok(Synced::Unmanaged),
         };
-        self.size = match &joined {
-            Some(file) => file.metadata()?.len(),
-            None => mine.len(),
+        // The file the path was proved to name, under the lock (S302-N1).
+        let proved = match &joined {
+            Some(file) => file.metadata()?,
+            None => mine,
         };
+        self.size = proved.len();
         if self.size < self.cap {
             return Ok(joined.map_or(Synced::Current, Synced::Joined));
         }
         let rotated = self.size;
-        self.rotate().map(|fresh| Synced::Rotated(fresh, rotated))
+        self.rotate((proved.dev(), proved.ino()))
+            .map(|fresh| Synced::Rotated(fresh, rotated))
     }
 
     /// The exclusive lock on `daemon.log.lock`, tried without blocking up to
@@ -502,9 +534,10 @@ impl Rotation {
 
     /// Shift `.1`… up one (the last is replaced), move the current file to
     /// `.1`, and open a fresh file at the path. Called only under the lock,
-    /// with the path checked to be this process's file. The fresh file is made
-    /// first, so a failure before the shift changes nothing.
-    fn rotate(&mut self) -> io::Result<File> {
+    /// with the path checked to be `proved` (device, inode), this process's
+    /// file or the one it joined. The fresh file is made first, so a failure
+    /// before the shift changes nothing.
+    fn rotate(&mut self, proved: (u64, u64)) -> io::Result<File> {
         let fresh_path = self.suffixed(".new");
         let fresh = staging(&fresh_path)?;
         let shifted = (|| {
@@ -515,7 +548,7 @@ impl Rotation {
                 }
             }
             if self.size > self.cap + self.cap / 16 {
-                self.keep_tail()
+                self.keep_tail(proved)
             } else {
                 std::fs::rename(&self.path, self.numbered(1))
             }
@@ -532,18 +565,26 @@ impl Rotation {
     /// or one line longer than that) becomes `.1` holding only its last `cap`
     /// bytes, from the start of a line. So no rotated file exceeds 17/16 cap.
     ///
-    /// The source is opened without following a symlink (S301-R2-N2), and its
-    /// device and inode are recorded in `daemon.log.trimmed` before its name
-    /// is removed, so a daemon whose launcher opened it can prove at start
-    /// that its unnamed file was the managed log (F251).
-    fn keep_tail(&self) -> io::Result<()> {
-        let mut source = BufReader::new(
-            OpenOptions::new()
-                .read(true)
-                .custom_flags(OFlag::O_NOFOLLOW.bits())
-                .open(&self.path)?,
-        );
-        let unlinked = source.get_ref().metadata()?;
+    /// The source is opened without following a symlink (S301-R2-N2) and
+    /// without waiting (a FIFO put at the path would otherwise block the log
+    /// thread), and is read only if it is a regular file with the device and
+    /// inode `sync` proved the path named (S302-N1): a **brake**, removing it
+    /// trims more. Its device and inode are recorded in `daemon.log.trimmed`
+    /// before its name is removed, so a daemon whose launcher opened it can
+    /// prove at start that its unnamed file was the managed log (F251).
+    fn keep_tail(&self, proved: (u64, u64)) -> io::Result<()> {
+        let source = OpenOptions::new()
+            .read(true)
+            .custom_flags((OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK).bits())
+            .open(&self.path)?;
+        let unlinked = source.metadata()?;
+        if !unlinked.file_type().is_file() || (unlinked.dev(), unlinked.ino()) != proved {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "daemon.log is not the file the lock proved it named",
+            ));
+        }
+        let mut source = BufReader::new(source);
         let length = unlinked.len();
         source.seek(SeekFrom::Start(length.saturating_sub(self.cap)))?;
         let mut partial = Vec::new();
@@ -879,6 +920,39 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    /// R326-001: a stream's unterminated last line survives a read that timed
+    /// out holding it, whether EOF or the rest of the line comes next. The
+    /// writer idles 15 read bounds mid-line, so the bounded read times out
+    /// with the fragment kept before either arrives.
+    #[test]
+    fn a_fragment_held_across_a_read_timeout_is_written_once_whole() {
+        let recheck = Duration::from_millis(20);
+        for (name, rest) in [("eof", None), ("continued", Some(&b"lit\n"[..]))] {
+            let root = pij_testkit::fresh_dir(&format!("pij-daemon-log-held-{name}"));
+            let path = root.join("daemon.log");
+            let shared = unmanaged(File::create(&path).unwrap());
+            let (reader, mut writer) = UnixStream::pair().unwrap();
+            let pumping = Arc::clone(&shared);
+            let pump = thread::spawn(move || pump_every(reader, &pumping, 0, recheck));
+            match rest {
+                None => writer.write_all(b"ready\n\xffsplit").unwrap(),
+                Some(_) => writer.write_all(b"ready\n\xffsp").unwrap(),
+            }
+            thread::sleep(recheck * 15);
+            if let Some(rest) = rest {
+                writer.write_all(rest).unwrap();
+            }
+            writer.shutdown(Shutdown::Write).unwrap();
+            pump.join().unwrap().unwrap();
+            assert_eq!(
+                payloads(&fs::read(&path).unwrap()),
+                [b"ready\n".to_vec(), b"\xffsplit\n".to_vec()],
+                "{name}"
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
     /// Through the real reader: a repeated template is written once, and its
     /// count is written when the stream ends.
     #[test]
@@ -1009,7 +1083,12 @@ mod tests {
         }
         let root = pij_testkit::fresh_dir("pij-daemon-log-panic");
         let path = root.join("daemon.log");
-        let output = Command::new(std::env::current_exe().unwrap())
+        // F273: wait on the child itself, bounded, its stderr in a file: a
+        // child that never exits fails this test loudly, naming itself,
+        // instead of holding the run (one hung here 41 min, its log readers
+        // asleep in `recv` after their streams had ended).
+        let stderr_path = root.join("child.stderr");
+        let mut child = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "daemon_log::tests::captures_raw_panic_output_and_flushes_during_unwind",
@@ -1017,13 +1096,34 @@ mod tests {
             ])
             .env(CHILD_LOG, &path)
             .env("RUST_BACKTRACE", "0")
+            .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .output()
+            .stderr(File::create(&stderr_path).unwrap())
+            .spawn()
             .unwrap();
+        let budget = pij_testkit::time::scaled(Duration::from_secs(60));
+        let started = Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if started.elapsed() >= budget {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "the re-exec'd child (pid {}) had not exited after {:?} of a {budget:?} budget, so it was killed; its stderr: {}; its log: {}",
+                    child.id(),
+                    started.elapsed(),
+                    fs::read_to_string(&stderr_path).unwrap_or_default(),
+                    fs::read_to_string(&path).unwrap_or_default()
+                );
+            }
+            thread::sleep(Duration::from_millis(20));
+        };
         assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
+            status.success(),
+            "{status}: {}",
+            fs::read_to_string(&stderr_path).unwrap_or_default()
         );
         let lines = payloads(&fs::read(&path).unwrap());
         for expected in [
@@ -1446,7 +1546,11 @@ mod tests {
             cap: 100,
             keep: 3,
         };
-        assert!(rotation.keep_tail().is_err());
+        let target = fs::metadata(&elsewhere).unwrap();
+        assert!(
+            rotation.keep_tail((target.dev(), target.ino())).is_err(),
+            "not even when the link's target is the proved file"
+        );
         assert!(!root.join("daemon.log.1").exists(), "nothing copied");
         assert_eq!(
             fs::read_to_string(&elsewhere).unwrap(),
@@ -1459,6 +1563,108 @@ mod tests {
                 .is_symlink()
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    fn oversized(path: &Path) -> Rotation {
+        Rotation {
+            path: path.to_path_buf(),
+            size: 1300,
+            cap: 100,
+            keep: 3,
+        }
+    }
+
+    /// S302-N1: the trim reads only the file the lock proved the path named.
+    /// A regular file put there since is not trimmed (nor unlinked).
+    #[test]
+    fn the_trim_reads_only_the_file_the_lock_proved() {
+        let root = pij_testkit::fresh_dir("pij-daemon-log-trim-proved");
+        let path = root.join("daemon.log");
+        fs::write(&path, "theirs\n".repeat(200)).unwrap();
+        let other = root.join("proved.log");
+        fs::write(&other, b"").unwrap();
+        let proved = fs::metadata(&other).unwrap();
+        let error = oversized(&path)
+            .keep_tail((proved.dev(), proved.ino()))
+            .expect_err("another file");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(!root.join("daemon.log.1").exists(), "nothing copied");
+        assert_eq!(fs::read_to_string(&path).unwrap(), "theirs\n".repeat(200));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// S302-N1: a FIFO put at the path is never read, and opening it never
+    /// waits for a writer.
+    #[test]
+    fn the_trim_never_waits_on_a_fifo_at_the_path() {
+        let root = pij_testkit::fresh_dir("pij-daemon-log-trim-fifo");
+        let fifo = root.join("daemon.log");
+        nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::S_IRWXU).unwrap();
+        let named = fs::symlink_metadata(&fifo).unwrap();
+        let proved = (named.dev(), named.ino());
+        let (done, finished) = mpsc::channel();
+        let probe = fifo.clone();
+        thread::spawn(move || {
+            done.send(oversized(&probe).keep_tail(proved).is_err())
+                .unwrap()
+        });
+        assert_eq!(
+            finished.recv_timeout(Duration::from_secs(3)),
+            Ok(true),
+            "refused at once"
+        );
+        assert!(!root.join("daemon.log.1").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// S302-N2: a symlink, FIFO or directory planted at `daemon.log.trimmed`
+    /// is never followed or waited on. A link or FIFO is replaced by the
+    /// record (its target untouched); a directory refuses the trim, which
+    /// leaves the log where it was.
+    #[test]
+    fn a_planted_trim_record_is_never_followed_or_waited_on() {
+        for planted in ["symlink", "fifo", "directory"] {
+            let root = pij_testkit::fresh_dir("pij-daemon-log-trim-planted");
+            let record = root.join("daemon.log.trimmed");
+            let target = root.join("target.txt");
+            fs::write(&target, "keep me\n").unwrap();
+            match planted {
+                "symlink" => std::os::unix::fs::symlink(&target, &record).unwrap(),
+                "fifo" => {
+                    nix::unistd::mkfifo(&record, nix::sys::stat::Mode::S_IRWXU).unwrap();
+                }
+                _ => fs::create_dir(&record).unwrap(),
+            }
+            let mut old = String::new();
+            for n in 0..100 {
+                old.push_str(&format!("old line {n:03}\n"));
+            }
+            let mut trimmer = managed(&root, old.as_bytes(), 100, 3);
+            let (done, finished) = mpsc::channel();
+            thread::spawn(move || {
+                trimmer.sync(0);
+                done.send(()).unwrap();
+            });
+            assert_eq!(
+                finished.recv_timeout(Duration::from_secs(3)),
+                Ok(()),
+                "{planted}: never waits"
+            );
+            assert_eq!(
+                fs::read_to_string(&target).unwrap(),
+                "keep me\n",
+                "{planted}"
+            );
+            let kind = fs::symlink_metadata(&record).unwrap().file_type();
+            if planted == "directory" {
+                assert!(kind.is_dir(), "{planted}");
+                assert!(root.join("daemon.log").exists(), "the log stays named");
+            } else {
+                assert!(kind.is_file(), "{planted}: replaced by the record");
+                assert_eq!(read_no_follow(&record).unwrap().lines().count(), 1);
+            }
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     /// R301-001: a file another process put at the path since this one's was

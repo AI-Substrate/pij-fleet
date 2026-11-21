@@ -3729,6 +3729,38 @@ async fn spawn_wait_reports_child_exit_with_log_tail() {
     server.abort();
 }
 
+/// F265: a key reused by a raw HTTP caller after an earlier rowless launch
+/// with it (a daemon killed mid-launch) finds that launch's status file. The
+/// new launch never reads it as its own child's exit: it waits, and times out.
+#[tokio::test]
+async fn a_reused_keys_stale_status_file_is_never_read_as_this_launchs_exit() {
+    const REUSED: &str = "s-f265f265f265f265f265f265f265f265";
+    let registry = Arc::new(FakeRegistry::new());
+    let mut services = test_services(
+        registry.clone(),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    services.tmux = Arc::new(FakeTmux::new());
+    let (status_path, log_path) = super::spawn_evidence_paths(REUSED);
+    std::fs::create_dir_all(status_path.parent().unwrap()).expect("evidence dir");
+    std::fs::write(&status_path, "exit_code=7\n").expect("an earlier launch's exit");
+    std::fs::write(&log_path, "an earlier launch's log\n").expect("its log");
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let (status, body) = post_spawn(addr, &keyed_spawn(REUSED, Some(1))).await;
+    assert_eq!(status, 504, "its own wait timed out: {body}");
+    assert_ne!(
+        body["details"]["reason"], "child exited before registration",
+        "{body}"
+    );
+    assert!(!body.to_string().contains("exit code 7"), "{body}");
+    assert!(!body.to_string().contains("an earlier launch"), "{body}");
+    let _ = std::fs::remove_file(status_path);
+    let _ = std::fs::remove_file(log_path);
+    server.abort();
+}
+
 /// Plan 181 ac-0002: a Codex spawn that times out says what is on its screen.
 /// The capture is the update prompt recorded from pane %114 on 2026-10-28.
 #[tokio::test]
