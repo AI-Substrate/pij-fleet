@@ -2700,7 +2700,10 @@
 					"harness_session": "b84dfc8f-850d-435b-8788-f318b9f4cc3d",
 					"instance_key": "315",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #315 merged (73a956a571d7)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-sure-urial",
+					"to": "2026-11-21T10:04:21.565Z",
 					"why": "#315 F258 0049 round 1"
 				},
 				{
