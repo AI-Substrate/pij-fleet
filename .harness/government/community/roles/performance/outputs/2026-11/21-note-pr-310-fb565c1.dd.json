@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"head": "fb565c165d74a3715ac5c24f477fa5496bef7e4b",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:310",
+				"writer": "pij-golden-ant",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "pij-rs --json ping at three edges over 120.045989 s on PID 31125/fb565c165d",
+					"exit_code": 0
+				},
+				{
+					"command": "/bin/ps -p 31125 -o time=,rss=,lstart=,comm= at three edges over 120.043565 s",
+					"exit_code": 0
+				},
+				{
+					"command": "os.getloadavg() at all measurement edges",
+					"exit_code": 0
+				},
+				{
+					"command": "just spawn-rate --seconds 20 --json, separately after CPU windows",
+					"exit_code": 0
+				},
+				{
+					"command": "read-only bounded spine seq-range measurement over 60.011100 s",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Performance AFTER-deploy receipt: pr:310\n\nDeployed merge: fb565c165d74a3715ac5c24f477fa5496bef7e4b. Reviewed head: 7f83e0defd62fb5da0170b02afb6af4872ccbaa3. Live daemon: PID 31125, ping commit fb565c165d, process start November 21, 2026, 06:06:56 UTC. No bounce, restart, competing receiver or product edit was performed.\n\n**Observed result:** inbox active time fell from 64.927 to 3.769 ms/completion (17.23x lower). Daemon CPU fell from 24.988% to 15.836% of one core (9.153 percentage points, 36.63% relative). The two consecutive AFTER windows agree. Exact daemon launch counters did not move over 120.046 s; RSS fell during that interval.\n\n## Paired AFTER readings\n\nThe first edge was more than three minutes after daemon start, beyond a complete 55 s request lifetime and an additional 60 s settling wait. All three edges retained the same PID, build commit and process-start identity.\n\n| UTC, November 21 | Load average 1/5/15 min | Cumulative CPU, s | RSS, KiB | Inbox ok/refused | Inbox active_us | Total daemon spawns |\n|---|---|---:|---:|---|---:|---:|\n| 06:10:13.305289 | 35.378 / 45.055 / 64.895 | 55.33 | 134336 | 244 / 0 | 2412942 | 676 |\n| 06:11:13.326945 | 23.614 / 39.743 / 61.545 | 65.14 | 134352 | 323 / 0 | 2683222 | 676 |\n| 06:12:13.349132 | 39.000 / 40.592 / 60.339 | 74.34 | 118624 | 402 / 0 | 3008481 | 676 |\n\nThe host has 16 logical CPUs. Machine load remained elevated despite the settling wait; these are quiet-inbox windows, not an idle-machine benchmark.\n\n| Window | Ping interval, s | Completions | Active delta, us | Active/completion, ms | Active/second, ms | CPU delta, s | CPU, % one core |\n|---|---:|---:|---:|---:|---:|---:|---:|\n| First | 60.023757 | 79 | 270280 | 3.421 | 4.503 | 9.81 | 16.344 |\n| Second | 60.022232 | 79 | 325259 | 4.117 | 5.419 | 9.20 | 15.328 |\n| Combined | 120.045989 | 158 | 595539 | 3.769 | 4.961 | 19.01 | 15.836 |\n\nCPU intervals from the ps edges were 60.021516, 60.022049 and 120.043565 s. Inbox refusals were zero. Every spawn-site delta was zero, reconciling to the zero total delta. RSS went 134336 -> 134352 -> 118624 KiB; this short trend is not a leak test.\n\nCommands: `pij-rs --json ping` and `/bin/ps -p 31125 -o time=,rss=,lstart=,comm=`, at three edges 60 s apart; `os.getloadavg()` at every edge. Calculations use monotonic elapsed time and cumulative counter differences, not lifetime ps %cpu.\n\n## BEFORE comparison and limits\n\nHistorical BEFORE was PID 22838 at 653f90ef96, November 21, 04:55:09.077-04:56:09.108 UTC: 141 successful inbox completions in 60.030824 s, 9154765 active_us, 64.927 ms/completion, 152.501 active ms/s, 15.00 CPU seconds over 60.027686 s, 24.988% core, RSS 116576 -> 121840 KiB, and 14 exact daemon launches.\n\nObserved active/second is 30.74x lower AFTER. The health view listed 81 live Copilot seats BEFORE and 82 at every AFTER edge; these are cohort counts, not measured waiter counts. BEFORE included a spawn, two adopts, one output and 16 sends. AFTER had no register/adopt/spawn or inbox-ack completion in the measurement interval; it had 1088 whoami, 20 cards, 474 heartbeats, 23 activity calls, 11 FYI claims and nine shim sends.\n\nMean held time/completion was 30.254 s BEFORE versus 54.999 s AFTER, so request/activity mixes differ. BEFORE load was not recorded, and the old daemon was much older. The deployed code also contains an intervening governance change. These are measured before/after differences consistent with A1's loop reduction, not a controlled claim assigning every saved CPU second or the entire timing ratio exclusively to #310.\n\n**Passes/completion are not measured.** The deployed `ping` route entry exposes ok, refused, active_us and held_us, not inner claim passes. The four undisturbed passes per 55 s request and six recipient reads per 20 s remain exact-head source/CI bounds. Completion counts must not be relabeled as passes.\n\n## Separate machine and event samples\n\n`just spawn-rate --seconds 20 --json` ran only after both CPU windows, approximately 06:13:41-06:14:01 UTC: 369.0 total new processes/s, 349.4 sampled/s (lower bound), with no observed daemon child. Load 1/5/15 was 114.417/61.867/66.357 before that sampler and 97.892/61.592/66.159 after. Historical machine BEFORE was 388.7 total/s and 365.7 sampled/s. These unmatched machine windows do not establish an A1 launch reduction; A1 adds no launch site.\n\nA concurrent bounded read-only spine range, 06:10:13.945-06:11:13.957 UTC, observed seq 4694254 -> 4694274: 20 events in 60.011100 s (0.3333/s), 2343 payload bytes, including four delivery.outcome events. No message bodies were read. At 82 waiters this would imply approximately 27.33 broadcast receives/s, not measured subscriber polls or CPU. Filtering remains inside HeldSpan; inbox active_us alone cannot price that CPU or prove fan-out dominates.\n\n## Preservation and holding\n\nThe native AFTER measurements and comparison are preserved in this governed output. Local raw artifacts are pr310-after.ndjson, pr310-after-spawn-rate.json, pr310-after-event-rate.json and the historical pr310-before.json; the tables above preserve the public values needed to recompute the central deltas.\n\nThe authoritative performance/310 holder row for pij-golden-ant already ended at 06:07:04.408 UTC through merge delivery, before the AFTER request. It was not reassigned merely to manufacture another release. This after-deploy note is by the original reviewer. The measurement assignment is finished and the seat can be closed.\n"
+		}
+	]
+}
