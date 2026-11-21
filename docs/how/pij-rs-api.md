@@ -2540,6 +2540,14 @@ A send receipt proves only its recorded delivery strength: queued is not parent 
 
 Obituary preparation, send and audit failures are isolated per seat: log the error, continue with the remaining parents, then report `death sweep: N notice(s) failed` once. A failed obituary does not roll back retirement or gain an automatic retry.
 
+**Mass death (F271b).** When one sweep retires **5 or more** seats, or **10 or more** have been retired within the last **60 s**, the daemon raises one alarm: it wakes every live PA (`pa` role, not tombstoned, not a relay) once through the ordinary PA wake path (audited like any cold wake, reason `mass-death`), then records a `death.mass` spine event with no seat and the payload `in_sweep`, `in_window`, `window_ms`, `thresholds`, `by_harness`, `seats` (every retired id in the window, oldest first) and `wakes` (each PA's delivery outcome and cold-check, or the PA lookup's error). At most one alarm fires per 60 s; deaths in that quiet minute fold into the window. The PA's message:
+
+```text
+[pij] mass death: <n> seats retired in one sweep, <m> in the last 60 s (<harness> <count>, …): <id>, … (+<k> more). Many at once means a shared cause (a kill by pattern, an update, tmux): find it before reviving. Spine: death.mass.
+```
+
+It names at most 20 seats; the event names them all. The count lives in memory on the sweep task, so a daemon restart forgets it, which can only delay an alarm, never raise a false one. It adds no loop, timer or launch: a compare per sweep, and on firing one live-seat list, one role read and one delivery per PA. Per-seat obituaries are unchanged.
+
 ## PA watchdog
 
 The daemon runs a watchdog for **PAs only**: seats whose asserted role is `pa`. No other role is watched, primes included. It has **no fixed cadence** (plan 172, 2026-10-13). Every 60 seconds it checks each PA's fleet and nudges each PA on the **idle edge**: the round in which the fleet's **workers** go from someone `working` to no one working. Only the daemon's own turn observation (`SeatDescriptor::state == working`) counts.

@@ -10,7 +10,7 @@ Resource cost is a correctness property (AGENTS.md § Resource cost). This page 
 | Background jobs | 100 ms | one sqlite read of unfinished or unnotified jobs. A finished job's completion event is published once. A source whose owner is tombstoned waits for a resume or revive, as before: 2 in-process sqlite reads per tick (the owner's row, and the once-guard, which hits the first row it checks), no launches, and its refusal is logged once. | unfinished and waiting jobs |
 | Sidecar bg worker | 100 ms | one `stat` of its state directory. It lists the directory only after it changes, and re-reads only running records. | running sidecar jobs |
 | Delivery drain, binders | `delivery_interval_secs` | queue reads; the Claude and Codex binders and the native-receiver reconcile each read only their harness's live seats (F185; each decoded the whole roster) | queued deliveries; live seats of that harness |
-| Death sweep | 5 s (`PIJ_RS_DEATH_SWEEP_MS`) | in-process liveness per live seat (no launch, plan 182) | live seats |
+| Death sweep | 5 s (`PIJ_RS_DEATH_SWEEP_MS`) | in-process liveness per live seat (no launch, plan 182); the mass-death count is a compare per sweep, and only an alarm (at most one a minute, F271b) lists live seats and wakes the PAs | live seats |
 | PA watchdog | 60 s | registry and spine reads | PAs |
 
 Launches per tick per seat: none. The launch sites and their rates are in [macos-defender.md](macos-defender.md).
