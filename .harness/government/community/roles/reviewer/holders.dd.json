@@ -2534,7 +2534,10 @@
 					"harness_session": "ddddf745-f176-4343-859e-192fb74c0e44",
 					"instance_key": "301",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #301 merged (ed1e89113b59)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-quiet-moth",
+					"to": "2026-11-21T00:12:59.641Z",
 					"why": "verdict on #301 (issue #90 daemon.log bound)"
 				}
 			]
