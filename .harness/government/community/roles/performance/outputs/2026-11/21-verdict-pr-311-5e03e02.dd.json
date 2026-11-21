@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fd56-a564-76c1-870e-fa169f622e9d",
+				"date": "2026-11-21",
+				"head": "5e03e0219a1a04fd3120355024bb72c28039a9de",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:311",
+				"writer": "pij-minimum-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"new (C34 follow-up, non-blocking): gap reconciliation is serialized but has no scans/second cap; repeated gaps cost one live-Copilot roster read plus three indexed seeks per native seat per pass. Post-deploy evidence should include gap/pass count, duration and seat count.",
+				"carried from R1: authorized deploy owner owes comparable AFTER CPU/RSS/spawn receipts and the natural unattended recovery chain, including inherited control/registration launch deltas; no AFTER measurement claimed here."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 311; git diff --check",
+					"exit_code": 0,
+					"log": "FINAL at 5e03e0219a1a04fd3120355024bb72c28039a9de, CI5/5, clean detached worktree"
+				},
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci (CI)",
+					"exit_code": 0,
+					"log": "run44883027136 job136782244035 successful artifact14698713239: 30 relevant JUnit cases PASS"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "Same eight C25 missing-dependency/ambient-tool failures as R1; native Copilot and SDK contracts pass; not a local full-gate pass"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "ROUND 2 OF 2 (C34 FINAL) - PERFORMANCE: PASS-WITH-NOTES\nPR: #311\nHead: 5e03e0219a1a04fd3120355024bb72c28039a9de\nAnswers: 01a1fd56-a564-76c1-870e-fa169f622e9d\n\nNo performance correctness regression or demonstrated normal-use cost breach found. Round-one cost notes are substantially addressed: the R2 cost section explicitly prices total-event/payload fan-out, conditional inherited work, the existing counted /bin/ps fallback, and post-deploy AFTER debt. The new reconciliation closes the missing attach/gap trigger path without a timer or new launch site. This verdict does not replace the correctness review of B311-01.\n\nVerified cost rows:\n\n| Path | Work, frequency and scaling |\n| --- | --- |\n| Live subscriber | One daemon-wide receiver, not one per seat. Every broadcast Event is received/cloned before the kind filter, so CPU/allocation scales with total event rate and payload bytes, even when no lapse occurs. No unrelated-event SQL. Event-count retention uses the existing bounded ring (default capacity 1024), not a replay of the entire spine. |\n| Delivered lapse | One outstanding() check, then the R1 exact-seat registry/liveness/conditional-remedy path only if the event sequence still matches. outstanding() is one latest_matching port call with THREE indexed LIMIT 1 seeks, a schema check and read-transaction setup/rollback, not one SQL statement. The three kinds are lapsed, renewed and seat.auth_recovery. |\n| Reconcile | One registry.list filtered to live Copilot seats; the returned snapshot also includes live non-native Copilot seats, which are filtered in Rust. For N native seats: N latest_matching calls, hence 3N indexed tail seeks plus metadata/transaction work. Only an outstanding lapse reaches the existing decision path. Runs once on initial attachment and once per detected gap, never on a periodic tick. No full-spine history materialization. |\n| Gap storm | One follower executes scans serially: concurrency is 1, with no per-gap task fan-out or backlog of scheduled rescans. Each replacement subscription starts with a fresh dropped counter, so a stale count cannot itself create an endless reattach loop. Another pass requires another observed gap in the new subscription. There is NO configured scans/second cap or cooldown. G gap recoveries cost G+1 roster passes and (G+1)*N latest_matching calls for a fixed N, plus conditional remedies. Unrelated broadcast traffic can cause those gaps. The 30-minute remedy budget does not limit these reads. |\n| Closure/shutdown | Zero drops when the stream ends breaks the outer loop. Reattachment resets the count, avoiding a persistent old-gap retry loop. The daemon still aborts and joins the one follower task; the additive #309 spawn_waits field/stop integration retains extension_lost construction and shutdown wiring. No new shutdown poll or process launch was introduced by R2. |\n| Liveness/remedy | Unchanged R1 path: kernel/procfs start observation normally launches nothing; the exceptional exact-PID /bin/ps path is absolute and records ps.proc-liveness-fallback. Existing pane reads/control delivery, CLI restart initialization, registration and notifications retain their conditional costs. No new launch site and no automatic revive. |\n\nSources at this head: auth_recovery.rs:567-694; events/mod.rs:259-283,459-492; store/spine.rs:64-65,367-395; store/registry.rs:447-471; core/config.rs:213. Liveness, tmux and latest_matching implementations are unchanged from R1; the merged registry addition is the separate #309 list_launched method, not a change to the list used here.\n\nThe lapse remains the POLICY input; reconciliation is another delivery path for that same input. outstanding(), process identity, idle/composer checks and the shared window are BRAKES, not new restart policies. The same follower cannot run its reconcile and live-event handler concurrently; the existing per-seat ledger lock continues to serialize concurrent F212 report admission.\n\nValidation:\n- just pr-freeze 311: exit 0, FINAL at 5e03e0219a1a04fd3120355024bb72c28039a9de, CLEAN, CI 5/5 successful, clean detached review worktree. git diff --check: exit 0.\n- CI run 44883027136, successful rust-test job 136782244035: cargo nextest run --locked --workspace --profile ci PASS. The successful upload log selects artifact ID 14698713239. Parsed JUnit confirms 30 relevant cases PASS: 22 auth_recovery cases, two no-ps liveness cases and six launch-site sensors. This includes pre-attach lapse recovery, one-slot overwrite recovery, renewed/previously-decided lapse suppression, delayed live-edge recheck, unreadable liveness, both shared-budget orders, and every_daemon_launch_site_records_itself.\n- No independent local mutation run or local Rust build; C34 makes mutants optional and the correctness reviewer owns those probes. No working seat was lapsed or restarted, no bounce, no dependency install/link, and no product-tree edits.\n- harness boot: ready=false due to missing worktree node_modules/.bin/vitest. harness checks --quick: exit 1, the same eight missing-dependency/ambient-tool failures as R1; native Copilot and SDK contracts pass. This is not a local full-gate pass. Exact-head CI is the locked-toolchain proof; the unchanged macOS liveness adapter was inspected, not recompiled locally.\n\nnotes_owed:\n- new (C34 follow-up, non-blocking): sustained broadcast gaps can drive repeated O(native seats) reconcile work without a time-based cap. The bound verified here is serial concurrency and bounded event-count retention, not scans/second or a demonstrated fleet CPU budget. Price each latest_matching call as three indexed seeks, not one SQL read. Measure gap/pass count, pass duration and native-seat count after deployment; additional machinery is not a final-round gate without a demonstrated normal-use cost breach.\n- carried from R1: the authorized deploy owner owes comparable AFTER CPU/RSS/spawn receipts and the next natural unattended recovery chain, including inherited control/registration launch deltas. No AFTER measurement is claimed here. The R1 governed verdict fe65e364 retains the undisturbed BEFORE receipt (PID22838/commit653f90ef96, 20.034019s, daemon spawn delta0 and liveness-fallback delta0); those older numbers are not a measurement of this head.\n\nHarness feedback: magicWand = a read-only recovery-cost receipt exposing gap count, reconciliation count/duration/native-seat count and spine-call versus SQL-seek counts alongside CPU/RSS/spawn deltas. Difficulties = dependency-free review gates fall through to incompatible ambient tools; neither a green correctness suite nor a serial loop proves a numerical steady-state read/CPU ceiling. Recorded through governed performance role memory. Holding performance/311 until merge.\n"
+		}
+	]
+}
