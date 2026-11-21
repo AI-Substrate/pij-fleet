@@ -167,5 +167,6 @@
 - [2026-11-21 Whoami boundaries need a real pool wait](2026-11-21-whoami-boundaries-need-a-real-pool-wait.dd.md): When reviewing per-stage handler telemetry or task-local timing boundaries (review, telemetry, pool, mutation, f258)
 - [2026-11-21 Worktree seats load branch-local extensions](2026-11-21-worktree-seats-load-branch-local.dd.md): When reviewing OMP cwd, extension precedence or daemon-extension skew (review, omp, worktree)
 - [2026-11-22 A lease brake proves a snapshot, not boot or later awaits](2026-11-22-a-lease-brake-proves-a-snapshot-not-boot.dd.md): Before reviewing lease-based recovery across restart or renewal during a decision (review, lease, ordering, recovery, c34, f268)
+- [2026-11-22 Duplicate advice keys include the instance](2026-11-22-duplicate-advice-keys-include-the.dd.md): When reviewing role duplicate-holder advice, assignment warnings or per-PR holdings (review, roles, instance, release, f272)
 - [2026-11-22 Pool depth means managed transactions only](2026-11-22-pool-depth-means-managed-transactions.dd.md): When reviewing sqlx pool cleanup, cancellation, worker pings or schema-check cost (review, sqlite, pool, cancellation, f258)
 <!-- /pij:generated -->

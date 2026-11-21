@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "When reviewing role duplicate-holder advice, assignment warnings or per-PR holdings",
+				"tags": [
+					"review",
+					"roles",
+					"instance",
+					"release",
+					"f272"
+				],
+				"title": "Duplicate advice keys include the instance"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR323 at 134b010: bare and named instances are separate holdings for duplicate advice; only distinct live seats on the same instance count. Repeated rows for one seat alone, dead/closed rows and many-holder roles get no duplicate advice. Release filtering must compare seat identity, not assignment pointer, so repeated kept-seat rows cannot release that seat. The CLI renders the same view actions; open-work reads use the shared grouping guard. Send-routing E-RS-ROLE-HOLDERS is a separate unchanged ambiguity check. Assign warning still checks open rows, not current seat liveness (existing limit). Fifteen picture tests plus the HTTP assign/view regression passed before and after independently killed grouping and warning-scope mutations. MagicWand: retain the extra same-seat/dead/mixed-instance/kept-seat oracle beside the instance regression. Cost: no new tick or launch; grouping scans already-loaded rows in-process."
+		}
+	]
+}
