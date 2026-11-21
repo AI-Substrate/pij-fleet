@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ffa3-bc58-7b63-94fb-efe2076e5484",
+				"date": "2026-11-22",
+				"head": "6d855e82239fac4abf1f064505bc1f5b35ee9b04",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:330",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 330 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at 6d855e8"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #330 round 2 at 6d855e82239fac4abf1f064505bc1f5b35ee9b04: pass\n\nDelta 23e4d369..6d855e82: crates/tmux/src/lib.rs, tests and docs. The merge brings main's content, which was already reviewed in its own PRs.\n\n1. Chunk construction and quoting are as safe as before.\n   - `detach_args` builds argv from the same fixed `detach_pair`: pipe-pane -t PANE, a separator, then set-option -p -u -t PANE TAP_SINK_OPTION. Each pane id is a separate argv element, and the separator is exactly a semicolon.\n   - `run()` executes it through `Command::args`, with no shell.\n   - Chunking only slices `pending`, capped at 8 KiB by `detach_chunk_len`, which counts the real argument bytes plus separators. It adds no text, interpolation or new argument kind.\n\n2. tmux error text is never reflected into a command.\n   - It appears only in the Err result string (\"detach failed for pane ...: error\"), which the observer folds into first_error and the shutdown log. That is local stderr only.\n   - It never goes into an argv, a tmux option, a path or a seat-delivered message.\n\n3. Ownership still decides.\n   - The pending set is built before the loop and is unchanged in this delta. A pane gets in only if this daemon tracks its tap locally, or its marker equals `expected_tap_sink`; anything else is refused as foreign.\n   - The round-2 logic only REMOVES panes from pending (the stopped-at pane keeps its marker and sink), so a foreign or unowned pane can never enter a later chunk.\n   - The 32-pane foreign-tap test still passes with 1 launch.\n\nNo secrets, lockfile or .npmrc changes. Nothing new for notes_owed.\n"
+		}
+	]
+}
