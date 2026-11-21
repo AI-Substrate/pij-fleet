@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Open when reviewing a PR that adds a SQLite index, an INDEXED BY query branch, or changes which rows a sweep/reaper lists.",
+				"tags": [
+					"store",
+					"sqlite",
+					"reaper",
+					"migration",
+					"review"
+				],
+				"title": "Store index/query PRs: check row-set equivalence and fail-closed, then read past the changed line"
+			}
+		},
+		{
+			"name": "body",
+			"value": "From #315 (F258, migration 0049 seats_live):\n- Security question for a new query branch: is it the SAME row set as the generic query with that filter (same predicates, same ORDER BY), and are all inputs bound (a static &str, the same ?1..?5 binds)? If so, no seat can be newly acted on, revived or missed.\n- For a reaper or death sweep, the safety lives in the loop, not in the list: it re-reads each row with registry.get, skips tombstoned rows, re-checks eligibility, then does tombstone_if_unchanged (a CAS). Confirm that is untouched and the list change is only a narrowing the old Rust filter already did.\n- INDEXED BY with a missing index makes the query refuse, so it fails closed. An older binary on a newer store is refused by require_current_schema. Both are good fail modes.\n- Read the whole function, not just the hunk. Round 1 missed nothing on security, but a second full-table list (receipt.after) sat below the changed line, so the cost claim covered half the work. Flag that kind of gap as a cost note for performance; don't block on it.\n- After a merge of main, `git diff origin/main...HEAD --stat` shows whether the merge brought in anything unreviewed.\n"
+		}
+	]
+}
