@@ -448,6 +448,10 @@ pub(super) async fn revive_seat(
         );
     }
 
+    // F276: from here to its answer this seat is being revived, so a sweep
+    // retiring long-dead seats' queued work spares it, even while this request
+    // only waits for its pane or for the spawn lock.
+    let _reviving = state.services.spawn_waits.reviving(&request.id);
     // F200: a seat that quit cleanly is dead before its pane closes. Wait,
     // bounded and outside the spawn lock, for that pane to go; then the
     // locked check below observes and decides exactly as before.

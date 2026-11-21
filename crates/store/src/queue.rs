@@ -459,6 +459,21 @@ const HOLD_EXPIRY_PROBE_SQL: &str = "SELECT EXISTS (SELECT 1 FROM delivered_mess
            AND state = 'failed' \
            AND outcome = 'undelivered:native-receiver-unavailable')";
 
+/// F276: the open delivery jobs of the given recipients that are still
+/// tombstoned before the cutoff, oldest first. Each recipient is one seats
+/// primary-key seek and one equality seek of its open jobs (`jobs_claimable
+/// (state, kind)` or `jobs_serial (serial_key, state)`), so the cost follows
+/// the chosen seats and their open jobs, never the queue's history.
+/// Binds: ?1 recipients (JSON array), ?2 tombstoned-before (Unix ms), ?3 limit.
+const RETIRABLE_JOBS_SQL: &str = "SELECT j.id, j.kind, j.serial_key, j.payload, j.dedupe_key, \
+            j.dedupe_origin, j.attempt \
+     FROM jobs j JOIN seats s ON s.id = j.serial_key \
+     WHERE s.id IN (SELECT value FROM json_each(?1)) \
+       AND s.tombstoned_at IS NOT NULL AND s.tombstoned_at < ?2 \
+       AND j.state IN ('pending', 'running') \
+       AND j.kind IN ('delivery:' || s.id, 'delivery-control:' || s.id) \
+     ORDER BY j.id LIMIT ?3";
+
 fn decode_job(row: &sqlx::sqlite::SqliteRow) -> Result<Job> {
     Ok(Job {
         kind: row.try_get("kind").map_err(adapter_error)?,
@@ -1301,6 +1316,83 @@ impl Queue for SqliteQueue {
         .await
     }
 
+    async fn retire_recipient_jobs(
+        &self,
+        recipients: &[SeatId],
+        tombstoned_before_ms: u64,
+        limit: usize,
+        at: u64,
+        _spine: &dyn pij_core::ports::Spine,
+    ) -> Result<Vec<pij_core::model::Event>> {
+        require_current_schema(&self.pool).await?;
+        if recipients.is_empty() || limit == 0 {
+            return Ok(Vec::new());
+        }
+        let recipients = serde_json::to_string(recipients).map_err(|error| PijError::Adapter {
+            adapter: "store/queue".into(),
+            message: error.to_string(),
+        })?;
+        let too_large = |what: &str| PijError::Adapter {
+            adapter: "store/queue".into(),
+            message: format!("{what} exceeds SQLite's integer range"),
+        };
+        let before =
+            i64::try_from(tombstoned_before_ms).map_err(|_| too_large("retirement cutoff"))?;
+        let limit = i64::try_from(limit).map_err(|_| too_large("retirement limit"))?;
+        let pool = self.pool.clone();
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            // The tombstone is read again here, in the write transaction: a
+            // revive that lifted it (or a later death that renewed it) since
+            // the caller's roster spares every job of that seat.
+            let rows = sqlx::query(RETIRABLE_JOBS_SQL)
+                .bind(&recipients)
+                .bind(before)
+                .bind(limit)
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+            let mut events = Vec::new();
+            for row in &rows {
+                let id: i64 = row.try_get("id").map_err(adapter_error)?;
+                let affected = sqlx::query(
+                    "UPDATE jobs SET state = 'failed', outcome = ?2, acked_at = unixepoch() \
+                     WHERE id = ?1 AND state IN ('pending', 'running')",
+                )
+                .bind(id)
+                .bind(DeliveryFailure::RecipientRetired.as_str())
+                .execute(&mut *tx)
+                .await
+                .map_err(adapter_error)?
+                .rows_affected();
+                if affected == 0 {
+                    continue;
+                }
+                let evidence = pij_core::ports::ParkingEvidence {
+                    outcome: DeliveryFailure::RecipientRetired,
+                    reason: pij_core::delivery::RECIPIENT_RETIRED_REASON,
+                    at,
+                };
+                // A payload that is not a message names no sender to tell.
+                let Ok(parked) = pij_core::delivery::parked_events_via(
+                    JobId(id as u64),
+                    &decode_job(row)?,
+                    &evidence,
+                    "queue",
+                ) else {
+                    continue;
+                };
+                for mut event in parked {
+                    event.seq = Some(crate::spine::append_in_transaction(&mut tx, &event).await?);
+                    events.push(event);
+                }
+            }
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(events)
+        })
+        .await
+    }
+
     async fn record_delivery_deferral(
         &self,
         job: JobId,
@@ -2094,5 +2186,67 @@ mod tests {
                 "no `{probe}`:\n{text}"
             );
         }
+    }
+
+    /// F276: the retirement read seeks each chosen recipient by primary key,
+    /// then that recipient's open jobs by an equality seek (state and kind, or
+    /// serial key and state), on a queue shaped like the live one (thousands
+    /// of retired seats, a long finished history, a few hundred open rows):
+    /// never a walk of `jobs`.
+    #[tokio::test]
+    async fn the_retirement_read_seeks_by_recipient() {
+        let pool = crate::open("").await.expect("memory");
+        sqlx::query(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 3000) \
+             INSERT INTO seats (id, harness, folder, state, seq, tombstoned_at) \
+             SELECT 'pij-seat-' || i, 'copilot', '/abs', 'idle', i, 1000 + i FROM n",
+        )
+        .execute(&pool)
+        .await
+        .expect("seats");
+        sqlx::query(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 40000) \
+             INSERT INTO jobs (kind, serial_key, payload, dedupe_key, dedupe_origin, \
+                               enqueued_at, state) \
+             SELECT 'delivery:pij-seat-' || (i % 3000), 'pij-seat-' || (i % 3000), \
+                    '{\"from\":\"pij-sender\"}', 'm-' || i, '', 1, \
+                    CASE WHEN i % 100 = 0 THEN 'pending' ELSE 'done' END FROM n",
+        )
+        .execute(&pool)
+        .await
+        .expect("jobs");
+        sqlx::query("ANALYZE")
+            .execute(&pool)
+            .await
+            .expect("analyze");
+        let plan: Vec<String> =
+            sqlx::query(&format!("EXPLAIN QUERY PLAN {}", super::RETIRABLE_JOBS_SQL))
+                .fetch_all(&pool)
+                .await
+                .expect("plan")
+                .iter()
+                .map(|row| row.get::<String, _>("detail"))
+                .collect();
+        let text = plan.join("\n");
+        assert!(
+            plan.iter().any(
+                |line| line.starts_with("SEARCH s USING INDEX sqlite_autoindex_seats_1 (id=?)")
+            ),
+            "no recipient seek:\n{text}"
+        );
+        assert!(
+            plan.iter().any(|line| line
+                .starts_with("SEARCH j USING INDEX jobs_claimable (state=? AND kind=?)")
+                || line.starts_with("SEARCH j USING INDEX jobs_serial (serial_key=? AND state=?)")),
+            "no open-job seek per recipient:\n{text}"
+        );
+        // `SCAN json_each` is the recipient list itself, not a table.
+        assert!(
+            !plan.iter().any(|line| {
+                let mut words = line.split_whitespace();
+                words.next() == Some("SCAN") && matches!(words.next(), Some("j" | "s"))
+            }),
+            "walks a table:\n{text}"
+        );
     }
 }

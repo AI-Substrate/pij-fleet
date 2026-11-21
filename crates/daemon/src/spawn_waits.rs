@@ -34,7 +34,7 @@
 //! ([`SpawnWaits::stop`]), no spawn starts, and the stop waits for each launch
 //! already past its check to write its row.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -172,6 +172,10 @@ pub struct SpawnWaits {
     /// F264: what the holder of `launches` is launching, for a stop that
     /// gives up waiting on it.
     launching: Mutex<Option<String>>,
+    /// F276: seats with a revive request in progress, from its first wait to
+    /// its answer, counted per request. The retirement of a long-dead seat's
+    /// queue spares every seat here.
+    reviving: Mutex<HashMap<SeatId, usize>>,
 }
 
 impl SpawnWaits {
@@ -185,6 +189,7 @@ impl SpawnWaits {
             stopping: AtomicBool::new(false),
             launches: Arc::new(tokio::sync::Mutex::new(())),
             launching: Mutex::new(None),
+            reviving: Mutex::new(HashMap::new()),
         }
     }
 
@@ -204,6 +209,32 @@ impl SpawnWaits {
             .lock()
             .expect("spawn waits launching")
             .clone()
+    }
+
+    /// F276: `seat` is being revived until the returned guard drops. Taken
+    /// before a revive's first wait, so a revive that is only waiting (for
+    /// its dead pane to close, or for the spawn lock) already counts.
+    pub fn reviving(self: &Arc<Self>, seat: &SeatId) -> ReviveIntent {
+        *self
+            .reviving
+            .lock()
+            .expect("spawn waits reviving")
+            .entry(seat.clone())
+            .or_default() += 1;
+        ReviveIntent {
+            waits: Arc::clone(self),
+            seat: seat.clone(),
+        }
+    }
+
+    /// F276: the seats a revive request is working on now.
+    pub fn revives(&self) -> HashSet<SeatId> {
+        self.reviving
+            .lock()
+            .expect("spawn waits reviving")
+            .keys()
+            .cloned()
+            .collect()
     }
 
     /// The daemon is stopping (F255): no spawn starts from now on, and this
@@ -407,6 +438,25 @@ impl SpawnWaits {
     fn hand_off(&self, launch: Launch, reason: String) {
         let settle = Arc::clone(&self.settle);
         tokio::spawn(async move { settle.report(&launch, &reason).await });
+    }
+}
+
+/// F276: one revive request's claim that its seat is being revived; the seat
+/// stops counting when the last such guard drops.
+pub struct ReviveIntent {
+    waits: Arc<SpawnWaits>,
+    seat: SeatId,
+}
+
+impl Drop for ReviveIntent {
+    fn drop(&mut self) {
+        let mut reviving = self.waits.reviving.lock().expect("spawn waits reviving");
+        if let Some(count) = reviving.get_mut(&self.seat) {
+            *count -= 1;
+            if *count == 0 {
+                reviving.remove(&self.seat);
+            }
+        }
     }
 }
 
@@ -664,6 +714,24 @@ mod tests {
     fn bind(waits: &SpawnWaits, spawn_id: &str) {
         let launch = launch(spawn_id);
         waits.bound(spawn_id, &launch.seat, launch.pane.as_deref());
+    }
+
+    /// F276: a seat counts as being revived while any revive request for it
+    /// is in progress, not only the first: two requests, one ends, the seat
+    /// is still spared until the other ends too.
+    #[test]
+    fn a_seat_is_reviving_until_its_last_revive_request_ends() {
+        let (waits, _) = waits();
+        let seat = SeatId::from("pij-reviving");
+        let first = waits.reviving(&seat);
+        let second = waits.reviving(&seat);
+        drop(first);
+        assert!(
+            waits.revives().contains(&seat),
+            "the second request runs on"
+        );
+        drop(second);
+        assert!(waits.revives().is_empty());
     }
 
     /// R253-001: the seat binds while the request watches, then the request

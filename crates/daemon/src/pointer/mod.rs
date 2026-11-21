@@ -11,6 +11,7 @@ use pij_core::model::SeatId;
 mod worker;
 
 pub use worker::DrainWorker;
+pub(crate) use worker::live_or_owed;
 
 /// Event emitted after the pointer line itself was submitted to the recipient.
 pub const POINTER_ANNOUNCED_EVENT_KIND: &str = "delivery.pointer-announced";

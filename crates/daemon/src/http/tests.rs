@@ -161,6 +161,19 @@ impl Queue for CountingQueue {
         })
     }
 
+    async fn retire_recipient_jobs(
+        &self,
+        _recipients: &[SeatId],
+        _tombstoned_before_ms: u64,
+        _limit: usize,
+        _at: u64,
+        _spine: &dyn Spine,
+    ) -> Result<Vec<Event>> {
+        Err(PijError::Adapter {
+            adapter: "test/counting-queue".into(),
+            message: "enqueue-only fixture cannot retire jobs".into(),
+        })
+    }
     async fn record_delivery_deferral(
         &self,
         _job: JobId,
