@@ -925,3 +925,94 @@ async fn a_bind_between_the_pane_read_and_the_tombstone_is_preserved() {
         "no stale tombstone"
     );
 }
+
+/// Records whether each registry list a reap makes is live-only.
+struct ListSpy {
+    inner: Arc<dyn Registry>,
+    live_only: Mutex<Vec<bool>>,
+}
+#[async_trait]
+impl Registry for ListSpy {
+    async fn get(&self, seat: &pij_core::model::SeatId) -> Result<Option<SeatDescriptor>> {
+        self.inner.get(seat).await
+    }
+    async fn put(&self, descriptor: SeatDescriptor) -> Result<pij_core::model::Seq> {
+        self.inner.put(descriptor).await
+    }
+    async fn put_reporting(
+        &self,
+        d: SeatDescriptor,
+    ) -> Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
+        self.inner.put_reporting(d).await
+    }
+    async fn put_reporting_keeping_parent(
+        &self,
+        d: SeatDescriptor,
+    ) -> Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
+        self.inner.put_reporting_keeping_parent(d).await
+    }
+    async fn list(&self, filter: pij_core::ports::SeatFilter) -> Result<Vec<SeatDescriptor>> {
+        self.live_only
+            .lock()
+            .expect("list spy")
+            .push(filter.live_only);
+        self.inner.list(filter).await
+    }
+    async fn tombstone(
+        &self,
+        seat: &pij_core::model::SeatId,
+        reason: &str,
+    ) -> Result<pij_core::model::Seq> {
+        self.inner.tombstone(seat, reason).await
+    }
+    async fn tombstone_if_unchanged(
+        &self,
+        expected: SeatDescriptor,
+        reason: String,
+    ) -> Result<pij_core::model::Seq> {
+        self.inner.tombstone_if_unchanged(expected, reason).await
+    }
+    async fn set_activity(
+        &self,
+        seat: &pij_core::model::SeatId,
+        state: pij_core::model::SystemState,
+        reason: Option<&str>,
+    ) -> Result<Option<pij_core::model::Seq>> {
+        self.inner.set_activity(seat, state, reason).await
+    }
+}
+
+/// F258, R315-F001: a sweep reads live rows only, before and after, never
+/// every row ever written (the live store keeps about 3,000 retired rows), and
+/// its receipt still counts live seats: a retired row is in neither count.
+///
+/// Mutation witness: the after-count lists `SeatFilter::default()` again.
+#[tokio::test]
+async fn a_reap_lists_only_live_rows_and_counts_them() {
+    let (services, _store) = services().await;
+    let reapable = seat();
+    services.registry.put(reapable.clone()).await.unwrap();
+    let mut retired = seat();
+    retired.id = pij_core::model::SeatId::from("pij-long-retired");
+    services.registry.put(retired.clone()).await.unwrap();
+    services
+        .registry
+        .tombstone(&retired.id, "test: retired long ago")
+        .await
+        .unwrap();
+    let registry = ListSpy {
+        inner: services.registry.clone(),
+        live_only: Mutex::new(Vec::new()),
+    };
+    let (live, tmux) = (FakeLiveness::new(), FakeTmux::new());
+
+    let dry = reap(&registry, &live, &tmux, true).await.unwrap();
+    assert_eq!((dry.before, dry.after), (1, 1));
+    let swept = reap(&registry, &live, &tmux, false).await.unwrap();
+    assert_eq!((swept.before, swept.after, swept.reaped.len()), (1, 0, 1));
+    assert_eq!(
+        *registry.live_only.lock().unwrap(),
+        [true, true, true],
+        "dry run: one live list; sweep: a live list before and after"
+    );
+}

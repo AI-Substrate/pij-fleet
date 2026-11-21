@@ -257,6 +257,19 @@ impl EventBus {
     /// `Some(cursor)`; `subscribe(None, ..)` is reserved for an intentional cold
     /// replay from the beginning.
     pub fn subscribe_live(&self, filter: EventFilter) -> Subscription {
+        self.live_subscription(filter, false)
+    }
+
+    /// [`Self::subscribe_live`] that ends at the first gap a lag leaves (events
+    /// overwritten in the broadcast ring before it read them), instead of
+    /// skipping it. Its consumer reconciles from the spine and attaches again;
+    /// [`Subscription::dropped_count`] above zero tells that end from the
+    /// bus closing.
+    pub fn subscribe_live_until_gap(&self, filter: EventFilter) -> Subscription {
+        self.live_subscription(filter, true)
+    }
+
+    fn live_subscription(&self, filter: EventFilter, ends_on_gap: bool) -> Subscription {
         Subscription {
             replay: VecDeque::new(),
             paging: None,
@@ -264,7 +277,7 @@ impl EventBus {
             filter,
             last_seq: Seq(0),
             dropped: Arc::new(AtomicU64::new(0)),
-            ends_on_gap: false,
+            ends_on_gap,
             lagged: false,
             ended: false,
         }

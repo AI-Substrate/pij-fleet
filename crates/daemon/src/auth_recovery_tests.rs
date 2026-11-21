@@ -9,9 +9,11 @@ use pij_core::model::{Harness, Outcome, ProcIdentity, SeatDescriptor, SeatId, Sy
 use pij_core::ports::TmuxPort;
 use pij_harnesses::InteractionGate;
 use pij_testkit::FreshStore;
-use pij_testkit::fakes::FakeTmux;
+use pij_testkit::fakes::{FakeLiveness, FakeTmux};
 
-use super::{Action, Entry, Incarnation, Ledger, LostLogin, RECOVERY_WINDOW, decide, handle};
+use super::{
+    Action, Cause, Entry, Incarnation, Ledger, LostLogin, RECOVERY_WINDOW, decide, handle, on_lapse,
+};
 
 const SEAT: &str = "pij-copilot-coder";
 const PARENT: &str = "pij-pm";
@@ -104,7 +106,7 @@ async fn report(fleet: &Fleet, reporter: Incarnation, now_ms: u64) -> super::Out
         &fleet.services,
         &coder(fleet).await,
         reporter,
-        LostLogin::Authorization,
+        Cause::Reported(LostLogin::Authorization),
         now_ms,
     )
     .await
@@ -223,7 +225,7 @@ async fn a_draft_in_the_composer_spares_the_seat() {
         &fleet.services,
         &coder(&fleet).await,
         FIRST,
-        LostLogin::CredentialAuthority,
+        Cause::Reported(LostLogin::CredentialAuthority),
         10 * MINUTE,
     )
     .await
@@ -366,26 +368,50 @@ fn the_window_bounds_every_brake() {
     let notify = entry(Action::Notify, recent);
     let yes = || true;
     let no = || false;
-    assert_eq!(decide(None, now, FIRST, no, yes), Action::Restart);
-    assert_eq!(decide(None, now, FIRST, no, no), Action::Notify);
-    assert_eq!(decide(Some(&restart), now, FIRST, no, yes), Action::Pending);
+    assert_eq!(decide(None, now, FIRST, true, no, yes), Action::Restart);
+    assert_eq!(decide(None, now, FIRST, true, no, no), Action::Notify);
     assert_eq!(
-        decide(Some(&restart), now, FIRST, yes, yes),
+        decide(Some(&restart), now, FIRST, true, no, yes),
+        Action::Pending
+    );
+    assert_eq!(
+        decide(Some(&restart), now, FIRST, true, yes, yes),
         Action::NotRestarted
     );
     assert_eq!(
-        decide(Some(&restart), now, SECOND, no, yes),
+        decide(Some(&restart), now, SECOND, true, no, yes),
         Action::Relogin
     );
-    assert_eq!(decide(Some(&notify), now, FIRST, yes, yes), Action::Told);
+    assert_eq!(
+        decide(Some(&notify), now, FIRST, true, yes, yes),
+        Action::Told
+    );
+    // F261: a process that is not running is never restarted, in the window
+    // or out of it.
+    assert_eq!(decide(None, now, FIRST, false, no, yes), Action::Exited);
+    assert_eq!(
+        decide(Some(&restart), now, FIRST, false, yes, yes),
+        Action::Exited
+    );
+    assert_eq!(
+        decide(Some(&notify), now, FIRST, false, yes, yes),
+        Action::Told
+    );
     // At the window's end the seat may be restarted again.
     let old = now - RECOVERY_WINDOW;
     assert_eq!(
-        decide(Some(&entry(Action::Restart, old)), now, FIRST, no, yes),
+        decide(
+            Some(&entry(Action::Restart, old)),
+            now,
+            FIRST,
+            true,
+            no,
+            yes
+        ),
         Action::Restart
     );
     assert_eq!(
-        decide(Some(&entry(Action::Notify, old)), now, FIRST, no, no),
+        decide(Some(&entry(Action::Notify, old)), now, FIRST, true, no, no),
         Action::Notify
     );
 }
@@ -398,7 +424,371 @@ fn only_the_two_lost_login_kinds_are_accepted() {
     ] {
         assert_eq!(serde_json::from_str::<LostLogin>(wire).unwrap(), kind);
     }
-    for wire in ["\"quota\"", "\"authentication\"", "\"\""] {
+    // F261: `extension-lost` is the daemon's own cause; no caller may claim it.
+    for wire in [
+        "\"quota\"",
+        "\"authentication\"",
+        "\"\"",
+        "\"extension-lost\"",
+    ] {
         assert!(serde_json::from_str::<LostLogin>(wire).is_err(), "{wire}");
     }
+}
+
+/// F261: the kernel runs the coder's recorded process (pid and start).
+fn running(fleet: &mut Fleet) {
+    fleet.services.liveness = Arc::new(FakeLiveness::new().with_proc(ProcIdentity {
+        pid: FIRST.pid,
+        proc_start: FIRST.proc_start,
+    }));
+}
+
+async fn lapse(fleet: &Fleet, now_ms: u64) -> Option<super::Outcome> {
+    on_lapse(&fleet.services, &SeatId::from(SEAT), now_ms)
+        .await
+        .unwrap()
+}
+
+/// F261: Copilot force-killed the pij extension (its enterprise sign-in
+/// lapsed) and the daemon told the lease lapse. The process still runs and
+/// the seat is idle with an empty composer: one `/restart`, recorded as
+/// `extension-lost`, nobody told. A second lapse in the window adds nothing.
+#[tokio::test]
+async fn a_lapse_of_a_running_idle_copilot_seat_restarts_it_once() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    let follower = tokio::spawn(super::follow_lapses(fleet.services.clone()));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    fleet
+        .services
+        .event_bus
+        .publish(pij_core::model::Event {
+            seq: None,
+            v: 1,
+            at: 10 * MINUTE,
+            kind: crate::delivery::NATIVE_RECEIVER_LAPSED.to_string(),
+            seat: Some(SeatId::from(SEAT)),
+            payload: serde_json::json!({"seat": SEAT, "renewed_at": null}).to_string(),
+        })
+        .await
+        .unwrap();
+    let mut queued = Vec::new();
+    for _ in 0..200 {
+        queued = controls(&fleet).await;
+        if !queued.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    follower.abort();
+    assert_eq!(queued.len(), 1, "one restart control is queued");
+    assert!(queued[0].contains("\"restart\""), "{queued:?}");
+    assert!(told(&fleet, PARENT).await.is_empty(), "nobody is told");
+    let recorded = fleet
+        .services
+        .spine
+        .latest_matching(&SeatId::from(SEAT), &[super::AUTH_RECOVERY_KIND])
+        .await
+        .unwrap()
+        .expect("the decision is recorded");
+    let payload: serde_json::Value = serde_json::from_str(&recorded.payload).unwrap();
+    assert_eq!(payload["kind"], "extension-lost");
+    assert_eq!(payload["action"], "restart");
+    let again = lapse(&fleet, 11 * MINUTE).await.expect("decided");
+    assert_eq!(again.action, Action::Pending);
+    assert_eq!(controls(&fleet).await.len(), 1, "still the one restart");
+}
+
+/// F261: a lapse whose process is gone (no such pid) or recycled (another
+/// start at that pid) is an exit or a crash. Never a restart: the parent is
+/// told to revive it, once in the window.
+#[tokio::test]
+async fn a_lapse_whose_process_is_gone_never_restarts_and_says_revive() {
+    for kernel in [
+        FakeLiveness::new(),
+        FakeLiveness::new().with_proc(ProcIdentity {
+            pid: FIRST.pid,
+            proc_start: FIRST.proc_start + 1,
+        }),
+    ] {
+        let mut fleet = fleet(SystemState::Idle, None).await;
+        fleet.services.liveness = Arc::new(kernel);
+        let exited = lapse(&fleet, 10 * MINUTE).await.expect("decided");
+        assert_eq!(exited.action, Action::Exited);
+        assert!(controls(&fleet).await.is_empty(), "never a restart");
+        assert_eq!(exited.told.len(), 1, "{:?}", exited.told);
+        let body = told(&fleet, PARENT).await.join("\n");
+        assert!(body.contains("pij-rs revive pij-copilot-coder"), "{body}");
+        assert!(!body.contains("/restart"), "{body}");
+        assert_eq!(
+            lapse(&fleet, 11 * MINUTE).await.expect("decided").action,
+            Action::Told
+        );
+        assert_eq!(told(&fleet, PARENT).await.len(), 1, "told once");
+    }
+}
+
+/// F261: the extension's own report and the lease lapse share one window: a
+/// loss seen both ways is restarted once, whichever comes first.
+#[tokio::test]
+async fn a_lapse_and_a_report_share_one_restart() {
+    let mut fleet_a = fleet(SystemState::Idle, None).await;
+    running(&mut fleet_a);
+    assert_eq!(
+        report(&fleet_a, FIRST, 10 * MINUTE).await.action,
+        Action::Restart
+    );
+    assert_eq!(
+        lapse(&fleet_a, 11 * MINUTE).await.expect("decided").action,
+        Action::Pending
+    );
+    assert_eq!(controls(&fleet_a).await.len(), 1);
+
+    let mut fleet_b = fleet(SystemState::Idle, None).await;
+    running(&mut fleet_b);
+    assert_eq!(
+        lapse(&fleet_b, 10 * MINUTE).await.expect("decided").action,
+        Action::Restart
+    );
+    assert_eq!(
+        report(&fleet_b, FIRST, 11 * MINUTE).await.action,
+        Action::Pending
+    );
+    assert_eq!(controls(&fleet_b).await.len(), 1);
+}
+
+/// F261: the same brakes as a report. A busy seat or a draft in the composer
+/// is never restarted on a lapse; the parent is told how.
+#[tokio::test]
+async fn a_lapsed_seat_that_is_busy_or_holds_a_draft_is_not_restarted() {
+    for (state, draft) in [
+        (SystemState::Working, None),
+        (SystemState::Idle, Some("half a thought")),
+    ] {
+        let mut fleet = fleet(state, draft).await;
+        running(&mut fleet);
+        let outcome = lapse(&fleet, 10 * MINUTE).await.expect("decided");
+        assert_eq!(outcome.action, Action::Notify, "{state:?} {draft:?}");
+        assert!(controls(&fleet).await.is_empty(), "{state:?} {draft:?}");
+        assert_eq!(told(&fleet, PARENT).await.len(), 1, "{state:?} {draft:?}");
+    }
+}
+
+/// F261: a lapse decides only a live Copilot seat with a recorded process.
+/// Any other harness, a retired seat, or one never bound is left alone.
+#[tokio::test]
+async fn a_lapse_of_any_other_seat_does_nothing() {
+    for change in ["claude", "retired", "unbound"] {
+        let mut fleet = fleet(SystemState::Idle, None).await;
+        running(&mut fleet);
+        let mut seat = coder(&fleet).await;
+        match change {
+            "claude" => seat.harness = Harness::Claude,
+            "retired" => seat.tombstoned_at = Some(1),
+            _ => seat.proc = None,
+        }
+        fleet.services.registry.put(seat).await.unwrap();
+        assert!(lapse(&fleet, 10 * MINUTE).await.is_none(), "{change}");
+        assert!(controls(&fleet).await.is_empty(), "{change}");
+        assert!(told(&fleet, PARENT).await.is_empty(), "{change}");
+    }
+}
+
+/// A second native Copilot seat, whose process the kernel does not run.
+const OTHER: &str = "pij-copilot-tester";
+
+/// B311-01: the coder delivers natively (a reconcile reads only such seats),
+/// and `other` adds a second native Copilot seat beside it.
+async fn native(fleet: &Fleet, other: bool) {
+    let mut seat = coder(fleet).await;
+    seat.native_extension_delivery = true;
+    let mut second = seat.clone();
+    fleet.services.registry.put(seat).await.unwrap();
+    if other {
+        second.id = SeatId::from(OTHER);
+        second.pane = Some("%22".into());
+        second.harness_session = Some("native-tester".into());
+        second.proc = Some(ProcIdentity {
+            pid: 4300,
+            proc_start: 11,
+        });
+        fleet.services.registry.put(second).await.unwrap();
+    }
+}
+
+/// One spine event of `kind` for `seat`, through the bus (and so live).
+async fn edge(fleet: &Fleet, kind: &str, seat: Option<&str>) {
+    fleet
+        .services
+        .event_bus
+        .publish(pij_core::model::Event {
+            seq: None,
+            v: 1,
+            at: 10 * MINUTE,
+            kind: kind.to_string(),
+            seat: seat.map(SeatId::from),
+            payload: serde_json::json!({"seat": seat, "renewed_at": null}).to_string(),
+        })
+        .await
+        .unwrap();
+}
+
+/// The coder's queued controls once one appears, or none after two seconds.
+async fn controls_soon(fleet: &Fleet) -> Vec<String> {
+    for _ in 0..200 {
+        let queued = controls(fleet).await;
+        if !queued.is_empty() {
+            return queued;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Vec::new()
+}
+
+/// B311-01: a lapse told before the follower attached (a daemon restart
+/// restores it without telling it again, R277-2) is decided at attachment:
+/// one restart.
+#[tokio::test]
+async fn a_lapse_told_before_the_follower_attached_is_restarted_once() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    native(&fleet, false).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    let follower = tokio::spawn(super::follow_lapses(fleet.services.clone()));
+    let queued = controls_soon(&fleet).await;
+    follower.abort();
+    assert_eq!(queued.len(), 1, "one restart control is queued");
+    assert!(queued[0].contains("\"restart\""), "{queued:?}");
+}
+
+/// B311-01: a lapse overwritten in a one-slot broadcast ring before the
+/// follower read it is decided after the gap: one restart. The follower is
+/// held on the other seat's lock while the ring overflows.
+#[tokio::test]
+async fn a_lapse_overwritten_in_the_broadcast_ring_is_restarted_once() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    native(&fleet, true).await;
+    let spine = fleet.services.event_bus.raw_spine();
+    fleet.services.event_bus = Arc::new(crate::events::EventBus::new(spine, 1).unwrap());
+    let other = fleet.services.auth_recovery.slot(&SeatId::from(OTHER));
+    let held = other.lock().await;
+    let follower = tokio::spawn(super::follow_lapses(fleet.services.clone()));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(OTHER)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    for _ in 0..3 {
+        edge(&fleet, "test.noise", None).await;
+    }
+    drop(held);
+    let queued = controls_soon(&fleet).await;
+    follower.abort();
+    assert_eq!(queued.len(), 1, "one restart control is queued");
+}
+
+/// B311-01: a lapse its receiver renewed before the reconcile read it is
+/// never decided; a lapse still outstanding is.
+#[tokio::test]
+async fn a_reconcile_never_replays_a_lapse_its_receiver_renewed() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    native(&fleet, false).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_RENEWED, Some(SEAT)).await;
+    super::reconcile(&fleet.services).await;
+    assert!(
+        controls(&fleet).await.is_empty(),
+        "a renewed lapse is spared"
+    );
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    super::reconcile(&fleet.services).await;
+    assert_eq!(controls(&fleet).await.len(), 1, "an outstanding one is not");
+    super::reconcile(&fleet.services).await;
+    assert_eq!(
+        controls(&fleet).await.len(),
+        1,
+        "a decided one is not again"
+    );
+}
+
+/// B311-01: a lapse an earlier daemon already decided, its window since
+/// over, is not replayed when a new daemon reconciles: the reconcile acts
+/// only on a lapse with nothing decided after it.
+#[tokio::test]
+async fn a_lapse_an_earlier_daemon_decided_is_not_decided_again() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    native(&fleet, false).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    let long_ago = super::now_ms() - 40 * MINUTE;
+    fleet
+        .services
+        .event_bus
+        .publish(pij_core::model::Event {
+            seq: None,
+            v: 1,
+            at: long_ago,
+            kind: super::AUTH_RECOVERY_KIND.to_string(),
+            seat: Some(SeatId::from(SEAT)),
+            payload: serde_json::json!({
+                "action": "notify",
+                "at": long_ago,
+                "pid": FIRST.pid,
+                "proc_start": FIRST.proc_start,
+                "kind": "extension-lost",
+                "msg_id": null,
+            })
+            .to_string(),
+        })
+        .await
+        .unwrap();
+    super::reconcile(&fleet.services).await;
+    assert!(controls(&fleet).await.is_empty(), "never decided twice");
+}
+
+/// N311-01: a lapse renewed before the follower decides it is spared. The
+/// follower is held on the other seat's lock while the coder's lapse and its
+/// renewal are told.
+#[tokio::test]
+async fn a_lapse_renewed_before_it_is_decided_is_spared() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    native(&fleet, true).await;
+    let other = fleet.services.auth_recovery.slot(&SeatId::from(OTHER));
+    let held = other.lock().await;
+    let follower = tokio::spawn(super::follow_lapses(fleet.services.clone()));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(OTHER)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_RENEWED, Some(SEAT)).await;
+    drop(held);
+    let queued = controls_soon(&fleet).await;
+    follower.abort();
+    assert!(queued.is_empty(), "{queued:?}");
+}
+
+/// A kernel whose process table cannot be read.
+struct Unreadable;
+
+#[async_trait::async_trait]
+impl pij_core::ports::LivenessPort for Unreadable {
+    async fn proc_start(&self, _pid: u32) -> pij_core::error::Result<Option<u64>> {
+        Err(pij_core::error::PijError::Adapter {
+            adapter: "test/liveness".to_string(),
+            message: "unreadable".to_string(),
+        })
+    }
+}
+
+/// F261, security note 1: a start that cannot be read is not running: never
+/// a restart, the parent is told to revive it.
+#[tokio::test]
+async fn a_lapse_whose_process_cannot_be_read_never_restarts() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    fleet.services.liveness = Arc::new(Unreadable);
+    let outcome = lapse(&fleet, 10 * MINUTE).await.expect("decided");
+    assert_eq!(outcome.action, Action::Exited);
+    assert!(controls(&fleet).await.is_empty(), "never a restart");
 }
