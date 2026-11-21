@@ -1016,7 +1016,10 @@
 					"harness_session": "f28cd4ff-f0b1-4c95-af70-4ae77babe36d",
 					"instance_key": "307",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #307 merged (09a12825237e)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-visual-wildfowl",
+					"to": "2026-11-21T02:29:59.823Z",
 					"why": "verdict on #307 (F250)"
 				}
 			]

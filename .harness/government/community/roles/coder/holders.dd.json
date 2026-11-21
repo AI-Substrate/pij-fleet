@@ -1576,7 +1576,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f250",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #307 merged (09a12825237e)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-21T02:29:59.823Z",
 					"why": "F250 local per-version Copilot contract-pass cache"
 				}
 			]
