@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "When testing installedVersion environment or avoiding a live Copilot update/restart probe",
+				"tags": [
+					"review",
+					"harness",
+					"copilot",
+					"env",
+					"f271"
+				],
+				"title": "Offline version env proof via fake CLI"
+			}
+		},
+		{
+			"name": "body",
+			"value": "The installedVersion helper in harness/scripts/copilot-cli.mjs has a cheap offline proof seam: set COPILOT_BIN to an owned fake executable which requires COPILOT_AUTO_UPDATE=false and COPILOT_OFFLINE=true, then run the helper with inherited COPILOT_AUTO_UPDATE=true. Removing the helper override makes the fake exit 42; restoring it passes. This proves the env handoff without invoking the installed CLI, package cache, live daemon or a model. It does not prove internal /restart environment inheritance, which current CLI docs do not specify. PR325 at 9a77968 used this alongside independently killed no-alarm/no-cooldown/no-spawn-env mutants and a restored 11-daemon/22-spawn baseline. Its process-local window/cooldown and no-retrofit limits are explicit notes; the compaction continuation is complete. MagicWand: retain this fake-executable fixture as the version-reader contract test rather than requiring a live update canary."
+		}
+	]
+}
