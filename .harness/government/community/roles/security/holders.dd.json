@@ -1187,6 +1187,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-selected-deer",
 					"why": "#320 F268 round 1 (reuse)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T13:05:36.233Z",
+					"harness": "copilot",
+					"harness_session": "aa358e02-6f68-4ca0-88ce-59ef10419c81",
+					"instance_key": "321",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-selected-deer",
+					"why": "#321 F258 pool cut round 1 (reuse)"
 				}
 			]
 		}
