@@ -2575,6 +2575,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-northern-cricket",
 					"why": "verdict on #304 (#42 OMP worktree spawn)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T01:23:20.296Z",
+					"harness": "copilot",
+					"harness_session": "3ba3d0e7-9394-4ce2-b413-ad14d00a5177",
+					"instance_key": "305",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-smooth-wildebeest",
+					"why": "verdict on #305 (F253)"
 				}
 			]
 		}
