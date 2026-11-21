@@ -1,0 +1,64 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fed8-7749-7640-a7da-788961665dcf",
+				"date": "2026-11-22",
+				"head": "44e4974613311537047b346be285f5ec733507cd",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:324",
+				"writer": "pij-anonymous-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N324-01: cancellation of the shutdown/join future detaches already-started phase tasks; document returned-call versus cancellation ownership.",
+				"N324-02: timers wrapping prestarted HTTP drain/control release measure remaining join wait, not full operation latency; strict finish ordering with an empty HTTP drain was never established."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib store_shutdown_tests -- --skip review_mutant_ --nocapture --then test -p pij-daemon --lib spawn_waits::tests -- --skip review_mutant_ --then test -p pij-daemon --lib pane_observer::tests::a_stop_that_comes_with_a_due_tick_observes_nothing_more --then test -p pij-cli --test daemon_stop --then test -p pij-daemon --lib review_mutant_ -- --nocapture",
+					"exit_code": 101,
+					"log": "session-local pr324-probes.log;29 positive controls pass including private stream/control ordering;4 mutants killed"
+				},
+				{
+					"command": "just shared-build -- clippy --locked -p pij-daemon --lib -- -D warnings",
+					"exit_code": 0,
+					"log": "session-local pr324-clippy.log;production exact-head macOS"
+				},
+				{
+					"command": "inspect CI44920753765/job136896041293 successful artifact14714035736",
+					"exit_code": 0,
+					"log": "JUnit2820cases,zero failures;named shutdown/hold/stop/stream cases pass"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "session-local pr324-harness-checks.log;eight dependency/tool failures,heavy stages skipped;no full local pass"
+				},
+				{
+					"command": "just pr-freeze 324",
+					"exit_code": 0,
+					"log": "FINAL exacthead;CI5/5,CLEAN,no migration"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES at 44e4974613311537047b346be285f5ec733507cd, round 1.\n\n#316 N1-N3 and security new-1/new-2 are closed:\n- N1: the API documentation now states FIFO eviction at 256, regardless of\n  binding state; memory only, not hydrated at boot. The spine's settlement\n  facts guard boot recovery, while a resend reads its row. No durable replay\n  cache is implied.\n- N2: pane observation selects stop first, including a dropped sender, before\n  a ready tick. The 32-round control passes; the unbiased mutant fails at round0.\n  An already-running observation is still joined, not interrupted.\n- N3 / new-2: SpawnHold owns the launch mutex and clears its diagnostic name\n  in Drop before its OwnedMutexGuard releases. Both spawn and revive use it,\n  and revive names its own checks before handing that same hold to the owned\n  launch task. Early return, next-holder acquisition and panic unwinding all\n  leave no stale name. No public raw spawn-lock/name-setting bypass remains;\n  stop's private mutex acquisition is a join, not a spawn path.\n- New-1: SpawnHold::name rejects every control character and recognized line\n  separator through render::is_one_line; spawn names its folder only after\n  printable_path. Newline/ESC controls pass; removing the guard fails.\n\nShutdown ordering / ownership:\nAll twelve concurrent phase tasks are awaited by join!, not try_join!, before\ndelivery/event flush and physical store close. Only after those joins/cleanup\ndoes shutdown propagate errors. Moving the concurrent work into tasks does not\nremove the sequential barriers: SpawnWaits::stop remains first and bounded;\nHTTP/governance are signalled; park notices and lapse follower are aborted/joined;\nall phase tasks join; admitted work flushes; stores close.\nThe practical F242 ordering passed on this exact source: the private tmux\ncontrol client left while a real HTTP event stream still held the drain, then\nshutdown completed and the private server's other session survived.\n\nThere was not, and is not, a universal finish-order constraint between tmux\nrelease and an empty/short HTTP drain. Release is started before the concurrent\njoin, independently of drain. A deterministic blocked-release fixture showed\nHTTP may finish first, while the group still waits for release before returning.\nThe former code had the same pre-started release and concurrent join. This is a\nqualification of the ordering claim, not a regression introduced by this PR.\n\nA phase future that panics returns an error naming that phase, while the other\nphase still joins; the independent panic/control fixture passed. The caller's\nnormal shutdown path waits for every phase, so no added phase task is detached\nafter a returned shutdown result. As before, the tmux release's inner teardown\nfailure is intentionally tolerated; that is not the generic phase-panic path.\nThere is no new global timeout for a wedged phase; the change diagnoses it.\n\nNotes owed:\n1. Cancellation is a different ownership path. Dropping the future returned\n   by spawn_phase drops its JoinHandle and detaches the already-started task.\n   A latch probe dropped the join wait, then released work and observed it finish.\n   Likewise cancelling the outer shutdown during join! does not abort/join the\n   newly spawned phase tasks. The production CLI awaits shutdown directly, so\n   no normal-use regression was demonstrated. Document this cancellation scope\n   or add cancellation-safe ownership if a caller needs it; do not claim that\n   every cancellation leaves zero running phase tasks.\n2. HTTP/control timers still measure the wrapper's wait when their work already\n   began before timed(): HTTP shutdown is signalled and control release's blocking\n   task is spawned earlier. The independent end logs fix the shared-task starvation\n   problem, but are not complete signal-to-release durations in every phase.\n   Avoid presenting them as such.\n\nSource anchors: daemon/lib.rs:356-500,527-539; spawn_waits.rs:193-198,415-437;\nhttp/mod.rs:1459-1528,1673; http/revive.rs:458-484,757-766;\npane_observer.rs:307-317,775-785,800-806; core/render.rs:168-182.\nThe merge preserves the phase/hold/stop fixes and main's port changes; diff-check\npasses. Federation fan-in's unchanged unbiased selectors and detach_all's\nblocking calls remain the explicitly named deferrals, not fixes claimed here.\n\nCost:\nTwelve one-shot Tokio tasks per stop, global per daemon, not per seat; no added\nsteady-state process launch, poll or timer. The existing single observer loop's\ndefault600ms interval and per-live-pane pass shape are unchanged; bias can only\nspare an extra pass at stop. A normal spawn makes two name writes plus Drop's\nclear; a successful revive can make three name writes plus clear. These are\nO(1) request-time mutex operations, not a periodic cost. Existing blocking tmux\ndetach work is unchanged. No live-fleet bounce or before/after cost claim.\n\nValidation:\n- Exact-head session-only archive, default production branches preserved, with\n  explicit test-name-routed mutants. Shared target, nice19/four jobs:\n  store_shutdown controls6/6; spawn_waits21/21; ready-stop control1/1;\n  private daemon_stop stream/control integration1/1. Total29 passing controls.\n- Mutant batch: exit101 as expected, four/four killed by their own assertion:\n  no separate phase task, unsafe name, stale name retained after Drop, unbiased\n  ready-stop. No other test failure. Private fixtures and latch probes ended.\n- Exact production checkout macOS daemon-lib clippy -Dwarnings: exit0.\n- CI44920753765, successful rust-testjob136896041293, upload artifact14714035736:\n  independently parsed2,820 cases, zero failures, including all named phase,\n  hold, stop and real stream/control-release cases.\n- harness checks --quick: exit1, eight absent-dependency/ambient-tool failures;\n  native contracts, SDK and pij-skill pass; heavy Rust/route/smoke skipped.\n  No C25 dependency links or repeated unbounded workspace suite. This is not\n  a green local full gate.\n- just pr-freeze324: FINAL at this head, CI5/5, CLEAN, schema49, no migration.\n  Read-only review checkout unchanged; no working-seat spawn or daemon bounce.\n\nHarness lesson: test each sequential shutdown barrier, returned-call ownership,\ncancellation and log timer origin separately. Independent phase logging is not\nby itself proof of cancellation-safe lifecycle ownership.\n"
+		}
+	]
+}
