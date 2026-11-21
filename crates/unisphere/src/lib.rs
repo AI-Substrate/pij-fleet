@@ -350,6 +350,13 @@ pub fn seat_status(status: &SessionStatus) -> SeatStatus {
         model: fact(status.model.current.as_ref(), None, |model: &String| {
             Some(model.clone())
         }),
+        // S306-N1: a switch the SDK can't order against the last call (a time
+        // missing on one side) is listed unknown, not absent: count it pending.
+        model_switch_pending: status.model.pending_switch.is_some()
+            || status
+                .unknown
+                .iter()
+                .any(|fact| fact == "model.pending_switch"),
         context_used_tokens: fact(status.context.used_tokens.as_ref(), None, |v: &u64| {
             Some(*v)
         }),
@@ -405,7 +412,9 @@ mod tests {
         assert_eq!(
             mapped,
             SeatStatus {
-                // The adapter adds nothing an empty status did not say.
+                // An empty status can't say whether a switch is pending
+                // (S306-N1); otherwise it adds nothing an empty status did not say.
+                model_switch_pending: true,
                 ..SeatStatus::unknown()
             }
         );
@@ -673,7 +682,68 @@ mod tests {
         };
         assert!(status.context_used_tokens.value().is_some(), "{status:?}");
         assert_eq!(status.last_call_at_ms.value(), Some(&1_788_825_602_000));
+        assert!(
+            !status.model_switch_pending,
+            "no switch after the last call"
+        );
         std::fs::remove_dir_all(&sessions).unwrap();
+    }
+
+    /// F249: a `/model` switch after the last call (OMP 18.16's own
+    /// `model_change` record shape) leaves the latest call's model in place and
+    /// says a switch is pending, so the canary doesn't take the old model as
+    /// what the session runs now.
+    #[tokio::test]
+    async fn an_omp_model_switch_after_the_last_call_is_pending() {
+        let sessions =
+            std::env::temp_dir().join(format!("pij-unisphere-omp-switch-{}", std::process::id()));
+        let project = sessions.join("--work-demo--");
+        std::fs::create_dir_all(&project).unwrap();
+        let lines = [
+            r#"{"type":"session","version":3,"id":"sess-sw","timestamp":"2026-09-08T00:00:00.000Z","cwd":"/work/demo"}"#,
+            r#"{"type":"model_change","id":"m0","parentId":null,"timestamp":"2026-09-08T00:00:00.500Z","runtime":{"version":"18.16.0"},"model":"github-copilot/claude-opus-5.5-1m","resolvedModelIsFallback":false}"#,
+            r#"{"type":"message","id":"e1","parentId":"m0","timestamp":"2026-09-08T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"hi"}],"timestamp":1788825601000}}"#,
+            r#"{"type":"message","id":"e2","parentId":"e1","timestamp":"2026-09-08T00:00:02.000Z","message":{"role":"assistant","api":"anthropic-messages","provider":"github-copilot","model":"claude-opus-5.5-1m","stopReason":"stop","usage":{"input":10,"output":5,"cacheRead":400,"cacheWrite":100,"totalTokens":515,"cttl":{"ephemeral5m":100}},"content":[{"type":"text","text":"hello"}],"timestamp":1788825602000}}"#,
+            r#"{"type":"model_change","id":"m1","parentId":"e2","timestamp":"2026-09-08T00:00:03.000Z","runtime":{"version":"18.16.0"},"model":"github-copilot/gpt-5.4-mini","resolvedModelIsFallback":false}"#,
+        ];
+        std::fs::write(
+            project.join("2026-09-08T00-00-00-000Z_sess-sw.jsonl"),
+            lines.join("\n") + "\n",
+        )
+        .unwrap();
+        let source = UnisphereSessionStatus::with_roots(SessionRoots {
+            omp_sessions: Some(sessions.clone()),
+            ..SessionRoots::default()
+        });
+        let reply = source
+            .status(&SessionTarget {
+                seat: SeatId("pij-omp-switch".into()),
+                harness: Harness::Omp,
+                session: "sess-sw".into(),
+            })
+            .await
+            .expect("status");
+        let SessionStatusReply::Status(status) = reply else {
+            panic!("expected OMP facts, got {reply:?}");
+        };
+        assert!(status.model.value().is_some(), "{status:?}");
+        assert!(status.model_switch_pending, "{status:?}");
+        std::fs::remove_dir_all(&sessions).unwrap();
+    }
+
+    /// S306-N1: a pending switch the SDK can't decide (it lists
+    /// `model.pending_switch` as unknown) reads as pending, never as none.
+    #[test]
+    fn an_undecided_switch_reads_as_pending() {
+        let target = StatusTarget {
+            harness: OH_MY_PI.to_string(),
+            session_id: "sess".into(),
+            transcript: None,
+        };
+        let mut status = SessionStatus::empty(target);
+        assert!(seat_status(&status).model_switch_pending, "undecided");
+        status.unknown.retain(|fact| fact != "model.pending_switch");
+        assert!(!seat_status(&status).model_switch_pending, "decided: none");
     }
 
     /// A Copilot seat is read from `~/.copilot/session-state/<id>/events.jsonl`.

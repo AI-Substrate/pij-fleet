@@ -351,15 +351,69 @@ fn observed_model(kind: Harness, text: &str) -> Option<String> {
             .rev()
             .find_map(parse_codex_footer)
             .map(|footer| footer.model.to_string()),
-        Harness::Pi | Harness::Omp => {
-            // The last model field is authoritative, including explicit absence.
-            // Never fall back to a stale model quoted earlier in the pane.
-            let (_, value) = text.lines().rev().find_map(|line| line.split_once('⬢'))?;
-            let model = value.split(['·', '>']).next()?.trim();
-            (!model.is_empty() && !(kind == Harness::Omp && model == "no-model"))
-                .then(|| model.to_string())
+        Harness::Pi | Harness::Omp => footer_model(kind, text),
+    }
+}
+
+/// F249: icons a pi-family footer puts before the model name. `⬢` (and its
+/// nerd-font form) is the model icon; in compact mode OMP draws the
+/// thinking-level glyph there instead, which rotates with the level: `○ ◔ ◑ ◒
+/// ◕ ◉`, `⟳` while auto thinking resolves, `⦸` for off, and their nerd-font
+/// forms. The ASCII preset (`[M]`) is not read: it answers `None`.
+const MODEL_ICONS: [char; 18] = [
+    '⬢',
+    '\u{ec19}',
+    '○',
+    '◔',
+    '◑',
+    '◒',
+    '◕',
+    '◉',
+    '⟳',
+    '⦸',
+    '\u{f0a9e}',
+    '\u{f0a9f}',
+    '\u{f0aa1}',
+    '\u{f0aa3}',
+    '\u{f0aa5}',
+    '\u{f06d}',
+    '\u{f074}',
+    '\u{f05e}',
+];
+
+/// The words a thinking-level segment carries after its glyph.
+const THINKING_WORDS: [&str; 9] = [
+    "min", "low", "med", "high", "xhigh", "xhi", "max", "off", "auto",
+];
+
+/// The model a pi-family footer names. The footer is the last line with the
+/// context segment (`◫`); it is cut into segments at ` · ` and ` > `. The model
+/// segment is the one that is an icon from [`MODEL_ICONS`], a space and a name
+/// that is not a thinking-level word (non-compact OMP shows the level as its
+/// own `◒ high` segment). Exactly one such segment, or `None`: no footer, no
+/// model segment, two candidates, or OMP's explicit `no-model`. Never a model
+/// quoted earlier in the pane.
+fn footer_model(kind: Harness, text: &str) -> Option<String> {
+    let footer = text.lines().rev().find(|line| line.contains('◫'))?;
+    let mut found = None;
+    for segment in footer.split(" · ").flat_map(|part| part.split(" > ")) {
+        let mut chars = segment.trim().chars();
+        let Some(icon) = chars.next() else {
+            continue;
+        };
+        let rest = chars.as_str();
+        let Some(name) = rest.strip_prefix(' ').map(str::trim) else {
+            continue;
+        };
+        if !MODEL_ICONS.contains(&icon) || name.is_empty() || THINKING_WORDS.contains(&name) {
+            continue;
+        }
+        if found.replace(name).is_some() {
+            return None;
         }
     }
+    let model = found?;
+    (!(kind == Harness::Omp && model == "no-model")).then(|| model.to_string())
 }
 
 fn observed_cwd(kind: Harness, text: &str) -> Option<String> {
@@ -1052,8 +1106,9 @@ mod tests {
     #[test]
     fn omp_footer_model_field_excludes_status_columns() {
         let footer = include_str!("../../testkit/fixtures/harnesses/omp-18-0-10-footer.txt");
+        let footer = format!("◫ 13.3%/1M ⟲ · {}", footer.trim());
         assert_eq!(
-            super::observed_model(Harness::Omp, footer).as_deref(),
+            super::observed_model(Harness::Omp, &footer).as_deref(),
             Some("GPT-6 Astra (1M)"),
             "the model field ends before the effort/status columns"
         );
@@ -1138,6 +1193,85 @@ mod tests {
                 .expect_err("missing catalog is not model evidence")
                 .to_string()
                 .contains("unavailable")
+        );
+    }
+
+    /// F249: live OMP 18.16.0 footers (falcon on Claude, a GPT seat), compact
+    /// mode: the thinking-level glyph `◒` stands where `⬢` used to.
+    #[test]
+    fn omp_18_16_compact_footers_name_their_model() {
+        for (fixture, model) in [
+            (
+                include_str!("../../testkit/fixtures/harnesses/omp-18-16-0-footer-claude.txt"),
+                "Opus 5.5 (1M)",
+            ),
+            (
+                include_str!("../../testkit/fixtures/harnesses/omp-18-16-0-footer-gpt.txt"),
+                "GPT-5.4 mini",
+            ),
+        ] {
+            let pane = format!("{}\n────────\n❯\n────────\n{}", cwd(), fixture.trim_end());
+            assert_eq!(
+                super::observed_model(Harness::Omp, &pane).as_deref(),
+                Some(model)
+            );
+            assert_eq!(
+                super::classify_readiness(Harness::Omp, &pane),
+                Readiness::Ready
+            );
+            // The glyph rotates with the thinking level; every level reads.
+            for glyph in ['○', '◔', '◑', '◕', '◉', '⟳', '⦸', '\u{f0aa3}'] {
+                let rotated = pane.replace('◒', &glyph.to_string());
+                assert_eq!(
+                    super::observed_model(Harness::Omp, &rotated).as_deref(),
+                    Some(model),
+                    "{glyph}"
+                );
+            }
+        }
+    }
+
+    /// F249: anything ambiguous is no model, never a guess.
+    #[test]
+    fn pi_family_footer_model_fails_closed_on_ambiguity() {
+        let footer = |segments: &str| format!("────────\n❯\n────────\n ◫ 5.8%/272K ⟲ · {segments}");
+        for (segments, model) in [
+            // Non-compact: the model icon, then the level as its own segment.
+            (
+                "⬢ GPT-6 Astra (1M) · ◒ high · ⑂ main",
+                Some("GPT-6 Astra (1M)"),
+            ),
+            ("rs·pij-x · ◒ Opus 5.5 (1M) · ◑ med", Some("Opus 5.5 (1M)")),
+            // Two model-shaped segments: which one runs is unknown.
+            ("⬢ GPT-6 Astra (1M) · ◒ Opus 5.5 (1M)", None),
+            ("◒ Opus 5.5 (1M) · ○ GPT-5.4 mini", None),
+            // Only a level, or nothing after the glyph.
+            ("◒ high · ⑂ main", None),
+            ("◒ · ⑂ main", None),
+            // The ASCII preset is not read.
+            ("[M] GPT-6 Astra (1M) · [high]", None),
+            // A glyph glued to its text is not a segment icon.
+            ("◒Opus 5.5 (1M)", None),
+        ] {
+            assert_eq!(
+                super::observed_model(Harness::Omp, &footer(segments)).as_deref(),
+                model,
+                "{segments}"
+            );
+        }
+        // No footer line: no model, even if one is quoted in the pane.
+        assert_eq!(
+            super::observed_model(Harness::Omp, "⬢ GPT-6 Astra (1M) · ◒ high"),
+            None
+        );
+        // A model quoted above the footer is never read.
+        assert_eq!(
+            super::observed_model(
+                Harness::Omp,
+                &format!("◫ old · ⬢ Old Model\n{}", footer("◒ New Model"))
+            )
+            .as_deref(),
+            Some("New Model")
         );
     }
 

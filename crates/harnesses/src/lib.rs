@@ -38,7 +38,7 @@ pub use claude_settings::{
 };
 pub use composer::{ComposerRegion, composer_region};
 pub use interaction::{InjectionVerdict, InteractionGate, StagedSubmission};
-pub use models::ModelCatalog;
+pub use models::{ModelCatalog, omp_model_shows, resolve_omp_model};
 pub use spawn::{
     CopilotProviderWiring, SpawnPlan, SpawnPlanInput, SpawnedChild, build_spawn_plan,
     observed_launch_command, pane_env_args, usable_observer_executable,
