@@ -94,6 +94,7 @@ Inside an agent, prefer the skill: `/pij ready`, `/pij peer`, `/pij delegate`,
 | Prime governance and batons | [`docs/how/pij-prime.md`](docs/how/pij-prime.md), [`docs/how/pij-orchestration-baton.md`](docs/how/pij-orchestration-baton.md) |
 | Claude Code seats and statusline | [`docs/how/claude-auto-seat.md`](docs/how/claude-auto-seat.md), [`docs/how/claude-statusline.md`](docs/how/claude-statusline.md) |
 | Copilot CLI native extension | [`docs/how/copilot-native-extension.md`](docs/how/copilot-native-extension.md) |
+| Model cost and prompt-cache TTL | [`docs/how/prompt-cache-cost.md`](docs/how/prompt-cache-cost.md) |
 | Coder + reviewer loops | [`docs/how/flow-pair.md`](docs/how/flow-pair.md) |
 | Telegram bridge | [`docs/how/pij-telegram.md`](docs/how/pij-telegram.md) |
 | Building and the npm supply-chain policy | [`docs/how/build.md`](docs/how/build.md) |
