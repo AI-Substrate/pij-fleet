@@ -1031,6 +1031,11 @@ pub enum DeliveryFailure {
     /// exact leftover and did not submit it (plan 184).
     #[serde(rename = "undelivered:staged-unsent")]
     StagedUnsent,
+    /// The recipient seat was retired (tombstoned) more than
+    /// [`crate::delivery::RETIRED_RECIPIENT_AFTER_MS`] ago and not revived, so
+    /// nothing will ever claim its queued work (F276).
+    #[serde(rename = "undelivered:recipient-retired")]
+    RecipientRetired,
 }
 
 impl DeliveryFailure {
@@ -1043,6 +1048,7 @@ impl DeliveryFailure {
             Self::NativeReceiverUnavailable => "undelivered:native-receiver-unavailable",
             Self::HoldLimit => "undelivered:hold-limit",
             Self::StagedUnsent => "undelivered:staged-unsent",
+            Self::RecipientRetired => "undelivered:recipient-retired",
         }
     }
 }

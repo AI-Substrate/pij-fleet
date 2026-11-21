@@ -379,6 +379,21 @@ pub fn control_kind(seat: &SeatId) -> String {
 /// park: there is no sender to tell.
 pub const NO_SENDER_OUTCOME: &str = "undelivered:no-sender";
 
+/// F276: a recipient tombstoned longer than this, and not being revived, has
+/// its open queue jobs failed as
+/// [`crate::model::DeliveryFailure::RecipientRetired`]. Within it a revive
+/// keeps them, and its drain delivers them (F193, F227). A BRAKE on the
+/// retirement policy: removing it retires the same jobs or more, sooner.
+pub const RETIRED_RECIPIENT_AFTER_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
+
+/// F276: at most this many jobs are retired per park-notice sweep, so a
+/// backlog drains over several sweeps instead of one write and one burst of
+/// notices.
+pub const RETIRE_PER_SWEEP: usize = 64;
+
+/// The reason a retired recipient's parked jobs carry.
+pub const RECIPIENT_RETIRED_REASON: &str = "the recipient seat was retired over 7 days ago";
+
 /// Whether a body contains a terminal control character that a stock composer
 /// cannot represent losslessly. Linefeed remains ordinary body text.
 #[must_use]

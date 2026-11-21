@@ -884,6 +884,27 @@ pub trait Queue: Send + Sync {
         spine: &dyn Spine,
     ) -> Result<Vec<Event>>;
 
+    /// F276: fail, oldest first and at most `limit`, the open (pending or
+    /// running) `delivery:<seat>` and `delivery-control:<seat>` jobs of
+    /// `recipients`, retired seats the caller chose, as
+    /// [`crate::model::DeliveryFailure::RecipientRetired`]. The real queue
+    /// checks each recipient's tombstone again in the same transaction and
+    /// retires only one still tombstoned before `tombstoned_before_ms`, so a
+    /// revive that lifted it first keeps every job (a brake on the caller's
+    /// stale roster). A job whose payload decodes as a message gets the
+    /// canonical `delivery.outcome` and `delivery.parked` events, appended in
+    /// the same transaction and returned with their sequences for the
+    /// committed-event bus; one that does not is failed with none (there is
+    /// no sender to tell). The fake has no roster and trusts `recipients`.
+    async fn retire_recipient_jobs(
+        &self,
+        recipients: &[SeatId],
+        tombstoned_before_ms: u64,
+        limit: usize,
+        at: u64,
+        spine: &dyn Spine,
+    ) -> Result<Vec<Event>>;
+
     /// Read diagnostic facts for this recipient's live delivery jobs only.
     /// Completion hides active state but retains the historical job fields.
     async fn delivery_deferrals(

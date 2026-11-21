@@ -448,6 +448,13 @@ pub(super) async fn revive_seat(
         );
     }
 
+    // F276: from here this seat is being revived, so a sweep retiring
+    // long-dead seats' queued work spares it, even while this request only
+    // waits for its pane or for the spawn lock. Once the lock is held, the
+    // intent goes into the hold, which the launch task owns until the row is
+    // written or the launch fails: cancelling this request never ends it
+    // early (B332-01).
+    let reviving = state.services.spawn_waits.reviving(&request.id);
     // F200: a seat that quit cleanly is dead before its pane closes. Wait,
     // bounded and outside the spawn lock, for that pane to go; then the
     // locked check below observes and decides exactly as before.
@@ -455,7 +462,8 @@ pub(super) async fn revive_seat(
     // No pre-lock registry read decides anything: a second revive must observe
     // the new incarnation, not the same dead predecessor that the first
     // request is about to replace.
-    let spawn_guard = state.services.spawn_waits.hold().await;
+    let mut spawn_guard = state.services.spawn_waits.hold().await;
+    spawn_guard.carry(reviving);
     let prior = match state.services.registry.get(&request.id).await {
         Ok(Some(prior)) => prior,
         Ok(None) => {

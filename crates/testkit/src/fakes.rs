@@ -1661,6 +1661,73 @@ impl Queue for FakeQueue {
         Ok(())
     }
 
+    async fn retire_recipient_jobs(
+        &self,
+        recipients: &[SeatId],
+        _tombstoned_before_ms: u64,
+        limit: usize,
+        at: u64,
+        spine: &dyn Spine,
+    ) -> Result<Vec<Event>> {
+        let retiring: Vec<(JobId, Job)> = {
+            let state = self.state.lock().expect("fake queue mutex");
+            let ours = |job: &Job| {
+                recipients
+                    .iter()
+                    .any(|seat| seat.as_str() == job.serial_key)
+                    && (job.kind == format!("delivery:{}", job.serial_key)
+                        || job.kind == format!("delivery-control:{}", job.serial_key))
+            };
+            let mut open: Vec<(JobId, Job)> = state
+                .live
+                .iter()
+                .map(|(id, job)| (*id, job.clone()))
+                .chain(
+                    state
+                        .claimed
+                        .iter()
+                        .map(|(id, (job, _))| (JobId(*id), job.clone())),
+                )
+                .filter(|(_, job)| ours(job))
+                .collect();
+            open.sort_by_key(|(id, _)| id.0);
+            open.truncate(limit);
+            open
+        };
+        let evidence = pij_core::ports::ParkingEvidence {
+            outcome: pij_core::model::DeliveryFailure::RecipientRetired,
+            reason: pij_core::delivery::RECIPIENT_RETIRED_REASON,
+            at,
+        };
+        let mut events = Vec::new();
+        for (id, job) in &retiring {
+            // A payload that is not a message names no sender to tell.
+            let Ok(parked) = pij_core::delivery::parked_events_via(*id, job, &evidence, "queue")
+            else {
+                continue;
+            };
+            for mut event in parked {
+                event.seq = Some(spine.append(event.clone()).await?);
+                events.push(event);
+            }
+        }
+        let mut state = self.state.lock().expect("fake queue mutex");
+        for (id, job) in retiring {
+            state.live.retain(|(live, _)| *live != id);
+            state.claimed.remove(&id.0);
+            state.completed.insert(id.0, (job, "failed"));
+            state.acked.push((
+                id,
+                Outcome::Failed {
+                    reason: pij_core::model::DeliveryFailure::RecipientRetired
+                        .as_str()
+                        .to_string(),
+                },
+            ));
+        }
+        Ok(events)
+    }
+
     async fn record_delivery_deferral(
         &self,
         job: JobId,
