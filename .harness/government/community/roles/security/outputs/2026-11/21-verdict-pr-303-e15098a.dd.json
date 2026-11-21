@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fb8f-4d56-7b70-ac70-85636372cb2e",
+				"date": "2026-11-21",
+				"head": "e15098a975c8d50c00018b3bd2ae8b66819aa8a7",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:303",
+				"writer": "pij-overseas-eel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"S303-N1: standalone loads Google Fonts (inherited); self-host or drop, add no-referrer",
+				"S303-N2: validate structure colour/pr before innerHTML (pre-existing raw sinks, now on Chainglass origin)"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #303 at e15098a: pass-with-notes\n\n## Breakout (the main ask): closed\n- `dataText` escapes every `<` in the whole serialised value (keys and values; `stable()` writes only `JSON.stringify` output). HEADER holds no `<`. So the inlined text has **zero `<`**. The HTML script-data state can only be left through a `<`, so no `</script`, `<!--` or `<script` can end the block or move it into escaped or double-escaped state. `-->` alone does nothing in script data. U+2028/2029 are legal in JS string literals (ES2019) and mean nothing to HTML. `JSON.stringify` escapes NUL, control characters and lone surrogates.\n- `standaloneText` joins the pieces with split and a template literal, not `String.replace`, so `$&`, `` $` `` and `$'` in data are not expanded.\n- Scratch run (`node generate.mjs generate --offline --structure <hostile> --out <tmp>`) with `</script><!-- <script>x</script> -->`, `</sCrIpT\\t>`, U+2028/2029, `$&`, `` $` ``, `$'`, NUL, a lone surrogate and a key `<k</script>`. Results: `<` count in data.js 0; standalone === index.html with the tag swapped for `<script>\\n`+data.js+`</script>` (exact: true); `</script` count 2 in index.html and 2 in the standalone file; title read back unchanged.\n- Mutation: with the `.replaceAll` removed (in a scratch copy), the same input gives 16 `<` and 10 `</script` closers, a breakout. The PR's test asserts the block has no `</script` or `<!--` and that the closer counts are equal, so it catches the mutant. I did not run vitest (C25: no node_modules).\n\n## Rendering (unchanged by this PR)\nEverything from the daemon or gh (seats, outputs, verdicts, titles, heads, url) goes through `esc()` before `innerHTML`. `s.url` comes only from gh.\n\n## Location and permissions: match\nThe new file is written by the same `writeFresh` (rm, then `wx`, so a symlink is never followed) into the same out dir, with the same mode (0644 under umask 022, observed). `ignoredCheck` covers the directory.\n\n## Fixtures (C21): clean\nThe only addition is the `alert(1)` hostile note. No secrets or home paths.\n\n## Notes (pre-existing, not introduced here; follow-ups, not blockers)\n- **S303-N1 external loads.** The standalone page is not free of external loads: it inherits index.html's Google Fonts preconnect and stylesheet (fonts.googleapis.com, fonts.gstatic.com). The URLs carry no fleet data, and the browser's default referrer policy sends Google only the origin. Still, opening the page tells Google you viewed it, and you get a font-less render offline. Suggest self-hosting the font or using a system stack, plus `<meta name=\"referrer\" content=\"no-referrer\">`.\n- **S303-N2 raw sinks.** Two structure fields go into `innerHTML` without escaping: a line's `colour` (`style=\"background:${real.colour}\"` in cards) and a stop's `pr` (`'#' + s.pr`). `buildData` copies both unvalidated from fleet-map.structure.json, which seats write. The standalone file is built to be served from Chainglass's origin, not file://, so a hostile structure value would now run script on that origin. Suggest validating `colour` (hex or CSS name) and `pr` (positive integer) in `buildData`.\n"
+		}
+	]
+}
