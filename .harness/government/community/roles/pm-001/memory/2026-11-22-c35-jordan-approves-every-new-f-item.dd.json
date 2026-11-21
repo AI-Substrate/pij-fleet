@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Open before writing any coder packet or starting any new F-item, feature or behaviour change",
+				"tags": [
+					"rulings",
+					"c35",
+					"approval"
+				],
+				"title": "C35: Jordan approves every new F-item before work"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Ruling C35 (Jordan, 2026-11-22, RULINGS a75c9819): every new feature or F-item needs JORDAN's own approval before any seat builds it, opens a PR or rolls it out. The prime's GOs don't count (about 40 F-items, F228-F279, were approved by the prime alone; Jordan ruled that too much).\nWhat pm-001 may still do:\n- Diagnose read-only, and send findings to the prime as a short proposal (what, why, cost). The prime puts them to Jordan one at a time.\n- Finish work Jordan already approved. A bug in shipped work found by review (a C34 follow-up of an approved item) is part of that item, not a new one.\n- Close review seats with no approved work.\n- Never revive non-pij-fleet seats (Jordan does that himself).\nFirst case: F279 (a lapsed Copilot seat's stale 'working' state blocks its own restart control) was paused at packet stage. Falcon has the packet (msgs/f279.md) and holds coder/f279; it waits for Jordan.\n"
+		}
+	]
+}
