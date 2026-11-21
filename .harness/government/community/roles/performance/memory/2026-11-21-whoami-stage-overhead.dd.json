@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before pricing shared task-local timers or interpreting whoami stage counters",
+				"tags": [
+					"cost",
+					"whoami",
+					"instrumentation",
+					"wall-time",
+					"proof"
+				],
+				"title": "Whoami instrumentation: off-scope cost and wall time"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Instrumentation that records nothing outside its task-local scope can still execute on every shared-helper call.\n\nFor whoami StageSpan, price 5+L clock pairs on a successful pane path, where L is the number of process_gone helper invocations, not necessarily kernel reads. The completion performs3-9 relaxed counter adds plus an added Arc clone/drop pair. StageTimes is eight u64s copied locally; the fixed nine counters are not per seat. Snapshot alone allocates the six-key map. Unscoped resolver paths retain their clock and try_with work, so include all resolver invocations in rate accounting.\n\nStage elapsed time includes the whole awaited operation: pool acquisition, schema/query worker hops and scheduling, not just CPU and not isolated pool wait. Per-span whole-microsecond truncation can erase sub-microsecond work. The residual is also instrumentation, unguarded refusal work and auth/extraction. whoami.calls combines GET/POST handlers; outer route counts include extractor/auth refusals. Independent relaxed snapshots require matched delta windows.\n\nEvidence: PR317 head4771b4b3d7ac93dd836be90cc3ca5d5d2dd5fb36; http/identity.rs:1237-1310,1475-1492,1575-1578; http/route_counts.rs:350-480. CI44894876595/job136818279375/artifact14704165009:21 focused cases passed. Source work count is not instrument-only latency measurement.\n\nLive BEFORE cohort: UTC2026-11-21T10:52:34.760819Z to10:52:54.784821Z, daemon35dd41ac91/PID72066,20.023932s;182 POST whoamis,9.0891/s,444.43us active-wall/call, no daemon spawn delta. CPU+1.67s and RSS99,648->101,520KiB reflect all daemon work. Separate20s machine sample205.5 launches/s; no daemon descendants sampled. Different load/cohort from the earlier2.4ms claim; no AFTER saving or added-instrument cost proved.\n\nmagicWand: a reusable exact-source instrument-on/off microbenchmark plus matched route/stage/CPU/spawn receipt.\ndifficulties: C25 locked dependencies absent; boot not ready and quick gate exit1, despite native/SDK passes. Keep that distinct from exact-head CI. No source edits, dependency repair, bounce or build.\n"
+		}
+	]
+}

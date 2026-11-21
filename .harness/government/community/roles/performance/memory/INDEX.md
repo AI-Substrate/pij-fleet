@@ -64,4 +64,5 @@
 - [2026-11-21 PR315 R2: whole-reaper cost guard closed](2026-11-21-pr315-r2-whole-reaper-cost-guard-closed.dd.md): Before pricing all reads in a reaper or collecting PR315 deployed AFTER (cost, sqlite, proof, baseline)
 - [2026-11-21 Quiet-pane backstop averages and observer-only counters](2026-11-21-quiet-pane-backstop-averages-and.dd.md): Before pricing pane-observer replay or interpreting deployed observer counters (F258, pane-observer, counters, measurement)
 - [2026-11-21 Tmux absence proof and launched-read budgets](2026-11-21-tmux-absence-proof-and-launched-read.dd.md): Before changing tmux cleanup, Linux holder census, bounce waits or resuming after PR299 (tmux, F247, F248, bounds, proof, handover)
+- [2026-11-21 Whoami instrumentation: off-scope cost and wall time](2026-11-21-whoami-stage-overhead.dd.md): Before pricing shared task-local timers or interpreting whoami stage counters (cost, whoami, instrumentation, wall-time, proof)
 <!-- /pij:generated -->
