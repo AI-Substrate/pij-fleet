@@ -201,6 +201,19 @@ pub trait Registry: Send + Sync {
     ) -> Result<Option<Seq>>;
 }
 
+/// What [`TmuxPort::attach_pane_tap`] found (F266).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TapAttach {
+    /// This adapter's own pipe was already live: every byte the pane wrote
+    /// since it attached is in the sink.
+    Kept,
+    /// A pipe was started (a first attach, an adopted orphan, or a repair of
+    /// one that had vanished): bytes the pane wrote before it were never
+    /// sensed, so nothing read from the screen earlier can be trusted as
+    /// unchanged.
+    Attached,
+}
+
 /// What one [`TmuxPort::sweep_orphan_taps`] pass did, so a removal is attributable.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TapSweep {
@@ -1156,8 +1169,9 @@ pub trait TmuxPort: Send + Sync {
     /// Return success only after the world reports the pipe live: a lying attach
     /// feeds zero bytes into a policy that reads zero as HUMAN NOT TYPING, so the
     /// gate would authorize forever on a sensor that never sensed. The caller
-    /// owns the sink path and its lifecycle.
-    async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> Result<()>;
+    /// owns the sink path and its lifecycle. [`TapAttach::Attached`] whenever a
+    /// pipe had to be started, including the repair of a vanished one.
+    async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> Result<TapAttach>;
     /// Durable sink marker recorded on `pane`, when this project owns its pipe.
     ///
     /// This asks the world rather than process-local memory: after a restart the

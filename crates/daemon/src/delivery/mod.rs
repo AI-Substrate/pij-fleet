@@ -3104,7 +3104,11 @@ mod tests {
             }
             self.inner.capture(pane, lines).await
         }
-        async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> pij_core::error::Result<()> {
+        async fn attach_pane_tap(
+            &self,
+            pane: &str,
+            sink: &Path,
+        ) -> pij_core::error::Result<pij_core::ports::TapAttach> {
             self.inner.attach_pane_tap(pane, sink).await
         }
         async fn pane_tap_sink(&self, pane: &str) -> pij_core::error::Result<Option<PathBuf>> {

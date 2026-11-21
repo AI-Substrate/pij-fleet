@@ -40,6 +40,8 @@ struct ComposerState {
     last_edit_at: Option<Instant>,
     uncertainty_since: Option<Instant>,
     self_injection: Option<SelfInjection>,
+    /// Drains of this pane's tap the gate began (fresh injection reads).
+    tap_drains: u64,
 }
 
 impl ComposerState {
@@ -146,6 +148,11 @@ pub struct ObservedComposer {
     pub last_edit_at: Option<Instant>,
     /// When recognition was first lost, while it still is.
     pub uncertainty_since: Option<Instant>,
+    /// How many times the gate has begun draining this pane's tap (F266). A
+    /// drain takes bytes the pane observer would otherwise have seen, whether
+    /// or not the read after it succeeded, so the observer replays nothing
+    /// across a change in this count.
+    pub tap_drains: u64,
 }
 
 /// Outcome of a pane transaction whose input was owned before observation.
@@ -519,7 +526,19 @@ impl InteractionGate {
                 last_interaction_at: state.last_interaction_at,
                 last_edit_at: state.last_edit_at,
                 uncertainty_since: state.uncertainty_since,
+                tap_drains: state.tap_drains,
             })
+    }
+
+    /// [`ObservedComposer::tap_drains`] alone, without cloning the composer:
+    /// the pane observer reads it for every pane on every tick (F266).
+    #[must_use]
+    pub fn tap_drains(&self, pane: &str) -> u64 {
+        self.panes
+            .lock()
+            .expect("interaction gate mutex")
+            .get(pane)
+            .map_or(0, |state| state.tap_drains)
     }
 
     /// Re-drain the live tap and re-capture the composer at the send boundary.
@@ -537,6 +556,14 @@ impl InteractionGate {
         }
         // A pane tap contains rendered OUTPUT, not input events. Drain it to keep
         // the boundary fresh, but never translate output bytes into human typing.
+        // Counted before the drain: whatever it takes, and however the read
+        // after it ends, the observer's last capture no longer stands (F266).
+        self.panes
+            .lock()
+            .expect("interaction gate mutex")
+            .entry(pane.to_string())
+            .or_default()
+            .tap_drains += 1;
         self.tmux.drain_pane_tap(pane).await?;
         Ok(true)
     }
