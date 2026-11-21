@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"head": "b1c7fedc2ffdd44a050a6a1714675a74fffc6a87",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:331",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "nice -n 19 python /Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr331-after-counts.py",
+					"exit_code": 0,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr331-after-counts.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "F259a / #331 AFTER COMPLETE for the requested matched-count scope.\n\nDeployment: b1c7fedc2ffdd44a050a6a1714675a74fffc6a87, daemon PID 92465. Health pings immediately before and after the snapshot both report healthy at b1c7fedc2f/PID92465. GitHub records #331 merged at this full commit; the deployed queue, registry, worker and kind-prefix source files have no diff from reviewed head 55b3cbb44c32033d23ed19b462d0cb4571149fe2.\n\nCaptured November 22, 2026 at 06:56:44 +10 (November 21, 2026 at 20:56:44 UTC). One read transaction on the SQLite file opened by this daemon; URI mode=ro, query_only=ON, schema50, SQLite3.54.1. No copy, writes, claim, lapse, renewal or bounce.\n\n| Same-snapshot count | Value |\n| --- | ---: |\n| Total seat rows / retired | 3,297 / 3,165 |\n| Live seats | 132 |\n| Distinct owed recipients | 169 |\n| Owed retired / owed live / missing seat rows | 169 / 0 / 0 |\n| Old full roster / deployed live+owed roster | 3,297 / 301 |\n| Old drain kinds / deployed drain kinds | 1,992 / 274 |\n| Open delivery body jobs | 377: 241 pending, 136 running |\n| Open delivery-control jobs | 0 |\n| Open unrelated jobs | 0 |\n\nThe deployed roster is exactly 132 live +169 retired owed, with no duplicate rows. Old and new kinds intersect the SAME snapshot's open-job kinds identically: zero versus zero; no lost or added open kinds. This is an empty-claimable cohort, not proof of dispatch under active demand. Kind filtering is a faithful Python transcription of the deployed drain's filter, not a Rust stage sensor.\n\nThese deployed counts match the author's round-two Python-copy benchmark cohort (3,297/301 rows, 1,992/274 kinds, 132 live,169 owed,377 open). They independently validate the deployed workload reduction. They do NOT reproduce the author's 7.37/0.91ms timing, establish Rust latency, attribute daemon CPU or demonstrate the unrelated-job exclusion under a nonzero live unrelated cohort. That exclusion's proof remains the exact range SQL and the separate +2,000 unrelated-open-job fixture.\n\nReceipt: nice -n 19 python /Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr331-after-counts.py -- exit0. Aggregated snapshot, matching head/PID pings and exact-query SHA256 values are persisted in this session's pr331-after-counts.json. No bodies, recipient list or credentials were included in the receipt.\n\nThe requested AFTER obligation is closed. No measured live Rust speedup is claimed; performance/331 can be released.\n"
+		}
+	]
+}
