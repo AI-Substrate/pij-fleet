@@ -404,6 +404,12 @@ impl Daemon {
         // the next daemon reads.
         self.extension_lost.abort();
         let _ = phase("lapse follower", self.extension_lost).await;
+        // F267 step 2: each phase runs in its own task, so one that blocks its
+        // thread (a synchronous tmux launch, say) cannot hold the others back,
+        // and each logs its own end. Polled together by one `join!`, they all
+        // logged the end of the slowest (11305 ms each, 2026-11-21 11:41:48).
+        let joined = self.joined;
+        let governance_observer = self.governance_observer;
         let (
             served,
             drained,
@@ -414,34 +420,34 @@ impl Daemon {
             deaths,
             watchdog,
             proxy_watch,
-            (),
+            sidecars,
             governance,
             released,
         ) = tokio::join!(
-            phase("http drain (claim waits, streams)", async {
-                self.joined.await.map_err(|error| PijError::Adapter {
+            spawn_phase("http drain (claim waits, streams)", async move {
+                joined.await.map_err(|error| PijError::Adapter {
                     adapter: "daemon".to_string(),
                     message: format!("the server task did not stop cleanly: {error}"),
                 })
             }),
-            phase("delivery drain loop", self.drain_loop.shutdown()),
-            phase("bind loop", self.bind_loop.shutdown()),
-            phase("pane observer", self.pane_observer.shutdown()),
-            phase("federation worker", self.federation_worker.shutdown()),
-            phase("background loop", self.background_loop.shutdown()),
-            phase("death sweep", self.death_sweep_loop.shutdown()),
-            phase("pa watchdog", self.pa_watchdog_loop.shutdown()),
-            phase("cache-proxy watch", self.cache_proxy_loop.shutdown()),
-            phase("sidecars", self.sidecars.shutdown()),
-            phase("governance observer", async {
-                self.governance_observer
+            spawn_phase("delivery drain loop", self.drain_loop.shutdown()),
+            spawn_phase("bind loop", self.bind_loop.shutdown()),
+            spawn_phase("pane observer", self.pane_observer.shutdown()),
+            spawn_phase("federation worker", self.federation_worker.shutdown()),
+            spawn_phase("background loop", self.background_loop.shutdown()),
+            spawn_phase("death sweep", self.death_sweep_loop.shutdown()),
+            spawn_phase("pa watchdog", self.pa_watchdog_loop.shutdown()),
+            spawn_phase("cache-proxy watch", self.cache_proxy_loop.shutdown()),
+            spawn_phase("sidecars", self.sidecars.shutdown()),
+            spawn_phase("governance observer", async move {
+                governance_observer
                     .await
                     .map_err(|error| PijError::Adapter {
                         adapter: "daemon/governance".to_string(),
                         message: format!("delivery observer task failed: {error}"),
                     })
             }),
-            phase("tmux control release", release),
+            spawn_phase("tmux control release", release),
         );
         // A release that panicked is the client's teardown lost, not the
         // stop's: the process exit ends the client either way.
@@ -480,30 +486,55 @@ impl Daemon {
         if let Ok(admitted) = admitted {
             admitted?;
         }
-        served?;
-        drained?;
-        bound?;
-        observed?;
-        governance?;
-        background?;
-        deaths?;
-        watchdog?;
-        proxy_watch?;
-        forwarded
+        served?.0?;
+        drained?.0?;
+        bound?.0?;
+        observed?.0?;
+        governance?.0?;
+        background?.0?;
+        deaths?.0?;
+        watchdog?.0?;
+        proxy_watch?.0?;
+        sidecars?;
+        forwarded?.0
     }
 }
 
 /// F267: one shutdown phase, logged as it starts and as it ends with its
 /// time in ms. Two lines per phase per stop; nothing at run time.
 async fn phase<T>(name: &str, work: impl std::future::Future<Output = T>) -> T {
+    timed(name, work).await.0
+}
+
+async fn timed<T>(
+    name: &str,
+    work: impl std::future::Future<Output = T>,
+) -> (T, std::time::Duration) {
     let started = std::time::Instant::now();
     eprintln!("pij-rs shutdown: {name}: started");
     let done = work.await;
+    let took = started.elapsed();
     eprintln!(
         "pij-rs shutdown: {name}: ended after {}ms",
-        started.elapsed().as_millis()
+        took.as_millis()
     );
-    done
+    (done, took)
+}
+
+/// F267 step 2: [`phase`] in its own task, started now: a phase that blocks
+/// its thread holds back only itself, and its end is its own. Its output and
+/// its own time; a phase that panicked is an error naming it.
+fn spawn_phase<T: Send + 'static>(
+    name: &'static str,
+    work: impl std::future::Future<Output = T> + Send + 'static,
+) -> impl std::future::Future<Output = Result<(T, std::time::Duration)>> {
+    let task = tokio::spawn(timed(name, work));
+    async move {
+        task.await.map_err(|error| PijError::Adapter {
+            adapter: "daemon".to_string(),
+            message: format!("the shutdown phase {name} did not finish: {error}"),
+        })
+    }
 }
 
 impl std::fmt::Debug for Daemon {

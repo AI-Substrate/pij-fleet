@@ -92,7 +92,6 @@ pub(crate) struct AppState {
     services: Services,
     auth: AuthRing,
     machine_alias: String,
-    spawn_lock: Arc<tokio::sync::Mutex<()>>,
     typing_lock: Arc<tokio::sync::Mutex<()>>,
     /// Serialises the double-seat notice's dedupe read and write (plan 174).
     double_seat_lock: Arc<tokio::sync::Mutex<()>>,
@@ -637,13 +636,10 @@ fn router_with_optional_federation(
     .with_spawn_waits(Arc::clone(&services.spawn_waits))
     .with_return_hook(crate::delivery::role_send::return_hook(&services))
     .with_carry_hook(crate::carry::carry_hook(&services));
-    // R309-01: the spawn lock is the one the daemon's stop joins.
-    let spawn_lock = services.spawn_waits.launch_lock();
     let state = AppState {
         services,
         auth: config.auth,
         machine_alias: config.machine_alias,
-        spawn_lock,
         typing_lock: Arc::new(tokio::sync::Mutex::new(())),
         double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_grace_ms: resolve_typing_grace_ms(),
@@ -1438,7 +1434,7 @@ pub(crate) async fn launch_seat(
     existing_policy: ExistingSeatPolicy,
     command_name: &'static str,
 ) -> Response {
-    let spawn_guard = Arc::clone(&state.spawn_lock).lock_owned().await;
+    let spawn_guard = state.services.spawn_waits.hold().await;
     launch_seat_locked(
         state,
         request,
@@ -1465,7 +1461,7 @@ async fn launch_seat_locked(
     request: SpawnRequest,
     existing_policy: ExistingSeatPolicy,
     command_name: &'static str,
-    spawn_guard: tokio::sync::OwnedMutexGuard<()>,
+    spawn_guard: crate::spawn_waits::SpawnHold,
     revive_receipt: Option<revive::Receipt>,
 ) -> Response {
     let owner = state.clone();
@@ -1493,7 +1489,7 @@ async fn launch_owned(
     request: SpawnRequest,
     existing_policy: ExistingSeatPolicy,
     command_name: &'static str,
-    spawn_guard: tokio::sync::OwnedMutexGuard<()>,
+    spawn_guard: crate::spawn_waits::SpawnHold,
     revive_receipt: Option<revive::Receipt>,
     gone: tokio::sync::oneshot::Receiver<()>,
 ) -> Response {
@@ -1503,10 +1499,6 @@ async fn launch_owned(
     if state.services.spawn_waits.stopping() {
         return stopping_refused(command_name);
     }
-    state.services.spawn_waits.set_launching(format!(
-        "a spawn into {} not yet past its checks",
-        request.cwd
-    ));
     if let Some(id) = request.id.as_ref()
         && id.as_str().trim().is_empty()
     {
@@ -1532,6 +1524,11 @@ async fn launch_owned(
              folder in daemon-authored messages (F133)",
         );
     }
+    // F267 step 2 (deer new-1): named only once the folder is known printable.
+    spawn_guard.name(format!(
+        "a spawn into {} not yet past its checks",
+        request.cwd
+    ));
     let wait_seconds = request.wait_seconds.unwrap_or(DEFAULT_SPAWN_WAIT_SECONDS);
     let no_wait = request.no_wait;
     let trust_folder = request.trust_folder;
@@ -1673,7 +1670,7 @@ async fn launch_owned(
         }
         None => return refused(command_name, "revive requires an existing seat id"),
     };
-    state.services.spawn_waits.set_launching(format!(
+    spawn_guard.name(format!(
         "seat {seat_id} (spawn {spawn_id}, folder {})",
         request.cwd
     ));
@@ -1888,7 +1885,7 @@ async fn answer_again(
     request: SpawnRequest,
     key: &str,
     launched: Vec<SeatDescriptor>,
-    spawn_guard: tokio::sync::OwnedMutexGuard<()>,
+    spawn_guard: crate::spawn_waits::SpawnHold,
     gone: tokio::sync::oneshot::Receiver<()>,
 ) -> Response {
     let Some(seat) = launched
@@ -5706,7 +5703,6 @@ pub(crate) fn test_state(services: Services) -> AppState {
             Arc::clone(&services.roles),
         )
         .with_native_delivery(Arc::clone(&services.delivery)),
-        spawn_lock: services.spawn_waits.launch_lock(),
         services,
         auth: AuthRing::local("key".to_string()),
         machine_alias: "local".to_string(),

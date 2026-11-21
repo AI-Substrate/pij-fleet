@@ -455,7 +455,7 @@ pub(super) async fn revive_seat(
     // No pre-lock registry read decides anything: a second revive must observe
     // the new incarnation, not the same dead predecessor that the first
     // request is about to replace.
-    let spawn_guard = Arc::clone(&state.spawn_lock).lock_owned().await;
+    let spawn_guard = state.services.spawn_waits.hold().await;
     let prior = match state.services.registry.get(&request.id).await {
         Ok(Some(prior)) => prior,
         Ok(None) => {
@@ -473,6 +473,13 @@ pub(super) async fn revive_seat(
         }
         Err(error) => return internal(COMMAND, error),
     };
+    // F267 step 2: a revive holds the spawn lock from here, so it names
+    // itself for a stop that gives up on it (its folder only if printable).
+    spawn_guard.name(if pij_core::admission::printable_path(&prior.folder) {
+        format!("a revive of {} (folder {})", prior.id, prior.folder)
+    } else {
+        format!("a revive of {}", prior.id)
+    });
     // Plan 225b: a Claude seat resuming its conversation on its recorded model
     // needs a warm cache, or a human's choice. Non-Claude seats, `--fresh` and
     // an explicit `--model` are as before.
