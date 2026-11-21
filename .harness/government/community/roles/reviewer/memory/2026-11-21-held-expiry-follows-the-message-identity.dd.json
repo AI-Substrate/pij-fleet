@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before reviewing held-message expiry, duplicate recovery or renewal-edge consumers",
+				"tags": [
+					"review",
+					"queue",
+					"identity",
+					"expiry",
+					"f260"
+				],
+				"title": "Held expiry follows the message identity"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR314 R1 at 2ad9e18: two independent real-SQLite/DeliveryService witnesses found that an expired same-ID copy can emit NOT-delivered while an unexpired copy is pending, and that a live-duplicate guard missing kind/recipient can strand another recipient after renewal clears its lapse. Judge terminal expiry across the scoped recipient/origin/message identity, not just one parked row. Match duplicate guards to the actual queue key (kind, origin, msg_id); the existing index then replaces a live-state scan. A 64-new-send brake is not a bound on preaccepted queue rows parked by reconciliation. Difficulties: exact-head CI passed all existing tests, mutation logs were not retained, and shared-build waits dominated local proof. MagicWand: add duplicate-deadline and distinct-recipient same-ID regressions and retain per-mutant command/exit/log receipts. Both behavioral bugs and the 65-row cap witness reproduced in an isolated exact-head archive; review worktree untouched and temporary archive removed."
+		}
+	]
+}
