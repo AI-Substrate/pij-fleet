@@ -166,5 +166,6 @@
 - [2026-11-21 Socket absence needs a complete holder proof](2026-11-21-socket-absence-needs-a-complete-holder.dd.md): Before reviewing Unix-socket deletion, lsof pathname handling, or a process-fd census (review, sockets, liveness, negative-evidence, f248)
 - [2026-11-21 Whoami boundaries need a real pool wait](2026-11-21-whoami-boundaries-need-a-real-pool-wait.dd.md): When reviewing per-stage handler telemetry or task-local timing boundaries (review, telemetry, pool, mutation, f258)
 - [2026-11-21 Worktree seats load branch-local extensions](2026-11-21-worktree-seats-load-branch-local.dd.md): When reviewing OMP cwd, extension precedence or daemon-extension skew (review, omp, worktree)
+- [2026-11-22 A lease brake proves a snapshot, not boot or later awaits](2026-11-22-a-lease-brake-proves-a-snapshot-not-boot.dd.md): Before reviewing lease-based recovery across restart or renewal during a decision (review, lease, ordering, recovery, c34, f268)
 - [2026-11-22 Pool depth means managed transactions only](2026-11-22-pool-depth-means-managed-transactions.dd.md): When reviewing sqlx pool cleanup, cancellation, worker pings or schema-check cost (review, sqlite, pool, cancellation, f258)
 <!-- /pij:generated -->

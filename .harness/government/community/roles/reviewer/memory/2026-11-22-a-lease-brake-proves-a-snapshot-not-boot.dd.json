@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before reviewing lease-based recovery across restart or renewal during a decision",
+				"tags": [
+					"review",
+					"lease",
+					"ordering",
+					"recovery",
+					"c34",
+					"f268"
+				],
+				"title": "A lease brake proves a snapshot, not boot or later awaits"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Open when a current-daemon lease brake is proposed as all-interleaving protection.\n\nF268 R2's original real-SQLite witnesses passed: no restart after a failed audit\nwhen the current lease is already live; a later real expiry has its own edge and\nrestart. Three mutants independently restored those failures or lost audit retry.\n\nThe scope has two boundaries. Fresh delivery service on the same durable state\nhas no lease-map proof until reattachment/heartbeat: stale lapse plus boot grace\nqueued one restart; current heartbeat before reconcile spared it even when its\naudit failed. Initial native attestation/registration also creates the map entry,\nso \"renewed\" is not necessarily an observed heartbeat.\n\nA deterministic liveness latch proved a second ordering: brake returned false,\nthen the receiver renewed with a failed audit while decision work awaited\nliveness. Releasing it still queued one restart. A snapshot brake does not span\nlater awaits. Do not repair it by blindly holding the global native mutex across\ncontrol admission; inspect the lock order.\n\nBoth are new C34 follow-ups, not R2 regressions; original witnesses remain green.\nMagic wand: keep boot and renewal-during-decision controls beside producer retry\ntests, so future claims name exactly when their evidence applies.\n"
+		}
+	]
+}
