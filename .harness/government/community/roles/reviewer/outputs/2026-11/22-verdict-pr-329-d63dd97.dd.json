@@ -1,0 +1,73 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff4e-47ab-7e31-9338-f0232de9cd9e",
+				"date": "2026-11-22",
+				"head": "d63dd979f8384afb3b331c48713bfdd61895dc3b",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:329",
+				"writer": "pij-written-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N329-R1-01: fresh-port retries should re-seed the oversized log and classify actual bind conflict; nonblocking fixture-proof follow-up."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 329",
+					"exit_code": 0,
+					"log": "FINAL d63dd979f8384afb3b331c48713bfdd61895dc3b; clean exact-head checkout"
+				},
+				{
+					"command": "just shared-build -- clippy --locked -p pij-cli -p pij-daemon --all-targets -- -D warnings",
+					"exit_code": 0,
+					"log": "pr329-baseline.log: macOS passed; 25 logger tests, stale status, owned cancellation/replay and private two-daemon contention also passed"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib http::tests::review -- --nocapture",
+					"exit_code": 0,
+					"log": "pr329-probes.log: active same-key evidence survived cancelled caller and replay"
+				},
+				{
+					"command": "private copied logger test binary with one guard disabled per process",
+					"exit_code": 101,
+					"log": "pr329-no-identity.log, pr329-no-nofollow.log, pr329-no-nonblock.log: all three intended regressions failed"
+				},
+				{
+					"command": "private copied daemon test binary with fresh evidence cleanup disabled",
+					"exit_code": 101,
+					"log": "pr329-keep-stale.log: stale 502/exit7; positive control pr329-stale-control.log passed"
+				},
+				{
+					"command": "nice -n 19 node --input-type=module passDir assertions",
+					"exit_code": 0,
+					"log": "original three cases passed; old fallback mutant ERR_ASSERTION exit1 in pr329-old-fallback.log"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "pr329-harness-checks.log: eight dependency/ambient-tool failures; separate exact-head CI proof under C25"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: PASS-WITH-NOTES\n\nPR #329, round 1, head d63dd979f8384afb3b331c48713bfdd61895dc3b.\nAnswers 01a1ff4e-47ab-7e31-9338-f0232de9cd9e. No blocking product-correctness finding.\n\n## Dispositions\n\nF254 is closed for the stated check/open/read race. `sync` holds the rotation lock, preserves the proved device/inode, and passes it into `keep_tail`. The latter opens with O_NOFOLLOW|O_NONBLOCK and fstats the opened descriptor before reading. A replaced regular file fails identity; a FIFO or directory fails regular-file type without a blocking FIFO open; a symlink fails at open even if its target would match. The checked descriptor is the descriptor read, so a later pathname swap cannot redirect that read. This is not a claim that every later pathname rename/unlink is atomic against writers ignoring the rotation lock.\n\nThe planted trim-record tests cover symlink, FIFO and directory behavior. Link/FIFO record names are replaced atomically without touching their targets; a directory refuses publication and the current log stays named. All 25 logger tests and the real private-daemon concurrency witness passed.\n\nF265 is closed in the daemon's owned-launch serialization domain. The `SpawnHold` is acquired before key classification and moved into the independently owned launch task. A caller disappearing cannot release it while the row is pending. An existing key row goes through `answer_again`, never fresh cleanup; only a no-row key reaches the two unlinks, still under the same guard, which lasts through observed launch and row persistence. The key is minted or checked as `s-` plus 32 lowercase hex digits. Cleanup touches exactly that key's status and log names and errors other than NotFound stop the launch.\n\nIndependent sentinel probe: hold the first row write after its fake pane exists, write active evidence, cancel its HTTP-side caller, and resend the same key. The resend stays pending and both files remain unchanged. After row publication the resend answers that same seat, with one pane, one row and both files still unchanged. This directly checks the newly destructive step against an owned live launch and replay. It does not assert cross-daemon locking or identify a rowless wrapper orphaned by a prior daemon crash as a current owned launch.\n\nF262 matches the prime's role-memory ruling: never kill OR delete by pattern in a shared root; remove only created, recorded paths. The added ledger example explains the shared-user failure. This review's cleanup names only its recorded private archive, fixture root, test-binary copies and CI download.\n\nS307-N1 now matches Rust's `default_state_dir`: no-HOME means a stand-in HOME under tmpdir, with `.pij-rs` still below it. Direct dependency-free Node checks passed for explicit state dir, HOME and no-HOME. The old fallback mutant failed. Security's separate exact-head output owns the inherited cross-user predictable-temp-dir qualification.\n\nPolicy/brakes and cost: rotation policy is unchanged; descriptor identity/type and no-follow/nonblocking checks only refuse extra trim work, so they are BRAKES. F265 removes stale evidence owned by a classified fresh key, not age-selected files or a pattern. One fstat per rotation and two unlinks per fresh launch; no new production loop, timer or process launch.\n\n## Nonblocking N329-R1-01\n\nThe fresh-port retry is bounded and does not retry a run that logged a listening banner. However, it classifies ANY both-dead/no-banner startup as a port race, without checking the address-in-use cause. It also reuses the current log after the unsuccessful attempt already trimmed it: a successful retry may no longer exercise oversized-log startup contention, although its tail assertion passes against the prior attempt's tail. Re-seed the oversized log for each retry and classify the actual bind failure, rather than weaken that round's witness. This is test-proof follow-up, not a demonstrated new normal-use binding or rotation bug.\n\n## Validation\n\nAll Rust builds ran from an isolated exact-head archive through `just shared-build`, canonical shared target, niceness 19, four jobs and incremental compilation disabled. Private test binaries were copied out while the lock was still held. No live daemon bounce, working-seat mutation or foreign cleanup occurred.\n\n| Proof | Result |\n|---|---|\n| `just pr-freeze 329` | FINAL, CLEAN, five latest exact-head checks passed, no migration |\n| `just shared-build -- clippy --locked -p pij-cli -p pij-daemon --all-targets -- -D warnings` | macOS passed |\n| `just shared-build -- test --locked -p pij-cli --bin pij-rs daemon_log::tests -- --nocapture` | Original 25/25 passed; instrumentation-off control also 25/25 |\n| `just shared-build -- test --locked -p pij-daemon --lib http::tests::a_reused_keys_stale_status_file_is_never_read_as_this_launchs_exit -- --exact --nocapture` | Passed, own wait returns 504 rather than stale 502 |\n| `just shared-build -- test --locked -p pij-daemon --lib http::tests::a_request_cut_before_its_row_still_writes_it_and_a_resend_launches_nothing -- --exact --nocapture` | Passed |\n| `just shared-build -- test --locked -p pij-cli --test daemon_log two_daemons_started_together_on_an_oversized_log_keep_the_server_on_the_path -- --exact --nocapture` | Passed, eight private contention rounds |\n| `just shared-build -- test --locked -p pij-daemon --lib http::tests::review -- --nocapture` | Active same-key evidence sentinel probe passed |\n| Copied logger binary, each test with one test-only guard switch disabled | no dev/ino, no O_NOFOLLOW, no O_NONBLOCK: each intended regression failed, exit 101; FIFO witness failed on its bounded receive timeout |\n| Copied daemon binary with only fresh evidence cleanup disabled | Intended stale-status regression failed, exit 101, stale 502/exit 7 instead of 504; switch-off control passed |\n| `nice -n 19 node --input-type=module` assertions on `passDir` | All three original cases passed; old no-HOME formula mutant failed with ERR_ASSERTION, exit 1 |\n| CI 44932347857/job 136931505661, successful upload artifact 14718392195 | Independently parsed seven focused logger/spawn/concurrency cases: all passed |\n| `harness boot`; `harness checks --quick` | Boot advisory ready=false; quick gate exit 1 from eight dependency/ambient-tool failures; native/SDK/skill checks passed and heavy stages skipped |\n\nC25: local TS/full ship readiness is not green; no dependency links or installs were used. Exact-head CI is separate workspace proof. Retained receipts: pr329-baseline.log, pr329-probes.log, pr329-no-identity.log, pr329-no-nofollow.log, pr329-no-nonblock.log, pr329-keep-stale.log, pr329-stale-control.log, pr329-old-fallback.log and pr329-harness-checks.log. Temporary mutation instrumentation is removed and relevant source byte-compared with the detached checkout before cleanup.\n\nHarness magicWand: make every retried scenario re-establish its load-bearing starting state. The new same-key sentinel probe strengthens proof of evidence ownership; the retry observation names the concrete fixture improvement to encode.\n\nHold reviewer/329 until merge; reviewer/330 follows.\n"
+		}
+	]
+}
