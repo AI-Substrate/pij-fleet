@@ -6059,7 +6059,7 @@ PEC notice";
         );
         assert_eq!(json["data"]["liveness"], "active");
         // F195: the daemon's line is printed on its own, in place of the reason.
-        let line = "native receiver: lapsed, last renewed 39m ago. The process is active, but sends to this seat are refused until its extension registers again.";
+        let line = "native receiver: lapsed, last renewed 39m ago. The process is active, but sends to this seat are held (F260) until its extension registers again.";
         let card = serde_json::from_value::<pij_daemon::http::StateCard>(serde_json::json!({
             "id":"pij-native", "state":"idle", "liveness":"active", "cwd":"/abs/tree",
             "harness":"copilot", "unsupported":[],

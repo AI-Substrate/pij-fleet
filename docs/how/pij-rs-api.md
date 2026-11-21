@@ -686,7 +686,7 @@ Once a lease expires, `pij state` reports
 `native_receiver_reason:"native-extension-unavailable"` separately from host
 liveness, plus `nativeReceiverLine` (F195), which both renderers print as its own
 line: `native receiver: lapsed, last renewed 39m ago. The process is active, but
-sends to this seat are refused until its extension registers again.` (or `not
+sends to this seat are held (F260) until its extension registers again.` (or `not
 renewed by this process since the daemon started`). `pij list` (`/v1/seats`) adds
 `nativeReceiver:"receiver lapsed 39m"` to the row, shown after its STATE. Both
 read the in-memory leases only: no store read, no launch. `pij inbox` and
@@ -695,7 +695,54 @@ read the in-memory leases only: no store read, no launch. `pij inbox` and
 receiver is renewing.
 
 Expiry parks native bodies with `undelivered:native-receiver-unavailable`,
-publishes sender-addressed `delivery.parked`, and refuses subsequent sends.
+publishes sender-addressed `delivery.parked`, and **holds** later sends (F260).
+
+**A body for a lapsed native receiver is held, not lost** (F260). A send that
+finds the lease lapsed queues the body and parks it at once, so nothing is
+delivered into the lapsed receiver (F124's brake). Its receipt is
+`{"outcome":"held","reason":"native-receiver-lapsed: … until <ms> (Unix ms) …"}`,
+and the sender-addressed `delivery.outcome` and `delivery.parked` say the same
+(`delivery.parked` carries `heldUntil`). Bodies queued before the lapse park the
+same way. The hold lasts `NATIVE_HOLD_SECS` (2 hours) from when the body was
+sent, kept in the parked row's `jobs.not_before`. The heartbeat that ends a told
+lapse (`native.receiver.renewed`, which a restarted incarnation's first heartbeat
+also produces) returns every held body to the queue in one queue write
+transaction, oldest first. Then, still under the native lock, each returned body
+gets its own committed `queued` outcome (`native-receiver-renewed`) on the
+recipient's seat, and the renewed edge is published: H returned bodies cost one
+queue transaction plus H + 1 commits. The ordinary claim then delivers each
+body, once. A held copy of a message already delivered, or beside a live copy of
+it for the same recipient, is never returned. A send also tells the lapse edge
+when it finds the lapse first, so its renewal always returns it.
+
+This is **policy**: such bodies used to die. Two brakes bound it. A send that
+finds `NATIVE_HOLD_LIMIT` (64) bodies already held for its recipient is
+refused, as before. Bodies already queued when the lease lapses were accepted
+before it and are all held, never discarded to fit, so held rows per recipient
+are bounded by the larger of 64 and the queue at the lapse. Rows parked before
+F260 carry no hold (`not_before` 0) and are never returned by a renewal (their
+senders were told to resend); the manual `pij inbox` pull still recovers them.
+An expiry notice is owed only while no other copy of the message (a same-id
+resend) is still queued, running or held for the recipient; a copy of the same id for
+another recipient never blocks a recovery.
+
+The sender hears twice at most. At the park, an FYI from `pij-bg`
+(`park-notice-<job_id>`) says the body is HELD, not refused, and must not be
+resent: a receipt that says `held` never reaches the model on some paths (a
+`pij` block, or an older tool). When the hold ends undelivered (past its
+instant, or the recipient closed or retired), the park notice sweep ends the
+hold and decides the notice in one queue write, then sends
+`park-expired-<job_id>`: NOT delivered, resend if it still matters (audited as
+`delivery.park-expiry-notice`); a held FYI not yet sent by then is skipped, so
+the sender never reads "do not resend" after "resend". A body returned or
+delivered first owes nothing, and one expired first is never returned after.
+The sweep is the existing one (every 60 seconds); nothing new runs. It walks
+every `delivery.parked` fact in its 24-hour lookback, historical ones included,
+so its work follows park volume over that day, not the rows held now. A park
+recovered before its deadline is checked for expiry again on every sweep after
+the deadline until it leaves the lookback, because "not owed" is not recorded
+(D-F260-4, a follow-up). Rows are not deleted: the hold bounds when a body can
+be returned, not how long its row is kept.
 
 Pane deliveries (plan 184) add two terminal outcomes, each publishing a
 sender-addressed `delivery.parked` with transport `pty`. They cover Claude seats
@@ -712,7 +759,7 @@ through a `delivery.hold-limit` fact and a `hold-notice-<job_id>` notice,
 audited as `delivery.hold-notice`. Schedule, limit and own-text rules:
 [pij-pane-signals](pij-pane-signals.md#staged-submits-their-leftovers-and-held-deliveries-plan-184).
 
-**Every park tells its sender once.** For any parked outcome the daemon's
+**Every park tells its sender once.** For any other parked outcome the daemon's
 `pij-bg` sends the sender one short message naming the msg id, the target, the
 outcome and reason, and "Resend after the target recovers". The notice's msg_id
 is derived from the parked job (`park-notice-<job_id>`). It is admitted at most
@@ -720,8 +767,9 @@ once across both channels: the queue dedupes the id in any job state, and the
 FYI store holds it at most once (`INSERT OR IGNORE`, with an atomic `fyi.held`
 fact the follower checks). The notice never wakes a cold seat: it passes the
 send guard's own cold-wake `check()`, and where `pij send` would be refused with
-`E-RS-COLD-WAKE` it is held as an FYI for the sender's next turn. A refused
-delivery (the sender's own receiver is down) also falls back to that FYI.
+`E-RS-COLD-WAKE` it is held as an FYI for the sender's next turn. A sender whose
+own native receiver has lapsed (a body to it would be held, F260) or whose
+holds are full gets that FYI too.
 `delivery.park-notice` (`{msg_id,job_id,notice_msg_id,recipient,channel,notice}`)
 is an audit record written after admission and repaired on replay. The follower
 subscribes live, then sweeps every live seat's `delivery.parked` facts from the
@@ -2511,7 +2559,7 @@ The full behaviour, state diagram and known residual are in [pa-watchdog.md](pa-
   - stale cards (`status-stale`). These come from the anomaly authority's own `StatusStaleDetector`, run over bounded reads. Each fleet seat gets one indexed `LIMIT 1` read for its latest card. Only for a card that is stale, the round then looks for its own clear or ack, matched by occurrence key, among the seat's `anomaly.clear` and `anomaly.ack` events since that card. That search uses a seat- and kind-indexed window of at most 4 pages of 256 rows. A clear for a different anomaly on the same seat never stands in for the card's own clear. Rows read per round follow the fleet and its stale cards, never the history. Other anomaly kinds stay with `pij anomalies`;
   - refused pane taps (`tap-refused`, F112): a seat whose pane's tap the pane observer couldn't attach, such as a pane already piped with no `@pij-tap-sink` owner marker. The detail is the adapter's refusal, which names the manual repair (`tmux set-option -p -t <pane> @pij-tap-sink '<sink>'` when the pipe is the daemon's own `cat >> <sink>`). It is an in-memory read of the observer's record, no launch. The observer retries such a pane with a backoff that doubles from its interval up to 60 s (`ATTACH_BACKOFF_MAX`), logs it once per pane incarnation, and drops it when the pane attaches or leaves;
   - stale extensions (`stale-extension`, F113): a seat whose extension source differs from what the daemon was built with. It compares content, not commits. Each extension reports ` tree:<id>` in its `extension_build`: ten characters of its directory's git tree id, and for the OMP extension also of the one file it loads from outside that directory (`crates/core/tests/fixtures/control-commands.json`), `+`-joined. `just rs-install` and `just bounce-rs` stamp the daemon with the same (`PIJ_EXT_TREE_COPILOT`, `PIJ_EXT_TREE_OMP`, one `git rev-parse` per build; `pij-rs ping` shows the build's `commit`). A merge that doesn't touch an extension (docs only, or a daemon-only change and bounce) flags nothing. Copilot seats compare with the Copilot stamp, OMP and Pi seats with the OMP stamp; Claude and Codex seats report no extension. A seat with no tree (an older extension, or a `hash:` build) or a daemon without the stamp is not compared. `crates/testkit/tests/extension_closure.rs` fails if an extension's import closure leaves its directory anywhere the identity doesn't cover. `extension_build` is the seat's own report and the digest goes into the PA's prompt, so the daemon parses it against a closed grammar (the build: a 7-40 hex commit with an optional `+dirty`, or `hash:` and 12-64 hex; the tree: one to four 7-40 hex ids joined by `+`) and renders only the parsed ids, labelled seat-reported. A tree that doesn't parse is not compared; a build that doesn't parse shows as `unparseable (N bytes)`, and a whole `extension_build` longer than the grammar allows (238 bytes) isn't compared or parsed further. That applies to stored rows too, since it runs at render time. `extension_closure.rs` reads every quoted `./` or `../` string, so a comment or line break inside an import can't hide it. A computed relative path fails the check, and so does any relative literal that leaves the extension's directory without naming a listed outside file (a concatenation like `"../../../crates/" + ...`). A path built with no escaping literal at all (a variable, `join(dir, "..")`) is beyond a lexical scan. The detail names both trees and the fix: reload the seat's extension, revive it for changed launch flags, or `just bounce-rs` if the extension is the newer. It reads the seat rows the round already has, no launch;
-  - lapsed native receivers (`receiver-lapsed`, F124): a live Copilot seat with native extension delivery whose receiver lease has lapsed, so every send to it is refused with `native-extension-unavailable` until the extension recovers. The detail says how long since this incarnation last renewed, and the fix: restart the seat from its pane with `pij send <seat> --command restart` (Copilot's own `/restart`, typed through the pane gate once the seat is idle with an empty composer; it keeps the session). An `extensions_reload` ask is a message, and a lapsed receiver cannot take it. Its extension log's `receive-held` line, if any, names the cause. It is one read of the daemon's in-memory lease map per digest, no launch and no store read. The same check decides the refusal, so the two can't disagree. The lease's edges are recorded too (auth/lapse D1): the reconciliation that first finds a lease lapsed writes one `native.receiver.lapsed` spine event `{seat, renewed_at}` (epoch ms of this incarnation's last renewal, `null` if none since the daemon started) and one daemon.log line, and the heartbeat that renews it writes one `native.receiver.renewed` `{seat, renewed_at}` and one line. Ticks in between write nothing, and a later lapse is a new edge. The edge state is an in-memory set of the live native Copilot seats, pruned with the leases, and it outlives a restart (R277-2): before its first heartbeat or reconciliation, a daemon marks lapsed again each live native Copilot seat whose last edge on the spine is `lapsed`, so a lapse is not told twice and the heartbeat that ends it tells `renewed`. That is one roster read and one indexed spine read per live native Copilot seat, once per daemon;
+  - lapsed native receivers (`receiver-lapsed`, F124): a live Copilot seat with native extension delivery whose receiver lease has lapsed, so every send to it is held (F260; `native-extension-unavailable`) until the extension recovers. The detail says how long since this incarnation last renewed, and the fix: restart the seat from its pane with `pij send <seat> --command restart` (Copilot's own `/restart`, typed through the pane gate once the seat is idle with an empty composer; it keeps the session). An `extensions_reload` ask is a message, and a lapsed receiver cannot take it. Its extension log's `receive-held` line, if any, names the cause. It is one read of the daemon's in-memory lease map per digest, no launch and no store read. The same check decides the hold, so the two can't disagree. The lease's edges are recorded too (auth/lapse D1): the reconciliation (or the held send) that first finds a lease lapsed writes one `native.receiver.lapsed` spine event `{seat, renewed_at}` (epoch ms of this incarnation's last renewal, `null` if none since the daemon started) and one daemon.log line, and the heartbeat that renews it returns the seat's held bodies to the queue (F260), then writes one `native.receiver.renewed` `{seat, renewed_at}` and one line. Ticks in between write nothing, and a later lapse is a new edge. The edge state is an in-memory set of the live native Copilot seats, pruned with the leases, and it outlives a restart (R277-2): before its first heartbeat or reconciliation, a daemon marks lapsed again each live native Copilot seat whose last edge on the spine is `lapsed`, so a lapse is not told twice and the heartbeat that ends it tells `renewed`. That is one roster read and one indexed spine read per live native Copilot seat, once per daemon;
 - **Messages held behind a busy turn** (plan 214, AC2): every message to a seat in this fleet that waited more than 15 minutes (`HELD_FLAG_SECS` in `pij_store::held`) between being queued and reaching the session, with sender, recipient, msg id, held time and whether it is still queued. A delivery's held time is `jobs.acked_at - jobs.enqueued_at` on every rung (the ack is written after the body reaches the session: the Copilot extension's consume, an OMP/Pi steer, a PTY type, a socket ack), so no column was added. The ack that ends a long hold records it in `held_deliveries` (migration 0043); the digest also lists messages still queued past the threshold. Each is shown once: every digest that carries the list (the idle-edge nudge, the prime-active wake and the dormant-PA wake) marks what it listed once its message is admitted (F115: the dormant wake once didn't, and repeated the same holds every 30 minutes). One read per digest, scoped to this fleet's recipients before its limit of 50 rows (so another fleet's holds never fill the page), through the unflagged partial index and `jobs_serial`; never per seat.
 - every seat, largest context first, with role, turn state, declared state, context, idle time, cache warmth and the cold-wake price of waking it.
 
