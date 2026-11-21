@@ -135,3 +135,4 @@
 | — | pij-cultural-falcon | omp | 01a1ec37-421c-73b4-b9d3-da9d4ed048ca | JordansacStudio.localdomain | i85 | 2026-11-20T20:32:08.114Z | — | pij-steady-otter | — | issue #85 daemon launch leftovers (bare lsof/omp, ps sites) | — |
 | — | pij-cultural-falcon | omp | 01a1ec37-421c-73b4-b9d3-da9d4ed048ca | JordansacStudio.localdomain | i90 | 2026-11-20T21:20:17.951Z | — | pij-steady-otter | — | issue #90 daemon.log cap and rate limit, plus #300 notes N1, N2 and the lsof cost row | — |
 | — | pij-cultural-falcon | omp | 01a1ec37-421c-73b4-b9d3-da9d4ed048ca | JordansacStudio.localdomain | f249 | 2026-11-20T22:55:16.574Z | — | pij-steady-otter | — | F249 OMP runtime model observation (footer drift) | — |
+| — | pij-cultural-falcon | omp | 01a1ec37-421c-73b4-b9d3-da9d4ed048ca | JordansacStudio.localdomain | f251 | 2026-11-21T00:01:13.288Z | — | pij-steady-otter | — | F251 daemon_log follow-ups from #301 C34 (before F249) | — |
