@@ -448,10 +448,13 @@ impl Registry for SqliteRegistry {
         require_current_schema(&self.pool).await?;
         // Absent filter fields mean "do not filter" — expressed as an IS NULL
         // guard per field rather than by building SQL strings, so an empty
-        // string can never be mistaken for "no filter". A pane filter takes
-        // its own branch: the guard form cannot use an index (F258).
+        // string can never be mistaken for "no filter". A pane filter, else a
+        // live-only one, takes its own branch: the guard form cannot use an
+        // index (F258).
         let sql = if filter.pane.is_some() {
             LIST_BY_PANE_SQL
+        } else if filter.live_only {
+            LIST_LIVE_SQL
         } else {
             LIST_SQL
         };
@@ -599,6 +602,21 @@ pub const LIST_BY_PANE_SQL: &str = "SELECT * FROM seats INDEXED BY seats_by_pane
        AND (?2 IS NULL OR folder = ?2) \
        AND (?3 IS NULL OR parent = ?3) \
        AND (?5 = 0 OR tombstoned_at IS NULL) \
+     ORDER BY id";
+
+/// [`LIST_SQL`] for live rows only, no pane named (F258): a walk of
+/// `seats_live` (migration 0049), which holds only the live rows in id order,
+/// instead of a scan of every seat row ever written. The pane observer asks
+/// this every 600 ms and the death sweep every 5 s. `INDEXED BY` makes SQLite
+/// refuse the query if the index is ever gone. `?4` is NULL on this branch;
+/// it is kept so every list query binds the same five parameters.
+pub const LIST_LIVE_SQL: &str = "SELECT * FROM seats INDEXED BY seats_live \
+     WHERE tombstoned_at IS NULL \
+       AND (?1 IS NULL OR harness = ?1) \
+       AND (?2 IS NULL OR folder = ?2) \
+       AND (?3 IS NULL OR parent = ?3) \
+       AND (?4 IS NULL OR pane = ?4) \
+       AND ?5 <> 0 \
      ORDER BY id";
 
 /// The sole seats-row upsert, shared by registry puts and atomic placements.
