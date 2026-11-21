@@ -1517,7 +1517,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f249",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #306 merged (653f90ef964b)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-21T02:32:33.623Z",
 					"why": "F249 OMP runtime model observation (footer drift)"
 				},
 				{

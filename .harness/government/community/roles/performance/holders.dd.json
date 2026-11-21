@@ -584,7 +584,10 @@
 					"harness_session": "26723d38-5471-4d1e-9875-9540be1fa57d",
 					"instance_key": "306",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #306 merged (653f90ef964b)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-early-wildfowl",
+					"to": "2026-11-21T02:32:33.623Z",
 					"why": "verdict on #306 (F249)"
 				}
 			]
