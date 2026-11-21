@@ -79,6 +79,9 @@ struct Parked {
     recipient: String,
     outcome: DeliveryFailure,
     reason: String,
+    /// F260: a body held for redelivery until this instant (Unix ms).
+    #[serde(rename = "heldUntil", default)]
+    held_until: Option<u64>,
 }
 
 /// The `delivery.hold-limit` payload (`pij_core::delivery::hold_limit_event`).
@@ -98,6 +101,9 @@ struct HoldLimit {
 /// already sent (plan 184).
 pub const HOLD_NOTICE_KIND: &str = "delivery.hold-notice";
 
+/// Audit record of a held body's expiry notice (F260), keyed by its `msg_id`.
+pub const EXPIRY_NOTICE_KIND: &str = "delivery.park-expiry-notice";
+
 /// The stable notice id for one parked job: the queue's dedupe key.
 #[must_use]
 pub fn notice_id(job_id: JobId) -> String {
@@ -110,11 +116,27 @@ pub fn hold_notice_id(job_id: JobId) -> String {
     format!("hold-notice-{}", job_id.0)
 }
 
+/// The stable expiry notice id for one held job (F260).
+#[must_use]
+pub fn expiry_notice_id(job_id: JobId) -> String {
+    format!("park-expired-{}", job_id.0)
+}
+
 fn hold_body(held: &HoldLimit) -> String {
     format!(
         "[pij] message {} to {} is still held ({}) after {} composer holds. It stays queued for now and fails by name if the hold continues.",
         held.message_id, held.recipient, held.reason, held.holds
     )
+}
+
+/// How a notice reaches its sender.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Channel {
+    /// As `pij send` would, or held as an FYI where that would be refused.
+    Send,
+    /// Always an FYI for the sender's next turn: news, nothing to do (F260's
+    /// held notice; the receipt that said `held` may never reach a model).
+    Fyi,
 }
 
 /// One notice owed to a sender, whichever fact owes it.
@@ -125,31 +147,68 @@ struct Owed {
     id: String,
     body: String,
     audit_kind: &'static str,
+    channel: Channel,
+    /// F260: an expiry notice, owed once the hold ends at this instant (Unix
+    /// ms) or the recipient is gone, and only while the body is undelivered.
+    expires_at: Option<u64>,
 }
 
 impl Owed {
-    /// The notice `event` owes, or `None` when it does not decode as one.
-    fn from_event(event: &Event) -> Option<Self> {
+    /// The notices `event` owes, none when it does not decode as one.
+    fn from_event(event: &Event) -> Vec<Self> {
         if event.kind == HOLD_LIMIT_EVENT_KIND {
-            let held = serde_json::from_str::<HoldLimit>(&event.payload).ok()?;
-            return Some(Self {
+            let Ok(held) = serde_json::from_str::<HoldLimit>(&event.payload) else {
+                return Vec::new();
+            };
+            return vec![Self {
                 id: hold_notice_id(held.job_id),
                 body: hold_body(&held),
                 audit_kind: HOLD_NOTICE_KIND,
                 message_id: held.message_id,
                 job_id: held.job_id,
                 recipient: held.recipient,
-            });
+                channel: Channel::Send,
+                expires_at: None,
+            }];
         }
-        let parked = serde_json::from_str::<Parked>(&event.payload).ok()?;
-        Some(Self {
-            id: notice_id(parked.job_id),
-            body: body(&parked),
-            audit_kind: NOTICE_KIND,
-            message_id: parked.message_id,
+        let Ok(parked) = serde_json::from_str::<Parked>(&event.payload) else {
+            return Vec::new();
+        };
+        let owed = |id, body, audit_kind, channel, expires_at| Self {
+            message_id: parked.message_id.clone(),
             job_id: parked.job_id,
-            recipient: parked.recipient,
-        })
+            recipient: parked.recipient.clone(),
+            id,
+            body,
+            audit_kind,
+            channel,
+            expires_at,
+        };
+        match parked.held_until {
+            None => vec![owed(
+                notice_id(parked.job_id),
+                body(&parked),
+                NOTICE_KIND,
+                Channel::Send,
+                None,
+            )],
+            Some(until) => vec![
+                owed(
+                    notice_id(parked.job_id),
+                    held_body(&parked, until),
+                    NOTICE_KIND,
+                    Channel::Fyi,
+                    None,
+                ),
+                owed(
+                    expiry_notice_id(parked.job_id),
+                    expired_body(&parked),
+                    EXPIRY_NOTICE_KIND,
+                    Channel::Send,
+                    Some(until),
+                ),
+            ],
+        }
     }
 }
 
@@ -163,7 +222,25 @@ fn body(parked: &Parked) -> String {
     )
 }
 
-/// Notify the sender of one parked job, at most once per job.
+fn held_body(parked: &Parked, until: u64) -> String {
+    format!(
+        "[pij] message {} to {} is HELD, not refused: its native receiver lapsed. It is delivered once \
+         when the receiver renews, or you are told if the hold ends first (at {until}, Unix ms). Do not \
+         resend it.",
+        parked.message_id, parked.recipient
+    )
+}
+
+fn expired_body(parked: &Parked) -> String {
+    format!(
+        "[pij] message {} to {} was NOT delivered: it was held because its native receiver lapsed, \
+         and the hold ended before the receiver renewed. It will never be delivered now; resend it \
+         if it still matters.",
+        parked.message_id, parked.recipient
+    )
+}
+
+/// Notify the sender of one parked job, at most once per job and notice.
 ///
 /// # Errors
 /// Registry, queue, spine, delivery or event-publication failures. A failure
@@ -175,9 +252,10 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
     };
     // User spine kinds are open strings; a same-named event that does not
     // decode as a park receipt (or hold-limit fact) is not one.
-    let Some(owed) = Owed::from_event(event) else {
+    let owed = Owed::from_event(event);
+    if owed.is_empty() {
         return Ok(());
-    };
+    }
     let Some(seat) = services
         .registry
         .get(sender)
@@ -186,6 +264,47 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
     else {
         return Ok(());
     };
+    // F260: a held park's expiry is owed once its hold is over; by then the
+    // held FYI ("do not resend") would only contradict it, so it is skipped.
+    let over = match owed.iter().find_map(|owed| {
+        owed.expires_at
+            .map(|until| (owed.recipient.as_str(), until))
+    }) {
+        Some((recipient, until)) => Some(hold_over(services, recipient, until).await?),
+        None => None,
+    };
+    for owed in owed {
+        let skipped = matches!(
+            (owed.channel, owed.expires_at, over),
+            (Channel::Fyi, None, Some(true)) | (_, Some(_), Some(false))
+        );
+        if !skipped {
+            notify_one(services, event, sender, &seat, owed).await?;
+        }
+    }
+    Ok(())
+}
+
+/// F260: is the hold on this body over: past its instant, or its recipient
+/// gone (missing, closed or retired), which can never renew it now?
+async fn hold_over(services: &Services, recipient: &str, until: u64) -> Result<bool> {
+    if crate::http::system_time_ms()? >= until {
+        return Ok(true);
+    }
+    Ok(services
+        .registry
+        .get(&SeatId::from(recipient))
+        .await?
+        .is_none_or(|seat| seat.tombstoned_at.is_some()))
+}
+
+async fn notify_one(
+    services: &Services,
+    event: &Event,
+    sender: &SeatId,
+    seat: &SeatDescriptor,
+    owed: Owed,
+) -> Result<()> {
     let id = owed.id.clone();
     let audited = services
         .event_bus
@@ -202,6 +321,17 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
         // out. It was sent; it is never sent again.
         return Ok(());
     } else {
+        // F260: ending the hold and deciding the notice is one queue write: a
+        // body already back in the queue (or delivered) owes nothing, and one
+        // expired here is never recovered after.
+        if owed.expires_at.is_some()
+            && !services
+                .delivery
+                .expire_native_hold(owed.job_id, &SeatId::from(owed.recipient.as_str()))
+                .await?
+        {
+            return Ok(());
+        }
         let msg = Msg {
             from: SeatId::from(BG_ACTOR),
             to: sender.clone(),
@@ -211,7 +341,10 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
             in_reply_to: None,
             command: None,
         };
-        let (channel, receipt) = send_or_hold(services, &seat, msg).await?;
+        let (channel, receipt) = match owed.channel {
+            Channel::Send => send_or_hold(services, seat, msg).await?,
+            Channel::Fyi => ("fyi", services.delivery.hold_fyi(msg).await?),
+        };
         (Some(channel), Some(receipt))
     };
     if audited {
@@ -259,11 +392,16 @@ pub(crate) async fn send_or_hold(
     if refusal(&seat.id, &cold).is_some() {
         return Ok(("fyi", services.delivery.hold_fyi(msg).await?));
     }
+    // The recipient's own receiver is down: a body would be held (F260) and
+    // wake it on renewal. A notice never waits for a wake: it is held for the
+    // recipient's next turn under the same id instead (background B9/B10).
+    if services.delivery.native_receiver_lapsed(seat).await {
+        return Ok(("fyi-after-refusal", services.delivery.hold_fyi(msg).await?));
+    }
     let receipt = services.delivery.accept(msg.clone()).await?;
     if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
-        // A refusal (e.g. the recipient's own receiver lease lapsed) is final
-        // for the wake, never for the notice: hold it for the recipient's next
-        // turn under the same id (background B9/B10).
+        // A refusal (e.g. the recipient's holds are full) is final for the
+        // wake, never for the notice: the same FYI fallback.
         return Ok(("fyi-after-refusal", services.delivery.hold_fyi(msg).await?));
     }
     Ok(("send", receipt))
@@ -493,8 +631,10 @@ mod tests {
             .unwrap()
     }
 
-    /// Send SENDER -> TARGET and park it, committing `fillers` unrelated events
-    /// in the same batch after the park (they overrun a one-slot live channel).
+    /// Send SENDER -> TARGET and park it terminally (an operator release, whose
+    /// sender is told to resend; F260's held native parks are tested with the
+    /// native receiver), committing `fillers` unrelated events in the same
+    /// batch after the park (they overrun a one-slot live channel).
     async fn park(services: &Services, label: &str, fillers: usize) -> (JobId, Event) {
         services
             .delivery
@@ -503,7 +643,7 @@ mod tests {
             .unwrap();
         let (job_id, job) = services
             .queue
-            .peek(&[delivery_kind(&TARGET.into())])
+            .claim(&[delivery_kind(&TARGET.into())], TARGET)
             .await
             .unwrap()
             .unwrap();
@@ -513,8 +653,8 @@ mod tests {
             .event_bus
             .publish_committed_batch(async move {
                 let evidence = ParkingEvidence {
-                    outcome: DeliveryFailure::NativeReceiverUnavailable,
-                    reason: "native-extension-unavailable",
+                    outcome: DeliveryFailure::OperatorReleased,
+                    reason: "operator released the head",
                     at: now_ms(),
                 };
                 let (parked, mut events) = queue

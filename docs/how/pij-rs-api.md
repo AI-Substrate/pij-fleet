@@ -112,6 +112,26 @@ to time them through, so the SQLite cost of a route is inside its
 `active_us`. Both fields are new keys beside `ok`/`refused`; nothing that read
 the earlier shape changes.
 
+`data.requests.whoami:{calls,stages_us,list_rows,liveness_reads}` splits
+`whoami`'s handler time by stage (F258 diagnosis). `stages_us` holds summed
+microseconds for each of these stages:
+
+- `seat_list`: the registry read of the pane's seat rows, or the asserted id's
+  row;
+- `liveness`: each live row's process read;
+- `codex`: the Codex caller's thread check;
+- `role`: the role read;
+- `fyi`: the held-FYI count;
+- `encode`: serialising the answer.
+
+`list_rows` counts the rows the seat lists returned; a pane keeps its retired
+rows. `liveness_reads` counts the process reads. The `POST /v1/whoami` and
+`GET /v1/whoami` routes' `active_us`, less the sum of `stages_us`, is the rest:
+auth, body extraction, and refusal paths. Each stage is timed with two
+`Instant::now()` into a task-local, and a whoami adds its stages to relaxed
+atomics once, with no lock and no allocation. Other routes share
+`resolve_seat`, and they record nothing here.
+
 `data.pane_observer:{passes,active_us,captures,capture_bytes,skipped,backstop}`
 counts the pane observer's work since start (F258). `passes` is one per tick
 (600 ms by default) and `active_us` their wall time, so `active_us / passes` is
@@ -120,11 +140,20 @@ they returned. A tracked pane whose tap drained nothing, with its composer
 settled (recognised blank or text), its cursor where its last capture read it
 and the interaction gate still holding that capture's composer with no
 uncertainty, is not captured: its last verdict is decided again and counted in
-`skipped`. Tap bytes, a moved cursor, or any other recorder changing the gate
-force a capture that tick. A replayed pane is still captured once
-`CAPTURE_BACKSTOP` (30 s) has passed since its last capture, counted in both
-`captures` and `backstop`, so a dead or silent tap hides a screen change for at
-most 30 s. Each injection still drains the tap and captures the pane itself.
+`skipped`. Each of these forces a capture that tick:
+
+- tap bytes;
+- a moved cursor;
+- any other recorder changing the gate;
+- an injection's fresh read draining the tap since the last capture, even if
+  that read then failed (F266);
+- a tap whose pipe had vanished and was started again (`attach_pane_tap`
+  answers `TapAttach::Attached`, F266).
+
+A replayed pane is still captured once `CAPTURE_BACKSTOP` (30 s) has passed
+since its last capture. That capture counts in both `captures` and `backstop`,
+so a dead or silent tap hides a screen change for at most 30 s. Each injection
+still drains the tap and captures the pane itself.
 Cost: two relaxed atomic adds per pass and one to three per pane; no lock, no
 launch.
 
@@ -313,8 +342,10 @@ A match reports `spawned pij worker <id>`. Otherwise the tool reports `spawned, 
 - **A launched seat always reaches someone.** The daemon keeps two independent facts per launch: whether the seat has **bound** (registered with its process), and whether the caller was **answered** with it (a success, a `--no-wait` dispatch, or a failure that says the seat is bound). A caller is *not* answered with the seat when its failure said the seat was not bound, when its request ended before any answer (the caller went away), or when the daemon restarted under it. Whichever of "bound" and "not answered" comes second hands the seat to the spawning parent, exactly once: one notice from `pij-bg` naming the seat, its pane, its spawn id, why, and the close command. That holds whatever the order: a seat that binds while the spawn still waits and is then abandoned, or that binds just before a timeout answer built from the stale row, is handed over as surely as one that binds after the failure. Only the launch's own seat on its own pane counts as its binding, on any registration path (HTTP, the Claude and Codex binders). The seat is left registered and running: it is live, and the parent decides.
 - **It survives a restart.** The spine records `spawn.launched` (`{spawn_id, pane, parent}`, written before the seat's row), `spawn.answered` (`{spawn_id, outcome: bound|dispatched|failed-bound}`, written once the answer naming the seat is built) and `spawn.reported` (`{spawn_id, pane, parent, reason, close, notice}`, written once the parent's notice is admitted; or `withheld: "no live parent" | "no parent recorded" | "parent lookup failed: …"`). At boot, every live spawned row with `spawn.launched` and neither of the others is unsettled, bound or not (the case of pij-sure-eagle, which sat 22 h unused): a bound one is handed to its parent at once, an unbound one when it binds. A notice that was not admitted writes no `spawn.reported`, so the next boot tries again. Rows from before F211 have no `spawn.launched` and are left alone. Cost: two spine writes per spawn on the success path, one indexed read per live spawned row at boot, no launch. There is no prime fallback: a seat whose parent is gone is recorded as withheld, and stays visible in `pij list`.
 - **A spawn sent again launches once (F255).** A daemon stop drops whatever is still open when its 5 s drain ends, and a spawn waiting for its seat usually is: on 2026-11-21 one registered while its caller got EOF, the caller sent it again, and got a second seat. So a spawn carries the caller's key, HTTP `spawn_id` (`s-` and 32 lowercase hex digits, the shape the daemon mints; anything else refuses). `pij-rs spawn` and `pij_spawn` mint it before the first send and, within the restart wait (counted from the first failed send, never the first send), send the same request again after a send that got no answer (a closed or reset connection) or a 503. The daemon looks the key up first, under the spawn lock, from the seats' spawn-id index. No row: it launches as before, with the key as the spawn id. A live row: it answers as the first send would have, waited on until the seat binds (or at once with `no_wait`), and launches nothing; that request now watches the launch in place of the lost one, keeping a binding already known, so the parent is not also told. A launch already settled with a bound seat (its caller answered, or its parent told) is answered from its row and never re-armed, so it is never reported twice. Refused, launching nothing (BRAKES): no live row (`… has since closed; a spawn id launches once`), or a row for a different request (harness, folder, parent or explicit id differ). The resend's own `model`, `wait_seconds`, `no_wait` and `trust_folder` govern its answer: the model check is the first send's (`build_spawn_plan` passes the requested model through unchanged), and a resend with `trust_folder` may answer that launch's own folder-trust prompt (the last sender's opt-in). A caller that sends no key gets a daemon-minted id, and a resend launches again, as before.
-- **The launch belongs to the daemon, not the request (F255, R309-01).** From classification through the row write a spawn runs in its own task, which holds the spawn lock; the request only waits on it. A request cut in that segment (a client gone, a stop's drain) leaves the task to write the row, and a resend of the same key waits on the lock and finds it. After the row, the task waits for the bind only while its request is there; once the request goes, its watch is left unsettled and a later bind reaches the parent (F211).
-- **A stopping daemon starts no spawn (F255).** The stop tells the spawn path first, before the drain: a spawn not yet past its check answers HTTP 503, `details.code` `E-RS-STOPPING`, with nothing launched, and `pij-rs` and `pij_spawn` send it again to the next daemon. The stop then takes the spawn lock (bounded by the 5 s drain), so every launch already past the check has written its row before tmux is released and the HTTP drain starts. Cost: one indexed seats read per keyed spawn; nothing new is stored (the key is the seat's existing `spawn_id`, kept as long as the row); one task per spawn, for that spawn's own life; no loop, no launch.
+- **The launch belongs to the daemon, not the request (F255, R309-01).** From classification through the row write a spawn runs in its own task, which holds the spawn lock; the request only waits on it. A request cut in that segment (a client gone, a stop's drain) leaves the task to write the row, and a resend of the same key waits on the lock and finds it. After the row, the task waits for the bind only while its request is there; once the request goes, its watch is left unsettled and a later bind reaches the parent (F211). A caller already gone wins even over an answer ready at once (a `no_wait` dispatch, F264), so no launch is settled as answered for nobody.
+- **A resend never re-arms a settled launch (F264).** The resend reads its row under the spawn lock, but a registration binds and reports without that lock, so the row it holds can say unbound after the seat bound and its parent was told. The daemon remembers each launch it settled (answered, or handed to the parent) and whether its seat is known to be bound, so a launch settled bound is never watched again, whatever the resend's row says; one dispatched unbound and not bound since is watched again. The record is a BRAKE (it only ever withholds a watch), keeps the newest 256 launches (`SETTLED_KEPT`; a resend's window is milliseconds), and goes with the daemon: after a restart the spine's `spawn.answered` and `spawn.reported` stand in.
+- **A stopping daemon starts no spawn (F255).** The stop tells the spawn path first, before the drain: a spawn not yet past its check answers HTTP 503, `details.code` `E-RS-STOPPING`, with nothing launched, and `pij-rs` and `pij_spawn` send it again to the next daemon. The stop then takes the spawn lock, bounded by the 5 s drain, so every launch already past the check has written its row before tmux is released and the HTTP drain starts. If that bound runs out, the stop goes on without it and logs `stopping without waiting longer for a spawn launch to write its row`, naming the seat, spawn id and folder the lock holder last named (F264): that launch's pane may then have no row, so the next daemon cannot find it by its key, and it is closed by hand. A daemon killed outright (SIGKILL, a crash) in that segment leaves the same. Cost: one indexed seats read per keyed spawn; a record of at most 256 settled launches in memory; one task per spawn, for that spawn's own life; no loop, no launch.
+- **Every shutdown phase is logged (F267).** `pij-rs shutdown: <phase>: started` and `…: ended after <ms>ms` for the spawn-launch join, the park notices, the HTTP drain (claim waits and streams), each worker loop, the sidecars, the governance observer, the tmux control release, the delivery and event flush and the store close; then `pij-rs daemon: shutdown returned after <ms>ms; exiting`. A stop that hangs names its phase: the last `started` without its `ended`, or, after `exiting`, the runtime's wait for a blocking task. Two lines per phase per stop; nothing at run time.
 
 **A folder-trust prompt refuses the spawn at once (F215).** Copilot and Claude ask whether to trust a folder they have not seen before they start, and a seat never registers while the question is open. The registration wait already reads the pane every 50 ms. It now keeps the whole screen from that one read: Claude draws its prompt at the top of a tall pane, so the bottom 20 rows the log keeps can be blank. When [`trust.rs`](../../crates/harnesses/src/trust.rs) finds the harness's prompt there, the spawn answers at once with HTTP 409 and the usual F211 `details`. Its `reason` names the prompt, the folder (from the request, never from the pane) and the trust row, and says the pane is left live on the prompt. The keys it names come from the row highlighted on that screen, never from the prompt's default (R264-001): Enter alone only when the trust row is highlighted; otherwise Up or Down to it first, naming what Enter would choose now; with no highlighted row in view, the trust row and no key.
 
@@ -666,7 +697,7 @@ Once a lease expires, `pij state` reports
 `native_receiver_reason:"native-extension-unavailable"` separately from host
 liveness, plus `nativeReceiverLine` (F195), which both renderers print as its own
 line: `native receiver: lapsed, last renewed 39m ago. The process is active, but
-sends to this seat are refused until its extension registers again.` (or `not
+sends to this seat are held (F260) until its extension registers again.` (or `not
 renewed by this process since the daemon started`). `pij list` (`/v1/seats`) adds
 `nativeReceiver:"receiver lapsed 39m"` to the row, shown after its STATE. Both
 read the in-memory leases only: no store read, no launch. `pij inbox` and
@@ -675,7 +706,54 @@ read the in-memory leases only: no store read, no launch. `pij inbox` and
 receiver is renewing.
 
 Expiry parks native bodies with `undelivered:native-receiver-unavailable`,
-publishes sender-addressed `delivery.parked`, and refuses subsequent sends.
+publishes sender-addressed `delivery.parked`, and **holds** later sends (F260).
+
+**A body for a lapsed native receiver is held, not lost** (F260). A send that
+finds the lease lapsed queues the body and parks it at once, so nothing is
+delivered into the lapsed receiver (F124's brake). Its receipt is
+`{"outcome":"held","reason":"native-receiver-lapsed: … until <ms> (Unix ms) …"}`,
+and the sender-addressed `delivery.outcome` and `delivery.parked` say the same
+(`delivery.parked` carries `heldUntil`). Bodies queued before the lapse park the
+same way. The hold lasts `NATIVE_HOLD_SECS` (2 hours) from when the body was
+sent, kept in the parked row's `jobs.not_before`. The heartbeat that ends a told
+lapse (`native.receiver.renewed`, which a restarted incarnation's first heartbeat
+also produces) returns every held body to the queue in one queue write
+transaction, oldest first. Then, still under the native lock, each returned body
+gets its own committed `queued` outcome (`native-receiver-renewed`) on the
+recipient's seat, and the renewed edge is published: H returned bodies cost one
+queue transaction plus H + 1 commits. The ordinary claim then delivers each
+body, once. A held copy of a message already delivered, or beside a live copy of
+it for the same recipient, is never returned. A send also tells the lapse edge
+when it finds the lapse first, so its renewal always returns it.
+
+This is **policy**: such bodies used to die. Two brakes bound it. A send that
+finds `NATIVE_HOLD_LIMIT` (64) bodies already held for its recipient is
+refused, as before. Bodies already queued when the lease lapses were accepted
+before it and are all held, never discarded to fit, so held rows per recipient
+are bounded by the larger of 64 and the queue at the lapse. Rows parked before
+F260 carry no hold (`not_before` 0) and are never returned by a renewal (their
+senders were told to resend); the manual `pij inbox` pull still recovers them.
+An expiry notice is owed only while no other copy of the message (a same-id
+resend) is still queued, running or held for the recipient; a copy of the same id for
+another recipient never blocks a recovery.
+
+The sender hears twice at most. At the park, an FYI from `pij-bg`
+(`park-notice-<job_id>`) says the body is HELD, not refused, and must not be
+resent: a receipt that says `held` never reaches the model on some paths (a
+`pij` block, or an older tool). When the hold ends undelivered (past its
+instant, or the recipient closed or retired), the park notice sweep ends the
+hold and decides the notice in one queue write, then sends
+`park-expired-<job_id>`: NOT delivered, resend if it still matters (audited as
+`delivery.park-expiry-notice`); a held FYI not yet sent by then is skipped, so
+the sender never reads "do not resend" after "resend". A body returned or
+delivered first owes nothing, and one expired first is never returned after.
+The sweep is the existing one (every 60 seconds); nothing new runs. It walks
+every `delivery.parked` fact in its 24-hour lookback, historical ones included,
+so its work follows park volume over that day, not the rows held now. A park
+recovered before its deadline is checked for expiry again on every sweep after
+the deadline until it leaves the lookback, because "not owed" is not recorded
+(D-F260-4, a follow-up). Rows are not deleted: the hold bounds when a body can
+be returned, not how long its row is kept.
 
 Pane deliveries (plan 184) add two terminal outcomes, each publishing a
 sender-addressed `delivery.parked` with transport `pty`. They cover Claude seats
@@ -692,7 +770,7 @@ through a `delivery.hold-limit` fact and a `hold-notice-<job_id>` notice,
 audited as `delivery.hold-notice`. Schedule, limit and own-text rules:
 [pij-pane-signals](pij-pane-signals.md#staged-submits-their-leftovers-and-held-deliveries-plan-184).
 
-**Every park tells its sender once.** For any parked outcome the daemon's
+**Every park tells its sender once.** For any other parked outcome the daemon's
 `pij-bg` sends the sender one short message naming the msg id, the target, the
 outcome and reason, and "Resend after the target recovers". The notice's msg_id
 is derived from the parked job (`park-notice-<job_id>`). It is admitted at most
@@ -700,8 +778,9 @@ once across both channels: the queue dedupes the id in any job state, and the
 FYI store holds it at most once (`INSERT OR IGNORE`, with an atomic `fyi.held`
 fact the follower checks). The notice never wakes a cold seat: it passes the
 send guard's own cold-wake `check()`, and where `pij send` would be refused with
-`E-RS-COLD-WAKE` it is held as an FYI for the sender's next turn. A refused
-delivery (the sender's own receiver is down) also falls back to that FYI.
+`E-RS-COLD-WAKE` it is held as an FYI for the sender's next turn. A sender whose
+own native receiver has lapsed (a body to it would be held, F260) or whose
+holds are full gets that FYI too.
 `delivery.park-notice` (`{msg_id,job_id,notice_msg_id,recipient,channel,notice}`)
 is an audit record written after admission and repaired on replay. The follower
 subscribes live, then sweeps every live seat's `delivery.parked` facts from the
@@ -2491,7 +2570,7 @@ The full behaviour, state diagram and known residual are in [pa-watchdog.md](pa-
   - stale cards (`status-stale`). These come from the anomaly authority's own `StatusStaleDetector`, run over bounded reads. Each fleet seat gets one indexed `LIMIT 1` read for its latest card. Only for a card that is stale, the round then looks for its own clear or ack, matched by occurrence key, among the seat's `anomaly.clear` and `anomaly.ack` events since that card. That search uses a seat- and kind-indexed window of at most 4 pages of 256 rows. A clear for a different anomaly on the same seat never stands in for the card's own clear. Rows read per round follow the fleet and its stale cards, never the history. Other anomaly kinds stay with `pij anomalies`;
   - refused pane taps (`tap-refused`, F112): a seat whose pane's tap the pane observer couldn't attach, such as a pane already piped with no `@pij-tap-sink` owner marker. The detail is the adapter's refusal, which names the manual repair (`tmux set-option -p -t <pane> @pij-tap-sink '<sink>'` when the pipe is the daemon's own `cat >> <sink>`). It is an in-memory read of the observer's record, no launch. The observer retries such a pane with a backoff that doubles from its interval up to 60 s (`ATTACH_BACKOFF_MAX`), logs it once per pane incarnation, and drops it when the pane attaches or leaves;
   - stale extensions (`stale-extension`, F113): a seat whose extension source differs from what the daemon was built with. It compares content, not commits. Each extension reports ` tree:<id>` in its `extension_build`: ten characters of its directory's git tree id, and for the OMP extension also of the one file it loads from outside that directory (`crates/core/tests/fixtures/control-commands.json`), `+`-joined. `just rs-install` and `just bounce-rs` stamp the daemon with the same (`PIJ_EXT_TREE_COPILOT`, `PIJ_EXT_TREE_OMP`, one `git rev-parse` per build; `pij-rs ping` shows the build's `commit`). A merge that doesn't touch an extension (docs only, or a daemon-only change and bounce) flags nothing. Copilot seats compare with the Copilot stamp, OMP and Pi seats with the OMP stamp; Claude and Codex seats report no extension. A seat with no tree (an older extension, or a `hash:` build) or a daemon without the stamp is not compared. `crates/testkit/tests/extension_closure.rs` fails if an extension's import closure leaves its directory anywhere the identity doesn't cover. `extension_build` is the seat's own report and the digest goes into the PA's prompt, so the daemon parses it against a closed grammar (the build: a 7-40 hex commit with an optional `+dirty`, or `hash:` and 12-64 hex; the tree: one to four 7-40 hex ids joined by `+`) and renders only the parsed ids, labelled seat-reported. A tree that doesn't parse is not compared; a build that doesn't parse shows as `unparseable (N bytes)`, and a whole `extension_build` longer than the grammar allows (238 bytes) isn't compared or parsed further. That applies to stored rows too, since it runs at render time. `extension_closure.rs` reads every quoted `./` or `../` string, so a comment or line break inside an import can't hide it. A computed relative path fails the check, and so does any relative literal that leaves the extension's directory without naming a listed outside file (a concatenation like `"../../../crates/" + ...`). A path built with no escaping literal at all (a variable, `join(dir, "..")`) is beyond a lexical scan. The detail names both trees and the fix: reload the seat's extension, revive it for changed launch flags, or `just bounce-rs` if the extension is the newer. It reads the seat rows the round already has, no launch;
-  - lapsed native receivers (`receiver-lapsed`, F124): a live Copilot seat with native extension delivery whose receiver lease has lapsed, so every send to it is refused with `native-extension-unavailable` until the extension recovers. The detail says how long since this incarnation last renewed, and the fix: restart the seat from its pane with `pij send <seat> --command restart` (Copilot's own `/restart`, typed through the pane gate once the seat is idle with an empty composer; it keeps the session). An `extensions_reload` ask is a message, and a lapsed receiver cannot take it. Its extension log's `receive-held` line, if any, names the cause. It is one read of the daemon's in-memory lease map per digest, no launch and no store read. The same check decides the refusal, so the two can't disagree. The lease's edges are recorded too (auth/lapse D1): the reconciliation that first finds a lease lapsed writes one `native.receiver.lapsed` spine event `{seat, renewed_at}` (epoch ms of this incarnation's last renewal, `null` if none since the daemon started) and one daemon.log line, and the heartbeat that renews it writes one `native.receiver.renewed` `{seat, renewed_at}` and one line. Ticks in between write nothing, and a later lapse is a new edge. The edge state is an in-memory set of the live native Copilot seats, pruned with the leases, and it outlives a restart (R277-2): before its first heartbeat or reconciliation, a daemon marks lapsed again each live native Copilot seat whose last edge on the spine is `lapsed`, so a lapse is not told twice and the heartbeat that ends it tells `renewed`. That is one roster read and one indexed spine read per live native Copilot seat, once per daemon;
+  - lapsed native receivers (`receiver-lapsed`, F124): a live Copilot seat with native extension delivery whose receiver lease has lapsed, so every send to it is held (F260; `native-extension-unavailable`) until the extension recovers. The detail says how long since this incarnation last renewed, and the fix: restart the seat from its pane with `pij send <seat> --command restart` (Copilot's own `/restart`, typed through the pane gate once the seat is idle with an empty composer; it keeps the session). An `extensions_reload` ask is a message, and a lapsed receiver cannot take it. Its extension log's `receive-held` line, if any, names the cause. It is one read of the daemon's in-memory lease map per digest, no launch and no store read. The same check decides the hold, so the two can't disagree. The lease's edges are recorded too (auth/lapse D1): the reconciliation (or the held send) that first finds a lease lapsed writes one `native.receiver.lapsed` spine event `{seat, renewed_at}` (epoch ms of this incarnation's last renewal, `null` if none since the daemon started) and one daemon.log line, and the heartbeat that renews it returns the seat's held bodies to the queue (F260), then writes one `native.receiver.renewed` `{seat, renewed_at}` and one line. Ticks in between write nothing, and a later lapse is a new edge. The edge state is an in-memory set of the live native Copilot seats, pruned with the leases, and it outlives a restart (R277-2): before its first heartbeat or reconciliation, a daemon marks lapsed again each live native Copilot seat whose last edge on the spine is `lapsed`, so a lapse is not told twice and the heartbeat that ends it tells `renewed`. That is one roster read and one indexed spine read per live native Copilot seat, once per daemon;
 - **Messages held behind a busy turn** (plan 214, AC2): every message to a seat in this fleet that waited more than 15 minutes (`HELD_FLAG_SECS` in `pij_store::held`) between being queued and reaching the session, with sender, recipient, msg id, held time and whether it is still queued. A delivery's held time is `jobs.acked_at - jobs.enqueued_at` on every rung (the ack is written after the body reaches the session: the Copilot extension's consume, an OMP/Pi steer, a PTY type, a socket ack), so no column was added. The ack that ends a long hold records it in `held_deliveries` (migration 0043); the digest also lists messages still queued past the threshold. Each is shown once: every digest that carries the list (the idle-edge nudge, the prime-active wake and the dormant-PA wake) marks what it listed once its message is admitted (F115: the dormant wake once didn't, and repeated the same holds every 30 minutes). One read per digest, scoped to this fleet's recipients before its limit of 50 rows (so another fleet's holds never fill the page), through the unflagged partial index and `jobs_serial`; never per seat.
 - every seat, largest context first, with role, turn state, declared state, context, idle time, cache warmth and the cold-wake price of waking it.
 

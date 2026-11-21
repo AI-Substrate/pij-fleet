@@ -201,6 +201,21 @@ pub trait Registry: Send + Sync {
     ) -> Result<Option<Seq>>;
 }
 
+/// What [`TmuxPort::attach_pane_tap`] found (F266).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TapAttach {
+    /// The adapter already tracks this sink and tmux reports the pane's pipe
+    /// open. That does not prove the reader process is alive: a dead reader
+    /// shows as an open pipe until the pane next writes, after which tmux
+    /// closes it and the next attach answers [`TapAttach::Attached`].
+    Kept,
+    /// A pipe was started (a first attach, an adopted orphan, or a repair of
+    /// one that had vanished): bytes the pane wrote before it were never
+    /// sensed, so nothing read from the screen earlier can be trusted as
+    /// unchanged.
+    Attached,
+}
+
 /// What one [`TmuxPort::sweep_orphan_taps`] pass did, so a removal is attributable.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TapSweep {
@@ -600,6 +615,53 @@ pub trait Queue: Send + Sync {
     /// Preserves its id/history, increments the attempt, and releases to pending.
     /// Other outcomes, a foreign recipient, or a conflicting live row return false.
     async fn recover_native_delivery(&self, job: JobId, recipient: &SeatId) -> Result<bool>;
+
+    /// F260: return every body held for `recipient` (parked
+    /// native-receiver-unavailable within its hold, `jobs.not_before` in the
+    /// future) to pending, oldest first, each behind the same guards as
+    /// [`Queue::recover_native_delivery`]: never one already delivered, never
+    /// beside a live row of the same message. Rows parked before F260 carry no
+    /// hold and are never returned. Returns the recovered rows.
+    ///
+    /// This default REFUSES: a wrapper that has not implemented it must not
+    /// answer "nothing held".
+    async fn recover_held_native_deliveries(
+        &self,
+        recipient: &SeatId,
+    ) -> Result<Vec<(JobId, Job)>> {
+        let _ = recipient;
+        Err(crate::error::PijError::Adapter {
+            adapter: "queue".to_string(),
+            message: "this queue cannot hold native deliveries".to_string(),
+        })
+    }
+
+    /// F260: how many bodies are held for `recipient` now.
+    ///
+    /// This default REFUSES, so a caller enforcing the hold limit holds nothing.
+    async fn held_native_count(&self, recipient: &SeatId) -> Result<u64> {
+        let _ = recipient;
+        Err(crate::error::PijError::Adapter {
+            adapter: "queue".to_string(),
+            message: "this queue cannot hold native deliveries".to_string(),
+        })
+    }
+
+    /// F260: end the hold on one parked body at once, so it is never recovered.
+    /// True when its sender is owed an expiry notice: the message is not
+    /// delivered, and no other copy of it (a same-id resend) is still queued,
+    /// running or held for this recipient. False when it was recovered,
+    /// delivered, has a copy still on its way, or is not this recipient's park.
+    ///
+    /// This default REFUSES, so no expiry notice is sent for a body that might
+    /// still be delivered.
+    async fn expire_native_hold(&self, job: JobId, recipient: &SeatId) -> Result<bool> {
+        let _ = (job, recipient);
+        Err(crate::error::PijError::Adapter {
+            adapter: "queue".to_string(),
+            message: "this queue cannot hold native deliveries".to_string(),
+        })
+    }
 
     /// Park only the named live head at the observed attempt. Native receiver
     /// unavailability may also park an unclaimed/deferred head; other outcomes
@@ -1156,8 +1218,9 @@ pub trait TmuxPort: Send + Sync {
     /// Return success only after the world reports the pipe live: a lying attach
     /// feeds zero bytes into a policy that reads zero as HUMAN NOT TYPING, so the
     /// gate would authorize forever on a sensor that never sensed. The caller
-    /// owns the sink path and its lifecycle.
-    async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> Result<()>;
+    /// owns the sink path and its lifecycle. [`TapAttach::Attached`] whenever a
+    /// pipe had to be started, including the repair of a vanished one.
+    async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> Result<TapAttach>;
     /// Durable sink marker recorded on `pane`, when this project owns its pipe.
     ///
     /// This asks the world rather than process-local memory: after a restart the

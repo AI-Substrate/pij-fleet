@@ -31,7 +31,7 @@ use pij_core::model::{
 use pij_core::ports::{
     DeferNoopReason, DeferOutcome, DeliveryAck, DeliveryEnqueue, HarnessPort, LaunchCommand,
     LivenessPort, MenuKey, Queue, Registry, ReleaseOutcome, STAGED_SUBMIT_RECOVERY, SeatFilter,
-    SessionStatusPort, Spine, StagedSubmit, TmuxPort, Transport, is_rendered_leftover,
+    SessionStatusPort, Spine, StagedSubmit, TapAttach, TmuxPort, Transport, is_rendered_leftover,
     staged_leftover,
 };
 use pij_core::session_status::{SessionStatusReply, SessionTarget};
@@ -708,6 +708,9 @@ struct QueueState {
     not_before: HashMap<u64, Duration>,
     deferrals: HashMap<u64, (pij_core::model::DeliveryDeferral, u64, u64)>,
     now: Duration,
+    /// F260: held native parks, by job id, until this fake-clock instant
+    /// (the real queue counts from enqueue; the fake from the park).
+    held_until: HashMap<u64, Duration>,
     next_id: u64,
     /// `(recipient, sender machine, msg_id, origin)`: keyed like the real
     /// ledger, origin in its own field (plan 164 review F02).
@@ -1135,11 +1138,25 @@ impl Queue for FakeQueue {
             }
             job.expect("validated live head").clone()
         };
-        let mut events = pij_core::delivery::parked_events(id, &job, evidence)?;
+        let held_until = (evidence.outcome
+            == pij_core::model::DeliveryFailure::NativeReceiverUnavailable)
+            .then(|| {
+                evidence
+                    .at
+                    .saturating_add(pij_core::delivery::NATIVE_HOLD_SECS.saturating_mul(1_000))
+            });
+        let mut events = match held_until {
+            Some(until) => pij_core::delivery::held_parked_events(id, &job, evidence, until)?,
+            None => pij_core::delivery::parked_events(id, &job, evidence)?,
+        };
         for event in &mut events {
             event.seq = Some(spine.append(event.clone()).await?);
         }
         let mut state = self.state.lock().expect("fake queue mutex");
+        if held_until.is_some() {
+            let until = state.now + Duration::from_secs(pij_core::delivery::NATIVE_HOLD_SECS);
+            state.held_until.insert(id.0, until);
+        }
         state.claimed.remove(&id.0);
         state.live.retain(|(pending, _)| *pending != id);
         state.acked.push((
@@ -1154,6 +1171,96 @@ impl Queue for FakeQueue {
             outcome: evidence.outcome,
         });
         Ok((Some(job), events))
+    }
+
+    async fn recover_held_native_deliveries(
+        &self,
+        recipient: &SeatId,
+    ) -> Result<Vec<(JobId, Job)>> {
+        let held: Vec<JobId> = {
+            let state = self.state.lock().expect("fake queue mutex");
+            state
+                .parked
+                .iter()
+                .filter(|row| {
+                    row.job.serial_key == recipient.as_str()
+                        && state
+                            .held_until
+                            .get(&row.job_id.0)
+                            .is_some_and(|until| *until > state.now)
+                })
+                .map(|row| row.job_id)
+                .collect()
+        };
+        let mut recovered = Vec::new();
+        for id in held {
+            if self.recover_native_delivery(id, recipient).await? {
+                let mut state = self.state.lock().expect("fake queue mutex");
+                state.held_until.remove(&id.0);
+                if let Some((_, job)) = state.live.iter().find(|(live, _)| *live == id) {
+                    recovered.push((id, job.clone()));
+                }
+            }
+        }
+        Ok(recovered)
+    }
+
+    async fn held_native_count(&self, recipient: &SeatId) -> Result<u64> {
+        let state = self.state.lock().expect("fake queue mutex");
+        Ok(state
+            .parked
+            .iter()
+            .filter(|row| {
+                row.job.serial_key == recipient.as_str()
+                    && state
+                        .held_until
+                        .get(&row.job_id.0)
+                        .is_some_and(|until| *until > state.now)
+            })
+            .count() as u64)
+    }
+
+    async fn expire_native_hold(&self, id: JobId, recipient: &SeatId) -> Result<bool> {
+        let mut state = self.state.lock().expect("fake queue mutex");
+        let Some(parked) = state.parked.iter().find(|row| {
+            row.job_id == id
+                && row.job.serial_key == recipient.as_str()
+                && row.outcome == pij_core::model::DeliveryFailure::NativeReceiverUnavailable
+        }) else {
+            return Ok(false);
+        };
+        let job = parked.job.clone();
+        let now = state.now;
+        state
+            .held_until
+            .entry(id.0)
+            .and_modify(|until| *until = (*until).min(now));
+        let same = |other: &Job| {
+            other.kind == job.kind
+                && other.dedupe_key == job.dedupe_key
+                && other.dedupe_origin == job.dedupe_origin
+        };
+        let sibling = state
+            .live
+            .iter()
+            .any(|(other, row)| *other != id && same(row))
+            || state
+                .claimed
+                .iter()
+                .any(|(other, (row, _))| *other != id.0 && same(row))
+            || state.parked.iter().any(|row| {
+                row.job_id != id
+                    && same(&row.job)
+                    && state
+                        .held_until
+                        .get(&row.job_id.0)
+                        .is_some_and(|until| *until > now)
+            });
+        let delivered = state
+            .delivered
+            .iter()
+            .any(|(seat, machine, msg, _)| delivered_job(&job, seat, machine, msg));
+        Ok(!delivered && !sibling)
     }
 
     async fn live_payloads(&self, kinds: &[String]) -> Result<Vec<String>> {
@@ -2265,6 +2372,24 @@ impl FakeTmux {
         }
     }
 
+    /// The pane's output pipe vanished (tmux closed it): the next attach
+    /// starts a new one and answers [`TapAttach::Attached`].
+    pub fn lose_tap(&self, pane: &str) {
+        self.state
+            .lock()
+            .expect("fake tmux mutex")
+            .taps
+            .remove(pane);
+    }
+
+    /// [`Self::with_list_pane_failures`] for a fake already behind an `Arc`.
+    pub fn fail_list_panes(&self, count: usize) {
+        self.state
+            .lock()
+            .expect("fake tmux mutex")
+            .list_pane_failures = count;
+    }
+
     /// Queue one dependency failure from the next attached tap drain.
     pub fn script_tap_error(self, message: impl Into<String>) -> Self {
         self.state
@@ -2721,14 +2846,14 @@ impl TmuxPort for FakeTmux {
         Ok(Some(state.standing_capture.clone().unwrap_or_default()))
     }
 
-    async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> Result<()> {
+    async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> Result<TapAttach> {
         let mut state = self.state.lock().expect("fake tmux mutex");
         state
             .recorder
             .record(format!("attach_pane_tap:{pane}:{}", sink.display()));
         if let Some(existing) = state.taps.get(pane) {
             if existing == sink {
-                return Ok(());
+                return Ok(TapAttach::Kept);
             }
             return Err(PijError::Adapter {
                 adapter: "fake-tmux".to_string(),
@@ -2736,7 +2861,7 @@ impl TmuxPort for FakeTmux {
             });
         }
         state.taps.insert(pane.to_string(), sink.to_path_buf());
-        Ok(())
+        Ok(TapAttach::Attached)
     }
 
     async fn pane_tap_sink(&self, pane: &str) -> Result<Option<PathBuf>> {

@@ -219,7 +219,7 @@ export default function (pi: ExtensionAPI): void {
 					content: [
 						{
 							type: "text",
-							text: `${receipt.held ? "held (fyi)" : "queued"} ${receipt.msgId} -> ${params.to}${coldCheck}${warning}`,
+							text: `${receipt.verdict} ${receipt.msgId} -> ${params.to}${coldCheck}${warning}`,
 						},
 					],
 					details: {},

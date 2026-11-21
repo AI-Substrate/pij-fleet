@@ -111,6 +111,21 @@ export function isHeldFyi(receipt: QueueReceipt): boolean {
 	return record.outcome === "held" && record.reason === "fyi";
 }
 
+/**
+ * What a send receipt says happened, as the sender's model reads it (F260):
+ * `queued`, `delivered`, `held (fyi)`, or `held: <why>` / `refused: <why>`.
+ * Never `queued` for a message the daemon held or refused.
+ */
+export function receiptVerdict(receipt: QueueReceipt): string {
+	if (isHeldFyi(receipt)) return "held (fyi)";
+	const outcome = receipt.outcome;
+	const record =
+		typeof outcome === "object" && outcome !== null ? (outcome as Record<string, unknown>) : {};
+	const word = typeof record.outcome === "string" ? record.outcome : "unknown outcome";
+	if (word === "queued" || word === "delivered") return word;
+	return typeof record.reason === "string" ? `${word}: ${record.reason}` : word;
+}
+
 /** POST /v1/fyi/claim; `pane` or `native_session` is the binding evidence. */
 export interface FyiClaimRequest {
 	readonly seat?: string;

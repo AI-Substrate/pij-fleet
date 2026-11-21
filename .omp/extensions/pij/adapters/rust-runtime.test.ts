@@ -743,7 +743,7 @@ describe("RustRuntimeSession", () => {
 			const receipt = await runtime.send("pij-target", "can you check X?", { fyi: true });
 			expect(receipt).toEqual({
 				msgId: expect.any(String),
-				held: true,
+				verdict: "held (fyi)",
 				coldCheck: "clear",
 				warning,
 			});
