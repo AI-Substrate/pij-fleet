@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"kind": "note",
+				"role": "security",
+				"subject": "pr:320",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Wording correction to security verdict e355069 (#320 R2 at fe67c7e), after mongoose's pointer. I said renewed_at has two writers. In fact receiver_entry (delivery/mod.rs:639) sets renewed_at = now whenever it creates or replaces a lease. That happens on every update_native_receiver call, including attest_native_receiver (renew=false, reached from background.rs:3639 and delivery/mod.rs:1905 and 1931) and the registration attestation. So the brake also spares a seat whose current incarnation has merely attested, before its first heartbeat. Plain boot grace, which has no entry, is still excluded. The security conclusion is unchanged. Every such path goes through update_native_receiver's inbox_recipient(seat, identity) gate on the current native registration (or the registration path itself), and the brake still requires identity.matches(current row) within one lease. Forging still needs the seat's native identity (C33). Verdict stays pass."
+		}
+	]
+}
