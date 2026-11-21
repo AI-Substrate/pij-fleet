@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff16-c4f6-7761-8a99-e05c190db078",
+				"date": "2026-11-22",
+				"head": "4830d7314982b5c466cbf96c84de17220de38b0f",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:327",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 327 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at 4830d73"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #327 round 1 at 4830d7314982b5c466cbf96c84de17220de38b0f: pass\n\nStatic review of crates/store/src/queue.rs (ack_delivery), core/delivery.rs and testkit fakes, in a detached worktree. I did not touch the live store. CI 5/5 SUCCESS at this head.\n\n## Can a caller craft a job that gets ANOTHER seat's message ended this way?\nNo.\n- The new branch fails exactly one row: `UPDATE jobs … WHERE id = ?1 AND state = 'running'`, the job being acked. It touches no other row with the same key, recipient or sender.\n- It fires only when that row's own `dedupe_sender` is ''. That column is VIRTUAL, derived from the row's own `payload.from` (migration 0050). Another seat's message carries its own `from`, set at admission through `require_sender`, so it can never read as '' because of some other job. Legacy pre-0050 jobs also get their sender from their stored payload, because the column is computed, not backfilled. Only a delivery payload without `from` reaches the branch: an internal or malformed job, with no caller-reachable generic enqueue (as found for #322).\n- Ack authority is unchanged. Ack is by job id plus `state = 'running'`, as before this PR. Even if some path could ack a foreign job id, the change only alters the outcome for a sender-less row, which already could not be delivered. A row with a sender takes the old path unchanged.\n- Brake or policy: it is a POLICY, as stated, scoped to rows the ack already refuses. Removing it makes those rows stay running and block their serial key (the #322 note), which is worse for availability and no better for delivery. It frees the queue behind the row, it does not drop a deliverable message.\n\n## Does the terminal outcome leak anything?\nNo. The outcome is the constant `undelivered:no-sender`. The error message names only the job id and that constant, with no body, recipient, payload or env. There is no `delivery.parked` and no notice, so nothing goes to any seat.\n\nNo secrets, lockfile or `.npmrc` changes.\n"
+		}
+	]
+}
