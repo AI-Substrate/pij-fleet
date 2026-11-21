@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before pricing pane-observer replay or interpreting deployed observer counters",
+				"tags": [
+					"F258",
+					"pane-observer",
+					"counters",
+					"measurement"
+				],
+				"title": "Quiet-pane backstop averages and observer-only counters"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F258 D1 at 8dd610594a1194320106f15233242e8764870b35: quiet settled panes average Q/30 captures per second, but backstops can synchronize into one Q-pane burst; active or Unknown/PendingClear panes retain per-pass captures. ObserverCounts excludes injection-owned captures and failed capture attempts. active_us is pass wall time, not process CPU; relaxed snapshots have field skew. Replay retains one extra composer string per pane and clones remembered/gate content, so only counters are allocation-free. Keep the busy-polling machine sampler separate from cumulative ps CPU windows and pin PID/start/commit across endpoints. The governed pr:313 verdict contains BEFORE and AFTER debt; per-thread SQLite CPU was not collected. magicWand: a read-only cost-receipt command exposing instrument timestamps and counter scope. Difficulties: dependency-free review gates fail with missing or ambient incompatible TS tools; use exact-head CI under C25 rather than linking dependencies."
+		}
+	]
+}
