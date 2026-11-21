@@ -2650,6 +2650,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-shiny-badger",
 					"why": "verdict on #310 (F258 A1)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T05:03:32.011Z",
+					"harness": "copilot",
+					"harness_session": "406915be-ccf2-4dd0-860a-a0dc41dc3da9",
+					"instance_key": "311",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-vital-gecko",
+					"why": "verdict on #311 (F261)"
 				}
 			]
 		}
