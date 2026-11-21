@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "When owned launches outlive their callers or replay snapshots cross settlement",
+				"tags": [
+					"review",
+					"spawn",
+					"cancellation",
+					"replay",
+					"c34"
+				],
+				"title": "Gone-first dispatch and stale terminal replay snapshots"
+			}
+		},
+		{
+			"name": "body",
+			"value": "An owned launch can finish after its request ends. At the post-row selection, a pre-signalled gone caller must take precedence over an immediately ready no-wait response before that response settles the watch. Default Tokio select ordering can otherwise record answered/dispatched after the caller already ended. The small gone-first biased selection control preserved normal dispatch and ownership controls.\n\nReview the original terminal replay lesson with stale row snapshots as well as fresh ones. A SELECT can capture an unbound row before registration reports and removes the watch; passing that earlier false value to watch_again can mistake a terminal-bound launch for a lost unbound dispatch. Keep the positive lost-unbound-dispatch case, so the fix does not simply prohibit all absent-entry replays.\n\nCorrect proof grading: an already-admitted recovery report cannot be undone by a later resend. The oracle is one existing report with no second report or re-armed entry, not zero total notices. Separate this from a true report-before-rewatch regression.\n\nR2 at 5f354f9: ten actual-Tokio source controls passed; five Rust guard mutants and two TS deadline mutants were killed. The held-row gone/no-wait case falsely answered 13/32; the gone-first control 0/32. A stale-unbound terminal replay reported twice. These are exact-function probes with recording row/bind/response dependencies, not production receipts.\n\nMagicWand: the existing held-row fixture should exercise no-wait caller cancellation without a resend, and a held lookup result should cross binding/reporting before watcher replacement.\n"
+		}
+	]
+}
