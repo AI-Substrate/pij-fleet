@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fbea-fc0e-7003-971f-238dcef3f816",
+				"date": "2026-11-21",
+				"head": "c8d457f348ad36857dd8aab16301206fce8b083f",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:307",
+				"writer": "pij-visual-wildfowl",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"S307-N1: no-HOME passDir fallback diverges from Rust default_state_dir (missing .pij-rs) and the comment claims parity"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "node copilot-sdk-contract.mjs --json --sdk <broken> with forged record (scratch PIJ_RS_STATE_DIR)",
+					"exit_code": 1,
+					"log": "status fail: forged record cannot rescue failing checks"
+				},
+				{
+					"command": "node copilot-sdk-contract.mjs --json --copilot-version 1.0.115-4 / --sdk <real> (scratch state)",
+					"exit_code": 0,
+					"log": "warn; state dir never created"
+				},
+				{
+					"command": "node probe of writeLocalPass/readLocalPass: 11 path-shaped versions, symlink, FIFO, case alias",
+					"exit_code": 0,
+					"log": "all refused/absent; symlink target untouched; record 0600; FIFO 0ms"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, PR #307 at c8d457f348ad36857dd8aab16301206fce8b083f: pass-with-notes\n\nScope: the local per-version contract-pass record (F250) as a trust input to \"safe to reload\", its path handling, the override no-write rule, and C21. Proof: source review plus local node probes against the exact head in a scratch PIJ_RS_STATE_DIR (macOS, Copilot 1.0.115-4, which arrived during review), plus exact-head CI 5/5. Vitest was not run locally (the detached worktree has no node_modules; none was linked).\n\n## Trust: forging a record (C33)\n- A same-user process can forge `<state>/copilot-sdk-pass/<v>.json` with one write. That is in the trusted account (C33) and costs about the same as editing harness/copilot-sdk-verified.json, setting PIJ_COPILOT_SDK_CONTRACT_CMD, or COPILOT_HOME, which were all already possible.\n- The record's reach is smaller than the committed file's. verdict() runs only after the contract has executed every check in the same invocation, and a failed check returns `fail` before either record is consulted. Probe: a forged, well-formed record for 1.0.115-4 plus `--sdk <broken module>` gave `fail`.\n- Every full pass on the installed SDK writes its own record first. So a forged record can only change warn to pass on an override run (`--sdk` or `--copilot-version`) whose own checks passed. Probe: forged record plus `--sdk <the real 1.0.115-4 SDK>` gave `pass`, quoting the forged passed_at. update-copilot runs the contract without overrides, so its reload approval always rests on a pass in that same run. A forged record cannot get a broken SDK approved for reload.\n- Stale records across contract changes: the check-count gate is a brake. contract_commit is informational and is never compared. For security this does not matter, because no record is accepted without a fresh run of the current checks.\n\n## Path handling\n- VERSION is `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$` with no `m` flag. Probes: `../x`, `a/b`, `.hidden`, `..`, `1.0\\n`, `1.0\\nx`, the empty string, 65 characters, `1.0/../../x`, `C:x` and `1 0` were each refused on write and absent on read. Nothing was written.\n- Exact match: a record for `1.0.0-A` reads as absent for `1.0.0-a` (macOS case folding maps both to the same file, and the in-record version check catches it). A record for `1.0.0` does not answer `1.0`.\n- Symlinks: a symlinked record reads as absent (O_NOFOLLOW). A write renames over the link and leaves its target untouched. A FIFO record reads as absent in 0 ms (O_NONBLOCK plus the isFile check). The record is 0600, and a newly created directory is 0700. The contents (version, time, sha) are not secret.\n- Overrides: both `--copilot-version <v>` and `--sdk <path>` left the scratch state dir uncreated. The guard uses the same exact-token argv match as flag(), so a form like `--sdk=x` is not an override at all: it checks the installed SDK.\n- contractCommit reads only sha-shaped content. Probe: in this detached review worktree it wrote c8d457f…, which equals HEAD. It launches no git.\n\n## Notes (non-blocking)\n- S307-N1: when HOME is unset, passDir() falls back to `tmpdir()/pij-rs-no-home/copilot-sdk-pass`. Rust default_state_dir uses `temp_dir()/pij-rs-no-home/.pij-rs`. The comment \"as default_state_dir picks it\" is wrong for that case. On Linux, a shared /tmp would also let another account plant or replace records there. That account still gains at most the override-run warn-to-pass above, so this is a note, not a gate. Fix: append `.pij-rs` for parity, or correct the comment.\n- S307-N2 (informational): C33 means a local pass attests nothing against same-user tampering. That is the same as the committed floor, and acceptable because both are subordinate to a fresh run of the checks.\n\n## C21 and supply chain\n- The diff adds no home paths, hostnames, tokens or secrets. Docs and tests use `<state-dir>`, `~/.pij-rs` and temp dirs. No lockfile or .npmrc change. No new process launch.\n"
+		}
+	]
+}
