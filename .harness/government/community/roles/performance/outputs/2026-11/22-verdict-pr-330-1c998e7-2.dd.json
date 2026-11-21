@@ -1,0 +1,48 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"head": "1c998e75d005eaa70266314da25a533204ab7f70",
+				"kind": "verdict",
+				"result": "block",
+				"role": "performance",
+				"subject": "pr:330",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"BLOCK: bound tmux command packets; current300-entry minimum-width batch rejects, repeats34 launches and retains the live tap.",
+				"BLOCK: isolate a retained-exited pane; current failed prefix repeats46 launches and starves a later live tap.",
+				"Supersedes prior4dd77fd PASS at this head. Latest freeze is NOT FINAL/merge DIRTY; converge and close transport blocks before merge/deploy."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Independent reviewer actual-adapter probes: review_large_batch_fits_the_tmux_command_transport; review_one_retained_exited_pane_does_not_starve_later_live_taps",
+					"exit_code": 101,
+					"log": "pr330-adapter-probes.log baseline git-archive1c998e7 before D1 instrumentation:34 launches/2.053271291s and46/2.048724458s, live pipe/marker/sink retained; both FAILED. Inspected, not rerun by performance."
+				},
+				{
+					"command": "just pr-freeze 330",
+					"exit_code": 1,
+					"log": "NOT FINAL: merge DIRTY against updated main; examined head remains1c998e7. This output is a negative finding, not merge-ready clearance."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "ROUND 1 supplemental performance verdict: BLOCK.\nSubject: pr:330\nHead: 1c998e75d005eaa70266314da25a533204ab7f70\n\nThis supersedes my PASS-WITH-NOTES at this head (governance commit4dd77fd). New, independent actual-adapter witnesses show normal-shape teardown failures and repeated non-progressing launch bursts. The earlier32-pane happy-path CI does not clear these cases. This remains round1; the findings are within the original batch-size/failure-isolation scope.\n\nBlocking evidence:\n1. Large-batch transport failure: a300-entry minimum-width command packet was rejected as \"command too long\". The actual adapter made34 launches in2.053271291s, returned failure, and left the live pipe, marker and sink intact. The fixture repeats one owned pane to avoid creating300 processes. It is not a300-live-pane benchmark; applicability to300 distinct panes is an inference from the unchanged per-entry command encoding: distinct pane IDs cannot make this minimum-width packet smaller. A realistic larger fleet therefore cannot rely on the advertised single batch completing.\n2. Retained-exited pane starves a live suffix: with an exited pane still retained/listed in the middle, the actual adapter made46 launches in2.048724458s. The first tap completed, but the later live tap remained pipe1 with its marker and sink. The command list repeatedly failed at \"target pane has exited\". This violates the batch port's failure-isolation promise: one pane's failure must not keep another's tap attached. The previous per-pane detach loop could continue to the unrelated live pane after one error.\n\nRoot cause and cost:\n- The batch is neither transport-size bounded nor split before execution. A permanent packet rejection leaves every pending entry unchanged.\n- A retained exited pane remains in pending because its marker exists. Retrying the same ordered list keeps failing at that same pane before reaching the suffix.\n- The25ms retry loop treats both conditions as convergence races until its2s grace. Thus the healthy1-launch claim becomes34/46 failed or partially progressing launches, and teardown still fails. The observations are private-fixture counts/times, not measured whole-fleet rates.\n- This is more than optional hardening: valid large-batch shape and ordinary retained-exited pane state produce a wrong teardown result plus repeat-launch cost. Keep the ownership brakes; bound command packets and isolate terminal/permanent per-pane failures so unrelated owned taps can complete. A concrete fix belongs to the coder, not this read-only review.\n\nEvidence/provenance:\n- Independent reviewer pij-written-mongoose's pr330-adapter-probes.log: review_large_batch_fits_the_tmux_command_transport and review_one_retained_exited_pane_does_not_starve_later_live_taps, both FAILED;0 passed/2 failed, runner exit101. Log was read directly by this performance seat; probes were not rerun.\n- Reviewer confirmed the log ran before any PIJ_REVIEW_D1 branch existed, using tmux/src/lib.rs from git archive1c998e7. Only integration review code and its Tokio executor differed then. The D1 selector was added after these completed receipts for later mutation controls; baseline env was unset. The current scratch-tree mutant branch is not the provenance of these two RED results.\n- Source at this head: tmux/lib.rs:1531-1652 constructs one argv list over all pending entries, runs it, and retains every still-piped/marked pane; core/ports.rs:1259-1268 declares per-pane failure isolation.\n- My prior source/CI review and historical4731ms BEFORE remain valid evidence of the happy path and old shutdown; they are no longer clearance to merge this head. No live daemon, working seat, tap or production DB was mutated by this performance seat.\n- Exact-head CI is green and the earlier local quick gate remains dependency-red under C25. No claim that green CI covers these independently added adversarial/normal-boundary witnesses.\n- Latest just pr-freeze 330 returned NOT FINAL, exit1: merge DIRTY against updated main; the remote head is still1c998e7. This supplemental negative finding reports BLOCK on the examined immutable head, not a new FINAL/merge-ready assertion. Convergence is required in addition to the two transport fixes.\n\nRequired closure: a head that demonstrates bounded packets and progress past a retained-exited pane, with launch-count/retained-live-tap witnesses. Preserve the owed post-deployment observer-phase AFTER against4731ms at the reported~145-pane cohort. Do not bounce this head for that AFTER while these blocks stand.\n\nPerformance/330 remains held. This supplemental output has no --answers because the original role request was already answered; the PM is notified directly that its prior performance clearance is superseded.\n"
+		}
+	]
+}
