@@ -3217,7 +3217,15 @@ async fn run_daemon(
                 }
             }
             println!("pij-rs daemon: shutting down");
-            match daemon.shutdown().await {
+            let stopping = std::time::Instant::now();
+            let stopped = daemon.shutdown().await;
+            // F267: after this line only the runtime's own teardown is left
+            // (it waits for every blocking task still running).
+            eprintln!(
+                "pij-rs daemon: shutdown returned after {}ms; exiting",
+                stopping.elapsed().as_millis()
+            );
+            match stopped {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => {
                     eprintln!("pij-rs: {error}");
