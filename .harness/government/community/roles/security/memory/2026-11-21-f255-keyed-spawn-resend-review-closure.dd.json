@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Read before reviewing F264 or any change to spawn_id replay, keyed resend or spawn-lock ownership.",
+				"tags": [
+					"spawn",
+					"idempotency",
+					"replay",
+					"f255",
+					"f264"
+				],
+				"title": "F255 keyed spawn resend review closure"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#309 (F255 keyed spawn resend) passed security in two rounds: d10b5e0 and 5f354f9 (outputs b41b773, c301ec6). It ships READY under C34.\n\nSecurity model to carry forward:\n- `spawn_id` is an idempotency handle, not a capability. It is public in `pij list --json`. A replay is gated by a live row plus matching harness, folder, parent and id. It returns only the descriptor, with no grant.\n- The shape `s-` + 32 lowercase hex is checked before any path, env or memorable-id use. Malformed keys get 400 (tests.rs).\n- Keyed resend is limited to /v1/spawn (Rust `Resend::Keyed`, TS `KEYED_RESEND_ROUTE`), within the 20 s restart wait from the first failure.\n- R2: the launch runs in an owned task holding the spawn lock through the row write. A gone caller leaves the watch unsettled, and the seat is reported to `Launch.parent`, which is the row's parent. `watch_again` never re-arms a launch that is settled and bound.\n- N1 (accepted, C33): the resend's own trust_folder governs. N2 closed: `build_spawn_plan` copies the model unchanged.\n- Residuals: a crash between new_window and the row write leaves a rowless pane. N3: a stale status file on a reused rowless key.\n\nNext: F264 (biased select, settled-launch record, stop-timeout log) comes as a fresh PR. Re-check that the gone-caller → parent-report path and the replay gates are unchanged.\n"
+		}
+	]
+}
