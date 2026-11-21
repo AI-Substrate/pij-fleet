@@ -4531,6 +4531,7 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
         caller: role.is_some().then(caller_context),
         no_cache_proxy: *no_cache_proxy,
         trust_folder: *trust_folder,
+        spawn_id: None,
     }))
 }
 

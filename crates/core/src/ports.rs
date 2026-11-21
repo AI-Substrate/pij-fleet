@@ -162,6 +162,15 @@ pub trait Registry: Send + Sync {
         Ok(seats)
     }
 
+    /// Every seat, live or retired, that names `spawn_id` as its launch,
+    /// ordered by id (F255). The default filters the whole roster; a store
+    /// answers it from its spawn-id index.
+    async fn list_launched(&self, spawn_id: &str) -> Result<Vec<SeatDescriptor>> {
+        let mut seats = self.list(SeatFilter::default()).await?;
+        seats.retain(|seat| seat.spawn_id.as_deref() == Some(spawn_id));
+        Ok(seats)
+    }
+
     /// Mark a seat dead, keeping the row and the reason. Rows are tombstoned,
     /// never deleted: a seat that vanishes takes its own post-mortem with it.
     async fn tombstone(&self, seat: &SeatId, reason: &str) -> Result<Seq>;

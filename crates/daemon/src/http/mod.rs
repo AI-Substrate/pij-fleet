@@ -1454,6 +1454,12 @@ async fn launch_seat_locked(
     spawn_guard: tokio::sync::MutexGuard<'_, ()>,
     revive_receipt: Option<revive::Receipt>,
 ) -> Response {
+    // F255: once the daemon is stopping, no launch starts; the caller sends
+    // it again to the next daemon. Checked under the spawn lock, so a launch
+    // is either refused here or past its row write before the stop.
+    if state.services.spawn_waits.stopping() {
+        return stopping_refused(command_name);
+    }
     if let Some(id) = request.id.as_ref()
         && id.as_str().trim().is_empty()
     {
@@ -1550,10 +1556,31 @@ async fn launch_seat_locked(
     }
 
     // The caller's spawn guard keeps classification, observed launch, and the
-    // descriptor write in one daemon-local critical section.
-    let spawn_id = match mint_spawn_id() {
-        Ok(spawn_id) => spawn_id,
-        Err(error) => return internal(command_name, error),
+    // descriptor write in one daemon-local critical section. F255: a keyed
+    // spawn sent again finds its launch's row here, under the same guard, and
+    // is answered with that seat; it never launches twice.
+    let spawn_id = match request.spawn_id.take() {
+        Some(key) => {
+            if !is_spawn_id(&key) {
+                return refused(
+                    command_name,
+                    "spawn_id must be `s-` and 32 lowercase hex digits, as pij mints it",
+                );
+            }
+            let launched = match state.services.registry.list_launched(&key).await {
+                Ok(launched) => launched,
+                Err(error) => return internal(command_name, error),
+            };
+            if !launched.is_empty() {
+                return answer_again(state, command_name, request, &key, launched, spawn_guard)
+                    .await;
+            }
+            key
+        }
+        None => match mint_spawn_id() {
+            Ok(spawn_id) => spawn_id,
+            Err(error) => return internal(command_name, error),
+        },
     };
     let (seat_id, displaced) = match request.id.clone() {
         Some(id) => match state.services.registry.get(&id).await {
@@ -1770,7 +1797,128 @@ async fn launch_seat_locked(
         }
     };
     drop(spawn_guard);
+    answer_launch(
+        state,
+        command_name,
+        Waiting {
+            descriptor,
+            pane: pane.id,
+            requested_model,
+            trust_folder,
+            no_wait,
+            wait_seconds,
+            revive_receipt,
+            watch,
+            status_path,
+            log_path,
+        },
+    )
+    .await
+}
 
+/// F255: a keyed spawn sent again after its answer was lost (a daemon bounce
+/// cut it). `launched` is every row naming its key. The live one is answered
+/// as the first send would have been: waited on until it binds, or at once
+/// with `no_wait`. Nothing is launched. BRAKES, each of which only refuses:
+/// no live row, or a row for a different request (harness, folder, parent or
+/// explicit id), since a key repeats one request.
+async fn answer_again(
+    state: &AppState,
+    command_name: &'static str,
+    request: SpawnRequest,
+    key: &str,
+    launched: Vec<SeatDescriptor>,
+    spawn_guard: tokio::sync::MutexGuard<'_, ()>,
+) -> Response {
+    let Some(seat) = launched
+        .iter()
+        .find(|seat| seat.tombstoned_at.is_none())
+        .cloned()
+    else {
+        let closed = launched.first().map_or("", |seat| seat.id.as_str());
+        return refused(
+            command_name,
+            format!(
+                "spawn {key} already launched seat {closed}, which has since closed; a spawn id \
+                 launches once, so send the spawn with a new one"
+            ),
+        );
+    };
+    if seat.harness != request.harness
+        || seat.folder != request.cwd
+        || seat.parent != request.parent
+        || request.id.as_ref().is_some_and(|id| *id != seat.id)
+    {
+        return refused(
+            command_name,
+            format!(
+                "spawn {key} launched seat {} for a different request (its harness, folder, \
+                 parent or id differ); a spawn id is sent again only with the request it keys",
+                seat.id
+            ),
+        );
+    }
+    let (Some(launch), Some(pane)) = (crate::spawn_waits::Launch::of(&seat), seat.pane.clone())
+    else {
+        return refused(
+            command_name,
+            format!(
+                "spawn {key} names seat {}, which has no pane to wait on",
+                seat.id
+            ),
+        );
+    };
+    let watch = state.services.spawn_waits.watch(launch);
+    drop(spawn_guard);
+    let (status_path, log_path) = spawn_evidence_paths(key);
+    answer_launch(
+        state,
+        command_name,
+        Waiting {
+            descriptor: seat,
+            pane,
+            requested_model: request.model,
+            trust_folder: request.trust_folder,
+            no_wait: request.no_wait,
+            wait_seconds: request.wait_seconds.unwrap_or(DEFAULT_SPAWN_WAIT_SECONDS),
+            revive_receipt: None,
+            watch,
+            status_path,
+            log_path,
+        },
+    )
+    .await
+}
+
+/// A launch whose row is written, as its spawn answers it.
+struct Waiting {
+    descriptor: SeatDescriptor,
+    pane: String,
+    requested_model: Option<String>,
+    trust_folder: bool,
+    no_wait: bool,
+    wait_seconds: u64,
+    revive_receipt: Option<revive::Receipt>,
+    watch: crate::spawn_waits::WaitGuard,
+    status_path: PathBuf,
+    log_path: PathBuf,
+}
+
+/// Answer a launch: at once with `no_wait`, else once its seat binds, its
+/// child exits, its pane goes, or the wait runs out.
+async fn answer_launch(state: &AppState, command_name: &'static str, waiting: Waiting) -> Response {
+    let Waiting {
+        descriptor,
+        pane,
+        requested_model,
+        trust_folder,
+        no_wait,
+        wait_seconds,
+        revive_receipt,
+        watch,
+        status_path,
+        log_path,
+    } = waiting;
     if no_wait {
         let answer = spawn_success(command_name, descriptor, revive_receipt);
         watch.answered("dispatched");
@@ -1808,7 +1956,7 @@ async fn launch_seat_locked(
         // One read of the whole screen: the log keeps its bottom rows, and a
         // folder-trust prompt (F215) is looked for in all of it, because
         // Claude draws its prompt at the top of a tall pane.
-        if let Ok(screen) = state.services.tmux.capture(&pane.id, u32::MAX).await {
+        if let Ok(screen) = state.services.tmux.capture(&pane, u32::MAX).await {
             let tail = last_lines(&screen, 20);
             if !tail.trim().is_empty() {
                 last_output = tail;
@@ -1817,7 +1965,7 @@ async fn launch_seat_locked(
                 pij_harnesses::trust::folder_trust_prompt(descriptor.harness, &screen)
             {
                 let blocked = match (trust_folder, prompt.next_key()) {
-                    (false, _) => Some(trust_prompt_refusal(&prompt, &descriptor, &pane.id)),
+                    (false, _) => Some(trust_prompt_refusal(&prompt, &descriptor, &pane)),
                     (true, None) => Some(format!(
                         "is waiting on {} for {}, and --trust-folder can't see which row is \
                          highlighted, so it pressed nothing; the pane is left live on the prompt",
@@ -1830,7 +1978,7 @@ async fn launch_seat_locked(
                             state
                                 .services
                                 .tmux
-                                .press_key(&pane.id, key)
+                                .press_key(&pane, key)
                                 .await
                                 .err()
                                 .map(|error| {
@@ -1873,7 +2021,7 @@ async fn launch_seat_locked(
                 let actual = bound.model.as_deref().unwrap_or("no-model");
                 let footer_deadline = tokio::time::Instant::now() + Duration::from_secs(8);
                 loop {
-                    if let Ok(output) = state.services.tmux.capture(&pane.id, 20).await
+                    if let Ok(output) = state.services.tmux.capture(&pane, 20).await
                         && !output.trim().is_empty()
                     {
                         let footer_visible = output.contains(actual);
@@ -1943,7 +2091,7 @@ async fn launch_seat_locked(
             }
         }
         let pane_exists = match state.services.tmux.list_panes().await {
-            Ok(panes) => panes.iter().any(|listed| listed.id == pane.id),
+            Ok(panes) => panes.iter().any(|listed| listed.id == pane),
             Err(error) => {
                 let reason = format!("could not list tmux panes while waiting: {error}");
                 return failed(
@@ -4721,7 +4869,13 @@ fn encode_frame(frame: StreamFrame) -> io::Result<String> {
         .map_err(io::Error::other)
 }
 
-fn mint_spawn_id() -> Result<String> {
+/// A fresh spawn id: `s-` and 32 lowercase hex digits from the OS's
+/// randomness. The daemon mints one for an unkeyed spawn; a client mints its
+/// key the same way before the first send (F255).
+///
+/// # Errors
+/// The OS refused randomness.
+pub fn mint_spawn_id() -> Result<String> {
     let mut bytes = [0_u8; 16];
     getrandom::fill(&mut bytes).map_err(|error| PijError::Adapter {
         adapter: "spawn".to_string(),
@@ -4733,6 +4887,18 @@ fn mint_spawn_id() -> Result<String> {
         write!(&mut id, "{byte:02x}").expect("writing to a String cannot fail");
     }
     Ok(id)
+}
+
+/// Whether `key` has the shape [`mint_spawn_id`] gives (F255). A BRAKE: a
+/// caller's key names an evidence file and a launch environment variable, so
+/// nothing else is ever accepted.
+fn is_spawn_id(key: &str) -> bool {
+    key.strip_prefix("s-").is_some_and(|hex| {
+        hex.len() == 32
+            && hex
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
 }
 
 pub(crate) fn system_time_ms() -> Result<u64> {
@@ -5170,6 +5336,22 @@ fn control_session_refused(command: &str) -> Response {
     );
     answer.details = Some(serde_json::json!({ "code": CONTROL_SESSION_CODE }));
     envelope(StatusCode::BAD_REQUEST, &answer)
+}
+
+/// The stable code for a spawn that reaches a stopping daemon (F255).
+pub const STOPPING_CODE: &str = "E-RS-STOPPING";
+
+/// Nothing was launched: the caller sends the spawn again once the next
+/// daemon is up. `pij-rs` and the pij extension do, with the same key.
+fn stopping_refused(command: &str) -> Response {
+    let mut answer: Envelope<()> = Envelope::refused(
+        command,
+        ErrorKind::Refused,
+        "the daemon is stopping, so nothing was launched; send the spawn again once it is \
+         back (pij-rs ping)",
+    );
+    answer.details = Some(serde_json::json!({ "code": STOPPING_CODE }));
+    envelope(StatusCode::SERVICE_UNAVAILABLE, &answer)
 }
 
 pub(crate) fn internal(command: &str, error: impl std::fmt::Display) -> Response {

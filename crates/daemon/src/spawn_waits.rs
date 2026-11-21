@@ -22,8 +22,15 @@
 //! spawned row with `spawn.launched` and neither of the others was never
 //! settled, bound or not; a historical row without `spawn.launched` is
 //! ignored.
+//!
+//! F255: a caller that lost its answer sends the same spawn again, keyed by
+//! the same spawn id, and that request watches the launch in its place
+//! ([`SpawnWaits::watch`] again). Only the latest watcher settles it, so an
+//! earlier request ending later never counts. Once the daemon is stopping
+//! ([`SpawnWaits::stop`]), no spawn starts.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -107,12 +114,16 @@ struct Entry {
     bound: bool,
     /// `None` while a spawn request watches; why, once it is not answered.
     unanswered: Option<String>,
+    /// The request watching it, or 0 when none does (recovered at boot).
+    watcher: u64,
 }
 
 /// Launches whose hand-off is not settled.
 pub struct SpawnWaits {
     entries: Mutex<HashMap<String, Entry>>,
     settle: Arc<dyn Settle>,
+    next_watcher: AtomicU64,
+    stopping: AtomicBool,
 }
 
 impl SpawnWaits {
@@ -121,24 +132,43 @@ impl SpawnWaits {
         Self {
             entries: Mutex::new(HashMap::new()),
             settle,
+            next_watcher: AtomicU64::new(1),
+            stopping: AtomicBool::new(false),
         }
     }
 
-    /// A spawn request now watches `launch`. Settle the guard; dropping it
-    /// unsettled counts as [`ABANDONED`].
+    /// The daemon is stopping (F255): no spawn starts from now on. A BRAKE:
+    /// it can only refuse a launch, never cause one.
+    pub fn stop(&self) {
+        self.stopping.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether [`Self::stop`] was called.
+    pub fn stopping(&self) -> bool {
+        self.stopping.load(Ordering::SeqCst)
+    }
+
+    /// A spawn request now watches `launch`, in place of any request that
+    /// watched it before (F255: the same spawn sent again). Settle the guard;
+    /// dropping it unsettled counts as [`ABANDONED`].
     pub fn watch(self: &Arc<Self>, launch: Launch) -> WaitGuard {
         let spawn_id = launch.spawn_id.clone();
-        self.entries.lock().expect("spawn waits").insert(
+        let watcher = self.next_watcher.fetch_add(1, Ordering::Relaxed);
+        let mut entries = self.entries.lock().expect("spawn waits");
+        let bound = entries.get(&spawn_id).is_some_and(|entry| entry.bound);
+        entries.insert(
             spawn_id.clone(),
             Entry {
                 launch,
-                bound: false,
+                bound,
                 unanswered: None,
+                watcher,
             },
         );
         WaitGuard {
             waits: Arc::clone(self),
             spawn_id,
+            watcher,
             settled: false,
         }
     }
@@ -153,9 +183,10 @@ impl SpawnWaits {
                 launch,
                 bound,
                 unanswered: None,
+                watcher: 0,
             },
         );
-        self.not_answered(&spawn_id, RESTARTED);
+        self.not_answered(&spawn_id, None, RESTARTED);
     }
 
     /// A registration bound `seat` to its process. Only the launch's own seat
@@ -180,12 +211,16 @@ impl SpawnWaits {
         }
     }
 
-    fn not_answered(&self, spawn_id: &str, reason: &str) {
+    /// `watcher`: only while that request still watches; `None` for boot.
+    fn not_answered(&self, spawn_id: &str, watcher: Option<u64>, reason: &str) {
         let report = {
             let mut entries = self.entries.lock().expect("spawn waits");
             let Some(entry) = entries.get_mut(spawn_id) else {
                 return;
             };
+            if watcher.is_some_and(|watcher| watcher != entry.watcher) {
+                return;
+            }
             if entry.bound {
                 entries
                     .remove(spawn_id)
@@ -200,8 +235,17 @@ impl SpawnWaits {
         }
     }
 
-    fn answered(&self, spawn_id: &str, outcome: &'static str) {
-        let Some(entry) = self.entries.lock().expect("spawn waits").remove(spawn_id) else {
+    /// The launch's entry, removed, while `watcher` still watches it.
+    fn take(&self, spawn_id: &str, watcher: u64) -> Option<Entry> {
+        let mut entries = self.entries.lock().expect("spawn waits");
+        if entries.get(spawn_id)?.watcher != watcher {
+            return None;
+        }
+        entries.remove(spawn_id)
+    }
+
+    fn answered(&self, spawn_id: &str, watcher: u64, outcome: &'static str) {
+        let Some(entry) = self.take(spawn_id, watcher) else {
             return;
         };
         let settle = Arc::clone(&self.settle);
@@ -220,6 +264,7 @@ impl SpawnWaits {
 pub struct WaitGuard {
     waits: Arc<SpawnWaits>,
     spawn_id: String,
+    watcher: u64,
     settled: bool,
 }
 
@@ -228,30 +273,28 @@ impl WaitGuard {
     /// `dispatched` or `failed-bound`).
     pub fn answered(mut self, outcome: &'static str) {
         self.settled = true;
-        self.waits.answered(&self.spawn_id, outcome);
+        self.waits.answered(&self.spawn_id, self.watcher, outcome);
     }
 
     /// Nothing was left to bind (the pane was removed): forget it.
     pub fn withdrawn(mut self) {
         self.settled = true;
-        self.waits
-            .entries
-            .lock()
-            .expect("spawn waits")
-            .remove(&self.spawn_id);
+        self.waits.take(&self.spawn_id, self.watcher);
     }
 
     /// The caller's failure answer is built and says the seat is not bound.
     pub fn failed(mut self, reason: &str) {
         self.settled = true;
-        self.waits.not_answered(&self.spawn_id, reason);
+        self.waits
+            .not_answered(&self.spawn_id, Some(self.watcher), reason);
     }
 }
 
 impl Drop for WaitGuard {
     fn drop(&mut self) {
         if !self.settled {
-            self.waits.not_answered(&self.spawn_id, ABANDONED);
+            self.waits
+                .not_answered(&self.spawn_id, Some(self.watcher), ABANDONED);
         }
     }
 }
@@ -535,6 +578,73 @@ mod tests {
         );
         bind(&waits, "s-7");
         assert_eq!(reported(&recorded).await.len(), 2);
+    }
+
+    /// F255: the same spawn sent again watches the launch in place of the
+    /// request that lost its caller. The earlier request ending afterwards
+    /// settles nothing; the latest one answers, and nobody is reported.
+    #[tokio::test]
+    async fn a_resent_spawn_settles_its_launch_and_the_earlier_request_does_not() {
+        let (waits, recorded) = waits();
+        let first = waits.watch(launch("s-8"));
+        bind(&waits, "s-8");
+        let again = waits.watch(launch("s-8"));
+        drop(first);
+        assert!(reported(&recorded).await.is_empty(), "the earlier request");
+        again.answered("bound");
+        assert!(reported(&recorded).await.is_empty());
+        assert_eq!(
+            recorded.answered.lock().unwrap().clone(),
+            [("s-8".to_string(), "bound")]
+        );
+    }
+
+    /// F255: a launch recovered at boot unbound, then sent again by its
+    /// caller: the bind comes while the caller watches, so the caller is
+    /// answered and the parent is never told.
+    #[tokio::test]
+    async fn a_recovered_launch_sent_again_is_answered_not_reported() {
+        let (waits, recorded) = waits();
+        waits.recover(launch("s-9"), false);
+        let again = waits.watch(launch("s-9"));
+        bind(&waits, "s-9");
+        assert!(reported(&recorded).await.is_empty());
+        again.answered("bound");
+        assert!(reported(&recorded).await.is_empty());
+        assert_eq!(recorded.answered.lock().unwrap().len(), 1);
+    }
+
+    /// F255: a resent spawn that loses its caller too, after the seat bound
+    /// while the first request watched, hands the seat to the parent.
+    #[tokio::test]
+    async fn a_resent_spawn_that_also_goes_unanswered_reports_its_bound_seat() {
+        let (waits, recorded) = waits();
+        let first = waits.watch(launch("s-10"));
+        bind(&waits, "s-10");
+        let again = waits.watch(launch("s-10"));
+        drop(first);
+        drop(again);
+        assert_eq!(
+            reported(&recorded).await,
+            [("s-10".to_string(), ABANDONED.to_string())]
+        );
+    }
+
+    /// F255: the earlier request's answer, built after the resend took over,
+    /// settles nothing; its caller may be the one that went away.
+    #[tokio::test]
+    async fn an_earlier_requests_answer_does_not_settle_a_resent_spawn() {
+        let (waits, recorded) = waits();
+        let first = waits.watch(launch("s-11"));
+        let again = waits.watch(launch("s-11"));
+        bind(&waits, "s-11");
+        first.answered("bound");
+        drop(again);
+        assert_eq!(
+            reported(&recorded).await,
+            [("s-11".to_string(), ABANDONED.to_string())]
+        );
+        assert!(recorded.answered.lock().unwrap().is_empty());
     }
 
     /// The close command quotes what a shell would split or expand.

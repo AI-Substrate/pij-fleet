@@ -3048,6 +3048,7 @@ async fn spawned_registration_adopts_prebind_row_and_preserves_port() {
             caller: None,
             no_cache_proxy: false,
             trust_folder: false,
+            spawn_id: None,
         })
         .send()
         .await
@@ -3650,6 +3651,7 @@ async fn spawn_wait_reports_child_exit_with_log_tail() {
             caller: None,
             no_cache_proxy: false,
             trust_folder: false,
+            spawn_id: None,
         })
         .send();
     let report_exit = async {
@@ -3756,6 +3758,7 @@ async fn codex_spawn_timeout_names_the_prompt_on_screen() {
             caller: None,
             no_cache_proxy: false,
             trust_folder: false,
+            spawn_id: None,
         })
         .send()
         .await
@@ -3939,6 +3942,7 @@ fn f211_spawn(id: &str, wait_seconds: u64) -> SpawnRequest {
         caller: None,
         no_cache_proxy: false,
         trust_folder: false,
+        spawn_id: None,
     }
 }
 
@@ -4126,6 +4130,219 @@ async fn an_adapter_error_while_waiting_names_the_seat_it_left() {
     assert_eq!(
         events.last().map(|event| event.kind.as_str()),
         Some("spawn.failed")
+    );
+    server.abort();
+}
+
+/// F255: a caller's key for its spawn.
+const KEY: &str = "s-0123456789abcdef0123456789abcdef";
+
+/// F255: an unnamed spawn (a memorable id), keyed with `key`.
+fn keyed_spawn(key: &str, wait_seconds: Option<u64>) -> SpawnRequest {
+    SpawnRequest {
+        id: None,
+        no_wait: wait_seconds.is_none(),
+        wait_seconds,
+        spawn_id: Some(key.to_string()),
+        ..f211_spawn("unused", 0)
+    }
+}
+
+fn launches(tmux: &FakeTmux) -> usize {
+    tmux.calls()
+        .iter()
+        .filter(|call| call.starts_with("new_window"))
+        .count()
+}
+
+async fn post_spawn(addr: SocketAddr, request: &SpawnRequest) -> (u16, serde_json::Value) {
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/spawn"))
+        .bearer_auth("key")
+        .json(request)
+        .send()
+        .await
+        .expect("spawn response");
+    let status = response.status().as_u16();
+    (status, response.json().await.expect("spawn JSON"))
+}
+
+/// F255: the same keyed spawn sent again, after its answer was lost, is
+/// answered with the seat its launch made, unbound and then bound, and
+/// nothing is launched a second time.
+#[tokio::test]
+async fn a_keyed_spawn_sent_again_is_answered_with_its_seat_and_never_launches_twice() {
+    let registry = Arc::new(FakeRegistry::new().with_seat(SeatDescriptor::new(
+        "pij-parent",
+        Harness::Omp,
+        "/abs/tree",
+    )));
+    let identity = ProcIdentity {
+        pid: 25_501,
+        proc_start: 20261121025501,
+    };
+    let mut services = test_services(
+        registry.clone(),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    let tmux = Arc::new(FakeTmux::new());
+    services.tmux = tmux.clone();
+    services.liveness = Arc::new(FakeLiveness::new().with_proc(identity));
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+
+    let (status, first) = post_spawn(addr, &keyed_spawn(KEY, None)).await;
+    assert_eq!(status, 200, "{first}");
+    assert_eq!(
+        first["data"]["spawn_id"], KEY,
+        "the caller's key is the launch's"
+    );
+    let seat = first["data"]["id"].as_str().expect("seat id").to_string();
+    let (status, again) = post_spawn(addr, &keyed_spawn(KEY, None)).await;
+    assert_eq!(status, 200, "{again}");
+    assert_eq!(again["data"]["id"], seat.as_str());
+    assert_eq!(launches(&tmux), 1);
+
+    let row = registry
+        .get(&SeatId::from(seat.as_str()))
+        .await
+        .expect("read row")
+        .expect("pre-bind row");
+    let registered = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/register"))
+        .bearer_auth("key")
+        .json(&Registration {
+            supersedes: None,
+            id: seat.clone(),
+            harness: "omp".to_string(),
+            folder: "/abs/tree".to_string(),
+            extension_build: None,
+            extension_path: None,
+            pane: row.pane.clone(),
+            pid: Some(identity.pid),
+            proc_start: Some(identity.proc_start),
+            spawn_id: Some(KEY.to_string()),
+            model: None,
+            actual_model: None,
+            actual_model_observed: false,
+            provider: None,
+            effort: None,
+            parent: None,
+            role: None,
+            relay: false,
+            native_precedence: None,
+        })
+        .send()
+        .await
+        .expect("registration");
+    assert_eq!(registered.status(), 200);
+    let (status, bound) = post_spawn(addr, &keyed_spawn(KEY, Some(5))).await;
+    assert_eq!(status, 200, "{bound}");
+    assert_eq!(bound["data"]["id"], seat.as_str());
+    assert_eq!(
+        bound["data"]["pid"], identity.pid,
+        "answered bound: {bound}"
+    );
+    assert_eq!(launches(&tmux), 1);
+    assert_eq!(registry.list(SeatFilter::default()).await.unwrap().len(), 2);
+    server.abort();
+}
+
+/// F255: a key repeats one request. Sent with a different request, after its
+/// seat closed, or in a shape pij never mints, it is refused and nothing is
+/// launched.
+#[tokio::test]
+async fn a_spawn_id_answers_only_its_own_request_and_only_while_its_seat_lives() {
+    let registry = Arc::new(FakeRegistry::new());
+    let mut services = test_services(
+        registry.clone(),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    let tmux = Arc::new(FakeTmux::new());
+    services.tmux = tmux.clone();
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let (status, first) = post_spawn(addr, &keyed_spawn(KEY, None)).await;
+    assert_eq!(status, 200, "{first}");
+    let seat = SeatId::from(first["data"]["id"].as_str().expect("seat id"));
+
+    let others = [
+        SpawnRequest {
+            parent: Some("pij-someone-else".into()),
+            ..keyed_spawn(KEY, None)
+        },
+        SpawnRequest {
+            cwd: "/abs/elsewhere".to_string(),
+            ..keyed_spawn(KEY, None)
+        },
+        SpawnRequest {
+            harness: Harness::Codex,
+            ..keyed_spawn(KEY, None)
+        },
+        SpawnRequest {
+            id: Some("pij-named-otherwise".into()),
+            ..keyed_spawn(KEY, None)
+        },
+    ];
+    for other in &others {
+        let (status, refused) = post_spawn(addr, other).await;
+        assert_eq!(status, 400, "{refused}");
+        assert!(
+            refused["meta"]
+                .as_str()
+                .is_some_and(|meta| meta.contains("for a different request")),
+            "{refused}"
+        );
+    }
+    for malformed in [
+        "s-0123456789ABCDEF0123456789abcdef",
+        "s-0123",
+        "../../etc/passwd",
+        "s-0123456789abcdef0123456789abcdeg",
+    ] {
+        let (status, refused) = post_spawn(addr, &keyed_spawn(malformed, None)).await;
+        assert_eq!(status, 400, "{malformed}: {refused}");
+    }
+    registry.tombstone(&seat, "closed").await.expect("close");
+    let (status, refused) = post_spawn(addr, &keyed_spawn(KEY, None)).await;
+    assert_eq!(status, 400, "{refused}");
+    assert!(
+        refused["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.contains("has since closed")),
+        "{refused}"
+    );
+    assert_eq!(launches(&tmux), 1);
+    server.abort();
+}
+
+/// F255: once the daemon is stopping, a spawn is refused before it launches
+/// anything, with a code its caller sends it again on.
+#[tokio::test]
+async fn a_stopping_daemon_launches_nothing() {
+    let registry = Arc::new(FakeRegistry::new());
+    let mut services = test_services(
+        registry.clone(),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    let tmux = Arc::new(FakeTmux::new());
+    services.tmux = tmux.clone();
+    services.spawn_waits.stop();
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let (status, refused) = post_spawn(addr, &keyed_spawn(KEY, Some(5))).await;
+    assert_eq!(status, 503, "{refused}");
+    assert_eq!(refused["details"]["code"], super::STOPPING_CODE);
+    assert_eq!(launches(&tmux), 0);
+    assert!(
+        registry
+            .list(SeatFilter::default())
+            .await
+            .unwrap()
+            .is_empty()
     );
     server.abort();
 }
@@ -4390,6 +4607,7 @@ async fn spawn_wait_returns_bound_process_and_publishes_event() {
             caller: None,
             no_cache_proxy: false,
             trust_folder: false,
+            spawn_id: None,
         })
         .send();
     let register = async {
@@ -4507,6 +4725,7 @@ async fn spawn_reports_model_mismatch_without_killing_registered_seat() {
             caller: None,
             no_cache_proxy: false,
             trust_folder: false,
+            spawn_id: None,
         })
         .send();
     let register = async {
@@ -5104,6 +5323,7 @@ async fn spawn_into_the_control_session_is_refused_by_name() {
                 caller: None,
                 no_cache_proxy: false,
                 trust_folder: false,
+                spawn_id: None,
             })
             .send()
             .await
@@ -5178,6 +5398,7 @@ async fn spawn_stamps_only_the_argv_that_reached_the_observed_launch() {
             caller: None,
             no_cache_proxy: false,
             trust_folder: false,
+            spawn_id: None,
         };
 
     for (id, accept, session, pane) in [
@@ -5310,6 +5531,7 @@ async fn direct_http_spawn_carries_no_claude_default_the_cli_owns_it() {
             caller: None,
             no_cache_proxy: false,
             trust_folder: false,
+            spawn_id: None,
         })
         .send()
         .await
