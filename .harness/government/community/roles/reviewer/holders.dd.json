@@ -2702,6 +2702,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-sure-urial",
 					"why": "#315 F258 0049 round 1"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T09:26:30.332Z",
+					"harness": "copilot",
+					"harness_session": "f1dae566-30c8-4ef6-9854-9eba059f2d1c",
+					"instance_key": "314",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-complex-alpaca",
+					"why": "#314 F260 round 1"
 				}
 			]
 		}
