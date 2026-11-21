@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ffce-73e4-7692-8b17-c930105f931e",
+				"date": "2026-11-22",
+				"head": "55b3cbb44c32033d23ed19b462d0cb4571149fe2",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:331",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 331 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at 55b3cbb"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #331 round 2 at 55b3cbb44c32033d23ed19b462d0cb4571149fe2: pass\n\nDelta 0a8490fc..55b3cbb4 (round 2 only; main unchanged).\n\n- No SQL built from data. OWED_RECIPIENTS_SQL and LIST_LIVE_WITH_SQL are const strings.\n  - The range bounds are bound parameters: ?1 to ?4 are DELIVERY_KIND_PREFIX and CONTROL_KIND_PREFIX, each with its prefix_bound. prefix_bound derives the upper bound from those constants (the last char + 1). No caller input reaches it.\n  - The owed seat list passes to the registry as ONE bound JSON array (serde-encoded), which `json_each(?1)` expands as data. A seat id taken from a job's kind suffix therefore cannot become SQL; an id with no row matches nothing.\n  - The states are literals. INDEXED BY names fixed indexes and fails loudly if one is dropped.\n- Nothing else changes in security terms. owed_recipients and list_live_with are reads used only by the drain roster. The FakeQueue answer and the None fallback (the full seat list) are supersets. No route, holder, role or authority changes. No new log lines carry data beyond a serde encoding error.\n- Round 1 still holds: the auth_recovery lease-read log names only the seat id and the error, and it spares the seat.\n\nNo secrets, lockfile or .npmrc changes. Nothing new for notes_owed.\n"
+		}
+	]
+}
