@@ -2947,7 +2947,10 @@
 					"harness_session": "ae639be0-bf8b-4dcf-b1a3-21645f441861",
 					"instance_key": "333",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #333 merged (71771aee4741)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-written-mongoose",
+					"to": "2026-11-21T22:15:30.023Z",
 					"why": "#333 F278 R1 verdict"
 				}
 			]

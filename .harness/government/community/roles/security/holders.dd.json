@@ -1354,7 +1354,10 @@
 					"harness_session": "aa358e02-6f68-4ca0-88ce-59ef10419c81",
 					"instance_key": "333",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #333 merged (71771aee4741)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-selected-deer",
+					"to": "2026-11-21T22:15:30.023Z",
 					"why": "#333 F278 R1 verdict"
 				}
 			]
