@@ -201,7 +201,11 @@ citation disputes, all of which resolved as neither party being wrong.)
   last run: F243, `$target/.pij-shared-build-tree`), runs every cargo command at
   niceness max(19, the caller's) through `harness/scripts/nice19.sh` (never
   `taskpolicy -b`, F186; never stacked to 20, F220), and always releases. A stale lock is reported with its clear command, never
-  cleared for you (plans 198, 208). Parallelism is capped too, because `nice`
+  cleared for you (plans 198, 208). A `cargo test` command may run at most
+  `PIJ_SHARED_BUILD_TEST_LIMIT` minutes (default 20, stretched by
+  `PIJ_TEST_TIME_SCALE`; `0` for none, `Ns` for seconds): past it the recipe
+  names what still runs in cargo's own process group, stops that group and only
+  it, releases the lock and exits 8 (F273). Parallelism is capped too, because `nice`
   lowers priority but does not shorten the run queue (F126). The repository's
   `.cargo/config.toml` sets `build.jobs = 4` and `RUST_TEST_THREADS = 4` for
   every cargo run in the repo, whatever its environment: recipes, `pij daemon
