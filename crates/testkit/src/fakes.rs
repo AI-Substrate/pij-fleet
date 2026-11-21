@@ -31,7 +31,7 @@ use pij_core::model::{
 use pij_core::ports::{
     DeferNoopReason, DeferOutcome, DeliveryAck, DeliveryEnqueue, HarnessPort, LaunchCommand,
     LivenessPort, MenuKey, Queue, Registry, ReleaseOutcome, STAGED_SUBMIT_RECOVERY, SeatFilter,
-    SessionStatusPort, Spine, StagedSubmit, TmuxPort, Transport, is_rendered_leftover,
+    SessionStatusPort, Spine, StagedSubmit, TapAttach, TmuxPort, Transport, is_rendered_leftover,
     staged_leftover,
 };
 use pij_core::session_status::{SessionStatusReply, SessionTarget};
@@ -2372,6 +2372,24 @@ impl FakeTmux {
         }
     }
 
+    /// The pane's output pipe vanished (tmux closed it): the next attach
+    /// starts a new one and answers [`TapAttach::Attached`].
+    pub fn lose_tap(&self, pane: &str) {
+        self.state
+            .lock()
+            .expect("fake tmux mutex")
+            .taps
+            .remove(pane);
+    }
+
+    /// [`Self::with_list_pane_failures`] for a fake already behind an `Arc`.
+    pub fn fail_list_panes(&self, count: usize) {
+        self.state
+            .lock()
+            .expect("fake tmux mutex")
+            .list_pane_failures = count;
+    }
+
     /// Queue one dependency failure from the next attached tap drain.
     pub fn script_tap_error(self, message: impl Into<String>) -> Self {
         self.state
@@ -2828,14 +2846,14 @@ impl TmuxPort for FakeTmux {
         Ok(Some(state.standing_capture.clone().unwrap_or_default()))
     }
 
-    async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> Result<()> {
+    async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> Result<TapAttach> {
         let mut state = self.state.lock().expect("fake tmux mutex");
         state
             .recorder
             .record(format!("attach_pane_tap:{pane}:{}", sink.display()));
         if let Some(existing) = state.taps.get(pane) {
             if existing == sink {
-                return Ok(());
+                return Ok(TapAttach::Kept);
             }
             return Err(PijError::Adapter {
                 adapter: "fake-tmux".to_string(),
@@ -2843,7 +2861,7 @@ impl TmuxPort for FakeTmux {
             });
         }
         state.taps.insert(pane.to_string(), sink.to_path_buf());
-        Ok(())
+        Ok(TapAttach::Attached)
     }
 
     async fn pane_tap_sink(&self, pane: &str) -> Result<Option<PathBuf>> {

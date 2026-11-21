@@ -10,7 +10,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use pij_core::delivery::MAX_TYPED_FRAME_BYTES;
 use pij_core::framing::frame_message;
 use pij_core::model::{Pane, SeatId};
-use pij_core::ports::TmuxPort;
+use pij_core::ports::{TapAttach, TmuxPort};
 use pij_testkit::block_on;
 use pij_testkit::contract::{TmuxContractFixture, tmux_contract};
 use pij_testkit::fakes::FakeTmux;
@@ -1646,6 +1646,41 @@ fn pane_tap_drains_each_raw_byte_once_and_detaches_cleanly() {
     block_on(tmux.detach_pane_tap(&pane.id)).expect("detach tap");
     assert!(!sink.exists(), "detach owns sink cleanup");
     assert!(block_on(tmux.drain_pane_tap(&pane.id)).is_err());
+}
+
+/// F266: an attach says whether it had to start a pipe. A live pipe of its own
+/// is kept; one that vanished is started again and reported `Attached`, which
+/// tells the pane observer the pane wrote bytes it never sensed.
+#[test]
+fn an_attach_reports_a_kept_pipe_apart_from_a_repaired_one() {
+    let Some(session) = TestSession::start_or_skip("tap-repair") else {
+        return;
+    };
+    let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let pane = block_on(tmux.list_panes())
+        .expect("list isolated panes")
+        .into_iter()
+        .next()
+        .expect("isolated session pane");
+    let sink = tap_sink_path(&session.tap_root, &pane.id);
+    let attach = || block_on(tmux.attach_pane_tap(&pane.id, &sink)).expect("attach tap");
+    assert_eq!(attach(), TapAttach::Attached, "first attach");
+    assert_eq!(attach(), TapAttach::Kept, "its own live pipe");
+    session.run(["pipe-pane", "-t", &pane.id]);
+    let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(5));
+    while String::from_utf8_lossy(
+        &session
+            .run(["display-message", "-p", "-t", &pane.id, "#{pane_pipe}"])
+            .stdout,
+    )
+    .trim()
+        != "0"
+    {
+        assert!(Instant::now() < deadline, "the pipe never closed");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(attach(), TapAttach::Attached, "a vanished pipe is repaired");
+    block_on(tmux.detach_pane_tap(&pane.id)).expect("detach tap");
 }
 
 /// Plan 185 F5: a live tap's sink is emptied once consumed past the cap, and the
