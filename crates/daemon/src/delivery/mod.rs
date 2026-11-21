@@ -283,10 +283,14 @@ pub const TURN_WAIT_HOLD: &str = "turn-wait: mid-turn steering is off for this s
 /// The event `pij steer` writes for a real change; it wakes a during-turn wait.
 pub const STEERING_CHANGED_KIND: &str = "steer.changed";
 
-/// A during-turn wait is event-driven (an enqueue or a switch change for the
-/// seat wakes it); this backstop only covers work that becomes claimable on a
-/// timer, such as a delayed retry. At most one wake per this per waiting seat.
-pub const DURING_TURN_BACKSTOP: Duration = Duration::from_secs(15);
+/// A native claim's wait is event-driven (F258; plan 214 for a during-turn
+/// wait): an enqueue, an ack or a switch change for the seat wakes it, and
+/// work that becomes claimable on a timer (a delayed retry, a lapsed claim)
+/// wakes it at that instant ([`Queue::next_claimable_in`]). This backstop
+/// covers the rest: a release behind the seat's serial key by another kind's
+/// claim, or a replaced incarnation, refused at its next pass. At most one
+/// wake per this per waiting seat.
+pub const CLAIM_WAIT_BACKSTOP: Duration = Duration::from_secs(15);
 
 /// Reads the seat's mid-turn steering at a during-turn claim's hand-off.
 pub type SteeringGate =
@@ -1751,9 +1755,9 @@ impl DeliveryService {
     /// own message started (plan 214, C31). The switch is read at the hand-off,
     /// after the job is claimed: with steering off by then, the job is released
     /// and the page holds [`TURN_WAIT_HOLD`], so a message enqueued after `off`
-    /// never steers, even into a claim that was already waiting. The wait has
-    /// no 500 ms tick: it wakes on the seat's enqueues and switch changes, with
-    /// [`DURING_TURN_BACKSTOP`].
+    /// never steers, even into a claim that was already waiting. The wait
+    /// wakes on the seat's enqueues and switch changes, at its next timed
+    /// claimable instant, and at [`CLAIM_WAIT_BACKSTOP`].
     pub async fn claim_native_inbox_during_turn(
         &self,
         seat: &SeatId,
@@ -2271,12 +2275,23 @@ impl DeliveryService {
             if native && tokio::time::Instant::now() >= idle_until {
                 return Ok(NativeInboxPage::default());
             }
+            // F258: no poll. The seat's events wake the wait; a timed change
+            // wakes it when due; the backstop bounds everything else. One
+            // indexed read, on an empty pass only.
+            let timed = native || during_turn.is_some();
+            let nap = if timed {
+                self.queue
+                    .next_claimable_in(&kinds)
+                    .await?
+                    .map_or(CLAIM_WAIT_BACKSTOP, |due| due.min(CLAIM_WAIT_BACKSTOP))
+            } else {
+                CLAIM_WAIT_BACKSTOP
+            };
             // F231: the wait is held time; each pass of the loop above is active.
             let _held = crate::http::route_counts::HeldSpan::start();
             tokio::select! {
                 event = subscription.next() => { if event.is_none() { return Ok(NativeInboxPage::default()); } }
-                _ = tokio::time::sleep(Duration::from_millis(500)), if native && during_turn.is_none() => {}
-                _ = tokio::time::sleep(DURING_TURN_BACKSTOP), if during_turn.is_some() => {}
+                _ = tokio::time::sleep(nap), if timed => {}
                 () = tokio::time::sleep_until(idle_until), if native => {
                     return Ok(NativeInboxPage::default());
                 }
@@ -3016,8 +3031,8 @@ mod tests {
     use tokio_stream::StreamExt;
 
     use super::{
-        DeliveryService, DeliverySources, NativeInboxIdentity, OUTCOME_EVENT_KIND,
-        PUSHED_EVENT_KIND, TURN_WAIT_HOLD, delivery_job,
+        CLAIM_WAIT_BACKSTOP, DeliveryService, DeliverySources, NativeInboxIdentity,
+        OUTCOME_EVENT_KIND, PUSHED_EVENT_KIND, TURN_WAIT_HOLD, delivery_job,
     };
     use crate::events::EventBus;
     use crate::pointer::{POINTER_PARKED_EVENT_KIND, POINTER_UNPARKED_EVENT_KIND};
@@ -6509,13 +6524,14 @@ mod tests {
         assert!(fixture.transport.delivered().is_empty());
     }
 
-    /// Review of #152 (P152-F003, F005). A during-turn wait on an empty inbox
-    /// is event-driven: ten idle seconds cost the native wait about twenty
-    /// claim passes (its 500 ms tick) and the during-turn wait one. A
-    /// message enqueued after `off`, while a during-turn claim already waits,
-    /// is released at the hand-off with the turn-wait hold, never steered.
+    /// F258, and review of #152 (P152-F003, F005). Both claim waits on an
+    /// empty inbox are event-driven: twenty idle seconds cost each wait its
+    /// first pass and one per [`CLAIM_WAIT_BACKSTOP`], where the native
+    /// wait's old 500 ms tick made about forty. A message enqueued after
+    /// `off`, while a during-turn claim already waits, is released at the
+    /// hand-off with the turn-wait hold, never steered.
     #[tokio::test(start_paused = true)]
-    async fn a_during_turn_wait_wakes_on_events_and_rechecks_the_switch_at_hand_off() {
+    async fn claim_waits_are_event_driven_and_recheck_the_switch_at_hand_off() {
         use std::future::Future;
         use std::pin::Pin;
         use std::sync::atomic::AtomicBool;
@@ -6541,7 +6557,7 @@ mod tests {
                 .filter(|call| call.as_str() == "get:pij-native")
                 .count()
         };
-        let idle = Duration::from_secs(10);
+        let idle = Duration::from_secs(20);
 
         let before = passes();
         let waited = tokio::time::timeout(
@@ -6571,11 +6587,14 @@ mod tests {
         .await;
         assert!(waited.is_err(), "nothing to claim");
         let turn_passes = passes() - before;
-        // Each pass reads the recipient about twice (attest, then the loop).
-        // Measured: native 44 reads, during-turn 4.
+        // A pass reads the recipient twice (the loop, then its revalidation),
+        // and each request twice before its first pass (the harness check and
+        // the receiver attest): 2 + 2 x (1 + 20 s / 15 s) = 6. The old 500 ms
+        // tick: about 80.
+        let bound = 2 + 2 * (1 + (idle.as_secs() / CLAIM_WAIT_BACKSTOP.as_secs()) as usize);
         assert!(
-            native_passes >= 30 && turn_passes <= 4,
-            "recipient reads in 10 idle seconds: native {native_passes}, during-turn {turn_passes}"
+            native_passes <= bound && turn_passes <= bound,
+            "recipient reads in {idle:?} idle: native {native_passes}, during-turn {turn_passes}, bound {bound}"
         );
 
         let waiting = {

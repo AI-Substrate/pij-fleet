@@ -99,6 +99,10 @@ impl Queue for CountingQueue {
         Ok(None)
     }
 
+    async fn next_claimable_in(&self, _kinds: &[String]) -> Result<Option<Duration>> {
+        Ok(None)
+    }
+
     async fn claimed_delivery(&self, _job: JobId) -> Result<Option<Job>> {
         Ok(None)
     }

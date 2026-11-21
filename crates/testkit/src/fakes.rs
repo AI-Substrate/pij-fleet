@@ -1183,6 +1183,20 @@ impl Queue for FakeQueue {
         Ok(pending.chain(claimed).min_by_key(|(id, _)| id.0))
     }
 
+    /// On the fake clock: a live row's `not_before` still ahead. This fake's
+    /// plain `claim` holds no lease, so no running claim ever lapses here.
+    async fn next_claimable_in(&self, kinds: &[String]) -> Result<Option<Duration>> {
+        let state = self.state.lock().expect("fake queue mutex");
+        Ok(state
+            .live
+            .iter()
+            .filter(|(_, job)| kinds.contains(&job.kind))
+            .filter_map(|(id, _)| state.not_before.get(&id.0))
+            .filter(|at| **at > state.now)
+            .map(|at| *at - state.now)
+            .min())
+    }
+
     async fn claimed_delivery(&self, job: JobId) -> Result<Option<Job>> {
         let state = self.state.lock().expect("fake queue mutex");
         Ok(state

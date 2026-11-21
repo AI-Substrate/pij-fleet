@@ -3076,7 +3076,7 @@ async fn an_idle_native_claim_is_answered_empty_at_the_daemons_bound() {
 }
 
 /// F231: an idle native claim's wait is held time in ping, not active: the
-/// claim's passes between waits are what `active_us` sums.
+/// claim's passes between waits (one here, F258) are what `active_us` sums.
 #[tokio::test]
 async fn an_idle_native_claims_wait_is_held_time_and_only_its_passes_are_active() {
     let store = FreshStore::new();
@@ -3120,6 +3120,194 @@ async fn an_idle_native_claims_wait_is_held_time_and_only_its_passes_are_active(
         "only the passes are active: {inbox}"
     );
     server.abort();
+}
+
+/// F258: how long a claim wait may take to hear of new work and still show it
+/// woke on that work, not at [`crate::delivery::CLAIM_WAIT_BACKSTOP`].
+fn before_backstop(budget: Duration) -> Duration {
+    pij_testkit::time::scaled(budget).min(crate::delivery::CLAIM_WAIT_BACKSTOP / 2)
+}
+
+/// A native claim waiting on the real store, as the extension's long poll.
+fn waiting_claim(
+    delivery: &Arc<DeliveryService>,
+    seat: &SeatId,
+    identity: &NativeInboxIdentity,
+) -> tokio::task::JoinHandle<pij_core::error::Result<crate::delivery::NativeInboxPage>> {
+    let (delivery, seat, identity) = (Arc::clone(delivery), seat.clone(), identity.clone());
+    tokio::spawn(async move { delivery.claim_native_inbox(&seat, true, &identity).await })
+}
+
+/// F258: a waiting native claim does not poll. An enqueue to its seat
+/// publishes the seat's `delivery.outcome`, and that wakes it.
+#[tokio::test]
+async fn an_enqueue_wakes_a_waiting_native_claim() {
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    let waiting = waiting_claim(&services.delivery, &seat.id, &identity);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    services
+        .delivery
+        .send("pij-peer".into(), seat.id.clone(), "wake")
+        .await
+        .unwrap();
+    let page = tokio::time::timeout(before_backstop(Duration::from_secs(3)), waiting)
+        .await
+        .expect("the enqueue wakes the wait, not the backstop")
+        .unwrap()
+        .unwrap();
+    assert_eq!(page.claims.len(), 1, "{:?}", page.held_reason);
+    assert_eq!(page.claims[0].message.body, "wake");
+}
+
+/// F258: a row that falls due on a timer wakes the wait at its `not_before`,
+/// with no event to wake it and no poll.
+#[tokio::test]
+async fn a_delayed_row_wakes_a_waiting_native_claim_when_it_falls_due() {
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    services
+        .delivery
+        .send("pij-peer".into(), seat.id.clone(), "later")
+        .await
+        .unwrap();
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::query("UPDATE jobs SET not_before = unixepoch() + 3 WHERE kind = ?1")
+        .bind(delivery_kind(&seat.id))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let page = tokio::time::timeout(
+        before_backstop(Duration::from_secs(6)),
+        services
+            .delivery
+            .claim_native_inbox(&seat.id, true, &identity),
+    )
+    .await
+    .expect("woken when the row falls due, not at the backstop")
+    .unwrap();
+    let waited = started.elapsed();
+    assert_eq!(page.claims.len(), 1, "{:?}", page.held_reason);
+    assert_eq!(page.claims[0].message.body, "later");
+    assert!(
+        waited >= Duration::from_millis(1_900),
+        "claimed before it was due: {waited:?}"
+    );
+}
+
+/// F258: a claim its receiver never acknowledged lapses on the ordinary claim
+/// lease. The lapse wakes a waiting claim, which takes the body again.
+#[tokio::test]
+async fn a_lapsing_claim_wakes_a_waiting_native_claim_at_its_lease() {
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (seat, identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    services
+        .delivery
+        .send("pij-peer".into(), seat.id.clone(), "unacknowledged")
+        .await
+        .unwrap();
+    let first = services
+        .delivery
+        .claim_native_inbox(&seat.id, false, &identity)
+        .await
+        .unwrap()
+        .claims
+        .remove(0);
+    let lease = i64::try_from(Config::default().claim_lease_secs).unwrap();
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::query("UPDATE jobs SET claimed_at = unixepoch() - ?1 + 3 WHERE id = ?2")
+        .bind(lease)
+        .bind(i64::try_from(first.job_id.0).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let page = tokio::time::timeout(
+        before_backstop(Duration::from_secs(6)),
+        services
+            .delivery
+            .claim_native_inbox(&seat.id, true, &identity),
+    )
+    .await
+    .expect("woken when the claim lapses, not at the backstop")
+    .unwrap();
+    let waited = started.elapsed();
+    assert_eq!(page.claims.len(), 1, "{:?}", page.held_reason);
+    assert_eq!(page.claims[0].job_id, first.job_id);
+    assert_eq!(page.claims[0].attempt, first.attempt + 1);
+    assert!(
+        waited >= Duration::from_millis(1_900),
+        "taken again before its lease lapsed: {waited:?}"
+    );
+}
+
+/// F258: with no poll, a replaced incarnation's waiting claim learns of the
+/// replacement at its next wake. It is refused there, and the work queued
+/// for the replacement stays queued.
+#[tokio::test]
+async fn a_replaced_incarnations_waiting_claim_is_refused_at_its_next_wake() {
+    let store = FreshStore::new();
+    let services = sqlite_services(&store).await;
+    let (mut seat, old_identity) = contract_identity();
+    services.registry.put(seat.clone()).await.unwrap();
+    let waiting = waiting_claim(&services.delivery, &seat.id, &old_identity);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    seat.proc = Some(ProcIdentity {
+        pid: 13800,
+        proc_start: 20260905130000,
+    });
+    seat.harness_session = Some("replacement-session".into());
+    services.registry.put(seat.clone()).await.unwrap();
+    let replacement = NativeInboxIdentity {
+        native_session: seat.harness_session.clone(),
+        pid: seat.proc.map(|proc| proc.pid),
+        proc_start: seat.proc.map(|proc| proc.proc_start),
+    };
+    // The replacement attests its receiver (an empty claim), so the send
+    // below is queued for it rather than refused.
+    services
+        .delivery
+        .claim_native_inbox(&seat.id, false, &replacement)
+        .await
+        .unwrap();
+    let receipt = services
+        .delivery
+        .send("pij-peer".into(), seat.id.clone(), "for the replacement")
+        .await
+        .unwrap();
+    assert!(
+        matches!(receipt.outcome, DeliveryOutcome::Queued { .. }),
+        "{:?}",
+        receipt.outcome
+    );
+    let refused = tokio::time::timeout(before_backstop(Duration::from_secs(3)), waiting)
+        .await
+        .expect("the enqueue wakes the stale wait")
+        .unwrap()
+        .expect_err("a replaced incarnation is refused");
+    assert!(refused.to_string().contains("incarnation"), "{refused}");
+    let (job, _) = services
+        .queue
+        .peek(&[delivery_kind(&seat.id)])
+        .await
+        .unwrap()
+        .expect("the work is still queued");
+    assert!(
+        services
+            .queue
+            .claimed_delivery(job)
+            .await
+            .unwrap()
+            .is_none(),
+        "the stale wait never claimed it"
+    );
 }
 
 #[tokio::test(start_paused = true)]

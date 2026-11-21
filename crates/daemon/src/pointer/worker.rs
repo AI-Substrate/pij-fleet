@@ -2585,6 +2585,13 @@ mod tests {
             self.inner.peek(kinds).await
         }
 
+        async fn next_claimable_in(
+            &self,
+            kinds: &[String],
+        ) -> pij_core::error::Result<Option<std::time::Duration>> {
+            self.inner.next_claimable_in(kinds).await
+        }
+
         async fn claimed_delivery(&self, job: JobId) -> pij_core::error::Result<Option<Job>> {
             self.inner.claimed_delivery(job).await
         }

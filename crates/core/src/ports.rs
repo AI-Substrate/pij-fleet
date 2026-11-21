@@ -623,6 +623,16 @@ pub trait Queue: Send + Sync {
     /// repeated peeks return the same row until another actor completes it.
     async fn peek(&self, kinds: &[String]) -> Result<Option<(JobId, Job)>>;
 
+    /// How long until a live row of `kinds` next becomes claimable on a timer,
+    /// as [`Self::claim`] (the ordinary lease) decides it: the earliest future
+    /// instant at which a pending row's `not_before` falls due or a running
+    /// claim's lease lapses. `None` when no such instant lies ahead. Read-only.
+    ///
+    /// A claim wait sleeps until this instant instead of polling (F258). Work
+    /// that becomes claimable WITHOUT a timer (an enqueue, an ack, a release)
+    /// is not covered here: the waiter hears of it by event, or at its backstop.
+    async fn next_claimable_in(&self, kinds: &[String]) -> Result<Option<Duration>>;
+
     /// Inspect one running destination-delivery job by its authoritative id.
     /// Unknown, pending, terminal, and non-delivery jobs return `None`.
     /// This read does not claim, acknowledge, or extend the job's lease;
