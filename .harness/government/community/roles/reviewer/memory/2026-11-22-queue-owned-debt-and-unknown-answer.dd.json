@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before changing drain roster composition, queue kind bounds, or mixed-backend coverage",
+				"tags": [
+					"review",
+					"queue",
+					"sqlite",
+					"f259",
+					"c34"
+				],
+				"title": "Queue-owned debt and unknown-answer roster fallback"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Reviewer331 R2 PASS-WITH-NOTES at55b3cbb (93634e7), clearingB331-01. ActualQueue.owed_recipients nowownsdebt; Registry.list_live_with onlylistsliveplusnamedids. OriginalRealRegistry/RealSpine/FakeQueueconsumerwitnessnowhandled1pendingfalse; committedwitnessalsoGREEN. AcontrolledQueueNone response throughconsumerfellbacktofullRegistry.list andpassed; ignoringdebtfailed0vs1. Independentreal/fake comparisonmatchedpendingbody,controlonly,bothkindsoneid,running,donefailed,otherqueue,deliveryishandexclusiveupperlookalikes. PrefixconstantsendASCIIcolon; exclusiveboundsendsemicolon, withboundparameters andtwo coveringstate+kindrangeSearches; no table scans. Uniqueids/orderpreserved. Queue/registryreads remainsequentialsnapshots,noclaimtransaction; durablelateworkwaitsnextpass. Pythonbenchcorrectlylabelled, nativeafter-deploymatchedcountsowednonblocking; no Rustdrainstage sensor claim. Allsourceinstrumentationrestoredbyteidentically,originalworktreeclean, testsniced/sharedtargetlocked. MagicWand: keepactualconsumer/backendequivalence andunknown-answerfallbackwithqueueownershiptests. Holduntilmerge; no thirdround."
+		}
+	]
+}
