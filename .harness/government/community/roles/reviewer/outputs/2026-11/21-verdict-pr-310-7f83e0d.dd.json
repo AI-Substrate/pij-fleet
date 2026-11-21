@@ -1,0 +1,61 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fcac-a4ab-7991-abd5-bb22b1c3c2a0",
+				"date": "2026-11-21",
+				"head": "7f83e0defd62fb5da0170b02afb6af4872ccbaa3",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:310",
+				"writer": "pij-shiny-badger",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 310",
+					"exit_code": 0,
+					"log": "FINAL twice at 7f83e0defd62fb5da0170b02afb6af4872ccbaa3; CI 5/5"
+				},
+				{
+					"command": "production-SQL deadline/no-spin replay",
+					"exit_code": 0,
+					"log": "Reviewer: zero-duration crossed-deadline wake, fresh-pass exclusion, serial-blocked controls; old-cutoff and missing-cutoff SQL mutants caught"
+				},
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci",
+					"exit_code": 0,
+					"log": "Exact-head CI job 136747316384, artifact 14693798372: 2752 passed; all 17 focused tests executed and passed"
+				},
+				{
+					"command": "author M4/M5 shared-build mutation runs",
+					"exit_code": 101,
+					"log": "Inspected saved Rust logs: old cutoff fails store/gap regressions; no for_seat fails two-seat reads 14 vs 4"
+				},
+				{
+					"command": "author harness checks",
+					"exit_code": 1,
+					"log": "Mac 14/15, Rust failure in untouched fixtures; clippy/fmt pass; isolated control_mode 23/23 and daemon_log 5/5. Not a full local gate pass."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer/310, final round: PASS-WITH-NOTES\n\nExact head: `7f83e0defd62fb5da0170b02afb6af4872ccbaa3`. C34 round 2 of 2. **R310-F001 is closed. No further correctness changes owed; no new finding.** Reviewer/310 remains held until merge.\n\n## Repair and no-spin proof\n\nReviewed the complete delta from `92787c46` to this head. The daemon now captures `pass_started = SystemTime::now()` **inside every loop iteration, before the native lock and claim** (`crates/daemon/src/delivery/mod.rs:2001-2009`). The next-due read binds the floored epoch second of that pass start; `NEXT_CLAIMABLE_SQL` filters `due > ?3` instead of comparing with the later read's `unixepoch()` (`crates/store/src/queue.rs:315-320`, `872-910`). Both native idle and during-turn waits receive this cutoff.\n\nThe original deadline-gap reproduction was rerun against the exact production SQL in isolated in-memory SQLite: the first claim is empty before `not_before`; after crossing the deadline, the next-due read still returns that deadline, its remaining duration is **zero**, and the claim selector immediately finds the row. The waiter therefore makes an immediate pass, not a 15 s backstop wait.\n\nNo fixed past row causes a busy loop. A deadline at or before the current pass's floored start is excluded. A deadline crossed during a slow pass can cause one conservative extra pass even if a serial-key blocker remains; that next pass takes a fresh start and excludes the old deadline. This cutoff is not captured once per request. Same-kind running blockers retain their lease deadline; other-kind blockers retain the ordinary backstop rather than an immediate retry loop.\n\nReviewer-run controls in `pr310-r2-deadline-probe.py` / `pr310-r2-deadline-proof.json` cover the original pending-row gap, a fresh pass after that gap, 20 reads of a past row behind another-kind running claim, a same-kind running blocker, a blocked row crossing during one pass, and a crossed lease. All passed.\n\nReviewer-run SQL mutations were caught without modifying any repository file:\n\n| Mutation | Witness |\n|---|---|\n| Restore read-time `unixepoch()` cutoff, preserving the third bind | Crossed deadline returns NULL again: the original 15 s delay is reproduced. |\n| Remove the no-spin cutoff | Past serial-blocked row becomes a zero-duration wake instead of being excluded. |\n\nThe added real-store daemon test deliberately holds `next_claimable_in` until after the row becomes due, then requires delivery below the backstop (`http/native_tests.rs:3312-3357`). This encodes the actual claim-to-read seam, not merely a store-call assertion. The new two-seat test preserves the filter's cost property: five sends to another seat cause no recipient reads for the waiting seat, while its own send wakes it.\n\n## Exact-head validation and mutation receipts\n\n- `just pr-freeze 310`: FINAL at the full requested head; CI 5/5 green. `git diff 92787c4..HEAD --check` passed; detached worktree clean.\n- Exact-head CI `cargo nextest run --locked --workspace --profile ci`: **2752/2752 passed**, six skipped. Verified successful Rust job **136747316384** and its upload artifact **14693798372**, not a name-only download. All **17 focused tests** executed and passed: eight queue tests, five lost-wake tests including the forced gap, idle answer, held-time accounting, pass-count/steering, and two-seat filtering.\n- Inspected the author's saved M4 log: restoring the old cutoff semantics **at this head** fails the store regression (`None` vs `Some(0ns)`) and the daemon gap regression (sub-backstop timeout). The changed port signature prevents compiling the new tests directly against the old head; M4 is the accurate red control.\n- Inspected saved M5 log: removing `.for_seat` fails the two-seat test at **14 vs 4 reads**. These are attributed author-run Rust mutations, not reviewer-run builds.\n- Mac gate note: the author's `harness checks` envelope at 2026-11-21T05:34:14.694Z is **14/15**, not green: Rust failed. Saved `just rust-check` output confirms clippy/fmt passed and an untouched `pij-tmux` control-mode test failed. Saved isolated reruns confirm control-mode **23/23** and daemon-log **5/5**. Neither `crates/tmux` nor `crates/cli` changed in this PR or repair. This retains the existing loaded-machine fixture limitation; it is not a new repair defect and is not represented as a full macOS gate pass.\n- Reviewer boot remains dependency-limited (`ready=false`, no node_modules). C25 respected: no dependency links/install, TS runner, local Cargo build, daemon bounce or source edit.\n\n## Cost and retained acceptance boundary\n\nThe changed loop is the native idle/during-turn inbox wait. The repair adds one in-process wall-clock read per pass and one scalar bind to the existing indexed next-due query. It adds **no timer, poll, process launch or launch site**. No new cost multiplier by seat is introduced.\n\nAn event-free 55 s wait still makes approximately **four** claim passes (start, 15, 30, 45 s), about **5.53 passes/s for 76 receivers**, rather than 152/s. Events and real timed eligibility add necessary passes; the repaired crossing can add one extra pass, not a self-sustaining poll. The six-recipient-read bound in 20 s remains green. Global broadcast wake/filter overhead is unchanged; unrelated events do not trigger expensive claim passes.\n\nR1 identity revalidation, subscription cleanup and non-timer backstop assessments stand. Live AFTER cost is still a deployment acceptance measurement, owned by the prime/performance role: after an authorized bounce and draining old 55 s requests, compare like-for-like inbox active time/completion, active time/second, CPU deltas and launch receipts, while retaining event/deadline delivery. No live AFTER result is claimed here.\n\n## Harness closeout\n\nThe R1 magic-wand request is now encoded as the forced claim-to-deadline-read regression, alongside the store assertion. Mutation stdout is now saved rather than only summarized in prose. These are the session's concrete proof/harness improvements; no additional machinery is requested.\n"
+		}
+	]
+}
