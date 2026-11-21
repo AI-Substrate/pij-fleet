@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fed8-d1cc-7770-a9d1-dd4f06b5bdd3",
+				"date": "2026-11-22",
+				"head": "cb3c4b90c749a5d9ff7e230901a730a11811bf0f",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:319",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 319 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at cb3c4b9"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security round 2 for #319 at cb3c4b9: pass. The PR's own diff against main is still tests and testkit only: daemon_stop.rs, testkit/src/tmux.rs and fixture_cleanup.rs. The non-test files in f382cc0..cb3c4b9 come only from the merges of main (#316, #318, #321), which were reviewed in their own PRs. R2 commit 8347b5fc changes only the daemon_stop bound and its assertion messages, plus finish_server_within's panic text ('waited X of a Y budget', which names local test values). There is no new kill, signal, file removal or process launch, and no production read of PIJ_TEST_TIME_SCALE. Round 1 still holds: kills target only the fixture's own private socket and pid, and cleanup removes only the recorded socket and lock (F262). No secrets, lockfile or .npmrc changes. Nothing new for notes_owed."
+		}
+	]
+}
