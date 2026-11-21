@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fdca-9702-7271-b3da-0848f8036069",
+				"date": "2026-11-21",
+				"head": "db4e27d25972f0044234830613cdde8ae1d9066a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:318",
+				"writer": "pij-considerable-tapir",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict: #318 (F266) at db4e27d25972f0044234830613cdde8ae1d9066a\n\nResult: PASS. Static review of the full diff: core ports.rs, daemon pane_observer.rs, harnesses interaction.rs, tmux lib.rs, testkit fakes.rs, and the tests and docs. CI at this head: check (22), check (24), rust-lint, rust-test and delivers SUCCESS; merge state CLEAN. No local build or test run.\n\n## Ask: does any path now replay where it captured before?\nNo. Every change only removes replays, so it is a brake on replay, not a policy (removing it makes the observer capture less, never decide something different):\n- The replay eligibility filter in pane_observer.rs gains one more condition: `uncertainty_since.is_none() && observed.tap_drains == gate_drains`. A replay was allowed before only when the old condition held, and it now also needs an unchanged drain count, so the set of replays can only shrink.\n- `attach_pane_tap` now returns `TapAttach`. `Kept` takes exactly the old `Ok(())` branch (`refusals.clear`). `Attached` does the same and also calls `forget_capture`, which sets `last = None`, so that tick captures. The untracked `Ok(_) if !tracked` arm is unchanged.\n- The tmux adapter changes only return values (`Kept` on the matching-marker early return, `Attached` after attaching). Its commands, arguments and quoting are unchanged, and it launches nothing new.\n- `gate_drains` is read before the capture and `tap_drains` is counted before a drain begins. Any race therefore stores an older count, and the next tick captures instead of replaying. The race leans conservative; the detailed ordering is the reviewer's ask.\n- The gate's own decisions (`permits_injection`, `permits_injection_fresh`, `observe_composer`, `record_unknown`) are untouched apart from the added counter.\n\n## Other checks\n- No credential, environment or file access beyond what existed. The new tests use fixed `/tmp/pij-observer-*` sink names with FakeTmux, as 13 existing tests on main already do.\n- Public hygiene: no home paths, usernames or tokens in added lines. No lockfile, `.npmrc`, `package.json` or `Cargo.toml` change.\n"
+		}
+	]
+}
