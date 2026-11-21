@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fd3c-b22f-76d0-bcda-6dc43ec6a912",
+				"date": "2026-11-21",
+				"head": "8dd610594a1194320106f15233242e8764870b35",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:313",
+				"writer": "pij-skilled-flamingo",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Performance role: post-deploy AFTER counters, CPU and spawn-rate receipt; no reviewer code fix required."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 313",
+					"exit_code": 0,
+					"log": "FINAL at 8dd610594a1194320106f15233242e8764870b35; CLEAN; latest CI 5/5 pass"
+				},
+				{
+					"command": "CI cargo nextest run --locked --workspace --profile ci",
+					"exit_code": 0,
+					"log": "run 44884185946 job 136785776994; JUnit artifact 14699755702; 18/18 observer tests passed"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Local detached C25-limited worktree: missing/wrong TS tooling; pr313-quick-checks.json preserved with reviewer report"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: #313 - PASS WITH NOTES\n\nRound 1, exact head `8dd610594a1194320106f15233242e8764870b35`. No normal-use correctness blocker found. This is a review verdict, not a claim that the dependency-free local harness passed.\n\n## Required guards\n\n1. **Injection owns its fresh capture.** `InteractionGate::permits_injection_fresh` delegates to `injection_observation`, which independently checks/drains the tap, lists the pane and captures it (`crates/harnesses/src/interaction.rs:530-638`). `submit_with_owned_input` also repeats the deciding observation under input ownership and requires that capture's `composer_idle` before typing (:668-714). Auth recovery's `/restart` brake calls `fresh_injection_verdict` and requires both permission and blankness (`crates/daemon/src/auth_recovery.rs:325-336`). Observer replay cannot substitute for those reads. M4's logged failure is the fresh-injection witness.\n2. **Replay preserves ageing.** `decide` is the former capture-loop decision body, with the former `continue` paths changed to returns. Replay calls it with `tap_active=false` (`pane_observer.rs:510-512,623-658`). Unchanged nonblank content still reaches `observe_composer` and `expire_vetoes_if_idle`; unchanged blank content still reaches `record_composer_cleared`, which does not refresh interaction time. Edit timestamps are not reset by replay. The 72-second twin-observer test compares all exposed gate fields and knowledge every pass; M5 fails at pass 39 on idle expiry, and M6 fails at pass 2 on uncertainty.\n3. **Backstop is anchored to capture, not replay.** Only `remember` changes `last.at`; replay checks elapsed time against 30 seconds (:663-716). The paused-clock dead-tap test observes the draft in `[30s,30.6s)` and counts one backstop. M3 fails because the draft remains hidden through 60 passes. That interval is the scheduled-tick proof, not a hard real-time guarantee during scheduler stalls or failed captures.\n\n`Unknown`, `PendingClear`, missing/moved cursors, observer read errors, changed gate content and gate uncertainty cannot replay. Tap bytes force capture. A blank redraw with bytes remains PendingClear until a genuinely captured quiet blank corroborates it; skipping cannot bypass that transition.\n\n## Notes: freshness and counters\n\n**R313-N1 (non-blocking): quiet tap + same cursor is not a theorem about screen identity.** tmux can resize/reflow its base screen without pane output; respawn resets that screen and can retain the pane id. Repairing an already-tracked pipe does not invalidate `last`, so output written during the missing-pipe interval can be absent from the sink. The existing tap-trim implementation explicitly admits losing a single-write burst (`crates/tmux/src/lib.rs:34-51,1173-1298,1308-1340`). These are additional ways to reach the deliberately accepted silent-tap/backstop case, not guarantees of capture within 600 ms. A fresh injection's capture/list error also returns without necessarily setting gate uncertainty; an Unrecognized result does set it. Subsequent injections still perform their own reads.\n\nCopy mode alone does not alter what this adapter captures: `capture-pane -p` without `-M` and the cursor formats use the base screen. Clear-history removes history, while this adapter captures the visible base grid, not full scrollback. The recognizer is screen/cursor-derived, not clock-derived. These conclusions were checked against installed tmux 3.6a's upstream `cmd-capture-pane.c`, `window.c`, `spawn.c` and `format.c`.\n\nOrdinary output/edit redraws still force capture; previously fresh observations can now be stale until the backstop in the bypass cases above. Fresh delivery recognition of a different draft starts grace at observation time, making that case more conservative, not authorizing typing into it. No production consumer was found authorizing injection from observer knowledge or `observed()` alone. Optional future proof: one observer pass after a fresh injection changes the held composer, plus geometry/reattach invalidation fixtures. No additional machinery is required for this PR.\n\n**Counters:** wiring shares the same Arc between observer and health. Completed passes, successful capture results/bytes, skips and backstop-only captures are counted in the appropriate branches. Failed captures are not counted as successful reads. `active_us` is elapsed wall time, not CPU. Relaxed snapshots are individually atomic, not a coherent multi-field transaction. `fetch_add` wraps modulo 2^64; at the cited 2.9 MB/s rate the earliest practical counter wrap is roughly 200,000 years, so no operational overflow blocker.\n\n## Cost and merge\n\nOne unchanged 600 ms observer loop; attach checks/drains remain per tracked pane per tick. Capture scales with active, moved-cursor or unsettled panes, plus quiet backstops: 186 settled quiet panes average about 6.2 captures/s instead of 310/s. That is a long-run rate, not a burst cap: synchronized backstops may capture all panes in one pass. Unknown panes still capture every tick, so fleet savings remain a measurement, not a promise. No new launch site or per-tick launch is introduced. Live before/after receipts remain the performance role's work; the post-deploy AFTER is owed.\n\nThis change adds no destructive operation. The existing pane-absence deletion policy and its mtime brake are unchanged; replay/backstop are observation scheduling, not retention policy.\n\n`just pr-freeze 313` is FINAL, CLEAN, mergeable, no new migration, all five latest CI checks pass. The merge imports main's #309/#312 changes; the observer, interaction and fake sources are byte-identical to mutation-tested `587fe438`. `git diff --check origin/main...HEAD` passes.\n\n## Proof receipts and local limits\n\n- Exact-head CI run `44884185946`, rust-test job `136785776994`: 2774 passed, 6 skipped. Successful upload artifact ID `14699755702` was selected from that job's upload log. Its JUnit contains all 18 observer tests, none failed or skipped.\n- Independently inspected the coder's six mutant edits, assertions and failed logs in `/tmp/f258-receipts/d1/M1-replay-with-tap-bytes.log`, `M2-no-cursor-check.log`, `M3-no-backstop.log`, `M4-fresh-uses-held-state.log`, `M5-replay-skips-decide.log`, `M6-replay-tap-active.log`. These are coder executions, not newly executed reviewer mutants. The affected sources/tests have no delta between the receipt head and this head.\n- Exact-head macOS receipt `merged-observer-rerun.log`: 18/18 pass. The earlier `merged-8dd61059.log` has 1051 passed and two isolated tmux-server teardown failures; it is not credited as a green full run.\n- Local `harness boot --json`: NOT-READY, missing worktree dependencies. Local `harness checks --quick --json`: exit 1; eight dependency/tooling failures, three heavy stages skipped, native/SDK/skill sensors pass. Receipt: `pr313-quick-checks.json` beside this report. The full `harness checks --json` attempt was stopped while queued behind another seat's shared-build lock. No local full-green claim, dependency installation/link, product edit, daemon bounce, or other seat's teardown.\n\n**Harness gift:** add a witness for replay invalidation after a fresh recorder changes gate state. It would directly defend the subtle shared-tap guard that current M1-M6 do not independently remove. Read-only observations INS-001 and CONF-001 are preserved in reviewer memory; detached-review boot should surface the CI-only TS proof guidance under C25.\n"
+		}
+	]
+}
