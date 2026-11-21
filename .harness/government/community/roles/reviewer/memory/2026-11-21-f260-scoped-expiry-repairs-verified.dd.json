@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "When reviewing expiry sibling guards, message-key recovery or R314 closure",
+				"tags": [
+					"review",
+					"queue",
+					"expiry",
+					"identity",
+					"f260"
+				],
+				"title": "F260 scoped expiry repairs verified"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR314 final round at ed67200 closes both R1 findings. Expiry ends the original hold and tests delivered/sibling eligibility in one transaction; pending, running or held-unexpired copies suppress a notice only for the same kind/origin/key. Kind embeds recipient. Another recipient or origin does not suppress expiry. A running sibling that fails terminally permits the later notice, without recovering the expired original. Recovery now scopes live copies by kind as well. Original real-service witnesses and closure tests passed: five daemon and three store cases. Independent exact-SQL M8/M9 controls were killed and the author retained isolated Rust logs; do not conflate those evidence grades. Reconciled preaccepted rows are preserved; the 64 brake applies only to new sends. Existing negative-expiry sweep cost is D-F260-4. MagicWand achieved: the R1 failure oracles are committed regressions with retained mutation receipts."
+		}
+	]
+}
