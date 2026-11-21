@@ -2861,6 +2861,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-complex-alpaca",
 					"why": "#327 F275 round 1"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T17:30:17.471Z",
+					"harness": "copilot",
+					"harness_session": "f1dae566-30c8-4ef6-9854-9eba059f2d1c",
+					"instance_key": "326",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-complex-alpaca",
+					"why": "#326 F273 round 1"
 				}
 			]
 		}
