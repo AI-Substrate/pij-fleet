@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before reopening F276 AFTER or counting notice admissions; queue carriers can omit direct sends",
+				"tags": [
+					"F276",
+					"after",
+					"notices",
+					"cohort",
+					"proof"
+				],
+				"title": "F276 AFTER closed: facts, young rows and notices"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F276 AFTER CLOSED on3707709efd6bb731b4de96c32b2a4d4e12363bb6/PID42265. Pre-f276 backup(mode=ro) quick_checkok/v50,377open=345old/146recipients+32young. Six canonical sweep timestamps08:52:57..08:58:03+10:64x5+25. All345 failedrecipient-retired;345park+345matchingadjacentoutcomefacts,0duplicates;young32stillopen/0retired. Complete and stable at09:00:03+10 after later60scheck;matchinghealthyhead/PID atallsnapshots.\n\nNotice proof needs ALL admission paths:15distinctdeliveredledger +15audits for3live locals,ledger5reader-read/10injected;6queue carriers OVERLAP ledger,0FYI. Firstobserver countedonlycarriers, so6 was NOT missing9notices:stopped ownboundedobserver,addedledgercoverage,resumedpreservingmarkedpartials. No duplicatecarrier/ledger/audit;no dead/pij-bg notices;senderlivenessunchanged. Does not prove semanticmodelread orforeverno-duplicates.\n\nOnlyread transactions onbackup/live,closedbeforesleep;no writes/copy/bounce/testsend/build. Persistent pr332-after.py/json andmonitorlogs inthissession;aggregateonly/no bodies/senderlists,jobcohorthash+backupmaxseq. Reuse officialnotice-id diagnostic ifencoded:unioncarriers+ledger,not sum.\n\nRole/332 alreadyreleasedbymerger08:52:59+10;stateverified,no reassign/retry. Do not reopen F276 AFTER. magicWand: official read-only cohort+fact+notice-admission receipt that knows direct delivery and distinguishes carrier from ledger evidence.\n"
+		}
+	]
+}
