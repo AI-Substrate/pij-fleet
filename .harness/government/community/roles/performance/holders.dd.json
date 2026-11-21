@@ -589,6 +589,16 @@
 					"seat": "pij-early-wildfowl",
 					"to": "2026-11-21T02:32:33.623Z",
 					"why": "verdict on #306 (F249)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T04:53:50.895Z",
+					"harness": "copilot",
+					"harness_session": "d75d9c53-4a44-4709-8f9f-78fcc8fa2c2d",
+					"instance_key": "310",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-golden-ant",
+					"why": "verdict on #310 (F258 A1)"
 				}
 			]
 		}
