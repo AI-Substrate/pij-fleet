@@ -1,0 +1,7 @@
+ ~/.../review-328-12e0017 [⎇ detached@12e00170]       Session: 2852.66 AIC used
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+ ○ Reviewing destructiv… · 61.3 KiB ctrl+c interrupt GPT-6.1 Sol · 922K context
+24% review-328-12e0017 ⎇ 12e00170 ⛓ pij-written-mongoose • gpt-6.1-sol · xhigh ·
+922K context • xhigh • 218k/922k • 2852.66 AIU • 19.00 prem • 4h2m

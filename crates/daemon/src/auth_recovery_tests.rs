@@ -12,7 +12,8 @@ use pij_testkit::FreshStore;
 use pij_testkit::fakes::{FakeLiveness, FakeTmux};
 
 use super::{
-    Action, Cause, Entry, Incarnation, Ledger, LostLogin, RECOVERY_WINDOW, decide, handle, on_lapse,
+    Action, Brake, Cause, Entry, Incarnation, Ledger, LostLogin, RECOVERY_WINDOW, decide, handle,
+    on_lapse,
 };
 
 const SEAT: &str = "pij-copilot-coder";
@@ -33,11 +34,37 @@ const SECOND: Incarnation = Incarnation {
 
 struct Fleet {
     services: crate::Services,
+    tmux: Arc<FakeTmux>,
     _store: FreshStore,
 }
 
+/// A captured Copilot 1.0.115 screen (F279): `idle` (its prompt) or
+/// `working` (mid-turn: the same empty composer, a turn status under it).
+pub(crate) fn copilot_screen(name: &str) -> String {
+    std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../testkit/fixtures/harnesses")
+            .join(format!("copilot-1.0.115-{name}.txt")),
+    )
+    .expect("read a Copilot fixture")
+}
+
+/// `pane` shows the captured Copilot screen `name` with `draft` in its
+/// composer (row 2), the caret after it.
+pub(crate) fn show(tmux: &FakeTmux, pane: &str, name: &str, draft: Option<&str>) {
+    let screen = copilot_screen(name);
+    let (screen, caret) = match draft {
+        Some(text) => (
+            screen.replacen("❯\n", &format!("❯ {text}\n"), 1),
+            2 + u32::try_from(text.chars().count()).unwrap(),
+        ),
+        None => (screen, 2),
+    };
+    tmux.arrange_screen(pane, &screen, caret, 2);
+}
+
 /// A PM, a prime and the PM's Copilot coder (pid 4100), with a fake tmux whose
-/// coder pane shows `draft` in the composer, or an empty one.
+/// coder pane shows Copilot's prompt with `draft` in its composer, or none.
 async fn fleet(state: SystemState, draft: Option<&str>) -> Fleet {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let store = FreshStore::new();
@@ -61,10 +88,7 @@ async fn fleet(state: SystemState, draft: Option<&str>) -> Fleet {
         .delivery
         .set_native_boot_wait(Duration::from_millis(1));
     let tmux = Arc::new(FakeTmux::new());
-    match draft {
-        Some(text) => tmux.arrange_composer_text(PANE, text),
-        None => tmux.arrange_clear_composer(PANE),
-    }
+    show(&tmux, PANE, "idle", draft);
     services.tmux = Arc::clone(&tmux) as Arc<dyn TmuxPort>;
     services.interaction = Arc::new(InteractionGate::new(Arc::clone(&tmux) as Arc<dyn TmuxPort>));
     let folder = std::env::temp_dir().join(format!(
@@ -92,6 +116,7 @@ async fn fleet(state: SystemState, draft: Option<&str>) -> Fleet {
     }
     Fleet {
         services,
+        tmux,
         _store: store,
     }
 }
@@ -210,6 +235,7 @@ async fn a_busy_seat_is_never_restarted_its_parent_is_told_how() {
     let fleet = fleet(SystemState::Working, None).await;
     let outcome = report(&fleet, FIRST, 10 * MINUTE).await;
     assert_eq!(outcome.action, Action::Notify);
+    assert_eq!(outcome.held_by, Some(Brake::Busy), "a report reads the row");
     assert!(
         controls(&fleet).await.is_empty(),
         "no restart for a busy seat"
@@ -238,6 +264,7 @@ async fn a_draft_in_the_composer_spares_the_seat() {
     .unwrap()
     .expect("a report always has an outcome");
     assert_eq!(outcome.action, Action::Notify);
+    assert_eq!(outcome.held_by, Some(Brake::ComposerDraft));
     assert!(
         controls(&fleet).await.is_empty(),
         "a draft is never typed over"
@@ -564,20 +591,230 @@ async fn a_lapse_and_a_report_share_one_restart() {
     assert_eq!(controls(&fleet_b).await.len(), 1);
 }
 
-/// F261: the same brakes as a report. A busy seat or a draft in the composer
-/// is never restarted on a lapse; the parent is told how.
+/// The coder's latest `seat.auth_recovery` payload.
+async fn recorded(fleet: &Fleet) -> serde_json::Value {
+    let event = fleet
+        .services
+        .spine
+        .latest_matching(&SeatId::from(SEAT), &[super::AUTH_RECOVERY_KIND])
+        .await
+        .unwrap()
+        .expect("a recorded decision");
+    serde_json::from_str(&event.payload).unwrap()
+}
+
+/// F279: a lapse is the death of the extension that publishes the seat's
+/// turn state, so that state is frozen and never read: the pane decides,
+/// whatever the row says. The prompt with an empty composer restarts. A
+/// running turn queues the restart behind it and tells the parent. A draft,
+/// or a pane with no live control client to read it, is a notice and never a
+/// restart. `held_by` names what held it, on the outcome and the record.
 #[tokio::test]
-async fn a_lapsed_seat_that_is_busy_or_holds_a_draft_is_not_restarted() {
-    for (state, draft) in [
-        (SystemState::Working, None),
-        (SystemState::Idle, Some("half a thought")),
+async fn a_lapsed_seats_pane_decides_never_its_published_state() {
+    for state in [SystemState::Working, SystemState::Idle] {
+        for (screen, draft, action, held, queued, notices) in [
+            ("idle", None, Action::Restart, None, 1, 0),
+            ("working", None, Action::Restart, Some(Brake::Busy), 1, 1),
+            (
+                "idle",
+                Some("half a thought"),
+                Action::Notify,
+                Some(Brake::ComposerDraft),
+                0,
+                1,
+            ),
+            (
+                "unreadable",
+                None,
+                Action::Notify,
+                Some(Brake::ComposerUnreadable),
+                0,
+                1,
+            ),
+        ] {
+            let case = format!("{state:?} {screen} {draft:?}");
+            let mut fleet = fleet(state, None).await;
+            running(&mut fleet);
+            if screen == "unreadable" {
+                fleet.tmux.lose_control_client();
+            } else {
+                show(&fleet.tmux, PANE, screen, draft);
+            }
+            let outcome = lapse(&fleet, 10 * MINUTE).await.expect("decided");
+            assert_eq!(outcome.action, action, "{case}");
+            assert_eq!(outcome.held_by, held, "{case}");
+            assert_eq!(controls(&fleet).await.len(), queued, "{case}");
+            let body = told(&fleet, PARENT).await;
+            assert_eq!(body.len(), notices, "{case}");
+            if held == Some(Brake::Busy) {
+                assert!(body[0].contains("pij queued /restart"), "{case}: {body:?}");
+            }
+            assert_eq!(
+                recorded(&fleet).await["held_by"],
+                serde_json::to_value(held).unwrap(),
+                "{case}"
+            );
+        }
+    }
+}
+
+/// The pointer drain worker over the fleet's own services.
+fn drain(fleet: &Fleet) -> crate::pointer::DrainWorker {
+    let services = &fleet.services;
+    crate::pointer::DrainWorker::new(
+        Arc::clone(&services.registry),
+        Arc::clone(&services.queue),
+        Arc::clone(&services.transport),
+        Arc::clone(&services.tmux),
+        Arc::clone(&services.interaction),
+        Arc::clone(&services.event_bus),
+        crate::pointer::PointerPolicy {
+            cadence: Duration::from_secs(1),
+            announcement_limit: 1,
+        },
+    )
+    .unwrap()
+}
+
+/// How many `/restart`s were typed into the coder's pane.
+fn restarts_typed(fleet: &Fleet) -> usize {
+    let typed = format!("submit:{PANE}:/restart");
+    fleet
+        .tmux
+        .calls()
+        .iter()
+        .filter(|call| **call == typed)
+        .count()
+}
+
+/// Drain until `done` holds, for at most ten seconds: held controls back off
+/// one, then two, then four seconds.
+async fn drain_until(fleet: &Fleet, worker: &crate::pointer::DrainWorker, done: impl Fn() -> bool) {
+    for _ in 0..50 {
+        let _ = worker.drain_once().await;
+        if done() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    panic!("not done after ten seconds: {:?}", fleet.tmux.calls());
+}
+
+/// The parent's own restart control, as `pij send <seat> --command restart`.
+async fn parent_restart(fleet: &Fleet, id: &str) {
+    fleet
+        .services
+        .delivery
+        .accept_control(pij_core::model::Msg {
+            command: Some("restart".into()),
+            from: SeatId::from(PARENT),
+            ..crate::pa_watchdog::bg_msg(&SeatId::from(SEAT), String::new(), id.into())
+        })
+        .await
+        .unwrap();
+}
+
+/// The prime's F279 case. A seat lapses mid-turn: its row stays `working`,
+/// since the extension that would publish its idle is gone. It finishes its
+/// turn and is restarted once idle, with no human. Its parent, told, sends a
+/// restart of its own: one `/restart` is typed, not two. Before the
+/// restarted extension renews, the parent's control waits; after, it is
+/// dropped, never typed.
+#[tokio::test]
+async fn a_seat_that_lapses_mid_turn_is_restarted_once_when_its_turn_ends() {
+    let mut fleet = fleet(SystemState::Working, None).await;
+    running(&mut fleet);
+    show(&fleet.tmux, PANE, "working", None);
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    let outcome = lapse(&fleet, 10 * MINUTE).await.expect("decided");
+    assert_eq!(
+        (outcome.action, outcome.held_by),
+        (Action::Restart, Some(Brake::Busy))
+    );
+    parent_restart(&fleet, "parent-restart").await;
+    assert_eq!(controls(&fleet).await.len(), 2);
+    let worker = drain(&fleet);
+
+    assert!(worker.drain_once().await.unwrap() > 0);
+    assert_eq!(restarts_typed(&fleet), 0, "held while the turn runs");
+
+    show(&fleet.tmux, PANE, "idle", None);
+    assert_eq!(coder(&fleet).await.state, SystemState::Working, "frozen");
+    drain_until(&fleet, &worker, || restarts_typed(&fleet) == 1).await;
+
+    // The restarted Copilot shows its prompt before its extension renews.
+    // The other control, claimed then, waits (`restart-pending`), untyped.
+    show(&fleet.tmux, PANE, "idle", None);
+    let mut held = false;
+    for _ in 0..50 {
+        let _ = worker.drain_once().await;
+        held = fleet
+            .services
+            .queue
+            .delivery_deferrals(&SeatId::from(SEAT))
+            .await
+            .unwrap()
+            .iter()
+            .any(|deferral| deferral.reason == "restart-pending");
+        if held || restarts_typed(&fleet) > 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert_eq!(restarts_typed(&fleet), 1, "one restart per lapse");
+    assert!(held, "the other control was claimed and held");
+
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_RENEWED, Some(SEAT)).await;
+    let live = |fleet: &Fleet| {
+        let queue = Arc::clone(&fleet.services.queue);
+        async move {
+            queue
+                .live_payloads(&[control_kind(&SeatId::from(SEAT))])
+                .await
+                .unwrap()
+                .len()
+        }
+    };
+    for _ in 0..50 {
+        let _ = worker.drain_once().await;
+        if live(&fleet).await == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert_eq!(live(&fleet).await, 0, "both controls closed");
+    assert_eq!(restarts_typed(&fleet), 1, "the parent's was never typed");
+}
+
+/// F279 at the drain: a restart control to a lapsed seat waits for its pane.
+/// A running turn, a draft and a pane with no live control client to read
+/// hold it whatever the row says, and the prompt with an empty composer types
+/// it. A seat that has not lapsed is read from its row, as before: `working`
+/// holds even when the pane shows the prompt.
+#[tokio::test]
+async fn a_restart_control_waits_for_a_lapsed_seats_pane() {
+    for (lapsed, state, screen, draft, typed) in [
+        (true, SystemState::Idle, "working", None, 0),
+        (true, SystemState::Idle, "idle", Some("half a thought"), 0),
+        (true, SystemState::Idle, "unreadable", None, 0),
+        (true, SystemState::Working, "idle", None, 1),
+        (false, SystemState::Working, "idle", None, 0),
+        (false, SystemState::Idle, "idle", None, 1),
     ] {
-        let mut fleet = fleet(state, draft).await;
-        running(&mut fleet);
-        let outcome = lapse(&fleet, 10 * MINUTE).await.expect("decided");
-        assert_eq!(outcome.action, Action::Notify, "{state:?} {draft:?}");
-        assert!(controls(&fleet).await.is_empty(), "{state:?} {draft:?}");
-        assert_eq!(told(&fleet, PARENT).await.len(), 1, "{state:?} {draft:?}");
+        let case = format!("lapsed={lapsed} {state:?} {screen} {draft:?}");
+        let fleet = fleet(state, None).await;
+        if screen == "unreadable" {
+            fleet.tmux.lose_control_client();
+        } else {
+            show(&fleet.tmux, PANE, screen, draft);
+        }
+        if lapsed {
+            edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+        }
+        parent_restart(&fleet, "parent-restart").await;
+        drain(&fleet).drain_once().await.unwrap();
+        assert_eq!(restarts_typed(&fleet), typed, "{case}");
+        assert_eq!(controls(&fleet).await.len(), 1 - typed, "{case}");
     }
 }
 

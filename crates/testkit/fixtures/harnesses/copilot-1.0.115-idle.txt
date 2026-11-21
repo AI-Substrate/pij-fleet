@@ -1,0 +1,7 @@
+ ~/.../review-309-d10b5e0 [⎇ detached@d10b5e08]       Session: 1785.59 AIC used
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+ ← open sidebar · Interactive · Allow All · / commands          claude-opus-5.5
+33% review-309-d10b5e0 ⎇ d10b5e08 ⛓ pij-selected-deer • claude-opus-5.5 · medium
+• xhigh • 325k/1.0M • 1785.59 AIU • 17h37m

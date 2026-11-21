@@ -1,0 +1,7 @@
+ ~/pi-hacking/fleet-pm-001 [⎇ detached@a6694f95]     Session: 99276.52 AIC used
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+ ◉ Working · 313 B ctrl+c interrupt                             claude-opus-5.5
+18% fleet-pm-001 ⎇ a6694f95 ⛓ pij-steady-otter • claude-opus-5.5 · high • xhigh
+• 178k/1.0M • 99276.52 AIU • 34245.00 prem • 427h24m

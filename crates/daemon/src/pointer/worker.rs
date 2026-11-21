@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use pij_core::delivery::{
     DeliveryDeferralReason, DeliveryRung, HOLD_LIMIT_EVENT_KIND, MAX_TYPED_FRAME_BYTES,
@@ -9,12 +9,16 @@ use pij_core::error::{PijError, Result};
 use pij_core::framing::frame_message;
 use pij_core::model::{
     DeliveryFailure, DeliveryOrigin, DeliveryOutcome, Event, Harness, Job, JobId, Msg, Outcome,
-    Receipt, SeatDescriptor, SystemState,
+    Receipt, SeatDescriptor, SeatId, SystemState,
 };
 use pij_core::ports::{ParkingEvidence, Queue, Registry, TmuxPort, Transport};
 use pij_harnesses::{InteractionGate, StagedSubmission};
 
-use crate::delivery::{publish_delivery_held, publish_delivery_outcome, publish_socket_released};
+use crate::auth_recovery::{Brake, brake_of, fresh_turn};
+use crate::delivery::{
+    NATIVE_RECEIVER_LAPSED, NATIVE_RECEIVER_RENEWED, OUTCOME_EVENT_KIND, publish_delivery_held,
+    publish_delivery_outcome, publish_socket_released,
+};
 use crate::events::EventBus;
 
 use super::{
@@ -33,6 +37,11 @@ const WORKER_ID: &str = "pointer-drain";
 /// How long a Copilot seat must stay `idle` before a control is typed into it.
 /// Its intra-turn idle blips measured 2–4 ms in the plan 186 canary.
 const COPILOT_IDLE_SETTLE: Duration = Duration::from_millis(250);
+
+/// F279: how long a second restart control for one lapse waits for the
+/// receiver to renew after the first was let through: one native receiver
+/// lease (60 s), well past a restarted extension's first renewal.
+const RESTART_RENEWAL_GRACE: Duration = Duration::from_secs(60);
 
 /// The longest a composer-busy hold waits between attempts (plan 184).
 ///
@@ -143,6 +152,10 @@ pub struct DrainWorker {
     /// (review of #214, F003), and dropped when the job ends. Bounded: the
     /// oldest jobs are forgotten first.
     noted: std::sync::Mutex<std::collections::BTreeMap<u64, String>>,
+    /// F279: per Copilot seat, the restart control last let through to its
+    /// pane while its receiver had lapsed: the lapse's spine seq, the
+    /// control's msg_id, and when. One entry per seat, replaced, never more.
+    restarts: std::sync::Mutex<std::collections::HashMap<SeatId, (u64, String, Instant)>>,
 }
 
 /// How many jobs' noted bodies the worker remembers.
@@ -186,6 +199,7 @@ impl DrainWorker {
             holds: std::sync::Mutex::new(std::collections::HashMap::new()),
             notes: None,
             noted: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            restarts: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
@@ -399,14 +413,28 @@ impl DrainWorker {
         // Copilot also publishes `idle` for a few milliseconds between steps of
         // one turn, so the brake needs a SETTLED idle: the row has no state
         // change time, so it reads twice, COPILOT_IDLE_SETTLE apart (review S3).
-        // Removing either read only types the same control sooner.
-        if msg.command.is_some()
-            && recipient.harness == Harness::Copilot
-            && !self.copilot_idle_settled(&recipient).await?
-        {
-            return self
-                .release_or_backoff(job_id, job, &msg, "recipient-busy")
+        // Removing either read only types the same control sooner. F279: a
+        // seat whose receiver lapsed is read from its pane instead, and two
+        // restart controls for one lapse type one `/restart`.
+        if msg.command.is_some() && recipient.harness == Harness::Copilot {
+            let edge = self
+                .event_bus
+                .latest_matching(
+                    &recipient.id,
+                    &[NATIVE_RECEIVER_LAPSED, NATIVE_RECEIVER_RENEWED],
+                )
                 .await;
+            if let Some(renewed) = self.restart_overtaken(&msg, &edge).await {
+                return self.fail_claim(job_id, renewed).await;
+            }
+            if let Some(reason) = self.copilot_control_held(&recipient, pane, &edge).await? {
+                return self.release_or_backoff(job_id, job, &msg, reason).await;
+            }
+            if self.restart_already_let_through(&msg, &edge) {
+                return self
+                    .release_or_backoff(job_id, job, &msg, "restart-pending")
+                    .await;
+            }
         }
         if msg.command.is_some() {
             return self.submit_command_claim(job_id, job, pane, &msg).await;
@@ -491,6 +519,112 @@ impl DrainWorker {
             .get(&recipient.id)
             .await?
             .is_some_and(|seat| seat.state == SystemState::Idle && seat.tombstoned_at.is_none()))
+    }
+
+    /// F279: what holds a control to a Copilot seat now, or `None` to type it.
+    ///
+    /// A seat whose latest receiver edge is a lapse has lost the extension
+    /// that publishes its turn state, so that state is frozen at the
+    /// extension's last write. pij-helpful-elephant lapsed mid-turn on 22 Nov
+    /// (21:28Z) and read `working` long after its turn ended; its parent's
+    /// `--command restart` was held as recipient-busy seven times, until the
+    /// parent typed `/restart` in its pane by hand. So a lapsed seat's pane is
+    /// read instead: the turn status under its composer, over the live tmux
+    /// control client ([`fresh_turn`], never a launch), twice,
+    /// [`COPILOT_IDLE_SETTLE`] apart. A BRAKE: a running turn, a draft or a
+    /// screen it cannot read holds, and removing it types the same control
+    /// sooner. A seat that has not lapsed is read as before. An edge that
+    /// could not be read is read both ways; each can only hold.
+    async fn copilot_control_held(
+        &self,
+        recipient: &SeatDescriptor,
+        pane: &str,
+        edge: &Result<Option<Event>>,
+    ) -> Result<Option<&'static str>> {
+        let (published, lapsed) = match edge {
+            Ok(Some(edge)) if edge.kind == NATIVE_RECEIVER_LAPSED => (false, true),
+            Ok(_) => (true, false),
+            Err(_) => (true, true),
+        };
+        if published && !self.copilot_idle_settled(recipient).await? {
+            return Ok(Some("recipient-busy"));
+        }
+        if lapsed {
+            for read in 0..2 {
+                if read > 0 {
+                    tokio::time::sleep(COPILOT_IDLE_SETTLE).await;
+                }
+                let held = match brake_of(fresh_turn(self.tmux.as_ref(), pane).await) {
+                    None => continue,
+                    Some(Brake::Busy) => "recipient-busy",
+                    Some(Brake::ComposerDraft) => DeliveryDeferralReason::ComposerBusy.as_str(),
+                    Some(_) => DeliveryDeferralReason::Unrecognized.as_str(),
+                };
+                return Ok(Some(held));
+            }
+        }
+        Ok(None)
+    }
+
+    /// F279: one `/restart` per lapse. The first restart control let through
+    /// to a lapsed seat's pane is noted with that lapse; another restart
+    /// control for the same lapse waits up to [`RESTART_RENEWAL_GRACE`] for
+    /// the receiver to renew, and once it has, [`Self::restart_overtaken`]
+    /// drops it. The first control's own retries pass. A BRAKE: it only
+    /// delays a restart. Past the grace (the first restart did not bring the
+    /// extension back), or after a daemon restart, it types as before.
+    fn restart_already_let_through(&self, msg: &Msg, edge: &Result<Option<Event>>) -> bool {
+        if msg.command.as_deref() != Some("restart") {
+            return false;
+        }
+        let Ok(Some(lapse)) = edge else {
+            return false;
+        };
+        let (true, Some(seq)) = (lapse.kind == NATIVE_RECEIVER_LAPSED, lapse.seq) else {
+            return false;
+        };
+        let Ok(mut restarts) = self.restarts.lock() else {
+            return false;
+        };
+        if let Some((noted, id, at)) = restarts.get(&msg.to)
+            && *noted == seq.0
+            && (id == &msg.msg_id || at.elapsed() < RESTART_RENEWAL_GRACE)
+        {
+            return id != &msg.msg_id;
+        }
+        restarts.insert(msg.to.clone(), (seq.0, msg.msg_id.clone(), Instant::now()));
+        false
+    }
+
+    /// F279: a `restart` control queued before its seat's receiver last
+    /// renewed is not typed, and fails with this reason. A renewal is a live
+    /// extension back on the seat: the restart that brought it back has
+    /// happened (a human's `/restart`, or another control), and a second one
+    /// would only cut into the next turn. A BRAKE: it only removes a restart.
+    /// A control queued after the renewal, any other command, a seat whose
+    /// latest edge is a lapse, or a read that fails types as before.
+    async fn restart_overtaken(&self, msg: &Msg, edge: &Result<Option<Event>>) -> Option<String> {
+        if msg.command.as_deref() != Some("restart") {
+            return None;
+        }
+        let Ok(Some(renewed)) = edge else {
+            return None;
+        };
+        if renewed.kind != NATIVE_RECEIVER_RENEWED {
+            return None;
+        }
+        let queued = self
+            .event_bus
+            .latest_matching_message(&msg.to, OUTCOME_EVENT_KIND, &msg.msg_id)
+            .await
+            .ok()??;
+        let (queued_at, renewed_at) = (queued.seq?.0, renewed.seq?.0);
+        (queued_at < renewed_at).then(|| {
+            format!(
+                "restart not typed: {} renewed its receiver (spine seq {renewed_at}) after this control was queued (seq {queued_at}), so it has restarted already (F279)",
+                msg.to
+            )
+        })
     }
 
     async fn ack_delivered_claim(
