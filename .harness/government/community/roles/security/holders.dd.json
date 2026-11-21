@@ -998,6 +998,16 @@
 					"seat": "pij-overseas-eel",
 					"to": "2026-11-21T01:30:15.835Z",
 					"why": "verdict on #305 (F253)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T01:34:14.664Z",
+					"harness": "copilot",
+					"harness_session": "19683054-8a5d-47fa-a1f8-fdb10ddf79d0",
+					"instance_key": "306",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-dynamic-alligator",
+					"why": "verdict on #306 (F249)"
 				}
 			]
 		}
