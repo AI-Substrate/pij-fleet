@@ -302,6 +302,23 @@ pub const LIVE_OF_KINDS_SQL: &str = "SELECT 1 FROM jobs \
        AND kind IN (SELECT value FROM json_each(?1)) \
      LIMIT 1";
 
+/// The next instant a live row of these kinds becomes claimable on a timer
+/// (F258), in epoch seconds: a pending row's `not_before`, or a running row's
+/// lapse (`claimed_at + ?2`, the ordinary claim lease), whichever comes first
+/// AFTER `?3`, the epoch second the caller's empty claim read the queue. An
+/// instant at or before `?3` was claimable to that claim, so a row it left
+/// behind (held behind its serial key's running claim) waits for that claim's
+/// lapse or ack and never re-polls; one crossed since `?3` is returned, never
+/// dropped (review R310-F001). `?1` the JSON kind list. Uses
+/// `jobs_claimable (state, kind, id)`. Public so the cost test explains THIS
+/// query.
+pub const NEXT_CLAIMABLE_SQL: &str = "SELECT MIN(due) FROM (\
+     SELECT CASE state WHEN 'pending' THEN not_before ELSE claimed_at + ?2 END AS due \
+     FROM jobs \
+     WHERE state IN ('pending', 'running') \
+       AND kind IN (SELECT value FROM json_each(?1))\
+     ) WHERE due > ?3";
+
 /// The absolute deadline `delay` from now, in whole epoch seconds rounded UP:
 /// the queue compares whole seconds, and truncating released a 100 ms retry
 /// at once and a 1 s retry up to a second early (plan 183). Zero stays
@@ -849,6 +866,43 @@ impl Queue for SqliteQueue {
                 .max(0) as u32,
         };
         Ok(Some((JobId(id as u64), job)))
+    }
+
+    async fn next_claimable_in(
+        &self,
+        kinds: &[String],
+        since: SystemTime,
+    ) -> Result<Option<Duration>> {
+        require_current_schema(&self.pool).await?;
+        if kinds.is_empty() {
+            return Ok(None);
+        }
+        let kinds_json = serde_json::to_string(kinds).map_err(|error| PijError::Adapter {
+            adapter: "store/queue".to_string(),
+            message: format!("could not encode the next-claimable filter: {error}"),
+        })?;
+        // Whole seconds, floored as `unixepoch()` floors: the claim that read
+        // the queue at or after `since` saw every row due by this second.
+        let since = since
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .and_then(|since| i64::try_from(since.as_secs()).ok())
+            .unwrap_or(0);
+        let due: Option<i64> = sqlx::query_scalar(NEXT_CLAIMABLE_SQL)
+            .bind(&kinds_json)
+            .bind(self.claim_lease_secs)
+            .bind(since)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        // The queue compares whole epoch seconds: a row due at `due` is
+        // claimable from the start of that second. Read the clock the way
+        // `not_before_after` does; an instant already passed is due now.
+        Ok(due.map(|due| {
+            let at = UNIX_EPOCH + Duration::from_secs(u64::try_from(due).unwrap_or(0));
+            at.duration_since(SystemTime::now())
+                .unwrap_or(Duration::ZERO)
+        }))
     }
 
     async fn claimed_delivery(&self, job: JobId) -> Result<Option<Job>> {
