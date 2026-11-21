@@ -1,0 +1,64 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fd71-94ef-7a00-bb8a-77270b95d62a",
+				"date": "2026-11-21",
+				"head": "7d79009c5a1ad190f9c34ec717c32d37e2653511",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:315",
+				"writer": "pij-encouraging-turtle",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"existing AFTER: post-deploy 60s SQLite/Tokio CPU, ps CPU/RSS, exact per-site spawn deltas and separate machine spawn-rate; use D1 PID16325/build8b437897e3 baseline and preserve load/uptime/cohort differences.",
+				"existing R1 write-cost clarification: live upserts assigning tombstoned_at delete/reinsert seats_live even when unchanged; committed tombstone/revive timings within noise do not establish zero maintenance cost."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "nice -n 19 python3 pr315-r2-query-cost.py",
+					"exit_code": 0,
+					"log": "copilot-session:43dfc7b1-1b7e-463d-af0d-4f4aae11d8bf/files/pr315-r2-query-cost.json"
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test -p pij-daemon --lib reaper:: --then test -p pij-daemon --lib death_sweep:: --then test -p pij-store --test registry_live_index --test registry_pane_index",
+					"exit_code": 0,
+					"log": "copilot-session:43dfc7b1-1b7e-463d-af0d-4f4aae11d8bf/files/pr315-r2-focused-tests.log"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "copilot-session:43dfc7b1-1b7e-463d-af0d-4f4aae11d8bf/files/pr315-r2-local-checks.log"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "/tmp/f258-receipts/live/harness-checks-7d79009c.json"
+				},
+				{
+					"command": "just smoke",
+					"exit_code": 0,
+					"log": "/tmp/f258-receipts/live/smoke-rerun-7d79009c.log"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Performance verdict: PASS WITH NOTES, round 2 of 2\n\nSubject: pr:315\nHead: 7d79009c5a1ad190f9c34ec717c32d37e2653511\nRole: performance/315\nAnswers: 01a1fd71-94ef-7a00-bb8a-77270b95d62a\nLocal receipt prefix: Copilot session\n43dfc7b1-1b7e-463d-af0d-4f4aae11d8bf, files folder.\n\n## R315-P1 / R315-F001 CLOSED\n\nreaper.rs:188-193 and :269-270 now use the same live_only filter for both\nroster reads. Main's after-count explicitly filtered tombstoned rows out;\nthe new list(live()).len() counts the same fresh snapshot's live rows.\nDry-run still has one live list and before == after. Non-dry still refreshes\nafter from the database; it is not a subtraction from before. Candidate\neligibility, refreshes, guarded tombstones, retirement notices and receipts\notherwise have no delta. The merge retains both D-F258-3 and D-F258-4 and\nboth corresponding retro entries.\n\nThe real-store ListSpy regression proves all three calls across a dry run\nand a real sweep are live_only: [true, true, true]. It excludes an already\nretired row, reports dry (1,1) and sweep (1,0) with one reaped. Inspected L4\nreceipt restores the generic final read and fails precisely this assertion:\n[true,true,false]. The existing live-index dispatch test establishes that\na live_only/no-pane list actually takes LIST_LIVE_SQL, not merely that the\nflag was passed. No new mutation run was required in this read-only tree.\n\n## Both reads priced\n\nObserver: one live roster read per daemon per 600 ms (1.667/s). Reaper:\ntwo live roster reads per non-dry sweep, every 5 seconds by default\n(0.4 lists/s), not one read per seat. At T=3,279 and L=212, both roster\nreads now traverse L index entries and materialize 2L=424 descriptors,\ninstead of 2T=6,558. Round 1 materialized L+T=3,491. Per-live-seat refreshes,\neligibility probes and candidate mutation costs remain; this is not a claim\nthat the entire reaper costs only its two roster reads.\n\nIndependent exact-SQL private-copy measurement (Python sqlite3 3.54.1,\n30 warmups/300 paired samples, CPU median including tuple materialization):\nobserver 0.852 -> 0.360 ms; main's two full lists 12.759 ms; round 1's\nlive/full pair 6.789 ms; round 2's live/live pair 0.709 ms. The author's\n12.43/6.57/0.71 ms figures are sums of separately timed query medians,\nnot a complete Rust sweep measurement; the independent pair run reproduces\nthe improvement and final 0.71 ms. Rows/order match. EXPLAIN walks seats_live\nwithout a temporary sort; sqlite_stat1 says \"212 1\".\n\nCommand: nice -n 19 python3 <session>/files/pr315-r2-query-cost.py: PASS.\nRaw result: <session>/files/pr315-r2-query-cost.json. The supplied live-table\ncopy was opened read-only; baseline/indexed variants were private in-memory\nbackups. Nothing wrote to the live store or modified the source copy.\n\nNo new loop, timer, poll rate, process launch or launch site. No per-tick/\nper-seat launch cost is added. Index storage and maintenance are unchanged\nfrom R1: insert on live registration/revival, delete on tombstone, and\ndelete/reinsert on live upserts assigning tombstoned_at even unchanged.\nState/seq-only activity updates do not maintain this index. The prior\nstatement-only +0.34 us/upsert and +0.20 us/tombstone measurements remain\ncontext; the author's committed tombstone/revive pair 0.72 -> 0.70 ms is\nnoise dominated by commit, not evidence that index writes are cheaper.\nThe PR's compact write-cost row still does not enumerate live upserts;\ncarry this existing R1 clarification, not a new final-round block.\n\nThe index is additive, not destructive, and introduces no retention policy.\nExisting process/pane eligibility is unchanged; unknown evidence and pane\npresence remain one-directional BRAKES, not a new ageing policy.\n\n## Proof and existing AFTER debt\n\njust pr-freeze 315: FINAL at this exact head, CI 5/5, CLEAN, migration49\nabove main48; AGENTS.md unchanged from the reviewed R1 head.\nCI run44889436854 Node22/24, rust-lint and rust-test SUCCESS; delivers\nrun44889451353 SUCCESS. Inspected author's full harness checks:\n14/15 stages pass, including rust and route inventory; smoke failed with\nits diagnostic cut off, then just smoke alone passed at the same head.\nThe original combined gate is not represented as fully green.\nReceipts: /tmp/f258-receipts/live/harness-checks-7d79009c.json and\nsmoke-rerun-7d79009c.log. Local boot reports missing node_modules under C25;\nno installation or symlink was attempted.\n\nLocal harness checks --quick --json exited 1: the eight Node/tooling\nstages failed in this node_modules-less worktree; pij-skill and native\nCopilot stages passed, and heavy stages were skipped. Receipt:\n<session>/files/pr315-r2-local-checks.log. No TS/full-gate success is\ninferred locally. Independent final-head focused tests PASSED, 23/23:\nreaper17/17, death_sweep1/1, live index2/2, pane index3/3.\nExact command from the R2 worktree:\nPIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build --\ntest -p pij-daemon --lib reaper::\n--then test -p pij-daemon --lib death_sweep::\n--then test -p pij-store --test registry_live_index --test registry_pane_index\nThe shared lock serialized this build at niceness19, four cargo jobs and\nfour test threads. Raw receipt: <session>/files/pr315-r2-focused-tests.log.\n\nPost-deploy AFTER remains owed, not a merge block: use the D1 baseline on\nPID16325/build8b437897e3, 2026-11-21 08:53:07.128900 ->\n08:54:07.138771 UTC, 60.009666 seconds, SQLite4.366784 CPU seconds,\nTokio7.074194 seconds, exact spawns925->972 (+47 existing sites), and\nretained ps/RSS/load/uptime. Raw <session>/files/pr315-thread-before-d1.json.\nRepeat per-thread and aggregate CPU/RSS with PID/start/build, exact\nper-site launch deltas and a separate machine spawn-rate sample after\ndeploy. Preserve host-load, daemon-age and cohort differences; no exclusive\ndeployed CPU saving is established yet. Pre-D1 PID43526 windows are context,\nnot the matched comparator.\n\nNew notes: none. No remaining blocker or third review round requested.\nHold performance/315 until merge.\n\nmagicWand fulfilled: this PR encodes R1's requested whole-caller guard\nwith the real-store ListSpy regression, including the second count read.\ndifficulties retained: C25 leaves local TS proof CI-only; incomplete smoke\nfailure tails remain an existing diagnostic limitation, not evidence of a\nnew normal-use regression.\n"
+		}
+	]
+}
