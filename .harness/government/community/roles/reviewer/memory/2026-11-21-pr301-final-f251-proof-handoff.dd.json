@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before reviewing F251 or resuming daemon-log follow-up after the final #301 verdict.",
+				"tags": [
+					"review",
+					"logging",
+					"f251",
+					"concurrency",
+					"proof"
+				],
+				"title": "PR301 final review and F251 proof handoff"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# PR301 final review and F251 proof handoff\n\n#301 at f392e910f244e9b02f1dc69e4508901d0923551b is PASS-WITH-NOTES under the prime's C34 ship ruling, superseding the round-one BLOCK at 8bf2c2d. F251 is explicitly accepted follow-up work, not already fixed. Falcon implements it and this reviewer stays open after merge to verify it.\n\nVerified repair evidence: 18 logger unit tests, four daemon-log e2es (including eight synchronized-start attempts), six spawn-site tests, native macOS clippy, and an independent 4/4 concurrency replay all pass. In the independent replay, health was 401 and the serving banner reached the named log, not the unlinked original inode.\n\nF251 reproduction controls are ready:\n\n- R301-R2-001 P2: fresh staging is opened with write(true), not append. Two Shared sinks adopt the same initial log; first rotates; second joins and appends JOINER-SENTINEL; first writes 512 bytes. Sentinel is overwritten. A scratch variant changing only staging to append passes.\n- R301-R2-002 P2: adoption treats any unlinked regular fd as rotated-away provenance. An unrelated unlinked stdout/stderr file triggers joining and trimming of an oversized managed log in a real private daemon. Named unrelated files remain refused.\n- Prime's complete F251 scope: O_APPEND staging; dev/ino-proven adopt; O_NONBLOCK and fstat on join; O_NOFOLLOW on keep_tail.\n\nRequested lock probes: busy lock spared rotation for 2.68 s in the complete-module control and 2.91 s until native readiness; release allowed rotation. A killed private flock holder released the lock and both stale staging files were replaced successfully. Externally deleting/recreating the lock pathname allows two exclusive locks on different inodes: the implementation assumes its documented permanent lock path, and never removes it itself.\n\nActual LaunchAgent handoff passed: launchd opened the old file before a private bounce-style daemon rotated; after exec was released it joined the current log, left the retained tail unchanged and did not disrupt the serving daemon's 401 health response.\n\nThree guard mutants were independently caught: removed flock; removed output key component; folded digits. The scratch harness contains the complete unchanged production daemon_log module including timestamp encoding, not a stubbed model.\n\nmagicWand: canonicalize the F251 sentinel/adoption controls, plus health AND asynchronous sink-marker readiness. A fixed startup sleep was too weak; HTTP readiness may arrive before the reader thread has written the banner. The reusable probe now waits separately for both.\n\ndifficulties: shared-build prints an owner once, so that name may be stale while later builds hold the lock. Never infer a stalled seat or remove the lock from that old line. C25 leaves local quick gates dependency/ambient-tool limited; keep those receipts separate from exact-head CI. All private daemons/jobs were cleaned up and no product file or production state was changed.\n"
+		}
+	]
+}
