@@ -849,6 +849,16 @@
 					"seat": "pij-helpful-elephant",
 					"to": "2026-11-21T22:15:30.023Z",
 					"why": "#333 F278 R1 verdict"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T23:34:21.125Z",
+					"harness": "copilot",
+					"harness_session": "dea7ab1d-62ef-46e8-b479-333d15257194",
+					"instance_key": "334",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-responsible-locust",
+					"why": "#334 F279 R1 verdict (fresh seat; C35-approved)"
 				}
 			]
 		}
