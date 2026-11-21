@@ -2664,7 +2664,10 @@
 					"harness_session": "406915be-ccf2-4dd0-860a-a0dc41dc3da9",
 					"instance_key": "311",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-vital-gecko",
+					"to": "2026-11-21T10:10:03.219Z",
 					"why": "verdict on #311 (F261)"
 				},
 				{
