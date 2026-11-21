@@ -850,11 +850,23 @@ sender is a live seat. A dead sender, or `pij-bg`, is told nothing. The
 
 - a tombstone seven days old or younger: a revive in that window keeps the
   jobs, and its drain delivers them (F193; holdings stay open, F227);
-- a revive in progress, from the request's first wait to its answer
-  (`SpawnWaits::reviving`, in memory: a restart ends every request);
+- a revive in progress (`SpawnWaits::reviving`, in memory): from the request's
+  first wait (for its dead pane to close, or for the spawn lock) until its
+  launch has written the seat's row or failed. Once the lock is held, the
+  intent moves into the spawn hold, which the launch task owns (B332-01), so a
+  cancelled request never ends it early. A request cancelled before it holds
+  the lock launched nothing, so it ends there;
 - any read that fails: the roster read skips retirement for that sweep, and
   the store reads each tombstone again in the retiring transaction, so a
   revive that lifted it after the roster read keeps every job.
+
+Two orderings are not covered. A revive that **arrives** after a sweep read the
+revive set, but before its retiring commit, can find the work already retired:
+that retirement was decided while no revive was in progress. And a daemon that
+**exits** between a revive's pane launch and its row write loses the in-memory
+intent. A stop waits for that row (R309-01), so this takes a hard kill or a
+stop that outlasts its bound. The next daemon then sees a seat that is still
+tombstoned and has no revive in progress.
 
 A job whose payload is not a message is failed too, with no park facts: it
 names no sender to tell.
