@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fb96-94e1-7fa1-86fc-efd656fd13f8",
+				"date": "2026-11-21",
+				"head": "6fe4ee2d78df1141d8a8b076692fc965396f6d5e",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:302",
+				"writer": "pij-uncertain-antelope",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"S302-N1 (low, same-UID): keep_tail source open should be O_NONBLOCK + fstat is_file + dev/ino == mine (or reuse the proven fd)",
+				"S302-N2 (info): add a regression for a symlink/FIFO/dir at daemon.log.trimmed"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "python3 os.open(O_RDONLY|O_NOFOLLOW|O_NONBLOCK) on symlink, FIFO, dir",
+					"exit_code": 0,
+					"log": "link ELOOP; fifo opens, reads empty; dir read EISDIR: all fail safe to not-recorded"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict: #302 (F251) at 6fe4ee2d78df1141d8a8b076692fc965396f6d5e, PASS WITH NOTES\n\nScope: the full delta from ed1e8911 (#301). I read Rotation::{adopt,sync,keep_tail,record_trimmed}, read_no_follow, was_trimmed, open_regular_append and staging in full (daemon_log.rs:408-642), and the new tests. Static review plus primitive probes. No cargo build, no daemon started, ~/.pij-rs untouched. My F251 items from #301 are both closed.\n\n## daemon.log.trimmed and its temp file\n- **Read** (`read_no_follow`, :588-597): O_RDONLY, O_NOFOLLOW and O_NONBLOCK, capped at 64 KiB. Probe with the same flags on macOS:\n  - a symlink gives **ELOOP**;\n  - a FIFO opens and reads empty, without waiting;\n  - a directory opens, then the read fails with **EISDIR**.\n\n  Each of these makes `was_trimmed` answer false, or makes `record_trimmed` start over from an empty list. So a link at the record never reads its target, and a bad record can only cause *less* adoption.\n- **Write** (`record_trimmed`, :563-576): the temp `daemon.log.trimmed.new` goes through `staging()`. That removes any leftover, then opens with `create_new` (O_EXCL) and O_APPEND, at **0600**. A rename then replaces the record's name, so a planted link at the record is replaced, never followed. It runs only under the flock. The record holds only `dev ino` numbers: no paths, no secrets.\n\n## Can a same-user plant in the record steer adoption?\nPartly, and the effect stays contained. A planted `dev ino` matching a daemon's unlinked foreign stdout makes that daemon adopt `<state>/daemon.log` and join it at start; this is moth's inode-reuse question in a deliberate form. The record is a **brake** on adoption: remove it and the daemon adopts more, and planting can only switch the brake off for one file. Every adopted action still touches only the fixed names `<state>/daemon.log*`, so nothing outside the state dir is written. It needs state-dir write access, which is the same UID and so trusted under C33. Acceptable.\n\n## New open flags\n- **The join** (`open_regular_append`, :608-622): O_APPEND, O_NOFOLLOW and O_NONBLOCK, then fstat, refusing anything but a regular file with InvalidInput.\n  - It **fails safe**: `sync` propagates the error, and `Shared::sync` writes \"rotation failed, kept writing\" to the inherited fd. Rotation stays managed and writing continues; nothing is joined.\n  - The test `a_fifo_at_the_path_is_never_joined_and_never_waits` (:1412-1433) covers both cases, with no reader (it returns at once) and with a reader (InvalidInput).\n  - O_NONBLOCK on a regular-file fd has no effect.\n- **The trim** (`keep_tail`, :541-546): the source is opened with O_NOFOLLOW, and `the_trim_never_follows_a_symlink` asserts nothing is copied.\n- **Staging**: O_APPEND plus O_EXCL at 0600. This closes S301-N1 and keeps it closed.\n\n## Notes (low, same-UID only under C33; none blocking)\n- **S302-N1: keep_tail's source open is the one reopen left without the join's treatment.** It has no O_NONBLOCK and no fstat or dev/ino check against `mine` (:541-546). `sync` proves the path is this daemon's file under the lock, and `keep_tail` then reopens the path *by name*.\n  - A FIFO swapped in between makes the blocking O_RDONLY open wait for a writer. That stalls the log thread while it holds the flock, the same class as S301-R2-N1.\n  - A regular file swapped in is trimmed in its place, and its dev/ino is recorded. The effects stay inside the state dir.\n  - Fix: open the source with O_NONBLOCK and require `is_file()` plus the dev/ino of `mine`, or pass the already-proven fd down.\n- **S302-N2 (informational): no regression test for a planted record.** None covers a symlink, FIFO or directory at `daemon.log.trimmed`. The probe above shows all three fail safe today; a test would hold that.\n\n## Other checks\n- No new launches.\n- No home paths in the delta (a scan for /Users/ and /home/ came back empty).\n- No new logged data beyond `dev ino` numbers, which go to the record, not the log.\n\n## Limits\n- Static review plus flag probes; no cargo build or test run. I rely on exact-head CI at 5/5.\n- No second-UID test.\n- Inode-reuse odds are moth's lane.\n"
+		}
+	]
+}
