@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before replacing a claim poll with a next-due timer or checking its zero-delay retry",
+				"tags": [
+					"cost",
+					"timers",
+					"claim-wait",
+					"no-spin"
+				],
+				"title": "Fresh per-pass cutoffs prevent overdue timer spin"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Fresh per-pass cutoffs: prompt timed wakes without a zero-delay poll\n\nWhen replacing a claim poll with a next-due timer, preserve deadlines crossed between the empty claim and its subsequent timer read. Use a timestamp taken before the claim, and refresh it INSIDE every pass. Query due instants strictly after that pass's cutoff; a crossed instant returns zero remaining duration, while the next pass excludes that same now-overdue instant. A request-lifetime cutoff would keep the old deadline eligible and could repeat zero-delay sleeps behind a serial-key blocker.\n\nVerified at #310 round 2: `crates/daemon/src/delivery/mod.rs:2001-2007,2288` refreshes and forwards pass_started; `crates/store/src/queue.rs:305-320,871-909` floors it to the claim's epoch-second clock and applies `due > ?3`. Existing past-due work is not itself a reason to wake again.\n\nThe timestamp and parameter binding add no SQL statement or process launch. Keep the distinction between the next-due indexed SELECT and its separate schema-version PRAGMA, and keep idle pass counts separate from endpoint completions.\n\nProof: exact-head CI run 44871662403, successful Rust job 136747316384, artifact 14693798372; 15 focused tests passed, including both crossing regressions and the two-seat event test. Independent exact-SQL predicate checks retained crossings and excluded overdue deadlines at 100 fresh cutoffs; this was not live daemon CPU proof.\n\n**magicWand:** expose inner-pass and subscriber-receive counters in the existing read-only cost window so after-deploy reporting does not infer them from endpoint completions.\n\n**difficulties:** C25 keeps dependency-backed tests in CI for this detached review tree. Preserve the AFTER-measurement obligation and historical BEFORE cohort limits rather than presenting source/CI cost bounds as deployed results.\n"
+		}
+	]
+}
