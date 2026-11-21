@@ -2748,6 +2748,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-alert-tarantula",
 					"why": "#318 F266 round 1"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T11:22:01.932Z",
+					"harness": "copilot",
+					"harness_session": "f1dae566-30c8-4ef6-9854-9eba059f2d1c",
+					"instance_key": "319",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-complex-alpaca",
+					"why": "#319 F263 round 1 (reuse idle seat)"
 				}
 			]
 		}
