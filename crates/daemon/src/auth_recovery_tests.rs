@@ -844,6 +844,37 @@ async fn a_lapse_renewed_before_it_is_decided_is_spared() {
     assert!(queued.is_empty(), "{queued:?}");
 }
 
+/// F268 (B320-01): a receiver that renewed its lease with this daemon after
+/// its lapse was told is back, though no `renewed` is on the spine (its
+/// append failed and waits for the next heartbeat): never restarted for that
+/// lapse, by a reconcile or the follower. A lapse with no renewal since this
+/// daemon started is still decided (see the attach test above).
+#[tokio::test]
+async fn a_receiver_renewed_since_its_lapse_is_never_restarted() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    native(&fleet, false).await;
+    let identity = crate::delivery::NativeInboxIdentity {
+        native_session: Some("native-212".into()),
+        pid: Some(FIRST.pid),
+        proc_start: Some(FIRST.proc_start),
+    };
+    fleet
+        .services
+        .delivery
+        .heartbeat_native_receiver(&SeatId::from(SEAT), &identity, 1, 1, None)
+        .await
+        .expect("the receiver renews");
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    super::reconcile(&fleet.services).await;
+    assert!(lapse(&fleet, super::now_ms()).await.is_none(), "spared");
+    let follower = tokio::spawn(super::follow_lapses(fleet.services.clone()));
+    let queued = controls_soon(&fleet).await;
+    follower.abort();
+    assert!(queued.is_empty(), "{queued:?}");
+    assert!(told(&fleet, PARENT).await.is_empty());
+}
+
 /// A kernel whose process table cannot be read.
 struct Unreadable;
 

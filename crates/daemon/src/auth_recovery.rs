@@ -712,6 +712,20 @@ pub(crate) async fn on_lapse(
     if row.harness != Harness::Copilot || row.tombstoned_at.is_some() {
         return Ok(None);
     }
+    // F268 (B320-01): a receiver that renewed its lease with this daemon is
+    // back, though its `renewed` may not be on the spine yet (a failed append
+    // is told again at its next heartbeat): never restarted for the lapse it
+    // ended. A BRAKE, it only spares; a failed read spares too. Nothing is
+    // recorded, so the lapse stays outstanding until that `renewed` lands,
+    // or is decided by a reconcile that finds the lease lapsed again.
+    match services.delivery.native_receiver_renewed(seat).await {
+        Ok(false) => {}
+        Ok(true) => return Ok(None),
+        Err(error) => {
+            eprintln!("auth recovery: the receiver lease of {seat} not read: {error}");
+            return Ok(None);
+        }
+    }
     let reporter = Incarnation {
         pid: proc.pid,
         proc_start: proc.proc_start,

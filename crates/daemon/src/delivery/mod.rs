@@ -260,6 +260,11 @@ pub struct DeliveryService {
     /// however often reconciliation runs. Bounded by the live native Copilot
     /// seats: pruned with the leases on every reconciliation.
     native_lapsed: tokio::sync::Mutex<std::collections::HashSet<SeatId>>,
+    /// F268 (B320-02): the seats whose `native.receiver.renewed` the spine
+    /// did not record, told again at their next heartbeat. Kept apart from
+    /// [`Self::native_lapsed`], so a real expiry meanwhile is still told as
+    /// a new lapse. Pruned with it.
+    native_renewal_owed: tokio::sync::Mutex<std::collections::HashSet<SeatId>>,
     /// R277-2: [`Self::native_lapsed`] is restored from the spine once per
     /// daemon, before the first heartbeat or reconciliation reads it.
     native_edges_restored: tokio::sync::OnceCell<()>,
@@ -381,6 +386,7 @@ impl DeliveryService {
             native_lock: Arc::new(tokio::sync::Mutex::new(())),
             native_receivers: tokio::sync::Mutex::new(HashMap::new()),
             native_lapsed: tokio::sync::Mutex::new(std::collections::HashSet::new()),
+            native_renewal_owed: tokio::sync::Mutex::new(std::collections::HashSet::new()),
             native_edges_restored: tokio::sync::OnceCell::new(),
             native_idle_answer_ms: AtomicU64::new(NATIVE_IDLE_ANSWER.as_millis() as u64),
             native_started_at: tokio::time::Instant::now(),
@@ -490,24 +496,28 @@ impl DeliveryService {
         // D1: the heartbeat that ends a told lapse says so, once. F260: it
         // first returns the bodies held for this seat to the queue; if that
         // fails, the lapse stays told and the next heartbeat tries again.
-        // F268: so does a `renewed` the spine did not record: a stale
-        // `lapsed` left latest would read as a lost extension and could
-        // restart a healthy seat (F261).
         if renew && self.native_lapsed.lock().await.contains(seat) {
             match self.recover_held(seat).await {
                 Ok(()) => {
                     self.native_lapsed.lock().await.remove(seat);
-                    let at = (self.clock)().ok();
-                    if !self
-                        .tell_receiver_edge(NATIVE_RECEIVER_RENEWED, seat, at)
-                        .await
-                    {
-                        self.native_lapsed.lock().await.insert(seat.clone());
-                    }
+                    self.native_renewal_owed.lock().await.insert(seat.clone());
                 }
                 Err(error) => {
                     eprintln!("pij-rs could not return held messages to {seat}: {error}");
                 }
+            }
+        }
+        // F268: a `renewed` the spine did not record is told again by the
+        // next heartbeat: a stale `lapsed` left latest would read as a lost
+        // extension (F261). Owed apart from the lapse (B320-02), so an expiry
+        // before that heartbeat is told as a lapse of its own.
+        if renew && self.native_renewal_owed.lock().await.contains(seat) {
+            let at = (self.clock)().ok();
+            if self
+                .tell_receiver_edge(NATIVE_RECEIVER_RENEWED, seat, at)
+                .await
+            {
+                self.native_renewal_owed.lock().await.remove(seat);
             }
         }
         Ok(NativeReceiverHeartbeat {
@@ -765,6 +775,27 @@ impl DeliveryService {
         Ok((!self.native_receiver_live(&recipient).await).then_some(NATIVE_RECEIVER_UNAVAILABLE))
     }
 
+    /// F268 (B320-01): whether `seat`'s receiver renewed its lease with this
+    /// daemon, as the incarnation the registry records, within the lease:
+    /// the extension is back, whatever the spine says. The boot grace is not
+    /// a renewal: a seat not heard from since this daemon started is not live
+    /// here, so a lapse an earlier daemon told is still decided at boot.
+    pub(crate) async fn native_receiver_renewed(&self, seat: &SeatId) -> Result<bool> {
+        let _guard = self.native_lock.lock().await;
+        let Some(recipient) = self.registry.get(seat).await? else {
+            return Ok(false);
+        };
+        let lease = Duration::from_secs(self.extension_claim_lease_secs);
+        Ok(self
+            .native_receivers
+            .lock()
+            .await
+            .get(seat)
+            .is_some_and(|receiver| {
+                receiver.identity.matches(&recipient) && receiver.renewed_at.elapsed() < lease
+            }))
+    }
+
     /// Wake at the earliest unchecked receiver lease, including the boot grace.
     /// Register notification before reading deadlines so renewal cannot be lost.
     pub(crate) async fn wait_native_receiver_deadline(&self) {
@@ -824,6 +855,10 @@ impl DeliveryService {
             .await
             .retain(|id, _| seats.iter().any(|seat| &seat.id == id && native(seat)));
         self.native_lapsed
+            .lock()
+            .await
+            .retain(|id| seats.iter().any(|seat| &seat.id == id && native(seat)));
+        self.native_renewal_owed
             .lock()
             .await
             .retain(|id| seats.iter().any(|seat| &seat.id == id && native(seat)));
@@ -5983,6 +6018,64 @@ mod tests {
         );
         heartbeat().await.unwrap();
         assert_eq!(edges().await.len(), 2, "told once");
+    }
+
+    /// F268 (B320-02): a renewal the spine did not record, then a real expiry
+    /// before the heartbeat that would tell it again: the expiry is a lapse
+    /// of its own, told, so the lapse follower decides it (F261). The owed
+    /// `renewed` is told by the next heartbeat, once.
+    #[tokio::test(start_paused = true)]
+    async fn a_second_expiry_after_an_unrecorded_renewal_is_told_as_a_lapse() {
+        let fixture = fixture(FakeTransport::unreachable());
+        let seat = native_seat(Some("%137"));
+        register(&fixture, seat.clone()).await;
+        let identity = native_identity();
+        let heartbeat = || {
+            fixture
+                .service
+                .heartbeat_native_receiver(&seat.id, &identity, 1, 1, None)
+        };
+        let edges = || async {
+            fixture
+                .spine
+                .tail(None, Seq(0))
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|event| event.kind)
+                .filter(|kind| kind.starts_with("native.receiver."))
+                .collect::<Vec<_>>()
+        };
+        let lease = Duration::from_secs(fixture.service.extension_claim_lease_secs);
+        heartbeat().await.unwrap();
+        tokio::time::advance(lease).await;
+        fixture.service.reconcile_native_receivers().await.unwrap();
+        fixture.spine.script_append_error("the spine is full");
+        heartbeat().await.unwrap();
+        assert_eq!(
+            edges().await,
+            [super::NATIVE_RECEIVER_LAPSED],
+            "not recorded"
+        );
+        tokio::time::advance(lease).await;
+        fixture.service.reconcile_native_receivers().await.unwrap();
+        assert_eq!(
+            edges().await,
+            [super::NATIVE_RECEIVER_LAPSED, super::NATIVE_RECEIVER_LAPSED],
+            "the second expiry is told"
+        );
+        fixture.service.reconcile_native_receivers().await.unwrap();
+        assert_eq!(edges().await.len(), 2, "once");
+        heartbeat().await.unwrap();
+        heartbeat().await.unwrap();
+        assert_eq!(
+            edges().await,
+            [
+                super::NATIVE_RECEIVER_LAPSED,
+                super::NATIVE_RECEIVER_LAPSED,
+                super::NATIVE_RECEIVER_RENEWED
+            ]
+        );
     }
 
     #[tokio::test(start_paused = true)]
