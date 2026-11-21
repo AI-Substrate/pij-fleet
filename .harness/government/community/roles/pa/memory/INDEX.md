@@ -35,4 +35,5 @@
 - [2026-11-11 pa: start here \(reading order of the pa notes\)](2026-11-11-start-here-reading-order.dd.md): open first after a compact or when taking over pa (pa, onboarding, index)
 - [2026-11-19 OMP extension rollouts need a restart; Copilot seats reload themselves](2026-11-19-omp-extension-rollouts-need-a-restart.dd.md): open before any extension reload rollout (pa, reload, rollout, omp, copilot)
 - [2026-11-20 Role-queue wake with a live last holder: the reviewer released after round 1](2026-11-20-role-queue-wake-with-a-live-last-holder.dd.md): open when a \[pij role queue\] wake names a reviewer/security instance (pa, role-queue, reviewer, holding)
+- [2026-11-21 Copilot receiver lapses 8 h after process start \(Entra login\); the parent restarts it](2026-11-21-copilot-receiver-lapses-8-h-after.dd.md): open when a receiver-lapsed anomaly names a Copilot seat (pa, receiver, lapse, copilot, restart)
 <!-- /pij:generated -->
