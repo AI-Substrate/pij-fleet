@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "When reviewing fixture teardown budgets or a structural replacement for a timed concurrency check",
+				"tags": [
+					"review",
+					"fixture",
+					"tmux",
+					"oracle",
+					"f263"
+				],
+				"title": "Deflakes must preserve shutdown ordering"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR319 R1 at f382cc0: the scaled PID-gone wait passed deterministic live/gone controls and five real fixture tests. A no-wait mutant failed both deterministic controls. The daemon_stop change weakened its oracle: an isolated mutation awaited HTTP serving/drain completion, delayed 200 ms, then released control, yet the test passed in 6.09 s. is_finished checked only inside while has-session can be skipped when the session disappears; a timeout after that loop cannot bound the loop itself. Require a bounded full observation and a success-path ordering proof. After restoring production bytes, all eight controls passed again. Zombie/reused PID checks conservatively keep files; socket absence or successful kill-server is not death proof. Diagnostics print the configured wait, not actual elapsed. Difficulty: long serialized build waits. MagicWand: retain the wrong-order mutation as an explicit negative control whenever deflaking this test."
+		}
+	]
+}
