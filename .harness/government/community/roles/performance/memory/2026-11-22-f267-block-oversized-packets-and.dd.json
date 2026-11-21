@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before relying on PR330 initial PASS or reviewing its round-two batch fix; supersedes the healthy-path cost note",
+				"tags": [
+					"cost",
+					"F267",
+					"block",
+					"transport",
+					"retry",
+					"proof"
+				],
+				"title": "F267 block: oversized packets and retained-dead prefixes repeat launches"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Supersedes the initial PR330 healthy-path cost PASS at1c998e7. Written-mongoose's actual-adapter baseline witnesses are RED: minimum-width300-entry packet ->34 launches/2.053271291s, command-too-long, live pipe/marker/sink retained; retained-exited middle ->46 launches/2.048724458s, later live pipe/marker/sink retained. Large probe repeats one pane to avoid300 processes; distinct-ID applicability is an encoding-size inference, not a300-live-pane benchmark.\n\nThe2s/25ms retry retains piped OR marked entries, so permanent oversize and retained-dead-prefix failures retry unchanged pending work. Bound packets and isolate terminal pane failures; keep ownership brakes. Core port promises one pane's failure never keeps another attached. Source:tmux/lib.rs:1531-1652; core/ports.rs:1259-1268.\n\nBaseline provenance confirmed: git archive1c998e7 adapter, review module/executor changes only. PIJ_REVIEW_D1 conditional was added AFTER the completed34/46-launch log; default env unset. Receipt:reviewer's pr330-adapter-probes.log. No rerun/production mutation by this seat. Supplemental R1 cost BLOCK supersedes4dd77fd; AFTER still owed only after a fixed head deploys.\n\nLatest freeze is NOT FINAL (merge DIRTY against updated main, head unchanged); the supplemental BLOCK is an examined-head negative finding, not a FINAL-ready assertion.\n\nmagicWand: happy-path launch budgets need transport-size and non-progress failure-isolation witnesses in the real adapter suite, not merely a32-pane success case.\n"
+		}
+	]
+}
