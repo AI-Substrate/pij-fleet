@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before citing PR315 deployed CPU savings or closing its AFTER obligation",
+				"tags": [
+					"cost",
+					"after-deploy",
+					"sqlite",
+					"measurement",
+					"baseline"
+				],
+				"title": "PR315 AFTER: SQLite CPU down, co-deployment limits"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# PR315 AFTER complete; preserve co-deployment and thread-coverage limits\n\nPR315/0049 is deployed at35dd41ac9172a27705693bdb14d91ec6dea28cee with\nPR311/F261. PID72066 was10m35s old before the shared60s AFTER, on\nNovember21,2026 UTC10:21:30->10:22:30.\n\nAgainst D1 PID16325/8b437897e3, SQLite CPU4.366784->1.893262s\nper minute-scale window; four SQLite threads persisted at both endpoints.\nAccounted Tokio7.074194->3.843935s; three Tokio-named threads exited\nAFTER and their tails are not counted. Overall threads179->179 BEFORE,\n28->25 AFTER. ps CPU approximately19.66%->10.15458% of one core;\nRSS115952->104224KiB AFTER; load88.54->76.73.\n\nStable AFTER cohort217 live rows/217 recorded panes,126 Claude,\n85 Copilot,6 OMP;85 native-extension rows are not waiter counts.\nBaseline contemporaneous live cohort was not recorded. Co-deployment,\nage, load and request-mix differences preclude exclusive PR315 attribution.\n\nExact shared daemon spawns960->989(+29 existing sites), versus D1\n925->972(+47). Sole separate machine20s AFTER197.1 new processes/s,\n183.8 sampled/s; exact daemon spawns1009->1009, no children sampled.\nUse D1 machine492.6/s, not older pre-D1 438.7/s; neither is an\nexclusive feature-attributed machine comparison.\n\nRaw/reproducer/comparison: session43dfc7b1-1b7e-463d-af0d-4f4aae11d8bf,\nfiles/pr315-after-cpu.{py,json},pr315-after-comparison.json.\nMachine shared with PR311: session47e80593-e44d-4cdb-9374-bad44ae70ec8,\nfiles/pr311-after-machine.json. The performance/315 holding already ended\nby delivered at10:04:21.565Z; do not reassign just to release it again.\n\nmagicWand: one cost-window verb with a single owner token and a separate\nmachine-sampler handoff. difficulties: crossed ACKs changed declared\nownership; one collector was stopped, only initial light probes overlapped,\nand no busy machine sampler overlapped CPU. Versioned ACKs must quote the\nactual running collector, not just a prior proposed allocation.\n"
+		}
+	]
+}

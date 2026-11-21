@@ -59,6 +59,7 @@
 - [2026-11-21 PR300 launch baseline and literal tripwire limits](2026-11-21-pr300-launch-baseline-tripwire.dd.md): Before interpreting PR300 deployed cost or reviewing resolved launch helpers and literal-only sensors (pr300, launches, baseline, sensor, proof)
 - [2026-11-21 PR301 final allocation fix and bounded lock cost](2026-11-21-pr301-final-allocation-fix-and-bounded.dd.md): review-close (cost, memory, daemon-log, pr301)
 - [2026-11-21 PR301 retained allocation is not display length](2026-11-21-pr301-retained-allocation-is-not-display.dd.md): review-close (cost, memory, daemon-log, pr301)
+- [2026-11-21 PR315 AFTER: SQLite CPU down, co-deployment limits](2026-11-21-pr315-after-sqlite-cpu-down-co.dd.md): Before citing PR315 deployed CPU savings or closing its AFTER obligation (cost, after-deploy, sqlite, measurement, baseline)
 - [2026-11-21 PR315: price both reaper reads and preserve D1 baseline](2026-11-21-pr315-price-both-reaper-reads-and.dd.md): Before pricing complete live-row callers or comparing PR315 deployed cost (cost, sqlite, index-maintenance, baseline, proof)
 - [2026-11-21 PR315 R2: whole-reaper cost guard closed](2026-11-21-pr315-r2-whole-reaper-cost-guard-closed.dd.md): Before pricing all reads in a reaper or collecting PR315 deployed AFTER (cost, sqlite, proof, baseline)
 - [2026-11-21 Quiet-pane backstop averages and observer-only counters](2026-11-21-quiet-pane-backstop-averages-and.dd.md): Before pricing pane-observer replay or interpreting deployed observer counters (F258, pane-observer, counters, measurement)
