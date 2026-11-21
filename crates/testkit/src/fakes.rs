@@ -868,14 +868,6 @@ fn require_sender(sender: &str) -> Result<()> {
     Ok(())
 }
 
-/// F270 (B322-01): the final ledger writer refuses a message with no sender.
-fn require_job_sender(job: &Job) -> Result<()> {
-    if job.kind.starts_with("delivery:") || job.kind.starts_with("delivery-control:") {
-        require_sender(&job_sender(job))?;
-    }
-    Ok(())
-}
-
 #[async_trait]
 impl Queue for FakeQueue {
     async fn enqueue(&self, job: Job) -> Result<JobId> {
@@ -1561,13 +1553,21 @@ impl Queue for FakeQueue {
 
     async fn ack_delivery(&self, job: JobId, origin: DeliveryOrigin) -> Result<DeliveryAck> {
         let mut state = self.state.lock().expect("fake queue mutex");
+        let Some((claimed, _worker)) = state.claimed.get(&job.0) else {
+            return Err(PijError::Adapter {
+                adapter: "testkit/fake-queue".to_string(),
+                message: format!(
+                    "job {} is not running — it was already acked, or never claimed",
+                    job.0
+                ),
+            });
+        };
+        // As the real queue: the kind is validated before the row is touched,
+        // so a refused misfiled claim stays running, unchanged (R327-001).
+        require_delivery_job(claimed)?;
         // F275: a delivery that names no sender can never be recorded (F270);
         // its refused ack fails it, as the real queue does in one transaction.
-        if let Some(Err(refused)) = state
-            .claimed
-            .get(&job.0)
-            .map(|(claimed, _)| require_job_sender(claimed))
-        {
+        if let Err(refused) = require_sender(&job_sender(claimed)) {
             let (failed, _) = state.claimed.remove(&job.0).expect("claimed above");
             state.completed.insert(job.0, (failed, "failed"));
             state.acked.push((
@@ -1578,16 +1578,7 @@ impl Queue for FakeQueue {
             ));
             return Err(refused);
         }
-        let Some((claimed, _worker)) = state.claimed.remove(&job.0) else {
-            return Err(PijError::Adapter {
-                adapter: "testkit/fake-queue".to_string(),
-                message: format!(
-                    "job {} is not running — it was already acked, or never claimed",
-                    job.0
-                ),
-            });
-        };
-        require_delivery_job(&claimed)?;
+        let (claimed, _worker) = state.claimed.remove(&job.0).expect("claimed above");
         if !state.delivered.iter().any(|row| row.of(&claimed)) {
             state.delivered.push(LedgerRow {
                 recipient: claimed.serial_key.clone(),
