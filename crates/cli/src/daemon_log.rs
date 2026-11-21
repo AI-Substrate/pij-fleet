@@ -1348,15 +1348,15 @@ mod tests {
     #[test]
     fn a_rotator_and_a_joined_daemon_never_overwrite_each_other() {
         let root = pij_testkit::fresh_dir("pij-daemon-log-interleave");
+        // One line over the cap rotates once; the lines after it stay far
+        // below the cap, so nothing rotates them away before they are read.
         let mut rotator = managed(&root, b"", 400, 3);
-        for n in 0..8 {
-            rotator
-                .write_line(
-                    0,
-                    format!("rotator before {n} {}\n", "x".repeat(32)).as_bytes(),
-                )
-                .unwrap();
-        }
+        rotator
+            .write_line(
+                0,
+                format!("rotator before {}\n", "x".repeat(400)).as_bytes(),
+            )
+            .unwrap();
         assert!(root.join("daemon.log.1").exists(), "the rotator rotated");
         let path = root.join("daemon.log");
         let mut joined = Shared {
@@ -1383,6 +1383,7 @@ mod tests {
         ];
         assert!(order.iter().all(Option::is_some), "{lines:?}");
         assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{lines:?}");
+        assert!(!root.join("daemon.log.2").exists(), "rotated once");
         fs::remove_dir_all(root).unwrap();
     }
 
