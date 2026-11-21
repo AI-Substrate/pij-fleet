@@ -1617,6 +1617,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-cultural-falcon",
 					"why": "F255 spawn reply survives a bounce (no duplicate seats)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T03:04:49.881Z",
+					"harness": "omp",
+					"harness_session": "01a1fc0f-987f-71c8-9cbf-48a141c983dc",
+					"instance_key": "f258",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-sympathetic-marten",
+					"why": "F258 daemon idle cost: inbox per-completion, whoami rate, cards (diagnosis first)"
 				}
 			]
 		}
