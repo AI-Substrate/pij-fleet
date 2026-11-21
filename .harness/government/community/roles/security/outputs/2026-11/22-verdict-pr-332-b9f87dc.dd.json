@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a20037-e3c8-7321-8f5f-5a49ce2fa126",
+				"date": "2026-11-22",
+				"head": "b9f87dcfe21f50f00f19413a710a02d40f36ad9a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:332",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 332 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at b9f87dc"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #332 round 2 at b9f87dcfe21f50f00f19413a710a02d40f36ad9a: pass\n\nDelta 0e6eba27..b9f87dc:\n- e262b5cf, 01e4c4b0, 8e4ff859 and b70441ad (R2 code, tests, docs);\n- the merge of main 71771aee (#333, reviewed in its own PR: a6163243).\n\nCI 5/5 SUCCESS at this head.\n\n## The intent carries no secret\n`ReviveIntent` holds only `Arc<SpawnWaits>` and the `SeatId` being revived, both already known to the daemon. Its Drop only removes that seat from the in-memory reviving set. It carries no body, token, env or path.\n\n## No permission or ownership change comes through the hold\n- revive.rs moves the existing intent into `SpawnHold::carry` once the spawn lock is held. It still targets `request.id`, the seat the revive was already authorised for by the unchanged revive admission.\n- The hold gains one Option field whose only effect, through Drop, is to keep that seat in the reviving set until the hold ends.\n- The reviving set is a BRAKE that only spares a seat's jobs from F276's retirement. A carried or even leaked intent can therefore only spare more, never retire or redirect anything.\n- No route, holder, role or grant changes. Nothing outside revive can create an intent from caller input.\n\nRound 1 still holds: bound SQL only; the notice names only the sender's own message; jobs are terminalized, never redirected. No secrets, lockfile or .npmrc changes. Nothing new for notes_owed.\n"
+		}
+	]
+}
