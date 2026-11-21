@@ -1,0 +1,61 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff6c-52f3-7f00-a713-dbdb64da7501",
+				"date": "2026-11-22",
+				"head": "c8d39052d80cf05447fb0dccc4b501102eaa2ed4",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:326",
+				"writer": "pij-complex-alpaca",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build --timeout 300s -- test -p pij-cli --bin pij-rs daemon_log::tests -- --nocapture",
+					"exit_code": 0,
+					"log": "pr326-r2-controls.log: 25 passed including original production-bound EOF/continuation"
+				},
+				{
+					"command": "just shared-build --timeout 300s -- test -p pij-cli --bin pij-rs -- review_partial a_fragment_held_across_a_read_timeout_is_written_once_whole --nocapture (no-EOF-flush mutant)",
+					"exit_code": 101,
+					"log": "pr326-r2-mutant.log: two intended EOF failures; continuation passed"
+				},
+				{
+					"command": "same focused batch after verified exact restoration",
+					"exit_code": 0,
+					"log": "pr326-r2-restored.log: 3/3 passed"
+				},
+				{
+					"command": "gh run view 44936404178; inspect successful artifact 14719649092",
+					"exit_code": 0,
+					"log": "pr326-r2-junit.zip: 2838 cases, zero errors/failures, 23 logger unit + 5 integration cases"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "pr326-r2-local-checks.json: dependency/tool limited; no local full-green claim"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR326 R2 — PASS\n\nHead: `c8d39052d80cf05447fb0dccc4b501102eaa2ed4`\nRequest: `01a1ff6c-52f3-7f00-a713-dbdb64da7501`\n\n**R326-001 is closed.** `crates/cli/src/daemon_log.rs:195-202` writes a nonempty fragment retained by a timed-out read through `Shared::line` when the subsequent read returns EOF with zero new bytes, then finishes. It does not flush or clear the live fragment on timeout, so later continuation stays joined. `pump` still supplies the production one-second bound; the parameterized helper only makes the existing loop's bound testable.\n\n**Newline/consumers:** adding the newline is correct and is not a new format rule. The unchanged `stamp` at `daemon_log.rs:381-394` already appends LF to every unterminated final fragment; existing byte-exact coverage includes `\\xffpartial`. The new EOF arm uses that same sink, timestamp, repeat handling, flush and rotation path with the same per-stream output index. The line buffer is local to its reader, not shared with another stream.\n\nI checked executable/configuration references including hidden paths: bounce/just/LaunchAgent destinations append the log; daemon-log integration readers consume newline-framed timestamps or `.lines()`; native and step-on smoke consumers capture raw stdout/stderr text or an output file. Other source hits describe log producers, not parsers. No in-repository consumer gives an unterminated logger line a separate meaning. I am not claiming an inventory of untracked external tools. Completing the line also prevents a later daemon's timestamp from being appended into the fragment, exactly as the existing formatter documents.\n\n**Merge:** `c8d39052` has parents `3b30db2f` (R2 repair) and main `85fe143e`. The logger and both shared-build files are byte-identical across the merge. Against the main parent, the PR retains only the five F273 files. `just pr-freeze 326` reports the exact head FINAL/CLEAN, all latest checks passing, no migration.\n\n**Independent controls:** `just shared-build --timeout 300s -- test -p pij-cli --bin pij-rs daemon_log::tests -- --nocapture` passed 25/25: all 23 shipped cases plus the unchanged reviewer production-bound three-second EOF and continuation oracles from R1. EOF yields `ready\\n` and `\\xffsplit\\n` exactly once; continuation yields one intact joined line plus the following line. Receipt: `pr326-r2-controls.log`; oracle: `pr326-r2-oracles.patch`.\n\n**CI/local limits:** successful exact-head run `44936404178`, artifact `14719649092`, contains 2,838 Rust cases with no errors/failures, including all 23 logger unit and five logger integration cases. Local boot is NOT-READY without worktree dependencies; `harness checks --quick --json` exits 1 on missing TS dependencies/tools and incompatible ambient Biome, with skill/native/SDK stages passing and heavy stages skipped. No local full-green claim or dependency symlink.\n\n**Scope/cost:** R1 watchdog behavior and scoped lifecycle witnesses carry over unchanged. R2 adds only the previously dropped final sink write per affected stream, no loop, timer or process launch. The existing idle read cost remains two timeout wakeups per second per daemon, not per seat. The body now names watchdog cleanup polling and qualifies the diagnostic evidence. Time-based watchdog termination remains a POLICY, not a do-not-kill brake.\n\n**Mutation independently killed:** removing only the nonempty EOF write produced the two intended failures: the shipped short-bound regression and the original production-bound EOF oracle both lost `\\xffsplit`. The continuation oracle stayed green (one pass / two failures, exit 101). Receipt: `pr326-r2-mutant.log`, patch `pr326-r2-mutant.patch`. No infrastructure failure is credited as a kill. Source restoration was verified against the saved original-oracle-only diff before the final focused repeat.\n\n**Restored controls:** the shipped short-bound case and both original production-bound oracles passed 3/3 after restoration (exit 0, `pr326-r2-restored.log`). Sequence: all 25 logger controls GREEN -> mutant's 2 intended RED / continuation GREEN -> restored 3/3 GREEN.\n\n**C34 closeout:** no new finding or notes owed. The shared sink-framing regression is the permanent harness improvement; no extra production machinery is needed. No live daemon, seat or database was changed; all additional code is in an owned exact-head archive. Mutant fixtures were isolated under that archive via TMPDIR, so failure cleanup cannot reach another seat's temporary state.\n"
+		}
+	]
+}
