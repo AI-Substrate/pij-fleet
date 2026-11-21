@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "When reviewing buffered read timeouts or resuming PR327 R2 after R326",
+				"tags": [
+					"review",
+					"logging",
+					"timeout",
+					"eof",
+					"handover",
+					"f273"
+				],
+				"title": "Timed-out buffered bytes are not delivered bytes"
+			}
+		},
+		{
+			"name": "body",
+			"value": "R326 at aaf32e5 is BLOCK, governed output 74f91e8c. pump's timeout preserves partial bytes, but a later read_until EOF returns zero NEW bytes; Ok(0) finishes without sending the nonempty retained vector to the sink. Exact-head private oracle writes ready newline plus non-UTF-8 fragment, waits three recheck intervals, then shuts down: fragment lost. All 22 shipped tests and delayed continuation control pass. Standalone stress probe counted !line.is_empty() as success, which proves memory retention rather than delivery. Flush retained bytes through the ordinary sink at EOF; do not flush on timeout. MagicWand: encode delayed-fragment EOF beside the continuation oracle.\n\nWatchdog exact-head probes passed timeout8, armed SIGINT/TERM/HUP, private PGID/caps/nice19/lock cleanup and same-named bystander survival. No-watchdog mutant failed the 15-second outer deadline and was cleaned. The pre-PR reader comparison timed out waiting for another build's lock and ran no tests; do not credit it. Author macOS samples support stdout join stuck in recv; stderr writer has not yet been shut down because fields drop stdout first. Diagnose one demonstrated lost wake, not two. Cost also includes stop_watchdog's 50ms cleanup polls.\n\nNext queued request: PR327 FINAL R2 c515a664c8a86d80621a7a13df3bfd9e07e54e8a, worktree review-327-c515a66, request 01a1ff52-d9d2-7bf2-9585-0d28349010a0. Re-run real/fake wrong-kind versus sender-less own-kind comparison and M2; named wrong-kind refusals must remain running. Round-1 patches/logs remain in the session files. No R327 R2 exploration started. All R326 probes stopped; review worktree remains clean and role holds remain until merge.\n"
+		}
+	]
+}
