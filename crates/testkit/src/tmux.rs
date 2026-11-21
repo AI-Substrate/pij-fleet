@@ -65,8 +65,21 @@ pub fn attach_lock_path(socket: &Path) -> PathBuf {
     socket.with_file_name(format!(".{label}{ATTACH_LOCK_SUFFIX}"))
 }
 
-/// How long a killed server's process is given to exit.
-pub const SERVER_GONE_WAIT: Duration = Duration::from_secs(2);
+/// How long a killed server's process is given to exit, before scaling: the
+/// wait ends the moment it has, so a long bound costs nothing.
+///
+/// F263: `kill-server` returns once the server has the command, not once it
+/// has exited. The server then kills its panes and tears down; it runs at the
+/// test's niceness (19), so under a loaded machine that took over the old
+/// fixed 2 s, and the fixture failed a passing test (a fixture suite took 31 s
+/// at load 95 with this wait).
+pub const SERVER_GONE_BUDGET: Duration = Duration::from_secs(60);
+
+/// [`SERVER_GONE_BUDGET`] stretched by `PIJ_TEST_TIME_SCALE`.
+#[must_use]
+pub fn server_gone_wait() -> Duration {
+    crate::time::scaled(SERVER_GONE_BUDGET)
+}
 
 /// The pid of the server tmux runs for `-L label`, as the server reports it
 /// (`#{pid}`). `None` when it does not answer, which proves nothing about
@@ -87,8 +100,8 @@ pub fn server_pid(label: &str) -> Option<u32> {
 /// Why a fixture's files were kept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kept {
-    /// The server's process `pid` was still running after
-    /// [`SERVER_GONE_WAIT`]: its `kill-server` failed or it has not exited.
+    /// The server's process `pid` was still running after the wait
+    /// ([`server_gone_wait`]): its `kill-server` failed or it has not exited.
     Running(u32),
     /// The server's pid was never learned, or its state could not be read:
     /// nothing proves it gone, so nothing is removed (fail closed).
@@ -104,10 +117,9 @@ impl std::fmt::Display for Kept {
     }
 }
 
-/// Poll whether process `pid` has exited, in-process, for at most
-/// [`SERVER_GONE_WAIT`].
-fn exited(pid: u32) -> Result<(), Kept> {
-    let deadline = Instant::now() + SERVER_GONE_WAIT;
+/// Poll whether process `pid` has exited, in-process, for at most `wait`.
+fn exited(pid: u32, wait: Duration) -> Result<(), Kept> {
+    let deadline = Instant::now() + wait;
     loop {
         match pij_core::program::process_exists(pid) {
             Some(false) => return Ok(()),
@@ -120,16 +132,29 @@ fn exited(pid: u32) -> Result<(), Kept> {
 
 /// F241/F245: remove what a fixture's killed server leaves in tmux's shared
 /// directory, its socket and pij's attach lock beside it, but only once the
-/// server's process `pid` has exited. A server still running, or one whose
-/// pid is unknown while its socket is there, keeps both: unlinking a live
-/// server's socket would orphan it and make it look gone (R295-002). With no
-/// socket (a server never started) there is nothing to orphan.
+/// server's process `pid` has exited, waiting up to [`server_gone_wait`]. A
+/// server still running, or one whose pid is unknown while its socket is
+/// there, keeps both: unlinking a live server's socket would orphan it and
+/// make it look gone (R295-002). With no socket (a server never started)
+/// there is nothing to orphan.
 ///
 /// # Errors
 /// [`Kept`] when the server is not proved gone; nothing is removed.
 pub fn remove_server_files(socket: &Path, pid: Option<u32>) -> Result<(), Kept> {
+    remove_server_files_within(socket, pid, server_gone_wait())
+}
+
+/// [`remove_server_files`], waiting at most `wait` for the server to exit.
+///
+/// # Errors
+/// [`Kept`] when the server is not proved gone; nothing is removed.
+pub fn remove_server_files_within(
+    socket: &Path,
+    pid: Option<u32>,
+    wait: Duration,
+) -> Result<(), Kept> {
     match pid {
-        Some(pid) => exited(pid)?,
+        Some(pid) => exited(pid, wait)?,
         None if std::fs::symlink_metadata(socket).is_ok() => return Err(Kept::Unknown),
         None => {}
     }
@@ -143,10 +168,15 @@ pub fn remove_server_files(socket: &Path, pid: Option<u32>) -> Result<(), Kept> 
 /// second panic would abort), is reported on stderr. An unknown pid keeps the
 /// files and is reported: the fixture cannot tell, and the sweep will.
 pub fn finish_server(socket: &Path, pid: Option<u32>) {
-    match remove_server_files(socket, pid) {
+    finish_server_within(socket, pid, server_gone_wait());
+}
+
+/// [`finish_server`], waiting at most `wait` for the server to exit.
+pub fn finish_server_within(socket: &Path, pid: Option<u32>, wait: Duration) {
+    match remove_server_files_within(socket, pid, wait) {
         Ok(()) => {}
         Err(Kept::Running(pid)) if !std::thread::panicking() => panic!(
-            "{}: its server (pid {pid}) is still running after kill-server; socket and lock kept",
+            "{}: its server (pid {pid}) is still running {wait:?} after kill-server; socket and lock kept",
             socket.display()
         ),
         Err(kept) => eprintln!(

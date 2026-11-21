@@ -39,7 +39,9 @@ async fn an_open_event_stream_does_not_hold_the_stop_and_the_control_client_leav
         .await
         .expect("the daemon boots");
 
-    let attached = Instant::now() + scaled(Duration::from_secs(10));
+    // An end state, so a long bound costs nothing when it comes (F263: 10 s
+    // ran out under a loaded machine).
+    let attached = Instant::now() + scaled(Duration::from_secs(30));
     while private.control_clients() == 0 {
         assert!(
             Instant::now() < attached,
@@ -59,14 +61,15 @@ async fn an_open_event_stream_does_not_hold_the_stop_and_the_control_client_leav
         .expect("the event stream opens");
     assert!(stream.status().is_success(), "{}", stream.status());
 
-    let started = Instant::now();
     let stopping = tokio::spawn(daemon.shutdown());
     // `_pij` (alone: one client, the idle pane) is killed by the leaving
-    // client's teardown while the stream still holds the HTTP drain.
-    let handled = started + scaled(Duration::from_secs(2));
+    // client's teardown while the stream still holds the HTTP drain: before
+    // the stop ends, which the stream holds for SHUTDOWN_DRAIN_TIMEOUT. That
+    // end state is the bound, not a wall-clock guess (F263: 2 s ran out under
+    // a loaded machine).
     while has_control_session(&server) {
         assert!(
-            Instant::now() < handled,
+            !stopping.is_finished(),
             "_pij was not handled while the stream was open"
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
