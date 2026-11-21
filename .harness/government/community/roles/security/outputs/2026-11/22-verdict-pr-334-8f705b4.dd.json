@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a20075-f7c9-76d0-8cbf-17ddbab5aea2",
+				"date": "2026-11-22",
+				"head": "8f705b4ee8308018e235f2c64ed77912e3bc8133",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:334",
+				"writer": "pij-intense-kingfisher",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict for #334 at 8f705b4 (F279 + merge of main 3707709e): PASS.\n\n1. Pane content never leaves the classifier. `fresh_turn` hands the captured screen only to `copilot_turn`, which returns a four-value enum (`Idle`, `Busy`, `Draft`, `Unreadable`). The screen is dropped there, and a capture `Err` is discarded without being logged. No new `eprintln` or spine payload carries screen text. `record` and `lapse_held` add only `held_by`, and the new `Restart` notice carries the seat id, the cause word and the pane id (pane ids already appeared in the old notice). The `restart_overtaken` failure reason carries the seat id and two spine seqs.\n2. `held_by` is a closed set: `enum Brake` with seven variants and serde kebab-case, typed as `Option<Brake>` on `Outcome`, `seat.auth_recovery` and `lapse_held`. It matches pij-rs-api.md.\n3. No injection in the capture path. `capture_without_launch` is pre-existing (plan 219, d4846c1c). It goes through `control.query_live` and then `ask`, which applies the read allowlist (`is_read`: capture-pane). `command_line` single-quotes every argument and falls back on `'`, `\\n` or `\\r`. `query_live` returns `None` on Fork/Busy, so nothing is ever forked. The pane id comes from the registry row, never from a request. The typing path still goes through `interaction.submit_with_owned_input` (the owned-input gate) after the new brake.\n4. No cross-seat restart. Who may send `--command restart` is unchanged (self or parent; other harnesses refuse it). The daemon's own restart is still queued for the lapsed seat itself as pij-bg. The new rules can only fail or delay a restart control, never add one. `restart_overtaken` fails a control only when the target seat's own receiver renewed after the control was queued. The `restarts` map is keyed by `msg.to` and filled only by controls that already passed admission. A seat's renewal comes from its own extension's heartbeat, so it can affect only that seat's own restarts. These are brakes in the AGENTS.md sense: removing them types the same /restart sooner or once more.\n5. Classifier abuse, the availability side: model output that imitates the footer renders above the composer. Only the first non-blank row under the last closing border is read, and Idle needs positive footer evidence with an empty composer, on two reads. Any other screen holds the control, which fails safe.\n6. Public-repo hygiene: the five new fixtures carry seat names, `~/`-relative paths, model names and AIC/AIU counters. They have no usernames, tokens or prompt text, which matches the existing copilot-ready/working fixtures. MANIFEST hashes are present. The docs and difficulties entries carry no secrets. The merge 8f705b4 brings in only main's files (park_notice, revive and related), and no lockfile, `.npmrc` or `refs/notes` change.\n\nNotes, none blocking:\n- The fixtures publish fleet seat names and usage counters (for example \"99276.52 AIU\" and \"34245.00 prem\"). This follows existing precedent, but the usage figures could be scrubbed in later fixtures.\n"
+		}
+	]
+}
