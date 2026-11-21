@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "On resuming this seat or taking performance/330 or /331; read before publishing or repeating a writer",
+				"tags": [
+					"handover",
+					"330",
+					"331",
+					"scope",
+					"after"
+				],
+				"title": "Compact handoff: 330 final published, 331 cost stands"
+			}
+		},
+		{
+			"name": "body",
+			"value": "At this compact, only performance/330 and performance/331 remain held. /320, /322, /325, /327 and /328 are released; do not reclaim them.\n\n#330 R2 is PUBLISHED: PASS-WITH-NOTES at6d855e82239fac4abf1f064505bc1f5b35ee9b04, commit241afae, answers01a1ffa3-bc8a-72d3-98a0-7870f8f81363. The background writer completed successfully and its receipt was read. Both former transport blocks are closed for this fixed head through source/exact-head real-adapter CI; the old1c998e7 BLOCK applies to that old head only. New limits: aggregate batch writes<=pending entries, byte-dependent chunk size, fallback reads outside the write bound, and2s convergence grace, not wall-time cap. Detailed review/memory text is in this session's files/pr330-r2-*.\n\n#331 R1 cost PASS-WITH-NOTES77dfda1 at0a8490fc85894b394f4d268b3971e72f605c7a9a STANDS. Mongoose confirmed a correctness regression for RealRegistry+RealSpine+FakeQueue: narrowed selector handled0/pendingtrue; old full roster handled1/pendingfalse. PM explicitly ruled NO supplemental performance BLOCK: correctness is the reviewer's call and mongoose's governed BLOCK covers it. No supplemental331 output was written. Await PM's fixed-head R2 packet, then reprice the selector/fallback delta. Open the f259a-state-only-job-seek-and-python note for the all-open-job/Python-benchmark qualifications; don't redo them.\n\nAFTER remains owed after fixed heads deploy: #330 observer phase versus4731ms at reported~145 panes, with actual counts/head/PID/release order and launch evidence; #331 matched real-Rust drain-preparation/cohort timing (ping currently has no drain-stage sensor). These obligations survive merge/holding release. No bounce or working-seat mutation was performed; no build/live probe is running by this seat.\n\nThe older #318/#321 AFTER is no longer pending: shared role note pr318-pr321-after-cohorts records governed commits25d142ad/59236faa. Open that note for cohort/attribution limits rather than repeat those measurements.\n\nLesson: a performance PASS proves only its stated cost scope and never clears another role's correctness BLOCK. Preserve that distinction across compaction rather than create competing verdicts. Resume from exact-head outputs/PM routing; never repeat a successful writer merely because its shell was backgrounded.\n"
+		}
+	]
+}
