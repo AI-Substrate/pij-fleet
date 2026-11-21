@@ -1,0 +1,64 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fdd7-8676-7953-bc77-efac9d9ba0bb",
+				"date": "2026-11-21",
+				"head": "f382cc071d03ee752120ad735c286c83857ab175",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:319",
+				"writer": "pij-complex-alpaca",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R319-001: bound the whole daemon-stop observation and enforce a non-vacuous control-before-HTTP-drain ordering check; the after-drain release mutant currently survives",
+				"N319-1 (non-blocking): report measured elapsed time alongside the configured fixture wait budget"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test -p pij-testkit --lib reviewer_319_ -- --nocapture --then test -p pij-tmux --test fixture_cleanup -- --nocapture --then test -p pij-cli --test daemon_stop -- --nocapture",
+					"exit_code": 0,
+					"log": "pr319-baseline.log and pr319-restored.log: 8/8 controls green before and after mutations; five real tmux rounds observed PID present after kill-server returned"
+				},
+				{
+					"command": "just shared-build -- test -p pij-testkit --lib reviewer_319_ -- --nocapture",
+					"exit_code": 101,
+					"log": "pr319-no-wait-mutant.log: deterministic one-sample mutant killed by both wait controls on their assertions"
+				},
+				{
+					"command": "just shared-build -- test -p pij-testkit --lib reviewer_319_ -- --nocapture --then test -p pij-cli --test daemon_stop -- --nocapture",
+					"exit_code": 0,
+					"log": "pr319-after-drain-mutant.log: HTTP drain ended, then control released 200 ms later; unchanged daemon_stop still passed in 6.09 s (wrong-order mutant survives); replay patch retained"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14704966313/zip",
+					"exit_code": 0,
+					"log": "Exact-head run 44897938089, successful job 136827484858: 2790 JUnit cases, no failures; all six affected real-fixture tests present"
+				},
+				{
+					"command": "just pr-freeze 319",
+					"exit_code": 0,
+					"log": "Final recheck: f382cc071d03ee752120ad735c286c83857ab175 is FINAL/CLEAN; latest five checks green, no migration"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer/319 — round 1\n\nHead: `f382cc071d03ee752120ad735c286c83857ab175`.\n\n**Verdict: BLOCK.** R319-001 is independently reproduced. The scaled PID wait is sound; the daemon-stop ordering check is not.\n\n**R319-001 (P2): retain a bounded, non-vacuous daemon-stop ordering oracle.** `crates/cli/tests/daemon_stop.rs:70-84` removes the elapsed deadline from the `_pij` loop. `!stopping.is_finished()` is evaluated only while `has_control_session` returns true; if the session disappears after the HTTP drain, the loop can exit without that assertion. The timeout starts only after the loop, so a shutdown stuck with `_pij` present can poll indefinitely instead of reaching the timeout. An end-of-method join is not evidence that control teardown preceded the HTTP drain. Bound the entire observation and retain an ordering check that is enforced on the success path, not only while the session is still present.\n\nIndependently reproduced: an isolated mutant waits for `self.joined` (HTTP serving/draining) to finish, then waits another 200 ms before releasing control. Its trace reports HTTP drain ended, then control release, yet the unchanged daemon_stop test PASSES in 6.09 s. This is a surviving wrong-order mutant, not an artificial test timeout or a compilation error.\n\nThe asynchronous-exit diagnosis is supported. The official tmux command handler signals itself and returns normally; termination is not a child-process join. The installed tmux is 3.6a, and the corresponding upstream source was fetched through GitHub's contents API. Independent real-fixture observations at this head found the server PID still present after every one of five successful kill-server returns; subsequent end-state waits took about 14–143 ms. The author's recorded 24 runs all passed, at reported load 27–95. The 31.63-second figure is the whole fixture-cleanup suite, not a measured single server-exit wait. citeturn3view0\n\nThe new 60-second scaled fixture budget does not turn a known-live PID into success. `exited` keeps checking in-process and returns `Kept::Running(pid)` at the bound; normal teardown panics and retains the socket and lock. The explicitly short outlives-kill test still pins that failure. A zombie remains present until reaped; PID reuse conservatively keeps files rather than authorizing deletion. Socket existence or command success is not substituted for the recorded PID's disappearance. These criteria are unchanged.\n\n**N319-1 (non-blocking diagnostic precision):** the panic formats the configured `wait`, not measured elapsed time. Reporting actual elapsed time alongside the budget would meet the requested diagnosis more precisely. The already-panicking/unknown-state stderr path remains the existing behavior.\n\nNo new production constant reads `PIJ_TEST_TIME_SCALE`. The getter is in testkit, and its callers are test fixtures, including the pane-observer test module and integration tests. `SHUTDOWN_DRAIN_TIMEOUT` remains the unscaled five-second product constant. The PID-gone prerequisite is the existing **BRAKE** against unlinking a live server's files; increasing the test wait is not a retention/deletion policy change.\n\nCost is test-only: the existing PID wait checks in-process every 10 ms, bounded by 60 seconds times the test scale. The attach loop invokes the fixture's tmux client every 100 ms until its scaled 30-second bound. The `_pij` observation invokes it every 50 ms plus command time; R319-001 must preserve a real bound on that loop. No new daemon launch site or production tick.\n\n## Evidence\n\n`just pr-freeze 319`: initially FINAL/CLEAN at the exact head, five latest checks successful, no migration.\n\nExact-head CI run `44897938089`, successful rust-test job `136827484858`, upload-log-selected artifact `14704966313`: 2,790 JUnit cases, no failures. All five fixture-cleanup tests and daemon_stop are present and passed.\n\nIndependent baseline, with test-only process-observation injection and timing prints in an owned exact-head archive:\n`just shared-build -- test -p pij-testkit --lib reviewer_319_ -- --nocapture --then test -p pij-tmux --test fixture_cleanup -- --nocapture --then test -p pij-cli --test daemon_stop -- --nocapture`: exit 0, 2 deterministic wait controls, 5 real fixture-cleanup tests, and daemon_stop passed. The injected observations preserve the existing loop and default real-PID path, rather than inventing a parallel wait algorithm.\n\nOne-sample wait mutant: `just shared-build -- test -p pij-testkit --lib reviewer_319_ -- --nocapture`: exit 101, both deterministic controls failed on their own assertions (incorrect early refusal and no wait spent). The wait was restored afterward.\n\nWrong-order mutation: `just shared-build -- test -p pij-testkit --lib reviewer_319_ -- --nocapture --then test -p pij-cli --test daemon_stop -- --nocapture`: exit 0. The restored wait controls passed, and daemon_stop passed despite release explicitly following HTTP completion. This is the deficient oracle in R319-001.\n\nProduction `lib.rs` was restored byte-for-byte against the frozen checkout with `cmp`; the full eight-control command returned exit 0 again: 2 deterministic controls, 5 private real-tmux cleanup tests, and daemon_stop all passed.\n\nEvidence retained: `pr319-baseline.log`, `pr319-no-wait-mutant.log`, `pr319-after-drain-mutant.log`, `pr319-restored.log`, `pr319-after-drain-mutation.patch`, `pr319-testkit-witness.rs`, and the exact-head JUnit artifact. The reviewer-owned source archive is removed after verification; no other temp paths or author receipts are cleaned up.\n\nAuthor receipts were read at the two explicitly supplied paths; no author files were altered or removed. Local boot was dependency-limited under C25. All cargo runs use the shared target, shared-build lock, niceness 19, and four jobs. No working seat, operator tmux server, or live daemon was stopped.\n\n**Harness lesson:** a deflake must preserve the old behavioral oracle; a larger fixture budget and a green suite do not prove shutdown ordering. Keep both a deterministic gone-state sequence and a wrong-order control.\n"
+		}
+	]
+}
