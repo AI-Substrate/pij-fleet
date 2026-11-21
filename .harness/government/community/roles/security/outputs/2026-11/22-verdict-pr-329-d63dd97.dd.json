@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff4e-49dd-7e21-8c92-db3877616b98",
+				"date": "2026-11-22",
+				"head": "d63dd979f8384afb3b331c48713bfdd61895dc3b",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:329",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 329 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at d63dd97"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #329 round 1 at d63dd979f8384afb3b331c48713bfdd61895dc3b: pass\n\nStatic review of daemon_log.rs, http/mod.rs (F265), copilot-sdk-local-pass.mjs and AGENTS.md, in a detached worktree. CI 5/5 SUCCESS at this head.\n\n## F254: symlinks, FIFOs and planted files\nClosed, with no TOCTOU between the check and the read.\n- `keep_tail` opens with O_NOFOLLOW|O_NONBLOCK, so a symlink fails at open (ELOOP) and a FIFO opens without blocking.\n- It then fstat's THE OPENED FD and refuses (InvalidInput) unless that fd is a regular file whose (dev, ino) equals what the lock proved. Because the check and the read share one fd, a swap after the check can't redirect the read.\n- A FIFO, symlink, directory or replaced file at the path, or a planted `.trimmed` record, is refused without trimming or hanging, and each case has a witness plus a mutant.\n\n## F265: unlink scope\n- It removes exactly `spawn_evidence_paths(key)`: `$TMPDIR/pij-rs-spawn/<key>.status|.log`.\n- `key` has already passed `is_spawn_id` (`s-` and 32 lowercase hex) or was daemon-minted, so there is no `/`, `..` or other traversal.\n- `remove_file` unlinks the name and never follows a symlink to its target.\n- It runs only on the no-row branch, under the spawn lock (#309), so no same-key launch is in flight.\n- This closes my N3 from #309 (a stale status file read on a reused key).\n\n## S307-N1: the no-HOME fallback\nIt now mirrors Rust `default_state_dir` (crates/cli/src/lib.rs:44): `<tmpdir>/pij-rs-no-home/.pij-rs`. On macOS `tmpdir()` is the per-user `$TMPDIR`, so another user cannot reach it.\n- Low note (pre-existing, Linux and no-HOME only, and identical in the Rust daemon): with TMPDIR unset this is `/tmp/pij-rs-no-home/.pij-rs`. That path is predictable in a shared root. `mkdir(recursive, 0o700)` does not re-own or re-mode an existing directory, so another local user could pre-create it and plant a \"passed\" record for a Copilot version, which would quiet the copilot-sdk warn. That is cross-user, outside C33's same-user boundary, but it needs both a no-HOME run and a multi-user host. If wanted later: refuse a state dir that isn't owned by the euid with mode 0700. Not new in this PR; the PR only aligns the JS with Rust.\n\n## AGENTS.md rule 6 (F262)\nIt now forbids killing OR deleting by pattern in a shared root, and allows deleting only paths you created and recorded. This tightens the rule. F265's unlink is consistent with it: one derived, recorded name per key.\n\nThe two_daemons retry is test-only. No secrets, lockfile or `.npmrc` changes.\n"
+		}
+	]
+}
