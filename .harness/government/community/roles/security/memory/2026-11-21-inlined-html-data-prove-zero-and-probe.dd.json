@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Open before reviewing any generated HTML page that inlines data or renders it via innerHTML (fleet-map, standalone reports).",
+				"tags": [
+					"html",
+					"xss",
+					"fleet-map",
+					"browser",
+					"proof"
+				],
+				"title": "Inlined HTML data: prove zero '<' and probe cards in headless Chrome"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#303/#305 (fleet-map standalone):\n- Script-block breakout proof is simple and complete: count `<` in the inlined text. HTML script-data state can only leave on `<`, so zero `<` (JSON with `<` -> \\u003c, header constant `<`-free) closes </script, <!--, <script. U+2028/2029 and `-->` are irrelevant. Check the splice uses split/template, not String.replace (`$&` expansion).\n- esc() in a style=\"\" attribute stops attribute breakout but NOT CSS injection (url(https://evil)). Colour needs an allow-list (#rgb/#rrggbb) on BOTH generator and page load; mutate each layer separately.\n- Origin matters: a file served via Chainglass runs on its origin, so pre-existing innerHTML sinks fed by seat-written structure become real; file:// alone understated it.\n- Live probe recipe (no node_modules): generate into mktemp, rewrite fleet-map.data.js with hostile values (bypasses generator checks), inject a probe.js before the data script that dispatches pointer/mouse events on every [data-key] and records #card innerHTML + window.PWN into a body attribute; run `Google Chrome --headless=new --user-data-dir=<tmp> --virtual-time-budget=3000 --dump-dom file://...`. `--log-net-log` shows Chrome's own background traffic (update2, variations, accounts) in every run: diff against a control, don't read it as page requests.\n- Generated templates hid external loads (Google Fonts) — grep the template for http(s)://, url(, @import, fetch before claiming \"nothing external\".\n"
+		}
+	]
+}
