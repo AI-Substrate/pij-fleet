@@ -670,9 +670,16 @@ async fn take_over_pane(
 /// Both facts are OBSERVED, never claimed: `lsof` names the process owning the
 /// client end of this very connection, and the parent chain is read from the
 /// kernel one process at a time, in-process (#85: it was one whole-machine
-/// `ps` snapshot per call). Any failure answers `false`, which refuses; it
-/// never admits. A parent that exits mid-walk reparents its child (to 1, or a
-/// subreaper), so the walk can only lose the host, never invent it.
+/// `ps` snapshot per call). Any failure answers `false`, which refuses.
+///
+/// What that guarantees, and what it doesn't: each link is the kernel's parent
+/// pid for that pid at the moment it is read. Pids are not identities, and no
+/// start time is checked along the way. A process that exits between `lsof`
+/// and the walk, or during the walk, can have its pid reused, and the walk then
+/// follows the new process's parents. A parent that merely exits reparents its
+/// child (to 1 or a subreaper), which can only lose `host`; a reused pid could
+/// in principle lead to it. The `ps` snapshot this replaced had the same
+/// window between `lsof` and its read. `host` is likewise a bare pid here.
 fn caller_descends_from(peer: SocketAddr, host: u32) -> bool {
     let Some(pid) = peer_pid(peer) else {
         return false;
