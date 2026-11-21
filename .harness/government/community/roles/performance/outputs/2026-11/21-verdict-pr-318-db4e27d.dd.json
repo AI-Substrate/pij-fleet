@@ -1,0 +1,64 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fdca-9913-7633-a7bb-ecf2ad903ef6",
+				"date": "2026-11-21",
+				"head": "db4e27d25972f0044234830613cdde8ae1d9066a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:318",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Correct one-extra-capture wording: a drain between early snapshot and replay can cause two; price up to2D+R in the settled case, coalescing and failures separately.",
+				"Price the distinct fresh-read mutex/key allocation and multiple reads per injection; measure cause-attributed fresh/repair capture rates on authorized AFTER deployment before claiming rare."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 318",
+					"exit_code": 0,
+					"log": "FINAL at db4e27d25972f0044234830613cdde8ae1d9066a; CLEAN; latest five checks pass; schema49; no migration"
+				},
+				{
+					"command": "gh run view 44897099855 --job 136824992422 --log",
+					"exit_code": 0,
+					"log": "2793 Rust cases passed; successful upload artifact14703934722; JUnit reports28 relevant passing cases, including21 observer tests and six spawn guards"
+				},
+				{
+					"command": "pij-rs --json ping and single-PID ps, two reads20s apart",
+					"exit_code": 0,
+					"log": "BEFORE35dd41ac91/PID72066;20.020625s;33 passes,669 captures,5964 skips,201 decision panes/pass;2004.93 captures/min;daemon spawn delta0;CPU+1.51s;RSS114704->110640KiB"
+				},
+				{
+					"command": "just spawn-rate --seconds 20",
+					"exit_code": 0,
+					"log": "Separate machine BEFORE window113.9 launches/s,101.4/s sampled,0.9/s daemon descendants; not PR318 attribution"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "Eight missing-dependency/ambient-tool failures; native/SDK pass; heavy stages skipped; C25 exact-head TS CI proof, no claimed local green gate"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "ROUND 1 performance verdict: PASS-WITH-NOTES.\nSubject: pr:318\nHead: db4e27d25972f0044234830613cdde8ae1d9066a\n\nThe per-pane read cost is verified: one added gate mutex lookup per pane reaching the drain path, no composer clone in that lookup. Replay obtains the new field from its EXISTING observed() snapshot, so it adds no second gate lock for the comparison. No new timer, poll, SQL, event-write or process-launch site. No demonstrated normal-use resource breach blocks this head. The PR should price fresh-read locking/allocation explicitly and treat extra-capture rarity as unmeasured, rather than a rate.\n\nSteady-state and event costs:\n\n| Path | Added work | Scaling |\n|---|---|---|\n| Observer | Synchronous shared std::sync::Mutex lock, BTreeMap get, copy u64, unlock; another u64 comparison through the existing replay snapshot | Once per attached, eligible pane per pass. At217 panes and600ms:361.67 extra lock acquisitions/s,21,700/min nominal. Backoff/refused panes skip it; shared-gate contention is possible, not a per-pane private lock. |\n| Fresh tap read | A NEW gate lock section, entry lookup/counter increment and pane.to_string allocation, even on an occupied entry; no lock survives the drain await | Per refresh_live_tap that finds an owned sink, including a later failed drain/list/capture. Not simply per completed injection: submit_with_owned_input reads before and after reservation, and other paths can re-read. |\n| Tracked repair | One additional observer-state lock to drop LastCapture, then the existing capture path that pass | Per successful Attached on an already tracked pane; initial attachments were already captured. |\n| Metadata | One u64 per gate ComposerState and per observer LastCapture, plus a u64 in transient ObservedComposer snapshots |16 raw field bytes/pane across gate and remembered capture,3,472 bytes at217 panes; not an allocation per tick. Existing strings/clones/capture payloads remain. |\n| Capture transport | Existing capture-pane read, response copying/composer extraction and trailing tap drain | Normally through the persistent control client, with no process per capture. The existing Query::Fork fallback can launch at the counted old capture site, and repairs retain their existing marker/pipe launches. \"No NEW launch site\" is accurate; absolute \"no launch on any path\" is not. |\n\nExtra-capture rate:\n- Drain starts are invalidations, not a new periodic capture. Several starts between captures can coalesce; an already-active pane would have captured anyway. A repair and a drain on the same tick do not create two observer capture calls.\n- Even a settled, successful single drain can force TWO observer captures: it increments after the tick's early snapshot, replay's later observed() sees the increment and captures, but remember stores the earlier stamp; the next tick captures again. In the settled case budget up to2D+R captures for D fresh-drain starts and R tracked repairs, with coalescing/overlap reducing actual work. Error/unrecognized/pending-clear paths can continue capturing on later passes. Counting before drain means failed reads also belong in D. Source: pane_observer.rs:504,562,738-743.\n- The observer invokes capture at most once per pane per pass. The all-pane gross nominal envelope remains217/0.6=361.67 observer captures/s,21,700/min; unchanged30s backstops can still synchronize. Additional capture frequency/bytes must be measured after deployment with matched pane/activity cohorts.\n- Current ping has aggregate observer captures/skips/backstops but no drain-start or repair-invalidation counters. Thus neither fresh-read starts/minute nor the added captures attributable to each cause is directly established by this review. The source and CI prove the triggers, not that they are \"rare\".\n\nLive BEFORE receipt, undisturbed receiver state:\nDaemon35dd41ac91/PID72066; UTC2026-11-21T11:12:26.409766Z to11:12:46.430459Z,20.020625s. Observer33 passes,669 successful captures,5,964 skips,117 backstops,7,094,427 capture bytes;2,004.93 captures/min,201 completed decisions/pane cohort per pass,54.4648ms wall/pass. The current cohort is201, not the packet's217 scenario. CPU+1.51s (7.54% of one core), RSS114,704->110,640KiB. All daemon spawn counters flat, including pipe-attach: no daemon-counted repair start in this window. A separate subsequent just spawn-rate --seconds20 reported113.9 machine launches/s,101.4/s sampled, and0.9/s sampled daemon-descendant pij-rs launches. These are different windows; neither is PR318 attribution. Other fleet work existed; no PR318 overhead or AFTER saving is claimed. Observer counters exclude injection-owned captures and failed capture attempts; wall/pass is not CPU.\n\nEvidence:\n- just pr-freeze318: FINAL at the full head, CLEAN, five latest checks pass, main/head schema49, no new migration.\n- Exact-head CI44897099855/job136824992422, successful upload artifact14703934722:2,793 passed overall, six skipped. JUnit reports28 focused cases passing:21 observer tests, the adapter Kept/Attached test, and all six spawn-site sensors. New cases directly pin gate-change, failed fresh-drain and repaired-tap captures. The adapter fixture can self-skip if tmux is absent; I did not independently run a local real-tmux witness.\n- Source: pane_observer.rs:464-562,674-756; interaction.rs:217-220,515-567,699-711; tmux/src/lib.rs:365-370,484-502,1142-1152,1173-1301. Attach changes only report Kept/Attached on the existing call graph; no added process read/census.\n- harness boot ready=false (missing vitest). harness checks --quick exit1 for eight dependency/ambient-tool failures; native/SDK passed, heavy Rust/route/smoke skipped. No claimed green local gate; C25 dependency-backed proof remains exact-head CI.\n- No source edit, dependency installation/link, local Rust build, mutation rerun, pane input, private/default daemon, bounce, repair or live lapse/renewal experiment. Product worktree remains clean. Existing #314/#317 holdings and performance/318 remain until merge.\n\nNon-blocking notes owed: correct the one-extra-capture claim to cover the two-capture overlap; price the separate fresh-read mutex/key allocation and multiple reads per injection attempt; record cause-attributed fresh-drain/repair/capture rates on the authorized AFTER deployment before calling them rare. The highest-leverage harness improvement is adding these cause/failed-attempt counters to the existing observer receipt, not a new loop or telemetry stream.\n\nPolicy/brakes: the typing decision policy and cleanup policy are unchanged. F266 adds cache-validity brakes on replay, choosing a fresh observation rather than permitting a stale replay; no destructive operation or retention rule is introduced. Correctness of the concurrent ordering is the separate reviewer's verdict, not inferred from this performance pass.\n"
+		}
+	]
+}
