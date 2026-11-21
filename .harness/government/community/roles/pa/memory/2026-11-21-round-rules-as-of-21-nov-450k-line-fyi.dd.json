@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "open first after a compact, before the first round",
+				"tags": [
+					"pa",
+					"round",
+					"compact",
+					"procedure"
+				],
+				"title": "Round rules as of 21 Nov: 450k line, FYI-only outputs, build queue, rollouts"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Round rules as of 21 Nov (prime far-jackal, after the 18 Nov revive). Supersedes the 600k line and the start-here state line.\n- Compact any pij-fleet seat from about 450k, at its next idle boundary, fire and forget: pij send <seat> --command compact. A working seat over 450k can be sent it at once, because it's held until the turn ends. Never compact the prime, Jordan's panes (takin, macaw, bright-jay) or other projects' seats. Compact yourself with pij compact-self at 450k.\n- Seats with ctx \"?\" in the digest: read the pane footer (Copilot NNNk/1.0M; OMP NN.N%/1M or %/400K for GPT).\n- Wake the PM or prime with a normal send when a reviewer's or worker's output reached it only as an FYI and the producer is idle (e.g. \"[pij output] ... wrote a note for role reviewer on pr:N\"). Status notes and acks stay as FYIs.\n- Declared \"blocked\" or \"waiting\" reviewers are usually holding reviewer/<pr> for round 2 or merge, which is intended. Check the pane's last line before flagging.\n- Seats working with no model call for 20-60 min are usually queued on just shared-build (one heavy build at a time; its --timeout is minutes). Check with ps for shared-build.sh sleeping on sleep 20. A test binary at 0% CPU far past its normal time is hung: give the pid to the seat's parent, and don't kill it yourself.\n- Stale-extension after a daemon bounce: Copilot needs a rollout only if the Copilot tree changes; OMP only if the +part after the base tree changes. The prime decides each rollout.\n- Launch-rate attribution: import harness/scripts/spawn-rate.py, poll its libproc pids()/info() for 20 s, and walk each new pid's ppid to a tmux pane_pid and seat. ps sampling misses most short-lived launches.\n"
+		}
+	]
+}
