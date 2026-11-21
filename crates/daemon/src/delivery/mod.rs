@@ -5487,16 +5487,17 @@ mod tests {
                 fixture.registry.put(seat.clone()).await.unwrap();
             }
             tokio::time::advance(lease).await;
-            let refused = fixture
+            let held_send = fixture
                 .service
                 .send("pij-from".into(), seat.id.clone(), "after death")
                 .await
                 .unwrap();
+            // F260: held for the receiver's renewal, never delivered into it.
             assert!(
-                matches!(&refused.outcome, DeliveryOutcome::Refused { reason }
-                    if reason.contains("native-extension-unavailable") && reason.contains(seat.id.as_str())),
+                matches!(&held_send.outcome, DeliveryOutcome::Held { reason }
+                    if reason.starts_with("native-receiver-lapsed") && reason.contains(seat.id.as_str())),
                 "a live Copilot host cannot hide an expired receiver: {:?}",
-                refused.outcome
+                held_send.outcome
             );
             assert_eq!(
                 fixture.registry.get(&seat.id).await.unwrap(),
@@ -5516,7 +5517,11 @@ mod tests {
                     .iter()
                     .map(|row| row.message.msg_id.as_str())
                     .collect::<Vec<_>>(),
-                vec![first.msg_id.as_str(), second.msg_id.as_str()]
+                vec![
+                    first.msg_id.as_str(),
+                    second.msg_id.as_str(),
+                    held_send.msg_id.as_str()
+                ]
             );
             for row in parked {
                 assert_eq!(row.state.as_deref(), Some("failed"));
@@ -5546,8 +5551,8 @@ mod tests {
                 .collect();
             assert_eq!(
                 parked.len(),
-                2,
-                "each retained body parks once; refused sends never queue"
+                4,
+                "each body parks once, the held sends included"
             );
             for event in parked {
                 assert_eq!(event["recipient"], seat.id.as_str());
@@ -5558,8 +5563,8 @@ mod tests {
                 .iter()
                 .filter(|event| event.kind == "delivery.outcome")
                 .map(|event| serde_json::from_str::<Value>(&event.payload).unwrap())
-                .find(|payload| payload["msg_id"] == refused.msg_id.as_str())
-                .expect("the refusal is published");
+                .find(|payload| payload["msg_id"] == held_send.msg_id.as_str())
+                .expect("the hold is published");
             assert_eq!(
                 outcome["transport"], "extension-stream",
                 "a native refusal names the native transport (F124)"
@@ -5688,15 +5693,12 @@ mod tests {
                 .is_err()
         );
         tokio::time::advance(half).await;
-        assert!(matches!(
-            fixture
-                .service
-                .send("pij-from".into(), seat.id.clone(), "dead")
-                .await
-                .unwrap()
-                .outcome,
-            DeliveryOutcome::Refused { .. }
-        ));
+        let held = fixture
+            .service
+            .send("pij-from".into(), seat.id.clone(), "dead")
+            .await
+            .unwrap();
+        assert!(matches!(held.outcome, DeliveryOutcome::Held { .. }));
         fixture
             .service
             .heartbeat_native_receiver(&seat.id, &identity, 1, 1, None)
@@ -5707,19 +5709,22 @@ mod tests {
             .send("pij-from".into(), seat.id.clone(), "reconnected")
             .await
             .unwrap();
-        let claim = fixture
-            .service
-            .claim_native_inbox(&seat.id, false, &identity)
-            .await
-            .unwrap()
-            .claims
-            .remove(0);
-        assert_eq!(claim.message.msg_id, sent.msg_id);
-        fixture
-            .service
-            .acknowledge_inbox(&seat.id, claim.job_id, &identity, None)
-            .await
-            .unwrap();
+        // F260: the renewal returned the held body first; both arrive, in order.
+        for expected in [&held.msg_id, &sent.msg_id] {
+            let claim = fixture
+                .service
+                .claim_native_inbox(&seat.id, false, &identity)
+                .await
+                .unwrap()
+                .claims
+                .remove(0);
+            assert_eq!(&claim.message.msg_id, expected);
+            fixture
+                .service
+                .acknowledge_inbox(&seat.id, claim.job_id, &identity, None)
+                .await
+                .unwrap();
+        }
     }
 
     // Regression from the reviewer's live-receiver theft and dead-window probes.
@@ -5905,7 +5910,7 @@ mod tests {
                 .await
                 .unwrap()
                 .outcome,
-            DeliveryOutcome::Refused { .. }
+            DeliveryOutcome::Held { .. }
         ));
         let events = fixture.spine.tail(None, Seq(0)).await.unwrap();
         assert_eq!(
@@ -5913,7 +5918,8 @@ mod tests {
                 .iter()
                 .filter(|event| event.kind == "delivery.parked")
                 .count(),
-            1
+            2,
+            "the original park, then the held send's (F260)"
         );
     }
 
