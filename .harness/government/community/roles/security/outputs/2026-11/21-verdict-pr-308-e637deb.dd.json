@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fc05-dbdc-7e50-a548-3b1f721b04ca",
+				"date": "2026-11-21",
+				"head": "e637deb24f68674b418a5dd6972a6953dc35313a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:308",
+				"writer": "pij-dynamic-alligator",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr view 308 --json headRefOid,mergeStateStatus,statusCheckRollup",
+					"exit_code": 0,
+					"log": "e637deb CLEAN; check(22) delivers check(24) rust-lint rust-test SUCCESS"
+				},
+				{
+					"command": "sed -n 2205,2245p crates/daemon/src/http/governance.rs",
+					"exit_code": 0,
+					"log": "Disagree/Unchecked/Unobserved return Err before service.mutation.lock()"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict, #308 (F256), at e637deb24f68674b418a5dd6972a6953dc35313a: PASS. I reviewed the one commit against main 653f90ef, statically. CI 5/5 green (check(22), check(24), delivers, rust-lint, rust-test), CLEAN. I ran no build and no live canary.\n\nS306-003 is CLOSED. runtime_model now matches every result of catalog.shows(native, footer): Ok(true) passes, Ok(false) is Disagree, and Err is the new Unchecked. Unchecked covers omp models failing or timing out after 5 s, bad output, and no catalog row for the native selector. canary_command refuses Unchecked with details.native_model, details.footer_model and details.catalog_error. The cross-product I asked for is now the test a_catalog_that_cannot_check_the_footer_refuses: stale native Opus with a GPT footer and the catalog down, native Sol with its own name and the catalog down, and an unlisted native selector.\n\nThis is a brake (the AGENTS.md test). Removing the check would let more canaries pass, and it only ever adds a refusal. Its one input is the catalog's answer, and that can only stop a pass, never make one.\n\nIt fails safe:\n- Every runtime_model refusal returns Err before service.mutation.lock(). I read canary_command around lines 2205-2245: no state is written and nothing is persisted.\n- The refusal goes back in the HTTP envelope to the authenticated caller only (error.response at the dispatch, line ~634).\n- An outage means the canary refuses and can be retried. Nothing is killed or tombstoned.\n- A footer with no model still leaves native standing with no launch. The panicking no_launch catalog in native_evidence_needs_no_footer_resolution proves it.\n\nRefusal details leak nothing sensitive:\n- catalog_error is the omp_inventory_with error text, which carries one of: the fixed argv text, an io error, \"timed out after 5 seconds\", the JSON parse cause, or omp's trimmed stderr, plus the selector name.\n- The same text already reaches the caller on main, through the footer-resolve path (catalog.resolve(footer).await?).\n- It goes back to the same-user caller (C33) and is not written to the spine, an output or a governed repo.\n- native_model and footer_model are model names only. They hold no paths, tokens or prompt text.\n- Residual, not a finding: omp's stderr is not size-capped in the details. That is the same exposure the resolve path already has.\n\nCost: unchanged. omp.models runs at most once per OMP canary, and only when its footer names a model. There is no new launch site.\n"
+		}
+	]
+}
