@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fff9-6357-7321-ae59-8f6d9fd4634c",
+				"date": "2026-11-22",
+				"head": "0e6eba27cd689828556345bfe20c9a64931b5fb6",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:332",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 332 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at 0e6eba2"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #332 round 1 at 0e6eba27cd689828556345bfe20c9a64931b5fb6: pass\n\nStatic review of store/queue.rs (retire), park_notice.rs, spawn_waits.rs (reviving), revive.rs and the fakes, in a detached worktree. I ran nothing against the live store. CI 5/5 SUCCESS at this head.\n\n## Bound SQL only\nRETIRABLE_JOBS_SQL is a const.\n- Recipients pass as ONE bound JSON array, expanded by `json_each(?1)`; the cutoff (?2) and LIMIT (?3) are bound integers.\n- The kind is constrained to the seat's OWN `'delivery:' || s.id` and `'delivery-control:' || s.id`, joined on `s.id = j.serial_key`. No other job kind, and no other seat's job, can match.\n- The terminalizing UPDATE is per id, bound, with `state IN ('pending','running')`. Test-only SQL (fixtures and EXPLAIN) is under cfg(test).\n\n## No secrets in the notice or the spine appends\nThe notice reuses the existing park-notice `body()`: message id, recipient seat id, outcome, reason, and a fixed \"next\" sentence (the only line this PR adds). It carries no message body, payload, env or token. The spine facts are the existing `delivery.parked` shape.\n\n## A sender learns only about its own jobs\nEach retired job is published as its own park and `notify` targets that job's own `from`, only while that seat is live (dead senders and pij-bg get nothing, per the tests). A sender therefore learns only that ITS message to that recipient was not delivered. It learns nothing about other senders' jobs, and nothing about the recipient beyond the seat id the sender itself addressed. The message id is the sender's own, echoed back to it.\n\n## No permission laundering or redirection\nJobs are TERMINALIZED (state = failed, outcome `undelivered:recipient-retired`), never re-addressed, re-queued, re-keyed or delivered elsewhere. A retired seat's work cannot be moved to another seat, and no role, holder or grant changes.\n\n## Destructive change: policy and brakes (AGENTS.md)\nThe POLICY is \"the recipient is tombstoned\". Every other check only spares a job, so each is a brake:\n- older than 7 days;\n- not in `SpawnWaits::reviving`;\n- a failed roster read skips the pass;\n- the transaction re-reads the tombstone;\n- LIMIT 64.\n\nRemoving any brake retires the same set or more, which is the right direction. The labels hold. Race and timing questions (a revive racing the transaction, timestamp units, a running job completing) are the reviewer's.\n\nNo secrets, lockfile or .npmrc changes.\n"
+		}
+	]
+}
