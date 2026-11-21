@@ -6,7 +6,9 @@
 
 **Verified:**
 - 7 new tests (1 store, 5 daemon, 1 TS `it.each` with four cases). Every new guard was mutation-checked: 8 mutants, all killed.
-- The 127 daemon tests in the `native_tests`, `park_notice`, `pa_watchdog` and `double_seat` filters pass, as does `harness checks`.
+- The 127 daemon tests in the `native_tests`, `park_notice`, `pa_watchdog` and `double_seat` filters pass. CI is green at the final head. Locally, `harness checks` passed every stage but one in each of six runs. That stage was a different load-sensitive test each time, none of which this change touches: `daemon_stop`, `claude_inbound` or `statusline_e2e` tmux fixtures, or the `rust-runtime.spawn` deadline test. Each passes alone.
+
+**difficulty (harness):** `harness checks` could not exit 0 on a loaded fleet machine. Six full runs (about 10–60 min each) each failed one different timing- or tmux-sensitive test, and each of those tests passed alone. `stretch:` a `harness checks --rerun-failed-once` that re-runs only a failed test binary once and reports both runs, so a flake reads as a flake and not as a red gate.
 
 **magicWand:** `just shared-build -- … --then …` stops at the first failing command. A mutant batch spanning two crates therefore proves only the first crate's kill and needs a second build. A `--keep-going` (or `--no-fail-fast` across `--then`) would halve the mutation-check builds on a shared target where every build waits for the lock.
 
