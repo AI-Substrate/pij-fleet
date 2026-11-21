@@ -1,0 +1,56 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fb8f-4b1a-7d22-ab10-3dd985157586",
+				"date": "2026-11-21",
+				"head": "e15098a975c8d50c00018b3bd2ae8b66819aa8a7",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:303",
+				"writer": "pij-smooth-wildebeest",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 303",
+					"exit_code": 0,
+					"log": "FINAL e15098a975c8d50c00018b3bd2ae8b66819aa8a7; five latest checks pass"
+				},
+				{
+					"command": "gh run view 44845058153 --job 136662601267 --log",
+					"exit_code": 0,
+					"log": "Node 22 exact-head CI: fleet-map 14/14; 2388 passed, 7 skipped"
+				},
+				{
+					"command": "gh run view 44845058153 --job 136662601237 --log",
+					"exit_code": 0,
+					"log": "Node 24 exact-head CI: fleet-map 14/14; 2388 passed, 7 skipped"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Dependency-free read-only tree: 8 missing-tool/dependency or ambient-version failures; no local TS proof claimed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS WITH NOTES - reviewer/303, round 1 of at most 2\nHead: e15098a975c8d50c00018b3bd2ae8b66819aa8a7\nBase: ed1e89113b59204102b03facbd1bf70d522c9c1c\n\nNo blocking correctness findings. The standalone file delivers F252 without changing the existing page's behavior.\n\n## Answers and evidence\n\n- Exact composition: `generate.mjs:547-560,604-608` produces the standalone page by replacing exactly one data-script tag in the already-headered index page. Its inline script is byte-identical to the generated data file. Independent scratch runs verified both headers, exact replacement, deterministic bytes, no script src, and explicit refusal of zero or two matching tags.\n- Escaping: the stable serializer JSON-quotes keys and string values before replacing every literal less-than character. No payload can supply an HTML script end tag or comment opener. Independent probes round-tripped 22 strings in keys and values, including mixed-case close tags, whitespace/slash delimiters, comment openers/closers, quotes, backslashes, lone surrogates, and U+2028/U+2029. Those Unicode characters are valid string contents in ES2019+; a plain `-->` inside the JSON string neither closes a script nor escapes the string. Standards cross-check: WHATWG HTML script-data tokenization and restrictions on script contents; ECMA-262 String Literals / TC39 Subsume JSON.\n- Browser proof: headless Google Chrome opened the actual standalone file in a directory with no sibling data file, using an isolated temporary profile and DNS disabled. It rendered 271 map SVG nodes. A combined mixed-case close-tag, img/onerror, comment, U+2028/U+2029 payload remained text in the title; no injected image appeared. The first browser oracle incorrectly searched script source as well as rendered markup; narrowing it to the viewport fixed that probe-only false positive.\n- Existing outputs: replaying the base generator and head generator against the original base fixture gives byte-identical index and data files. With hostile less-than data, only the data's source representation changes; evaluated values are identical. Generate stdout now names the extra file. `open` still selects index.html.\n- Mutation: removing the escape in a copied generator makes all three dependency-free equivalents of the committed golden, standalone-equality, and hostile-boundary assertions fail. The golden fixture itself contains escaped less-than bytes and no literal less-than. This independently verifies the oracle; it is not a claim that local Vitest ran.\n- Filesystem/privacy: the standalone file uses the same output directory and `writeFresh` path as the existing files. Scratch outputs all had mode 0644 under the current umask. A pre-existing standalone symlink was replaced by a regular file and its target stayed untouched. The changed fixture/golden/test payloads are synthetic; no secret, token, private identity, or home path was found in the committed fixtures.\n- D-F252-1: the sixth-strike count matches D-167-1 plus D-36-1, D-171-1, D-229-1, and D-F214-1. The main checkout's generator is currently clean, consistent with the recorded restoration. The historical edit/move command sequence is the coder's account, not independently witnessed; no contradiction found.\n- Cost: no loop, poll, timer, hook, or launch was added or changed. Existing on-demand collection is unchanged; incremental cost is one serialization replacement and one extra page write per invocation, not per-seat recurring work.\n\n## Nonblocking notes / proof limits\n\nN303-1: \"loads nothing external\" is false. The unchanged page template at `templates/index.html:7-9` retains Google Fonts preconnects and its stylesheet. The standalone removes the sibling-data dependency, not the font network dependency. It still renders with DNS disabled. No new external request is introduced; making it strictly network-free would change the existing template and is outside this fix.\n\nThe committed tests cover both comment markers but do not explicitly add U+2028/U+2029 cases; these passed the independent Node and real-browser probes above. No extra fixture is required for this verdict.\n\n## Validation\n\n- `just pr-freeze 303`: FINAL at the full head above, checked at entry and before publication; latest five checks pass.\n- `gh run view 44845058153 --job 136662601267 --log` and `gh run view 44845058153 --job 136662601237 --log`: exact-head Node 22 and 24 CI each show fleet-map 14/14 and 2388 tests passed, 7 skipped; typecheck and lint stages succeeded.\n- Session-only `review-303-probe.mjs`, run with `nice -n 19 node`: 8 contract groups passed, including the three mutation oracles.\n- Session-only `review-303-browser.mjs`, run with `nice -n 19 node --experimental-strip-types --disable-warning=ExperimentalWarning`: corrected DOM oracle passed.\n- `git diff --check ed1e8911...HEAD`: passed. Detached review worktree remains clean. All generation/mutation/browser work used temporary directories, which were removed; no live fleet output was generated.\n- `harness boot --json`: advisory not-ready because this review tree intentionally has no node_modules.\n- `harness checks --quick --json`: exit 1, eight tooling/dependency failures (missing tsx/Vitest/local TS dependencies and ambient Biome mismatch); pij-skill and copilot-native passed, SDK version/trailer checks warned, heavy stages skipped. This is not a green local gate. No dependencies were installed or linked; TS proof is the exact-head CI under C25. Full Rust/smoke gates were not rerun in the read-only review tree.\n\n## Harness feedback\n\nmagicWand: a dependency-free fleet-map contract/smoke recipe would make review-tree mutation proof a supported command instead of a session script. Difficulty: full/quick checks do not share boot's early dependency-readiness advisory, so an intentionally dependency-free review produces secondary tool errors. Suggested encoding: expose a review-proof mode or a dependency-free map check; no product changes requested in this PR.\n"
+		}
+	]
+}
