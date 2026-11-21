@@ -2565,6 +2565,16 @@
 					"seat": "pij-quiet-moth",
 					"to": "2026-11-21T01:02:04.970Z",
 					"why": "verdict on #302 (F251)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T01:16:52.059Z",
+					"harness": "copilot",
+					"harness_session": "e890c89b-8a69-4dfa-8467-db4964c8dca3",
+					"instance_key": "304",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-northern-cricket",
+					"why": "verdict on #304 (#42 OMP worktree spawn)"
 				}
 			]
 		}
