@@ -155,7 +155,7 @@ window.FLEET_MAP = {
   ],
   "sidings": [
     {
-      "colour": "#0F9D7A",
+      "colour": "#6B7F2A",
       "id": "500",
       "joins": "alpha",
       "name": "Side work",
@@ -196,6 +196,8 @@ window.FLEET_MAP = {
   ],
   "title": "Fixture fleet",
   "warnings": [
-    "line 400: repo \"-R evil\" is not owner/name"
+    "line 400: repo \"-R evil\" is not owner/name",
+    "line 500: colour \"#0F9D7A\\\">\u003cimg src=x onerror=alert(1)>\" is not #rgb or #rrggbb",
+    "stop a4: pr \"7\\\" onmouseover=\\\"alert(1)\" is not a PR number"
   ]
 };

@@ -54,14 +54,14 @@ stop and escalate one hop; do not improvise a replacement contract.
 
 Record any named user choice exactly.
 - Default coder: a separate Copilot seat on `gpt-5.6-sol`, `--effort xhigh`. Streams live in
-  linked worktrees, where OMP and Pi refuse to spawn (peer route § Spawn and revive); a Copilot
+  linked worktrees, where every harness but Pi spawns (peer route § Spawn and revive); a Copilot
   seat compacts on `pij send <seat> --command compact` like a Claude seat (plan 186).
 - Default reviewer: a separate seat on a different model family, discovered at spawn (§ C4).
 Then read it back verbatim and confirm inline before fleet creation — never a
 modal question UI (global invariant 9); persist the pending choice and remain
 reachable.
 
-Native spawn opens each worker in its own window: move its pane into yours (§ C5), never the o-prime's window, and spawn with `--cwd` set to your verified worktree (claude or copilot; OMP/Pi refuse a linked worktree).
+Native spawn opens each worker in its own window: move its pane into yours (§ C5), never the o-prime's window, and spawn with `--cwd` set to your verified worktree (any harness but Pi, which refuses a linked worktree).
 Canary model, effort, identity, cwd, branch, and placement before use.
 See the [pair route](../routes/pair.md) for lazy acquisition and fleet lifecycle. Spawn and canary the
 selected models, then persist the plan roster with their ids/models before dispatch; the plan roster is the

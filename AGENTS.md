@@ -235,7 +235,9 @@ citation disputes, all of which resolved as neither party being wrong.)
   stage) fails if the file or OMP's own answer from the repo root says otherwise.
   It is project-scoped: `just link` never links it, and `~/.omp` is not touched.
   OMP reads it from the OMP session's start directory (and an explicit
-  `omp worktree add`'s cwd): start OMP seats at the repo root.
+  `omp worktree add`'s cwd). Every worktree carries the same file, so start each
+  OMP seat in its own worktree, never at main (#42; `--cwd <worktree>` there
+  answers `false` too).
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
 - **`just update-copilot`** is the one way to take a Copilot CLI update: it runs

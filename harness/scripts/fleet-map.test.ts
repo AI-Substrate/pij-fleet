@@ -161,6 +161,20 @@ describe("determinism", () => {
 		expect(standalone.startsWith(`<!doctype html>\n<!-- ${HEADER} -->\n`)).toBe(true);
 	});
 
+	it("the standalone page requests nothing from another origin and sends no referrer (F253)", () => {
+		const out = join(scratch(), "out");
+		const structure = join(FIXTURES, "structure.json");
+		expect(
+			run(["generate", "--offline", "--at", AT, "--structure", structure, "--out", out]).status,
+		).toBe(0);
+		const standalone = readFileSync(join(out, "fleet-map.standalone.html"), "utf8");
+		// any src or href (HTML or SVG), CSS @import or url() that names a scheme or a //host
+		expect(standalone).not.toMatch(/\b(?:src|href)\s*=\s*["']?\s*(?:[a-z][a-z0-9+.-]*:|\/\/)/i);
+		expect(standalone).not.toMatch(/@import/i);
+		expect(standalone).not.toMatch(/url\(\s*["']?\s*(?:[a-z][a-z0-9+.-]*:|\/\/)/i);
+		expect(standalone).toContain('<meta name="referrer" content="no-referrer">');
+	});
+
 	it("hostile data cannot end or comment out the inlined block, and reads back unchanged", () => {
 		const out = join(scratch(), "out");
 		const hostile = "</script><!-- <script>alert(1)</script> -->";
@@ -210,6 +224,143 @@ describe("track geometry (AC4)", () => {
 		expect(builtSpans(line("merged", "merged", "review", "next"))).toEqual([[-1e6, 156]]);
 		expect(builtSpans(line("merged", "merged"))).toEqual([[-1e6, 1e6]]);
 		expect(builtSpans(line("review", "next"))).toEqual([]);
+	});
+});
+
+describe("hostile data renders inert (F253)", () => {
+	const HOSTILE_COLOUR = '#0F9D7A"><img src=x onerror=alert(1)>';
+	const HOSTILE_PR = '7" onmouseover="alert(1)';
+	const ALLOWED_ATTRIBUTE: Record<string, true> = {
+		class: true,
+		style: true,
+		href: true,
+		target: true,
+		rel: true,
+	};
+	type Stop = { id: string; name: string; state: string; pr?: unknown; url?: unknown };
+	type Line = { id: string; name: string; colour: unknown; state: string; stops: Stop[] };
+	type Item = Record<string, unknown>;
+
+	const clean = new Function(
+		[
+			pageSource("const safeColour =", true),
+			pageSource("const prNum =", true),
+			pageSource("const safeUrl =", true),
+			pageSource("function cleanData("),
+			"return cleanData;",
+		].join("\n"),
+	)() as (d: { lines: Line[]; sidings?: Line[] }) => { lines: Line[]; sidings?: Line[] };
+
+	// The card builder with its real helpers; the layout it reads (L, S) is passed in.
+	const cardFor = new Function(
+		"L",
+		"S",
+		[
+			"const STOP_LABEL = {}, PHASE_LABEL = {};",
+			"const lineName = (id) => id;",
+			pageSource("const esc =", true),
+			pageSource("const STATE_COLOUR =", true),
+			pageSource("function shortRoadmap("),
+			pageSource("function seatHtml("),
+			pageSource("function verdictHtml("),
+			pageSource("function cardHtml("),
+			"return cardHtml;",
+		].join("\n"),
+	) as (L: { branches: Item[] }, S: Item[]) => (item: Item) => string;
+
+	/** Every tag is a known element with only known attributes, and no markup is left over. */
+	function expectInert(html: string): void {
+		const open = /<([a-z0-9]+)((?:\s+[a-z-]+="[^"<>]*")*)>/g;
+		for (const [, , attrs] of html.matchAll(open))
+			for (const [, name] of (attrs ?? "").matchAll(/\s+([a-z-]+)="[^"]*"/g))
+				expect(ALLOWED_ATTRIBUTE[name ?? ""], `attribute ${name} in ${html}`).toBe(true);
+		const text = html.replace(open, "").replace(/<\/[a-z0-9]+>/g, "");
+		expect(text, html).not.toMatch(/[<>"]/);
+	}
+
+	it("the generator drops a colour that isn't #rgb/#rrggbb and a pr that isn't a number, and says so", () => {
+		const data = JSON.parse(
+			readFileSync(join(FIXTURES, "golden.data.js"), "utf8")
+				.replace(/^[^{]*/, "")
+				.replace(/;\s*$/, ""),
+		) as { sidings: Line[]; lines: Line[]; warnings: string[] };
+		expect(data.sidings[0]?.colour).toMatch(/^#[0-9A-F]{6}$/);
+		expect(data.lines[0]?.stops.find((s) => s.id === "a4")).not.toHaveProperty("pr");
+		expect(data.warnings).toContain(
+			`line 500: colour ${JSON.stringify(HOSTILE_COLOUR)} is not #rgb or #rrggbb`,
+		);
+		expect(data.warnings).toContain(`stop a4: pr ${JSON.stringify(HOSTILE_PR)} is not a PR number`);
+	});
+
+	it("the page drops hostile colours, PR numbers and links from a data file it didn't write", () => {
+		const stop = (pr: unknown, url?: unknown): Stop => ({
+			id: "s",
+			name: "s",
+			state: "review",
+			pr,
+			url,
+		});
+		const d = clean({
+			lines: [
+				{
+					id: "1",
+					name: "l",
+					colour: HOSTILE_COLOUR,
+					state: "now",
+					stops: [
+						{ ...stop(HOSTILE_PR, "javascript:alert(1)"), stops: [stop(-3), stop(2.5)] } as Stop,
+						stop(42, "https://example.invalid/pull/42"),
+					],
+				},
+			],
+			sidings: [{ id: "2", name: "s", colour: "#abc", state: "done", stops: [] }],
+		});
+		const [line] = d.lines;
+		expect(line?.colour).toBe("var(--muted)");
+		expect(line?.stops[0]?.pr).toBeUndefined();
+		expect(line?.stops[0]?.url).toBeUndefined();
+		expect((line?.stops[0] as Stop & { stops: Stop[] }).stops.map((s) => s.pr)).toEqual([
+			undefined,
+			undefined,
+		]);
+		expect(line?.stops[1]).toMatchObject({ pr: 42, url: "https://example.invalid/pull/42" });
+		expect(d.sidings?.[0]?.colour).toBe("#abc");
+	});
+
+	it("every card escapes its values even when the data skipped the page's cleaning", () => {
+		const line = {
+			id: "1",
+			realLine: "1",
+			name: "<b>line</b>",
+			colour: HOSTILE_COLOUR,
+			kind: "line",
+			state: "now",
+			roadmap: '"><svg onload=alert(1)>',
+			stops: [],
+		};
+		const s = {
+			id: "a",
+			name: "</div><script>alert(1)</script>",
+			state: "review",
+			pr: HOSTILE_PR,
+			repo: "o/r",
+			url: 'https://x.invalid/"onmouseover="alert(1)',
+			head: "<i>",
+			owner: '"><img src=x onerror=alert(1)>',
+			note: "<!--",
+		};
+		const card = cardFor({ branches: [line] }, []);
+		const cards = [
+			card({ kind: "stop", b: line, s }),
+			card({ kind: "line", b: line }),
+			card({ kind: "crew", colour: HOSTILE_COLOUR, title: "<t>", community: [] }),
+		];
+		for (const html of cards) {
+			expectInert(html);
+			expect(html).not.toContain("<img");
+		}
+		expect(cards[0]).toContain("background:#0F9D7A&quot;&gt;&lt;img src=x onerror=alert(1)&gt;");
+		expect(cards[0]).toContain("#7&quot; onmouseover=&quot;alert(1)");
 	});
 });
 
@@ -450,6 +601,10 @@ describe("pij first, gh optional", () => {
 			state: "released",
 		});
 		expect(dataOf(out).warnings).toContain("gh pr view 11 failed");
+		// the fixture's hostile pr (stop a4) is dropped before any lookup: it never reaches gh's argv
+		expect((dataOf(out).warnings as string[]).filter((w) => w.startsWith("gh pr view 7"))).toEqual(
+			[],
+		);
 		// a stop's repo overrides its line's, and reaches gh as its own argv words
 		expect(dataOf(out).warnings).toContain("gh pr view 24 -R example-org/other.repo failed");
 	});

@@ -83,8 +83,8 @@ pij dispatch <seat> --packet <absolute-packet-path> --json
 ```
 
 - **Models**: no defaults. Discover ids per § C4; pass effort with `--effort`, never a model
-  suffix. OMP and Pi refuse a linked-worktree `--cwd` (peer route § Spawn and revive): for worktree
-  work use `claude` or `copilot`, or spawn OMP/Pi from the main checkout and have it work by absolute path.
+  suffix. Spawn a worktree seat with `--cwd <absolute-worktree>`, never at main; only Pi refuses a
+  linked-worktree `--cwd` (peer route § Spawn and revive).
 - **Lazy reviewer** — spawn the reviewer at the first `REVIEW`, never with the coder: an idle
   live peer still costs cache writes.
 - **Canary before trust (§ C2)**, provided peers too. Place and name the panes (§ C5).
