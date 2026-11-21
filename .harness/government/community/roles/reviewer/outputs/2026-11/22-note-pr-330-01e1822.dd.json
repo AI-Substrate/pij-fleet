@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"head": "01e18224dc717bdec08cf976889d5df583de1cb9",
+				"kind": "note",
+				"role": "reviewer",
+				"subject": "pr:330",
+				"writer": "pij-written-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "git diff --check 6d855e82239fac4abf1f064505bc1f5b35ee9b04 01e18224dc717bdec08cf976889d5df583de1cb9",
+					"exit_code": 0,
+					"log": "pr330-merge-only-01e1822-final.log"
+				},
+				{
+					"command": "just pr-freeze 330 --worktree",
+					"exit_code": 0
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "pr330-merge-only-01e1822-harness.log"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Merge-only confirmation, not a new round. Exact parents are 6d855e8 and b1c7fedc; changed byte lines and counts match main since e3673fb9 (10 files, +557/-15). Both ledger tails are preserved byte-identically; git diff --check and final-tree conflict-marker scan pass. Correction: git show --cc is not empty; its displayed hunks are the ledger union only. No conflict-resolution defect or added loop/launch. just pr-freeze 330 is FINAL with all exact-head CI checks passing. Local harness checks --quick exits 1 on the known dependency/ambient-tool gaps; no Rust or tmux tests rerun. The prime carries B330-R2-01 as F278; its fix and wording remain outside this check."
+		}
+	]
+}
