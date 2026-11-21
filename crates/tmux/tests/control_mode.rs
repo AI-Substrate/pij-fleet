@@ -1449,3 +1449,83 @@ fn an_exited_pane_mid_batch_never_holds_back_the_taps_after_it() {
     assert!(sink.exists(), "the exited pane's sink is retained");
     assert!(!pij_tmux::tap_sink_path(&taps, &last).exists());
 }
+
+/// #330 review B330-R2-01 (mongoose): a tap this adapter still holds whose
+/// pane already reads clear (its detach ran, but the read verifying it
+/// failed, so it was kept), then exits under `remain-on-exit`. Sent along,
+/// its `pipe-pane` stopped the list with `target pane has exited` and read
+/// clear afterwards, so the next LIVE pane was blamed and left attached.
+/// Released before anything is sent, it costs nothing and blames nobody.
+#[test]
+fn a_clear_exited_pane_ahead_of_live_taps_is_released_and_blames_no_one() {
+    let mut server = Server::start();
+    let clear = server
+        .run(&[
+            "new-window",
+            "-d",
+            "-P",
+            "-F",
+            "#{pane_id}",
+            "-t",
+            "work",
+            "exec cat",
+        ])
+        .trim()
+        .to_string();
+    server.run(&["set-option", "-w", "-t", &clear, "remain-on-exit", "on"]);
+    let (first, second) = (server.panes[1].clone(), server.panes[2].clone());
+    server.panes = vec![clear.clone(), first.clone(), second.clone()];
+    let taps = server.dir.join("taps");
+    let adapter = server.adapter(true);
+    on_tokio(async {
+        for pane in &server.panes {
+            adapter
+                .attach_pane_tap(pane, &pij_tmux::tap_sink_path(&taps, pane))
+                .await
+                .expect("attach");
+        }
+    });
+    wait_capturing(&server, &taps, &server.panes);
+    // The state a detach whose verifying read failed leaves: tmux clear, the
+    // adapter still holding the tap and its sink.
+    server.run(&["pipe-pane", "-t", &clear]);
+    server.run(&["set-option", "-p", "-u", "-t", &clear, "@pij-tap-sink"]);
+    server.run(&["send-keys", "-t", &clear, "Enter", "C-d"]);
+    let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(5));
+    while server
+        .run(&["display-message", "-p", "-t", &clear, "#{pane_dead}"])
+        .trim()
+        != "1"
+    {
+        assert!(Instant::now() < deadline, "{clear} never exited");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    on_tokio(async {
+        adapter.list_panes().await.expect("warm the control client");
+        let before = server.launches().len();
+        let results = adapter.detach_pane_taps(&server.panes).await;
+        for (pane, result) in server.panes.iter().zip(&results) {
+            result
+                .as_ref()
+                .unwrap_or_else(|error| panic!("{pane}: {error}"));
+        }
+        let launched = server.launches()[before..].to_vec();
+        assert_eq!(launched.len(), 1, "{launched:#?}");
+        assert!(
+            !launched[0].split(' ').any(|arg| arg == clear),
+            "the clear pane was sent: {launched:#?}"
+        );
+    });
+    for line in tap_states(&server) {
+        let pane = line.split(' ').next().unwrap_or_default();
+        if pane == first || pane == second {
+            assert_eq!(line, format!("{pane} 0 "), "{pane} kept its pipe or marker");
+        }
+    }
+    for pane in &server.panes {
+        assert!(
+            !pij_tmux::tap_sink_path(&taps, pane).exists(),
+            "{pane}'s sink outlived its detach"
+        );
+    }
+}
