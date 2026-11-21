@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fdbd-2f1b-78d2-93c2-6fdc98e1574a",
+				"date": "2026-11-21",
+				"head": "3bdad4b1b470f9cacd3ffb932e7585e1d5b6a39b",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:316",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"new-1: set_launching stores raw request.cwd before the F133 printable_path check (mod.rs:1506 vs :1528); can reach the stop-timeout stderr log unescaped",
+				"new-2: launching is never cleared; the stop-timeout log may name a stale launch (revive holds the lock without setting it)"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 316 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at 3bdad4b"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #316 round 1 at 3bdad4b1b470f9cacd3ffb932e7585e1d5b6a39b: pass-with-notes\n\nStatic review of c8281d8c (F264 + F267 step 1) and the main merges, in a detached worktree. No builds and no live spawns. CI 5/5 SUCCESS at this head.\n\n## Can a caller grow or poison the settled record?\nGrowth: no. Poisoning: only within C33, and only as a brake.\n- `Settled` is capped at SETTLED_KEPT = 256 and kept in memory only. `record()` updates a known key in place without pushing it onto `order` again, so a key cannot be duplicated and the deque cannot grow past the cap.\n- The only writer is `settle_entry`, and an entry exists only for a real launch (`watch`, a fresh row), a boot recovery, or a `watch_again` on a live row that passed the round-1 replay gates (live row; matching harness, folder, parent and id; key shape). A replay of a known key overwrites that key in place. Each new key needs a real launched seat, so evicting a real launch's record costs 256 real spawns.\n- What eviction costs: the record is a BRAKE that only withholds a watch. An evicted launch falls back to the round-2 behaviour, and the worst case from a stale resend is one duplicate parent notice for an existing seat. No launch, no grant and no answer go to another caller. That needs a same-user caller with the bearer key: C33.\n- `bound()` marks a settled record only for the same seat and pane, through the registration path that already checks identity. A false \"bound\" could only withhold a re-watch, which is a brake. It would need a forged registration, which is outside this PR.\n\n## Do the shutdown logs carry anything sensitive?\nNo tokens, bodies or env. The phase names are static strings. The only dynamic text is the `launching` description: folder, seat id and spawn id (public in `pij list`), and the main exit line with its milliseconds. Nothing reads the env or message bodies.\n\n## Notes\n- new-1 (low, log injection): `launch_owned` calls `set_launching(format!(\"a spawn into {} not yet past its checks\", request.cwd))` at mod.rs:1506, BEFORE the F133 `printable_path` check at :1528. A cwd with a control character, newline or ANSI escape is refused, but its text stays in `launching` until the next launch overwrites it. Revive holds the same lock before it reaches launch_owned (revive.rs:458), without calling `set_launching`. If a stop times out in that window, lib.rs:381-388 writes the raw string to the daemon's stderr log. This reintroduces the daemon-authored-text hazard F133 exists to prevent. It is same-user and needs a rare coincidence. Fix: set it after the printable check (or format the cwd with `{:?}`).\n- new-2 (low, misattribution): `launching` is never cleared, whether on a row write, a refusal or a gone caller. The timeout message can therefore name a launch that already finished, or an earlier request, while the lock is held by a revive's pre-launch section, and it tells the operator to \"close it by hand\". Its own \"if its pane exists with no seat row\" condition limits this, because a finished launch has a row. Fix: clear it once the row is written and on every return, or have revive set its own description.\n- Carried forward from #309: N1 (the resend's own trust_folder governs its wait, accepted under C33) and the stated residual (a crash between new_window and the row write leaves a rowless pane, now named in the log).\n"
+		}
+	]
+}
