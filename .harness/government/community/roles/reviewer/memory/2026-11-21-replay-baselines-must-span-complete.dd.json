@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before reviewing shared-tap drains, observer replay baselines, or async completion counters.",
+				"tags": [
+					"review",
+					"replay",
+					"concurrency",
+					"cancellation",
+					"f266"
+				],
+				"title": "Replay baselines must span complete drain lifetimes"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Adds to 2026-11-21-pr313-quiet-pane-replay; #318 supersedes its observation that repaired taps and failed fresh reads can preserve the cached capture.\n\nCounting drain starts alone is insufficient. Preserve this barrier schedule: pause a fresh read after its start is counted, let the observer capture a blank, then consume newly rendered draft bytes and fail the fresh read. The capture can inherit the unfinished drain's start count and replay a stale blank. Sequential tests and start-counter mutants missed this overlap.\n\nUse started/ended counts read together under the gate mutex. A baseline must be Some(ended) while no drain is in flight, and replay requires the same settled count now; None must never match None as a valid baseline. A completed drain between capture and replay advances the count. Account for the end with a named drop guard on success, error, cancellation and unwind. Deliberately forgetting a pending future can skip its destructor, but unequal counts must disable replay rather than bless a stale baseline. Before guard creation no consuming drain has run; keep the start-to-guard segment free of awaits/fallible work.\n\nTest both outcomes: the hidden draft forces recapture, and quiet replay resumes after the drain ends. #318's original barrier, cancellation and spawned-panic probes all passed; reverting to started-only comparison breaks recapture, while omitting ended accounting breaks replay restoration. The latter also costs a capture every tick indefinitely.\n\nApply the existing queue-reentry-and-gate-ownership-at-cancellation note if consumption can outlive its caller: the real tmux drain is synchronous today, but a caller-owned guard would not cover an independently surviving mutation. Source anchors: crates/harnesses/src/interaction.rs (TapDrains, DrainEnd, refresh_live_tap) and crates/daemon/src/pane_observer.rs (LastCapture, replay, a_drain_in_flight_during_a_capture_does_not_become_its_baseline).\n"
+		}
+	]
+}
