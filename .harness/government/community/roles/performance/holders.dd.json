@@ -755,6 +755,16 @@
 					"seat": "pij-neat-dove",
 					"to": "2026-11-21T15:08:03.908Z",
 					"why": "post-deploy AFTER for #321 (fresh seat; elephant cold)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T16:35:01.959Z",
+					"harness": "copilot",
+					"harness_session": "2c4d4a94-b597-4f4e-b664-302f3c41c5ee",
+					"instance_key": "325",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-helpful-elephant",
+					"why": "#325 F271b/c round 1"
 				}
 			]
 		}
