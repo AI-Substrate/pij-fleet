@@ -106,10 +106,69 @@ const TAP_SINK_OPTION: &str = "@pij-tap-sink";
 /// is open, and its owner marker. The marker is last because a sink path may
 /// hold a `|`; a pane id and a pipe state never do.
 const TAP_STATE_FORMAT: &str = "#{pane_id}|#{pane_pipe}|#{@pij-tap-sink}";
-/// How long a pipe-pane attach or detach may take to show, and how often it is
-/// read meanwhile.
+/// The convergence grace of a pipe-pane attach or detach, and how often the
+/// pipe is read meanwhile. It is checked between steps (after each launch and
+/// each read), so it is not a hard limit on any one tmux call or on a stop.
 const PIPE_STATE_WAIT: Duration = Duration::from_secs(2);
 const PIPE_STATE_POLL: Duration = Duration::from_millis(25);
+/// The most argument bytes one tap-detach command carries (#330 review
+/// B330-01). The bound is tmux's message transport, not the host's `ARG_MAX`
+/// (1 MiB): the tmux 3.6a client packs the whole command's arguments, each
+/// with its NUL, into one imsg of at most `MAX_IMSGSIZE` (16384 bytes, header
+/// included; `client.c` 370-397, `compat/imsg.h` 30) and refuses a longer one
+/// with `command too long` before any of it runs. A 300-pane detach list was
+/// 17,098 bytes. Half the limit leaves the imsg header and the message's own
+/// fields room on any tmux version; at about 60 bytes a pane that is some 130
+/// panes a launch.
+const DETACH_COMMAND_MAX_BYTES: usize = 8 * 1024;
+
+/// The tmux arguments detaching one pane's tap: close its pipe, then clear
+/// its owner marker.
+fn detach_pair(pane: &str) -> [&str; 10] {
+    [
+        "pipe-pane",
+        "-t",
+        pane,
+        ";",
+        "set-option",
+        "-p",
+        "-u",
+        "-t",
+        pane,
+        TAP_SINK_OPTION,
+    ]
+}
+
+/// How many leading `panes` fit one detach command within
+/// [`DETACH_COMMAND_MAX_BYTES`], counting each argument with its NUL as the
+/// tmux client packs it; at least one, so every round makes progress.
+fn detach_chunk_len<'a>(panes: impl Iterator<Item = &'a str>) -> usize {
+    let mut bytes = 0;
+    let mut count = 0;
+    for pane in panes {
+        // A `;` and its NUL join this pair to the one before.
+        let separator = if count == 0 { 0 } else { 2 };
+        let pair: usize = detach_pair(pane).iter().map(|arg| arg.len() + 1).sum();
+        if count > 0 && bytes + separator + pair > DETACH_COMMAND_MAX_BYTES {
+            break;
+        }
+        bytes += separator + pair;
+        count += 1;
+    }
+    count
+}
+
+/// One command list detaching every pane in `panes`, in order.
+fn detach_args<'a>(panes: impl Iterator<Item = &'a str>) -> Vec<OsString> {
+    let mut args = Vec::new();
+    for pane in panes {
+        if !args.is_empty() {
+            args.push(OsString::from(";"));
+        }
+        args.extend(detach_pair(pane).map(OsString::from));
+    }
+    args
+}
 
 /// A listed pane's tap facts, as [`TAP_STATE_FORMAT`] reads them.
 struct ListedTap {
@@ -1530,8 +1589,8 @@ impl TmuxPort for TmuxAdapter {
 
     async fn detach_pane_taps(&self, panes: &[String]) -> Vec<Result<()>> {
         // F267 step 3: one read of every pane's pipe and owner marker, one
-        // launch detaching every listed pane, and one read to verify; never a
-        // launch or a read per pane.
+        // launch per chunk of panes (`DETACH_COMMAND_MAX_BYTES`), and one read
+        // after each launch; never a launch or a read per pane.
         let mut results: Vec<Option<Result<()>>> = panes.iter().map(|_| None).collect();
         let listed = match self.tap_states() {
             Ok(listed) => listed,
@@ -1577,33 +1636,26 @@ impl TmuxPort for TmuxAdapter {
 
         let started = Instant::now();
         let deadline = started + PIPE_STATE_WAIT;
-        let mut last_error: Option<PijError>;
+        // What tmux listed before the launch now being settled.
+        let mut before = listed;
         while !pending.is_empty() {
-            // tmux runs the list in order and stops at the first command that
-            // fails (a pane closed since the read): the read after it finds
-            // what is left, and the next round detaches that. A pipe-pane with
-            // no command closes the pipe before it returns, so the marker is
-            // cleared only behind a closed pipe, as one pane at a time did.
-            let mut args = Vec::new();
-            for (_, pane, _) in &pending {
-                if !args.is_empty() {
-                    args.push(OsString::from(";"));
+            if Instant::now() >= deadline {
+                for (index, pane, path) in pending.drain(..) {
+                    results[index] = Some(Err(self.error(format!(
+                        "pipe-pane detach did not reach pane {pane:?}, sink {path:?}, within {:?} — ownership marker and sink retained; the next observer sweep will retry",
+                        started.elapsed()
+                    ))));
                 }
-                args.extend(os_args([
-                    "pipe-pane",
-                    "-t",
-                    pane,
-                    ";",
-                    "set-option",
-                    "-p",
-                    "-u",
-                    "-t",
-                    pane,
-                    TAP_SINK_OPTION,
-                ]));
+                break;
             }
-            last_error = self.run("pipe-pane detach taps", &args).err();
-            let listed = match self.tap_states() {
+            // tmux runs a command list in order and stops at the first command
+            // that fails. A pipe-pane with no command closes the pipe before it
+            // returns, so the marker is cleared only behind a closed pipe, as
+            // one pane at a time did.
+            let chunk = detach_chunk_len(pending.iter().map(|(_, pane, _)| *pane));
+            let args = detach_args(pending[..chunk].iter().map(|(_, pane, _)| *pane));
+            let launched = self.run("pipe-pane detach taps", &args);
+            let mut listed = match self.tap_states() {
                 Ok(listed) => listed,
                 Err(error) => {
                     for (index, _, _) in pending.drain(..) {
@@ -1612,31 +1664,66 @@ impl TmuxPort for TmuxAdapter {
                     break;
                 }
             };
-            pending.retain(|(index, pane, path)| match listed.get(*pane) {
-                Some(state) if state.piped || state.marker.is_some() => true,
-                // Gone, or listed with its pipe closed and its marker cleared.
-                _ => {
-                    results[*index] = Some(self.release_tap(pane, path));
-                    false
-                }
-            });
-            if pending.is_empty() {
-                break;
-            }
-            if Instant::now() >= deadline {
-                let cause = last_error
-                    .as_ref()
-                    .map(|error| format!(" (last detach: {error})"))
-                    .unwrap_or_default();
-                for (index, pane, path) in pending.drain(..) {
+            let attached = |listed: &BTreeMap<String, ListedTap>, pane: &str| {
+                listed
+                    .get(pane)
+                    .is_some_and(|state| state.piped || state.marker.is_some())
+            };
+            if let Err(error) = &launched {
+                // Where tmux stopped. A chunk pane gone since the last read is
+                // the likely stop, so nobody is blamed this round; otherwise the
+                // first chunk pane still attached is the one whose command
+                // failed. Either way that pane leaves `pending`, so no command
+                // is ever sent twice, and the panes after it go in the next one.
+                let vanished = pending[..chunk]
+                    .iter()
+                    .any(|(_, pane, _)| before.contains_key(*pane) && !listed.contains_key(*pane));
+                if !vanished
+                    && let Some(stop) = pending[..chunk]
+                        .iter()
+                        .position(|(_, pane, _)| attached(&listed, pane))
+                {
+                    let (index, pane, path) = pending.remove(stop);
                     results[index] = Some(Err(self.error(format!(
-                        "pipe-pane detach did not converge for pane {pane:?}, sink {path:?}, within {:?}{cause} — ownership marker and sink retained; the next observer sweep will retry",
-                        started.elapsed()
+                        "pipe-pane detach failed for pane {pane:?}, sink {path:?}: {error} — ownership marker and sink retained; the next observer sweep will retry"
                     ))));
                 }
-                break;
+            } else {
+                // The whole chunk ran: anything still attached is only waited
+                // for, with reads, never sent again.
+                while pending[..chunk.min(pending.len())]
+                    .iter()
+                    .any(|(_, pane, _)| attached(&listed, pane))
+                    && Instant::now() < deadline
+                {
+                    sleep(PIPE_STATE_POLL).await;
+                    listed = match self.tap_states() {
+                        Ok(listed) => listed,
+                        Err(_) => break,
+                    };
+                }
+                let mut position = 0;
+                pending.retain(|(index, pane, path)| {
+                    position += 1;
+                    if position <= chunk && attached(&listed, pane) {
+                        results[*index] = Some(Err(self.error(format!(
+                            "pipe-pane detach did not converge for pane {pane:?}, sink {path:?}, within {:?} — ownership marker and sink retained; the next observer sweep will retry",
+                            started.elapsed()
+                        ))));
+                        return false;
+                    }
+                    true
+                });
             }
-            sleep(PIPE_STATE_POLL).await;
+            // Gone, or listed with its pipe closed and its marker cleared.
+            pending.retain(|(index, pane, path)| {
+                if attached(&listed, pane) {
+                    return true;
+                }
+                results[*index] = Some(self.release_tap(pane, path));
+                false
+            });
+            before = listed;
         }
         results
             .into_iter()

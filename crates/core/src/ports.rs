@@ -1264,8 +1264,9 @@ pub trait TmuxPort: Send + Sync {
     /// failure never keeps another's tap attached.
     ///
     /// F267 step 3: the set is one call, so an adapter reads the world once
-    /// and launches once for all of it, not per pane (a stop at ~145 panes
-    /// spent 4.7 s detaching them one at a time).
+    /// and, on the healthy path, launches once per chunk of panes its tool
+    /// can take in one command, not per pane (a stop at ~145 panes spent
+    /// 4.7 s detaching them one at a time).
     async fn detach_pane_taps(&self, panes: &[String]) -> Vec<Result<()>>;
 
     /// [`Self::detach_pane_taps`] for one pane.
