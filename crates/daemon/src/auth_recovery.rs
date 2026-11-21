@@ -303,15 +303,20 @@ pub(crate) async fn handle(
         // so the lease is read again here, the last step before anything is
         // recorded or queued: the decision linearizes at this read. A renewal
         // after it meets a restart decided while the lease had lapsed. A
-        // BRAKE: it only spares; a failed read spares too.
-        if cause == Cause::ExtensionLost
-            && services
-                .delivery
-                .native_receiver_renewed(&seat.id)
-                .await
-                .unwrap_or(true)
-        {
-            return Ok(None);
+        // BRAKE: it only spares; a failed read spares too, and says so
+        // (N328-R1-01), as the first lease read does.
+        if cause == Cause::ExtensionLost {
+            match services.delivery.native_receiver_renewed(&seat.id).await {
+                Ok(false) => {}
+                Ok(true) => return Ok(None),
+                Err(error) => {
+                    eprintln!(
+                        "auth recovery: the receiver lease of {} not read again before its restart: {error}",
+                        seat.id
+                    );
+                    return Ok(None);
+                }
+            }
         }
         let id = format!("auth-restart:{}:{now_ms}", seat.id);
         // Persist before mutate: the window starts before the control exists.

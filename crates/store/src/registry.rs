@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use sqlx::{Pool, Row, Sqlite};
 
+use pij_core::delivery::{CONTROL_KIND_PREFIX, DELIVERY_KIND_PREFIX};
 use pij_core::error::{PijError, Result};
 use pij_core::model::{
     Event, Harness, ProcIdentity, SeatDescriptor, SeatId, SemanticState, Seq, SystemState,
@@ -510,6 +511,17 @@ impl Registry for SqliteRegistry {
         rows.iter().map(row_to_descriptor).collect()
     }
 
+    async fn list_live_or_owed(&self) -> Result<Vec<SeatDescriptor>> {
+        require_current_schema(&self.pool).await?;
+        let rows = sqlx::query(LIST_LIVE_OR_OWED_SQL)
+            .bind(DELIVERY_KIND_PREFIX)
+            .bind(CONTROL_KIND_PREFIX)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        rows.iter().map(row_to_descriptor).collect()
+    }
+
     async fn tombstone(&self, seat: &SeatId, reason: &str) -> Result<Seq> {
         self.publish_tombstone(seat.clone(), reason.to_string(), None)
             .await
@@ -617,6 +629,28 @@ pub const LIST_LIVE_SQL: &str = "SELECT * FROM seats INDEXED BY seats_live \
        AND (?3 IS NULL OR parent = ?3) \
        AND (?4 IS NULL OR pane = ?4) \
        AND ?5 <> 0 \
+     ORDER BY id";
+
+/// [`Registry::list_live_or_owed`] (F259a): the live rows from `seats_live`,
+/// then each retired seat named by an open delivery row (`?1` the
+/// `delivery:` prefix, `?2` the `delivery-control:` one), read from
+/// `jobs_claimable` (state, kind) and found by primary key. The delivery
+/// drain asks it every 5 s; it visits no other retired row, where `LIST_SQL`
+/// scanned every seat row ever written. `CROSS JOIN` keeps the open rows the
+/// outer loop, and `INDEXED BY` makes SQLite refuse the query if either
+/// index is ever gone. Public so the cost test explains THIS query.
+pub const LIST_LIVE_OR_OWED_SQL: &str = "SELECT * FROM seats INDEXED BY seats_live \
+     WHERE tombstoned_at IS NULL \
+     UNION ALL \
+     SELECT seats.* FROM ( \
+         SELECT DISTINCT CASE WHEN substr(kind, 1, length(?1)) = ?1 \
+             THEN substr(kind, length(?1) + 1) \
+             ELSE substr(kind, length(?2) + 1) END AS id \
+         FROM jobs INDEXED BY jobs_claimable \
+         WHERE state IN ('pending', 'running') \
+           AND (substr(kind, 1, length(?1)) = ?1 OR substr(kind, 1, length(?2)) = ?2) \
+     ) AS owed CROSS JOIN seats ON seats.id = owed.id \
+     WHERE seats.tombstoned_at IS NOT NULL \
      ORDER BY id";
 
 /// The sole seats-row upsert, shared by registry puts and atomic placements.

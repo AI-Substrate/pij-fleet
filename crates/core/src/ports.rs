@@ -171,6 +171,18 @@ pub trait Registry: Send + Sync {
         Ok(seats)
     }
 
+    /// Every live seat, and every retired seat that still has an open
+    /// (pending or running) row of its [`crate::delivery::delivery_kind`] or
+    /// [`crate::delivery::control_kind`], ordered by id (F259a): the delivery
+    /// drain's roster. A retired seat with nothing open gives the drain
+    /// nothing to claim, so leaving it out changes no answer. The default
+    /// lists the whole roster, a superset; a store answers it from its live
+    /// index and its queue's claim index, never visiting the other retired
+    /// rows.
+    async fn list_live_or_owed(&self) -> Result<Vec<SeatDescriptor>> {
+        self.list(SeatFilter::default()).await
+    }
+
     /// Mark a seat dead, keeping the row and the reason. Rows are tombstoned,
     /// never deleted: a seat that vanishes takes its own post-mortem with it.
     async fn tombstone(&self, seat: &SeatId, reason: &str) -> Result<Seq>;

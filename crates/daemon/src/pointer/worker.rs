@@ -11,7 +11,7 @@ use pij_core::model::{
     DeliveryFailure, DeliveryOrigin, DeliveryOutcome, Event, Harness, Job, JobId, Msg, Outcome,
     Receipt, SeatDescriptor, SystemState,
 };
-use pij_core::ports::{ParkingEvidence, Queue, Registry, SeatFilter, TmuxPort, Transport};
+use pij_core::ports::{ParkingEvidence, Queue, Registry, TmuxPort, Transport};
 use pij_harnesses::{InteractionGate, StagedSubmission};
 
 use crate::delivery::{publish_delivery_held, publish_delivery_outcome, publish_socket_released};
@@ -228,7 +228,9 @@ impl DrainWorker {
     /// failures. A fallible delivery action is returned to pending before its
     /// error is surfaced.
     pub async fn drain_once(&self) -> Result<usize> {
-        let seats = self.registry.list(SeatFilter::default()).await?;
+        // F259a: live seats and the retired ones still owed a delivery row,
+        // never the rest of the retired rows (nothing to claim for them).
+        let seats = self.registry.list_live_or_owed().await?;
         // Copilot bodies belong to its native extension; only its typed controls,
         // queued on their own kind, are drained here (plan 186). That kind is
         // listed even for a paneless seat: only a claim that lists it sweeps an
