@@ -625,3 +625,17 @@ sha256 = "d0e331b23cf51e01423efc04345eee23a25895eb8a78c521729fc172e4cdf881"
 bytes = 544
 note = "Live Claude Code 2.1.329 in a fresh folder under /tmp, 34x30 pane: the prose wraps but every row the parser reads ('Accessing workspace:', both menu rows, the footer) stays whole. R264's C34 follow-up."
 answer = "folder_trust_prompt(Claude) matches on the heading; next key Down."
+[[fixture]]
+path = "harnesses/omp-18-16-0-footer-claude.txt"
+sha256 = "6bdd3558d02c1c1f2e61a0a0006374569b6a3823adb361ada22e87d1e24f2725"
+bytes = 130
+note = "Real OMP 18.16.0 footer line captured 2026-11-21 with tmux capture-pane from a live OMP seat running Claude Opus. Only the footer line is kept; nothing synthetic is added."
+answer = "In compact mode the thinking-level glyph (here U+25D2) stands where the model icon was. The model segment is 'Opus 5.5 (1M)', and OMP's display name drops the 'Claude ' prefix, so a catalog lookup must match it with that prefix stripped. A parser keyed on one icon glyph finds no model here and is wrong."
+
+[[fixture]]
+path = "harnesses/omp-18-16-0-footer-gpt.txt"
+sha256 = "f95819ff5bfa528ca11cea18adc27a8285ca959b7095784d4570a4405aa6da76"
+bytes = 110
+note = "Real OMP 18.16.0 footer line captured 2026-11-21 with tmux capture-pane from a live OMP seat running a GPT model. Only the footer line is kept; nothing synthetic is added."
+answer = "The model segment is 'GPT-5.4 mini' after the thinking-level glyph. Exactly one segment carries a model or thinking glyph; a footer with none, or with more than one, must read as unknown (fail closed), never as the requested model."
+
