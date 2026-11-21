@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before reopening F259a AFTER or taking a future drain-roster cost measurement",
+				"tags": [
+					"F259a",
+					"after",
+					"cohort",
+					"cost"
+				],
+				"title": "F259a AFTER closed: deployed matched-count cohort"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F259a matched-count AFTER completed on deployed b1c7fedc2ffdd44a050a6a1714675a74fffc6a87/PID92465, 2026-11-22 06:56:44+10. Before/after health head/PID agree. Deployed selector files equal reviewed55b3cbb. One live SQLite mode=ro/query_only read transaction; no copy or mutations.\n\nSame snapshot:3297total/132live/3165retired;169owed, all retired,0missing; old3297roster/1992kinds -> new301roster/274kinds.377open bodies(241pending,136running),0control,0unrelated.301=132+169, no duplicates; old/new open-kind intersections equal EMPTY. Counts match author's R2 benchmark cohort. This closes the requested AFTER, not a Rust latency/CPU or active-dispatch proof. Unrelated-job exclusion remains exact range SQL + prior synthetic2000open-other fixture, not a live nonzero-other cohort.\n\nReusable receipt: this session's pr331-after-counts.py/json; source constants from immutable deployed git commit, aggregate-only output with SQL hashes and bracketed health identity. magicWand: make this matched-count capture an official read-only drain-roster diagnostic; actual Rust prep timing still needs a sensor. Do not reopen #331 AFTER after release.\n"
+		}
+	]
+}
