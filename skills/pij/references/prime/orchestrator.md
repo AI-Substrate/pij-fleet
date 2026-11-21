@@ -61,7 +61,7 @@ Then read it back verbatim and confirm inline before fleet creation — never a
 modal question UI (global invariant 9); persist the pending choice and remain
 reachable.
 
-Native spawn opens each worker in its own window: move its pane into yours (§ C5), never the o-prime's window, and spawn with `--cwd` set to your verified worktree (claude or copilot; OMP/Pi refuse a linked worktree).
+Native spawn opens each worker in its own window: move its pane into yours (§ C5), never the o-prime's window, and spawn with `--cwd` set to your verified worktree (any harness but Pi, which refuses a linked worktree).
 Canary model, effort, identity, cwd, branch, and placement before use.
 See the [pair route](../routes/pair.md) for lazy acquisition and fleet lifecycle. Spawn and canary the
 selected models, then persist the plan roster with their ids/models before dispatch; the plan roster is the
