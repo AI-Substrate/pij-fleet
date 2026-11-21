@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"head": "5c219c0b34c1f2e3e2253e68bbf96f8fca1a9631",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:320",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh run view 44899914282 --job 136833437449 --log",
+					"exit_code": 0,
+					"log": "Successful exact-head job;artifact14705537000;2807 tests passed;33 focused JUnit cases verified"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Receipt correction for verdict a69acfd: the CI-log command was gh run view 44899914282 --job 136833437449 --log (a space follows --job). The verdict evidence command string omitted that space. Job/artifact IDs and passing results are unchanged; performance verdict remains PASS-WITH-NOTES."
+		}
+	]
+}
