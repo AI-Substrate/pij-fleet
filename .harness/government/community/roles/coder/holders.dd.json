@@ -1568,6 +1568,16 @@
 					"seat": "pij-classical-tern",
 					"to": "2026-11-21T01:30:15.835Z",
 					"why": "F253 fleet-map innerHTML sinks and external fonts (eel S303-N1/N2)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T01:34:44.242Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f250",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F250 local per-version Copilot contract-pass cache"
 				}
 			]
 		}
