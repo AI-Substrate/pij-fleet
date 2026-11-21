@@ -2881,6 +2881,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-written-mongoose",
 					"why": "#328 F274 round 1"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T18:11:22.098Z",
+					"harness": "copilot",
+					"harness_session": "ae639be0-bf8b-4dcf-b1a3-21645f441861",
+					"instance_key": "329",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-written-mongoose",
+					"why": "#329 chore round 1"
 				}
 			]
 		}
