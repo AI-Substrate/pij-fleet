@@ -50,7 +50,7 @@ const NATIVE_RECEIVER_UNAVAILABLE: &str = "native-extension-unavailable";
 const NATIVE_RECEIVER_RENEWAL_DIVISOR: u64 = 3;
 /// D1: the spine kinds of a native receiver lease's two edges.
 pub(crate) const NATIVE_RECEIVER_LAPSED: &str = "native.receiver.lapsed";
-const NATIVE_RECEIVER_RENEWED: &str = "native.receiver.renewed";
+pub(crate) const NATIVE_RECEIVER_RENEWED: &str = "native.receiver.renewed";
 /// R277-1: how long a native (Copilot) claim waits idle before the daemon
 /// answers an empty page, under the extension's 65 s request timeout, so an
 /// idle receiver gets an answer from the daemon instead of timing out

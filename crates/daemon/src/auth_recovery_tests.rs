@@ -593,3 +593,202 @@ async fn a_lapse_of_any_other_seat_does_nothing() {
         assert!(told(&fleet, PARENT).await.is_empty(), "{change}");
     }
 }
+
+/// A second native Copilot seat, whose process the kernel does not run.
+const OTHER: &str = "pij-copilot-tester";
+
+/// B311-01: the coder delivers natively (a reconcile reads only such seats),
+/// and `other` adds a second native Copilot seat beside it.
+async fn native(fleet: &Fleet, other: bool) {
+    let mut seat = coder(fleet).await;
+    seat.native_extension_delivery = true;
+    let mut second = seat.clone();
+    fleet.services.registry.put(seat).await.unwrap();
+    if other {
+        second.id = SeatId::from(OTHER);
+        second.pane = Some("%22".into());
+        second.harness_session = Some("native-tester".into());
+        second.proc = Some(ProcIdentity {
+            pid: 4300,
+            proc_start: 11,
+        });
+        fleet.services.registry.put(second).await.unwrap();
+    }
+}
+
+/// One spine event of `kind` for `seat`, through the bus (and so live).
+async fn edge(fleet: &Fleet, kind: &str, seat: Option<&str>) {
+    fleet
+        .services
+        .event_bus
+        .publish(pij_core::model::Event {
+            seq: None,
+            v: 1,
+            at: 10 * MINUTE,
+            kind: kind.to_string(),
+            seat: seat.map(SeatId::from),
+            payload: serde_json::json!({"seat": seat, "renewed_at": null}).to_string(),
+        })
+        .await
+        .unwrap();
+}
+
+/// The coder's queued controls once one appears, or none after two seconds.
+async fn controls_soon(fleet: &Fleet) -> Vec<String> {
+    for _ in 0..200 {
+        let queued = controls(fleet).await;
+        if !queued.is_empty() {
+            return queued;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Vec::new()
+}
+
+/// B311-01: a lapse told before the follower attached (a daemon restart
+/// restores it without telling it again, R277-2) is decided at attachment:
+/// one restart.
+#[tokio::test]
+async fn a_lapse_told_before_the_follower_attached_is_restarted_once() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    native(&fleet, false).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    let follower = tokio::spawn(super::follow_lapses(fleet.services.clone()));
+    let queued = controls_soon(&fleet).await;
+    follower.abort();
+    assert_eq!(queued.len(), 1, "one restart control is queued");
+    assert!(queued[0].contains("\"restart\""), "{queued:?}");
+}
+
+/// B311-01: a lapse overwritten in a one-slot broadcast ring before the
+/// follower read it is decided after the gap: one restart. The follower is
+/// held on the other seat's lock while the ring overflows.
+#[tokio::test]
+async fn a_lapse_overwritten_in_the_broadcast_ring_is_restarted_once() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    native(&fleet, true).await;
+    let spine = fleet.services.event_bus.raw_spine();
+    fleet.services.event_bus = Arc::new(crate::events::EventBus::new(spine, 1).unwrap());
+    let other = fleet.services.auth_recovery.slot(&SeatId::from(OTHER));
+    let held = other.lock().await;
+    let follower = tokio::spawn(super::follow_lapses(fleet.services.clone()));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(OTHER)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    for _ in 0..3 {
+        edge(&fleet, "test.noise", None).await;
+    }
+    drop(held);
+    let queued = controls_soon(&fleet).await;
+    follower.abort();
+    assert_eq!(queued.len(), 1, "one restart control is queued");
+}
+
+/// B311-01: a lapse its receiver renewed before the reconcile read it is
+/// never decided; a lapse still outstanding is.
+#[tokio::test]
+async fn a_reconcile_never_replays_a_lapse_its_receiver_renewed() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    native(&fleet, false).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_RENEWED, Some(SEAT)).await;
+    super::reconcile(&fleet.services).await;
+    assert!(
+        controls(&fleet).await.is_empty(),
+        "a renewed lapse is spared"
+    );
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    super::reconcile(&fleet.services).await;
+    assert_eq!(controls(&fleet).await.len(), 1, "an outstanding one is not");
+    super::reconcile(&fleet.services).await;
+    assert_eq!(
+        controls(&fleet).await.len(),
+        1,
+        "a decided one is not again"
+    );
+}
+
+/// B311-01: a lapse an earlier daemon already decided, its window since
+/// over, is not replayed when a new daemon reconciles: the reconcile acts
+/// only on a lapse with nothing decided after it.
+#[tokio::test]
+async fn a_lapse_an_earlier_daemon_decided_is_not_decided_again() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    native(&fleet, false).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    let long_ago = super::now_ms() - 40 * MINUTE;
+    fleet
+        .services
+        .event_bus
+        .publish(pij_core::model::Event {
+            seq: None,
+            v: 1,
+            at: long_ago,
+            kind: super::AUTH_RECOVERY_KIND.to_string(),
+            seat: Some(SeatId::from(SEAT)),
+            payload: serde_json::json!({
+                "action": "notify",
+                "at": long_ago,
+                "pid": FIRST.pid,
+                "proc_start": FIRST.proc_start,
+                "kind": "extension-lost",
+                "msg_id": null,
+            })
+            .to_string(),
+        })
+        .await
+        .unwrap();
+    super::reconcile(&fleet.services).await;
+    assert!(controls(&fleet).await.is_empty(), "never decided twice");
+}
+
+/// N311-01: a lapse renewed before the follower decides it is spared. The
+/// follower is held on the other seat's lock while the coder's lapse and its
+/// renewal are told.
+#[tokio::test]
+async fn a_lapse_renewed_before_it_is_decided_is_spared() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    native(&fleet, true).await;
+    let other = fleet.services.auth_recovery.slot(&SeatId::from(OTHER));
+    let held = other.lock().await;
+    let follower = tokio::spawn(super::follow_lapses(fleet.services.clone()));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(OTHER)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_RENEWED, Some(SEAT)).await;
+    drop(held);
+    let queued = controls_soon(&fleet).await;
+    follower.abort();
+    assert!(queued.is_empty(), "{queued:?}");
+}
+
+/// A kernel whose process table cannot be read.
+struct Unreadable;
+
+#[async_trait::async_trait]
+impl pij_core::ports::LivenessPort for Unreadable {
+    async fn proc_start(&self, _pid: u32) -> pij_core::error::Result<Option<u64>> {
+        Err(pij_core::error::PijError::Adapter {
+            adapter: "test/liveness".to_string(),
+            message: "unreadable".to_string(),
+        })
+    }
+}
+
+/// F261, security note 1: a start that cannot be read is not running: never
+/// a restart, the parent is told to revive it.
+#[tokio::test]
+async fn a_lapse_whose_process_cannot_be_read_never_restarts() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    fleet.services.liveness = Arc::new(Unreadable);
+    let outcome = lapse(&fleet, 10 * MINUTE).await.expect("decided");
+    assert_eq!(outcome.action, Action::Exited);
+    assert!(controls(&fleet).await.is_empty(), "never a restart");
+}

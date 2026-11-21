@@ -38,7 +38,21 @@
 //!   lost its login too, they are told the login needs renewing;
 //! - they are told at most once per window;
 //! - F261: the seat's recorded process (pid and start) is not running, or its
-//!   start could not be read: never a restart; they are told to revive it.
+//!   start could not be read: never a restart; they are told to revive it;
+//! - F261: a lapse is decided only while it is still the seat's latest
+//!   receiver edge and nothing has been decided since: a lapse its receiver
+//!   has since renewed, or one already decided (live, by an earlier
+//!   reconcile, or by an earlier daemon), is spared. A read that fails spares
+//!   it too.
+//!
+//! The lapse follower attaches live, so it also reconciles: at attachment, and
+//! again after any gap a lag leaves in its subscription, it decides every
+//! lapse outstanding on the spine (each live native Copilot seat whose latest
+//! receiver edge is `native.receiver.lapsed`). A restart restores a lapse
+//! without telling it again (R277-2), and a lapse overwritten in the
+//! broadcast ring is never delivered, so without this a seat lost either way
+//! would stay deaf (B311-01). The reconcile is the same decision, with every
+//! brake above; it never replays a lapse its receiver has since renewed.
 //!
 //! The window and its budget are SHARED by both triggers: one remedy, one
 //! seat. A loss can show both ways (the extension dies, then a turn fails
@@ -57,21 +71,30 @@
 //!
 //! Cost: the route runs only on an auth error, and the lapse follower only on
 //! a `native.receiver.lapsed` edge (told once per lapse, never per tick): one
-//! roster read and one in-process start-time read of the seat's process
-//! (`proc_pidinfo` on macOS, procfs on Linux; no launch for the daemon's own
-//! user). Either then reads the seat's latest recovery event once per daemon
-//! lifetime, the live payloads of the seat's control kind while a restart may
-//! be pending, its holdings when someone is told, and one composer capture
-//! through the existing interaction gate when a restart is possible; it
-//! launches nothing. The restart is one queued control; a notice is one
-//! message per recipient.
+//! indexed read of the seat's latest receiver or recovery event, one roster
+//! read and one start-time read of the seat's process (`proc_pidinfo` on
+//! macOS, procfs on Linux; no launch for the daemon's own user; otherwise the
+//! existing absolute `/bin/ps` fallback, counted as
+//! `ps.proc-liveness-fallback`). Its live subscription receives every
+//! broadcast event before its filter drops the rest: one subscriber per
+//! daemon, never per seat. A reconcile, at attachment and after a gap only,
+//! is one roster read and one indexed spine read per live native Copilot seat
+//! (the R277-2 restore's shape); no timer. Either then reads the seat's
+//! latest recovery event once per daemon lifetime, the live payloads of the
+//! seat's control kind while a restart may be pending, its holdings when
+//! someone is told, and one composer capture through the existing
+//! interaction gate when a restart is possible. The restart is one queued
+//! control; a notice is one message per recipient.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use pij_core::events::EventFilter;
-use pij_core::model::{DeliveryOutcome, Event, Harness, Msg, SeatDescriptor, SeatId, SystemState};
+use pij_core::model::{
+    DeliveryOutcome, Event, Harness, Msg, SeatDescriptor, SeatId, Seq, SystemState,
+};
+use pij_core::ports::SeatFilter;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio_stream::StreamExt;
@@ -537,21 +560,111 @@ pub(crate) fn notice(seat: &SeatDescriptor, action: Action, cause: Cause) -> Str
 
 /// F261: follow `native.receiver.lapsed` and decide each lapse of a Copilot
 /// seat. Event-driven: no timer, nothing per tick, one decision per lapse
-/// edge (told once per lapse). A lapse dropped by a lagging subscription is
-/// not decided, which can only spare a seat.
+/// edge (told once per lapse). A lapse the live subscription cannot deliver
+/// (told before it attached, or overwritten in the broadcast ring) is found
+/// by [`reconcile`], at attachment and after every gap (B311-01).
 pub async fn follow_lapses(services: Services) {
-    let mut lapses = services.event_bus.subscribe_live(EventFilter::kinds([
-        crate::delivery::NATIVE_RECEIVER_LAPSED,
-    ]));
-    while let Some(event) = lapses.next().await {
-        let Some(seat) = event.seat else {
-            continue;
-        };
-        if let Err(error) = on_lapse(&services, &seat, event.at).await {
-            eprintln!("auth recovery: lapse of {seat} not decided: {error}");
+    let mut lapses = attach(&services);
+    reconcile(&services).await;
+    loop {
+        while let Some(event) = lapses.next().await {
+            let (Some(seat), Some(seq)) = (event.seat.as_ref(), event.seq) else {
+                continue;
+            };
+            if outstanding(&services, seat).await == Some(seq) {
+                decide_lapse(&services, seat).await;
+            }
         }
+        let dropped = lapses.dropped_count();
+        if dropped == 0 {
+            break;
+        }
+        eprintln!(
+            "pij-rs auth recovery: {dropped} events overwritten before the lapse follower read them; reconciling"
+        );
+        lapses = attach(&services);
+        reconcile(&services).await;
     }
     eprintln!("pij-rs auth recovery: native.receiver.lapsed subscription ended");
+}
+
+/// The follower's live subscription: it ends at a gap rather than skip one.
+fn attach(services: &Services) -> crate::events::Subscription {
+    services
+        .event_bus
+        .subscribe_live_until_gap(EventFilter::kinds([
+            crate::delivery::NATIVE_RECEIVER_LAPSED,
+        ]))
+}
+
+/// B311-01: decide every lapse outstanding on the spine. One roster read and
+/// one indexed spine read per live native Copilot seat (the shape of the
+/// delivery engine's R277-2 restore); a seat whose read fails is skipped,
+/// which can only spare it.
+pub(crate) async fn reconcile(services: &Services) {
+    let seats = match services
+        .registry
+        .list(SeatFilter {
+            harness: Some(Harness::Copilot),
+            live_only: true,
+            ..SeatFilter::default()
+        })
+        .await
+    {
+        Ok(seats) => seats,
+        Err(error) => {
+            eprintln!("auth recovery: outstanding lapses not read: {error}");
+            return;
+        }
+    };
+    for seat in seats
+        .iter()
+        .filter(|seat| seat.native_extension_delivery && seat.tombstoned_at.is_none())
+    {
+        if outstanding(services, &seat.id).await.is_some() {
+            decide_lapse(services, &seat.id).await;
+        }
+    }
+}
+
+/// The seat's undecided lapse: its latest receiver edge or recovery decision,
+/// when that is a `native.receiver.lapsed`. A renewal since (N311-01), a
+/// decision since (already handled, live or by an earlier reconcile or
+/// daemon) or a failed read is none: a BRAKE, it can only spare the seat.
+async fn outstanding(services: &Services, seat: &SeatId) -> Option<Seq> {
+    match services
+        .spine
+        .latest_matching(
+            seat,
+            &[
+                crate::delivery::NATIVE_RECEIVER_LAPSED,
+                crate::delivery::NATIVE_RECEIVER_RENEWED,
+                AUTH_RECOVERY_KIND,
+            ],
+        )
+        .await
+    {
+        Ok(Some(event)) if event.kind == crate::delivery::NATIVE_RECEIVER_LAPSED => event.seq,
+        Ok(_) => None,
+        Err(error) => {
+            eprintln!("auth recovery: the receiver edge of {seat} not read: {error}");
+            None
+        }
+    }
+}
+
+async fn decide_lapse(services: &Services, seat: &SeatId) {
+    if let Err(error) = on_lapse(services, seat, now_ms()).await {
+        eprintln!("auth recovery: lapse of {seat} not decided: {error}");
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        })
 }
 
 /// One lapse: a live Copilot seat with a recorded process is decided as
