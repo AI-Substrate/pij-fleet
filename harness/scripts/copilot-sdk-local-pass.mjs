@@ -22,11 +22,13 @@ const VERSION = /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$/;
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 const MAX_RECORD_BYTES = 4096;
 
-/** Where local passes live: pij-rs's state dir, as `default_state_dir` picks it. */
+/**
+ * Where local passes live: pij-rs's state dir, as `default_state_dir` picks
+ * it: `$HOME/.pij-rs`, or with no HOME `<tmpdir>/pij-rs-no-home/.pij-rs`
+ * (S307-N1: the fallback is a stand-in HOME, `.pij-rs` still under it).
+ */
 export function passDir(env = process.env) {
-	const state =
-		env.PIJ_RS_STATE_DIR ||
-		(env.HOME ? join(env.HOME, ".pij-rs") : join(tmpdir(), "pij-rs-no-home"));
+	const state = env.PIJ_RS_STATE_DIR || join(env.HOME || join(tmpdir(), "pij-rs-no-home"), ".pij-rs");
 	return join(state, "copilot-sdk-pass");
 }
 

@@ -34,6 +34,9 @@ describe("a local Copilot contract pass (F250)", () => {
 	it("lives under pij-rs's state dir", () => {
 		expect(passDir({ PIJ_RS_STATE_DIR: "/s", HOME: "/h" })).toBe("/s/copilot-sdk-pass");
 		expect(passDir({ HOME: "/h" })).toBe("/h/.pij-rs/copilot-sdk-pass");
+		// S307-N1: with no HOME, pij-rs's `default_state_dir` uses a temp dir as
+		// HOME, `.pij-rs` still under it.
+		expect(passDir({})).toBe(join(tmpdir(), "pij-rs-no-home", ".pij-rs", "copilot-sdk-pass"));
 	});
 
 	it("reads back exactly the version it was written for, and no other", async () => {

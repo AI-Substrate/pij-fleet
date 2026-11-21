@@ -1739,6 +1739,18 @@ async fn launch_owned(
     {
         return internal(command_name, error);
     }
+    // F265: this key has no row, so any status or log at its paths is an
+    // earlier rowless launch's (a raw HTTP caller can reuse a key); read as
+    // this launch's, its exit would answer for a child that never ran. This
+    // launch's own wrapper writes them afresh.
+    for stale in [&status_path, &log_path] {
+        match tokio::fs::remove_file(stale).await {
+            Err(error) if error.kind() != io::ErrorKind::NotFound => {
+                return internal(command_name, error);
+            }
+            _ => {}
+        }
+    }
     let wrapper_executable = match std::env::current_exe()
         .ok()
         .and_then(|path| path.into_os_string().into_string().ok())
