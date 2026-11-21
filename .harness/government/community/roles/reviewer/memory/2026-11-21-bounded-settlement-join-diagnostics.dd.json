@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "When reviewing a settled cache, stale replay snapshots, or shutdown-phase diagnostics",
+				"tags": [
+					"review",
+					"spawn",
+					"replay",
+					"diagnostics",
+					"c34"
+				],
+				"title": "Bounded settlement records and join-wait diagnostics"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F264's gone-first selection and retained terminal binding close the original held-row/no-wait and stale-unbound replay orderings. Exact-function Tokio probes at 3bdad4b passed fifteen positive cases and killed five mutants.\n\nA bounded settled cache is not a durable deduplication ledger. Evicted keys with stale unbound snapshots can re-arm; current bound rows still protect them. FIFO tracks the first record of each distinct key, not later binding upgrades, so an old upgraded record can be evicted by one subsequent unique settlement. The boot spine skips already-settled recovery but does not hydrate replay-cache records or supply an on-demand replay fallback.\n\nShutdown diagnostic timings may measure remaining join wait when HTTP shutdown/control release already started before the wrapper. Holder metadata must be set at every lock-acquisition path, including revive prechecks before launch_owned; otherwise a timeout can name the previous operation.\n\nThe pane observer still has an unbiased stop-versus-tick select. Treat added shutdown work from that ordering as a source-level F267 candidate, not a measured diagnosis. Supervisor/common tick loops already prioritize stop.\n\nMagicWand: preserve the post-eviction and old-binding-upgrade probe alongside the normal stale-row controls, and label join-wait durations and last-recorded holder names accurately.\n"
+		}
+	]
+}
