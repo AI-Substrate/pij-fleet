@@ -768,6 +768,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-helpful-elephant",
 					"why": "#325 F271b/c round 1"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T17:10:44.912Z",
+					"harness": "copilot",
+					"harness_session": "2c4d4a94-b597-4f4e-b664-302f3c41c5ee",
+					"instance_key": "327",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-helpful-elephant",
+					"why": "#327 F275 round 1"
 				}
 			]
 		}
