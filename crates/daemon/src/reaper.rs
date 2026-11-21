@@ -183,11 +183,13 @@ pub(crate) async fn reap_with_reason(
     tombstone_reason: Option<&str>,
 ) -> Result<(ReapReceipt, Vec<SeatDescriptor>)> {
     let mut retired = Vec::new();
-    let seats = registry.list(SeatFilter::default()).await?;
-    let before = seats
-        .iter()
-        .filter(|seat| seat.tombstoned_at.is_none())
-        .count();
+    // Only live rows can be reaped (F258: not every retired row, every 5 s).
+    let live = SeatFilter {
+        live_only: true,
+        ..SeatFilter::default()
+    };
+    let seats = registry.list(live).await?;
+    let before = seats.len();
     let mut receipt = ReapReceipt {
         dry_run,
         before,
@@ -196,10 +198,7 @@ pub(crate) async fn reap_with_reason(
         reaped: Vec::new(),
         unverifiable: Vec::new(),
     };
-    for listed in seats
-        .into_iter()
-        .filter(|seat| seat.tombstoned_at.is_none())
-    {
+    for listed in seats {
         // Refresh the raw snapshot before host probes; the final CAS remains authoritative.
         let Some(expected) = registry.get(&listed.id).await? else {
             receipt.unverifiable.push(UnverifiableSeat {
