@@ -358,11 +358,10 @@ impl Daemon {
         // Signal HTTP and poll every worker shutdown together. Each worker's
         // shutdown future sends its stop before awaiting its join, so no slow
         // HTTP drain can leave queue workers claiming new rows in the meantime.
-        // The tmux control client is released in the same join (F242): its
-        // teardown never waits behind the HTTP drain, which a stream holds for
-        // all of SHUTDOWN_DRAIN_TIMEOUT. A tmux read after the release (a
-        // worker's last tick, a request still in flight) forks one client, as
-        // any read does without a control client.
+        // The tmux control client is released as soon as the pane observer
+        // has detached its taps (F242, F267 step 3): its teardown never waits
+        // behind the HTTP drain, which a stream holds for all of
+        // SHUTDOWN_DRAIN_TIMEOUT.
         // F255: no spawn starts once the stop begins, and every launch already
         // past its check writes its row before anything else stops (R309-01:
         // its task holds the spawn lock until then, and `stop` takes it), with
@@ -388,9 +387,18 @@ impl Daemon {
             );
         }
         let _ = self.shutdown.send(true);
+        // F267 step 3 (N324-02): a phase's task starts with its operation, so
+        // its logged time is that operation's own, not what was left of it
+        // when the join below began. The HTTP drain begins with the stop
+        // just sent.
+        let joined = self.joined;
+        let served = spawn_phase("http drain (claim waits, streams)", async move {
+            joined.await.map_err(|error| PijError::Adapter {
+                adapter: "daemon".to_string(),
+                message: format!("the server task did not stop cleanly: {error}"),
+            })
+        });
         let _ = self.governance_shutdown.send(());
-        let tmux = Arc::clone(&self.tmux);
-        let release = tokio::task::spawn_blocking(move || tmux.release_control());
         self.session_warmup.abort();
         self.park_notices.abort();
         // A cancelled notice task is the expected join outcome; any admitted
@@ -408,13 +416,29 @@ impl Daemon {
         // thread (a synchronous tmux launch, say) cannot hold the others back,
         // and each logs its own end. Polled together by one `join!`, they all
         // logged the end of the slowest (11305 ms each, 2026-11-21 11:41:48).
-        let joined = self.joined;
+        // F267 step 3: the tmux control client is released once the pane
+        // observer has detached its taps, so the detach reads over it rather
+        // than forking each read (F242 still holds: the release never waits
+        // behind the HTTP drain). A tmux read after the release (a worker's
+        // last tick, a request still in flight) forks one client, as any read
+        // does without a control client.
+        let pane_observer = self.pane_observer;
+        let tmux = Arc::clone(&self.tmux);
+        let observed_then_released = spawn_task("pane observer", async move {
+            let observed = timed("pane observer", pane_observer.shutdown()).await;
+            let released = timed(
+                "tmux control release",
+                tokio::task::spawn_blocking(move || tmux.release_control()),
+            )
+            .await;
+            (observed, released)
+        });
         let governance_observer = self.governance_observer;
         let (
             served,
             drained,
             bound,
-            observed,
+            observed_then_released,
             forwarded,
             background,
             deaths,
@@ -422,17 +446,11 @@ impl Daemon {
             proxy_watch,
             sidecars,
             governance,
-            released,
         ) = tokio::join!(
-            spawn_phase("http drain (claim waits, streams)", async move {
-                joined.await.map_err(|error| PijError::Adapter {
-                    adapter: "daemon".to_string(),
-                    message: format!("the server task did not stop cleanly: {error}"),
-                })
-            }),
+            served,
             spawn_phase("delivery drain loop", self.drain_loop.shutdown()),
             spawn_phase("bind loop", self.bind_loop.shutdown()),
-            spawn_phase("pane observer", self.pane_observer.shutdown()),
+            observed_then_released,
             spawn_phase("federation worker", self.federation_worker.shutdown()),
             spawn_phase("background loop", self.background_loop.shutdown()),
             spawn_phase("death sweep", self.death_sweep_loop.shutdown()),
@@ -447,11 +465,10 @@ impl Daemon {
                         message: format!("delivery observer task failed: {error}"),
                     })
             }),
-            spawn_phase("tmux control release", release),
         );
         // A release that panicked is the client's teardown lost, not the
         // stop's: the process exit ends the client either way.
-        drop(released);
+        let observed = observed_then_released.map(|(observed, _released)| observed);
         // Join work we own first. Both this join and physical pool cleanup share
         // one deadline: leaked leases must never turn stop into another wedge.
         let deadline = tokio::time::Instant::now() + SHUTDOWN_DRAIN_TIMEOUT;
@@ -528,12 +545,34 @@ fn spawn_phase<T: Send + 'static>(
     name: &'static str,
     work: impl std::future::Future<Output = T> + Send + 'static,
 ) -> impl std::future::Future<Output = Result<(T, std::time::Duration)>> {
-    let task = tokio::spawn(timed(name, work));
+    spawn_task(name, timed(name, work))
+}
+
+/// `work` in its own task, started now, owned by the returned future.
+///
+/// F267 step 3 (N324-01): dropping that future (a cancelled stop) aborts the
+/// task at its next await, so a cancelled stop leaves no phase of itself
+/// running on. A blocking call already on its thread (the control client's
+/// release) still runs to its end: `spawn_blocking` work cannot be aborted.
+fn spawn_task<T: Send + 'static>(
+    name: &'static str,
+    work: impl std::future::Future<Output = T> + Send + 'static,
+) -> impl std::future::Future<Output = Result<T>> {
+    let mut task = AbortOnDrop(tokio::spawn(work));
     async move {
-        task.await.map_err(|error| PijError::Adapter {
+        (&mut task.0).await.map_err(|error| PijError::Adapter {
             adapter: "daemon".to_string(),
             message: format!("the shutdown phase {name} did not finish: {error}"),
         })
+    }
+}
+
+/// A task that ends when its handle is dropped (a no-op once it has ended).
+struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
     }
 }
 

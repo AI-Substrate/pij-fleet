@@ -1256,11 +1256,30 @@ pub trait TmuxPort: Send + Sync {
     /// adapter's grace is spared (a brake, never a reason to remove).
     async fn sweep_orphan_taps(&self) -> Result<TapSweep>;
 
-    /// Detach the output tap and release its sink. A pane already gone is the
-    /// successful terminal outcome rather than an error. Process-local ownership
-    /// or the matching durable marker authorizes retirement: this is E-033's
-    /// surviving ownership evidence after a crash, not a relaxation of it.
-    async fn detach_pane_tap(&self, pane: &str) -> Result<()>;
+    /// Detach the output taps of `panes` and release their sinks: one result
+    /// per pane, in order. A pane already gone is the successful terminal
+    /// outcome rather than an error. Process-local ownership or the matching
+    /// durable marker authorizes retirement: this is E-033's surviving
+    /// ownership evidence after a crash, not a relaxation of it. One pane's
+    /// failure never keeps another's tap attached.
+    ///
+    /// F267 step 3: the set is one call, so an adapter reads the world once
+    /// and launches once for all of it, not per pane (a stop at ~145 panes
+    /// spent 4.7 s detaching them one at a time).
+    async fn detach_pane_taps(&self, panes: &[String]) -> Vec<Result<()>>;
+
+    /// [`Self::detach_pane_taps`] for one pane.
+    async fn detach_pane_tap(&self, pane: &str) -> Result<()> {
+        self.detach_pane_taps(&[pane.to_string()])
+            .await
+            .pop()
+            .unwrap_or_else(|| {
+                Err(crate::error::PijError::Adapter {
+                    adapter: "tmux".to_string(),
+                    message: format!("detaching pane {pane:?}'s tap answered nothing"),
+                })
+            })
+    }
 
     /// Kill a pane.
     async fn kill(&self, pane: &str) -> Result<()>;

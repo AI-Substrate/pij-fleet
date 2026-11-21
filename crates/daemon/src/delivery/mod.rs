@@ -3350,8 +3350,8 @@ mod tests {
         async fn sweep_orphan_taps(&self) -> pij_core::error::Result<pij_core::ports::TapSweep> {
             self.inner.sweep_orphan_taps().await
         }
-        async fn detach_pane_tap(&self, pane: &str) -> pij_core::error::Result<()> {
-            self.inner.detach_pane_tap(pane).await
+        async fn detach_pane_taps(&self, panes: &[String]) -> Vec<pij_core::error::Result<()>> {
+            self.inner.detach_pane_taps(panes).await
         }
         async fn kill(&self, pane: &str) -> pij_core::error::Result<()> {
             self.inner.kill(pane).await

@@ -52,3 +52,26 @@ async fn a_blocking_shutdown_phase_holds_back_only_itself() {
     let (saw_it_end, _) = slow.expect("the blocking phase");
     assert!(saw_it_end, "the quick phase waited behind the blocking one");
 }
+
+/// F267 step 3 (N324-01): a stop cancelled once its phases have started
+/// leaves none of them running on. Dropping a phase's future aborts its
+/// task, which drops the phase's work (and the sender it holds); detached,
+/// the work would wait forever and hold the sender.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_cancelled_stop_leaves_no_phase_running() {
+    let (held, released) = tokio::sync::oneshot::channel::<()>();
+    let (started, began) = tokio::sync::oneshot::channel::<()>();
+    let forever = super::spawn_phase("forever", async move {
+        let _held = held;
+        let _ = started.send(());
+        std::future::pending::<()>().await;
+    });
+    began.await.expect("the phase started");
+    drop(forever);
+    let ended =
+        tokio::time::timeout(pij_testkit::time::scaled(Duration::from_secs(5)), released).await;
+    assert!(
+        ended.is_ok(),
+        "a phase whose stop was cancelled still runs and holds its work"
+    );
+}

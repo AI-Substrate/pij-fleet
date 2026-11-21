@@ -1120,3 +1120,97 @@ fn a_held_attach_lock_skips_reads_without_launching_or_waiting() {
         "the one launch is the control client: {launched:?}"
     );
 }
+
+/// F267 step 3: a stop detaches every tap the daemon owns in ONE tmux launch,
+/// and its reads ride the control client: never a launch or a read per pane.
+/// The per-pane path launched about two processes a pane and forked its
+/// reads after the release; at ~145 panes it took 4.7 s of a stop. A pane
+/// gone meanwhile is released; a listed pane with another owner's tap is
+/// refused and its tap keeps running.
+#[test]
+fn detaching_many_taps_launches_once_and_leaves_a_foreign_tap_alone() {
+    const PANES: usize = 32;
+    let mut server = Server::start();
+    for _ in server.panes.len()..PANES {
+        server.run(&["new-window", "-d", "-t", "work", "exec sleep 600"]);
+    }
+    server.panes = server
+        .run(&["list-panes", "-s", "-t", "work", "-F", "#{pane_id}"])
+        .lines()
+        .map(str::to_string)
+        .collect();
+    assert_eq!(server.panes.len(), PANES);
+    let taps = server.dir.join("taps");
+    let adapter = server.adapter(true);
+    let (foreign, owned) = server.panes.split_last().expect("panes");
+    let gone = &owned[0];
+    block_on(async {
+        for pane in owned {
+            adapter
+                .attach_pane_tap(pane, &pij_tmux::tap_sink_path(&taps, pane))
+                .await
+                .expect("attach");
+        }
+    });
+    server.run(&["pipe-pane", "-t", foreign, "cat >/dev/null"]);
+    server.run(&[
+        "set-option",
+        "-p",
+        "-t",
+        foreign,
+        "@pij-tap-sink",
+        "/elsewhere.raw",
+    ]);
+    server.run(&["kill-pane", "-t", gone]);
+    block_on(async {
+        adapter.list_panes().await.expect("warm the control client");
+        let before = server.launches().len();
+        let started = Instant::now();
+        let results = adapter.detach_pane_taps(&server.panes).await;
+        let took = started.elapsed();
+        let launched = server.launches()[before..].to_vec();
+        assert_eq!(
+            launched.len(),
+            1,
+            "detaching {PANES} taps launched more than once: {launched:#?}"
+        );
+        assert!(launched[0].starts_with("-u pipe-pane"), "{launched:#?}");
+        assert!(
+            took < pij_testkit::time::scaled(Duration::from_secs(5)),
+            "detaching {PANES} taps took {took:?}"
+        );
+        let (refused, released) = results.split_last().expect("results");
+        let refused = refused.as_ref().expect_err("a foreign tap is refused");
+        assert!(
+            refused
+                .to_string()
+                .contains("refusing to detach foreign tap"),
+            "{refused}"
+        );
+        for (pane, result) in owned.iter().zip(released) {
+            result
+                .as_ref()
+                .unwrap_or_else(|error| panic!("{pane}: {error}"));
+            assert!(
+                !pij_tmux::tap_sink_path(&taps, pane).exists(),
+                "{pane}'s sink outlived its detach"
+            );
+        }
+    });
+    let states = server.run(&[
+        "list-panes",
+        "-s",
+        "-t",
+        "work",
+        "-F",
+        "#{pane_id} #{pane_pipe} #{@pij-tap-sink}",
+    ]);
+    for line in states.lines() {
+        let expected = if line.starts_with(&format!("{foreign} ")) {
+            format!("{foreign} 1 /elsewhere.raw")
+        } else {
+            format!("{} 0 ", line.split(' ').next().unwrap_or_default())
+        };
+        assert_eq!(line, expected, "{states}");
+    }
+}
