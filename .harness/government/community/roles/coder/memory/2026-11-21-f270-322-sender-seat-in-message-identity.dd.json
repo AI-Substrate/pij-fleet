@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Open before changing message dedupe or delivered-ledger keys, the native hold expiry, or picking up #322/F270 after a compact",
+				"tags": [
+					"f270",
+					"delivery",
+					"migration",
+					"dedupe",
+					"mutation",
+					"worktree"
+				],
+				"title": "F270 (#322): sender seat in message identity (0050), settled expiry; state at compaction"
+			}
+		},
+		{
+			"name": "body",
+			"value": "State at compaction:\n- PR #322 is on branch f270-msgid-sender-binding, worktree ~/pi-hacking/pij-f270, commit 65732fce. Migration 0050 was granted by pm-001.\n- Receipts runner /tmp/f270-receipts/run.sh is running as bg_41. It runs, in order: RED on main in worktree ~/pi-hacking/pij-f270-red, the baselines, and mutants N01–N12, each alone. It applies each patch to the f270 tree and reverts it, so DON'T edit f270 sources while it runs. Results go to SUMMARY.txt.\n- PR body draft: the session-local f270-pr.md. Its RECEIPTS and LOCAL_GATE sections are placeholders; rebuild them from `gh pr view 322` if the file is gone.\n\nStill to do:\n1. Read SUMMARY.txt. Every mutant must fail, and RED must fail on its own assertions.\n2. Post the receipts as a PR comment, then fill the PR body.\n3. Fix the velocity row's end time.\n4. Remove the pij-f270-red worktree.\n5. Run harness checks.\n6. Run `just pr-freeze 322` and send FINAL to pm-001.\n\nLessons:\n- WORKTREE TRAP: read/edit resolve relative paths against the SESSION cwd, which here is the old pij-f260. After #314 merged, both trees were identical, so wrong-tree reads looked fine. Use absolute paths for every read and edit.\n- Identity: (kind, origin, msg_id, sender seat). jobs.dedupe_sender is a VIRTUAL generated column (payload `from`), so no INSERT changes. The ledger gained sender_seat, and '' matches any sender (the legacy brake). The store refuses deliveries with no sender, which broke about 15 `{}` and non-JSON test fixtures; fix fixtures, not the rule. carrying_enqueue's FYI attach must keep `from`.\n- Decision answers (store/decisions.rs) stay cross-sender on purpose: the answer id is daemon-minted and the parent can change.\n- Timing on a live-store copy: ALWAYS `rm copy.sqlite*` before re-copying. A leftover -wal from the previous run applied on top of the fresh copy and gave \"database disk image is malformed\". 0050 timings on the copy: debug build 2.0–2.7 s; optimised SQLite in one transaction 0.55 s.\n- Cost test for \"no lock taken\": hold `delivery.native_lock()` and give notify a 10 s timeout in a real-time test. Don't use start_paused: sqlx waits look idle and auto-advance the clock.\n"
+		}
+	]
+}
