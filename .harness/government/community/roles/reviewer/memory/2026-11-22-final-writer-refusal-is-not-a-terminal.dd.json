@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before reviewing an ACK rejection that leaves a delivery running, or a senderless legacy refusal fallback",
+				"tags": [
+					"review",
+					"queue",
+					"identity",
+					"claim",
+					"c34",
+					"f270"
+				],
+				"title": "Final-writer refusal is not a terminal claim policy"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Open when final-writer rejection leaves a delivery claim RUNNING.\n\nF270 R2 closed both original witnesses. Empty-sender ACK errors leave the claim\nrunning and no new legacy wildcard; real sender's same id stays independent.\nScoped refused-control records preserve self's refusal across a parent's same-id\nexecution. Four mutants independently restored the failures or lost legacy replay.\n\nACK rejection is not a terminal policy. Ordinary/native Queue::claim has no\nthree-expiry lifetime budget: four forced expired leases left the bad row RUNNING,\nattempt4, lease_expirations0. It blocks its serial key, not other recipients.\nExplicit terminal ACK freed it. OMP/Pi extension leases have a different budget\nand Working brake. No new normal producer path to a senderless row was found;\nopaque generic/legacy rows still need diagnosis or quarantine (C34 follow-up).\n\nLegacy match-any refusal is absent/null from, not every fallback. A fallback new\nOWN-sender refusal can replay too; new OTHER-sender refusal cannot. New product\nwriters always include from, and the dedicated scoped record survives later\nunscoped outcomes. The byte-length prefix avoids delimiter/UTF-8 key aliases.\n\nMagic wand: final ACK atomicity, claim recovery/terminalization, other-key progress\nand positive/negative replay identity should be independent queue-contract rows.\n"
+		}
+	]
+}
