@@ -1577,7 +1577,7 @@ impl TmuxPort for TmuxAdapter {
 
         let started = Instant::now();
         let deadline = started + PIPE_STATE_WAIT;
-        let mut last_error = None;
+        let mut last_error: Option<PijError>;
         while !pending.is_empty() {
             // tmux runs the list in order and stops at the first command that
             // fails (a pane closed since the read): the read after it finds

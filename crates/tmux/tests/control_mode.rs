@@ -1152,6 +1152,21 @@ fn detaching_many_taps_launches_once_and_leaves_a_foreign_tap_alone() {
                 .expect("attach");
         }
     });
+    // Detach taps that are capturing, as every real one is: a pipe reads live
+    // once tmux forks `sh -c 'cat >> sink'`, before that shell opens the sink,
+    // and a detach inside that window lets the late `>>` recreate it
+    // (D-F267-4). A key's tty echo is output the tap must carry.
+    for pane in owned {
+        server.run(&["send-keys", "-t", pane, "x"]);
+    }
+    let deadline = Instant::now() + pij_testkit::time::scaled(Duration::from_secs(5));
+    for pane in owned {
+        let sink = pij_tmux::tap_sink_path(&taps, pane);
+        while std::fs::metadata(&sink).map_or(0, |meta| meta.len()) == 0 {
+            assert!(Instant::now() < deadline, "{pane}'s tap captured nothing");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
     server.run(&["pipe-pane", "-t", foreign, "cat >/dev/null"]);
     server.run(&[
         "set-option",

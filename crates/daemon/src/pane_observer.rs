@@ -1531,6 +1531,20 @@ mod tests {
         observer.observe_once().await.expect("attach live tap");
         let sink = observer.sink_path(&pane.id);
         assert!(sink.exists());
+        // Detach a tap that is capturing, as every real one is: tmux reports
+        // the pipe live once it forks `sh -c 'cat >> sink'`, before that shell
+        // has opened the sink, and a detach inside that window (now a few ms,
+        // F267 step 3) lets the late `>>` create the sink again (D-F267-4).
+        session.run(["send-keys", "-t", &pane.id, "captured", "Enter"]);
+        let deadline =
+            std::time::Instant::now() + pij_testkit::time::scaled(Duration::from_secs(5));
+        while std::fs::metadata(&sink).map_or(0, |meta| meta.len()) == 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the tap captured nothing"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
 
         let mut descriptor = registry
             .get(&SeatId::from("pij-observed-0"))

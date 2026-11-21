@@ -419,13 +419,15 @@ impl Daemon {
         // F267 step 3: the tmux control client is released once the pane
         // observer has detached its taps, so the detach reads over it rather
         // than forking each read (F242 still holds: the release never waits
-        // behind the HTTP drain). A tmux read after the release (a worker's
-        // last tick, a request still in flight) forks one client, as any read
-        // does without a control client.
+        // behind the HTTP drain). The observer runs in a task of its own
+        // inside this one, so its panic is its error and the release still
+        // runs. A tmux read after the release (a worker's last tick, a request
+        // still in flight) forks one client, as any read does without a
+        // control client.
         let pane_observer = self.pane_observer;
         let tmux = Arc::clone(&self.tmux);
-        let observed_then_released = spawn_task("pane observer", async move {
-            let observed = timed("pane observer", pane_observer.shutdown()).await;
+        let observed_then_released = spawn_task("tmux control release", async move {
+            let observed = spawn_phase("pane observer", pane_observer.shutdown()).await;
             let released = timed(
                 "tmux control release",
                 tokio::task::spawn_blocking(move || tmux.release_control()),
@@ -468,7 +470,7 @@ impl Daemon {
         );
         // A release that panicked is the client's teardown lost, not the
         // stop's: the process exit ends the client either way.
-        let observed = observed_then_released.map(|(observed, _released)| observed);
+        let observed = observed_then_released.and_then(|(observed, _released)| observed);
         // Join work we own first. Both this join and physical pool cleanup share
         // one deadline: leaked leases must never turn stop into another wedge.
         let deadline = tokio::time::Instant::now() + SHUTDOWN_DRAIN_TIMEOUT;
