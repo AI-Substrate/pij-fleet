@@ -141,4 +141,5 @@
 - [2026-11-21 Managed log ownership precedes rotation](2026-11-21-managed-log-ownership-precedes-rotation.dd.md): Before reviewing daemon log rotation, concurrent initialization, repeat suppression or launch-sensor scope. (review, logging, concurrency, retention, proof)
 - [2026-11-21 PR301 final review and F251 proof handoff](2026-11-21-pr301-final-f251-proof-handoff.dd.md): Before reviewing F251 or resuming daemon-log follow-up after the final \#301 verdict. (review, logging, f251, concurrency, proof)
 - [2026-11-21 Socket absence needs a complete holder proof](2026-11-21-socket-absence-needs-a-complete-holder.dd.md): Before reviewing Unix-socket deletion, lsof pathname handling, or a process-fd census (review, sockets, liveness, negative-evidence, f248)
+- [2026-11-21 Worktree seats load branch-local extensions](2026-11-21-worktree-seats-load-branch-local.dd.md): When reviewing OMP cwd, extension precedence or daemon-extension skew (review, omp, worktree)
 <!-- /pij:generated -->
