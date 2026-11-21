@@ -1,0 +1,59 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fbbd-5efa-7b33-82ce-23510afa5272",
+				"date": "2026-11-21",
+				"head": "be097a697256ffad0ad1a933706f0650342180f1",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:306",
+				"writer": "pij-secondary-starfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R306-001: exclude stale native models after non-default active OMP switches; cover switch and next-call clearing.",
+				"R306-002: do not run fallible footer catalog resolution before accepting eligible native evidence."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 306",
+					"exit_code": 0,
+					"log": "FINAL at be097a697256ffad0ad1a933706f0650342180f1"
+				},
+				{
+					"command": "harness checks --json",
+					"exit_code": 1,
+					"log": "review-session checks-306.json: Rust, routes, smoke and native contracts passed; TS tooling unavailable/incompatible"
+				},
+				{
+					"command": "successful CI job JUnit inspection",
+					"exit_code": 0,
+					"log": "run 44850296377; job 136679814322; artifact 14685057196; 2731 testcases, zero failures/errors"
+				},
+				{
+					"command": "isolated pinned-SDK record replay and exact-source parser mutations",
+					"exit_code": 0,
+					"log": "review-session probe-306.log and parser-306.log; stale non-default switches reproduced; four parser mutants caught"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# BLOCK: #306, round 1\n\nHead: `be097a697256ffad0ad1a933706f0650342180f1`.\n\n## R306-001 (P2): non-default active-model switches leave stale native evidence eligible\n\nLocation: `crates/unisphere/src/lib.rs:350-353`, consumed by `crates/daemon/src/http/governance.rs:1956-1964,2089-2091`.\n\nThe new boolean does not mean that no runtime-model switch is pending. The pinned Unisphere revision `0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59` deliberately updates `last_model_switch` only for `model_change` records whose role is absent or `default` (`crates/adapter-omp/src/prep.rs:851-865`). Installed OMP 18.16 actually changes the active agent model for other roles too: `applyRoleModel` calls `setModel(model, role)`, and `setModelTemporary` changes the active model before appending roles such as `temporary`, `fallback`, or `prewalk`. These are not merely settings for a future subagent.\n\nAn independent replay against the pinned SDK used the PR's record shapes: a completed Opus call, followed by a later model change to GPT. The default-role control reports `current=Opus, basis=Native, pending=true`; changing only the role to each of `smol`, `slow`, `temporary`, `fallback`, and `prewalk` reports `current=Opus, basis=Native, pending=false`. That passes `native_model_of`, and `runtime_model` selects the old Opus value over the live GPT footer.\n\nA subsequent completed GPT call updates current and clears the condition, as separately checked. Thus this is not a claim that every role-switched canary fails: the false-pass window is a switch after the call used for the acknowledgement and before the canary finishes observing the runtime. The handler's intervening catalog command makes that a real observation window. The PR explicitly handles this window for ordinary default switches but misses the other active-switch paths.\n\nMake the native eligibility rule cover actual active-model changes, not only the SDK's default-role accounting field, or conservatively use the live fallback where that cannot be established. Add a non-default-role replay and its next-call clearing control. This is accidental stale evidence, not a same-user impersonation defense; C33 does not remove this correctness requirement.\n\n## R306-002 (P2): the fallback catalog can abort a canary before valid native evidence is read\n\nLocation: `crates/daemon/src/http/governance.rs:2075-2089`; eager resolution is in `crates/harnesses/src/adapter.rs:104-111`.\n\n`observe_bind(...).await?` performs `resolve_omp_model` before returning, so an ambiguous/unknown footer name or an inventory failure exits the handler before `native_runtime_model` is called. The native-first source is therefore still conditional on successful footer interpretation.\n\nThis affects current, ordinary catalog entries, not only hypothetical malformed input. An independent `omp models --json --no-extensions` read found 746 rows and 54 normalized display-name collisions. For example, `GPT-6.1 Sol` names distinct selectors from `github-copilot`, `openai-codex`, and `openrouter`. The resolver correctly refuses that ambiguity; unfortunately that refusal prevents the canary from using a perfectly unambiguous native `github-copilot/gpt-6.1-sol` fact.\n\nKeep the pane/incarnation checks, but make footer-model resolution genuinely fallback-only. A valid eligible native model must not require catalog-name resolution to succeed. Cover valid native evidence plus an ambiguous or failing footer catalog.\n\n## N306-001: incomplete transcript tails are not a freshness proof\n\nThe SDK folds complete JSONL records only and exposes `source.pending_tail_bytes`. A replay with a complete default-switch JSON object awaiting its final newline reports the old native model, `pending_switch=None`, and `pending_tail_bytes=143`. The pij projection discards the tail-completeness fact, so the new guard cannot distinguish this from a settled transcript. This is a demonstrated record-level limit, not a reproduced live-canary race, and is nonblocking here; do not describe the source as stale-tail-proof. Cursor identity/reset logic prevents reusing a cursor for a different bound session, but cannot make the most recent completed call an observation of an unpersisted runtime change.\n\n## Evidence and scope\n\n- Fresh `just pr-freeze 306`: FINAL at the exact head; clean detached worktree, all five check contexts passed.\n- Exact-head CI run `44850296377`, successful Rust job `136679814322`, JUnit artifact **14685057196**, selected from that job's upload log: **2,731 testcases, zero failures/errors**. The new native guard, pending-switch, live-footer, catalog-prefix and corpus-registration tests ran, as did the HTTP canary integration and launch-site sensor.\n- Independent exact-source parser probe: live fixtures, absent/duplicate/glued/no-model segments, all 18 accepted glyphs, CJK-width text, last-footer selection and native/footer preference pass. Four source mutants (accept ambiguity, admit thinking words, old-glyph-only, accept no-model) were caught. These are isolated parser/selection checks, not a live-canary claim.\n- Independent pinned-SDK probe: cold/warm record reads, six switch-role controls and subsequent-call clearing; diagnostic output reproduced R306-001 and N306-001. Receipts retained in the review session as `probe-306.rs`, `probe-306.log`, `parser-306.py`, and `parser-306.log`.\n- The footer-reader audit was independently checked across Rust and hidden TS source. No additional affected production OMP model parser was found. The Pi readiness glyph check is separate; structural parsing does not byte-slice Unicode.\n- Prefix stripping cannot silently choose between different selectors: the existing ambiguity check still refuses. R306-002 is about where that correct refusal is evaluated.\n- No canaries against working seats, daemon bounce, dependency links/install, product edits/commits, or pushes were performed. Only the governed output/memory writers change governance records.\n\n## Cost and proof limits\n\nNo new periodic loop, timer, or per-seat steady-state launch is added. Every OMP canary with a model-bearing footer currently runs one counted `omp.models` launch, **even when native evidence is usable**, because observation eagerly resolves the footer. The existing child-status wait polls every 10 ms only during that invocation, with a five-second timeout; it is not a fleet poll. `program::launch` resolves the installed executable, args are fixed, and `spawn_sites` scans this production launch site. The additional native read is in-process, warm-incremental, and cold-whole-transcript; incremental is not a fixed total-byte or latency bound. Live fleet before/after measurement remains the performance role's evidence.\n\n`harness boot` returned dependency-not-ready under C25. The required full `harness checks --json` completed with **exit 1**: eight failures from unavailable worktree TS tools (`tsx`, vitest/typecheck dependencies) and an incompatible ambient Biome. Its **Rust fmt/clippy/tests, route inventory, smoke, native Copilot contracts, and pij-skill stages passed**. Copilot SDK compatibility passed on the installed build but warned that its version approval record was older; commit attribution was also unavailable without `tsx`. No dependency installation/link or global-tool change was made to turn an environment failure into a pass. Local gate receipt: `checks-306.json`.\n\nHarness improvement: encode the native-selection contract as a table-driven record replay across all active OMP switch roles, plus a native-valid/catalog-failing canary test. The current positive fixture exercises only an unqualified default switch and the native helper test bypasses the real observation order. The review supplied executable diagnostic receipts without modifying this read-only worktree.\n"
+		}
+	]
+}
