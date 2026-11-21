@@ -1497,7 +1497,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "i85",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "work finished (i85 merged/closed; f257 branch delivered, PR is prime/Jordan's); prime asked 2026-11-22",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-21T20:52:44.794Z",
 					"why": "issue #85 daemon launch leftovers (bare lsof/omp, ps sites)"
 				},
 				{
