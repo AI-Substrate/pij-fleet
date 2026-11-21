@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"head": "7f83e0defd62fb5da0170b02afb6af4872ccbaa3",
+				"kind": "verdict",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:310",
+				"writer": "pij-noble-silkworm",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict, #310 at 7f83e0defd62fb5da0170b02afb6af4872ccbaa3 (R2, delta from 92787c4): PASS WITH NOTES. My round-1 analysis (0d7294a) stands. The delta adds nothing to it.\n\nR2 delta (the next-due read cuts off at the pass's start, R310-F001):\n- `since` is the daemon's own `SystemTime::now()`, taken at the top of each pass before the claim (mod.rs:2005). No caller or seat can supply or influence it. It is bound as `?3`, a parameter, not string-built SQL.\n- No spin:\n  - An instant crossed between the claim and the next-due read returns ZERO, giving exactly one extra pass.\n  - That pass's `since` is at or after the instant, so a row still held behind its serial key drops out of the MIN.\n  - Flooring matches `unixepoch()`.\n- Clock regression: if the clock moves backwards, an already-seen held row can be returned once with a positive nap. That is bounded by the backstop and is not a loop.\n- My round-1 N3 is closed by `another_seats_messages_do_not_wake_a_claim_wait`. It covers a two-seat bus, five sends to the other seat, and zero recipient reads for the waiter. Dropping `.for_seat` would make it fail on reasoning; I did not run that mutant, to avoid a build at fleet load.\n- Hygiene: the delta adds no secrets or local paths (`/abs/tree` is a fixture), no lockfile or CI changes, and no launches.\n\nNotes still open, none owed:\n- N1: a wake lost to broadcast lag costs up to 15 s.\n- N2: a replaced incarnation's wait lingers up to 15 s and cannot claim.\n"
+		}
+	]
+}
