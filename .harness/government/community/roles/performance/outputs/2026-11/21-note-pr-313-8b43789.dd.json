@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"head": "8b437897e378193df11f817f861460bde6c8a790",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:313",
+				"writer": "pij-like-guppy",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "/bin/ps cumulative time and pij-rs --json ping endpoints",
+					"exit_code": 0,
+					"log": "UTC 2026-11-21 08:49:46.097692 to 08:50:46.053257; 60.009713709s; PID16325/8b437897e3, tmux28942; CPU20.4800%/25.5959%, spawn delta64 reconciled; full endpoint receipts and definitions in body"
+				},
+				{
+					"command": "pij-rs --json ping data.pane_observer interval deltas",
+					"exit_code": 0,
+					"log": "passes100, active_us9533248, captures3237, capture_bytes26478540, skipped18063, backstop292; captures53.9413/s, skip ratio84.8028%, active_us95332.48/pass"
+				},
+				{
+					"command": "just spawn-rate --seconds 20 --json",
+					"exit_code": 0,
+					"log": "Separate AFTER: machine492.6/s, sampled451.8/s, daemon children observed0.4/s lower bound; wrapper UTC08:51:43.129910 to08:52:04.344186; recipe sample20.0s"
+				},
+				{
+					"command": "Read performance holders.dd.json row for pij-like-guppy / instance313",
+					"exit_code": 0,
+					"log": "Already released by merger pij-far-jackal at 2026-11-21T08:48:34.395Z for merged8b437897e378; no reassign or duplicate release"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "F258 D1 / PR #313 - deployed AFTER\n\nThe requested AFTER is complete on merge/deployment commit 8b437897e378193df11f817f861460bde6c8a790. Observer captures measured 53.9413/s and 84.8028% of capture/replay decisions were replayed. This completes the measurement owed by the performance verdict at 8dd610594a1194320106f15233242e8764870b35.\n\nMatched protocol, not a matched workload\n\nAs BEFORE, cumulative /bin/ps time, RSS, load and ping counters were read at two endpoints approximately 60 seconds apart. The busy-polling machine sampler ran separately afterward. No bounce, live DB write, local build or source modification was performed.\n\n| Receipt | BEFORE | AFTER |\n| --- | --- | --- |\n| UTC start, November 21, 2026 | 08:34:19.797254 | 08:49:46.097692 |\n| UTC end | 08:35:19.759723 | 08:50:46.053257 |\n| Monotonic interval | 60.009486917 s | 60.009713709 s |\n| Endpoint collection time | 1.531 / 1.484 s | 1.547 / 1.492 s |\n| Daemon PID / commit | 43526 / 7a6b8cbc8a | 16325 / 8b437897e3 |\n| Daemon age | 26:50 -> 27:50 | 01:17 -> 02:17 |\n| Tmux server PID | 28942 | 28942 |\n| Daemon CPU, % of one core | 21.5633% | 20.4800% |\n| Tmux CPU, % of one core | 34.0779% | 25.5959% |\n| Daemon RSS, KiB | 128064 -> 106800 | 124480 -> 135008 |\n| Tmux RSS, KiB | 76816 -> 77264 | 71872 -> 71536 |\n| Load, 1/5/15 min at start | 95.97998 / 88.05908 / 78.02344 | 76.95459 / 65.60596 / 69.67041 |\n| Load, 1/5/15 min at end | 90.31250 / 86.66406 / 78.10547 | 81.95215 / 69.94434 / 71.06104 |\n| Counted daemon launches | 1224 -> 1262, +38 | 843 -> 907, +64 |\n| Counted daemon launches/s | 0.6332 | 1.0665 |\n\nAFTER endpoint commands:\n\n/bin/ps -p 16325,28942 -o pid=,ppid=,lstart=,etime=,time=,rss=,comm=\npij-rs --json ping\n/usr/sbin/lsof -nP -iTCP:7461 -sTCP:LISTEN -t\ntmux display-message -p '#{pid}'\n\nListening-port PID, stamp and process-start identity were verified across the window. Daemon start: November 21, 2026 18:48:29 UTC+10; tmux start: November 16, 2026 12:17:38 UTC+10, unchanged from BEFORE.\nRaw cumulative CPU: daemon 0:46.10 -> 0:58.39, delta 12.29 s; tmux 677:06.24 -> 677:21.60, delta 15.36 s. Endpoint collection latency makes the derived percentages approximate, as in BEFORE.\n\nObserver counters, same AFTER window\n\n| Counter | Start -> end | Delta | Derived rate |\n| --- | --- | --- | --- |\n| passes | 102 -> 202 | 100 | 1.6664/s |\n| active_us | 23472836 -> 33006084 | 9533248 us | 95332.48 us/pass |\n| captures | 3495 -> 6732 | 3237 | 53.9413/s |\n| capture_bytes | 30273229 -> 56751769 | 26478540 | 441237.57 bytes/s |\n| skipped | 18321 -> 36384 | 18063 | 301.0013/s |\n| backstop | 175 -> 467 | 292 | 4.8659/s |\n\nSkip ratio = 18063 / (18063 + 3237) = 84.8028%. Capture/replay decisions averaged 213.0 per completed pass. The 100 passes in 60.0097 s are consistent with the unchanged nominal 600 ms tick.\n\n53.9413 observer captures/s is 82.5996% below the older approximately 310/s BEFORE estimate. BEFORE had no observer counters, and its 186-pane estimate is not the AFTER cohort: this is not an exact counter-to-counter reduction. The same AFTER cohort offers a stronger internal receipt: 21300 observed capture/replay decisions, of which 18063 avoided capture.\n\nThe backstop rate is a quiet-cohort average, not a burst cap. Of 3237 successful captures, 292 were forced solely by the backstop; the other 2945 came through non-replayable paths. Counter totals do not separate active, Unknown, PendingClear, cursor-change and changed-gate causes. Fresh injection captures and failed capture attempts are outside these counters. active_us is wall time in the observer, not CPU. Relaxed snapshots permit small field/end-boundary skew.\n\nAFTER launch-site reconciliation\n\n| Site | Start -> end | Delta |\n| --- | --- | --- |\n| ddocs.community | 12 -> 24 | 12 |\n| git.community | 28 -> 70 | 42 |\n| tmux.atomically reserve staged submit | 1 -> 2 | 1 |\n| tmux.authorize staged submit commit | 1 -> 2 | 1 |\n| tmux.load submit buffer | 3 -> 6 | 3 |\n| tmux.paste owned submit buffer | 3 -> 6 | 3 |\n| tmux.restore pane input and release ownership | 1 -> 2 | 1 |\n| tmux.submit authorized staged body | 1 -> 2 | 1 |\n\nSum = 64, matching the total delta. All other sites were flat, including tmux.control-client=1, tmux.pipe-pane attach=215, tmux.set-options tap owner=215, ps.registration-native-process=347 and ps.tmux-harness-process-tree=5. The higher whole-daemon launch rate is accounted for by the existing governance/submission paths, not new observer launches.\n\nSeparate AFTER machine sample\n\njust spawn-rate --seconds 20 --json: 20.0 s of sampling, daemon PID 16325; machine 492.6 new PIDs/s (BEFORE 438.7/s), sampled 451.8/s over 87,560 polls. Attribution lower bounds: gone-before-seen 270.4/s, other 181.0/s, daemon children 0.4/s (all observed as pij-rs). Observed statusline runs 0.6/s and Claude display/stop hooks 0.3/1.1 per second. These sampled categories are lower bounds, not exact site counts.\n\nThe wrapper, including setup, ran UTC 08:51:43.129910 -> 08:52:04.344186, elapsed 21.213859625 s. Host load at its edges was 124.41260 / 84.14600 / 76.28906 -> 120.17480 / 85.77490 / 77.05420. The recipe's rates use its own 20.0 s sampling interval, not the wrapper duration. Top observed commands included bash 53.4/s, git 28.5/s, git-ai 27.6/s, node 24.6/s and sh 21.9/s. Machine launch rate increased by 53.9/s in these separate windows; no machine-wide launch saving is claimed. This is not evidence of a new observer launch site.\n\nThe performance/315 holder was asked to wait until this sample finished, and was sent the exact completion time before proceeding with its independent thread-time/SQLite window. This is a coordination receipt, not independent proof of that holder's start time; no thread-time sampler was launched by this seat.\n\nInterpretation and closeout\n\nObserved daemon CPU fell 1.0832 percentage points and tmux CPU fell 8.4821 percentage points. These are observed window differences, not isolated causal savings: host load, fleet activity, observer cohort and daemon age differ. AFTER is an early post-start window; RSS changes do not establish a leak or a long-run memory saving. No per-thread SQLite/Tokio CPU was collected.\n\nPM reported that the old daemon hung on shutdown and was SIGKILLed (F267, separately under diagnosis). This note records the resulting identity/age change; it neither diagnoses that shutdown nor attributes it to D1.\n\nPerformance/313 was already released by the merger's delivered operation at 08:48:34.395 UTC on November 21, 2026, with release reason PR #313 merged (8b437897e378). Do not reopen it merely to release it again. This deployed note closes the original AFTER debt; the original verdict remains unchanged.\n\nmagicWand: a read-only matched-cost receipt command that records per-instrument monotonic timestamps, daemon age and cohort, and schedules the machine sampler outside CPU windows.\ndifficulties: approximate pre-counter capture estimates have different pane cohorts; startup age and machine activity prevent exclusive CPU attribution despite a directly measured capture/replay cut.\n"
+		}
+	]
+}
