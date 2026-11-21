@@ -173,11 +173,13 @@ pub fn finish_server(socket: &Path, pid: Option<u32>) {
 
 /// [`finish_server`], waiting at most `wait` for the server to exit.
 pub fn finish_server_within(socket: &Path, pid: Option<u32>, wait: Duration) {
+    let started = Instant::now();
     match remove_server_files_within(socket, pid, wait) {
         Ok(()) => {}
         Err(Kept::Running(pid)) if !std::thread::panicking() => panic!(
-            "{}: its server (pid {pid}) is still running {wait:?} after kill-server; socket and lock kept",
-            socket.display()
+            "{}: its server (pid {pid}) is still running after kill-server: waited {:?} of a {wait:?} budget; socket and lock kept",
+            socket.display(),
+            started.elapsed()
         ),
         Err(kept) => eprintln!(
             "pij-testkit: {}: {kept}; socket and lock kept",

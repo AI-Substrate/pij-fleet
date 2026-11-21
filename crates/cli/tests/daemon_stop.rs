@@ -61,17 +61,32 @@ async fn an_open_event_stream_does_not_hold_the_stop_and_the_control_client_leav
         .expect("the event stream opens");
     assert!(stream.status().is_success(), "{}", stream.status());
 
+    let started = Instant::now();
     let stopping = tokio::spawn(daemon.shutdown());
     // `_pij` (alone: one client, the idle pane) is killed by the leaving
-    // client's teardown while the stream still holds the HTTP drain: before
-    // the stop ends, which the stream holds for SHUTDOWN_DRAIN_TIMEOUT. That
-    // end state is the bound, not a wall-clock guess (F263: 2 s ran out under
-    // a loaded machine).
-    while has_control_session(&server) {
+    // client's teardown while the stream still holds the HTTP drain. The
+    // stream holds that drain for SHUTDOWN_DRAIN_TIMEOUT from no earlier than
+    // `started`, so "while the stream is open" is "within it": the product's
+    // own bound, not a test budget, and never scaled. A teardown that waited
+    // behind the drain misses it (F263: the old 2 s ran out under load).
+    // Each check, the one that sees `_pij` gone included, must end inside
+    // that bound: seeing it gone only later proves nothing about when it went.
+    let handled = started + SHUTDOWN_DRAIN_TIMEOUT;
+    loop {
+        let present = has_control_session(&server);
         assert!(
-            !stopping.is_finished(),
-            "_pij was not handled while the stream was open"
+            Instant::now() < handled,
+            "_pij was not handled while the stream was open: {} after {:?} of the {SHUTDOWN_DRAIN_TIMEOUT:?} drain",
+            if present {
+                "still present"
+            } else {
+                "seen gone only"
+            },
+            started.elapsed()
         );
+        if !present {
+            break;
+        }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     tokio::time::timeout(
