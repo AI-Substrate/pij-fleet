@@ -1,0 +1,63 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff32-b6e2-7760-96b0-934d8d507c4e",
+				"date": "2026-11-22",
+				"head": "12e001701c4697d2b8925d6ebb73146dc0b2a3d3",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:328",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Use no new periodic timer: boot sleep is a bounded one-shot timer at a shared lease deadline; do not claim a <=60s end-to-end follower/restart latency ceiling.",
+				"Price up to two early/late guards, each with schema/registry/native-lock work; late guard is restart-only and initial registry read remains separate.",
+				"Authorized AFTER should separate boot wait, serial backlog, gap decisions and per-guard SQL/lock work; no live lapse/renewal/boot was induced."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 328",
+					"exit_code": 0
+				},
+				{
+					"command": "git diff --check origin/main...HEAD",
+					"exit_code": 0
+				},
+				{
+					"command": "gh run view 44929325713 --repo AI-Substrate/pij-fleet --job 136922278656 --log; gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14717360742/zip; Python XML parse",
+					"exit_code": 0,
+					"log": "Exact-head CI: 2839 cases, zero failed/error/skipped; eleven selected F274/F268/F261/spawn cases passed."
+				},
+				{
+					"command": "read-only pij-rs --json ping twice with /bin/ps, 20s apart; just spawn-rate --seconds 20 concurrently",
+					"exit_code": 0,
+					"log": "BEFORE PID83182/85fe143e51,20.020939s: spawn delta0,CPU+.80s,RSS109104->108688KiB; machine96.4 launches/s, no daemon children sampled. Not boot-wait/guard AFTER proof."
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Eight dependency/ambient-tool failures; pij-skill/native/SDK passed, Rust/route/smoke skipped. Local gate not green; separate C25 exact-head CI proof."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "ROUND 1 performance verdict: PASS-WITH-NOTES.\nSubject: pr:328\nHead: 12e001701c4697d2b8925d6ebb73146dc0b2a3d3\nAnswers: 01a1ff32-b6e2-7760-96b0-934d8d507c4e\n\nThe boot wait is deadline-bounded, with no per-seat multiplication of the60s wait in the serial follower. The late guard adds one registry/lease read only for a would-be lapse restart. No new periodic tick, poll, process launch or task fan-out appears. No demonstrated normal-use resource-cost breach blocks this head. This performance verdict does not clear the independent correctness/security ordering questions.\n\nVerified cost:\n- unheard_since_boot adds one relaxed atomic read and deadline arithmetic on each on_lapse invocation. During the boot window only, it also locks the existing lease map and checks one seat ID; after the deadline it returns before taking that lock. It performs no registry/store read or process probe.\n- The requested sleep is until native_started_at + one configured extension lease (60s by default), not now +60s for every seat. The normal follower awaits each decision serially, so at most one of its boot sleeps is active; after the first reaches that shared deadline, later unheard seats add no further lease-length sleep. The sleep holds neither the global native lock nor the per-seat auth slot. A heartbeat arriving during it does not wake it early; the receiver is rechecked after the deadline.\n- This is one conditional ONE-SHOT Tokio sleep/timer, not a new periodic timer or poll. Its configured deadline is bounded; total recovery latency is not guaranteed <=60s. Scheduler lateness, queued serial decisions, store/process/composer reads, recording and control admission remain outside that sleep bound. The existing scan roster/subscription can remain live while the serial follower sleeps; no new task-per-seat queue is created.\n- The early F268 guard uses native_receiver_renewed. The late F274 guard uses it again ONLY for Cause::ExtensionLost when the candidate action is Restart. Thus at most TWO guard calls, not two on every path. Each takes the global native mutex, does registry.get (schema PRAGMA + keyed SELECT/decode), then locks the lease map for an identity/elapsed check. A would-be restart has four store statements across these guard calls, plus on_lapse's separate original registry.get and other existing decision work. F274's incremental late cost is one of those calls; the shared native critical section includes its store await.\n- The auth slot is held during the late check, but the native lock is dropped before record/accept_control. No new lock spans control admission. A renewal found by the late check removes subsequent restart write/queue work; reports do not take that guard.\n- The inherited cost-row corrections are accepted: every renewing heartbeat checks the owed set, even empty; pruning runs on the existing receiver-reconcile5s/deadline cadence using its existing roster, with up to owed x live-Copilot-roster comparisons. The20s heartbeat cadence is a default client recommendation, not a server request-rate limit. The10s completion-based brake still caps only gap reconciles, not all live lapse/heartbeat work.\n- No F274 work is added to every receiver tick or per live seat per tick. A lapsed event/boot-gap decision supplies the trigger. Existing process-liveness fallback and restart/control launches are not new sites.\n\nNonblocking notes owed:\n1. Say \"no new periodic timer\", not literally \"no timer\": sleep_until registers the bounded one-shot boot wait. State the shared default60s deadline separately from end-to-end serial-follower/restart latency. The source bound is not a live latency guarantee.\n2. Price \"up to two lease guards\", each with a registry read: the late guard is restart-only, and the independent initial registry read remains. Keep read calls distinct from SQL statements and the native-lock hold time.\n3. Preserve an authorized AFTER with bootstrap/gap decision counts, wait durations and complete guard/store work. This review deliberately triggered no working-seat lapse, heartbeat or boot.\n\nShutdown: the existing shutdown path aborts the lapse follower and then awaits it; the boot sleep is ordinary cancellable async waiting, so that path need not wait for its60s deadline. This is source-path verification, not a live full-shutdown/F267 timing witness.\n\nPolicy/brakes: lapse remains the policy input. The shared boot wait delays, and the late lease/error guard only spares; removing either permits more/earlier restart work. They are BRAKES, not a new retention policy.\n\nSources: auth_recovery.rs:266-342,589-619,720-770; delivery/mod.rs:790-830; lib.rs:405-406; auth_recovery_tests.rs:909-977. The existing registry store operation is one schema check plus the keyed seat SELECT.\n\nValidation:\n- just pr-freeze 328: FINAL at the full head, CLEAN, all five latest checks passed, schema50, no migration.\n- git diff --check origin/main...HEAD: passed; detached worktree remains clean.\n- Exact-head CI44929325713/job136922278656, successful-upload artifact14717360742. Independently parsed JUnit:2,839 cases, zero failures/errors/skipped. Eleven focused cases passed: boot wait, renewal during decision, pre-attachment lapse, early renewal brake, second expiry after an unrecorded renewal, and all six spawn-site guards.\n- The boot test exercises heard/silent paths with a1.5s test override; production wait derives from the lease/default60s, independently verified in source. No local mutants, shutdown witness or Rust build was run.\n- Read-only BEFORE: PID83182/commit85fe143e51, UTC2026-11-21T17:43:46.544165Z to17:44:06.565454Z,20.020939s. All spawn counters flat (delta0); cumulative CPU1:29.86->1:30.66 (+0.80s, about4.0% of one core), RSS109104->108688KiB. The daemon was already past its boot lease; this is NOT boot-wait/late-recheck workload proof or F274 AFTER.\n- Concurrent nearby just spawn-rate --seconds 20:96.4 machine launches/s,89.1/s sampled, no daemon children sampled. Exact matching endpoints are not recorded by that sampler; other fleet/observer work is included. No saving or feature overhead is attributed.\n- harness boot ready=false (missing vitest); harness checks --quick --json exit1, eight dependency/ambient-tool failures; pij-skill/native/SDK pass, heavy Rust/route/smoke skipped. Local gate is not green; C25 exact-head CI is separate proof. No dependency installs/links.\n- No product edits, production DB access, bounce, live receiver mutation or synthetic death/restart. Owned baseline/evidence remains in session artifacts; only the owned CI download is temporary. Hold performance/328 until merge; other holdings unchanged.\n\nHarness lesson / magicWand: capture the common boot deadline and time spent in serial backlog separately from per-guard store/native-lock work, rather than infer recovery latency from a sleep constant.\n"
+		}
+	]
+}
