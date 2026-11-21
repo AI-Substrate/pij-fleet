@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff32-b51f-7420-8ce1-e510a816ba58",
+				"date": "2026-11-22",
+				"head": "12e001701c4697d2b8925d6ebb73146dc0b2a3d3",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:328",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 328 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at 12e0017"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #328 round 1 at 12e001701c4697d2b8925d6ebb73146dc0b2a3d3: pass\n\nStatic review of auth_recovery.rs, delivery/mod.rs and http/auth_error.rs, in a detached worktree. I triggered no lapse or renewal. CI 5/5 SUCCESS at this head.\n\n## Can a caller hold off another seat's recovery with fake heartbeats?\nNo more than before this PR.\n- Both new checks read state written only by identity-gated paths. The late recheck calls F268's `native_receiver_renewed`: the current registry row's incarnation must match the lease, renewed within one lease, read under `native_lock`. The boot wait asks `unheard_since_boot` whether `native_receivers` has an entry for the seat. Every writer of that map goes through `update_native_receiver` → `inbox_recipient(seat, identity)` (heartbeat and attestation), or through the registration path, as I established for #320 (note f8ca082).\n- So sparing another seat still needs that seat's native identity (session, pid, proc_start) on an authenticated call. That is C33, the same bar as F268. A holder of it could keep sparing the seat by heartbeating, exactly as before this PR. Nothing here widens it.\n- A failed lease read spares (`unwrap_or(true)`) and records nothing. That is a BRAKE: removing the recheck only adds restarts.\n\n## Can the boot wait be abused?\nNo. It has no caller input. `until = native_started_at + one lease` is fixed at daemon start. `native_boot_wait_ms` has a setter only under `#[cfg(test)]` and is 0 in production, which means one lease. After `until`, it returns None, so no caller can extend or re-arm the wait. It only delays a restart: a seat that is really silent is still restarted after the wait (the test's silent case). This is a BRAKE that delays, never skips.\n- A side effect for the reviewer, not a security lever: the follower is serial, so other lapses decided during the boot window queue behind the same fixed deadline, which is at most one lease after boot.\n\n## auth_error.rs\n`handle` now returns `Option`. The `/auth-error` report path maps `None` to an internal error, and that path can't produce `None` (only `Cause::ExtensionLost` rechecks the lease). It is fail-closed and exposes no state.\n\nNo secrets, lockfile or `.npmrc` changes.\n"
+		}
+	]
+}
