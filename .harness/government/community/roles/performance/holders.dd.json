@@ -815,7 +815,10 @@
 					"harness_session": "2c4d4a94-b597-4f4e-b664-302f3c41c5ee",
 					"instance_key": "331",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #331 merged (b1c7fedc2ffd)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-helpful-elephant",
+					"to": "2026-11-21T20:53:54.295Z",
 					"why": "#331 F259a R1 verdict"
 				}
 			]
