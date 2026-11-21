@@ -350,7 +350,13 @@ pub fn seat_status(status: &SessionStatus) -> SeatStatus {
         model: fact(status.model.current.as_ref(), None, |model: &String| {
             Some(model.clone())
         }),
-        model_switch_pending: status.model.pending_switch.is_some(),
+        // S306-N1: a switch the SDK can't order against the last call (a time
+        // missing on one side) is listed unknown, not absent: count it pending.
+        model_switch_pending: status.model.pending_switch.is_some()
+            || status
+                .unknown
+                .iter()
+                .any(|fact| fact == "model.pending_switch"),
         context_used_tokens: fact(status.context.used_tokens.as_ref(), None, |v: &u64| {
             Some(*v)
         }),
@@ -406,7 +412,9 @@ mod tests {
         assert_eq!(
             mapped,
             SeatStatus {
-                // The adapter adds nothing an empty status did not say.
+                // An empty status can't say whether a switch is pending
+                // (S306-N1); otherwise it adds nothing an empty status did not say.
+                model_switch_pending: true,
                 ..SeatStatus::unknown()
             }
         );
@@ -721,6 +729,21 @@ mod tests {
         assert!(status.model.value().is_some(), "{status:?}");
         assert!(status.model_switch_pending, "{status:?}");
         std::fs::remove_dir_all(&sessions).unwrap();
+    }
+
+    /// S306-N1: a pending switch the SDK can't decide (it lists
+    /// `model.pending_switch` as unknown) reads as pending, never as none.
+    #[test]
+    fn an_undecided_switch_reads_as_pending() {
+        let target = StatusTarget {
+            harness: OH_MY_PI.to_string(),
+            session_id: "sess".into(),
+            transcript: None,
+        };
+        let mut status = SessionStatus::empty(target);
+        assert!(seat_status(&status).model_switch_pending, "undecided");
+        status.unknown.retain(|fact| fact != "model.pending_switch");
+        assert!(!seat_status(&status).model_switch_pending, "decided: none");
     }
 
     /// A Copilot seat is read from `~/.copilot/session-state/<id>/events.jsonl`.

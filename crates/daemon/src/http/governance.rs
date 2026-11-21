@@ -15,7 +15,8 @@ use pij_core::error::{PijError, Result};
 use pij_core::events::EventFilter;
 use pij_core::liveness::alive;
 use pij_core::model::{
-    DeliveryOutcome, Envelope, ErrorKind, Event, Liveness, Msg, SeatDescriptor, SeatId, Seq,
+    DeliveryOutcome, Envelope, ErrorKind, Event, Harness, Liveness, Msg, SeatDescriptor, SeatId,
+    Seq,
 };
 use pij_core::orchestration::{
     BatonDefinition, BatonRequest, BatonRequestState, Dispatch, DispatchCanary, DispatchState,
@@ -1920,15 +1921,21 @@ async fn wait_dispatch(
 /// The record names the model of the session's latest main-chain call. It is
 /// stale in two ways, and both answer `None` here, which leaves the canary on
 /// the pane footer:
-/// - **a switch since that call** (`model_switch_pending`): the next call runs
-///   the new model, which the record has not used yet;
+/// - **a switch since that call** (`model_switch_pending`, which is also set
+///   when the record can't order the switch against the call, S306-N1): the
+///   next call runs the new model, which the record has not used yet;
 /// - **a fresh session before its first call**: no transcript or no call yet,
 ///   so the model is unknown.
 ///
+/// The record does not see every switch: Unisphere counts only default-role
+/// `model_change`s as pending, while OMP also switches the active model for
+/// its smol, slow, temporary, fallback and prewalk roles (R306-001). Those
+/// show only in the footer, so [`runtime_model`] refuses when the two
+/// disagree.
+///
 /// Only a `native` fact counts. The record is read for the session the seat is
-/// bound to (`harness_session`), the same id the observation was just checked
-/// against, so it can't answer for another session. One incremental read of
-/// that transcript per canary; no launch.
+/// bound to (`harness_session`), so it can't answer for another session. One
+/// incremental read of that transcript per canary; no launch.
 async fn native_runtime_model(state: &AppState, seat: &SeatDescriptor) -> Option<String> {
     let session = seat.harness_session.clone().filter(|id| !id.is_empty())?;
     let target = pij_core::session_status::SessionTarget {
@@ -1939,17 +1946,93 @@ async fn native_runtime_model(state: &AppState, seat: &SeatDescriptor) -> Option
     native_model_of(state.services.session_status.status(&target).await)
 }
 
-/// The canary's runtime model and where it came from: the native record's
-/// when it has one, else the footer's. An empty name is no name.
-fn runtime_model<'a>(
-    native: Option<&'a str>,
-    footer: Option<&'a str>,
-) -> Option<(&'a str, &'static str)> {
-    let non_empty = |model: &&str| !model.is_empty();
-    native
-        .filter(non_empty)
-        .map(|model| (model, "native"))
-        .or_else(|| footer.filter(non_empty).map(|model| (model, "footer")))
+/// The OMP model catalog as the canary uses it: `omp models`, one launch per
+/// call, run off the reactor.
+trait FooterCatalog {
+    /// The one selector a footer name stands for; ambiguity is an error.
+    async fn resolve(&self, shown: &str) -> Result<String>;
+    /// Whether `selector`'s catalog row is the one a footer shows as `shown`.
+    async fn shows(&self, selector: &str, shown: &str) -> Result<bool>;
+}
+
+struct OmpCatalog;
+
+impl FooterCatalog for OmpCatalog {
+    async fn resolve(&self, shown: &str) -> Result<String> {
+        let shown = shown.to_string();
+        blocking(move || pij_harnesses::resolve_omp_model(&shown)).await
+    }
+
+    async fn shows(&self, selector: &str, shown: &str) -> Result<bool> {
+        let (selector, shown) = (selector.to_string(), shown.to_string());
+        blocking(move || pij_harnesses::omp_model_shows(&selector, &shown)).await
+    }
+}
+
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|error| PijError::Adapter {
+            adapter: "omp model catalog".to_string(),
+            message: format!("catalog task failed: {error}"),
+        })?
+}
+
+/// The canary's runtime model and where it came from, or why there is none.
+#[derive(Debug, PartialEq, Eq)]
+enum RuntimeModel {
+    Observed { model: String, from: &'static str },
+    Disagree { native: String, footer: String },
+    Unobserved,
+}
+
+/// The native record's model when it has one, else the footer's
+/// (`shown`, as the pane draws it).
+///
+/// - **Native answers** (R306-002): the catalog never resolves the footer, so
+///   a name several providers share can't veto it. For OMP, a footer that
+///   names a model is checked against the native selector's own catalog row
+///   (S306-N2): a different model refuses, since one of the two is stale
+///   (R306-001). A catalog that can't answer leaves the check undone and the
+///   native model stands.
+/// - **Native can't answer**: the footer, resolved to its one selector for
+///   OMP; a catalog error refuses, as before.
+async fn runtime_model(
+    harness: Harness,
+    native: Option<String>,
+    shown: Option<&str>,
+    catalog: &impl FooterCatalog,
+) -> Result<RuntimeModel> {
+    let shown = shown.filter(|model| !model.is_empty());
+    if let Some(native) = native.filter(|model| !model.is_empty()) {
+        if harness == Harness::Omp
+            && let Some(footer) = shown
+            && let Ok(false) = catalog.shows(&native, footer).await
+        {
+            return Ok(RuntimeModel::Disagree {
+                native,
+                footer: footer.to_string(),
+            });
+        }
+        return Ok(RuntimeModel::Observed {
+            model: native,
+            from: "native",
+        });
+    }
+    let Some(footer) = shown else {
+        return Ok(RuntimeModel::Unobserved);
+    };
+    let model = if harness == Harness::Omp {
+        catalog.resolve(footer).await?
+    } else {
+        footer.to_string()
+    };
+    Ok(RuntimeModel::Observed {
+        model,
+        from: "footer",
+    })
 }
 
 /// [`native_runtime_model`]'s rule over one session-status read.
@@ -2072,24 +2155,41 @@ async fn canary_command(
     if current.harness_session.as_deref().is_none_or(str::is_empty) {
         return Err(refuse("recipient native session is not bound"));
     }
+    // No session id is passed: that would make the OMP observation resolve its
+    // footer through the catalog, which runs below only when the native
+    // record can't answer (R306-002). The bound session was checked above.
     let observation = state
         .services
         .harnesses
-        .observe_bind(&current, current.harness_session.clone(), None)
+        .observe_bind(&current, None, None)
         .await?;
-    if observation.facts.pane.as_deref() != Some(pane)
-        || observation.facts.native_session_id != current.harness_session
-    {
+    if observation.facts.pane.as_deref() != Some(pane) {
         return Err(refuse(
-            "fresh harness observation does not match the challenged session/pane",
+            "fresh harness observation does not match the challenged pane",
         ));
     }
     // F249: the session's own record names the runtime model; the pane's
     // footer is the fallback for a session it can't (yet) answer for.
     let native = native_runtime_model(state, &current).await;
-    let (observed_model, observed_from) =
-        runtime_model(native.as_deref(), observation.facts.model.as_deref())
-            .ok_or_else(|| refuse("runtime model could not be observed"))?;
+    let (observed_model, observed_from) = match runtime_model(
+        current.harness,
+        native,
+        observation.facts.model.as_deref(),
+        &OmpCatalog,
+    )
+    .await?
+    {
+        RuntimeModel::Observed { model, from } => (model, from),
+        RuntimeModel::Disagree { native, footer } => {
+            let mut error =
+                refuse("the session record and the pane footer name different runtime models");
+            error.details["native_model"] = json!(native);
+            error.details["footer_model"] = json!(footer);
+            return Err(error);
+        }
+        RuntimeModel::Unobserved => return Err(refuse("runtime model could not be observed")),
+    };
+    let observed_model = observed_model.as_str();
     if !crate::registration::requested_model_matches(
         call.value("expect-model"),
         Some(observed_model),
@@ -2251,24 +2351,219 @@ mod tests {
 
     use super::*;
 
+    /// A catalog of (selector, footer names) rows, as `omp models` answers.
+    /// `resolve` panics when `no_resolve` is set: it must not run.
+    struct Catalog {
+        rows: Vec<(&'static str, Vec<&'static str>)>,
+        down: bool,
+        no_resolve: bool,
+    }
+
+    impl Catalog {
+        fn new(rows: Vec<(&'static str, Vec<&'static str>)>) -> Self {
+            Self {
+                rows,
+                down: false,
+                no_resolve: false,
+            }
+        }
+
+        fn unavailable() -> PijError {
+            PijError::Adapter {
+                adapter: "fixture catalog".into(),
+                message: "omp models failed".into(),
+            }
+        }
+    }
+
+    impl FooterCatalog for Catalog {
+        async fn resolve(&self, shown: &str) -> Result<String> {
+            assert!(
+                !self.no_resolve,
+                "the footer is resolved only without native"
+            );
+            if self.down {
+                return Err(Self::unavailable());
+            }
+            let mut found = self
+                .rows
+                .iter()
+                .filter(|(_, names)| names.contains(&shown))
+                .map(|(selector, _)| (*selector).to_string());
+            match (found.next(), found.next()) {
+                (Some(selector), None) => Ok(selector),
+                _ => Err(PijError::Adapter {
+                    adapter: "fixture catalog".into(),
+                    message: format!("{shown:?} is ambiguous or absent"),
+                }),
+            }
+        }
+
+        async fn shows(&self, selector: &str, shown: &str) -> Result<bool> {
+            if self.down {
+                return Err(Self::unavailable());
+            }
+            self.rows
+                .iter()
+                .find(|(row, _)| *row == selector)
+                .map(|(_, names)| names.contains(&shown))
+                .ok_or_else(Self::unavailable)
+        }
+    }
+
+    const OPUS: &str = "github-copilot/claude-opus-5.5-1m";
+    const MINI: &str = "github-copilot/gpt-5.4-mini";
+    const SOL: &str = "github-copilot/gpt-6.1-sol";
+
+    fn catalog() -> Catalog {
+        Catalog::new(vec![
+            (OPUS, vec!["Opus 5.5 (1M)"]),
+            (MINI, vec!["GPT-5.4 mini"]),
+            // R306-002: one name, three providers (54 such names live).
+            (SOL, vec!["GPT-6.1 Sol"]),
+            ("openai-codex/gpt-6.1-sol", vec!["GPT-6.1 Sol"]),
+            ("openrouter/openai/gpt-6.1-sol", vec!["GPT-6.1 Sol"]),
+        ])
+    }
+
+    fn observed(model: &str, from: &'static str) -> RuntimeModel {
+        RuntimeModel::Observed {
+            model: model.to_string(),
+            from,
+        }
+    }
+
+    async fn omp(native: Option<&str>, footer: Option<&str>, catalog: &Catalog) -> RuntimeModel {
+        runtime_model(Harness::Omp, native.map(str::to_string), footer, catalog)
+            .await
+            .expect("a runtime-model decision")
+    }
+
+    /// R306-001: OMP's non-default roles switch the active model without the
+    /// record calling it pending, so the record still names the old model. The
+    /// footer shows the new one: the canary refuses rather than pass the stale
+    /// record. The next call settles the record and the two agree again.
+    #[tokio::test]
+    async fn a_role_switch_the_record_does_not_see_refuses_until_the_next_call() {
+        let switched = omp(Some(OPUS), Some("GPT-5.4 mini"), &catalog()).await;
+        assert_eq!(
+            switched,
+            RuntimeModel::Disagree {
+                native: OPUS.to_string(),
+                footer: "GPT-5.4 mini".to_string(),
+            }
+        );
+        let settled = Catalog {
+            no_resolve: true,
+            ..catalog()
+        };
+        assert_eq!(
+            omp(Some(MINI), Some("GPT-5.4 mini"), &settled).await,
+            observed(MINI, "native")
+        );
+    }
+
+    /// R306-002: a valid native model never needs the footer's name resolved,
+    /// so a name three providers share, or a catalog that fails, can't veto it.
+    #[tokio::test]
+    async fn native_evidence_needs_no_footer_resolution() {
+        let ambiguous = Catalog {
+            no_resolve: true,
+            ..catalog()
+        };
+        assert_eq!(
+            omp(Some(SOL), Some("GPT-6.1 Sol"), &ambiguous).await,
+            observed(SOL, "native")
+        );
+        let down = Catalog {
+            down: true,
+            no_resolve: true,
+            ..catalog()
+        };
+        assert_eq!(
+            omp(Some(SOL), Some("GPT-6.1 Sol"), &down).await,
+            observed(SOL, "native"),
+            "a failed agreement check leaves the native model standing"
+        );
+        assert_eq!(
+            omp(Some(OPUS), None, &ambiguous).await,
+            observed(OPUS, "native")
+        );
+    }
+
+    /// Without native evidence the footer answers, resolved to its one
+    /// selector; an ambiguous name or a failed catalog refuses, as before.
+    #[tokio::test]
+    async fn the_footer_answers_only_without_native_evidence() {
+        assert_eq!(
+            omp(None, Some("Opus 5.5 (1M)"), &catalog()).await,
+            observed(OPUS, "footer")
+        );
+        assert_eq!(
+            omp(Some(""), Some("GPT-5.4 mini"), &catalog()).await,
+            observed(MINI, "footer")
+        );
+        for catalog in [
+            catalog(),
+            Catalog {
+                down: true,
+                ..catalog()
+            },
+        ] {
+            let footer = if catalog.down {
+                "Opus 5.5 (1M)"
+            } else {
+                "GPT-6.1 Sol"
+            };
+            assert!(
+                runtime_model(Harness::Omp, None, Some(footer), &catalog)
+                    .await
+                    .is_err()
+            );
+        }
+        assert_eq!(
+            omp(None, Some(""), &catalog()).await,
+            RuntimeModel::Unobserved
+        );
+        assert_eq!(omp(None, None, &catalog()).await, RuntimeModel::Unobserved);
+        // Other harnesses' panes name the model as they run it: no catalog,
+        // even where the catalog would call the two different.
+        assert_eq!(
+            runtime_model(
+                Harness::Claude,
+                Some(OPUS.into()),
+                Some("GPT-5.4 mini"),
+                &Catalog {
+                    no_resolve: true,
+                    ..catalog()
+                }
+            )
+            .await
+            .unwrap(),
+            observed(OPUS, "native")
+        );
+        assert_eq!(
+            runtime_model(
+                Harness::Claude,
+                None,
+                Some("sonnet"),
+                &Catalog {
+                    no_resolve: true,
+                    ..catalog()
+                }
+            )
+            .await
+            .unwrap(),
+            observed("sonnet", "footer")
+        );
+    }
+
     /// F249: the canary takes the runtime model from the session's own record
     /// only when it is native and no switch is pending since its last call; a
     /// fresh session (no transcript), an unknown or derived model, an empty one
     /// or a failed read leaves it to the footer.
     #[test]
     fn the_native_record_names_the_runtime_model_only_when_it_is_current() {
-        // The record wins over the footer; the footer answers only without it.
-        assert_eq!(
-            runtime_model(Some("github-copilot/claude-opus-5.5-1m"), Some("other")),
-            Some(("github-copilot/claude-opus-5.5-1m", "native"))
-        );
-        assert_eq!(
-            runtime_model(None, Some("github-copilot/gpt-5.4-mini")),
-            Some(("github-copilot/gpt-5.4-mini", "footer"))
-        );
-        assert_eq!(runtime_model(Some(""), Some("f")), Some(("f", "footer")));
-        assert_eq!(runtime_model(None, Some("")), None);
-        assert_eq!(runtime_model(None, None), None);
         use pij_core::session_status::{Fact, SeatStatus, SessionStatusReply};
         let status = |model: Fact<String>, switching: bool| {
             Ok(SessionStatusReply::Status(SeatStatus {

@@ -442,8 +442,48 @@ fn omp_rows_with(run: impl FnOnce() -> std::io::Result<CommandResult>) -> Result
 
 /// Resolve an observed OMP label from the same inventory used by model discovery.
 /// A claimed descriptor is deliberately not an input: it cannot disambiguate evidence.
-pub(crate) fn resolve_omp_model(observed: &str) -> Result<String> {
+pub fn resolve_omp_model(observed: &str) -> Result<String> {
     resolve_omp_model_with(observed, run_omp_command)
+}
+
+/// Whether the OMP model `selector` is the one a footer shows as `shown`:
+/// `shown` is that row's selector, id, catalog name, or the name OMP's footer
+/// draws (`Claude ` dropped). This never resolves `shown` to a selector, so a
+/// name several providers share (`GPT-6.1 Sol`) still checks against the one
+/// selector asked about. A selector absent from the inventory is an error, not
+/// a disagreement.
+pub fn omp_model_shows(selector: &str, shown: &str) -> Result<bool> {
+    omp_model_shows_with(selector, shown, run_omp_command)
+}
+
+fn omp_model_shows_with(
+    selector: &str,
+    shown: &str,
+    run: impl FnOnce() -> std::io::Result<CommandResult>,
+) -> Result<bool> {
+    let value = omp_inventory_with(run)?;
+    for value in value["models"]
+        .as_array()
+        .expect("validated OMP model array")
+    {
+        let Some(source) = value.as_object() else {
+            continue;
+        };
+        if source.get("selector").and_then(Value::as_str) != Some(selector) {
+            continue;
+        }
+        let id = source.get("id").and_then(Value::as_str);
+        let name = source.get("name").and_then(Value::as_str);
+        let drawn = name.map(|name| name.strip_prefix("Claude ").unwrap_or(name));
+        return Ok(shown == selector
+            || id == Some(shown)
+            || name == Some(shown)
+            || drawn == Some(shown));
+    }
+    Err(error(
+        "omp model catalog",
+        format!("model {selector:?} is absent from the OMP inventory"),
+    ))
 }
 
 fn resolve_omp_model_with(
@@ -898,5 +938,26 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    /// R306-002/S306-N2: a footer is checked against the one selector the
+    /// native record names. A name three providers share is no ambiguity here.
+    #[test]
+    fn omp_footer_checks_against_one_selector_without_resolving_the_name() {
+        let inventory = r#"{"models":[{"provider":"github-copilot","id":"gpt-6.1-sol","selector":"github-copilot/gpt-6.1-sol","name":"GPT-6.1 Sol"},{"provider":"openai-codex","id":"gpt-6.1-sol","selector":"openai-codex/gpt-6.1-sol","name":"GPT-6.1 Sol"},{"provider":"openrouter","id":"openai/gpt-6.1-sol","selector":"openrouter/openai/gpt-6.1-sol","name":"GPT-6.1 Sol"},{"provider":"github-copilot","id":"claude-opus-5.5-1m","selector":"github-copilot/claude-opus-5.5-1m","name":"Claude Opus 5.5 (1M)"}]}"#;
+        let run = || {
+            Ok(CommandResult {
+                status: Some(0),
+                stdout: inventory.to_string(),
+                stderr: String::new(),
+            })
+        };
+        let shows = |selector: &str, shown: &str| super::omp_model_shows_with(selector, shown, run);
+        assert!(super::resolve_omp_model_with("GPT-6.1 Sol", run).is_err());
+        assert!(shows("github-copilot/gpt-6.1-sol", "GPT-6.1 Sol").unwrap());
+        assert!(shows("github-copilot/claude-opus-5.5-1m", "Opus 5.5 (1M)").unwrap());
+        assert!(!shows("github-copilot/claude-opus-5.5-1m", "GPT-6.1 Sol").unwrap());
+        assert!(!shows("github-copilot/gpt-6.1-sol", "Opus 5.5 (1M)").unwrap());
+        assert!(shows("local/absent", "GPT-6.1 Sol").is_err());
     }
 }
