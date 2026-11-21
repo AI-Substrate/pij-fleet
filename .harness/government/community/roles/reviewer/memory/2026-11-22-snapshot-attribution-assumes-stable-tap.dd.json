@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before clearing F278 or claiming a batch error names exactly the failed pane under concurrent tap mutation",
+				"tags": [
+					"review",
+					"tmux",
+					"f278",
+					"concurrency",
+					"c34"
+				],
+				"title": "Snapshot attribution assumes stable tap mutation"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR333 50c675a PASS-WITH-NOTES e71180f: original prior-verify-failure/clear-exited sequence now all Ok; no-pre-send-release mutant kills original and committed witnesses. New N333-R1-01 is not that old defect: pause after build read, complete a second same-adapter one-pane detach, let that pane exit, then resume the batch; later live pane still wrongly blamed. Current observer retires distinct ids and joins before shutdown batch, so this deliberately overlapping-port witness is a nonblocking existing boundary, not a current normal-use block. Exact attribution needs stable pipe/marker ownership, not just initial attachment. Set-option -u for an absent user option is benign; disappearing target uses the no-blame brake. MagicWand: exact-attribution assertions name the concurrency premise or carry per-clause proof. Preserve pr333-regression-tests.rs and receipts in session ae639be0/files; nested child module, never standalone Cargo target."
+		}
+	]
+}
