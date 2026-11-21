@@ -1,0 +1,68 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fed8-d19b-76b0-a5be-9a0852c0921e",
+				"date": "2026-11-22",
+				"head": "cb3c4b90c749a5d9ff7e230901a730a11811bf0f",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:319",
+				"writer": "pij-complex-alpaca",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"new: C34 follow-up N319-R2-1 — observer descheduling can false-fail an early release; use a scaled outer watchdog only alongside an exact completion-order witness, not by scaling away the ordering comparison"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test -p pij-tmux --test fixture_cleanup -- --nocapture --then test -p pij-cli --test daemon_stop -- --nocapture",
+					"exit_code": 0,
+					"log": "pr319-r2-baseline.log and pr319-r2-restored.log: 6/6 green; control release 12/13 ms, HTTP drain 5001/5002 ms; measured fixture diagnostic verified"
+				},
+				{
+					"command": "just shared-build -- test -p pij-cli --test daemon_stop -- --nocapture (after-drain release mutant)",
+					"exit_code": 101,
+					"log": "pr319-r2-after-drain-mutant.log: mutant that survived R1 now killed at deadline assertion after 5.011 s; successful compilation"
+				},
+				{
+					"command": "just shared-build -- test -p pij-cli --test daemon_stop -- --nocapture (never-finishing release mutant)",
+					"exit_code": 101,
+					"log": "pr319-r2-missing-release-mutant.log: failed at deadline after 5.028 s; test completed in 5.89 s, no hang"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14713831453/zip",
+					"exit_code": 0,
+					"log": "Exact-head successful job 136895993228, run 44920737778: 2817 JUnit cases, no failures"
+				},
+				{
+					"command": "just pr-freeze 319",
+					"exit_code": 0,
+					"log": "Final recheck FINAL/CLEAN at cb3c4b90c749a5d9ff7e230901a730a11811bf0f, latest checks green, no migration"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Worktree dependencies/ambient Biome unavailable under C25; native Copilot and skill checks pass, no full local gate claim"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer/319 — round 2 of 2 (C34)\n\nHead: `cb3c4b90c749a5d9ff7e230901a730a11811bf0f`.\n\n**Verdict: PASS WITH NOTES.** R319-001 and N319-1 are closed. Both negative controls are killed and the six-test restored baseline is green.\n\n**R319-001 is closed by the inspected repair:** the `_pij` watch is now a `loop`, and the deadline assertion runs after every observation, including the one that sees the session gone. A late success cannot bypass it, and repeated present observations fail at the deadline instead of depending on overall shutdown completion. The ordinary shutdown join remains separately bounded.\n\n**N319-1 is closed:** fixture teardown reports measured elapsed time and its configured budget. The daemon-stop assertion reports whether the session was still present or only observed gone late, with elapsed time and the drain constant.\n\nThe five-second comparison is unscaled because it is used as an ordering certificate. In this fixture the open event stream keeps HTTP graceful shutdown pending for `SHUTDOWN_DRAIN_TIMEOUT`, and that drain is armed no earlier than the test's `started` instant. Observing `_pij` gone before `started + timeout` is therefore sufficient to establish teardown before HTTP drain completion. Merely scaling that comparison would allow after-drain teardown to pass and would reintroduce the R1 failure.\n\n**New — C34 follow-up N319-R2-1:** this sufficient certificate is not a necessary condition for correct ordering. A loaded/descheduled observer can see a promptly removed session only after five seconds and fail even though control teardown happened first; the test also includes synchronous tmux-call/scheduling time. A scaled outer test watchdog is appropriate only alongside a separate exact ordering witness (recorded completion/barrier), not as a replacement for the current comparison. This is a remaining load-sensitive proof limit, not evidence of a new production regression or a reason to demand a third review round.\n\nAt the inspected #324 head `44e4974613311537047b346be285f5ec733507cd`, shutdown phases are moved into independent tasks but the existing control release is still started before the phase joins. HTTP serving/drain retains the same timeout and stop signal. The current certificate remains sufficient under that change; it does not rely on all phase futures sharing one task. Independent tasks should reduce cross-phase scheduling coupling, but the observer-delay limit above remains. This is source-level compatibility analysis, not a claim to have executed #324's combined head.\n\nThe sixty-second scaled server-gone budget and recorded-PID check are unchanged. They still fail loudly for a known live server and retain its socket/lock; zombie/PID-reuse conservatism is unchanged. The new elapsed diagnostic does not change cleanup behavior. No production constant reads `PIJ_TEST_TIME_SCALE`.\n\nCost is fixture-only: no daemon tick or launch site added. The existing private-server PID wait polls in-process every 10 ms with the scaled cap; attach and `_pij` probes invoke only the fixture's own tmux server. No live daemon, operator server, or working seat was stopped.\n\n## Evidence\n\n`just pr-freeze 319`: initially FINAL/CLEAN at the requested head, latest five checks green, no migration. The R2 commit changes only the test oracle and fixture diagnostic; main merges bring #316/#318/#321, not another F263 mechanism.\n\nCI run `44920737778`, successful rust-test job `136895993228`, upload-log-selected artifact `14713831453`: 2,817 JUnit cases, no failures. All five fixture-cleanup cases and daemon_stop are present and passed.\n\nIndependent baseline: `just shared-build -- test -p pij-tmux --test fixture_cleanup -- --nocapture --then test -p pij-cli --test daemon_stop -- --nocapture`: exit 0, all six tests passed. The fixture's captured panic reports measured `302.071084ms` of a `300ms` budget. Daemon phase logs show control release ended after 12ms and HTTP drain after 5001ms; daemon_stop passed in 5.90 seconds.\n\nThe original after-HTTP-drain mutation was rerun at the new head: `just shared-build -- test -p pij-cli --test daemon_stop -- --nocapture` returned exit 101 on the repaired assertion, reporting `_pij` still present at 5.011 seconds. HTTP drain completion was logged immediately before the assertion; the intentionally delayed release never got to bypass it. The same causal mutant passed at the R1 head, so this is independent RED/GREEN integration evidence for the repair.\n\nMissing-release mutation (control release waits forever): the same daemon_stop command returned exit 101 on the deadline assertion at 5.028 seconds; the binary completed in 5.89 seconds rather than hanging. Both mutations compiled and failed on the intended behavior checks.\n\nBoth mutated source files are restored byte-for-byte with `cmp`; the six-test baseline command returned exit 0 again. Control release ended after 13ms, HTTP drain after 5002ms, and daemon_stop passed in 5.90 seconds. `harness checks --quick --json` returned exit 1 due to missing worktree dependencies/ambient Biome mismatch; native Copilot and skill checks passed. No local full-gate success is claimed.\n\nEvidence retained: `pr319-r2-baseline.log`, after-drain/missing-release mutation patches and logs, `pr319-r2-restored.log`, `pr319-r2-local-checks.json`, exact-head JUnit archive, and the inspected #324 diff. Only the reviewer-owned source archive and the two explicitly recorded mutation-test state directories are removed after completion.\n\n**Notes owed — new:** C34 follow-up N319-R2-1, separate a scaled observer watchdog from an exact completion-order witness if load-sensitive false failures recur. This conditional scheduling limit is source-derived; no such false failure was observed in the passing baseline runs.\n\nLocal boot is dependency-limited under C25. All probes use an owned exact-head archive and fresh private servers, shared-build's lock, the resolved shared target, niceness 19, and four jobs. No product worktree edits.\n\n**Harness lesson:** preserve a wrong-order negative control; separate the system's causal ordering from the test observer's scheduling budget.\n"
+		}
+	]
+}
