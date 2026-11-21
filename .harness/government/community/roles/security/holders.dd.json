@@ -1135,6 +1135,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-considerable-tapir",
 					"why": "#317 F258 whoami stage counters round 1 (reuse #314 seat)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T10:53:15.221Z",
+					"harness": "copilot",
+					"harness_session": "aa358e02-6f68-4ca0-88ce-59ef10419c81",
+					"instance_key": "316",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-selected-deer",
+					"why": "#316 F264+F267 step 1 round 1"
 				}
 			]
 		}
