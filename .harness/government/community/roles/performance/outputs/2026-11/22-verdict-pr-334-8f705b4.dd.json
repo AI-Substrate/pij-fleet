@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a20075-fa4a-78b2-afcb-1a70160fa913",
+				"date": "2026-11-22",
+				"head": "8f705b4ee8308018e235f2c64ed77912e3bc8133",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44961625106",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:334",
+				"writer": "pij-responsible-locust",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Authorized deployer: AFTER receipt on the same fleet, two known-interval ping/spawn counter readings, just spawn-rate --seconds 20, and daemon CPU/RSS; BEFORE commit 3707709efd is recorded in this verdict."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 334",
+					"exit_code": 0,
+					"log": "FINAL at 8f705b4ee8308018e235f2c64ed77912e3bc8133; CLEAN; latest CI green"
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test -p pij-testkit --test spawn_sites --then test -p pij-tmux --test control_mode capture_without_launch_never_starts_a_client_or_forks --then test -p pij-daemon --lib a_seat_that_lapses_mid_turn_is_restarted_once_when_its_turn_ends",
+					"exit_code": 0,
+					"log": "macOS: 6 spawn-site tests, 1 cold/live/lost launch-free capture contract, 1 mid-turn lapse recovery regression passed; nice 19; shared target locked"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PASS-WITH-NOTES, round 1, performance/334, exact head 8f705b4ee8308018e235f2c64ed77912e3bc8133.\n\nNo blocking performance finding. The added work launches no process per tick or per seat. No daemon bounce, live-seat restart or live-seat typing was performed; the detached review worktree remains unchanged.\n\nCost verified from source:\n\n- The existing delivery drain defaults to a 5 s cadence (crates/core/src/config.rs:213; crates/daemon/src/lib.rs:1269-1270,1369-1371). drain_once removes a live recipient's kind after one claim in a pass (crates/daemon/src/pointer/worker.rs:251-309). New work runs only for a claimed Copilot control, not for every idle Copilot seat. Holds retain durable exponential retry_delay: 1,2,4,...,300 s, with the queue's attempt/not-before persisted (crates/daemon/src/pointer/mod.rs:105-117; worker.rs:951-965). The cadence is nominal: receiver-deadline wakes also exist. The durable not-before, not an assumed 5 s minimum, bounds retries.\n- Each such claim adds one logical latest-receiver-edge lookup (worker.rs:419-426). The real store performs two indexed seeks, one for each receiver kind, in one read transaction, with its existing schema check. LATEST_MATCHING_SQL explicitly names spine_by_seat_kind(seat,kind,seq), so it does not walk unrelated seat history (crates/store/src/spine.rs:59-65,367-395; migrations/0020_spine_by_seat_kind.sql:2).\n- For a lapsed seat, the busy brake replaces published-state checks with one visible-pane capture when held, or two captures 250 ms apart when the first is Idle (worker.rs:537-569). Capture/classification scales with visible pane rows/bytes, not scrollback. A continuously busy lapsed seat therefore adds one launch-free capture per due control claim; at the retry ceiling, approximately one per 300 s per such seat. Idle settlement can add 250 ms per qualifying seat to the serial drain pass, as the existing settled-state brake already did. A failed edge read conservatively runs both brakes.\n- fresh_turn calls only capture_without_launch (auth_recovery.rs:226-231). The real adapter calls query_live, which uses ask(args,false); without a live client it returns None before start(), and a failed/lost client is not restarted by this call (crates/tmux/src/lib.rs:1286-1294; control.rs:537-541,576-585). This path never falls back to a forked capture. Unreadable holds. The spawn-site sensor includes daemon, harnesses, store and tmux; no new launch site is required. An eventual /restart still uses the existing counted staged-control submission launches: zero is the incremental screen-read launch cost, not an end-to-end restart launch count.\n- F261 adds one launch-free pane capture only when an undecided lapse can act (auth_recovery.rs:358-362,539-563). Busy then queues the existing restart control and tells the same parent/primes the old notify path told. The existing follower is event-driven, with attachment/gap reconciliation, not a new timer or subscription per seat.\n- Duplicate suppression adds no timer: the 60 s grace is checked on existing claims. Memory is one entry per distinct Copilot seat whose lapsed restart was let through during this daemon lifetime, including subsequently retired seats; it does not grow per retry (worker.rs:158-162,581-604).\n\nNon-blocking cost note: restart_overtaken also calls latest_matching_message for a restart whose latest edge is renewal, before the busy brake (worker.rs:424-429,613-638). Its arguments are keyed, but its SQL is NOT an indexed msg_id seek: json_extract(payload,'$.msg_id') is a residual filter and no matching expression index is present (crates/store/src/spine.rs:397-418). A synthetic in-memory run of the exact SQL with the repository's three spine indexes and ANALYZE read progressively more history: 1,000/10,000/100,000 newer same-seat delivery.outcome rows took 0.248/2.065/18.787 ms and approximately 8,000/80,000/800,000 VM instructions. SQLite 3.54.1 chose SCAN spine_events in that single-seat fixture. These are synthetic warm-memory numbers, not deployed timings. Normal newly queued controls have recent admission outcomes; a found overtaken control closes immediately, and held claims back off. This is not a demonstrated normal-use cost breach. Do not describe this additional message lookup as constant-cost merely because the receiver-edge lookup is indexed; a bounded/indexed admission-outcome lookup is an optional follow-up candidate.\n\nBEFORE live receipts, deployed daemon commit 3707709efd:\n\n- pij-rs --json ping | jq .data.spawns: healthy at 2026-11-21T23:35:53.389160Z and 23:36:13.401561Z, measured interval 20.018374 s. total 875 -> 885: 10 launches, 0.4995/s. by_op deltas: tmux.atomically reserve staged submit +1; tmux.authorize staged submit commit +1; tmux.load submit buffer +3; tmux.paste owned submit buffer +3; tmux.restore pane input and release ownership +1; tmux.submit authorized staged body +1. Every other counter was unchanged; tmux.control-client remained 1.\n- just spawn-rate --seconds 20 --json: 20.0 s, whole-machine 583.3 new processes/s; sampled 562.6/s; no direct daemon child was observed. Parent attribution is a lower bound, not evidence of zero daemon launches. Other seats were active; no seat was charged by inherited PIJ environment.\n- /bin/ps -p 42265 -o pid=,pcpu=,rss=,time=,etime=,ni=: daemon CPU snapshot 4.1%, RSS 106112 KiB (103.625 MiB), accumulated CPU 2:37.80, elapsed 44:16, niceness 5. This is one snapshot, not a window-averaged CPU measurement.\n\nAFTER IS OWED after the authorized deploy: repeat both counter readings over a known interval, just spawn-rate --seconds 20, and daemon CPU/RSS on the same fleet. This review did not deploy, so it makes no measured before/after delta claim.\n\nValidation:\n\n- just pr-freeze 334: FINAL at the exact head, CLEAN, all latest checks successful.\n- PIJ_SHARED_TARGET=\"$(harness/scripts/cargo-target.sh)\" just shared-build -- test -p pij-testkit --test spawn_sites --then test -p pij-tmux --test control_mode capture_without_launch_never_starts_a_client_or_forks --then test -p pij-daemon --lib a_seat_that_lapses_mid_turn_is_restarted_once_when_its_turn_ends: exit 0 on macOS, serialized at nice 19 with four jobs/threads. Spawn-site tests 6/6 passed; disabled/cold/live/lost-client no-launch contract 1/1 passed; mid-turn lapse -> held -> one restart -> renewal regression 1/1 passed. The shared lock waited for its owner and was never cleared.\n- git diff --check 3707709e...HEAD: exit 0. git status --short: empty.\n- Exact-head CI run 44961625106: SUCCESS for check (22), check (24), rust-lint and rust-test; TS typecheck, lint, npm test and native contracts passed. Delivers run 44961625096 also passed.\n- harness boot --json: exit 0 advisory, ready:false because this read-only worktree has no node_modules. harness checks --quick --json: exit 1, eight dependency/tooling failures (missing tsx/vitest and an ambient incompatible Biome), not a green local full gate. Pij skill, native Copilot contracts and Copilot SDK contracts passed. Heavy route/Rust/smoke stages were deliberately not rerun through this command. C25 forbids repairing this with a symlink; TS proof is the exact-head CI proof above. The PR author's full local harness-checks pass is a reported receipt, not independently rerun here.\n\nBRAKE, not a new policy: unreadable/busy/draft and duplicate checks only delay or remove the existing restart; removing them can type the same command sooner or again. The restart policy/window itself is unchanged.\n\nHarness feedback: a single public-safe performance receipt command should combine monotonic counter deltas, machine spawn-rate, daemon CPU/RSS and deployed commit into comparable BEFORE/AFTER JSON. This session needed manual composition and separately checked whether a \"keyed\" read was actually indexed. Encoding that receipt and an admission-lookup query-plan check would make the next cost review cheaper; no unapproved code change was made.\n"
+		}
+	]
+}
