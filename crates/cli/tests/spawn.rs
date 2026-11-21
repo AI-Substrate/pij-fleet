@@ -1228,3 +1228,220 @@ fn spawn_child_appends_the_codex_pane_setting() {
     assert_eq!(run("claude", Some("%122")), "--model\nm\n");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// One daemon of the F255 bounce: real store at `config`, the shared tmux,
+/// served on `listener` from its own runtime, so dropping that runtime drops
+/// every open connection as a stop's expired drain does.
+fn serve_daemon(
+    runtime: &tokio::runtime::Runtime,
+    config: &Config,
+    dir: &std::path::Path,
+    tmux: &Arc<FakeTmux>,
+    identity: ProcIdentity,
+    key: &str,
+    listener: std::net::TcpListener,
+) -> pij_daemon::Services {
+    let mut services = runtime
+        .block_on(pij_daemon::build_services(
+            config,
+            &dir.join("pane-signals"),
+        ))
+        .expect("real registry and spine");
+    services.tmux = tmux.clone();
+    services.liveness = Arc::new(FakeLiveness::new().with_proc(identity));
+    let router = router_with_config(
+        services.clone(),
+        HttpConfig {
+            auth: pij_daemon::http::AuthRing::local(key.to_string()),
+            machine_alias: "test-machine".to_string(),
+        },
+    );
+    listener
+        .set_nonblocking(true)
+        .expect("nonblocking listener");
+    runtime.spawn(async move {
+        let listener = tokio::net::TcpListener::from_std(listener).expect("tokio listener");
+        let _ = axum::serve(listener, router).await;
+    });
+    services
+}
+
+/// F255 (2026-11-21, #304's bounce): a daemon stop cut a spawn while it
+/// waited for its seat. The seat registered, the caller heard nothing, sent
+/// the spawn again and got a second seat. Now `pij-rs spawn` keys its
+/// request, sends it again to the next daemon, and is answered with the one
+/// seat: one launch, one row, the caller told its id, the parent never told.
+#[test]
+fn a_bounce_mid_spawn_leaves_one_seat_and_its_caller_learns_it() {
+    let dir = fresh_dir("pij-f255-bounce");
+    std::fs::write(dir.join("daemon.key"), "first-boot-key").expect("write key");
+    let config = Config {
+        store_path: dir
+            .join("pij.sqlite")
+            .to_str()
+            .expect("UTF-8 database path")
+            .to_string(),
+        adapters: Adapters {
+            registry: AdapterChoice::Real,
+            spine: AdapterChoice::Real,
+            ..Adapters::default()
+        },
+        ..Config::default()
+    };
+    let tmux = Arc::new(FakeTmux::new());
+    let identity = ProcIdentity {
+        pid: 25_502,
+        proc_start: 20261121025502,
+    };
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind first daemon");
+    let addr = listener.local_addr().expect("address");
+    let first = tokio::runtime::Runtime::new().expect("first daemon runtime");
+    let services = serve_daemon(
+        &first,
+        &config,
+        &dir,
+        &tmux,
+        identity,
+        "first-boot-key",
+        listener,
+    );
+
+    let caller = Command::new(env!("CARGO_BIN_EXE_pij-rs"))
+        .args([
+            "--state-dir",
+            dir.to_str().expect("UTF-8 state dir"),
+            "--addr",
+            &addr.to_string(),
+            "--json",
+            "spawn",
+            "--harness",
+            "omp",
+            "--bin",
+            "/opt/harnesses/omp",
+            "--cwd",
+            "/abs/tree",
+            "--session",
+            "fleet",
+            "--wait-seconds",
+            "60",
+        ])
+        .env_remove("PIJ_SESSION_ID")
+        .env_remove("TMUX_PANE")
+        .env_remove("PIJ_RS_RESTART_WAIT_MS")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start the spawn");
+    let waited_on = |what: &str, done: &dyn Fn() -> bool| {
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !done() {
+            assert!(std::time::Instant::now() < until, "never {what}");
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    };
+    let captures = || {
+        tmux.calls()
+            .iter()
+            .filter(|call| call.starts_with("capture:"))
+            .count()
+    };
+    // Mid-spawn: launched, its row written, the request waiting on it.
+    waited_on("waited on its launch", &|| captures() > 0);
+    let launched = first
+        .block_on(
+            services
+                .registry
+                .list(pij_core::ports::SeatFilter::default()),
+        )
+        .expect("roster");
+    assert_eq!(launched.len(), 1, "{launched:?}");
+    let seat = launched[0].clone();
+    let key = seat.spawn_id.clone().expect("the caller's key");
+
+    // The bounce: every connection dropped, a new boot key, the next daemon
+    // on the same port over the same store and tmux, unsettled spawns
+    // recovered as at boot.
+    drop(services);
+    first.shutdown_background();
+    std::fs::write(dir.join("daemon.key"), "second-boot-key").expect("rotate key");
+    let next = tokio::runtime::Runtime::new().expect("next daemon runtime");
+    let rebind_until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let listener = loop {
+        if let Ok(listener) = std::net::TcpListener::bind(addr) {
+            break listener;
+        }
+        assert!(
+            std::time::Instant::now() < rebind_until,
+            "never rebound the port"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    let services = serve_daemon(
+        &next,
+        &config,
+        &dir,
+        &tmux,
+        identity,
+        "second-boot-key",
+        listener,
+    );
+    next.block_on(pij_daemon::spawn_waits::recover(
+        &services.spawn_waits,
+        &*services.registry,
+        &*services.spine,
+    ));
+    let resent = captures();
+    waited_on("sent the spawn again", &|| captures() > resent);
+
+    let registered = next
+        .block_on(
+            reqwest::Client::new()
+                .post(format!("http://{addr}/v1/register"))
+                .bearer_auth("second-boot-key")
+                .json(&serde_json::json!({
+                    "id": seat.id, "harness": "omp", "folder": "/abs/tree",
+                    "pane": seat.pane, "pid": identity.pid,
+                    "proc_start": identity.proc_start, "spawn_id": key,
+                }))
+                .send(),
+        )
+        .expect("registration");
+    assert_eq!(registered.status(), 200);
+
+    let output = caller.wait_with_output().expect("the spawn's answer");
+    assert!(
+        output.status.success(),
+        "the caller was not answered: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let answer: serde_json::Value = serde_json::from_slice(&output.stdout).expect("answer JSON");
+    assert_eq!(answer["data"]["id"], seat.id.as_str(), "{answer}");
+    assert_eq!(answer["data"]["bound"], true, "{answer}");
+    let calls = tmux.calls();
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|call| call.starts_with("new_window"))
+            .count(),
+        1,
+        "launched once: {calls:?}"
+    );
+    let roster = next
+        .block_on(
+            services
+                .registry
+                .list(pij_core::ports::SeatFilter::default()),
+        )
+        .expect("roster");
+    assert_eq!(roster.len(), 1, "{roster:?}");
+    let events = next
+        .block_on(services.spine.tail(Some(&seat.id), Seq(0)))
+        .expect("seat events");
+    assert!(
+        !events.iter().any(|event| event.kind == "spawn.reported"),
+        "the caller was answered, so the parent is not told: {events:?}"
+    );
+    next.shutdown_background();
+    let _ = std::fs::remove_dir_all(dir);
+}

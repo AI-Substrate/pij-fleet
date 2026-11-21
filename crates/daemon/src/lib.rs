@@ -155,6 +155,8 @@ pub struct Services {
     pub interaction: Arc<InteractionGate>,
     /// Panes whose tap the pane observer could not attach (F112), for the PA digest.
     pub tap_refusals: Arc<pane_observer::TapRefusals>,
+    /// What the pane observer has done since start (F258), for `ping`.
+    pub observer_counts: Arc<pane_observer::ObserverCounts>,
     /// Each Copilot seat's last lost-login decision (F212), on the monotonic clock.
     pub(crate) auth_recovery: Arc<auth_recovery::Ledger>,
     /// F190: native-session-boundary carries, one at a time.
@@ -327,10 +329,16 @@ pub struct Daemon {
     session_warmup: tokio::task::JoinHandle<()>,
     /// Sender notices for parked deliveries; aborted, then joined, at shutdown.
     park_notices: tokio::task::JoinHandle<()>,
+    /// F261: decides each Copilot lease lapse (event-driven); aborted, then
+    /// joined, at shutdown.
+    extension_lost: tokio::task::JoinHandle<()>,
     /// Its tmux client, released FIRST at shutdown, alongside the stop of every
     /// worker and before the HTTP drain can hold anything, so `_pij` is handled
     /// before the control client goes (F238, F242).
     tmux: Arc<dyn TmuxPort>,
+    /// Told first at shutdown that the daemon is stopping, so no spawn starts
+    /// during the drain (F255).
+    spawn_waits: Arc<spawn_waits::SpawnWaits>,
 }
 
 impl Daemon {
@@ -355,6 +363,13 @@ impl Daemon {
         // all of SHUTDOWN_DRAIN_TIMEOUT. A tmux read after the release (a
         // worker's last tick, a request still in flight) forks one client, as
         // any read does without a control client.
+        // F255: no spawn starts once the stop begins, and every launch already
+        // past its check writes its row before anything else stops (R309-01:
+        // its task holds the spawn lock until then, and `stop` takes it), with
+        // tmux still up. Bounded: a wedged launch never wedges the stop. A
+        // keyed caller cut off in its wait sends it again to the next daemon,
+        // which answers with that row's seat.
+        let _ = tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, self.spawn_waits.stop()).await;
         let _ = self.shutdown.send(true);
         let _ = self.governance_shutdown.send(());
         let tmux = Arc::clone(&self.tmux);
@@ -367,6 +382,11 @@ impl Daemon {
         // notifies it (`park_notice::LOOKBACK_MS`), and a notice admitted twice
         // is impossible because its id is derived from the parked job.
         let _ = self.park_notices.await;
+        // F261: a lapse decision cut here is decided by nobody. A restart it
+        // had queued is a durable control; its recovery event is the brake
+        // the next daemon reads.
+        self.extension_lost.abort();
+        let _ = self.extension_lost.await;
         let (
             served,
             drained,
@@ -713,6 +733,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         tmux,
         interaction,
         tap_refusals: Arc::new(pane_observer::TapRefusals::new()),
+        observer_counts: Arc::new(pane_observer::ObserverCounts::new()),
         auth_recovery: Arc::new(auth_recovery::Ledger::new()),
         carries: Arc::default(),
         build_commit: BUILD_COMMIT.map(str::to_string),
@@ -1088,7 +1109,8 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
             pane_signal_dir,
             Duration::from_millis(config.pane_observer_interval_ms),
         )?
-        .with_tap_refusals(Arc::clone(&services.tap_refusals)),
+        .with_tap_refusals(Arc::clone(&services.tap_refusals))
+        .with_counts(Arc::clone(&services.observer_counts)),
     );
     let claude_binder = Arc::new(
         claude_bind::ClaudeBinder::new(
@@ -1257,6 +1279,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         pa_watchdog_tick,
     );
     let park_notices = tokio::spawn(park_notice::follow(services.clone()));
+    let extension_lost = tokio::spawn(auth_recovery::follow_lapses(services.clone()));
     // F190: once at start, redo any native-session-boundary carry a crash or
     // an older daemon left unrecorded. One roster read; no loop.
     {
@@ -1270,6 +1293,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
     );
 
     let event_bus = Arc::clone(&services.event_bus);
+    let spawn_waits = Arc::clone(&services.spawn_waits);
     let delivery = Arc::clone(&services.delivery);
     let store_pools = services.store_pools.clone();
     let router = http::router_with_federation(
@@ -1331,6 +1355,8 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         governance_observer,
         session_warmup,
         park_notices,
+        extension_lost,
+        spawn_waits,
     })
 }
 

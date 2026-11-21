@@ -14,7 +14,7 @@ use pij_core::model::{Envelope, ErrorKind, Harness, SeatId};
 use serde::Deserialize;
 
 use super::{AppState, envelope, internal, refused, system_time_ms};
-use crate::auth_recovery::{self, Incarnation, LostLogin};
+use crate::auth_recovery::{self, Cause, Incarnation, LostLogin};
 
 const COMMAND: &str = "pij auth-error";
 
@@ -83,7 +83,15 @@ pub(crate) async fn handle(
         Ok(now) => now,
         Err(error) => return internal(COMMAND, error),
     };
-    match auth_recovery::handle(&state.services, &seat, reporter, request.kind, now).await {
+    match auth_recovery::handle(
+        &state.services,
+        &seat,
+        reporter,
+        Cause::Reported(request.kind),
+        now,
+    )
+    .await
+    {
         Ok(outcome) => envelope(StatusCode::OK, &Envelope::ok(COMMAND, outcome)),
         Err(error) => internal(COMMAND, error),
     }

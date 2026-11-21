@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,6 +19,78 @@ const CAPTURE_LINES: u32 = u32::MAX;
 /// The longest a pane whose tap attach keeps failing waits between attempts
 /// (F112). The wait doubles from the observer's interval up to this.
 pub const ATTACH_BACKOFF_MAX: Duration = Duration::from_secs(60);
+
+/// The longest a quiet pane goes without a capture (F258). A pane's tap
+/// carries every byte it writes, so a pane that wrote nothing is replayed, not
+/// re-read; this bounds what a dead or silent tap could hide.
+pub const CAPTURE_BACKSTOP: Duration = Duration::from_secs(30);
+
+/// What the observer has done since the daemon started, for `ping` (F258).
+/// Shared like [`TapRefusals`]: the observer writes it, `/health` reads it.
+#[derive(Debug, Default)]
+pub struct ObserverCounts {
+    passes: AtomicU64,
+    active_us: AtomicU64,
+    captures: AtomicU64,
+    capture_bytes: AtomicU64,
+    skipped: AtomicU64,
+    backstop: AtomicU64,
+}
+
+/// One reading of [`ObserverCounts`]. `active_us / passes` is a pass's cost.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct ObserverCountsView {
+    /// Observation passes (one per tick).
+    pub passes: u64,
+    /// Wall time inside passes, in microseconds.
+    pub active_us: u64,
+    /// `capture-pane` reads, the `backstop` ones included.
+    pub captures: u64,
+    /// Bytes those captures returned.
+    pub capture_bytes: u64,
+    /// Quiet panes whose last verdict was replayed instead of captured.
+    pub skipped: u64,
+    /// Captures taken only because [`CAPTURE_BACKSTOP`] had passed.
+    pub backstop: u64,
+}
+
+impl ObserverCounts {
+    /// Nothing observed yet.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Every count, read once each.
+    #[must_use]
+    pub fn snapshot(&self) -> ObserverCountsView {
+        ObserverCountsView {
+            passes: self.passes.load(Ordering::Relaxed),
+            active_us: self.active_us.load(Ordering::Relaxed),
+            captures: self.captures.load(Ordering::Relaxed),
+            capture_bytes: self.capture_bytes.load(Ordering::Relaxed),
+            skipped: self.skipped.load(Ordering::Relaxed),
+            backstop: self.backstop.load(Ordering::Relaxed),
+        }
+    }
+
+    fn record_pass(&self, took: Duration) {
+        self.passes.fetch_add(1, Ordering::Relaxed);
+        self.active_us.fetch_add(
+            u64::try_from(took.as_micros()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
+    }
+
+    fn record_capture(&self, bytes: usize, backstop: bool) {
+        self.captures.fetch_add(1, Ordering::Relaxed);
+        self.capture_bytes
+            .fetch_add(u64::try_from(bytes).unwrap_or(u64::MAX), Ordering::Relaxed);
+        if backstop {
+            self.backstop.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
 
 /// A pane whose tap could not be attached, and why: shown in the PA digest.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -127,6 +199,26 @@ enum ComposerKnowledge {
 #[derive(Debug)]
 struct PaneState {
     knowledge: ComposerKnowledge,
+    /// The composer the last capture recognised, the cursor it was read at,
+    /// and when (F258): what a quiet pane replays.
+    last: Option<LastCapture>,
+}
+
+#[derive(Debug)]
+struct LastCapture {
+    composer: String,
+    cursor: (u32, u32),
+    at: Instant,
+}
+
+/// What a pane with no new tap bytes gets this tick (F258).
+enum Replay {
+    /// The last capture's composer, decided again without a capture.
+    Composer(String),
+    /// Replayable, but its last capture is [`CAPTURE_BACKSTOP`] old.
+    BackstopDue,
+    /// Not replayable: the pane is captured as always.
+    Capture,
 }
 
 /// Polls attached tmux pane taps and turns only positively recognised composer
@@ -158,6 +250,7 @@ pub struct PaneObserver {
     interval: Duration,
     panes: Mutex<BTreeMap<String, PaneState>>,
     refusals: Arc<TapRefusals>,
+    counts: Arc<ObserverCounts>,
 }
 
 impl PaneObserver {
@@ -187,6 +280,7 @@ impl PaneObserver {
             interval,
             panes: Mutex::new(BTreeMap::new()),
             refusals: Arc::new(TapRefusals::new()),
+            counts: Arc::new(ObserverCounts::new()),
         })
     }
 
@@ -194,6 +288,13 @@ impl PaneObserver {
     #[must_use]
     pub fn with_tap_refusals(mut self, refusals: Arc<TapRefusals>) -> Self {
         self.refusals = refusals;
+        self
+    }
+
+    /// Share the observer's counts with `ping`.
+    #[must_use]
+    pub fn with_counts(mut self, counts: Arc<ObserverCounts>) -> Self {
+        self.counts = counts;
         self
     }
 
@@ -225,6 +326,13 @@ impl PaneObserver {
     }
 
     async fn observe_once(&self) -> Result<()> {
+        let started = std::time::Instant::now();
+        let observed = self.observe_pass().await;
+        self.counts.record_pass(started.elapsed());
+        observed
+    }
+
+    async fn observe_pass(&self) -> Result<()> {
         // Only live seats' panes are wanted (F185: not every retired row).
         let live = SeatFilter {
             live_only: true,
@@ -360,6 +468,7 @@ impl PaneObserver {
                         pane.id.clone(),
                         PaneState {
                             knowledge: ComposerKnowledge::Unknown,
+                            last: None,
                         },
                     );
                 }
@@ -389,6 +498,24 @@ impl PaneObserver {
                     continue;
                 }
             };
+            let cursor = pane.cursor_x.zip(pane.cursor_y);
+            // F258: a pane that printed nothing since its last capture, with
+            // its cursor where it was, shows the screen that capture read: its
+            // tap carries every byte the pane writes. Its verdict is replayed
+            // through the same decision instead of re-reading the screen.
+            let backstop = if bytes.is_empty() {
+                match self.replay(&pane.id, cursor, now) {
+                    Replay::Composer(composer) => {
+                        self.counts.skipped.fetch_add(1, Ordering::Relaxed);
+                        self.decide(&pane.id, &composer, false);
+                        continue;
+                    }
+                    Replay::BackstopDue => true,
+                    Replay::Capture => false,
+                }
+            } else {
+                false
+            };
             let capture = match self.tmux.capture(&pane.id, CAPTURE_LINES).await {
                 Ok(capture) => capture,
                 Err(error) => {
@@ -397,6 +524,7 @@ impl PaneObserver {
                     continue;
                 }
             };
+            self.counts.record_capture(capture.len(), backstop);
             let trailing_bytes = match self.tmux.drain_pane_tap(&pane.id).await {
                 Ok(bytes) => bytes,
                 Err(error) => {
@@ -406,7 +534,7 @@ impl PaneObserver {
                 }
             };
             let tap_active = !bytes.is_empty() || !trailing_bytes.is_empty();
-            let (Some(cursor_x), Some(cursor_y)) = (pane.cursor_x, pane.cursor_y) else {
+            let Some((cursor_x, cursor_y)) = cursor else {
                 self.set_unknown(&pane.id);
                 continue;
             };
@@ -416,39 +544,8 @@ impl PaneObserver {
                 self.set_unknown(&pane.id);
                 continue;
             };
-
-            let blank = composer.chars().all(char::is_whitespace);
-            let previous = self.knowledge(&pane.id);
-            if blank && tap_active {
-                if previous != ComposerKnowledge::Unknown {
-                    self.set_knowledge(&pane.id, ComposerKnowledge::PendingClear);
-                    self.gate.record_unknown(&pane.id);
-                } else {
-                    self.set_unknown(&pane.id);
-                }
-                continue;
-            }
-            if blank {
-                if matches!(
-                    previous,
-                    ComposerKnowledge::Blank
-                        | ComposerKnowledge::NonBlank
-                        | ComposerKnowledge::PendingClear
-                ) {
-                    self.gate.record_composer_cleared(&pane.id);
-                } else {
-                    self.gate.record_unknown(&pane.id);
-                    self.set_knowledge(&pane.id, ComposerKnowledge::Blank);
-                    continue;
-                }
-                self.set_knowledge(&pane.id, ComposerKnowledge::Blank);
-            } else {
-                if tap_active {
-                    self.gate.record_tap(&pane.id);
-                }
-                self.gate.observe_composer(&pane.id, &composer);
-                self.set_knowledge(&pane.id, ComposerKnowledge::NonBlank);
-            }
+            self.remember(&pane.id, &composer, (cursor_x, cursor_y), now);
+            self.decide(&pane.id, &composer, tap_active);
         }
 
         match first_error {
@@ -519,6 +616,113 @@ impl PaneObserver {
     fn set_unknown(&self, pane: &str) {
         self.set_knowledge(pane, ComposerKnowledge::Unknown);
         self.gate.record_unknown(pane);
+    }
+
+    /// The verdict for a recognised composer. A capture and the replay of an
+    /// unchanged screen (F258) both come through here, so a replay makes the
+    /// very gate calls a repeated capture of that screen made, at the gate's
+    /// own clock: ageing (`expire_vetoes_if_idle`) runs exactly as before.
+    fn decide(&self, pane: &str, composer: &str, tap_active: bool) {
+        let blank = composer.chars().all(char::is_whitespace);
+        let previous = self.knowledge(pane);
+        if blank && tap_active {
+            if previous != ComposerKnowledge::Unknown {
+                self.set_knowledge(pane, ComposerKnowledge::PendingClear);
+                self.gate.record_unknown(pane);
+            } else {
+                self.set_unknown(pane);
+            }
+            return;
+        }
+        if blank {
+            if matches!(
+                previous,
+                ComposerKnowledge::Blank
+                    | ComposerKnowledge::NonBlank
+                    | ComposerKnowledge::PendingClear
+            ) {
+                self.gate.record_composer_cleared(pane);
+            } else {
+                self.gate.record_unknown(pane);
+                self.set_knowledge(pane, ComposerKnowledge::Blank);
+                return;
+            }
+            self.set_knowledge(pane, ComposerKnowledge::Blank);
+        } else {
+            if tap_active {
+                self.gate.record_tap(pane);
+            }
+            self.gate.observe_composer(pane, composer);
+            self.set_knowledge(pane, ComposerKnowledge::NonBlank);
+        }
+    }
+
+    /// Keep what this capture recognised, for the replays that follow it.
+    fn remember(&self, pane: &str, composer: &str, cursor: (u32, u32), at: Instant) {
+        if let Some(state) = self
+            .panes
+            .lock()
+            .expect("pane observer mutex")
+            .get_mut(pane)
+        {
+            state.last = Some(LastCapture {
+                composer: composer.to_string(),
+                cursor,
+                at,
+            });
+        }
+    }
+
+    /// Whether a pane with no new tap bytes can replay its last capture: its
+    /// knowledge settled (Blank or NonBlank, never Unknown or PendingClear),
+    /// its cursor where that capture read it, and the gate still holding that
+    /// composer with no uncertainty. Another recorder (an injection's fresh
+    /// capture) drains the same tap: when it read a newer screen the gate holds
+    /// that one, and when it could not read the screen the gate is uncertain;
+    /// either way this pane is captured again, as a settled verdict always
+    /// leaves the gate certain. Past [`CAPTURE_BACKSTOP`] it is captured
+    /// regardless.
+    fn replay(&self, pane: &str, cursor: Option<(u32, u32)>, now: Instant) -> Replay {
+        let (knowledge, composer, at) = {
+            let panes = self.panes.lock().expect("pane observer mutex");
+            let Some(state) = panes.get(pane) else {
+                return Replay::Capture;
+            };
+            let Some(last) = state
+                .last
+                .as_ref()
+                .filter(|last| Some(last.cursor) == cursor)
+            else {
+                return Replay::Capture;
+            };
+            (state.knowledge, last.composer.clone(), last.at)
+        };
+        let held = self
+            .gate
+            .observed(pane)
+            .filter(|observed| observed.uncertainty_since.is_none())
+            .and_then(|observed| observed.content);
+        let holds = match (knowledge, held.as_deref()) {
+            (ComposerKnowledge::Blank, Some(held)) => held.chars().all(char::is_whitespace),
+            (ComposerKnowledge::NonBlank, Some(held)) => held == composer,
+            _ => false,
+        };
+        if !holds {
+            return Replay::Capture;
+        }
+        if now.saturating_duration_since(at) >= CAPTURE_BACKSTOP {
+            return Replay::BackstopDue;
+        }
+        Replay::Composer(composer)
+    }
+
+    /// Forget every pane's last capture, so the next pass captures each pane as
+    /// the observer did before F258: the old behaviour, for an equivalence test.
+    #[cfg(test)]
+    fn forget_captures(&self) {
+        for state in self.panes.lock().expect("pane observer mutex").values_mut() {
+            state.last = None;
+        }
     }
 
     fn sink_path(&self, pane: &str) -> PathBuf {
@@ -791,14 +995,21 @@ mod tests {
 
     #[tokio::test]
     async fn decision_table_keeps_unknown_and_stale_nonblank_blocked_until_clear() {
+        // A capture drains the tap before and after; a quiet pane whose screen
+        // did not move is replayed with one drain and no capture (F258), and a
+        // screen only changes with tap bytes.
         let tmux = Arc::new(
             FakeTmux::new()
                 .with_pane(pane("%1", 7, 2))
                 .script_tap(b"typed".to_vec())
                 .script_tap(Vec::new())
                 .script_tap(Vec::new())
+                .script_tap(b"cleared".to_vec())
+                .script_tap(Vec::new())
+                .script_tap(Vec::new())
+                .script_tap(Vec::new())
                 .script_capture(framed("hello"))
-                .script_capture(framed("hello"))
+                .script_capture(framed(""))
                 .script_capture(framed("")),
         );
         let registry = registry(&["%1"]).await;
@@ -821,6 +1032,13 @@ mod tests {
                 .permits_injection("%1")
                 .await
                 .expect("stale draft blocks")
+        );
+        observer.observe_once().await.expect("clearing observation");
+        assert!(
+            !gate
+                .permits_injection("%1")
+                .await
+                .expect("a blank redraw is not yet a clear")
         );
         observer.observe_once().await.expect("clear observation");
         assert!(gate.permits_injection("%1").await.expect("clear permits"));
@@ -1528,5 +1746,219 @@ mod tests {
         );
         observer.observe_once().await.expect("quiet corroboration");
         assert!(gate.permits_injection("%10").await.expect("quiet blank"));
+    }
+
+    fn captures_of(tmux: &FakeTmux, pane: &str) -> usize {
+        let prefix = format!("capture:{pane}:");
+        tmux.calls()
+            .iter()
+            .filter(|call| call.starts_with(&prefix))
+            .count()
+    }
+
+    async fn counted_observer(
+        tmux: &Arc<FakeTmux>,
+        gate: &Arc<InteractionGate>,
+        panes: &[&str],
+        sink: &str,
+    ) -> (PaneObserver, Arc<ObserverCounts>) {
+        let counts = Arc::new(ObserverCounts::new());
+        let observer = PaneObserver::new(
+            registry(panes).await as Arc<dyn Registry>,
+            Arc::clone(tmux) as Arc<dyn TmuxPort>,
+            Arc::clone(gate),
+            PathBuf::from(sink),
+            Duration::from_millis(1),
+        )
+        .expect("observer")
+        .with_counts(Arc::clone(&counts));
+        (observer, counts)
+    }
+
+    /// F258: a quiet pane is replayed, not captured; tap bytes or a moved
+    /// cursor force a capture that same tick.
+    ///
+    /// Mutation witnesses: replay a pane that has tap bytes, and the third
+    /// count fails; drop the cursor comparison from `replay`, and the fifth.
+    #[tokio::test]
+    async fn quiet_panes_replay_and_tap_bytes_or_a_moved_cursor_force_a_capture() {
+        let tmux = Arc::new(
+            FakeTmux::new()
+                .with_pane(pane("%1", 7, 2))
+                .with_standing_capture(framed("hello")),
+        );
+        let gate = Arc::new(InteractionGate::new(Arc::clone(&tmux) as Arc<dyn TmuxPort>));
+        let (observer, counts) =
+            counted_observer(&tmux, &gate, &["%1"], "/tmp/pij-observer-replay").await;
+        let mut seen = Vec::new();
+        observer.observe_once().await.expect("first capture");
+        seen.push(captures_of(&tmux, "%1"));
+        observer.observe_once().await.expect("quiet pass");
+        seen.push(captures_of(&tmux, "%1"));
+        tmux.queue_tap(b"output".to_vec());
+        observer.observe_once().await.expect("pass with tap bytes");
+        seen.push(captures_of(&tmux, "%1"));
+        observer.observe_once().await.expect("quiet pass");
+        seen.push(captures_of(&tmux, "%1"));
+        tmux.move_cursor("%1", 6, 2);
+        observer
+            .observe_once()
+            .await
+            .expect("pass with a moved cursor");
+        seen.push(captures_of(&tmux, "%1"));
+        assert_eq!(seen, vec![1, 1, 2, 2, 3], "captures after each pass");
+        let counts = counts.snapshot();
+        assert_eq!(
+            (
+                counts.passes,
+                counts.captures,
+                counts.skipped,
+                counts.backstop
+            ),
+            (5, 3, 2, 0),
+            "{counts:?}"
+        );
+        assert_eq!(
+            counts.capture_bytes,
+            3 * framed("hello").len() as u64,
+            "{counts:?}"
+        );
+    }
+
+    /// F258: a tap that died (or a pane that redraws without writing) cannot
+    /// hide a screen change for longer than [`CAPTURE_BACKSTOP`].
+    ///
+    /// Mutation witness: replay without the backstop check, and the change is
+    /// never seen.
+    #[tokio::test(start_paused = true)]
+    async fn the_capture_backstop_catches_a_screen_change_behind_a_dead_tap() {
+        let tmux = Arc::new(
+            FakeTmux::new()
+                .with_pane(pane("%1", 7, 2))
+                .with_standing_capture(framed("")),
+        );
+        let gate = Arc::new(InteractionGate::new(Arc::clone(&tmux) as Arc<dyn TmuxPort>));
+        let (observer, counts) =
+            counted_observer(&tmux, &gate, &["%1"], "/tmp/pij-observer-backstop").await;
+        let tick = Duration::from_millis(600);
+        // A first blank is only a baseline; the second corroborates it.
+        observer.observe_once().await.expect("baseline");
+        tokio::time::advance(tick).await;
+        observer.observe_once().await.expect("corroborated blank");
+        assert!(gate.permits_injection("%1").await.expect("clear permits"));
+        let last_capture = tokio::time::Instant::now();
+
+        // The screen now shows a draft, and the tap says nothing.
+        tmux.set_standing_capture(framed("hello"));
+        let mut caught = None;
+        for pass in 1..=60_u32 {
+            tokio::time::advance(tick).await;
+            observer.observe_once().await.expect("silent pass");
+            if !gate.permits_injection("%1").await.expect("gate") {
+                caught = Some(tokio::time::Instant::now() - last_capture);
+                break;
+            }
+            assert!(pass < 60, "a dead tap hid the draft for {pass} passes");
+        }
+        let caught = caught.expect("caught");
+        assert!(
+            caught >= CAPTURE_BACKSTOP && caught < CAPTURE_BACKSTOP + tick,
+            "caught after {caught:?}"
+        );
+        assert_eq!(counts.snapshot().backstop, 1, "{:?}", counts.snapshot());
+    }
+
+    /// F258: the observer's replays never stand in for the send boundary's own
+    /// look. An injection drains the tap and captures the screen itself, so a
+    /// draft the observer has not seen yet still defers it.
+    ///
+    /// Mutation witness: let `fresh_injection_verdict` answer from the gate's
+    /// held state when it is certain (skipping its capture), and this fails.
+    #[tokio::test]
+    async fn an_injection_takes_its_own_capture_while_the_observer_replays() {
+        let tmux = Arc::new(
+            FakeTmux::new()
+                .with_pane(pane("%1", 7, 2))
+                .with_standing_capture(framed("")),
+        );
+        let gate = Arc::new(InteractionGate::new(Arc::clone(&tmux) as Arc<dyn TmuxPort>));
+        let (observer, counts) =
+            counted_observer(&tmux, &gate, &["%1"], "/tmp/pij-observer-fresh").await;
+        observer.observe_once().await.expect("baseline");
+        observer.observe_once().await.expect("corroborated blank");
+        tmux.set_standing_capture(framed("hello"));
+        observer.observe_once().await.expect("replayed pass");
+        assert_eq!(counts.snapshot().skipped, 1, "{:?}", counts.snapshot());
+        let before = captures_of(&tmux, "%1");
+        assert!(
+            !gate
+                .permits_injection_fresh("%1")
+                .await
+                .expect("fresh verdict"),
+            "the fresh capture must see the draft the replay did not"
+        );
+        assert_eq!(captures_of(&tmux, "%1"), before + 1, "one fresh capture");
+    }
+
+    /// F258 open point (a): a replay is the same `decide` call a repeated
+    /// capture of the unchanged screen made, on the gate's clock, so idle
+    /// ageing (`expire_vetoes_if_idle`) and every other gate field come out the
+    /// same. One observer replays; its twin forgets its captures every pass,
+    /// which is the observer before F258. Over 72 s with a 20 s idle window
+    /// (a draft typed, aged, cleared, aged), the gates agree after every pass.
+    ///
+    /// Mutation witnesses: skip `decide` on a replay, or replay with
+    /// `tap_active` true, and the gates part.
+    #[tokio::test(start_paused = true)]
+    async fn a_replayed_verdict_leaves_the_gate_as_a_repeated_capture_did() {
+        let clock: Arc<dyn Fn() -> std::time::Instant + Send + Sync> =
+            Arc::new(|| tokio::time::Instant::now().into_std());
+        let twin = || async {
+            let tmux = Arc::new(
+                FakeTmux::new()
+                    .with_pane(pane("%1", 7, 2))
+                    .with_standing_capture(framed("")),
+            );
+            let gate = Arc::new(InteractionGate::with_clock(
+                Arc::clone(&tmux) as Arc<dyn TmuxPort>,
+                Duration::from_secs(20),
+                pij_core::delivery::DEFAULT_TYPING_GRACE_MS,
+                Arc::clone(&clock),
+            ));
+            let (observer, counts) =
+                counted_observer(&tmux, &gate, &["%1"], "/tmp/pij-observer-twin").await;
+            (tmux, gate, observer, counts)
+        };
+        let (tmux_new, gate_new, replaying, counts_new) = twin().await;
+        let (tmux_old, gate_old, capturing, counts_old) = twin().await;
+        for pass in 0..120_u32 {
+            let screen = match pass {
+                5 => Some(("typed", framed("hello"))),
+                60 => Some(("cleared", framed(""))),
+                _ => None,
+            };
+            if let Some((bytes, screen)) = screen {
+                for tmux in [&tmux_new, &tmux_old] {
+                    tmux.queue_tap(bytes.as_bytes().to_vec());
+                    tmux.set_standing_capture(screen.clone());
+                }
+            }
+            capturing.forget_captures();
+            replaying.observe_once().await.expect("replaying pass");
+            capturing.observe_once().await.expect("capturing pass");
+            assert_eq!(
+                gate_new.observed("%1"),
+                gate_old.observed("%1"),
+                "pass {pass}"
+            );
+            assert_eq!(
+                replaying.knowledge("%1"),
+                capturing.knowledge("%1"),
+                "pass {pass}"
+            );
+            tokio::time::advance(Duration::from_millis(600)).await;
+        }
+        let (new, old) = (counts_new.snapshot(), counts_old.snapshot());
+        assert!(new.skipped > 100 && old.skipped == 0, "{new:?} {old:?}");
     }
 }

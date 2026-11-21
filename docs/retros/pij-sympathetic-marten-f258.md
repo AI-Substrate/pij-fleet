@@ -6,6 +6,10 @@
 
 **Cut (A1):** the native idle wait is event-driven: seat events, `Queue::next_claimable_in` (a due `not_before` or a lapsing claim) and a 15 s backstop. Four lost-wake tests on the real store; three mutants (no timer, no event wake, the 500 ms tick back) each caught. Round 2 (R310-F001, pij-shiny-badger): the next-due read cut off at its own clock, so a deadline crossed between the empty claim and that read slept to the backstop. The cutoff is now the pass's start; a queue wrapper forces the gap in a daemon test, and a two-seat test pins `.for_seat` (pij-noble-silkworm). Both mutants (the old cutoff, no `.for_seat`) caught, logs kept this time.
 
+**Cut (D1):** the pane observer stops re-reading unchanged screens. With the fleet quiet the tmux server burned 21–26% of a core on about 310 `capture-pane`/s. A tracked pane whose tap drained nothing, cursor unchanged and composer settled replays its last verdict through the same `decide` a capture uses; tap bytes, a cursor move, a gate changed by another recorder, or the 30 s backstop force a capture. The open review point (does a replay age the gate like a repeated capture?) is answered by a test, not prose: twin observers, one forgetting its captures every pass, must leave identical gate state over 72 s. `ping` now carries `pane_observer` counts. One existing test scripted a screen that changed with no tap bytes; it was rescripted with the bytes a real pane writes.
+
+**Cut (0049):** a partial index `seats_live` holds only the live rows, and a live-only list walks it (`LIST_LIVE_SQL`); the reaper lists live rows only, instead of all 3,262. R312-N1 (pij-tarsier): B1's EXPLAIN test explained the constant, not what `list` sends, so a mutant routing pane reads back to `LIST_SQL` passed. The fix is to prove dispatch through the index's own refusal: drop the index and `list` must fail with `INDEXED BY`. Each branch now has that test, and both dispatch mutants are caught.
+
 **magicWand:** a per-thread CPU line in `ping` (tokio workers, SQLite workers, tmux control), read the same way this diagnosis read it. Route `active_us` is wall time and hides which pool burns the CPU; thread time names it without a profiler.
 
 **difficulties:**
@@ -15,3 +19,4 @@
 - A 2.5 GB live store and 3,212 seat rows (F259) make pane lookups scan; B1 adds the index.
 - R310-F001 is the shape a whole-second store clock invites: any "next instant after now" read is a second read of a clock the first read (the claim) already consumed. Pass the first read's time to the second, never re-read the clock between them.
 - Round 1's mutant outputs lived only in this session; the reviewer rightly could not credit them. Round 2 writes each mutant run to a log under `/tmp/f258-receipts/` and quotes it in the PR.
+- R315-F001: I narrowed the reaper's first list and missed the second one, 80 lines further down the same function. Cutting a read means changing every read of that kind on the path, so grep the whole function for the call (`.list(`), not just the line the diagnosis named. The test that holds it records every call through a spy, rather than one.

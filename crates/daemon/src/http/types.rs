@@ -190,6 +190,12 @@ pub struct SpawnRequest {
     /// refuses the spawn at once and leaves the pane waiting on it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub trust_folder: bool,
+    /// The caller's key for this launch (F255), minted before the first
+    /// send: `s-` and 32 lowercase hex digits. Sent again after a lost
+    /// answer, it is answered with the seat that launch made, never a second
+    /// launch. Absent: the daemon mints one and a resend launches again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spawn_id: Option<String>,
 }
 
 /// Additive spawn result: launch dispatch and process binding are separate facts.

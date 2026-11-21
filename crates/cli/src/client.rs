@@ -241,9 +241,27 @@ impl DaemonClient {
         self.post("pij phonehome", "/v1/phonehome", request).await
     }
 
-    /// Ask the daemon to launch and record one pre-bind seat.
+    /// Ask the daemon to launch and record one pre-bind seat. Keyed (F255):
+    /// a request without a spawn id gets one minted here, before the first
+    /// send, so a send whose answer is lost (a daemon bounce cut it) or that
+    /// a stopping daemon refused is sent again with the same key, and the
+    /// daemon answers it with the seat that key launched, never a second one.
     pub async fn spawn(&self, request: &SpawnRequest) -> Envelope<SeatDescriptor> {
-        self.post("pij spawn", "/v1/spawn", request).await
+        let mut request = request.clone();
+        if request.spawn_id.is_none() {
+            match pij_daemon::http::mint_spawn_id() {
+                Ok(key) => request.spawn_id = Some(key),
+                Err(error) => return setup_refusal("pij spawn", error),
+            }
+        }
+        self.execute_as(
+            "pij spawn",
+            self.http
+                .post(format!("{}/v1/spawn", self.base_url))
+                .json(&request),
+            Resend::Keyed,
+        )
+        .await
     }
 
     /// Relaunch one tombstoned seat through the daemon's revive transition.
@@ -570,17 +588,28 @@ impl DaemonClient {
 
     /// Send `request` with the key. A refused connection is tried again for
     /// the client's restart wait (F174); `Err` is the sentence to refuse with.
+    async fn transmit(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> std::result::Result<reqwest::Response, String> {
+        self.transmit_as(request, Resend::Refused).await
+    }
+
+    /// [`Self::transmit`], sending again on what `resend` allows.
     ///
     /// The daemon that comes back has a new boot key, so the key file is read
     /// again before each try. It publishes that key after it binds, so a try
     /// made with the key read just before can meet a 401: the bearer layer
     /// refuses before any handler runs, so that one is sent once more, with
-    /// the key read again (review of #219, F001).
-    async fn transmit(
+    /// the key read again (review of #219, F001). The restart wait runs from
+    /// the first failed try, so a keyed spawn that waited a minute for its
+    /// seat before a bounce cut it still waits out the restart (F255).
+    async fn transmit_as(
         &self,
         request: reqwest::RequestBuilder,
+        resend: Resend,
     ) -> std::result::Result<reqwest::Response, String> {
-        let deadline = tokio::time::Instant::now() + self.restart_wait;
+        let mut deadline = None;
         let mut pause = RESTART_FIRST_PAUSE;
         let mut recovering = false;
         loop {
@@ -592,7 +621,7 @@ impl DaemonClient {
                     .await
                     .map_err(|error| format!("could not reach the daemon: {error}"));
             };
-            let error = match self.auth(attempt).send().await {
+            match self.auth(attempt).send().await {
                 Ok(response)
                     if recovering
                         && self.key_file.is_some()
@@ -602,12 +631,22 @@ impl DaemonClient {
                     self.read_key_again();
                     continue;
                 }
+                // F255: a stopping daemon launched nothing; the next one answers.
+                Ok(response)
+                    if resend == Resend::Keyed
+                        && !self.restart_wait.is_zero()
+                        && response.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE => {}
                 Ok(response) => return Ok(response),
-                Err(error) => error,
-            };
-            if self.restart_wait.is_zero() || !connection_refused(&error) {
-                return Err(format!("could not reach the daemon: {error}"));
+                Err(error) => {
+                    let again = connection_refused(&error)
+                        || (resend == Resend::Keyed && !error.is_timeout());
+                    if self.restart_wait.is_zero() || !again {
+                        return Err(format!("could not reach the daemon: {error}"));
+                    }
+                }
             }
+            let deadline =
+                *deadline.get_or_insert_with(|| tokio::time::Instant::now() + self.restart_wait);
             if tokio::time::Instant::now() + pause > deadline {
                 return Err(format!(
                     "the daemon is restarting or down: retry, or run pij-rs ping \
@@ -671,7 +710,16 @@ impl DaemonClient {
         command: &str,
         request: reqwest::RequestBuilder,
     ) -> Envelope<T> {
-        let response = match self.transmit(request).await {
+        self.execute_as(command, request, Resend::Refused).await
+    }
+
+    async fn execute_as<T: DeserializeOwned>(
+        &self,
+        command: &str,
+        request: reqwest::RequestBuilder,
+        resend: Resend,
+    ) -> Envelope<T> {
+        let response = match self.transmit_as(request, resend).await {
             Ok(response) => response,
             Err(unreached) => return refusal(command, ErrorKind::Adapter, unreached),
         };
@@ -687,6 +735,18 @@ impl DaemonClient {
         };
         decode_response(command, body)
     }
+}
+
+/// What a failed send may be sent again on, within the restart wait.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Resend {
+    /// Only a refused connection: nothing reached the daemon, so a write
+    /// cannot happen twice (F174).
+    Refused,
+    /// Also a send whose answer never came (the connection closed or reset)
+    /// and a stopping daemon's 503. The request carries its own key, and the
+    /// daemon answers a second send with what the first did (F255).
+    Keyed,
 }
 
 /// A live event stream. Each call returns one complete frame without buffering
@@ -1136,6 +1196,88 @@ mod tests {
                 "unauthorized={unauthorized}: sent once"
             );
         }
+    }
+
+    /// One request from `socket`: its head, and its body to content-length.
+    fn read_request(socket: &mut std::net::TcpStream) -> String {
+        let mut bytes = Vec::new();
+        let mut chunk = [0_u8; 4096];
+        loop {
+            let text = String::from_utf8_lossy(&bytes).into_owned();
+            if let Some((head, body)) = text.split_once("\r\n\r\n") {
+                let length = head
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .map(|n| n.trim().parse::<usize>().unwrap_or(0))
+                    })
+                    .unwrap_or(0);
+                if body.len() >= length {
+                    return text;
+                }
+            }
+            let read = socket.read(&mut chunk).expect("read request");
+            assert!(read > 0, "request cut short");
+            bytes.extend_from_slice(&chunk[..read]);
+        }
+    }
+
+    /// F255: a spawn carries a key minted before its first send. A send the
+    /// daemon read and closed without answering, and a stopping daemon's
+    /// 503, are each sent again with the same key, and the answer is the
+    /// next daemon's.
+    #[tokio::test]
+    async fn a_keyed_spawn_is_sent_again_with_its_key_until_it_is_answered() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake daemon");
+        let addr = listener.local_addr().expect("fake daemon address");
+        let server = std::thread::spawn(move || {
+            let mut keys = Vec::new();
+            for answer in ["none", "stopping", "seat"] {
+                let (mut socket, _) = listener.accept().expect("accept");
+                let request = read_request(&mut socket);
+                let body = request.split_once("\r\n\r\n").expect("body").1;
+                let sent: serde_json::Value = serde_json::from_str(body).expect("JSON body");
+                keys.push(sent["spawn_id"].as_str().map(str::to_string));
+                let (status, body) = match answer {
+                    "none" => continue,
+                    "stopping" => (
+                        "503 Service Unavailable",
+                        json!({"v": ENVELOPE_VERSION, "ok": false, "command": "pij spawn",
+                            "error": "refused", "meta": "stopping",
+                            "details": {"code": "E-RS-STOPPING"}}),
+                    ),
+                    _ => (
+                        "200 OK",
+                        json!({"v": ENVELOPE_VERSION, "ok": true, "command": "pij spawn",
+                            "data": pij_core::model::SeatDescriptor::new(
+                                "pij-one", Harness::Omp, "/abs/tree")}),
+                    ),
+                };
+                let body = body.to_string();
+                write!(
+                    socket,
+                    "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .expect("answer");
+            }
+            keys
+        });
+        let request: super::SpawnRequest = serde_json::from_value(
+            json!({"harness": "omp", "cwd": "/abs/tree", "session": "fleet"}),
+        )
+        .expect("spawn request");
+        let reply = DaemonClient::with_token(&addr.to_string(), "key".to_string())
+            .with_restart_wait(Duration::from_secs(10))
+            .spawn(&request)
+            .await;
+        assert!(reply.ok, "{:?}", reply.meta);
+        assert_eq!(reply.data.expect("seat").id.as_str(), "pij-one");
+        let keys = server.join().expect("fake daemon");
+        let key = keys[0].clone().expect("keyed before the first send");
+        assert!(key.starts_with("s-") && key.len() == 34, "{key}");
+        assert_eq!(keys, [Some(key.clone()), Some(key.clone()), Some(key)]);
     }
 
     #[test]
