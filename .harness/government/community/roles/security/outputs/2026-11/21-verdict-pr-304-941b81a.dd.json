@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fbad-7bd2-7073-a51d-7aef1cc8e442",
+				"date": "2026-11-21",
+				"head": "941b81ae99478578f8b7b058eefd1dc5cdb5a701",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:304",
+				"writer": "pij-sufficient-angelfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"S304-N001 doc sentence: untrusted-author PR review seats should not start in the PR worktree (OMP now loads its .omp/)"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr view 304 --json headRefOid,mergeStateStatus,statusCheckRollup",
+					"exit_code": 0,
+					"log": "941b81ae CLEAN 5xSUCCESS"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #304 round 1 at 941b81ae99478578f8b7b058eefd1dc5cdb5a701: PASS WITH NOTES\n\nScope: 8e9c444f (CLI predicate, test, docs) and merge 941b81ae. Read only; no spawn, build or install. CI 5/5 SUCCESS, CLEAN, head matches gh.\n\n## OMP loader (installed omp/18.16.0, @oh-my-pi/pi-coding-agent/src, read only)\n- discovery/builtin.ts:61-78 getConfigDirs pushes the project dir (cwd/.omp) first, then the user agent dir. Lines 494-525 add modules in that order, named by getExtensionNameFromPath.\n- capability/extension-module.ts:27 `key: ext => ext.name`; capability/index.ts:231-275 dedupes first-wins and marks the rest _shadowed.\n- No project-trust gate for project extension modules. Any cwd's .omp/extensions loads as code.\n\n## Permission laundering: no new authority\n- The extension is same-user client code. The seat's agent already runs arbitrary shell as the same user in the same worktree and can reach the daemon the same way. A lane changing its own extension gains no right its bash tool lacks (C33: a same-user adversary is out of scope). Authority stays daemon-side. extension_path is a self-reported registration field, used for display only (registration.rs:1474, main.rs:4230).\n- \"Before = main's reviewed extension\" was never true. The project copy is main's working tree, and ~/.omp links to it too, so uncommitted lane edits in main loaded into every OMP seat on the machine (D-167-1). After this change a lane's edits load only in that lane's seats. The blast radius is smaller.\n\n## --cwd admission\n- Daemon spawn (http/mod.rs:1469-1481) checks only that the path is absolute and printable. Nothing checks it is the same repo or a worktree of it. Any absolute directory with a planted .omp/ was admitted before this PR, because only linked worktrees were refused, and it still is. Not new; noted.\n\n## Pi refusal\n- main.rs:4475: the predicate narrows to Harness::Pi only. is_linked_worktree / git_dir_is_linked are unchanged. The test omp_spawns_in_a_linked_worktree_and_pi_is_still_refused covers both directions with a real `git worktree add` (absolute /usr/bin/git, global config isolated).\n- It is a collision brake, not a trust boundary, and that is unchanged. It is CLI-only: daemon /v1/spawn and revive (revive.rs:732 reuses prior.folder) do not enforce it. A caller GIT_DIR, or a git failure (which returns Ok(false)), also bypasses it. All same-user; fine for its purpose.\n\n## Hygiene\nNo secrets, tokens or home paths in the diff. No lockfile changes. No new repeated launches: one fewer git rev-parse per OMP spawn.\n\n## Notes (non-blocking)\n- S304-N001: review worktrees now run the PR's code for OMP. An OMP reviewer or security seat spawned in a `review-<pr>-<sha>` worktree (as the updated docs direct) loads the PR head's .omp/ project layer: the extension, config and any other project-level capability. That is executed before the verdict. Claude and Copilot seats already load project config the same way, so this matches them rather than opening a new class. It matters if PRs ever come from untrusted authors on this public repo. Suggest a sentence in peer.md: review seats for PRs from untrusted authors should not start in the PR worktree.\n- S304-N002: the Pi refusal and the \"extension_path / ext <sha> show which build loads\" claim are observations, not provenance. Don't cite them as an enforcement or attestation boundary.\n"
+		}
+	]
+}
