@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Open before reviewing log rotation, trim, staging files or any code that re-checks a path and then reopens it by name in the state dir.",
+				"tags": [
+					"filesystem",
+					"symlinks",
+					"fifo",
+					"rotation",
+					"c33",
+					"proof"
+				],
+				"title": "Path-managed logs: every reopen by name needs the join treatment"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#301 and #302 (daemon.log rotation, F251) went through three rounds of the same lesson: a dev/ino check on the path followed by an open by name is a TOCTOU, and each reopen needs its own treatment.\n\nWhat the hardened shape looks like (crates/cli/src/daemon_log.rs at 6fe4ee2):\n- Staging files: remove the leftover, then create_new (O_EXCL) with O_APPEND at 0600, and only under the flock. O_EXCL refuses a symlink re-planted between the remove and the open, so the rotation fails closed. A test that only pre-plants links cannot catch a mutant that drops O_EXCL (ML3); that is a test gap, not an exposure.\n- Lock file: create plus O_NOFOLLOW at 0600; never truncate, write or remove it. A symlink, existing or dangling, gives ELOOP and is untouched.\n- Join (an open by name after a check): O_NOFOLLOW and O_NONBLOCK, then fstat is_file. A blocking O_WRONLY open of a FIFO waits for a reader and stalls the log thread while it holds the mutex and the flock.\n- Side records (daemon.log.trimmed): read with O_NOFOLLOW and O_NONBLOCK, capped. A symlink gives ELOOP, a FIFO reads empty, a directory gives EISDIR, and all of them must answer \"not recorded\" (less adoption).\n- Destructive trim: copy the tail, then unlink the name. Never truncate in place, so hard links survive.\n\nStill open after #302 (S302-N1, low): keep_tail reopens its source by name without O_NONBLOCK, fstat or dev/ino == mine. Passing the already-proven fd down is the clean fix.\n\nSeverity rule I applied: the default ~/.pij-rs is user-owned 0755, so a planted link needs the same UID, which C33 trusts. That makes these notes, not blocks, unless the state dir can be other-UID writable (--state-dir / PIJ_RS_STATE_DIR). Keep a demonstrated containment break (my round-1 repro truncated an outside file) distinct from whether it is exploitable across UIDs.\n\nMethod that worked fast: copy the verbatim Rotation code into a standalone rustc repro in /tmp (no cargo, nice 19), and probe open-flag semantics with python os.open on a symlink, a dangling link, a FIFO and a directory. Both are cheap receipts, with no build and no daemon.\n\nProcess: `pij output verdict --answers <req>` already marks the request answered, so a following pij_send reply warns \"already answered\", which is harmless. To cite a ruling after publishing, re-publish at the same head; it writes a -2 file.\n"
+		}
+	]
+}
