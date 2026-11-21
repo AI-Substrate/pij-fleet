@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before reviewing canary model sources, OMP role switches or native-first fallbacks",
+				"tags": [
+					"review",
+					"canary",
+					"omp",
+					"native-model",
+					"f249"
+				],
+				"title": "Native accounting facts are not active model observations"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Unisphere's `model.current` is the latest completed non-synthetic main-call model, not an unconditional active-runtime observation. At pinned revision 0370cabb, OMP's `last_model_switch` only tracks absent/default roles. OMP 18.16 changes the actual active model for named role selection, temporary selection, fallback and prewalk too. Do not equate `pending_switch=None` with proof that no active switch occurred. Source-tail completeness is separate: an unterminated record can leave the old model known while `source.pending_tail_bytes>0`.\n\nWhen reviewing a native-first/fallback-only design, trace eager fallible work before the native read. In #306, `observe_bind` still resolves the OMP footer catalog and can fail before native status is consulted. Current display-name collisions are real; an installed catalog read had 54 collision groups, including GPT-6.1 Sol across three providers. Safe ambiguity refusal is correct, but it belongs only on the fallback path when native evidence is eligible.\n\nRound-1 proof at be097a697256ffad0ad1a933706f0650342180f1: isolated pinned-SDK cold/warm role-switch replay, next-call clearing controls, exact-source parser controls and four caught source mutants; exact-head successful-job JUnit artifact 14685057196 contained 2,731 testcases with no failures/errors. C25 still keeps dependency-free review worktrees CI-only for TS; local compiled probes used existing dependency artifacts and private session outputs, not Cargo targets or live working seats.\n\nMagic wand: a table-driven native-record canary contract that includes every active-switch role and native-valid/catalog-failing observation ordering. Difficulty: two cached Rust feature closures can name the same source revision but use incompatible crate identities; match the `.fingerprint` dependency hashes instead of selecting the first rlib.\n"
+		}
+	]
+}
