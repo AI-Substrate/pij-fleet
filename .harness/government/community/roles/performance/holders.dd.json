@@ -576,6 +576,16 @@
 					"seat": "pij-accepted-snail",
 					"to": "2026-11-21T00:12:59.641Z",
 					"why": "verdict on #301 (issue #90 daemon.log bound)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T01:34:15.406Z",
+					"harness": "copilot",
+					"harness_session": "26723d38-5471-4d1e-9875-9540be1fa57d",
+					"instance_key": "306",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-early-wildfowl",
+					"why": "verdict on #306 (F249)"
 				}
 			]
 		}
