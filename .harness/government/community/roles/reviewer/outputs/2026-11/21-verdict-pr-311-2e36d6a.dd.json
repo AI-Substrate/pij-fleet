@@ -1,0 +1,64 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fc7c-fe9e-71c3-af4c-195943aa76df",
+				"date": "2026-11-21",
+				"head": "2e36d6a887a4ec4bcf251762d604a10f7f125a33",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:311",
+				"writer": "pij-vital-gecko",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"B311-01: recover currently outstanding durable lapses at boot and after a broadcast gap without weakening existing brakes.",
+				"N311-01 (nonblocking): a lapse already followed by native.receiver.renewed still queues a same-session restart; do not amplify this with historical replay."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 311",
+					"exit_code": 0,
+					"log": "FINAL at 2e36d6a887a4ec4bcf251762d604a10f7f125a33; CI 5/5"
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=$(bash harness/scripts/cargo-target.sh) just shared-build -- test --locked -p pij-daemon --lib auth_recovery --then clippy --locked -p pij-daemon --lib -- -D warnings",
+					"exit_code": 0,
+					"log": "review-311-rust.log: 16/16 recovery tests; scoped macOS clippy passed"
+				},
+				{
+					"command": "just shared-build -- test --offline --manifest-path <review-session-probe>/Cargo.toml -p review-311-probe -- --nocapture (session path normalized)",
+					"exit_code": 101,
+					"log": "review-311-probe-linked.log: compiled; positive control passed; pre-attachment, overwrite and post-renewal assertions failed"
+				},
+				{
+					"command": "nice -n 19 python3 <review-session>/review-311-mutants.py (session path normalized)",
+					"exit_code": 0,
+					"log": "review-311-mutants-replayed.log: six semantic guard mutants killed; restored baseline 16/16"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "review-311-checks.log: 9 sensors failed, 5 passed, 1 warned; not reported as a full local pass"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "**BLOCK — round 1, #311 (F261), head 2e36d6a887a4ec4bcf251762d604a10f7f125a33.**\n\n**B311-01 — recover outstanding lapses, not only newly delivered broadcast events.** `crates/daemon/src/auth_recovery.rs:538-553` attaches with `subscribe_live` and has no startup reconciliation, replay, lag handling, or retry of a failed decision. A lapse committed before attachment is never considered. On a daemon restart this is permanent: `delivery/mod.rs:500-557` restores the outstanding `native.receiver.lapsed`, and `:801-805` deliberately does not emit it again. A still-running, idle Copilot process with an empty composer therefore stays deaf until a human acts. The existing `http::native_tests::a_told_lapse_survives_a_restart_and_is_not_told_again` confirms the edge is not repeated.\n\nOverflow has the same failure: `events/mod.rs:259-272,473-476` counts overwritten events, but this follower never checks the count or reconciles durable state. Its buffer contains all bus traffic before filtering. With a one-slot legal buffer, a lapse followed by unrelated events disappeared permanently; the follower queued zero restarts. The pre-subscription persisted-lapse probe also queued zero. The positive control queued one restart.\n\nFix with a bounded, launch-free recovery of currently outstanding durable lapses at attachment and after a gap; preserve the existing shared budget and every typing/process brake. Do not replay a historical lapse whose receiver has since renewed. The loss of the sole trigger is not an acceptable implementation of the recovery policy merely because it types less. **The lapse is the POLICY input; process identity, idle, composer and cooldown remain BRAKES.**\n\n**N311-01 — nonblocking stale-lapse note.** `auth_recovery.rs:542-581` ignores subsequent renewal and resolves the process from the current registry row. An isolated probe committed a lapse, successfully heartbeated the receiver, verified the durable latest edge was `native.receiver.renewed`, and only then polled the follower: one restart was nevertheless queued. This confirms security's note 3. The effect is a bounded same-session restart, not a demonstrated draft overwrite; keep it as a note, not a second blocker. The reconciliation fix must not amplify it by replaying old lapses.\n\n**Other requested checks:** both trigger orders share the same per-seat lock, ledger and 30-minute budget. A replacement process inside that window gets a notice, not another restart. Dead/recycled processes get no control; unreadable liveness also fails closed by source inspection. Claude, retired and unbound seats do nothing. HTTP still deserializes the two-variant `LostLogin`, so `extension-lost` cannot enter through the route. Controls bypass only the native body-lease refusal; the drain still requires settled idle and the interaction gate rechecks a recognized empty composer under input ownership. No changed-body draft hole found.\n\nF260 compatibility is source-checked only: registration retains `seat.native-resumed`, and the heartbeat ending a told lapse retains `native.receiver.renewed`. This PR does not implement F260, and I did not claim its in-flight redelivery behavior as tested.\n\n**Cost:** one event subscription, no new timer or per-tick/per-seat work; O(1) per lapse before existing F212 work. The start read is in-process for readable processes; the existing exceptional `/bin/ps` fallback is absolute-path and counted as `ps.proc-liveness-fallback`. Existing queued pane controls still incur their existing interaction launches. Exact-head CI passed both `live_processes_are_read_without_launching_ps` and `every_daemon_launch_site_records_itself`. No live lapse, restart or daemon bounce was triggered; an after-deploy fleet-cost comparison is not claimed.\n\n**Proof:** `just pr-freeze 311` was FINAL at this head, CI 5/5. CI run 44868597764, successful rust-test job 136737799086, artifact ID 14691959975: 2,743 cases, zero failures; all 16 recovery tests and the durable-lapse test passed. Local `PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-daemon --lib auth_recovery --then clippy --locked -p pij-daemon --lib -- -D warnings` passed (16 tests, macOS clippy).\n\nThe additional probe used an isolated archive of this exact head with only `mod auth_recovery` exposed as `pub mod auth_recovery`; recovery/event/delivery logic was unchanged. It compiled, then ran one passing positive control and three failing behavioral assertions. The first external-link attempt failed compilation because the module was private and is not counted as behavioral evidence.\n\n**Mutation replay:** six semantic guard mutants matching MB1-MB6 were killed by their intended single-test assertions: ignore the liveness result; restart a dead process; discard the ledger on a lapse; ignore idle/composer; bypass harness/retired scope; mislabel a settled dead process as not-restarted. The restored snapshot then passed all 16 recovery tests. These are independent fault-class replays, not a claim to possess the author's exact mutation patches. An earlier run hit a cross-tree dependency compile failure and was discarded: the valid replay ran shared-build from the snapshot's actual source directory.\n\n**Full local gate:** `harness checks` exited 1, not green. Eight dependency/tooling-limited sensors failed in the node_modules-less C25 review tree (including an incompatible ambient Biome); its Rust stage also ended with a daemon-library test failure. The aggregate gate preserved the stderr tail rather than the failing test's stdout, so I do not assert that failure's cause or attribute it to this PR. Five sensors passed: pij-skill, copilot-native, copilot-sdk, route-inventory and smoke; attribution warned. Dependencies were not installed or symlinked. Exact-head CI and the focused original-tree macOS recovery tests/clippy are separately recorded above, not substituted for a claimed full local pass.\n\n**Harness gift:** incorporate the pre-attachment, broadcast-overwrite and post-renewal cases into the existing recovery suite, with the live-edge positive control. Missing readiness under C25 and shared-build waits were operational friction, not reasons to weaken proof. The review worktree's tracked files remained unchanged. I retain reviewer/311 until merge.\n"
+		}
+	]
+}
