@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"head": "f392e910f244e9b02f1dc69e4508901d0923551b",
+				"kind": "verdict",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:301",
+				"writer": "pij-uncertain-antelope",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"F251: O_APPEND staging; dev/ino-proven adopt; O_NONBLOCK+fstat on join (S301-R2-N1); O_NOFOLLOW on keep_tail (S301-R2-N2). Security verifies."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict: #301 round 2 (final, C34) at f392e910f244e9b02f1dc69e4508901d0923551b, PASS WITH NOTES\n\nScope: the full delta `git diff 8bf2c2d f392e91` (daemon_log.rs, tests/daemon_log.rs, spawn_sites.rs, pij-rs-api.md), with Rotation::{adopt,sync,lock,rotate,keep_tail} and staging() read in full (daemon_log.rs:277-567). Static review plus a primitive probe. No cargo build, no daemon started, the live log untouched.\n\n## S301-N1 is closed\n`staging()` (:557-567) removes any leftover name, then opens it `create_new(true)` (O_CREAT|O_EXCL) at 0600, and only under the flock. The regression `planted_staging_links_never_reach_outside_files` (:1313-1342) plants links at both `.new` and `.1.new` and asserts the victim's 35 bytes are unchanged and that `daemon.log` and `.1` are regular files. This is my round-1 repro, encoded.\n\n## ML3 (remove, then create_new): acceptable under C33\nThe survivor is a gap in the test, not an exposure. The remove clears a link planted ahead of time, so a mutant that drops O_EXCL passes the test, which plants nothing in between. In the real code a link re-planted between the remove and the open hits O_EXCL and fails with EEXIST. The rotation then **fails closed**: the error path writes a \"rotation failed\" note and keeps the current file, and the only clean-up is a name-only `remove_file` of `.new`. The target is never followed. Re-planting also needs write access to the state dir, which is the same UID, so it is inside the C33 trust boundary.\n\n## Lock file path handling\n`lock()` (:485-503) opens `daemon.log.lock` with read, write and create, plus O_NOFOLLOW, at mode 0600. It never truncates the file, never writes it and never removes it.\n\nProbe, using the same flags on macOS:\n- A symlink to an existing file and a dangling symlink both return **ELOOP**.\n- The existing target kept its contents, and the dangling target was not created.\n\n`sync` maps the error to a \"rotation failed\" note, and nothing is touched. A hard-linked or pre-existing lock file only receives an advisory flock, which is harmless. The 0600 mode applies only when the file is created, and an empty lock file holds no data.\n\n## Does rotation still stay inside the state dir?\nYes, for writes and truncation. Every name it touches is fixed under `<state>/daemon.log*`: `.1`–`.3`, `.new`, `.1.new` and `.lock`.\n- Renames and unlinks act on the name only.\n- The staging files are opened O_EXCL.\n- The join opens with append and O_NOFOLLOW (:462-467).\n- The lock opens with O_NOFOLLOW.\n- In-place truncation is gone everywhere: the trim copies, then unlinks.\n\n## Notes (low, same-UID only under C33; none blocking)\n- **S301-R2-N1: the join does not check what it opened.** `sync` checks `symlink_metadata(path).is_file()` and then opens the path append+O_NOFOLLOW with a **blocking** O_WRONLY (:461-467). It never fstats the opened fd to confirm it is a regular file. Swapping a FIFO onto the path between the check and the open makes the open wait for a reader. That stalls the log reader thread while it holds the Shared mutex and the flock, so daemon stdout blocks once the pipe fills (an availability issue only). Probe: an O_WRONLY|O_NONBLOCK open of a reader-less FIFO returns ENXIO, so a blocking open would wait. Fix: open with O_NONBLOCK, then require `is_file()` on the fd, or require the same dev/ino as the check.\n- **S301-R2-N2: `keep_tail` reads through symlinks.** It opens its source with `File::open(&self.path)` (:537), which follows a link swapped in after the re-check. The worst case is that the tail of one of the user's own files is copied into a 0600 `.1`; nothing outside is written. Adding O_NOFOLLOW would close it.\n- **Lock DoS:** a same-UID process that holds `daemon.log.lock` forever disables rotation, because the daemon falls back to Busy and keeps appending. That is accepted under C33, and the note it writes makes it visible.\n- **Correctness, in the reviewer's lane:** `adopt` accepts any unlinked regular file (`nlink == 0`, :425-428) as \"rotated away\". A daemon whose stdout was redirected to a since-deleted file outside the state dir would therefore adopt `<state>/daemon.log` and join it at start. This is not a containment issue, because every action still stays on `<state>/daemon.log*`. moth should judge whether it is the wrong file.\n\n## Still holds from round 1\n- No new secrets are logged. The exact-line key removes even the digit-blanked text of round 1. Panic and backtrace lines are always written.\n- No home paths in the delta (a scan for /Users/, /home/, token and secret came back empty).\n- Nothing here launches a process. The lock adds one open, one flock and one close at start and at each rotation.\n\n## Limits\n- No cargo build or test run; I rely on exact-head CI at 5/5 for the regression tests.\n- The FIFO hang was reasoned from the ENXIO probe, not run end to end against the daemon.\n- No second-UID test.\n\n## F251 (the prime's ruling, 2026-11-21)\nThis verdict now cites F251. It supersedes d2170d61 only to add this section; the result and findings are unchanged. #301 ships, and F251 carries the hardening: O_APPEND staging, a dev/ino-proven adopt (covering the nlink==0 rule above), O_NONBLOCK plus fstat on join (S301-R2-N1), and O_NOFOLLOW on keep_tail (S301-R2-N2). Security verifies F251 when falcon delivers it.\n"
+		}
+	]
+}
