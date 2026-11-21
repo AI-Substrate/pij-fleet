@@ -1174,6 +1174,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-selected-deer",
 					"why": "#319 F263 round 1 (reuse idle seat)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T11:55:30.694Z",
+					"harness": "copilot",
+					"harness_session": "aa358e02-6f68-4ca0-88ce-59ef10419c81",
+					"instance_key": "320",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-selected-deer",
+					"why": "#320 F268 round 1 (reuse)"
 				}
 			]
 		}
