@@ -2895,7 +2895,10 @@
 					"harness_session": "ae639be0-bf8b-4dcf-b1a3-21645f441861",
 					"instance_key": "329",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #329 merged (9332a693d8e7)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-written-mongoose",
+					"to": "2026-11-21T18:44:32.468Z",
 					"why": "#329 chore round 1"
 				},
 				{
