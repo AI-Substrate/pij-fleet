@@ -1,0 +1,73 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ffce-73b0-7a31-ba3b-1c357887ccb0",
+				"date": "2026-11-22",
+				"head": "55b3cbb44c32033d23ed19b462d0cb4571149fe2",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:331",
+				"writer": "pij-written-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Nonblocking carried performance note: post-deploy matched owed/roster/kind counts remain owed; no native Rust drain timing is claimed."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 331",
+					"exit_code": 0,
+					"log": "FINAL55b3cbb44c32033d23ed19b462d0cb4571149fe2,CLEAN,latest5checks pass"
+				},
+				{
+					"command": "just shared-build -- clippy --locked -p pij-core -p pij-store -p pij-testkit -p pij-daemon --all-targets -- -D warnings",
+					"exit_code": 0,
+					"log": "pr331-r2-baseline.log:macOSclippy,store3controls,original andcommittedmixedconsumerwitnesses passed"
+				},
+				{
+					"command": "original mixed-backend consumer witness",
+					"exit_code": 0,
+					"log": "pr331-r2-baseline.log:handled1,pendingfalse; B331-01closed"
+				},
+				{
+					"command": "real/fake owed-recipient comparison with open/terminal and prefix-edge rows",
+					"exit_code": 0,
+					"log": "pr331-r2-baseline.log:matching unique ID-ordered answers; deliveryish andupper-boundlookalikes excluded"
+				},
+				{
+					"command": "controlled None queue answer through actual consumer",
+					"exit_code": 0,
+					"log": "pr331-r2-none-fallback.log:handled1,pendingfalse; full-roster fallback verified"
+				},
+				{
+					"command": "same private executable with queue debt ignored",
+					"exit_code": 101,
+					"log": "pr331-r2-ignore-debt.log:intended assertion0vs1,handled0pendingtrue; requestedmutant killed"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "pr331-r2-harness-checks.log:8dependency/ambient failures; separate exact-head CI proof underC25"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: PASS-WITH-NOTES\n\nPR #331, round 2 of 2, exact head 55b3cbb44c32033d23ed19b462d0cb4571149fe2.\nAnswers 01a1ffce-73b0-7a31-ba3b-1c357887ccb0.\n\nB331-01 is closed. The ORIGINAL mixed-backend witness now handles its retired pending job and leaves none pending. No blocking correctness finding remains in this fix; no third review round is requested.\n\n## Final-round checks\n\n- Queue authority: `live_or_owed` asks the actual injected queue for its owed recipients, then passes those IDs to the registry. The real registry no longer guesses debt from its own pool. Real Registry + Real Spine + Fake Queue now works, as do the previously supported all-real and fake-registry combinations.\n- Original witness: unchanged review fixture returned handled=1/pending=false at this head, versus handled=0/pending=true at 0a8490f. The committed build_services mixed-backend test also passed.\n- None fallback: a queue unable to answer uses the former full `Registry::list(SeatFilter::default())`, not live-only or an empty debt list. A controlled None response through the actual consumer passed the original retired-pending witness. That is a true safe superset.\n- Prefix bounds: both actual prefixes end in ASCII `:`. Replacing that final character with `;` makes the exclusive lexicographic upper bound. The lower/upper comparisons include every valid suffix of the exact prefix and exclude the upper bound itself. Delivery/control arms do not overlap. The committed `deliveryish:` case and additional exclusive-upper-bound look-alikes are excluded.\n- Real/fake agreement: an independent common-input comparison passed for pending body, control-only, both kinds for one recipient, running work, done and failed work, another queue, `deliveryish:`, `delivery;` and `delivery-control;` look-alikes. Both actual queue implementations return the same unique ID-ordered owed list.\n- Registry order: `list_live_with` combines the live index with named retired PK lookups. DISTINCT named IDs and disjoint live/retired branches avoid duplicate rows; final ORDER BY id preserves the prior roster order. The default registry implementation filters its full list safely.\n- Query plans/index dependency: the committed actual-adapter tests passed. EXPLAIN requires two covering state-plus-kind-range searches on jobs_claimable, no jobs scan, seats_live plus named PK searches, and no historical seats scan. Dropping either required index gives a named error, not a silent slow fallback.\n- Required mutant: ignoring the queue's answer and listing live rows only failed the ORIGINAL consumer witness at handled=0/pending=true, exit 101. Mutation-off and None-fallback controls passed.\n- Timing: queue debt and registry population are sequential snapshots, not a transaction held through claim. Work created or revived across those snapshots may await a later pass; the durable queue row is not removed, and the consumer still rereads the recipient after claim. No new atomic same-tick or wall-latency guarantee is claimed.\n- Scope: the delta is the queue-owned debt/registry-name composition and its tests; no main merge was needed. The earlier late-lease logging/spare behavior is unchanged. No role, permission, retention or deletion policy was added.\n\n## Carried nonblocking note\n\nThe post-deploy matched counts (owed IDs, roster rows and claimable kinds) remain owed to performance. The Python copy benchmark is now correctly labelled, not presented as a native Rust/sqlx timing. No native drain-stage timer exists, and this review did not bounce or mutate the fleet.\n\nThe corrected recurring work is the existing five-second drain: range-read open delivery/control rows, deduplicate owed IDs, and list live plus named seats. Temporary B-trees are priced. No new loop, timer or process launch is added.\n\n## Evidence\n\nAll Rust work ran in an isolated exact-head archive through `just shared-build`, canonical shared target, niceness 19, four jobs and no incremental compilation.\n\n| Proof | Result |\n|---|---|\n| `just pr-freeze 331` | FINAL at this full head; CLEAN; five latest checks passed |\n| `just shared-build -- clippy --locked -p pij-core -p pij-store -p pij-testkit -p pij-daemon --all-targets -- -D warnings` | macOS passed |\n| `just shared-build -- test --locked -p pij-store --test registry_live_or_owed -- --nocapture` | 3/3 passed: committed equivalence and range-plan/index tests, plus real/fake debt comparison |\n| `just shared-build -- test --locked -p pij-daemon --lib review_real_registry_and_fake_queue_preserve_retired_pending_work -- --nocapture` | ORIGINAL witness passed, handled=1/pending=false |\n| Committed `a_retired_recipients_row_in_a_fake_queue_beside_a_real_registry_is_closed` selector | Passed |\n| Same copied executable with controlled unknown-queue None | Passed, handled=1/pending=false |\n| Same copied executable with queue debt ignored | Intended assertion failed, exit 101, handled=0/pending=true |\n| CI 44945945864/job 136973157286, successful-upload artifact 14724000886 | Three focused final-head committed controls independently parsed as passed |\n| `harness boot`; `harness checks --quick` | Boot ready=false; quick gate exit 1 from eight dependency/ambient-tool failures; heavy stages skipped, native/SDK/skill checks passed |\n\nC25: no dependency installs/links and no local green full-ship claim; exact-head CI is separate proof. The private executable was copied under the build lock, and all mutation/control selectors are restored byte-identically before named cleanup. Original product checkout remains untouched.\n\nRetained session receipts: pr331-r2-baseline.log, pr331-r2-mutation-build.log, pr331-r2-none-fallback.log, pr331-r2-ignore-debt.log and pr331-r2-harness-checks.log.\n\nHarness lesson: a queue's debt belongs to that queue, not to a registry's connection. Preserve the unknown-answer superset and compare the actual injected consumer across supported backend topologies.\n\nHold reviewer/331 until merge.\n"
+		}
+	]
+}
