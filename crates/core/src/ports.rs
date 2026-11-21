@@ -171,6 +171,17 @@ pub trait Registry: Send + Sync {
         Ok(seats)
     }
 
+    /// Every live seat, and each seat named in `also` that is retired,
+    /// ordered by id (F259a). The delivery drain passes the recipients its
+    /// queue still owes a row ([`Queue::owed_recipients`]), so it never reads
+    /// the retired seats it has nothing for. The default filters the whole
+    /// roster; a store answers it from its live index and primary key.
+    async fn list_live_with(&self, also: &[SeatId]) -> Result<Vec<SeatDescriptor>> {
+        let mut seats = self.list(SeatFilter::default()).await?;
+        seats.retain(|seat| seat.tombstoned_at.is_none() || also.contains(&seat.id));
+        Ok(seats)
+    }
+
     /// Mark a seat dead, keeping the row and the reason. Rows are tombstoned,
     /// never deleted: a seat that vanishes takes its own post-mortem with it.
     async fn tombstone(&self, seat: &SeatId, reason: &str) -> Result<Seq>;
@@ -704,6 +715,18 @@ pub trait Queue: Send + Sync {
     /// otherwise mutating it. Pending and already-claimed rows remain visible;
     /// repeated peeks return the same row until another actor completes it.
     async fn peek(&self, kinds: &[String]) -> Result<Option<(JobId, Job)>>;
+
+    /// Every seat with an open (pending or running) row of its
+    /// [`crate::delivery::delivery_kind`] or [`crate::delivery::control_kind`],
+    /// ordered by id, or `None` when this queue cannot say (F259a). The
+    /// delivery drain lists the live seats plus these instead of every seat
+    /// ever written; `None` makes it list every seat, so a queue that cannot
+    /// answer costs only the old full list, never a recipient. The answer is
+    /// this queue's own: a registry's store may not hold the queue being
+    /// drained (B331-01).
+    async fn owed_recipients(&self) -> Result<Option<Vec<SeatId>>> {
+        Ok(None)
+    }
 
     /// How long until a live row of `kinds` next becomes claimable on a timer,
     /// as [`Self::claim`] (the ordinary lease) decides it: the earliest instant

@@ -18,7 +18,7 @@ use sqlx::{Pool, Row, Sqlite};
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use pij_core::delivery::HoldExpiry;
+use pij_core::delivery::{CONTROL_KIND_PREFIX, DELIVERY_KIND_PREFIX, HoldExpiry};
 use pij_core::error::{PijError, Result};
 use pij_core::model::{DeliveryFailure, DeliveryOrigin, Job, JobId, Outcome, SeatId};
 use pij_core::ports::{
@@ -333,6 +333,32 @@ pub const NEXT_CLAIMABLE_SQL: &str = "SELECT MIN(due) FROM (\
      WHERE state IN ('pending', 'running') \
        AND kind IN (SELECT value FROM json_each(?1))\
      ) WHERE due > ?3";
+
+/// [`Queue::owed_recipients`] (F259a): the seat of every open row of a
+/// `delivery:` kind (`?1` the prefix, `?2` its upper bound) or a
+/// `delivery-control:` kind (`?3`, `?4`). Each arm is a range seek on
+/// `jobs_claimable (state, kind, id)`, one per open state, so it reads only
+/// open delivery rows, never another queue's. `UNION` keeps each seat once.
+/// Public so the cost test explains THIS query.
+pub const OWED_RECIPIENTS_SQL: &str = "SELECT substr(kind, length(?1) + 1) AS seat \
+     FROM jobs INDEXED BY jobs_claimable \
+     WHERE state IN ('pending', 'running') AND kind >= ?1 AND kind < ?2 \
+     UNION \
+     SELECT substr(kind, length(?3) + 1) \
+     FROM jobs INDEXED BY jobs_claimable \
+     WHERE state IN ('pending', 'running') AND kind >= ?3 AND kind < ?4 \
+     ORDER BY seat";
+
+/// The least string above every string that starts with `prefix`: its last
+/// character, one higher (the kind prefixes end in `:`, so `;`).
+pub fn prefix_bound(prefix: &str) -> String {
+    let mut bound = prefix.to_string();
+    let last = bound.pop().expect("a kind prefix is never empty");
+    bound.push(
+        char::from_u32(u32::from(last) + 1).expect("the next character after a prefix's last"),
+    );
+    bound
+}
 
 /// The absolute deadline `delay` from now, in whole epoch seconds rounded UP:
 /// the queue compares whole seconds, and truncating released a 100 ms retry
@@ -1089,6 +1115,19 @@ impl Queue for SqliteQueue {
                 .max(0) as u32,
         };
         Ok(Some((JobId(id as u64), job)))
+    }
+
+    async fn owed_recipients(&self) -> Result<Option<Vec<SeatId>>> {
+        require_current_schema(&self.pool).await?;
+        let seats: Vec<String> = sqlx::query_scalar(OWED_RECIPIENTS_SQL)
+            .bind(DELIVERY_KIND_PREFIX)
+            .bind(prefix_bound(DELIVERY_KIND_PREFIX))
+            .bind(CONTROL_KIND_PREFIX)
+            .bind(prefix_bound(CONTROL_KIND_PREFIX))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        Ok(Some(seats.into_iter().map(SeatId::from).collect()))
     }
 
     async fn next_claimable_in(

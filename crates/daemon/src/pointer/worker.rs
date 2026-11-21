@@ -11,7 +11,7 @@ use pij_core::model::{
     DeliveryFailure, DeliveryOrigin, DeliveryOutcome, Event, Harness, Job, JobId, Msg, Outcome,
     Receipt, SeatDescriptor, SystemState,
 };
-use pij_core::ports::{ParkingEvidence, Queue, Registry, SeatFilter, TmuxPort, Transport};
+use pij_core::ports::{ParkingEvidence, Queue, Registry, TmuxPort, Transport};
 use pij_harnesses::{InteractionGate, StagedSubmission};
 
 use crate::delivery::{publish_delivery_held, publish_delivery_outcome, publish_socket_released};
@@ -87,6 +87,23 @@ fn hold_delay(
 struct Held {
     since_ms: u64,
     holds: u32,
+}
+
+/// F259a: every live seat, and each retired one the drained queue still owes
+/// an open delivery or control row: the drain's roster, never the retired
+/// rows it has nothing to claim for. The debt is the QUEUE's answer, so a
+/// registry whose store does not hold the queue being drained (Real Registry
+/// with a Fake Queue, B331-01) is never asked about rows it cannot see. A
+/// queue that cannot say lists every seat, the old roster: a superset, never
+/// a missed recipient.
+pub(crate) async fn live_or_owed(
+    registry: &dyn Registry,
+    queue: &dyn Queue,
+) -> Result<Vec<SeatDescriptor>> {
+    match queue.owed_recipients().await? {
+        Some(owed) => registry.list_live_with(&owed).await,
+        None => registry.list(pij_core::ports::SeatFilter::default()).await,
+    }
 }
 
 /// One delivery-queue drain pass below the socket transport.
@@ -228,7 +245,7 @@ impl DrainWorker {
     /// failures. A fallible delivery action is returned to pending before its
     /// error is surfaced.
     pub async fn drain_once(&self) -> Result<usize> {
-        let seats = self.registry.list(SeatFilter::default()).await?;
+        let seats = live_or_owed(self.registry.as_ref(), self.queue.as_ref()).await?;
         // Copilot bodies belong to its native extension; only its typed controls,
         // queued on their own kind, are drained here (plan 186). That kind is
         // listed even for a paneless seat: only a claim that lists it sweeps an
@@ -3386,5 +3403,85 @@ mod tests {
         );
         assert_eq!(fixture.queue.live_len(), 0, "delivered");
         assert_eq!(fixture.queue.attempts(id), 2, "an abort and a clear");
+    }
+
+    /// B331-01 (#331 round 1, written-mongoose): the drain's roster names
+    /// the retired seats the QUEUE being drained still owes, never the rows
+    /// of a store that is not that queue. Real Registry with Real Spine and a
+    /// Fake Queue is a composition `build_services` accepts: the registry's
+    /// own `jobs` table never sees the fake queue's row. A seat retired with a
+    /// body still queued must have that row closed on the next tick; asked of
+    /// the registry's pool, the drain left it pending forever (handled 0).
+    #[tokio::test]
+    async fn a_retired_recipients_row_in_a_fake_queue_beside_a_real_registry_is_closed() {
+        let store = FreshStore::new();
+        let config = Config {
+            adapters: pij_core::config::Adapters {
+                registry: pij_core::config::AdapterChoice::Real,
+                spine: pij_core::config::AdapterChoice::Real,
+                queue: pij_core::config::AdapterChoice::Fake,
+                ..pij_core::config::Adapters::default()
+            },
+            store_path: store.path(),
+            ..Config::default()
+        };
+        let services = crate::build_services(
+            &config,
+            &std::path::Path::new(&store.path()).with_extension("signals"),
+        )
+        .await
+        .expect("a Real Registry, Real Spine and Fake Queue compose");
+        let tmux = Arc::new(FakeTmux::new());
+        let worker = DrainWorker::new(
+            Arc::clone(&services.registry),
+            Arc::clone(&services.queue),
+            Arc::new(FakeTransport::reachable()),
+            Arc::clone(&tmux) as Arc<dyn TmuxPort>,
+            Arc::new(InteractionGate::with_typing_grace(
+                Arc::clone(&tmux) as Arc<dyn TmuxPort>,
+                Duration::ZERO,
+                pij_core::delivery::DEFAULT_TYPING_GRACE_MS,
+            )),
+            Arc::clone(&services.event_bus),
+            PointerPolicy {
+                cadence: CADENCE,
+                announcement_limit: 3,
+            },
+        )
+        .expect("worker");
+        services
+            .registry
+            .put(seat("pij-retiring", None))
+            .await
+            .expect("register");
+        let msg = message("pij-retiring", "queued while it lived", None);
+        services
+            .queue
+            .enqueue(Job {
+                kind: delivery_kind(&msg.to),
+                serial_key: msg.to.0.clone(),
+                payload: serde_json::to_string(&msg).expect("message json"),
+                dedupe_key: msg.msg_id.clone(),
+                dedupe_origin: None,
+                attempt: 0,
+            })
+            .await
+            .expect("enqueue");
+        services
+            .registry
+            .tombstone(&SeatId::from("pij-retiring"), "test: retired")
+            .await
+            .expect("tombstone");
+
+        assert_eq!(worker.drain_once().await.expect("drain"), 1);
+        assert!(
+            services
+                .queue
+                .peek(&[delivery_kind(&SeatId::from("pij-retiring"))])
+                .await
+                .expect("peek")
+                .is_none(),
+            "the retired recipient's row is closed"
+        );
     }
 }
