@@ -311,14 +311,9 @@ impl PaneObserver {
         let joined = tokio::spawn(async move {
             let mut schedule = tokio::time::interval_at(Instant::now() + interval, interval);
             schedule.set_missed_tick_behavior(MissedTickBehavior::Delay);
-            loop {
-                tokio::select! {
-                    _ = &mut stop_rx => break,
-                    _ = schedule.tick() => {
-                        if let Err(error) = observer.observe_once().await {
-                            eprintln!("pij-rs pane observer: {error}");
-                        }
-                    }
+            while !stop_first(&mut stop_rx, schedule.tick()).await {
+                if let Err(error) = observer.observe_once().await {
+                    eprintln!("pij-rs pane observer: {error}");
                 }
             }
         });
@@ -774,6 +769,20 @@ impl PaneObserver {
     }
 }
 
+/// Whether the loop stops (its stop sent, or its sender gone) before the next
+/// `tick`. F267 step 2 (mongoose N2): a stop that comes with a due tick wins,
+/// so a stop never waits behind one more pass.
+async fn stop_first<T>(
+    stop: &mut oneshot::Receiver<()>,
+    tick: impl std::future::Future<Output = T>,
+) -> bool {
+    tokio::select! {
+        biased;
+        _ = stop => true,
+        _ = tick => false,
+    }
+}
+
 /// Owned handle for the observer task and every tap it attached.
 pub struct PaneObserverLoop {
     stop: oneshot::Sender<()>,
@@ -996,6 +1005,24 @@ mod tests {
             .expect("tombstone");
         let _ = observer.observe_once().await;
         assert!(refusals.list().is_empty(), "{:?}", refusals.list());
+    }
+
+    /// F267 step 2 (mongoose N2): a stop that comes with a tick already due
+    /// ends the loop before another pass (a pass can take seconds on a loaded
+    /// fleet, and the stop waited behind it). Unbiased, the select would pick
+    /// the tick half the time; 32 rounds. A tick alone is a pass.
+    #[tokio::test]
+    async fn a_stop_that_comes_with_a_due_tick_observes_nothing_more() {
+        for round in 0..32 {
+            let (stop, mut stop_rx) = oneshot::channel();
+            stop.send(()).expect("sent");
+            assert!(
+                super::stop_first(&mut stop_rx, std::future::ready(())).await,
+                "round {round}: a pass ran after the stop"
+            );
+        }
+        let (_stop, mut stop_rx) = oneshot::channel::<()>();
+        assert!(!super::stop_first(&mut stop_rx, std::future::ready(())).await);
     }
 
     /// PR #99 review S1: a pane that keeps failing keeps the world unreconciled,
