@@ -889,6 +889,8 @@ struct Health<'a> {
     cache_proxy: crate::cache_proxy::HealthView,
     /// Requests served since this daemon started, by route (F222).
     requests: route_counts::RequestCounts,
+    /// The pane observer's passes, captures and replays since start (F258).
+    pane_observer: crate::pane_observer::ObserverCountsView,
 }
 
 #[derive(serde::Serialize)]
@@ -926,6 +928,7 @@ async fn health(State(state): State<AppState>) -> Response {
         registrations: state.registration.counts(),
         cache_proxy: state.services.cache_proxy.health(),
         requests: state.route_counts.snapshot(),
+        pane_observer: state.services.observer_counts.snapshot(),
     };
     match checked {
         Ok(()) => envelope(StatusCode::OK, &Envelope::ok("pij ping", data)),

@@ -155,6 +155,8 @@ pub struct Services {
     pub interaction: Arc<InteractionGate>,
     /// Panes whose tap the pane observer could not attach (F112), for the PA digest.
     pub tap_refusals: Arc<pane_observer::TapRefusals>,
+    /// What the pane observer has done since start (F258), for `ping`.
+    pub observer_counts: Arc<pane_observer::ObserverCounts>,
     /// Each Copilot seat's last lost-login decision (F212), on the monotonic clock.
     pub(crate) auth_recovery: Arc<auth_recovery::Ledger>,
     /// F190: native-session-boundary carries, one at a time.
@@ -759,6 +761,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         tmux,
         interaction,
         tap_refusals: Arc::new(pane_observer::TapRefusals::new()),
+        observer_counts: Arc::new(pane_observer::ObserverCounts::new()),
         auth_recovery: Arc::new(auth_recovery::Ledger::new()),
         carries: Arc::default(),
         build_commit: BUILD_COMMIT.map(str::to_string),
@@ -1134,7 +1137,8 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
             pane_signal_dir,
             Duration::from_millis(config.pane_observer_interval_ms),
         )?
-        .with_tap_refusals(Arc::clone(&services.tap_refusals)),
+        .with_tap_refusals(Arc::clone(&services.tap_refusals))
+        .with_counts(Arc::clone(&services.observer_counts)),
     );
     let claude_binder = Arc::new(
         claude_bind::ClaudeBinder::new(

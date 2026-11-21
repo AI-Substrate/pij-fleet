@@ -131,6 +131,23 @@ pub struct InjectionVerdict {
     pub last_edit_age: Option<Duration>,
 }
 
+/// A pane's composer as the gate holds it ([`InteractionGate::observed`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ObservedComposer {
+    /// The last recognised composer text, if any.
+    pub content: Option<String>,
+    /// Tap activity latched since the last clear.
+    pub tap_active: bool,
+    /// A composer edit is holding the veto open.
+    pub composer_active: bool,
+    /// The interaction the idle window ages from.
+    pub last_interaction_at: Option<Instant>,
+    /// The last recognised composer edit.
+    pub last_edit_at: Option<Instant>,
+    /// When recognition was first lost, while it still is.
+    pub uncertainty_since: Option<Instant>,
+}
+
 /// Outcome of a pane transaction whose input was owned before observation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StagedSubmission {
@@ -483,6 +500,26 @@ impl InteractionGate {
             now,
         );
         state.uncertainty_since.get_or_insert(now);
+    }
+
+    /// What the gate holds for `pane`'s composer now, from every recorder
+    /// (the pane observer and fresh injection captures alike). The pane
+    /// observer replays an unchanged screen's verdict only while this still
+    /// holds the composer it last recorded (F258); tests compare it directly.
+    #[must_use]
+    pub fn observed(&self, pane: &str) -> Option<ObservedComposer> {
+        self.panes
+            .lock()
+            .expect("interaction gate mutex")
+            .get(pane)
+            .map(|state| ObservedComposer {
+                content: state.content.clone(),
+                tap_active: state.tap_active,
+                composer_active: state.composer_active,
+                last_interaction_at: state.last_interaction_at,
+                last_edit_at: state.last_edit_at,
+                uncertainty_since: state.uncertainty_since,
+            })
     }
 
     /// Re-drain the live tap and re-capture the composer at the send boundary.

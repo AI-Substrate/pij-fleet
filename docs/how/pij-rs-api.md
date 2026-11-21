@@ -112,6 +112,22 @@ to time them through, so the SQLite cost of a route is inside its
 `active_us`. Both fields are new keys beside `ok`/`refused`; nothing that read
 the earlier shape changes.
 
+`data.pane_observer:{passes,active_us,captures,capture_bytes,skipped,backstop}`
+counts the pane observer's work since start (F258). `passes` is one per tick
+(600 ms by default) and `active_us` their wall time, so `active_us / passes` is
+a pass's cost. `captures` counts `capture-pane` reads and `capture_bytes` what
+they returned. A tracked pane whose tap drained nothing, with its composer
+settled (recognised blank or text), its cursor where its last capture read it
+and the interaction gate still holding that capture's composer with no
+uncertainty, is not captured: its last verdict is decided again and counted in
+`skipped`. Tap bytes, a moved cursor, or any other recorder changing the gate
+force a capture that tick. A replayed pane is still captured once
+`CAPTURE_BACKSTOP` (30 s) has passed since its last capture, counted in both
+`captures` and `backstop`, so a dead or silent tap hides a screen change for at
+most 30 s. Each injection still drains the tap and captures the pane itself.
+Cost: two relaxed atomic adds per pass and one to three per pane; no lock, no
+launch.
+
 `data.registrations:{total,ps,by_key,by_seat}` counts registration
 attempts since start (plan 211, issue #145): `by_key` is per
 `<path>.<mode>.<outcome>` with `{count,ps}`, where `ps` is the ancestry `ps`
