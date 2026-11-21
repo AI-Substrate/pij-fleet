@@ -723,19 +723,24 @@ gets its own committed `queued` outcome (`native-receiver-renewed`) on the
 recipient's seat, and the renewed edge is published: H returned bodies cost one
 queue transaction plus H + 1 commits. The ordinary claim then delivers each
 body, once. A held copy of a message already delivered, or beside a live copy of
-it for the same recipient, is never returned. A send also tells the lapse edge
-when it finds the lapse first, so its renewal always returns it.
+it from the same sender to the same recipient, is never returned. A send also
+tells the lapse edge when it finds the lapse first, so its renewal always
+returns it.
 
 This is **policy**: such bodies used to die. Two brakes bound it. A send that
 finds `NATIVE_HOLD_LIMIT` (64) bodies already held for its recipient is
-refused, as before. Bodies already queued when the lease lapses were accepted
-before it and are all held, never discarded to fit, so held rows per recipient
-are bounded by the larger of 64 and the queue at the lapse. Rows parked before
-F260 carry no hold (`not_before` 0) and are never returned by a renewal (their
-senders were told to resend); the manual `pij inbox` pull still recovers them.
-An expiry notice is owed only while no other copy of the message (a same-id
-resend) is still queued, running or held for the recipient; a copy of the same id for
-another recipient never blocks a recovery.
+refused, as before. That is an admission brake, not a ceiling on held rows: it
+counts parked holds only. Bodies already queued when the lease lapses were
+accepted before it and are all held, never discarded to fit; and while a manual
+CLI read (`pij inbox`) holds the head, bodies a send admits wait pending,
+uncounted, until a later reconciliation parks them. So H, the rows a renewal
+returns, is whatever was held: price a renewal with the actual H, not with 64.
+Rows parked before F260 carry no hold (`not_before` 0) and are never returned
+by a renewal (their senders were told to resend); the manual `pij inbox` pull
+still recovers them. An expiry notice is owed only while no other copy of the
+message (a same-id resend from the same sender) is still queued, running or
+held for the recipient; a copy of the same id for another recipient, or from
+another seat, never blocks a recovery or silences a notice (F270).
 
 The sender hears twice at most. At the park, an FYI from `pij-bg`
 (`park-notice-<job_id>`) says the body is HELD, not refused, and must not be
@@ -749,11 +754,43 @@ the sender never reads "do not resend" after "resend". A body returned or
 delivered first owes nothing, and one expired first is never returned after.
 The sweep is the existing one (every 60 seconds); nothing new runs. It walks
 every `delivery.parked` fact in its 24-hour lookback, historical ones included,
-so its work follows park volume over that day, not the rows held now. A park
-recovered before its deadline is checked for expiry again on every sweep after
-the deadline until it leaves the lookback, because "not owed" is not recorded
-(D-F260-4, a follow-up). Rows are not deleted: the hold bounds when a body can
-be returned, not how long its row is kept.
+so its work follows park volume over that day, not the rows held now. Ending a
+hold decides one of three things (F270): **owed** (the notice is sent),
+**deferred** (another copy of the message from the same sender is still
+queued, running or held: decided again on a later sweep), or **settled** (the
+body was recovered or delivered first: never owed). A settled decision is
+recorded once as `delivery.park-expiry-settled` (`{msg_id: "park-seq-<seq of
+the park fact>", message_id, job_id, recipient}`, on the sender's seat), and
+every later sweep of that park stops at that one spine read: no native lock, no
+queue write (before F270, D-F260-4, it was decided again under the lock in a
+write transaction every sweep until the park left the lookback). Each probe of
+that decision is one seek: the ledger's unique key, the live unique index, and
+the unexpired range of `jobs_native_held` (migration 0050), so a message's
+expired or finished history is never visited. Rows are not deleted: the hold
+bounds when a body can be returned, not how long its row is kept.
+
+**A message is (recipient, sender machine, sender seat, msg_id)** (F270,
+migration 0050). A msg_id is chosen by its sender, so it is unique per sender
+only: the same id from two seats to one recipient is two messages, and both are
+delivered. An exact retry from the same seat is still one message. Before
+F270 the second seat's message collapsed into the first: its body was never
+delivered and its receipt still said `queued`, and since F260 a reused id could
+also silence the first message's expiry notice. The sender seat is the
+delivery payload's `from` (`jobs.dedupe_sender`, a VIRTUAL generated column)
+and `delivered_messages.sender_seat`. Ledger rows written before 0050 have
+sender `''`, which matches any sender, so a retry across the upgrade still
+finds its delivery (a brake: removing it only delivers more); every new row
+names its sender. A delivery or claim that names none is refused, and so is
+the ack of a delivery whose payload names none (the final ledger writer, so no
+path, generic enqueue included, can write a new `''` row; the claim stays
+running). A refused control (`delivery.control-refused`, keyed by its sender
+and id) replays only to that sender: a parent's control under the target's
+refused id is a new request. A refusal recorded before F270 names no sender
+and still replays to any (a brake). Decision answers keep their store-side
+check unscoped on purpose: the answer id is minted per decision by the
+daemon, and the answering parent can change. Per-sender identity is as strong
+as `from`: a raw `/v1/send` caller asserts its own `from` outside replies
+(C33, unchanged by F270).
 
 Pane deliveries (plan 184) add two terminal outcomes, each publishing a
 sender-addressed `delivery.parked` with transport `pty`. They cover Claude seats

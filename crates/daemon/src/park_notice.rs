@@ -40,7 +40,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pij_core::BG_ACTOR;
 use pij_core::cold_wake::refusal;
-use pij_core::delivery::HOLD_LIMIT_EVENT_KIND;
+use pij_core::delivery::{HOLD_LIMIT_EVENT_KIND, HoldExpiry};
 use pij_core::error::Result;
 use pij_core::events::EventFilter;
 use pij_core::model::{
@@ -103,6 +103,19 @@ pub const HOLD_NOTICE_KIND: &str = "delivery.hold-notice";
 
 /// Audit record of a held body's expiry notice (F260), keyed by its `msg_id`.
 pub const EXPIRY_NOTICE_KIND: &str = "delivery.park-expiry-notice";
+
+/// F270: the record that a held park's expiry was decided never owed (its body
+/// was recovered or delivered first), keyed by [`expiry_settled_key`]. Without
+/// it every sweep made that decision again, under the native lock in a write
+/// transaction, until the park left the [`LOOKBACK_MS`] window.
+pub const EXPIRY_SETTLED_KIND: &str = "delivery.park-expiry-settled";
+
+/// The key of one park fact's settled expiry: its spine sequence, since one
+/// job can be parked (and settled) more than once.
+#[must_use]
+pub fn expiry_settled_key(park: Seq) -> String {
+    format!("park-seq-{}", park.0)
+}
 
 /// The stable notice id for one parked job: the queue's dedupe key.
 #[must_use]
@@ -305,6 +318,17 @@ async fn notify_one(
     seat: &SeatDescriptor,
     owed: Owed,
 ) -> Result<()> {
+    // F270: an expiry this park already settled is final: no reads, no lock.
+    let settled_key = owed.expires_at.and(event.seq).map(expiry_settled_key);
+    if let Some(key) = &settled_key
+        && services
+            .event_bus
+            .latest_matching_message(sender, EXPIRY_SETTLED_KIND, key)
+            .await?
+            .is_some()
+    {
+        return Ok(());
+    }
     let id = owed.id.clone();
     let audited = services
         .event_bus
@@ -324,13 +348,38 @@ async fn notify_one(
         // F260: ending the hold and deciding the notice is one queue write: a
         // body already back in the queue (or delivered) owes nothing, and one
         // expired here is never recovered after.
-        if owed.expires_at.is_some()
-            && !services
+        if owed.expires_at.is_some() {
+            match services
                 .delivery
                 .expire_native_hold(owed.job_id, &SeatId::from(owed.recipient.as_str()))
                 .await?
-        {
-            return Ok(());
+            {
+                HoldExpiry::Owed => {}
+                // A same-id copy is still on its way: decide on a later sweep.
+                HoldExpiry::Deferred => return Ok(()),
+                HoldExpiry::Settled => {
+                    if let Some(key) = settled_key {
+                        services
+                            .event_bus
+                            .publish(Event {
+                                seq: None,
+                                v: 1,
+                                at: event.at,
+                                kind: EXPIRY_SETTLED_KIND.into(),
+                                seat: Some(sender.clone()),
+                                payload: json!({
+                                    "msg_id": key,
+                                    "message_id": owed.message_id,
+                                    "job_id": owed.job_id,
+                                    "recipient": owed.recipient,
+                                })
+                                .to_string(),
+                            })
+                            .await?;
+                    }
+                    return Ok(());
+                }
+            }
         }
         let msg = Msg {
             from: SeatId::from(BG_ACTOR),
@@ -1147,6 +1196,115 @@ mod tests {
             ids(&[job]),
             "the sender still gets its own notice"
         );
+    }
+
+    /// F270 (a): another local seat that sends a message under the notice's
+    /// id first (`park-notice-<job>` is predictable) sends its own message. It
+    /// never makes pij-bg's real notice look already admitted.
+    #[tokio::test]
+    async fn another_seats_message_with_the_notice_id_never_suppresses_the_real_notice() {
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 1_024)).await;
+        let pool = pool(&store).await;
+        let (job, parked) = park(&services, "parked; a seat squats the notice id", 0).await;
+        services
+            .delivery
+            .accept(Msg {
+                from: TARGET.into(),
+                from_machine: None,
+                to: SENDER.into(),
+                body: "not your notice".to_string(),
+                msg_id: notice_id(job),
+                in_reply_to: None,
+                command: None,
+            })
+            .await
+            .unwrap();
+        notify(&services, &parked).await.unwrap();
+        assert_eq!(
+            notice_jobs(&pool).await,
+            ids(&[job]),
+            "the sender still gets its own notice"
+        );
+    }
+
+    /// F270 (c), D-F260-4: a held body recovered before its hold ends settles
+    /// its expiry once. A later sweep of that park decides nothing again: it
+    /// takes no native lock (so no queue write behind it) and tells nobody.
+    #[tokio::test]
+    async fn a_recovered_hold_settles_its_expiry_once() {
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 1_024)).await;
+        let receipt = services
+            .delivery
+            .send(SENDER.into(), TARGET.into(), "held, then recovered")
+            .await
+            .unwrap();
+        assert!(matches!(receipt.outcome, DeliveryOutcome::Queued { .. }));
+        let (job_id, job) = services
+            .queue
+            .peek(&[delivery_kind(&TARGET.into())])
+            .await
+            .unwrap()
+            .expect("queued");
+        let queue = services.queue.clone();
+        let spine = services.event_bus.raw_spine();
+        let events = services
+            .event_bus
+            .publish_committed_batch(async move {
+                let evidence = ParkingEvidence {
+                    outcome: DeliveryFailure::NativeReceiverUnavailable,
+                    reason: "native receiver lapsed",
+                    at: now_ms(),
+                };
+                let (parked, events) = queue
+                    .park_delivery(
+                        job_id,
+                        &TARGET.into(),
+                        job.attempt,
+                        &evidence,
+                        spine.as_ref(),
+                    )
+                    .await?;
+                assert!(parked.is_some());
+                Ok((events.clone(), events))
+            })
+            .await
+            .unwrap();
+        let parked = events
+            .into_iter()
+            .find(|event| event.kind == PARKED_KIND)
+            .unwrap();
+        // The receiver renews before the hold ends: the body is queued again.
+        assert_eq!(
+            services
+                .queue
+                .recover_held_native_deliveries(&TARGET.into())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        // Then the hold's instant passes, and the sweep reads the park.
+        let mut payload: serde_json::Value = serde_json::from_str(&parked.payload).unwrap();
+        payload["heldUntil"] = 1.into();
+        let over = Event {
+            payload: payload.to_string(),
+            ..parked
+        };
+        notify(&services, &over).await.unwrap();
+        // Every later sweep: the native lock is busy, yet the park is done at once.
+        let lock = services.delivery.native_lock();
+        let _busy = lock.lock().await;
+        for _ in 0..2 {
+            tokio::time::timeout(Duration::from_secs(10), notify(&services, &over))
+                .await
+                .expect("a settled expiry is never decided again")
+                .unwrap();
+        }
+        let pool = pool(&store).await;
+        assert!(notice_jobs(&pool).await.is_empty(), "nobody is told");
+        assert!(notice_fyis(&pool).await.is_empty(), "nobody is told");
     }
 
     /// Plan 164: a parked message FORWARDED from a paired machine has no local

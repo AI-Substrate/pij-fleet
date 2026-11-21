@@ -38,6 +38,7 @@ impl Queue for CountingQueue {
         _recipient: &SeatId,
         _msg_id: &str,
         _sender_machine: Option<&str>,
+        _sender: &SeatId,
         _origin: DeliveryOrigin,
     ) -> Result<Option<DeliveryOrigin>> {
         // The counting request fixture models no ledger. Claiming would be a lie
@@ -54,6 +55,7 @@ impl Queue for CountingQueue {
         _recipient: &SeatId,
         _msg_id: &str,
         _sender_machine: Option<&str>,
+        _sender: &SeatId,
     ) -> Result<()> {
         Ok(())
     }
@@ -63,12 +65,15 @@ impl Queue for CountingQueue {
         recipient: &SeatId,
         msg_id: &str,
         sender_machine: Option<&str>,
+        sender: &SeatId,
     ) -> Result<bool> {
         let kind = format!("delivery:{}", recipient.as_str());
         Ok(self.jobs.lock().expect("queue mutex").iter().any(|job| {
             job.kind == kind
                 && job.dedupe_key == msg_id
                 && job.dedupe_origin.as_deref() == sender_machine
+                && serde_json::from_str::<serde_json::Value>(&job.payload)
+                    .is_ok_and(|payload| payload["from"] == sender.as_str())
         }))
     }
 
