@@ -24,7 +24,7 @@
 //! today, so a later adapter can become async without changing the seam.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 
@@ -622,6 +622,28 @@ pub trait Queue: Send + Sync {
     /// otherwise mutating it. Pending and already-claimed rows remain visible;
     /// repeated peeks return the same row until another actor completes it.
     async fn peek(&self, kinds: &[String]) -> Result<Option<(JobId, Job)>>;
+
+    /// How long until a live row of `kinds` next becomes claimable on a timer,
+    /// as [`Self::claim`] (the ordinary lease) decides it: the earliest instant
+    /// AFTER `since` at which a pending row's `not_before` falls due or a
+    /// running claim's lease lapses, as a wait from now (zero when it has
+    /// already passed). `None` when there is no such instant. Read-only.
+    ///
+    /// `since` is when the caller's empty claim read the queue, taken before
+    /// that claim: an instant crossed between the claim and this read is
+    /// returned as due now, never dropped (review R310-F001). An instant at or
+    /// before `since` was already claimable to that claim, so a row it left
+    /// behind (held behind its serial key's running claim) is not returned
+    /// and never re-polled.
+    ///
+    /// A claim wait sleeps until this instant instead of polling (F258). Work
+    /// that becomes claimable WITHOUT a timer (an enqueue, an ack, a release)
+    /// is not covered here: the waiter hears of it by event, or at its backstop.
+    async fn next_claimable_in(
+        &self,
+        kinds: &[String],
+        since: SystemTime,
+    ) -> Result<Option<Duration>>;
 
     /// Inspect one running destination-delivery job by its authoritative id.
     /// Unknown, pending, terminal, and non-delivery jobs return `None`.

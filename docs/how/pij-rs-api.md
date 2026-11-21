@@ -105,7 +105,8 @@ governance `wait_dispatch`, the spawn footer and poll waits, revive's wait for a
 dead pane) mark themselves with a span that adds its length to a task-local the
 request scopes, so `held_us` is time parked and `active_us` is wall time less
 that. A 55 s idle inbox answer adds about 55 s to `held_us` and only its own
-passes to `active_us`. SQLite time per statement class is not measured: the
+passes to `active_us`: since F258 about five (the first, then one per 15 s
+backstop or event), not one per 500 ms. SQLite time per statement class is not measured: the
 store runs its ~320 `sqlx::query` call sites directly, with no shared wrapper
 to time them through, so the SQLite cost of a route is inside its
 `active_us`. Both fields are new keys beside `ok`/`refused`; nothing that read
@@ -1067,7 +1068,7 @@ A normal send lands inside a turn the recipient is already in, wherever the harn
 
 A message still held long behind a busy turn shows up in the PA digest (`Messages held behind a busy turn`, below), which is how a wedge or a seat with steering off is noticed.
 
-Cost: no new launch. One primary-key read per native claim (the switch) and one more per during-turn hand-off, a registry read per queued send (the note), and one more claim per message during a turn instead of one after it. A during-turn claim's wait is event-driven, not the native 500 ms tick: it wakes on an enqueue to the seat or a `steer.changed` event for it, with a 15 s backstop (`DURING_TURN_BACKSTOP`) for work that becomes claimable on a timer, so a busy seat with an empty inbox costs at most one wake per 15 s. The extension observes a running turn with one shared watcher per turn, however many messages are steered into it.
+Cost: no new launch. One primary-key read per native claim (the switch) and one more per during-turn hand-off, a registry read per queued send (the note), and one more claim per message during a turn instead of one after it. A during-turn claim's wait is event-driven, like every native claim wait since F258: it wakes on an enqueue to the seat or a `steer.changed` event for it, at the seat's next timed claimable instant, and at a 15 s backstop (`CLAIM_WAIT_BACKSTOP`), so a busy seat with an empty inbox costs at most one wake per 15 s. The extension observes a running turn with one shared watcher per turn, however many messages are steered into it.
 
 ### Cold-wake guard (plan 157 phase 2)
 
