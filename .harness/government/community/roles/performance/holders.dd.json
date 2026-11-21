@@ -672,7 +672,10 @@
 					"harness_session": "2c4d4a94-b597-4f4e-b664-302f3c41c5ee",
 					"instance_key": "317",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #317 merged (0dabbb384726)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-helpful-elephant",
+					"to": "2026-11-21T11:28:57.026Z",
 					"why": "#317 F258 whoami stage counters round 1 (reuse #314 seat)"
 				},
 				{
