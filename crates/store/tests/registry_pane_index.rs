@@ -121,3 +121,29 @@ async fn the_pane_lookup_searches_its_index_not_the_table() {
         "no full scan of seats per whoami: {details:?}"
     );
 }
+
+/// R312-N1: `list` with a pane takes the indexed query, the one explained
+/// above. With the index gone, `INDEXED BY` refuses it; a `list` that sent
+/// pane reads to the generic `LIST_SQL` would still answer, by a scan.
+///
+/// Mutation witness: the pane branch in `list` falls back to `LIST_SQL`.
+#[tokio::test]
+async fn a_pane_list_takes_the_indexed_query() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let registry = SqliteRegistry::new(pool.clone(), support::publisher());
+    registry
+        .put(seat("pij-a", Harness::Copilot, Some("%5")))
+        .await
+        .unwrap();
+    assert_eq!(ids(&registry.list(on_pane("%5")).await.unwrap()), ["pij-a"]);
+    sqlx::query("DROP INDEX seats_by_pane")
+        .execute(&pool)
+        .await
+        .expect("drop index");
+    let refused = registry
+        .list(on_pane("%5"))
+        .await
+        .expect_err("INDEXED BY refuses");
+    assert!(refused.to_string().contains("seats_by_pane"), "{refused}");
+}
