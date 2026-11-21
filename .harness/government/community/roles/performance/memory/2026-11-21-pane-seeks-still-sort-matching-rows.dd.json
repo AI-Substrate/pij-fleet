@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before pricing pane-filtered registry SQL or interpreting F258 B1 receipts",
+				"tags": [
+					"cost",
+					"sqlite",
+					"sorting",
+					"index-maintenance",
+					"proof"
+				],
+				"title": "Pane seeks still sort matching rows"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Pane seeks still carry sorting and index maintenance\n\nFor pane-filtered registry lists, account for both the indexed candidate\nwalk and result ordering. The B1 query at PR 312 searches seats_by_pane,\nthen sorts its matching rows with a temporary B-tree for ORDER BY id.\nThat removes the full-history walk, not the matching-row decoding or\nsort. Inserts and upserts that assign pane pay index maintenance even\nwhen assigning the same value; state-only updates leave that index alone.\n\nKeep SQL benchmark protocols attached to their numbers. The independent\n3,252-row copy measured 0.730 -> 0.224 ms CPU for 112 matching rows,\nincluding Python tuple materialization; the author's sqlite3 CLI\n0.62 -> 0.07 ms is not the same protocol. Batched write overhead was\n0.435-0.551 microseconds per relevant statement, excluding commit/fsync.\n\nThe performance verdict at 6f4c3b9010109bf5532864e48dcaa59d97603050\ncontains the complete SQL, migration and live BEFORE receipts.\nPOST /v1/whoami measured 2.10584 ms active wall/completion at 11.1605/s,\nwith host load 97.551 -> 111.161; do not call this quiet or exclusive CPU.\nDeployed AFTER remains owed; performance/312 stays held until merge.\n\nOptional C34 follow-up: a plan test against an exported SQL constant\ndoes not catch deletion of the runtime branch selecting it.\n\n**magicWand:** a read-only cost-window command collecting route active/held,\nPID/start/build, CPU/RSS, load and cohorts together.\n\n**difficulties:** C25 leaves local TS/full-gate proof CI-only; preserve\nexact-head successful-job artifact IDs, and distinguish benchmark engines\nand materialization from deployed latency.\n"
+		}
+	]
+}
