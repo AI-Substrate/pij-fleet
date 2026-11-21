@@ -1954,6 +1954,9 @@ async fn record_delivered(
     origin: DeliveryOrigin,
     delivered_id_capacity: i64,
 ) -> Result<()> {
+    // F270 (B322-01): the final ledger writer refuses a new '' row itself, so
+    // no path, generic or specialised, can mint a match-any-sender message.
+    require_sender(sender)?;
     // A hold past the threshold is remembered for the PA digest: a
     // primary-key insert on the row just written; a message the digest
     // already showed while queued keeps its flag.

@@ -4,7 +4,7 @@
 //! id from two seats is two messages. Ledger rows from before 0050 record no
 //! sender and match any, so a retry across the upgrade is still one message.
 
-use pij_core::model::{DeliveryOrigin, Job, SeatId};
+use pij_core::model::{DeliveryOrigin, Job, Outcome, SeatId};
 use pij_core::ports::{DeliveryEnqueue, Queue};
 use pij_store::SqliteQueue;
 use pij_testkit::FreshStore;
@@ -76,6 +76,67 @@ async fn the_same_id_from_two_seats_is_two_messages() {
         DeliveryEnqueue::AlreadyDelivered(DeliveryOrigin::ReaderRead),
         "the first seat's own retry is the delivered message"
     );
+}
+
+/// F270 (B322-01): no path writes a NEW match-any-sender ('') ledger row.
+/// The generic enqueue takes any payload, so a sender-less delivery can reach
+/// a claim; its ack, the final ledger writer, refuses it and the claim stays
+/// running. A named sender's message under the same id is then still queued
+/// and delivered, never "already delivered".
+#[tokio::test]
+async fn no_ack_writes_a_sender_less_ledger_row() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.unwrap();
+    let queue = SqliteQueue::new(pool.clone(), 300, 1_024).unwrap();
+    let mut senderless = delivery("pij-reader", "", "squat");
+    senderless.payload = "{}".to_string();
+    queue.enqueue(senderless).await.unwrap();
+    let (claimed, _) = queue
+        .claim(&["delivery:pij-reader".to_string()], "worker")
+        .await
+        .unwrap()
+        .unwrap();
+    let acked = queue
+        .ack_delivery(claimed, DeliveryOrigin::ReaderRead)
+        .await;
+    assert!(acked.is_err(), "the ack writes no '' row: {acked:?}");
+    let wildcards: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM delivered_messages WHERE sender_seat = ''")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(wildcards, 0);
+    assert!(
+        queue.claimed_delivery(claimed).await.unwrap().is_some(),
+        "a refused ack leaves the claim running"
+    );
+    // Its reader gives up on it; a plain ack writes no ledger row.
+    queue.ack(claimed, Outcome::Done).await.unwrap();
+
+    // A real sender's same id is its own message, queued and delivered.
+    let named = queued(
+        queue
+            .enqueue_delivery(delivery("pij-reader", "pij-sender", "squat"))
+            .await
+            .unwrap(),
+    );
+    let (next, _) = queue
+        .claim(&["delivery:pij-reader".to_string()], "worker")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(next, named);
+    queue
+        .ack_delivery(named, DeliveryOrigin::ReaderRead)
+        .await
+        .unwrap();
+    let rows: Vec<String> = sqlx::query_scalar(
+        "SELECT sender_seat FROM delivered_messages WHERE recipient = 'pij-reader'",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows, ["pij-sender"]);
 }
 
 /// Migration 0050 rebuilds the delivered ledger: every row survives with its

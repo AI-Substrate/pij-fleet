@@ -769,9 +769,17 @@ delivery payload's `from` (`jobs.dedupe_sender`, a VIRTUAL generated column)
 and `delivered_messages.sender_seat`. Ledger rows written before 0050 have
 sender `''`, which matches any sender, so a retry across the upgrade still
 finds its delivery (a brake: removing it only delivers more); every new row
-names its sender, and a delivery or claim that names none is refused.
-Decision answers keep their store-side check unscoped on purpose: the answer
-id is minted per decision by the daemon, and the answering parent can change.
+names its sender. A delivery or claim that names none is refused, and so is
+the ack of a delivery whose payload names none (the final ledger writer, so no
+path, generic enqueue included, can write a new `''` row; the claim stays
+running). A refused control (`delivery.control-refused`, keyed by its sender
+and id) replays only to that sender: a parent's control under the target's
+refused id is a new request. A refusal recorded before F270 names no sender
+and still replays to any (a brake). Decision answers keep their store-side
+check unscoped on purpose: the answer id is minted per decision by the
+daemon, and the answering parent can change. Per-sender identity is as strong
+as `from`: a raw `/v1/send` caller asserts its own `from` outside replies
+(C33, unchanged by F270).
 
 Pane deliveries (plan 184) add two terminal outcomes, each publishing a
 sender-addressed `delivery.parked` with transport `pty`. They cover Claude seats

@@ -868,6 +868,14 @@ fn require_sender(sender: &str) -> Result<()> {
     Ok(())
 }
 
+/// F270 (B322-01): the final ledger writer refuses a message with no sender.
+fn require_job_sender(job: &Job) -> Result<()> {
+    if job.kind.starts_with("delivery:") || job.kind.starts_with("delivery-control:") {
+        require_sender(&job_sender(job))?;
+    }
+    Ok(())
+}
+
 #[async_trait]
 impl Queue for FakeQueue {
     async fn enqueue(&self, job: Job) -> Result<JobId> {
@@ -1553,6 +1561,11 @@ impl Queue for FakeQueue {
 
     async fn ack_delivery(&self, job: JobId, origin: DeliveryOrigin) -> Result<DeliveryAck> {
         let mut state = self.state.lock().expect("fake queue mutex");
+        // F270 (B322-01): the final ledger writer refuses a new '' row; the
+        // claim stays running, as the real queue's rolled-back ack leaves it.
+        if let Some((claimed, _)) = state.claimed.get(&job.0) {
+            require_job_sender(claimed)?;
+        }
         let Some((claimed, _worker)) = state.claimed.remove(&job.0) else {
             return Err(PijError::Adapter {
                 adapter: "testkit/fake-queue".to_string(),
