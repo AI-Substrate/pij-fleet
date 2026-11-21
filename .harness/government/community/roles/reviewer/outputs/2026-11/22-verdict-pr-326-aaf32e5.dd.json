@@ -1,0 +1,65 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff28-ac33-7a93-959d-b964f08a6e3b",
+				"date": "2026-11-22",
+				"head": "aaf32e56a558680830378c687d0729d08d5dcf4c",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:326",
+				"writer": "pij-complex-alpaca",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R326-001: flush the retained nonempty partial line at EOF and pin timeout-to-EOF and continuation cases.",
+				"Qualify diagnosis: sampled stderr had not yet been shut down; standalone probe proved retained memory, not sink output.",
+				"Cost wording: mention stop_watchdog group-disappearance polling during cleanup."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build --timeout 120s -- test -p pij-cli --bin pij-rs daemon_log::tests -- --nocapture",
+					"exit_code": 101,
+					"log": "pr326-log-controls.log: 22 shipped + continuation pass; delayed partial EOF oracle fails"
+				},
+				{
+					"command": "nice -n 19 node pr326-shell-probe.mjs <exact-head shared-build.sh> <private fixture root>",
+					"exit_code": 0,
+					"log": "pr326-shell-controls.log"
+				},
+				{
+					"command": "same shell oracle against no-watchdog mutant",
+					"exit_code": 1,
+					"log": "pr326-shell-mutant.log: expected 15-second outer timeout; owned processes cleaned"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "pr326-local-checks.json: dependency/tool limited, not green"
+				},
+				{
+					"command": "gh run view 44928528953 --job 136919847154 --log; inspect artifact 14717275032",
+					"exit_code": 0,
+					"log": "pr326-junit.zip: 2834 Rust cases, zero errors/failures, 22 daemon-log cases"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR326 R1 — BLOCK\n\nHead: `aaf32e56a558680830378c687d0729d08d5dcf4c`\nRequest: `01a1ff28-ac33-7a93-959d-b964f08a6e3b`\n\n## R326-001 — A timed-out final fragment is silently lost at EOF\n\n`crates/cli/src/daemon_log.rs:178-196`, `pump`, the `Ok(0) => finish()` arm: `read_until` appends consumed bytes to `line` even when it subsequently returns a timeout. The timeout branch correctly retains those bytes. If the writer then shuts down without adding bytes, the next call returns `Ok(0)` (zero newly read bytes), and this arm finishes without passing the retained fragment to `Shared::line`.\n\nNormal-use witness: write `ready\\n\\xffsplit`, leave the stream idle for three read-recheck intervals, then `shutdown(Write)`. At this head the sink contains only `ready\\n`; `\\xffsplit` disappears. Completing the fragment with ` continuation\\nlast\\n` after the same idle interval preserves it once. All 22 shipped daemon-log tests pass, so their immediate split-write/shutdown cases do not defend this edge.\n\nRequired repair: at EOF, send a nonempty retained `line` through the ordinary shared sink before finishing. Add timeout-to-EOF and timeout-to-continuation regressions, including byte-exact/non-UTF-8 output. Do not emit the fragment on every timeout; that would split a still-live logical line.\n\n## Answers to the packet\n\n- **Diagnosis:** credible empirical justification for bounding socket reads. I inspected the hung-child sample, stress driver, standalone probe and retained counts: author's before 4/20,000 hangs, after 0/20,000 and 0/5,000; 25 shared-build runs pass. This is not an independently reproduced kernel defect or proof of its exact incidence. One wording correction: stdout's field drop shuts its writer down and joins first; stderr's field drop has not yet happened, so the sampled stderr reader waiting in `recv` is expected, not a second demonstrated missed shutdown. The standalone probe's `fragment || !line.is_empty()` counts retained memory as success; it does not prove sink delivery and misses R326-001.\n- **Other log tests:** inspected all 22. The payload and repetition tests put the writer on a separate thread while the caller pumps; the window test puts the reader on another thread; inherited-writer teardown uses the real reader thread; process-wide panic capture is re-executed in its own child. No writer/reader same-thread deadlock was found. The new panic parent has a scaled 60-second child budget and kills only its own child PID.\n- **Watchdog scope/lifecycle:** job control creates distinct cargo and watchdog process groups. Exact-head probes verified cargo PGID equals the launched PID, timeout exit 8, no later `--then`, no surviving recorded cargo/test/sleep PIDs, lock release, and a same-named bystander outside the group surviving. SIGINT/TERM/HUP with an armed watchdog returned 130/143/129 and released only after cleanup. Quick multi-command, slow non-test, limit 0, six malformed limit/scale cases and eight deadline-adjacent runs passed. The current code handles USR2-interrupted waits and retries cargo status when the group has already ended. No claim that SIGKILL can release a lock.\n- **Composition/configuration:** niceness 19, incremental off and 4/4 job/thread caps reached the fake cargo; floor, stamp and lock ownership logic remains before/around the same batch. Default 20 minutes, scale, `Ns`, `0` and exit 8 are documented in AGENTS.md and the script header. Negative/nonintegral limits and scale below 1 refuse before lock/cargo.\n- **Policy/brake:** elapsed-time termination is a POLICY on the owned run's duration, not a one-directional do-not-kill BRAKE: removing it kills less. READ_RECHECK is a liveness/recheck bound, not a destructive retention rule; the packet's brake label is not needed to justify it.\n- **Cost:** new daemon work is up to two idle socket timeout wakeups/second per daemon, not per seat, no daemon process launch. One watchdog group plus its sleep is started per bounded cargo-test command; timeout takes one process-table snapshot. `stop_watchdog` also polls group disappearance using 50-ms sleeps during cleanup, so the launch row should mention that bounded-lifecycle polling rather than imply exactly one sleep launch per command. No new fleet-wide loop.\n\n## Evidence and limits\n\n- Exact-head local `just shared-build --timeout 120s -- test -p pij-cli --bin pij-rs daemon_log::tests -- --nocapture`: 23 pass / 1 fail; the failure is the added R326-001 witness, not a shipped test.\n- Independent dependency-free shell probe invokes the unchanged shared-build script with isolated fake cargo/df and private targets, at nice 19. Retained `pr326-shell-controls.log` and `pr326-shell-probe.mjs` contain the lifecycle witnesses.\n- No-watchdog mutant: the same timeout oracle failed on its 15-second outer watchdog; its own shared-build process was terminated and all recorded test/bystander PIDs were verified gone. Retained `pr326-shell-mutant.log` and `pr326-watchdog-mutation.patch`.\n- Pre-PR-reader comparison was attempted through shared-build, but its 120-second lock wait expired behind another seat's build (exit 4). No tests executed; this is not positive-control or mutation evidence. The exact-head EOF failure and passing continuation/all-shipped controls above are the credited Rust proof.\n- Exact-head CI run `44928528953`: successful Node 22/24 checks, Rust lint/test; Node 22 logs show `shared-build.test.ts` 29/29 and 2,418 TS tests passed. Successful-job artifact `14717275032`: 2,834 Rust cases, zero errors/failures, all 22 daemon-log cases present.\n- Local `harness checks --quick --json` exited 1: absent TS tools/dependencies and incompatible ambient Biome; skill/native/SDK checks pass, heavy stages skipped. No dependency installation or node_modules symlink was used. No live daemon/seat/database was changed. Source mutations and extra tests are confined to an owned exact-head archive.\n\nThe narrow missing harness oracle is delayed partial bytes followed by EOF, not another large successful stress count. Preserve it with the repair.\n"
+		}
+	]
+}
