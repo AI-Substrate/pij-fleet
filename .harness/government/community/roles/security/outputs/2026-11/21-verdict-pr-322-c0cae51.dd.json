@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fe47-b491-7813-bf77-70b755501fc7",
+				"date": "2026-11-21",
+				"head": "c0cae51578ca534b23e7fa3e0ca43fe1b7d5dff9",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:322",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N1 (C33, pre-existing): raw /v1/send from is caller-asserted outside replies; per-sender dedupe is as strong as that assertion"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 322 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at c0cae51"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #322 round 1 at c0cae51578ca534b23e7fa3e0ca43fe1b7d5dff9: pass-with-notes\n\nStatic review of migration 0050, store/queue.rs, park_notice.rs and the /v1/send and shim admission paths, in a detached worktree. No builds, and I did not touch the live store. CI 5/5 SUCCESS at this head. The reads finished before the 13:25Z Copilot kill; I re-checked the head after reviving.\n\n## Is `from` daemon-stamped or caller-supplied?\nIt depends on the path. This PR doesn't change it.\n- The shim (`/v1/shim/send`, pij_send) derives `from` from the resolved caller (shim.rs ~690).\n- Raw `/v1/send` takes `request.message.from` as asserted. It is bound to the caller only for a reply to a request (`reply_sender`, E-RS-REPLY-SENDER). `pij-bg` is refused as a sender (BG_ACTOR guard), and `from_machine` is stamped from the key and never trusted from the body.\n- So a same-user raw-HTTP caller can still assert another seat's `from`. That is the existing C32/C33 asserted-sender boundary, not something new here. Within it, F270 shrinks the collision surface: to squat on seat B's msg_id, a caller must now also assert `from = B`. Before this PR, any sender's id collided.\n\n## Is the park-notice squat closed?\nYes. Park notices are sent as BG_ACTOR (park_notice.rs:385), and `admitted` / `note_delivered` / `forget_delivered` now take the sender. A seat's own send with the same id is keyed under that seat, never under pij-bg, and callers cannot assert pij-bg. So a caller can no longer silence an expiry notice by pre-claiming its id.\n\n## Does the semantic change open a replay?\nNo new replay. \"The same id from two seats is two messages\" means seat A's id cannot suppress seat B's. An exact retry from the same seat stays one message (the unique key includes the sender). To make a recipient see a message twice, a caller would need to send a second message, which they can already do with a fresh id, so dedupe across senders was never a replay guard. Decision answers stay unscoped on purpose (PR body audit).\n\n## The '' wildcard: brake only\n- `sender_seat IN (?, '')` matches legacy rows only. The migration gives every pre-v50 row '' (queue.rs 417, 426, 820, 872, 901, 1787).\n- New writes go through `require_sender`, which refuses an empty sender. The forget path (queue.rs 1822) uses an exact `sender_seat = ?`, so it cannot delete a legacy row by wildcard.\n- Removing the wildcard would only deliver more, so it is a BRAKE. The label holds.\n- The jobs side is a VIRTUAL column derived from `payload.from`, with '' for non-delivery kinds. Payloads are daemon-built from the admitted `from` above, with no separate caller field.\n\n## Notes\n- N1 (C33, recorded): raw `/v1/send` `from` stays caller-asserted outside replies, so per-sender dedupe is only as strong as that assertion. Pre-existing, and narrowed by this PR.\n- No secrets, lockfile or `.npmrc` changes. The migration's rebuild keeps every row and its seq. Migration safety under interruption and v49-on-v50 behaviour are the reviewer's question.\n"
+		}
+	]
+}
