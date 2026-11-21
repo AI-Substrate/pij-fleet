@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fbea-f921-7a62-8f72-096321b299c4",
+				"date": "2026-11-21",
+				"head": "c8d457f348ad36857dd8aab16301206fce8b083f",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:307",
+				"writer": "pij-breakable-aardwolf",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 307",
+					"exit_code": 0,
+					"log": "FINAL at c8d457f348ad36857dd8aab16301206fce8b083f; clean detached worktree; five checks passed"
+				},
+				{
+					"command": "just copilot-sdk-contract --json (scratch PIJ_RS_STATE_DIR)",
+					"exit_code": 0,
+					"log": "Installed Copilot 1.0.115-4: 7/7 checks, local record mode 0600 at exact review head; SDK/version overrides wrote no record; blocked state storage visibly warned"
+				},
+				{
+					"command": "Independent dependency-free Node review probes at niceness 19",
+					"exit_code": 0,
+					"log": "Record guards, git discovery and atomic-publication probes passed; 13 updater stub scenarios passed; 11 mutants assertion-killed; no real updater executed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "ROUND 1: PASS WITH NOTES. No blocking correctness findings at c8d457f348ad36857dd8aab16301206fce8b083f (base eb1ab2c60a8a735cf31671712e8c915d4e777811). All 11 changed files reviewed directly; product checkout remains clean and unchanged.\n\nAcceptance and contract freshness\n- Both the committed floor and local pass use exact string equality, not prefixes or semver ordering. Independent controls rejected a neighboring version, a prefix and an extended suffix.\n- contract_commit is provenance only: readLocalPass validates its shape (SHA-1/SHA-256 or null), not equality with this checkout. Thus an older contract commit still counts if the exact CLI version and current check count match. This is consistent with the implemented design, not a bypass: every invocation runs the current installed-SDK canary before consulting the record, and any failed check wins over both the local pass and committed floor. Successful ordinary runs refresh the record. No commit-based invalidation is needed for this change.\n- In-process git discovery handles the actual detached review worktree, ordinary loose refs, common packed refs, a relative .git worktree pointer and relative commondir. Missing metadata produces the explicitly supported null provenance rather than a fabricated commit.\n\nIndependent proof (2026-11-21)\n- Dependency-free, niced Node probes passed for invalid/partial/oversized records, non-regular files, final-component symlinks, unsafe version filenames, exact matching, check-count/date/commit validation, 0600 output and git discovery.\n- W2 is now behavior-proven, beyond the author's final-state test: intercepted the real writer's FileHandle.writeFile, wrote only half the body, and checked a concurrent reader still saw the old whole record; repeated after fsync and immediately before rename, then observed the complete new record after rename. The same probe rejected an in-place truncate/write mutant. This proves publication visibility under those interleavings, not power-loss durability.\n- Ten further independent source mutants were assertion-killed with passing unmutated controls: record version, count, date, commit, size, symlink and path guards; ignoring local passes; accepting any local version; allowing cached verification to override a failed current check. Total: 11 killed including W2.\n- Thirteen updater scenarios used executable stubs only. Exact local pass and exact floor pass permit reload; wrong/missing report version, wrong/missing verification, warn/skipped/fail/malformed report, nonzero contract exit, update failure and disappearing CLI version never approve it. Contract arguments were --json only. No real copilot update was run.\n- The installed CLI now reports 1.0.115-4, newer than the packet's 1.0.115-3 receipt. Four real contract runs used scratch PIJ_RS_STATE_DIR only: ordinary installed SDK passed 7/7 and wrote a 0600 record stamped with this exact head; --copilot-version and --sdk each passed 7/7 but wrote no local record; an unwritable state path surfaced a warn after 7/7 successful checks, not reload approval. No production pass-cache writes.\n\nTrust and cost\n- A same-user process can construct a valid local record; 0600 is not an authenticity signature. C33 explicitly trusts that account, which could already edit the committed verification JSON or the checker. PIJ_RS_STATE_DIR redirection is intentional. Closed filename grammar, final-component no-follow/regular-file/bounded reads and staged exclusive writes remain useful correctness brakes, not per-seat isolation. No new secret, credential, private identity or machine-specific home path was added in the reviewed diff.\n- No new loop, poll, timer or launch site. Added steady-state launches: 0/s; per-invocation process delta: 0; no per-seat scaling. Existing on-demand CLI-version query and extension child remain unchanged.\n\nGate evidence and limits\n- just pr-freeze 307: FINAL twice, exact requested head, CLEAN, all five checks passed.\n- CI run 44855223303 at this head: success. Node 22 log explicitly shows local-pass tests 15/15 and update-copilot tests 13/13; full Vitest 2410 passed, 8 skipped. Both installed-SDK TS tests were skipped in CI; the independent live probes above supply separate runtime evidence.\n- node --check on all four changed production .mjs files: passed. git diff eb1ab2c6...HEAD --check: passed.\n- harness boot: advisory NOT-READY because this read-only worktree has no vitest dependency. Under C25 no dependencies were installed or symlinked and no local TS suite or full harness checks was run. Exact-head CI is the TS/build gate evidence; this verdict does not claim a green local full harness.\n\nNonblocking harness improvement: promote the deterministic W2 split-write/fsync/rename reader probe, with its in-place mutant control, into the existing local-pass test suite. Atomic publication is testable; this need not delay this PR. Retain the role until merge.\n"
+		}
+	]
+}
