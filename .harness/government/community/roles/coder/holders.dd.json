@@ -1627,6 +1627,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-sympathetic-marten",
 					"why": "F258 daemon idle cost: inbox per-completion, whoami rate, cards (diagnosis first)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T04:08:51.421Z",
+					"harness": "omp",
+					"harness_session": "01a1fc4a-7efc-73dc-9a53-d2cd3bbd674c",
+					"instance_key": "f260",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-famous-nightingale",
+					"why": "F260 lapsed-receiver refusal parks and redelivers (HIGH)"
 				}
 			]
 		}

@@ -144,3 +144,4 @@
 | — | pij-cultural-falcon | omp | 01a1ec37-421c-73b4-b9d3-da9d4ed048ca | JordansacStudio.localdomain | f257 | 2026-11-21T02:53:31.544Z | — | pij-steady-otter | — | F257 Unisphere: count every active-model switch as pending (branch only, no PR) | — |
 | — | pij-cultural-falcon | omp | 01a1ec37-421c-73b4-b9d3-da9d4ed048ca | JordansacStudio.localdomain | f255 | 2026-11-21T03:04:31.206Z | — | pij-steady-otter | — | F255 spawn reply survives a bounce (no duplicate seats) | — |
 | — | pij-sympathetic-marten | omp | 01a1fc0f-987f-71c8-9cbf-48a141c983dc | JordansacStudio.localdomain | f258 | 2026-11-21T03:04:49.881Z | — | pij-steady-otter | — | F258 daemon idle cost: inbox per-completion, whoami rate, cards (diagnosis first) | — |
+| — | pij-famous-nightingale | omp | 01a1fc4a-7efc-73dc-9a53-d2cd3bbd674c | JordansacStudio.localdomain | f260 | 2026-11-21T04:08:51.421Z | — | pij-steady-otter | — | F260 lapsed-receiver refusal parks and redelivers (HIGH) | — |
