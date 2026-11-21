@@ -1563,7 +1563,10 @@
 					"harness_session": "01a1fb7c-77a6-7665-9730-8a0618c01875",
 					"instance_key": "f253",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #305 merged (fc669fa66a27)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-classical-tern",
+					"to": "2026-11-21T01:30:15.835Z",
 					"why": "F253 fleet-map innerHTML sinks and external fonts (eel S303-N1/N2)"
 				}
 			]

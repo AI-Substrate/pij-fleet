@@ -2583,7 +2583,10 @@
 					"harness_session": "3ba3d0e7-9394-4ce2-b413-ad14d00a5177",
 					"instance_key": "305",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #305 merged (fc669fa66a27)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-smooth-wildebeest",
+					"to": "2026-11-21T01:30:15.835Z",
 					"why": "verdict on #305 (F253)"
 				}
 			]
