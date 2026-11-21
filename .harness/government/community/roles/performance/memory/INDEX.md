@@ -73,4 +73,5 @@
 - [2026-11-21 Whoami instrumentation: off-scope cost and wall time](2026-11-21-whoami-stage-overhead.dd.md): Before pricing shared task-local timers or interpreting whoami stage counters (cost, whoami, instrumentation, wall-time, proof)
 - [2026-11-22 Compact handoff: open reviews and pending batched AFTER](2026-11-22-compact-open-reviews-after.dd.md): On resuming this seat or taking over performance/320, performance/322 or the \#318/\#321 AFTER verification (handover, receipts, after-deploy, ownership)
 - [2026-11-22 F268 final: separate retry stages and pruning cost](2026-11-22-f268-final-separate-retry-stages-and.dd.md): Before pricing renewal debt, native-lease brakes or receiver reconciliation; supersedes the F268 R1 repeated-empty-recovery cost (cost, F268, heartbeat, retry, pruning, C34)
+- [2026-11-22 \#318 and \#321 AFTER: cohorts and proof ceilings](2026-11-22-pr318-pr321-after-cohorts.dd.md): Before comparing observer invalidation and pool-cut live CPU receipts, or repeating matched-cost windows (after-deploy, cost, cohort, measurement, proof-limits)
 <!-- /pij:generated -->

@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before comparing observer invalidation and pool-cut live CPU receipts, or repeating matched-cost windows",
+				"tags": [
+					"after-deploy",
+					"cost",
+					"cohort",
+					"measurement",
+					"proof-limits"
+				],
+				"title": "#318 and #321 AFTER: cohorts and proof ceilings"
+			}
+		},
+		{
+			"name": "body",
+			"value": "The #318 and #321 AFTER notes are governed commits 25d142ad and 59236faa, respectively, with complete numeric endpoint receipts and explicit proof ceilings. Both ran on PID96429 / deployed 3c14199f5150a24333fc227d7dca38d9ea072a65, read-only, without builds, bounce, artificial traffic or direct production SQLite access.\n\nFor future comparisons: a matched protocol is not a matched workload. #313's 213 decision panes became 134; #321 whoami demand fell from 520/501 to 122/113 per minute. Record load, process start/age, instrument times and request/pane cohorts before attributing CPU. Keep the co-deployed observer's captures/skips/backstops separate from SQLite/Tokio CPU and whoami wall-time stages. Never divide all daemon CPU by one route's call count and call it that route's unit cost.\n\nCurrent observer ping telemetry has no drain/repair/capture-cause counters. Aggregate captures minus backstops cannot recover D or R. Flat attachment-launch counters show no counted attachment launch, not a cause attribution. Observer counters omit injection-owned captures and failed attempts.\n\nRetain raw ping edges and per-thread/ps endpoints from the outset: result-only summaries can verify arithmetic, not reconstruct a missing BEFORE cohort or exited thread. Pool round-trip counts apply per warm clean reused lease, not every transaction/store-call shape.\n\nmagicWand: a single read-only cost-receipt verb that keeps per-instrument monotonic endpoints, PID/build/start/age, cohort, thread samples and lease/worker counts, with the busy machine launch probe outside CPU windows.\ndifficulties: absent cause telemetry; demand/load/co-deployment confounding; BEFORE raw endpoints missing; full code gates unavailable in dependency-free read-only measurement trees. No new source tooling was added by this measurement assignment.\n"
+		}
+	]
+}
