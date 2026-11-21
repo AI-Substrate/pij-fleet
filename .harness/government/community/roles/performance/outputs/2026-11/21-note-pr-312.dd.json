@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:312",
+				"writer": "pij-precious-sparrow",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Unchanged nice-19 pr312_probe.py live protocol; paired pij-rs --json ping and single-PID /bin/ps reads; initial AFTER 60.042968 s",
+					"exit_code": 0
+				},
+				{
+					"command": "Same 60-second AFTER protocol repeated once after the separate sampler; 60.039925 s; both windows retained",
+					"exit_code": 0
+				},
+				{
+					"command": "just spawn-rate --seconds 20 --json at niceness 19, with endpoint load readings",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# F258 B1: deployed AFTER for PR 312\n\nPR 312 merged as `7a6b8cbc8a7432b1f13e92ad39f0c329d76faca8` on\nNovember 21, 2026, at 08:00:30 UTC. The measured daemon is PID 43526,\nbuild `pij-rs 0.1.0`, commit `7a6b8cbc8a`, process start\nNovember 21, 2026, 18:07:29 local time (UTC+10).\nRead-only inspection confirmed schema version 48 and seats_by_pane.\n\n**The requested deployed AFTER is measured; no aggregate whoami latency\nimprovement is demonstrated.** BEFORE was 2.106 ms active/completion;\nthe initial AFTER was 5.838 ms and one additional AFTER was 2.265 ms.\nBoth are retained. Refusals, workload, daemon age and host load differ,\nso neither a feature-attributed latency regression nor an exclusive CPU\nsaving is established. The pre-deploy SQL-copy receipt remains valid;\nit is not a deployed latency or CPU receipt.\n\n## Matched 60-second protocol\n\nThe same session-local pr312_probe.py live command was run with\n`nice -n 19 python3`, unchanged from BEFORE. Each edge reads\n`pij-rs --json ping`, then single-PID\n`/bin/ps -p <pid> -o lstart=,time=,rss=`, and queries only harness counts\namong untombstoned seats through a mode=ro SQLite connection.\nElapsed time is monotonic; PID, start identity and deployed commit\nmust stay equal inside each window. The machine sampler is separate.\nNo bounce, local build, product edit or probe write to the live DB occurred.\n\nAll timestamps below are November 21, 2026, UTC:\n\n| Metric | BEFORE | Initial deployed AFTER |\n|---|---|---|\n| Window | 06:31:59.581 -> 06:32:59.615 | 08:08:41.569 -> 08:09:41.613 |\n| Elapsed seconds | 60.033353 | 60.042968 |\n| PID / commit | 31125 / fb565c165d | 43526 / 7a6b8cbc8a |\n| Daemon age at first edge | about 25 min | about 73 s |\n| Whoami ok | 14,944 -> 15,614 (+670) | 698 -> 1,257 (+559) |\n| Whoami refused | 0 -> 0 | 5 -> 11 (+6) |\n| Whoami active_us | 28,847,447 -> 30,258,359 (+1,410,912) | 980,591 -> 4,279,011 (+3,298,420) |\n| Whoami held_us | 0 -> 0 | 0 -> 0 |\n| Completions per second, ok + refused | 11.1605 | 9.4099 |\n| Active ms per completion | **2.10584** | **5.83791** |\n| Cumulative daemon CPU seconds | 288.32 -> 299.83 | 45.07 -> 55.81 |\n| Daemon CPU, percent of one core | 19.1727% | 17.8872% |\n| RSS KiB | 140,304 -> 130,992 | 157,072 -> 141,328 |\n| Load 1/5/15 min, first edge | 97.551 / 95.681 / 84.011 | 42.777 / 57.203 / 59.768 |\n| Load 1/5/15 min, last edge | 111.161 / 100.178 / 86.501 | 35.610 / 52.294 / 57.739 |\n| Untombstoned Copilot / Claude / OMP | 84 / 106 / 6, unchanged | 82 / 121 / 6 -> 82 / 122 / 6 |\n| Exact daemon launches | 989 -> 998 (+9) | 824 -> 848 (+24) |\n| Exact launches per second | 0.1499 | 0.3997 |\n\nactive_us is active wall time across the route, including scheduling and\nboth ok and refused outcomes; it is not SQLite CPU or successful-only\nlatency. The aggregate cannot separate the refusals' share. Daemon CPU\nis cumulative process CPU without exited-child CPU, not exclusive whoami\nCPU. Registry cohorts are untombstoned rows, not a liveness census or a\ncount of active status-line consumers.\n\nBEFORE launch-site deltas: ddocs.community +2, git.community +7;\neverything else flat. Initial AFTER deltas:\nps.tmux-harness-process-tree +1; tmux.new-window +1;\ntmux.pipe-pane attach +1; tmux.set-options tap owner +1;\ntmux.atomically reserve staged submit +2;\ntmux.authorize staged submit commit +2; tmux.load submit buffer +6;\ntmux.paste owned submit buffer +6;\ntmux.restore pane input and release ownership +2;\ntmux.submit authorized staged body +2.\nAll other sites were flat. Each site's delta reconciles to the exact\ntotal. The index introduces no new launch site; existing lifecycle and\ndelivery work accounts for the observed launches.\n\n## One additional AFTER check, retained rather than selected\n\nThe initial mixed-outcome/startup window justified one repeat after the\nseparate machine sampler, using exactly the same 60-second protocol.\nThe first result is not discarded or replaced by this one.\n\nNovember 21, 2026, 08:10:59.752 -> 08:11:59.792 UTC;\nelapsed 60.039925 s; same PID 43526, commit 7a6b8cbc8a and start identity.\nDaemon age at the first edge was about 211 s, still younger than BEFORE.\n\n- Whoami ok 2,013 -> 2,583 (+570), refused 19 -> 26 (+7);\n  577 total completions, 9.6103/s.\n  active_us 6,323,971 -> 7,630,640 (+1,306,669);\n  **2.26459 ms active/completion**. held_us remained 0.\n- Cumulative daemon CPU 68.84 -> 79.02 s:\n  **16.9554% of one core**. RSS 122,528 -> 119,840 KiB.\n- Load 1/5/15 min:\n  57.680 / 54.634 / 58.110 -> 74.097 / 58.928 / 59.416.\n- Untombstoned cohorts: 82 Copilot / 122 Claude / 6 OMP, unchanged.\n- Exact launches 858 -> 895 (+37), 0.6163/s.\n  Site deltas: ddocs.community +6, git.community +21;\n  tmux.atomically reserve staged submit +1;\n  tmux.authorize staged submit commit +1; tmux.load submit buffer +3;\n  tmux.paste owned submit buffer +3;\n  tmux.restore pane input and release ownership +1;\n  tmux.submit authorized staged body +1. Every other site was flat;\n  the site deltas sum to 37.\n\nThe additional window is closer to BEFORE, but not faster. Aggregate\ntiming cannot establish that the refusals caused the initial spike; the\nrepeat had seven refusals rather than six. Total daemon CPU changed\n19.1727% -> 17.8872% / 16.9554% across the retained windows, not an\nexclusive estimate of B1 savings.\n\n## Separate machine sampler\n\nThe same `just spawn-rate --seconds 20 --json` recipe ran at niceness 19.\nBEFORE: 20.0 s, PID 31125, 269.3 total new processes/s, sampled 250.9/s,\ndaemon-attributed lower bound 0.4/s.\n\nAFTER: November 21, 2026, 08:10:30.354 -> 08:10:50.589 UTC,\n20.0 s inner sample, PID 43526, **257.3 total new processes/s**,\nsampled 241.4/s, no daemon children caught by the sampler.\nLoad 1/5/15 min at the outer edges:\n45.158 / 52.298 / 57.444 -> 58.133 / 54.607 / 58.142.\nThe sampler's parent attribution is a lower bound, so an empty daemon\nsample does not establish zero launches. The script-marker statusline\ncount misses exec'd native statusline processes. Neither machine sample\noverlapped a 60-second CPU window. The 269.3 -> 257.3 change is an\nuncontrolled fleet observation, not an index-attributed launch reduction.\n\n## Lifecycle and proof limits\n\nThe merge's delivered operation already released performance/312 for\npij-precious-sparrow at 08:07:33.122 UTC, before the AFTER request was\nmeasured. No role was reassigned merely to release it a second time.\nThis governed note records the post-merge receipt as requested.\n\nNo implementation or TS/full-gate claim is added here. The exact-head\npre-deploy verdict and CI evidence remain recorded separately.\n\n**magicWand:** per-outcome route timing and a small latency distribution,\nalongside CPU/load/cohort/uptime, so a handful of refusals or slow calls\ncannot be mistaken for a changed normal-call cost.\n\n**difficulties:** AFTER was requested immediately after a fresh daemon\nstart; BEFORE was older and under higher host load. Preserve the initial\nslower result rather than selecting a favorable later window.\n"
+		}
+	]
+}
